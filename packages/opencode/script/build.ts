@@ -237,6 +237,30 @@ for (const item of targets) {
       console.error(`Smoke test failed for ${name}:`, e)
       process.exit(1)
     }
+
+    // Copy to root dist/bin/ for local launcher (npm ps1 points here)
+    // On Windows, rename the in-use binary first (rename works even when file is locked),
+    // then copy the new one.  If rename also fails, skip (binary will be updated on next build).
+    const ext = item.os === "win32" ? ".exe" : ""
+    const rootDistBin = path.resolve(dir, "../../dist/bin")
+    const src = `dist/${name}/bin/opencode${ext}`
+    const dest = path.join(rootDistBin, `opencode${ext}`)
+    const backup = path.join(rootDistBin, `opencode.old${ext}`)
+    await fs.promises.mkdir(rootDistBin, { recursive: true })
+    try {
+      // Try direct copy first (works when binary isn't running)
+      await fs.promises.copyFile(src, dest)
+      console.log(`Copied ${src} → ${dest}`)
+    } catch (_copyErr) {
+      // Direct copy failed (binary in use on Windows) → rename old → .old, then copy
+      try {
+        await fs.promises.rename(dest, backup).catch(() => { /* ignore if backup rename fails */ })
+        await fs.promises.copyFile(src, dest)
+        console.log(`Rotated old binary and copied ${src} → ${dest}`)
+      } catch (_rotateErr) {
+        console.log(`Will update binary on next restart (current binary in use)`)
+      }
+    }
   }
 
   await $`rm -rf ./dist/${name}/bin/tui`
