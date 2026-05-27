@@ -1,0 +1,24 @@
+<task-instruction type="feature">
+Build new functionality following a structured approach.
+
+## FIRST STEP — Cherche la bonne approche en ligne
+Avant d'écrire la première ligne de code :
+- Cherche les meilleures pratiques pour cette fonctionnalité
+- Trouve des librairies existantes qui résolvent déjà le problème
+- Vérifie la documentation de l'API / framework
+- Regarde des exemples d'implémentation similaires
+
+## Development workflow
+1. 🔍 **Recherche** — quelle est la meilleure approche connue ?
+2. 📖 **Comprends** — lis le code existant, comprends les conventions
+3. 📋 **Planifie** — design l'implémentation avant de coder
+4. ✏️ **Implémente** — écris du code minimal et correct
+5. 🧪 **Teste** — vérifie avec tests unitaires ET intégration
+6. 👀 **Revue** — cherche les edge cases, erreurs, sécurité
+
+## Principes
+- Suis les patterns existants dans le codebase
+- Garde les changements focalisés — une feature par PR/commit
+- Ajoute des tests pour la nouvelle fonctionnalité
+- Mets à jour la documentation si l'API change
+- Considère la rétrocompatibilité

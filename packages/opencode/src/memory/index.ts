@@ -1,0 +1,458 @@
+/**
+ * Memory — Native vector memory system for opencode.
+ *
+ * Replaces the external `llm-memory-tool` Python MCP server with a native
+ * TypeScript implementation backed by SQLite + hybrid BM25/vector search.
+ *
+ * Features:
+ * 1. Store knowledge (facts, decisions, patterns) with auto-embedding
+ * 2. Hybrid semantic + keyword search (BM25 + cosine similarity)
+ * 3. Auto-consolidation (decay, prune, merge)
+ * 4. Post-mortem session analysis and learning extraction
+ * 5. Cross-session pattern detection
+ *
+ * Architecture:
+ * ┌──────────┐    ┌──────────────┐    ┌────────────┐
+ * │ Memory   │───▶│ Embeddings   │───▶│ AI SDK     │
+ * │ Service  │    │ Service      │    │ or local   │
+ * │          │    │              │    │ n-gram     │
+ * │          │    └──────────────┘    └────────────┘
+ * │          │    ┌──────────────┐
+ * │          │───▶│ MemoryStore  │───▶ SQLite
+ * │          │    │ (BM25+vec)   │
+ * │          │    └──────────────┘
+ * │          │    ┌──────────────┐
+ * │          │───▶│ PostMortem   │───▶ Session analysis
+ * │          │    └──────────────┘
+ * │          │    ┌──────────────┐
+ * │          │───▶│ Patterns     │───▶ Cross-session
+ * │          │    └──────────────┘
+ * └──────────┘
+ *
+ * Module shape: single-namespace directory with self-reexport at bottom.
+ */
+
+import { Effect, Context, Layer, Schema } from "effect"
+import * as Log from "@opencode-ai/core/util/log"
+import { serviceUse } from "@opencode-ai/core/effect/service-use"
+import * as MemoryStore from "./store"
+import * as Embedding from "./embedding"
+import * as PostMortem from "./post-mortem"
+import * as Patterns from "./patterns"
+import {
+  hybridRank,
+  assembleContextText,
+  type SearchOptions,
+  type HybridDocument,
+} from "./search"
+import { consolidate, type ConsolidationStore } from "./consolidation"
+import type { Interface as EmbeddingInterface } from "./embedding"
+import type { PostMortemReport } from "./post-mortem"
+import type { PatternReport } from "./patterns"
+
+const log = Log.create({ service: "memory" })
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+/** Memory type discriminator. */
+export const MemoryType = Schema.Union([
+  Schema.Literal("semantic"),
+  Schema.Literal("episodic"),
+  Schema.Literal("procedural"),
+  Schema.Literal("profile"),
+  Schema.Literal("learning"),
+  Schema.Literal("pattern"),
+])
+export type MemoryType = Schema.Schema.Type<typeof MemoryType>
+
+/** A single memory entry. */
+export interface MemoryEntry {
+  id: string
+  content: string
+  memoryType: string
+  tags: string[]
+  importance: number
+  projectId: string
+  source: string
+  createdAt: number
+  updatedAt: number
+  confidence: number
+  /** True if this memory has a vector embedding stored */
+  hasEmbedding: boolean
+}
+
+/** Search result with relevance score. */
+export interface SearchResult {
+  entry: MemoryEntry
+  score: number
+  bm25Score?: number
+  vectorScore?: number
+}
+
+/** Memory system statistics. */
+export interface MemoryStats {
+  total: number
+  byType: Record<string, number>
+  averageConfidence: number
+  lastConsolidated: number | null
+  withEmbeddings: number
+  usingAIEmbeddings: boolean
+}
+
+// ---------------------------------------------------------------------------
+// Service Interface
+// ---------------------------------------------------------------------------
+
+export interface Interface {
+  /** Store a new memory entry. Auto-generates embedding. */
+  readonly store: (entry: Omit<MemoryEntry, "id" | "createdAt" | "updatedAt" | "hasEmbedding">) => Effect.Effect<string>
+
+  /** Retrieve relevant memories by hybrid semantic + keyword search. */
+  readonly retrieve: (
+    query: string,
+    opts?: SearchOptions & { projectId?: string },
+  ) => Effect.Effect<{ entries: MemoryEntry[]; contextText: string; results: SearchResult[] }>
+
+  /** Get a single memory by ID. */
+  readonly get: (id: string) => Effect.Effect<MemoryEntry | null>
+
+  /** Soft-delete a memory (hard delete from DB). */
+  readonly delete: (id: string) => Effect.Effect<boolean>
+
+  /** List memories with pagination and filters. */
+  readonly list: (opts?: {
+    projectId?: string
+    memoryType?: string
+    minConfidence?: number
+    page?: number
+    pageSize?: number
+  }) => Effect.Effect<{ entries: MemoryEntry[]; total: number }>
+
+  /** Run consolidation cycle (decay, prune, merge). */
+  readonly consolidate: (dryRun?: boolean) => Effect.Effect<{
+    decayed: number
+    pruned: number
+    merged: number
+    remainingBefore: number
+    remainingAfter: number
+    details: string[]
+  }>
+
+  /** Get memory system statistics. */
+  readonly stats: () => Effect.Effect<MemoryStats>
+
+  /** Health check. */
+  readonly health: () => Effect.Effect<{ ok: boolean; version: string }>
+
+  /** Analyze a session post-mortem and extract learnings. */
+  readonly analyzeSession: (sessionId: string) => Effect.Effect<PostMortemReport>
+
+  /** Detect cross-session patterns. */
+  readonly detectPatterns: (opts?: { sinceDays?: number }) => Effect.Effect<PatternReport>
+
+  /** Get the embedding service (for direct access if needed). */
+  readonly embedding: EmbeddingInterface
+}
+
+// ---------------------------------------------------------------------------
+// Service tag
+// ---------------------------------------------------------------------------
+
+export class Service extends Context.Service<Service, Interface>()("@opencode/Memory") {}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function rowToEntry(row: MemoryStore.MemoryRow): MemoryEntry {
+  return {
+    id: row.id,
+    content: row.content,
+    memoryType: row.memory_type,
+    tags: JSON.parse(row.tags) as string[],
+    importance: row.importance,
+    projectId: row.project_id,
+    source: row.source,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    confidence: row.confidence,
+    hasEmbedding: row.embedding !== null,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Layer
+// ---------------------------------------------------------------------------
+
+const MEMORY_VERSION = "2.0.0-hybrid"
+
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const store = yield* MemoryStore.Service
+
+    // Lazy-load sub-services to break circular module init
+    const eMod = yield* Effect.promise(() => import("./embedding"))
+    const pMod = yield* Effect.promise(() => import("./post-mortem"))
+    const ptMod = yield* Effect.promise(() => import("./patterns"))
+
+    const embedding = yield* eMod.Service
+    const postMortem = yield* pMod.Service
+    const patterns = yield* ptMod.Service
+
+        // ---- store with auto-embedding ----
+    const store_ = Effect.fn("Memory.store")(function* (
+      entry: Omit<MemoryEntry, "id" | "createdAt" | "updatedAt" | "hasEmbedding">,
+    ) {
+      // Generate embedding
+      const vec = yield* embedding.embed(entry.content)
+      const modelName = embedding.isUsingAI ? "ai-sdk" : "local-n-gram"
+
+      // Insert with embedding
+      const id = yield* store.insert({
+        content: entry.content,
+        memory_type: entry.memoryType,
+        tags: JSON.stringify(entry.tags),
+        importance: entry.importance,
+        project_id: entry.projectId,
+        source: entry.source,
+        confidence: entry.confidence ?? 1.0,
+        embedding: JSON.stringify(vec),
+        embedding_model: modelName,
+      })
+      log.info("stored memory with embedding", { id, type: entry.memoryType, dim: vec.length })
+      return id
+    })
+
+    // ---- retrieve with hybrid search ----
+    const retrieve = Effect.fn("Memory.retrieve")(function* (
+      query: string,
+      opts?: SearchOptions & { projectId?: string },
+    ) {
+      const topK = opts?.topK ?? 10
+      const tokenBudget = opts?.tokenBudget ?? 600
+      const alpha = opts?.alpha ?? 0.4
+      const minScore = opts?.minScore ?? 0
+
+      // Generate query embedding
+      const queryVec = yield* embedding.embed(query)
+
+      // Get vector search results
+      const vectorResults = yield* store.searchVector(queryVec, topK * 2)
+      const vectorIdSet = new Set(vectorResults.map((r) => r.row.id))
+
+      // Get keyword search results (for docs without embeddings or for BM25 boost)
+      const keywordRows = yield* store.search(query, topK * 3)
+
+      // Merge: keyword-only rows that weren't in vector results
+      const allRows = new Map<string, MemoryStore.MemoryRow>()
+      for (const vr of vectorResults) allRows.set(vr.row.id, vr.row)
+      for (const kr of keywordRows) allRows.set(kr.id, kr)
+
+      const docs: HybridDocument[] = Array.from(allRows.values()).map((row) => ({
+        id: row.id,
+        content: row.content,
+        importance: row.importance,
+        confidence: row.confidence,
+        embedding: row.embedding ? (JSON.parse(row.embedding) as number[]) : undefined,
+      }))
+
+      // Hybrid rank
+      const scored = hybridRank(query, queryVec, docs, topK, alpha, minScore)
+
+      // Apply project filter if needed
+      const filtered = opts?.projectId
+        ? scored.filter((s) => {
+            const row = allRows.get(s.id)
+            return row?.project_id === opts.projectId
+          })
+        : scored
+
+      const entries = filtered.map((s) => {
+        const row = allRows.get(s.id)!
+        return rowToEntry(row)
+      })
+
+      const contextText = assembleContextText(filtered, tokenBudget)
+
+      const results: SearchResult[] = filtered.map((s) => {
+        const row = allRows.get(s.id)!
+        return {
+          entry: rowToEntry(row),
+          score: s.score,
+          bm25Score: s.bm25Score,
+          vectorScore: s.vectorScore,
+        }
+      })
+
+      return { entries, contextText, results }
+    })
+
+    // ---- get ----
+    const get = Effect.fn("Memory.get")(function* (id: string) {
+      const row = yield* store.findById(id)
+      return row ? rowToEntry(row) : null
+    })
+
+    // ---- delete ----
+    const delete_ = Effect.fn("Memory.delete")(function* (id: string) {
+      return yield* store.deleteById(id)
+    })
+
+    // ---- list ----
+    const list = Effect.fn("Memory.list")(function* (opts?: {
+      projectId?: string
+      memoryType?: string
+      minConfidence?: number
+      page?: number
+      pageSize?: number
+    }) {
+      const page = opts?.page ?? 1
+      const pageSize = opts?.pageSize ?? 10
+      const offset = (page - 1) * pageSize
+
+      const { rows, total } = yield* store.list({
+        projectId: opts?.projectId,
+        memoryType: opts?.memoryType,
+        minConfidence: opts?.minConfidence,
+        offset,
+        limit: pageSize,
+      })
+
+      return {
+        entries: rows.map(rowToEntry),
+        total,
+      }
+    })
+
+    // ---- consolidate ----
+    let lastConsolidated: number | null = null
+
+    const consolidate_ = Effect.fn("Memory.consolidate")(function* (dryRun: boolean = false) {
+      const consolidationStore: ConsolidationStore = {
+        getAll: () => store.getAll(),
+        updateConfidence: (id, confidence) => store.updateConfidence(id, confidence),
+        updateContent: (id, content) => store.updateContent(id, content),
+        deleteById: (id) => store.deleteById(id),
+      }
+
+      const result = yield* consolidate(consolidationStore, dryRun)
+
+      if (!dryRun) {
+        lastConsolidated = Date.now()
+        log.info("consolidation complete", {
+          decayed: result.decayed,
+          pruned: result.pruned,
+          merged: result.merged,
+          remaining: result.remainingAfter,
+        })
+      }
+
+      return result
+    })
+
+    // ---- stats ----
+    const stats = Effect.fn("Memory.stats")(function* () {
+      const s = yield* store.stats()
+      const allRows = yield* store.getAll()
+      const withEmbeddings = allRows.filter((r) => r.embedding !== null).length
+      return {
+        total: s.total,
+        byType: s.byType,
+        averageConfidence: s.averageConfidence,
+        lastConsolidated,
+        withEmbeddings,
+        usingAIEmbeddings: embedding.isUsingAI,
+      } satisfies MemoryStats
+    })
+
+    // ---- health ----
+    const health = Effect.fn("Memory.health")(function* () {
+      try {
+        yield* store.count()
+        return { ok: true, version: MEMORY_VERSION }
+      } catch (e) {
+        log.error("memory health check failed", { error: String(e) })
+        return { ok: false, version: MEMORY_VERSION }
+      }
+    })
+
+    // ---- analyzeSession ----
+    const analyzeSession = Effect.fnUntraced(function* (sessionId: string) {
+      const report = yield* postMortem.analyze(sessionId)
+      // Auto-store learnings
+      const learnings = yield* postMortem.extractLearnings(report)
+      for (const learning of learnings) {
+        yield* store_({
+          content: learning.content,
+          memoryType: learning.type === "pattern" ? "pattern"
+            : learning.type === "decision" ? "semantic"
+            : learning.type === "pitfall" ? "episodic"
+            : "procedural",
+          tags: learning.tags,
+          importance: learning.confidence,
+          projectId: report.summary.sessionId,
+          source: "post-mortem",
+          confidence: learning.confidence,
+        })
+      }
+      log.info("session analyzed and learnings stored", {
+        sessionId,
+        learningsStored: learnings.length,
+      })
+      return report
+    })
+
+    // ---- detectPatterns ----
+    const detectPatterns = Effect.fn("Memory.detectPatterns")(function* (opts?: { sinceDays?: number }) {
+      const report = yield* patterns.detect(opts?.sinceDays ?? 30)
+      // Store important patterns
+      for (const pattern of report.recurringPatterns) {
+        yield* store_({
+          content: `[Auto-detected pattern] ${pattern.description}`,
+          memoryType: "pattern",
+          tags: ["auto-detected", "pattern", ...pattern.tags],
+          importance: pattern.frequency > 3 ? 0.8 : 0.5,
+          projectId: "default",
+          source: "pattern-detector",
+          confidence: Math.min(1, pattern.frequency / 10),
+        })
+      }
+      log.info("pattern detection complete", {
+        patterns: report.recurringPatterns.length,
+        suggestions: report.suggestions.length,
+      })
+      return report
+    })
+
+    return Service.of({
+      store: store_ as any,
+      retrieve: retrieve as any,
+      get: get as any,
+      delete: delete_ as any,
+      list: list as any,
+      consolidate: consolidate_ as any,
+      stats: stats as any,
+      health: health as any,
+      analyzeSession: analyzeSession as any,
+      detectPatterns: detectPatterns as any,
+      embedding: embedding as any,
+    })
+  }),
+)
+
+export const defaultLayer = layer.pipe(
+  Layer.provide(Patterns.layer.pipe(Layer.provideMerge(MemoryStore.layer))),
+  Layer.provide(Embedding.layer),
+  Layer.provide(PostMortem.layer),
+)
+
+export const use = serviceUse(Service)
+
+// ---------------------------------------------------------------------------
+// Self-reexport
+// ---------------------------------------------------------------------------
+
+export * as Memory from "."

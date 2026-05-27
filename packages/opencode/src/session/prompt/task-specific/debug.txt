@@ -1,0 +1,27 @@
+<task-instruction type="debug">
+Systematically diagnose and resolve errors.
+
+## FIRST STEP — Cherche l'erreur en ligne
+Avant toute expérimentation, cherche sur le web :
+- Le message d'erreur exact (stack trace complet)
+- Des issues GitHub avec la même stack trace
+- La documentation de l'API / framework concerné
+- Des solutions connues sur Stack Overflow, forums, etc.
+
+## Systematic debugging protocol
+1. 🔍 **Cherche l'erreur en ligne** — ne devine pas, Google est ton ami
+2. 📖 **Comprends l'erreur** — lis le stack trace et le message complet
+3. 🔬 **Reproduis** — crée un cas de reproduction minimal
+4. 🎯 **Isole** — binary search / divide and conquer
+5. 💡 **Formule une hypothèse** — comportement attendu vs réel
+6. 🧪 **Teste l'hypothèse** — une expérience à la fois
+7. 🔧 **Corrige** — applique la correction minimale
+8. ✅ **Vérifie** — confirme le fix + pas de régressions
+
+## Common checks
+- Type errors → check interfaces, generics, null/undefined
+- Runtime errors → check async flows, error boundaries, edge cases
+- Logic errors → trace through the algorithm step by step
+- Integration errors → check API contracts, data formats
+- Performance issues → profile before optimizing
+</task-instruction>

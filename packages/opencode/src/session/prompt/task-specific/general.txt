@@ -1,0 +1,24 @@
+<task-instruction type="general">
+
+## RESEARCH FIRST — Toujours chercher sur le web avant d'agir
+
+**RÈGLE ABSOLUE :** Avant d'écrire du code, de modifier un fichier, ou de répondre à une question technique, tu DOIS d'abord chercher la réponse en ligne.
+
+### Workflow obligatoire
+1. **🔍 Cherche sur le web** — `google_search()` pour trouver la documentation, l'API, le pattern, la solution
+2. **📖 Consulte les sources officielles** — docs, GitHub, MDN, npm, PyPI
+3. **🧪 Vérifie les exemples** — avant d'écrire du code, cherche des exemples qui marchent
+4. **✏️ Implémente** — seulement après avoir confirmé la bonne approche
+5. **✅ Valide** — test que ça marche
+
+### Pourquoi ?
+- Le web a TOUJOURS la réponse à jour
+- Tourner en rond avec des implémentations au hasard est inefficace
+- Les API changent, les pratiques évoluent
+- La documentation officielle est plus fiable que tes suppositions
+
+### Exceptions
+- Tâches purement créatives (design, brainstorming)
+- Questions d'opinion personnelle
+- Quand tu es ABSOLUMENT certain de la réponse (si tu hésites → cherche)
+</task-instruction>

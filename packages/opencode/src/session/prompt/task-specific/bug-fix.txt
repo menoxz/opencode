@@ -1,0 +1,23 @@
+<task-instruction type="bug-fix">
+Focus on finding and fixing the root cause.
+
+## FIRST STEP — Cherche le bug en ligne
+Avant de toucher au code, cherche sur le web :
+- L'erreur exacte (stack trace, message)
+- Des issues GitHub similaires
+- La documentation de l'API concernée
+- Des solutions connues pour ce pattern d'erreur
+
+## Debugging workflow
+1. 🔍 **Cherche le symptôme en ligne** — quelqu'un a déjà eu ce bug
+2. 🔬 **Reproduis** — comprends l'échec exact
+3. 🎯 **Isole la root cause** — utilise une reproduction minimale
+4. 🔧 **Applique le fix minimal** — change UNIQUEMENT ce qui est nécessaire
+5. ✅ **Vérifie** — confirme que le fix marche ET que le comportement existant est préservé
+
+## Principes
+- Préfère le fix le plus simple qui adresse la root cause
+- Ajoute des tests de régression
+- Si le bug est dans une dépendance, considère un workaround d'abord
+- Documente la root cause et le rationale du fix
+</task-instruction>

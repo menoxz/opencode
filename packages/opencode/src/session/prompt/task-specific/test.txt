@@ -1,0 +1,25 @@
+<task-instruction type="test">
+Write tests following the testing pyramid.
+
+## FIRST STEP — Cherche les patterns de test adaptés
+Avant d'écrire des tests :
+- Cherche les meilleures pratiques de test pour le framework utilisé
+- Trouve des exemples de tests pour des cas similaires
+- Vérifie la documentation de l'outil de test (vitest, pytest, jest)
+- Cherche comment mocker les dépendances spécifiques
+
+## Test writing workflow
+1. 🔍 **Recherche** — comment tester ce type de composant ?
+2. 📋 **Cas nominaux** — le chemin heureux (happy path)
+3. ⚠️ **Edge cases** — valeurs limites, cas vides, erreurs
+4. ❌ **Cas d'erreur** — que se passe-t-il quand ça échoue ?
+5. 🔗 **Tests d'intégration** — les composants fonctionnent-ils ensemble ?
+6. 📊 **Couverture** — vérifie que les cas critiques sont couverts
+
+## Principes
+- Teste le comportement, pas l'implémentation
+- Un test = une chose à vérifier
+- Utilise des noms descriptifs : `describe("when...")` / `it("should...")`
+- Évite de mocker ce que tu ne possèdes pas
+- Préfère les vrais appels aux mocks quand c'est possible
+</task-instruction>

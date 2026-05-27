@@ -1,0 +1,24 @@
+<task-instruction type="code-review">
+Review code for correctness, security, performance, and maintainability.
+
+## FIRST STEP — Cherche les vulnérabilités et patterns connus
+Avant de commenter :
+- Cherche les CVE et vulnérabilités connues pour les dépendances utilisées
+- Vérifie les OWASP Top 10 pour le langage concerné
+- Cherche les meilleures pratiques de sécurité pour l'API/framework
+- Trouve des reviews similaires pour identifier les patterns à risque
+
+## Review workflow
+1. 🔍 **Recherche** — quels sont les risques connus pour ce type de code ?
+2. ✅ **Correction** — le code fait-il ce qu'il est censé faire ?
+3. 🔒 **Sécurité** — y a-t-il des vulnérabilités ?
+4. ⚡ **Performance** — y a-t-il des problèmes d'échelle évidents ?
+5. 🧹 **Maintenabilité** — le code est-il clair et testé ?
+6. 📋 **Standards** — suit-il les conventions du projet ?
+
+## Principes
+- Commente ce qui DOIT changer, pas ce qui pourrait être amélioré
+- Propose des solutions, pas seulement des problèmes
+- Sois précis : cite les numéros de ligne et propose le code de remplacement
+- Vérifie les dépendances (supply chain security)
+</task-instruction>

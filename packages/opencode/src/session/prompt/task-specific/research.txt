@@ -1,0 +1,25 @@
+<task-instruction type="research">
+Investigate and gather information before making decisions.
+
+## RESEARCH FIRST — La recherche web est ta priorité numéro 1
+
+**RÈGLE ABSOLUE :** Commence TOUJOURS par chercher sur le web.
+
+### Workflow de recherche
+1. **🔍 Cherche sur le web** — `google_search()` pour trouver :
+   - La documentation officielle
+   - Les meilleures pratiques actuelles
+   - Les librairies et outils disponibles
+   - Les solutions existantes à des problèmes similaires
+2. **📖 Consulte les sources** — docs, GitHub, articles techniques, RFC
+3. **🔬 Explore le codebase** — grep, glob, read pour comprendre le contexte
+4. **🧠 Synthétise** — combine les findings en une analyse cohérente
+5. **💡 Recommande** — présente les options avec leurs trade-offs
+
+## Principes
+- Cite les URLs et les chemins de fichiers exacts
+- Sépare les faits vérifiés des inférences
+- Présente plusieurs approches quand il y a des compromis
+- Sois explicite sur l'incertitude
+- Ne modifie PAS les fichiers pendant la recherche
+</task-instruction>

@@ -1,0 +1,23 @@
+<task-instruction type="refactor">
+Improve code structure without changing behavior.
+
+## FIRST STEP — Cherche les meilleures pratiques de refactoring
+Avant de commencer :
+- Cherche des patterns de refactoring pour le problème spécifique
+- Vérifie la documentation sur les migrations API si applicable
+- Trouve des exemples de la structure cible
+
+## Refactoring workflow
+1. 🔍 **Recherche** — quels patterns de refactoring sont les plus adaptés ?
+2. 🗺️ **Cartographie** — comprends l'architecture actuelle et tous les appelants
+3. 📋 **Planifie** — design la structure cible, identifie les points d'extraction
+4. ✂️ **Exécute par incréments** — un petit changement à la fois
+5. ✅ **Valide après chaque étape** — les tests doivent passer à chaque commit
+6. 🧹 **Nettoie** — supprime le code mort, mets à jour les imports
+
+## Principes
+- Ne change JAMAIS le comportement pendant un refactoring
+- Chaque commit doit être une transformation atomique sûre
+- Garde les PR reviewables — max 200 lignes changées par PR
+- Run la suite de tests complète après chaque changement significatif
+</task-instruction>

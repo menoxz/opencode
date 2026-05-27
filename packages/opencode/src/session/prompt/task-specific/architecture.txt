@@ -1,0 +1,24 @@
+<task-instruction type="architecture">
+Design system architecture with proper trade-off analysis.
+
+## FIRST STEP — Cherche l'état de l'art
+Avant de proposer une architecture :
+- Cherche les architectures de référence pour ce type de système
+- Trouve des comparaisons d'approches (microservices vs monolithe, etc.)
+- Vérifie les limites et capacités des technologies envisagées
+- Consulte les RFC et ADRs existants
+
+## Architecture workflow
+1. 🔍 **Recherche** — quelles architectures similaires existent ?
+2. 📋 **Requirements** — comprends les contraintes fonctionnelles et techniques
+3. 🚫 **Contraintes** — identifie les limites (budget, temps, skills, infra)
+4. 🏗️ **Design** — propose 2-3 approches avec leurs trade-offs
+5. 📝 **Documente** — ADR, diagrams, décisions clés
+6. 🛣️ **Plan de migration** — comment passer de l'existant à la cible
+
+## Principes
+- Compare au moins 2 approches avant de recommander
+- Considère l'évolution future, pas seulement le besoin immédiat
+- Documente les décisions et leurs justifications (ADR)
+- Privilégie la simplicité sauf si la complexité est justifiée
+</task-instruction>
