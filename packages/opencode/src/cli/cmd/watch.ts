@@ -4,7 +4,7 @@ import { effectCmd } from "../effect-cmd"
 import { create as createDaemon } from "../../daemon/index"
 import { checkTriggers, memoryConsolidate, tunnelHealthCheck } from "../../daemon/triggers"
 import { every_30s, every_5m, every_1m } from "../../daemon/scheduler"
-import { subscribeFileChanges } from "../../daemon/file-watcher"
+import { subscribeFileChanges, startFileWatcher } from "../../daemon/file-watcher"
 import { listenForTriggers } from "../../daemon/ws-push"
 import * as Log from "@opencode-ai/core/util/log"
 import * as fs from "node:fs"
@@ -83,7 +83,12 @@ export const daemonHandler = Effect.fn("Daemon.handler")(function* (
   yield* daemon.register("trigger-check", checkTriggers, every_30s)
   yield* daemon.register("memory-consolidate", memoryConsolidate, every_5m)
   yield* daemon.register("tunnel-health", tunnelHealthCheck, every_1m)
-  yield* daemon.register("file-watcher", subscribeFileChanges, every_30s)
+
+  // File watcher cleanup (periodic — removes stale cooldown entries)
+  yield* daemon.register("file-watcher-cleanup", subscribeFileChanges, every_30s)
+
+  // File watcher subscription (long-lived — event-driven via @parcel/watcher)
+  yield* daemon.forkForever("file-watcher", startFileWatcher)
 
   // Register WebSocket push listener (event-driven, reconnects automatically)
   yield* daemon.forkForever("ws-push", listenForTriggers)

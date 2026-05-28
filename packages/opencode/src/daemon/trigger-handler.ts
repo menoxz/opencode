@@ -32,7 +32,7 @@ export interface TaskItem {
 /**
  * Write a trigger task to the queue for the next agent session.
  */
-function writeTask(trigger: { id: string; source: string; payload: unknown }): void {
+export function writeTask(trigger: { id: string; source: string; payload: unknown }): void {
   const dir = queueDir()
   fs.mkdirSync(dir, { recursive: true })
 

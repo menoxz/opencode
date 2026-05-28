@@ -27,6 +27,101 @@ type Payload<D extends BusEvent.Definition = BusEvent.Definition> = {
   properties: BusProperties<D>
 }
 
+// ── Global (daemon-safe) PubSubs ──────────────────────────────────────
+// These bypass InstanceState and work without InstanceRef.
+// Useful for daemon tasks, background workers, and cross-instance events.
+
+const getGlobalPubSubs = Effect.cached(
+  Effect.gen(function* () {
+    const wildcard = yield* PubSub.unbounded<Payload>()
+    const typed = new Map<string, PubSub.PubSub<Payload>>()
+    return { wildcard, typed }
+  }),
+)
+
+/**
+ * Resolve the global PubSubs (double-yield through Effect.cached).
+ */
+const resolveGlobalPubSubs = Effect.gen(function* () {
+  const cached = yield* getGlobalPubSubs
+  return yield* cached
+})
+
+function typedGetOrCreate<D extends BusEvent.Definition>(typed: Map<string, PubSub.PubSub<Payload>>, def: D) {
+  let ps = typed.get(def.type)
+  if (!ps) {
+    return PubSub.unbounded<Payload>().pipe(
+      Effect.map((newPs) => {
+        typed.set(def.type, newPs)
+        return newPs as unknown as PubSub.PubSub<Payload<D>>
+      }),
+    )
+  }
+  return Effect.succeed(ps as unknown as PubSub.PubSub<Payload<D>>)
+}
+
+/**
+ * Publish an event on the global (daemon-safe) bus.
+ * No InstanceRef required — can be called from any context.
+ */
+export const publishGlobal = <D extends BusEvent.Definition>(
+  def: D,
+  properties: BusProperties<D>,
+  options?: { id?: string },
+): Effect.Effect<void> =>
+  Effect.gen(function* () {
+    const g = yield* resolveGlobalPubSubs
+    const payload: Payload = { id: options?.id ?? createID(), type: def.type, properties }
+    log.info("publishing (global)", { type: def.type })
+
+    const ps = g.typed.get(def.type)
+    if (ps) yield* PubSub.publish(ps, payload)
+    yield* PubSub.publish(g.wildcard, payload)
+
+    // Also emit on GlobalBus so EventEmitter subscribers (e.g., server HTTP push) see it
+    GlobalBus.emit("event", {
+      directory: "__global__",
+      project: "__global__",
+      workspace: undefined,
+      payload,
+    })
+  })
+
+/**
+ * Subscribe to a specific event type on the global bus.
+ * Returns an unsubscribe function. No Scope or InstanceRef required.
+ */
+export const subscribeGlobal = <D extends BusEvent.Definition>(
+  def: D,
+  callback: (event: Payload<D>) => unknown,
+): Effect.Effect<() => void> =>
+  Effect.gen(function* () {
+    const g = yield* resolveGlobalPubSubs
+    const ps = yield* typedGetOrCreate(g.typed, def)
+    const bridge = yield* EffectBridge.make()
+    const scope = yield* Scope.make()
+    const subscription = yield* Scope.provide(scope)(PubSub.subscribe(ps))
+
+    yield* Scope.provide(scope)(
+      Stream.fromSubscription(subscription).pipe(
+        Stream.runForEach((msg) =>
+          Effect.tryPromise({
+            try: () => Promise.resolve().then(() => callback(msg)),
+            catch: (cause) => {
+              log.error("global subscriber failed", { type: def.type, cause })
+            },
+          }).pipe(Effect.ignore),
+        ),
+        Effect.forkScoped,
+      ),
+    )
+
+    return () => {
+      log.info("unsubscribing (global)", { type: def.type })
+      bridge.fork(Scope.close(scope, Exit.void))
+    }
+  })
+
 type State = {
   wildcard: PubSub.PubSub<Payload>
   typed: Map<string, PubSub.PubSub<Payload>>
