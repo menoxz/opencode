@@ -21,6 +21,14 @@ export function daemonDir(): string {
 }
 
 /**
+ * Get the service data directory (system-wide, for Windows service mode).
+ */
+export function serviceDir(): string {
+  const base = process.env.ProgramData || "C:\\ProgramData"
+  return path.join(base, "opencode", "daemon")
+}
+
+/**
  * Write a PID file so the wrapper script (or system monitoring) can track us.
  */
 export function writePidFile(dir: string): void {
@@ -43,14 +51,26 @@ export function removePidFile(dir: string): void {
 }
 
 /**
- * Core daemon handler — shared between `opencode watch` and `opencode daemon start`.
+ * Core daemon handler — shared between `opencode watch`, `opencode daemon start`,
+ * and Windows service mode (`opencode daemon start --service`).
  */
-export const daemonHandler = Effect.fn("Daemon.handler")(function* (args: { daemon?: boolean; "pid-file"?: string }) {
+export const daemonHandler = Effect.fn("Daemon.handler")(function* (
+  args: { daemon?: boolean; service?: boolean; "pid-file"?: string },
+) {
   const isDaemon = args.daemon ?? false
+  const isService = args.service ?? false
   const customPidFile = args["pid-file"] as string | undefined
-  const dd = customPidFile ? path.dirname(customPidFile) : daemonDir()
+  const dd = customPidFile
+    ? path.dirname(customPidFile)
+    : isService
+      ? serviceDir()
+      : daemonDir()
 
-  if (isDaemon) {
+  if (isService) {
+    // Service mode: write PID to system-wide directory, log via structured logger
+    writePidFile(dd)
+    log.info("daemon start (service mode)", { pid: process.pid, pidDir: dd })
+  } else if (isDaemon) {
     writePidFile(dd)
     log.info("daemon start", { pid: process.pid, pidDir: dd })
   } else {
@@ -70,7 +90,9 @@ export const daemonHandler = Effect.fn("Daemon.handler")(function* (args: { daem
 
   const st = yield* daemon.status()
 
-  if (isDaemon) {
+  if (isService) {
+    log.info("daemon ready (service mode)", { tasks: st.tasks })
+  } else if (isDaemon) {
     log.info("daemon ready", { tasks: st.tasks })
   } else {
     Console.log(`✅ Daemon running. Registered tasks: ${st.tasks.join(", ")}`)
@@ -79,7 +101,8 @@ export const daemonHandler = Effect.fn("Daemon.handler")(function* (args: { daem
 
   // Graceful shutdown: stop daemon tasks and remove PID file
   const shutdown = Effect.gen(function* () {
-    if (isDaemon) log.info("daemon shutting down...")
+    if (isService) log.info("daemon shutting down (service mode)...")
+    else if (isDaemon) log.info("daemon shutting down...")
     else Console.log("\nShutting down daemon...")
     removePidFile(dd)
     yield* daemon.stop().pipe(Effect.ignore)
@@ -92,7 +115,11 @@ export const daemonHandler = Effect.fn("Daemon.handler")(function* (args: { daem
     )
   }
   process.on("SIGTERM", () => onSignal("SIGTERM"))
-  process.on("SIGINT", () => onSignal("SIGINT"))
+  // Service mode: SCM sends CTRL_BREAK (not SIGINT), so don't trap SIGINT
+  // which interferes with Windows console event handling.
+  if (!isService) {
+    process.on("SIGINT", () => onSignal("SIGINT"))
+  }
 
   // Keep alive indefinitely — daemon runs until interrupted
   yield* Effect.never
