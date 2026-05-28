@@ -1,8 +1,11 @@
+import { Effect } from "effect"
 import * as fs from "node:fs"
 import * as path from "node:path"
 import { EOL } from "node:os"
 import { cmd } from "./cmd"
 import { readLatestReport } from "../../daemon/idle"
+import { processNextTask, isExecutorBusy } from "../../daemon/auto-executor"
+import { AppRuntime } from "@/effect/app-runtime"
 
 // ── Task queue helpers ──────────────────────────────────────────────────
 
@@ -69,8 +72,9 @@ export const TasksCommand = cmd({
     yargs
       .command(ListCommand)
       .command(ProcessCommand)
+      .command(ExecuteCommand)
       .command(ReportCommand)
-      .demandCommand(1, "Specify a subcommand: list, process, report"),
+      .demandCommand(1, "Specify a subcommand: list, process, execute, report"),
   async handler() {},
 })
 
@@ -160,6 +164,57 @@ const ProcessCommand = cmd({
       count++
     }
     process.stdout.write(`✅ ${count} task(s) marked as done${EOL}`)
+  },
+})
+
+// ── execute ─────────────────────────────────────────────────────────────
+
+const ExecuteCommand = cmd({
+  command: "execute [id]",
+  describe: "Run the auto-executor on a pending task immediately (no 5min wait)",
+  builder: (yargs) =>
+    yargs.positional("id", {
+      describe: "Specific task ID to execute (omit for first pending)",
+      type: "string",
+    }),
+  async handler(args) {
+    if (isExecutorBusy()) {
+      process.stdout.write(`⚠️  Auto-executor is currently busy. Wait for it to finish.${EOL}`)
+      return
+    }
+
+    // If an ID was given, mark all others done and execute only that one
+    const specificId = args.id as string | undefined
+    if (specificId) {
+      const pending = pendingTasks()
+      const match = pending.find((t) => t.triggerId === specificId)
+      if (!match) {
+        process.stdout.write(`❌ Task ${specificId} not found or already done${EOL}`)
+        return
+      }
+      // Mark other tasks done so only the specified one runs
+      for (const t of pending) {
+        if (t.triggerId !== specificId) markDone(t.triggerId)
+      }
+    }
+
+    process.stdout.write(`🚀 Starting auto-executor...${EOL}`)
+
+    try {
+      const effect = (processNextTask as unknown as () => Effect.Effect<unknown, never, never>)()
+      const result = await AppRuntime.runPromise(effect) as Record<string, unknown>
+      process.stdout.write(`${EOL}📋 Result:${EOL}`)
+      process.stdout.write(`   Status:  ${String(result.status)}${EOL}`)
+      if (result.taskId) process.stdout.write(`   Task:    ${String(result.taskId)}${EOL}`)
+      if (result.summary) process.stdout.write(`   Summary: ${String(result.summary).slice(0, 120)}${EOL}`)
+      if (result.filesChanged !== undefined) process.stdout.write(`   Files:   ${Number(result.filesChanged)} changed${EOL}`)
+      if (result.committed) process.stdout.write(`   Commit:  ✅ committed${EOL}`)
+      if (result.prUrl) process.stdout.write(`   PR:      ${String(result.prUrl)}${EOL}`)
+      process.stdout.write(EOL)
+    } catch (err) {
+      process.stdout.write(`❌ Auto-executor failed: ${err}${EOL}`)
+      process.exitCode = 1
+    }
   },
 })
 
