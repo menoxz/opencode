@@ -15,6 +15,8 @@ import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { NamedError } from "@opencode-ai/core/util/error"
 import { FormatError } from "./cli/error"
 import { ServeCommand } from "./cli/cmd/serve"
+import { WatchCommand } from "./cli/cmd/watch"
+import { DaemonCommand } from "./cli/cmd/daemon"
 import { Filesystem } from "@/util/filesystem"
 import { DebugCommand } from "./cli/cmd/debug"
 import { StatsCommand } from "./cli/cmd/stats"
@@ -32,6 +34,7 @@ import { SessionCommand } from "./cli/cmd/session"
 import { DbCommand } from "./cli/cmd/db"
 import { EvalCommand } from "./cli/cmd/eval"
 import { SelfImproveCommand } from "./cli/cmd/self-improve"
+import { TasksCommand } from "./cli/cmd/tasks"
 import path from "path"
 import { Global } from "@opencode-ai/core/global"
 import { JsonMigration } from "@/storage/json-migration"
@@ -181,6 +184,9 @@ const cli = yargs(args)
   .command(PluginCommand)
   .command(DbCommand)
   .command(EvalCommand)
+  .command(WatchCommand)
+  .command(DaemonCommand)
+  .command(TasksCommand)
   .command(SelfImproveCommand)
   .fail((msg, err) => {
     if (

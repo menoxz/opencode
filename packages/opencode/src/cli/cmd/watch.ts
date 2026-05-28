@@ -4,6 +4,8 @@ import { effectCmd } from "../effect-cmd"
 import { create as createDaemon } from "../../daemon/index"
 import { checkTriggers, memoryConsolidate, tunnelHealthCheck } from "../../daemon/triggers"
 import { every_30s, every_5m, every_1m } from "../../daemon/scheduler"
+import { subscribeFileChanges } from "../../daemon/file-watcher"
+import { listenForTriggers } from "../../daemon/ws-push"
 import * as Log from "@opencode-ai/core/util/log"
 import * as fs from "node:fs"
 import * as path from "node:path"
@@ -13,7 +15,7 @@ const log = Log.create({ service: "daemon.cli" })
 /**
  * Get the daemon data directory (platform-appropriate).
  */
-function daemonDir(): string {
+export function daemonDir(): string {
   const base = process.env.LOCALAPPDATA || path.join(process.env.HOME || "C:\\", ".opencode")
   return path.join(base, "opencode")
 }
@@ -21,7 +23,7 @@ function daemonDir(): string {
 /**
  * Write a PID file so the wrapper script (or system monitoring) can track us.
  */
-function writePidFile(dir: string): void {
+export function writePidFile(dir: string): void {
   try {
     fs.mkdirSync(dir, { recursive: true })
     fs.writeFileSync(path.join(dir, "daemon.pid"), String(process.pid), "utf-8")
@@ -33,12 +35,68 @@ function writePidFile(dir: string): void {
 /**
  * Remove the PID file on shutdown.
  */
-function removePidFile(dir: string): void {
+export function removePidFile(dir: string): void {
   try {
     const pidFile = path.join(dir, "daemon.pid")
     if (fs.existsSync(pidFile)) fs.unlinkSync(pidFile)
   } catch { /* best-effort */ }
 }
+
+/**
+ * Core daemon handler — shared between `opencode watch` and `opencode daemon start`.
+ */
+export const daemonHandler = Effect.fn("Daemon.handler")(function* (args: { daemon?: boolean; "pid-file"?: string }) {
+  const isDaemon = args.daemon ?? false
+  const customPidFile = args["pid-file"] as string | undefined
+  const dd = customPidFile ? path.dirname(customPidFile) : daemonDir()
+
+  if (isDaemon) {
+    writePidFile(dd)
+    log.info("daemon start", { pid: process.pid, pidDir: dd })
+  } else {
+    Console.log(`🧠 opencode-daemon starting (PID: ${process.pid})`)
+  }
+
+  const daemon = yield* createDaemon
+
+  // Register periodic tasks
+  yield* daemon.register("trigger-check", checkTriggers, every_30s)
+  yield* daemon.register("memory-consolidate", memoryConsolidate, every_5m)
+  yield* daemon.register("tunnel-health", tunnelHealthCheck, every_1m)
+  yield* daemon.register("file-watcher", subscribeFileChanges, every_30s)
+
+  // Register WebSocket push listener (event-driven, reconnects automatically)
+  yield* daemon.forkForever("ws-push", listenForTriggers)
+
+  const st = yield* daemon.status()
+
+  if (isDaemon) {
+    log.info("daemon ready", { tasks: st.tasks })
+  } else {
+    Console.log(`✅ Daemon running. Registered tasks: ${st.tasks.join(", ")}`)
+    Console.log("ℹ️  Press Ctrl+C to stop")
+  }
+
+  // Graceful shutdown: stop daemon tasks and remove PID file
+  const shutdown = Effect.gen(function* () {
+    if (isDaemon) log.info("daemon shutting down...")
+    else Console.log("\nShutting down daemon...")
+    removePidFile(dd)
+    yield* daemon.stop().pipe(Effect.ignore)
+  })
+
+  // Trap OS signals for clean exit
+  const onSignal = (signal: string) => {
+    AppRuntime.runFork(
+      shutdown.pipe(Effect.andThen(() => process.exit(0))) as any,
+    )
+  }
+  process.on("SIGTERM", () => onSignal("SIGTERM"))
+  process.on("SIGINT", () => onSignal("SIGINT"))
+
+  // Keep alive indefinitely — daemon runs until interrupted
+  yield* Effect.never
+})
 
 export const WatchCommand = effectCmd({
   command: "watch",
@@ -56,51 +114,6 @@ export const WatchCommand = effectCmd({
       }),
   instance: false,
   handler: Effect.fn("Cli.watch")(function* (args) {
-    const isDaemon = args.daemon ?? false
-    const customPidFile = args["pid-file"] as string | undefined
-    const dd = customPidFile ? path.dirname(customPidFile) : daemonDir()
-
-    if (isDaemon) {
-      writePidFile(dd)
-      log.info("daemon start", { pid: process.pid, pidDir: dd })
-    } else {
-      Console.log(`🧠 opencode-daemon starting (PID: ${process.pid})`)
-    }
-
-    const daemon = yield* createDaemon
-
-    // Register periodic tasks
-    yield* daemon.register("trigger-check", checkTriggers, every_30s)
-    yield* daemon.register("memory-consolidate", memoryConsolidate, every_5m)
-    yield* daemon.register("tunnel-health", tunnelHealthCheck, every_1m)
-
-    const st = yield* daemon.status()
-
-    if (isDaemon) {
-      log.info("daemon ready", { tasks: st.tasks })
-    } else {
-      Console.log(`✅ Daemon running. Registered tasks: ${st.tasks.join(", ")}`)
-      Console.log("ℹ️  Press Ctrl+C to stop")
-    }
-
-    // Graceful shutdown: stop daemon tasks and remove PID file
-    const shutdown = Effect.gen(function* () {
-      if (isDaemon) log.info("daemon shutting down...")
-      else Console.log("\nShutting down daemon...")
-      removePidFile(dd)
-      yield* daemon.stop().pipe(Effect.ignore)
-    })
-
-    // Trap OS signals for clean exit
-    const onSignal = (signal: string) => {
-      AppRuntime.runFork(
-        shutdown.pipe(Effect.andThen(() => process.exit(0))) as any,
-      )
-    }
-    process.on("SIGTERM", () => onSignal("SIGTERM"))
-    process.on("SIGINT", () => onSignal("SIGINT"))
-
-    // Keep alive indefinitely — daemon runs until interrupted
-    yield* Effect.never
+    return yield* daemonHandler(args)
   }),
 })
