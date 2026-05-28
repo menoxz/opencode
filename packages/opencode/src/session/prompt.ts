@@ -4,6 +4,7 @@ import { SessionID, MessageID, PartID } from "./schema"
 import { MessageV2 } from "./message-v2"
 import * as Log from "@opencode-ai/core/util/log"
 import { SessionRevert } from "./revert"
+import { TriggerHandler } from "../daemon/trigger-handler"
 import * as Session from "./session"
 import { Agent } from "../agent/agent"
 import { Provider } from "@/provider/provider"
@@ -62,6 +63,7 @@ import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
 import { LLMEvent } from "@opencode-ai/llm"
 
+
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
 
@@ -77,6 +79,39 @@ IMPORTANT:
 - This tool provides your final answer - no further actions are taken after calling it`
 
 const STRUCTURED_OUTPUT_SYSTEM_PROMPT = `IMPORTANT: The user has requested structured output. You MUST use the StructuredOutput tool to provide your final response. Do NOT respond with plain text - you MUST call the StructuredOutput tool with your answer formatted according to the schema.`
+
+/**
+ * Format pending trigger tasks as an XML section for the system prompt.
+ */
+function formatPendingTasksSection(tasks: TriggerHandler.TaskItem[]): string {
+  const lines = tasks.map((t, i) => {
+    const payloadStr = t.payload ? JSON.stringify(t.payload, null, 2) : ""
+    return `  <task index="${i + 1}">
+    <triggerId>${xmlEscape(t.triggerId)}</triggerId>
+    <source>${xmlEscape(t.source)}</source>
+    <receivedAt>${t.receivedAt}</receivedAt>${payloadStr ? `\n    <payload>${xmlEscape(payloadStr)}</payload>` : ""}
+  </task>`
+  })
+
+  return [
+    "",
+    `<pending_tasks>`,
+    `You have ${tasks.length} pending trigger task(s) from the background daemon.`,
+    `Review each task and take the appropriate action.`,
+    tasks.length === 1
+      ? `When you have processed the task, mark it as done by running:`
+      : `When you have processed all the tasks, mark each as done by running for each task:`,
+    `  opencode tasks process <triggerId>`,
+    "",
+    ...lines,
+    `</pending_tasks>`,
+    "",
+  ].join("\n")
+}
+
+function xmlEscape(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+}
 
 const log = Log.create({ service: "session.prompt" })
 const elog = EffectLogger.create({ service: "session.prompt" })
@@ -129,6 +164,7 @@ export const layer = Layer.effect(
     const references = yield* Reference.Service
     const events = yield* EventV2Bridge.Service
     const flags = yield* RuntimeFlags.Service
+
     const ops = Effect.fn("SessionPrompt.ops")(function* () {
       return {
         cancel: (sessionID: SessionID) => cancel(sessionID),
@@ -1439,6 +1475,16 @@ export const layer = Layer.effect(
               MessageV2.toModelMessagesEffect(msgs, model),
             ])
             const system = [...env, ...instructions, ...(skills ? [skills] : [])]
+            if (step === 1) {
+              const adaptive = yield* sys.adaptivePrompt({ messages: msgs, agent })
+              if (adaptive) system.push(adaptive)
+
+              // Pending trigger tasks from background daemon
+              const pendingTasks = yield* Effect.sync(() => TriggerHandler.listPendingTasks())
+              if (pendingTasks.length > 0) {
+                system.push(formatPendingTasksSection(pendingTasks))
+              }
+            }
             const format = lastUser.format ?? { type: "text" as const }
             if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
             const result = yield* handle.process({
@@ -1493,6 +1539,7 @@ export const layer = Layer.effect(
         }
 
         yield* compaction.prune({ sessionID }).pipe(Effect.ignore, Effect.forkIn(scope))
+
         return yield* lastAssistant(sessionID)
       },
     )
@@ -1666,6 +1713,7 @@ export const defaultLayer = Layer.suspend(() =>
         SystemPrompt.defaultLayer,
         LLM.defaultLayer,
         Reference.defaultLayer,
+
         Bus.layer,
         CrossSpawnSpawner.defaultLayer,
         RuntimeFlags.defaultLayer,

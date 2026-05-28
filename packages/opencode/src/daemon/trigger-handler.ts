@@ -21,7 +21,7 @@ function queueFile(triggerId: string): string {
   return path.join(queueDir(), `${triggerId}.json`)
 }
 
-interface TaskItem {
+export interface TaskItem {
   triggerId: string
   source: string
   payload: unknown
