@@ -125,4 +125,25 @@ export function acknowledgeAllLearnings(): void {
   }
 }
 
+/**
+ * Find learning entries matching a specific taskId (e.g. past failed attempts).
+ * Returns most recent first, up to maxResults.
+ */
+export function findLearningsByTaskId(taskId: string, maxResults = 5): LearningEntry[] {
+  const dir = learningsDir()
+  if (!fs.existsSync(dir)) return []
+
+  const results: LearningEntry[] = []
+  for (const file of fs.readdirSync(dir)) {
+    if (!file.endsWith(".json")) continue
+    try {
+      const entry = JSON.parse(fs.readFileSync(path.join(dir, file), "utf-8")) as LearningEntry
+      if (entry.taskId === taskId) results.push(entry)
+    } catch { /* skip corrupt */ }
+  }
+
+  results.sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+  return results.slice(0, maxResults)
+}
+
 export * as AutoMemory from "./auto-memory"

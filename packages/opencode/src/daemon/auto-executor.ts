@@ -7,13 +7,14 @@ import { writeNotification } from "./notifications"
 import { listPendingTasks, markTaskDone, type TaskItem } from "./trigger-handler"
 import { autoCommit, hasUncommittedChanges, type CommitResult, type DiffInfo } from "./auto-commit"
 import { isPRTrigger, createPR, pushBranchOnly } from "./auto-pr"
-import { storeLearning } from "./auto-memory"
+import { storeLearning, findLearningsByTaskId } from "./auto-memory"
 
 const log = Log.create({ service: "daemon.auto-executor" })
 
 // ── Configuration ───────────────────────────────────────────────────────
 
 const TASK_TIMEOUT_MS = 10 * 60 * 1000 // 10 minutes max per task
+const MAX_RETRIES = 3 // Give up after this many failed attempts
 
 // ── Type for the headless result ─────────────────────────────────────────
 
@@ -38,6 +39,55 @@ export interface HeadlessResult {
 let currentProcess: ChildProcess | null = null
 let currentTaskId: string | null = null
 
+// ── Repo context helpers ─────────────────────────────────────────────────
+
+interface RepoContext {
+  recentCommits: string
+  typecheckStatus: string
+  uncommittedChanges: boolean
+}
+
+function getRepoContext(cwd: string): RepoContext {
+  const ctx: RepoContext = {
+    recentCommits: "(could not read git log)",
+    typecheckStatus: "(could not run typecheck)",
+    uncommittedChanges: false,
+  }
+
+  try {
+    const { execSync } = require("node:child_process")
+    ctx.recentCommits = execSync("git log --oneline -5", { cwd, encoding: "utf-8", timeout: 5000 }).trim()
+  } catch { /* best-effort */ }
+
+  try {
+    ctx.uncommittedChanges = hasUncommittedChanges(cwd)
+  } catch { /* best-effort */ }
+
+  // Check if package.json exists and has a typecheck script
+  try {
+    const pkgPath = path.join(cwd, "package.json")
+    if (fs.existsSync(pkgPath)) {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"))
+      if (pkg.scripts?.typecheck) {
+        const { execSync } = require("node:child_process")
+        try {
+          execSync("bun typecheck", { cwd, encoding: "utf-8", timeout: 30000, stdio: "pipe" })
+          ctx.typecheckStatus = "typecheck passes (no errors)"
+        } catch (e: unknown) {
+          const stderr = (e as { stderr?: string })?.stderr ?? String(e)
+          ctx.typecheckStatus = `typecheck FAILED:\n${stderr.slice(0, 1000)}`
+        }
+      } else {
+        ctx.typecheckStatus = "(no typecheck script in package.json)"
+      }
+    } else {
+      ctx.typecheckStatus = "(no package.json found)"
+    }
+  } catch { /* best-effort */ }
+
+  return ctx
+}
+
 // ── Prompt builder ──────────────────────────────────────────────────────
 
 function buildAutoPrompt(task: TaskItem): string {
@@ -45,17 +95,56 @@ function buildAutoPrompt(task: TaskItem): string {
   const repo = (payload?.repo as string) ?? ""
   const action = (payload?.action as string) ?? "process"
   const description = (payload?.description as string) ?? ""
+  const repoDir = (payload?.local_dir as string) || process.cwd()
 
   const parts: string[] = [
     "You are processing an autonomous task for the opencode daemon.",
     `Task source: ${task.source}`,
+    `Task ID: ${task.triggerId}`,
     "",
   ]
 
   if (repo) parts.push(`Repository: ${repo}`)
   if (action) parts.push(`Action: ${action}`)
 
-  // Context-specific instructions
+  // ── Previous failure context ─────────────────────────────────────────
+  const failures = findLearningsByTaskId(task.triggerId)
+  const prevFailures = failures.filter((f) => f.tags.includes("failed"))
+  if (prevFailures.length > 0) {
+    parts.push("")
+    parts.push("⚠️ Previous attempts for this task have FAILED:")
+    for (const f of prevFailures.slice(0, 3)) {
+      parts.push(`  [${f.timestamp}] ${f.summary}`)
+      if (f.diffs.length > 0) {
+        parts.push(`  Last changed files: ${f.diffs.map((d) => d.file).join(", ")}`)
+      }
+    }
+    parts.push("  Try a different approach. Run typecheck before committing.")
+    parts.push("")
+  }
+
+  // ── Repo context ─────────────────────────────────────────────────────
+  const repoCtx = getRepoContext(repoDir)
+  parts.push("── Repository state ──")
+  parts.push(repoCtx.recentCommits)
+  parts.push("")
+  parts.push(`Typecheck: ${repoCtx.typecheckStatus}`)
+  parts.push(`Uncommitted changes: ${repoCtx.uncommittedChanges ? "yes" : "no"}`)
+  parts.push("")
+
+  // ── Pending tasks context ────────────────────────────────────────────
+  const allPending = listPendingTasks()
+  const otherPending = allPending.filter((t) => t.triggerId !== task.triggerId)
+  if (otherPending.length > 0) {
+    parts.push(`There are ${otherPending.length} other pending task(s) in the queue:`)
+    for (const t of otherPending.slice(0, 5)) {
+      const tDesc = (t.payload as Record<string, unknown> | undefined)?.description as string | undefined
+      parts.push(`  - [${t.source}] ${tDesc || t.triggerId}`)
+    }
+    parts.push("")
+  }
+
+  // ── Context-specific instructions ────────────────────────────────────
   if (task.source === "github") {
     parts.push(description || "Review the pull request. Make changes if needed, then run typecheck and commit.")
   } else if (task.source === "file-watcher") {
@@ -80,29 +169,56 @@ function buildAutoPrompt(task: TaskItem): string {
 
 // ── Task eligibility ────────────────────────────────────────────────────
 
+function countFailures(task: TaskItem): number {
+  return findLearningsByTaskId(task.triggerId).filter((f) => f.tags.includes("failed")).length
+}
+
 function isEligible(task: TaskItem): boolean {
+  const failures = countFailures(task)
+  if (failures >= MAX_RETRIES) {
+    log.warn("Task exceeded max retries, skipping", { taskId: task.triggerId, source: task.source, failures })
+    return false
+  }
   return true
 }
 
 // ── Find the opencode binary ────────────────────────────────────────────
 
+/**
+ * Check whether a file path is actually executable by child_process.spawn.
+ * On Windows, only .exe, .cmd, .bat, .com are natively executable.
+ */
+function isExecutable(candidate: string): boolean {
+  if (!fs.existsSync(candidate)) return false
+  if (process.platform !== "win32") return true
+  const ext = path.extname(candidate).toLowerCase()
+  return ext === ".exe" || ext === ".cmd" || ext === ".bat" || ext === ".com"
+}
+
+/**
+ * Find the opencode binary that child_process.spawn can actually execute.
+ * Priority: running process → dev build → PATH (.exe → .cmd).
+ */
 function findBinary(): string | null {
   const argv0 = process.argv[0]
-  if (argv0 && (argv0.endsWith("opencode.exe") || argv0.endsWith("opencode"))) {
+  if (argv0 && isExecutable(argv0) && (argv0.endsWith("opencode.exe") || argv0.endsWith("opencode"))) {
     return path.resolve(argv0)
   }
 
+  // Dev build takes priority
   try {
     const devPath = path.resolve(__dirname, "..", "..", "..", "..", "dist", "bin", "opencode.exe")
-    if (fs.existsSync(devPath)) return devPath
+    if (isExecutable(devPath)) return devPath
   } catch { /* __dirname unavailable */ }
 
+  // Search PATH — only accept natively executable extensions on Windows
   const envPath = process.env.PATH || ""
   for (const dir of envPath.split(path.delimiter)) {
-    const candidate = path.join(dir, "opencode.exe")
-    if (fs.existsSync(candidate)) return candidate
-    const noExt = path.join(dir, "opencode")
-    if (fs.existsSync(noExt)) return noExt
+    if (!dir) continue
+    for (const name of ["opencode.exe", "opencode.cmd", "opencode.bat"]) {
+      const candidate = path.join(dir, name)
+      if (isExecutable(candidate)) return candidate
+    }
   }
 
   return null
@@ -204,6 +320,28 @@ function formatDiffSummary(diffs: HeadlessResult["diffs"]): string {
   return `${diffs.length} file(s) changed:\n${lines.join("\n")}`
 }
 
+// ── Typecheck validation ────────────────────────────────────────────────
+
+/**
+ * Run `bun typecheck` in the given directory.
+ * Returns null if it passes, or the error output if it fails.
+ */
+function runTypecheck(cwd: string): string | null {
+  try {
+    const pkgPath = path.join(cwd, "package.json")
+    if (!fs.existsSync(pkgPath)) return null // no package.json = no typecheck
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"))
+    if (!pkg.scripts?.typecheck) return null // no typecheck script
+
+    const { execSync } = require("node:child_process")
+    execSync("bun typecheck", { cwd, encoding: "utf-8", timeout: 60000, stdio: "pipe" })
+    return null // passes
+  } catch (e: unknown) {
+    const stderr = (e as { stderr?: string; stdout?: string })?.stderr ?? (e as { message?: string })?.message ?? String(e)
+    return stderr.slice(0, 1000)
+  }
+}
+
 // ── Post-execution pipeline helpers ─────────────────────────────────────
 
 interface PipelineResult {
@@ -212,10 +350,11 @@ interface PipelineResult {
   commitMessage?: string
   prUrl?: string
   learningsStored: boolean
+  validationError?: string // typecheck failure message
 }
 
 /**
- * Run the post-execution pipeline: commit → memory → PR.
+ * Run the post-execution pipeline: validate → commit → memory → PR.
  */
 function runPostPipeline(
   task: TaskItem,
@@ -230,10 +369,25 @@ function runPostPipeline(
   const payload = task.payload as Record<string, unknown> | undefined
   const hasDiffs = result.diffs && result.diffs.length > 0
 
+  // ── Step 0: Typecheck validation ────────────────────────────────────
+  if (hasDiffs) {
+    const tcErr = runTypecheck(repoDir)
+    if (tcErr) {
+      pipeline.validationError = tcErr
+      log.warn("Post-pipeline: typecheck FAILED, skipping commit", { repoDir })
+      // Store the failure for feedback loop
+      writeNotification("task_escalated", "Typecheck failed after headless execution", tcErr.slice(0, 500), {
+        taskId: task.triggerId,
+        source: task.source,
+      })
+      return pipeline
+    }
+  }
+
   // ── Step 1: Auto-commit ─────────────────────────────────────────────
   let commit: CommitResult | null = null
   if (hasDiffs && hasUncommittedChanges(repoDir)) {
-    log.info("Post-pipeline: auto-committing changes", { repoDir })
+    log.info("Post-pipeline: typecheck OK, auto-committing changes", { repoDir })
     commit = autoCommit(repoDir, result.diffs)
     if (commit) {
       pipeline.committed = true
@@ -318,35 +472,58 @@ export const processNextTask = Effect.fnUntraced(function* () {
   let pipelineResult: PipelineResult | null = null
 
   if (success && result) {
-    // Run post-execution pipeline (commit → memory → PR)
+    // Run post-execution pipeline (validate → commit → memory → PR)
     pipelineResult = runPostPipeline(task, result, repoDir)
 
-    const notificationType = pipelineResult.committed ? "task_committed" : "task_success"
-    const notificationSummary = pipelineResult.committed
-      ? `Task committed: ${pipelineResult.commitHash?.slice(0, 8)}`
-      : "Task processed successfully"
+    // If typecheck validation failed, escalate but don't mark done
+    if (pipelineResult.validationError) {
+      writeNotification("task_escalated", "Typecheck failed after changes", pipelineResult.validationError.slice(0, 500), {
+        taskId: task.triggerId,
+        source: task.source,
+      })
+      // Store failure learning for feedback loop
+      try {
+        const failureCount = countFailures(task) + 1
+        storeLearning({
+          source: task.source,
+          taskId: task.triggerId,
+          summary: `Typecheck failed: ${pipelineResult.validationError.slice(0, 200)}`,
+          filesChanged: result.diffs.length,
+          diffs: result.diffs,
+          model: result.model,
+          tags: ["failed", "typecheck", "auto-executed", `attempt-${failureCount}`],
+        })
+      } catch { /* best-effort */ }
+      log.warn("Typecheck validation FAILED, task not committed", { taskId: task.triggerId })
+      // Do NOT mark task done — it will be retried
+    } else {
+      const notificationType = pipelineResult.committed ? "task_committed" : "task_success"
+      const notificationSummary = pipelineResult.committed
+        ? `Task committed: ${pipelineResult.commitHash?.slice(0, 8)}`
+        : "Task processed successfully"
 
-    const details = [
-      diffSummary,
-      pipelineResult.committed ? `Commit: ${pipelineResult.commitHash} (${pipelineResult.commitMessage})` : "",
-      result?.summary ? `Summary: ${JSON.stringify(result.summary)}` : "",
-      result?.model ? `Model: ${result.model}` : "",
-      pipelineResult.prUrl ? `PR: ${pipelineResult.prUrl}` : "",
-    ]
-      .filter(Boolean)
-      .join("\n")
+      const details = [
+        diffSummary,
+        pipelineResult.committed ? `Commit: ${pipelineResult.commitHash} (${pipelineResult.commitMessage})` : "",
+        result?.summary ? `Summary: ${JSON.stringify(result.summary)}` : "",
+        result?.model ? `Model: ${result.model}` : "",
+        pipelineResult.prUrl ? `PR: ${pipelineResult.prUrl}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n")
 
-    writeNotification(notificationType, notificationSummary, details, {
-      taskId: task.triggerId,
-      source: task.source,
-    })
-    markTaskDone(task.triggerId)
-    log.info("Auto-execution SUCCESS", {
-      taskId: task.triggerId,
-      diffs: result?.diffs?.length ?? 0,
-      committed: pipelineResult.committed,
-      prUrl: pipelineResult.prUrl,
-    })
+      writeNotification(notificationType, notificationSummary, details, {
+        taskId: task.triggerId,
+        source: task.source,
+      })
+      markTaskDone(task.triggerId)
+      log.info("Auto-execution SUCCESS", {
+        taskId: task.triggerId,
+        diffs: result?.diffs?.length ?? 0,
+        committed: pipelineResult.committed,
+        prUrl: pipelineResult.prUrl,
+      })
+    }
   } else if (success) {
     // Success by exit code but no structured result (no diffs = no pipeline needed)
     writeNotification("task_success", "Task processed successfully (exit code)", "", {
@@ -361,16 +538,38 @@ export const processNextTask = Effect.fnUntraced(function* () {
       taskId: task.triggerId,
       source: task.source,
     })
-    log.warn("Auto-execution FAILED", { taskId: task.triggerId, error: errorMessage })
+
+    // Store failure as learning entry for feedback loop
+    const failureCount = countFailures(task) + 1
+    try {
+      storeLearning({
+        source: task.source,
+        taskId: task.triggerId,
+        summary: errorMessage ?? "Task failed",
+        filesChanged: 0,
+        diffs: [],
+        model: null,
+        tags: ["failed", "auto-executed", `attempt-${failureCount}`, timedOut ? "timeout" : "error"],
+      })
+      log.info("Failure stored as learning entry", { taskId: task.triggerId, attempt: failureCount })
+    } catch (err) {
+      log.warn("Failed to store failure learning", { error: String(err) })
+    }
+
+    log.warn("Auto-execution FAILED", { taskId: task.triggerId, error: errorMessage, attempt: failureCount })
   }
 
   return {
-    status: timedOut ? "timeout" as const : success ? "success" as const : "failure" as const,
+    status: timedOut
+      ? "timeout" as const
+      : (pipelineResult?.validationError ? "validation_failed" as const : success ? "success" as const : "failure" as const),
     taskId: task.triggerId,
     summary: success
-      ? pipelineResult?.committed
-        ? `Committed: ${pipelineResult.commitHash?.slice(0, 8)}`
-        : "Task completed"
+      ? pipelineResult?.validationError
+        ? `Typecheck: ${pipelineResult.validationError.slice(0, 100)}`
+        : pipelineResult?.committed
+          ? `Committed: ${pipelineResult.commitHash?.slice(0, 8)}`
+          : "Task completed"
       : errorMessage ?? "Task failed",
     filesChanged: result?.diffs?.length ?? 0,
     committed: pipelineResult?.committed ?? false,
