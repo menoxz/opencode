@@ -2,7 +2,7 @@ import { Effect, Console } from "effect"
 import { AppRuntime } from "@/effect/app-runtime"
 import { effectCmd } from "../effect-cmd"
 import { create as createDaemon } from "../../daemon/index"
-import { checkTriggers, memoryConsolidate, tunnelHealthCheck } from "../../daemon/triggers"
+import { checkTriggers, memoryConsolidate, tunnelHealthCheck, processQueue } from "../../daemon/triggers"
 import { every_30s, every_5m, every_1m } from "../../daemon/scheduler"
 import { subscribeFileChanges, startFileWatcher } from "../../daemon/file-watcher"
 import { listenForTriggers } from "../../daemon/ws-push"
@@ -83,6 +83,9 @@ export const daemonHandler = Effect.fn("Daemon.handler")(function* (
   yield* daemon.register("trigger-check", checkTriggers, every_30s)
   yield* daemon.register("memory-consolidate", memoryConsolidate, every_5m)
   yield* daemon.register("tunnel-health", tunnelHealthCheck, every_1m)
+
+  // Auto-executor: process queued tasks autonomously
+  yield* daemon.register("process-queue", processQueue, every_5m)
 
   // File watcher cleanup (periodic — removes stale cooldown entries)
   yield* daemon.register("file-watcher-cleanup", subscribeFileChanges, every_30s)

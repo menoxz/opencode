@@ -12,9 +12,13 @@ const log = Log.create({ service: "daemon.trigger-handler" })
  * Directory for queued trigger tasks.
  * The next interactive agent session reads from here.
  */
-function queueDir(): string {
+export function taskQueueDir(): string {
   const base = process.env.LOCALAPPDATA || path.join(process.env.HOME || "C:\\", ".opencode")
   return path.join(base, "opencode", "tasks")
+}
+
+function queueDir(): string {
+  return taskQueueDir()
 }
 
 function queueFile(triggerId: string): string {
@@ -76,6 +80,19 @@ export function markTaskDone(triggerId: string): void {
     task.status = "done"
     fs.writeFileSync(file, JSON.stringify(task, null, 2))
   } catch { /* best-effort */ }
+}
+
+/**
+ * Find a specific task by trigger ID.
+ */
+export function findTask(triggerId: string): TaskItem | null {
+  const file = queueFile(triggerId)
+  if (!fs.existsSync(file)) return null
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf-8")) as TaskItem
+  } catch {
+    return null
+  }
 }
 
 // ── Handler ────────────────────────────────────────────────────────────

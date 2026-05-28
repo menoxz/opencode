@@ -5,6 +5,7 @@ import { MessageV2 } from "./message-v2"
 import * as Log from "@opencode-ai/core/util/log"
 import { SessionRevert } from "./revert"
 import { TriggerHandler } from "../daemon/trigger-handler"
+import { readUnacknowledged, acknowledgeAll } from "../daemon/notifications"
 import * as Session from "./session"
 import { Agent } from "../agent/agent"
 import { Provider } from "@/provider/provider"
@@ -105,6 +106,44 @@ function formatPendingTasksSection(tasks: TriggerHandler.TaskItem[]): string {
     "",
     ...lines,
     `</pending_tasks>`,
+    "",
+  ].join("\n")
+}
+
+// ── Notifications section ───────────────────────────────────────────────
+
+function formatNotificationsSection(): string {
+  const notifications = readUnacknowledged()
+  if (notifications.length === 0) return ""
+
+  const lines = notifications.map((n) => {
+    const typeIcon =
+      n.type === "task_success" ? "✅" :
+      n.type === "task_failure" ? "❌" :
+      n.type === "task_escalated" ? "⚠️" :
+      n.type === "critical_alert" ? "🚨" : "ℹ️"
+    const summary = xmlEscape(n.summary)
+    const details = xmlEscape(n.details.slice(0, 500))
+    const source = n.source ? xmlEscape(n.source) : "daemon"
+    return [
+      `  <notification>`,
+      `    <id>${xmlEscape(n.id)}</id>`,
+      `    <type>${n.type}</type>`,
+      `    <source>${source}</source>`,
+      `    <summary>${summary}</summary>`,
+      `    <details>${details}</details>`,
+      `    <timestamp>${n.timestamp}</timestamp>`,
+      `  </notification>`,
+    ].join("\n")
+  })
+
+  return [
+    "",
+    `<daemon_notifications>`,
+    `The background daemon has ${notifications.length} unacknowledged notification(s):`,
+    "",
+    ...lines,
+    `</daemon_notifications>`,
     "",
   ].join("\n")
 }
@@ -1483,6 +1522,14 @@ export const layer = Layer.effect(
               const pendingTasks = yield* Effect.sync(() => TriggerHandler.listPendingTasks())
               if (pendingTasks.length > 0) {
                 system.push(formatPendingTasksSection(pendingTasks))
+              }
+
+              // Daemon notifications (results of auto-execution)
+              const notificationsSection = formatNotificationsSection()
+              if (notificationsSection) {
+                system.push(notificationsSection)
+                // Acknowledge them so they don't reappear next session
+                yield* Effect.sync(() => acknowledgeAll())
               }
             }
             const format = lastUser.format ?? { type: "text" as const }

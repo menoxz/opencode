@@ -2,8 +2,9 @@ import { Effect } from "effect"
 import * as Log from "@opencode-ai/core/util/log"
 import * as fs from "node:fs"
 import * as path from "node:path"
-import { handlePendingTriggers } from "./trigger-handler"
+import { handlePendingTriggers, listPendingTasks } from "./trigger-handler"
 import { runIdleAnalysis } from "./idle"
+import { processNextTask, isExecutorBusy } from "./auto-executor"
 
 const log = Log.create({ service: "daemon.triggers" })
 
@@ -134,6 +135,30 @@ export const tunnelHealthCheck = Effect.fnUntraced(function* () {
   } catch (error) {
     log.warn("Trigger server not reachable — daemon mode may need opencode-trigger running", { error })
   }
+})
+
+/**
+ * Process the next queued task autonomously.
+ * Called periodically by the daemon scheduler (every 5m).
+ *
+ * Only processes one task at a time (sequential).
+ * If the executor is already busy, this is a no-op.
+ */
+export const processQueue = Effect.fnUntraced(function* () {
+  if (isExecutorBusy()) {
+    log.info("processQueue: executor busy, skipping")
+    return
+  }
+
+  const pending = listPendingTasks()
+  if (pending.length === 0) {
+    // No pending tasks — that's fine, idle analysis already covers this case
+    return
+  }
+
+  log.info("processQueue: attempting auto-execution", { pendingCount: pending.length })
+  const result = yield* processNextTask()
+  log.info("processQueue: result", { result })
 })
 
 export * as TriggerChecker from "."
