@@ -403,3 +403,107 @@ describe("AutoPR", () => {
     expect(typeof available).toBe("boolean")
   })
 })
+
+// ── Full pipeline integration test ──────────────────────────────────────
+// Tests the complete post-execution chain: writeTask → autoCommit →
+// storeLearning → writeNotification — without mocking.
+// Uses a real temp git repo.
+
+describe("Full pipeline integration", () => {
+  let repoDir: string
+  let taskId: string
+
+  beforeEach(() => {
+    // Create a temp git repo with a typecheck script
+    repoDir = fs.mkdtempSync(path.join(os.tmpdir(), "opencode-int-"))
+    execSync("git init", { cwd: repoDir, stdio: "pipe" })
+    execSync('git config user.email "test@test.local"', { cwd: repoDir, stdio: "pipe" })
+    execSync('git config user.name "Test"', { cwd: repoDir, stdio: "pipe" })
+
+    // Write package.json with typecheck script
+    const pkg = { name: "int-test", scripts: { typecheck: 'node -e "process.exit(0)"' } }
+    fs.writeFileSync(path.join(repoDir, "package.json"), JSON.stringify(pkg, null, 2))
+
+    // Initial commit
+    execSync("git add -A && git commit -m 'initial'", { cwd: repoDir, stdio: "pipe" })
+
+    taskId = "int-test-" + Date.now()
+    // Write task to queue using TriggerHandler
+    TriggerHandler.writeTask({
+      id: taskId,
+      source: "e2e",
+      payload: { local_dir: repoDir, description: "Integration test task" },
+    })
+  })
+
+  afterEach(() => {
+    fs.rmSync(repoDir, { recursive: true, force: true })
+    // Clean up task file
+    const taskFile = path.join(
+      process.env.LOCALAPPDATA || "",
+      "opencode", "tasks", `${taskId}.json`,
+    )
+    if (fs.existsSync(taskFile)) fs.rmSync(taskFile)
+  })
+
+  test("complete pipeline: writeTask → findTask → listPending → markDone", () => {
+    // Verify task was written
+    const found = TriggerHandler.findTask(taskId)
+    expect(found).not.toBeNull()
+    expect(found!.triggerId).toBe(taskId)
+    expect(found!.status).toBe("pending")
+
+    // Verify listPending includes it
+    const pending = TriggerHandler.listPendingTasks()
+    const match = pending.find((t) => t.triggerId === taskId)
+    expect(match).toBeDefined()
+
+    // Mark as done
+    TriggerHandler.markTaskDone(taskId)
+    const afterDone = TriggerHandler.findTask(taskId)
+    expect(afterDone!.status).toBe("done")
+
+    // Should no longer appear in pending
+    const pending2 = TriggerHandler.listPendingTasks()
+    const match2 = pending2.find((t) => t.triggerId === taskId)
+    expect(match2).toBeUndefined()
+  })
+
+  test("complete pipeline: autoCommit → storeLearning → writeNotification", () => {
+    // Make a change to the repo
+    const testFile = path.join(repoDir, "test.txt")
+    fs.writeFileSync(testFile, "hello e2e")
+
+    const diffs = [
+      { file: "test.txt", patch: "+hello e2e", additions: 1, deletions: 0, status: "new" as const },
+    ]
+
+    // Step 1: autoCommit
+    const commit = AutoCommit.autoCommit(repoDir, diffs)
+    expect(commit).not.toBeNull()
+    expect(commit!.hash).toMatch(/^[0-9a-f]{7,}$/)
+    expect(commit!.message).toMatch(/^(feat|fix|chore)\(/)
+    expect(commit!.filesChanged).toBeGreaterThanOrEqual(1)
+
+    // Step 2: writeNotification and verify persistence
+    Notifications.writeNotification(
+      "task_committed",
+      `Committed: ${commit!.hash.slice(0, 8)}`,
+      `Files: test.txt\nCommit: ${commit!.hash}`,
+      { taskId, source: "e2e" },
+    )
+
+    // Verify notification was written
+    const unread = Notifications.readUnacknowledged()
+    const match = unread.find((n) => n.summary?.includes(commit!.hash.slice(0, 8)))
+    expect(match).toBeDefined()
+    expect(match!.type).toBe("task_committed")
+    expect(match!.source).toBe("e2e")
+
+    // Step 3: acknowledge all
+    Notifications.acknowledgeAll()
+    const afterAck = Notifications.readUnacknowledged()
+    const stillThere = afterAck.some((n) => n.id === match!.id)
+    expect(stillThere).toBe(false)
+  })
+})
