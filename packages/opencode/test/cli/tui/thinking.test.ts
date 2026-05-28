@@ -33,4 +33,11 @@ describe("reasoningSummary", () => {
   test("leaves content without a leading title in its body", () => {
     expect(reasoningSummary("Details only.")).toEqual({ title: null, body: "Details only." })
   })
+
+  test("does not match non-phase bold text", () => {
+    expect(reasoningSummary("**Note:** this is just a note.")).toEqual({
+      title: null,
+      body: "**Note:** this is just a note.",
+    })
+  })
 })

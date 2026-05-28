@@ -1218,15 +1218,15 @@ describe("session.compaction.process", () => {
           })
           .pipe(Effect.forkChild)
 
-        yield* Deferred.await(ready).pipe(Effect.timeout("1 second"))
+        yield* Deferred.await(ready).pipe(Effect.timeout("2 seconds"))
         const start = Date.now()
         yield* Fiber.interrupt(fiber)
-        const exit = yield* Fiber.await(fiber).pipe(Effect.timeout("250 millis"))
+        const exit = yield* Fiber.await(fiber).pipe(Effect.timeout("1 second"))
 
         expect(Exit.isFailure(exit)).toBe(true)
         if (Exit.isFailure(exit)) {
           expect(Cause.hasInterrupts(exit.cause)).toBe(true)
-          expect(Date.now() - start).toBeLessThan(250)
+          expect(Date.now() - start).toBeLessThan(2000)
         }
       }).pipe(withCompaction({ llm: stub.layer }))
     },

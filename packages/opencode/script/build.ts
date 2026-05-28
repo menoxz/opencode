@@ -164,7 +164,14 @@ const targets = singleFlag
     })
   : allTargets
 
-await $`rm -rf dist`
+// On Windows, the running binary cannot be deleted (EPERM).
+// Clean web UI artifacts but keep the binary — Bun.build() will overwrite it.
+try {
+  for (const entry of fs.readdirSync(path.join(dir, "dist"))) {
+    if (entry.endsWith(".exe") || entry === "opencode-windows-x64") continue
+    fs.rmSync(path.join(dir, "dist", entry), { recursive: true, force: true })
+  }
+} catch { /* dist may not exist yet */ }
 
 const binaries: Record<string, string> = {}
 if (!skipInstall) {
@@ -209,7 +216,10 @@ for (const item of targets) {
       autoloadTsconfig: true,
       autoloadPackageJson: true,
       target: name.replace(pkg.name, "bun") as any,
-      outfile: `dist/${name}/bin/opencode`,
+      // On Windows, the running binary is locked → output to a temp path and rotate
+      outfile: process.platform === "win32"
+        ? path.join(dir, `../../dist/bin/opencode.new`)
+        : `dist/${name}/bin/opencode`,
       execArgv: [`--user-agent=opencode/${Script.version}`, "--use-system-ca", "--"],
       windows: {},
     },
@@ -228,7 +238,9 @@ for (const item of targets) {
 
   // Smoke test: only run if binary is for current platform
   if (item.os === process.platform && item.arch === process.arch && !item.abi) {
-    const binaryPath = `dist/${name}/bin/opencode`
+    const binaryPath = process.platform === "win32"
+      ? path.resolve(dir, `../../dist/bin/opencode.new`)
+      : `dist/${name}/bin/opencode`
     console.log(`Running smoke test: ${binaryPath} --version`)
     try {
       const versionOutput = await $`${binaryPath} --version`.text()
@@ -243,27 +255,30 @@ for (const item of targets) {
     // then copy the new one.  If rename also fails, skip (binary will be updated on next build).
     const ext = item.os === "win32" ? ".exe" : ""
     const rootDistBin = path.resolve(dir, "../../dist/bin")
-    const src = `dist/${name}/bin/opencode${ext}`
+    const src = process.platform === "win32"
+      ? path.resolve(dir, `../../dist/bin/opencode.new${ext}`)
+      : `dist/${name}/bin/opencode${ext}`
     const dest = path.join(rootDistBin, `opencode${ext}`)
     const backup = path.join(rootDistBin, `opencode.old${ext}`)
     await fs.promises.mkdir(rootDistBin, { recursive: true })
     try {
-      // Try direct copy first (works when binary isn't running)
-      await fs.promises.copyFile(src, dest)
-      console.log(`Copied ${src} → ${dest}`)
-    } catch (_copyErr) {
-      // Direct copy failed (binary in use on Windows) → rename old → .old, then copy
-      try {
-        await fs.promises.rename(dest, backup).catch(() => { /* ignore if backup rename fails */ })
+      // On Windows, rename the existing binary first (rename works even when file is locked),
+      // then rename the new one in place.
+      if (process.platform === "win32") {
+        await fs.promises.rename(dest, backup).catch(() => {})
+        await fs.promises.rename(src, dest)
+        console.log(`Rotated old binary and renamed ${src} → ${dest}`)
+      } else {
+        // On Unix, direct copy works
         await fs.promises.copyFile(src, dest)
-        console.log(`Rotated old binary and copied ${src} → ${dest}`)
-      } catch (_rotateErr) {
-        console.log(`Will update binary on next restart (current binary in use)`)
+        console.log(`Copied ${src} → ${dest}`)
       }
+    } catch (e) {
+      console.log(`Will update binary on next restart (current binary in use): ${e}`)
     }
   }
 
-  await $`rm -rf ./dist/${name}/bin/tui`
+  try { await $`rm -rf ./dist/${name}/bin/tui` } catch { fs.rmSync(path.join(dir, `dist/${name}/bin/tui`), { recursive: true, force: true }) }
   await Bun.file(`dist/${name}/package.json`).write(
     JSON.stringify(
       {

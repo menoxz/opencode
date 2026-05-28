@@ -24,6 +24,7 @@
 import { Effect, Context, Layer, Schema } from "effect"
 import * as Log from "@opencode-ai/core/util/log"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
+import * as MemoryStoreMod from "@/memory/store"
 
 // Import task-specific prompt texts
 import PROMPT_BUG_FIX from "../session/prompt/task-specific/bug-fix.txt"
@@ -269,6 +270,9 @@ const TASK_PROMPTS: Record<TaskType, string> = {
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
+    // Initialize MemoryStore for auto-memory retrieval (lightweight, no DI deps)
+    const memoryStore = yield* MemoryStoreMod.Service
+
     const detect = Effect.fn("PromptComposer.detect")(function* (
       message: string,
       context?: { files?: string[]; toolsUsed?: string[] },
@@ -302,6 +306,21 @@ export const layer = Layer.effect(
 
       // Build the system prompt array
       const system: string[] = []
+
+      // 0. Auto-memory: retrieve relevant past context from memory store
+      const memoryRows = yield* memoryStore.search(input.taskMessage, 5)
+      if (memoryRows.length > 0) {
+        log.info("auto-memory found", { count: memoryRows.length })
+        const memorySection = [
+          "## Relevant Past Context",
+          "The following entries from your memory are relevant to the current task:",
+          ...memoryRows.map((r: any) => `- ${r.content}`),
+          "",
+        ].join("\n")
+        system.push(memorySection)
+      } else {
+        log.info("auto-memory: no relevant context found")
+      }
 
       // 1. Base agent prompt (personality)
       system.push(input.basePrompt)
@@ -339,7 +358,9 @@ export const layer = Layer.effect(
   }),
 )
 
-export const defaultLayer = layer
+export const defaultLayer = layer.pipe(
+  Layer.provide(MemoryStoreMod.defaultLayer),
+)
 
 export const use = serviceUse(Service)
 

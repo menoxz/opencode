@@ -303,13 +303,14 @@ describe("AutoCommit", () => {
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "opencode-test-commit-"))
-    execSync("git init", { cwd: tmpDir, stdio: "pipe", shell: true })
-    execSync('git config user.email "test@test.com"', { cwd: tmpDir, stdio: "pipe", shell: true })
-    execSync('git config user.name "Test"', { cwd: tmpDir, stdio: "pipe", shell: true })
+    const sopts = { cwd: tmpDir, stdio: "pipe" as const }
+    execSync("git init", sopts)
+    execSync('git config user.email "test@test.com"', sopts)
+    execSync('git config user.name "Test"', sopts)
     // First commit (required for git operations)
     fs.writeFileSync(path.join(tmpDir, "README.md"), "# Test")
-    execSync("git add -A", { cwd: tmpDir, stdio: "pipe", shell: true })
-    execSync('git commit -m "initial commit"', { cwd: tmpDir, stdio: "pipe", shell: true })
+    execSync("git add -A", sopts)
+    execSync('git commit -m "initial commit"', sopts)
   })
 
   afterEach(() => {
@@ -474,8 +475,8 @@ describe("Full pipeline integration", () => {
     const testFile = path.join(repoDir, "test.txt")
     fs.writeFileSync(testFile, "hello e2e")
 
-    const diffs = [
-      { file: "test.txt", patch: "+hello e2e", additions: 1, deletions: 0, status: "new" as const },
+    const diffs: Array<{ file: string; patch?: string; additions: number; deletions: number; type: string }> = [
+      { file: "test.txt", patch: "+hello e2e", additions: 1, deletions: 0, type: "add" },
     ]
 
     // Step 1: autoCommit

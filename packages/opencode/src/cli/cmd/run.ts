@@ -302,13 +302,14 @@ export const RunCommand = effectCmd({
         die("--headless cannot be used with --interactive")
       }
 
-      if (args.headless && !process.stdout.isTTY && args.format !== "json") {
-        // In headless mode, force JSON format for structured output
-        // but the final output is always JSON regardless
-      }
-
       if (args.headless && args.command) {
         die("--headless cannot be used with --command")
+      }
+
+      // In headless mode, auto-approve all permissions (no user to ask)
+      if (args.headless && !args["dangerously-skip-permissions"]) {
+        // Override: headless implies dangerously-skip-permissions
+        ;(args as Record<string, unknown>)["dangerously-skip-permissions"] = true
       }
 
       if (args.interactive && !process.stdout.isTTY) {

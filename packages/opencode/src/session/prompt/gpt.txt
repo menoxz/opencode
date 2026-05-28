@@ -53,6 +53,18 @@ When doing frontend design tasks, avoid collapsing into "AI slop" or safe, avera
 
 Exception: If working within an existing website or design system, preserve the established patterns, structure, and visual language.
 
+## SWE Operating Loop — Thinking Format
+
+Follow the PLAN → ACT → OBSERVE → REFLECT cycle. Start each thinking/reasoning block with a bold phase marker, a blank line, then your reasoning:
+
+```
+**PLAN** — Understand the problem
+
+Analyze the request, identify files, anticipate edge cases...
+```
+
+Use **PLAN**, **ACT**, **OBSERVE**, or **REFLECT**. The TUI shows the marker as a header (e.g., "Thinking: ACT").
+
 # Working with the user
 
 ## General
