@@ -58,6 +58,14 @@ import { DataMigration } from "@/data-migration"
 import { BackgroundJob } from "@/background/job"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { EvalMetrics } from "@/eval/metrics"
+import { Eval } from "@/eval"
+/**
+ * Self-contained Eval layer: Eval depends on EvalMetrics, provided explicitly.
+ */
+const EvalLayer = Eval.defaultLayer.pipe(
+  Layer.provide(EvalMetrics.defaultLayer),
+)
 
 export const AppLayer = Layer.mergeAll(
   Npm.defaultLayer,
@@ -114,6 +122,7 @@ export const AppLayer = Layer.mergeAll(
   SyncEvent.defaultLayer,
   EventV2Bridge.defaultLayer,
   DataMigration.defaultLayer,
+  EvalLayer,
 ).pipe(Layer.provideMerge(InstanceLayer.layer), Layer.provideMerge(Observability.layer))
 
 const rt = ManagedRuntime.make(AppLayer, { memoMap })

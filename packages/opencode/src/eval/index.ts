@@ -56,6 +56,7 @@ export interface Interface {
   readonly listReports: (limit?: number) => Effect.Effect<EvalRunReport[]>
   readonly compareRuns: (runIdA: string, runIdB: string) => Effect.Effect<EvalComparison | null>
   readonly runFullBenchmark: (opts?: Partial<EvalRunOptions>) => Effect.Effect<EvalRunReport>
+  readonly recordRun: (results: ScenarioResult[], suiteId: string, suiteName: string) => Effect.Effect<EvalRunReport>
 }
 
 // ---------------------------------------------------------------------------
@@ -106,7 +107,7 @@ export function autoEvaluate(scenario: EvalScenario, output: string, toolCalls: 
 }
 
 /**
- * Simulate scenario execution (placeholder for real agent execution).
+ * Simulate scenario execution (fallback for manual mode / testing).
  */
 export function simulateScenario(
   scenario: EvalScenario,
@@ -215,6 +216,9 @@ export const layer = Layer.effect(
     const compareRuns: Interface["compareRuns"] = (a, b) =>
       metricsSvc.compare(a, b)
 
+    const recordRun: Interface["recordRun"] = (results, suiteId, suiteName) =>
+      metricsSvc.recordRun(results, suiteId, suiteName)
+
     return Service.of({
       runScenario: runScenario as any,
       runSuite: runSuite as any,
@@ -224,6 +228,7 @@ export const layer = Layer.effect(
       listReports: listReports as any,
       compareRuns: compareRuns as any,
       runFullBenchmark: runFullBenchmark as any,
+      recordRun: recordRun as any,
     })
   }),
 )

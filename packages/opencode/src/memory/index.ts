@@ -402,6 +402,53 @@ export const layer = Layer.effect(
         sessionId,
         learningsStored: learnings.length,
       })
+
+      // ---- Self-Improve recording (pure function, no Effect service) ----
+      try {
+        // Import pure function — no Effect layer dependency needed
+        const siMod: typeof import("@/self-improve") = yield* Effect.promise(
+          () => import("@/self-improve"),
+        ) as any
+
+        const outcome: {
+          sessionId: string; taskType: string; modelId: string; success: boolean
+          tokensUsed: number; toolCalls: number; errors: string[]; durationMs: number
+          paramsUsed: { temperature?: number; topP?: number; maxOutputTokens?: number }
+        } = {
+          sessionId,
+          taskType: (report.summary.taskDescription || "general").slice(0, 60),
+          modelId: "unknown",
+          success: report.summary.success,
+          tokensUsed: report.summary.tokenUsage.total,
+          toolCalls: report.summary.toolCallCount,
+          errors: report.summary.errors.map((e: any) => e.message),
+          durationMs: report.summary.duration || 0,
+          paramsUsed: {},
+        }
+
+        // Compute updated profile (pure math, no I/O)
+        const profile = siMod.updateProfile(null, outcome)
+
+        // Persist via memory store (already available)
+        yield* store_({
+          content: JSON.stringify(profile),
+          memoryType: "procedural",
+          tags: ["self-improve", "param-profile", profile.taskType, profile.modelId],
+          importance: 0.7,
+          projectId: "default",
+          source: `self-improve/${profile.taskType}/${profile.modelId}`,
+          confidence: Math.min(1, profile.samples / 10),
+        })
+        log.info("self-improve profile recorded", {
+          sessionId,
+          success: outcome.success,
+          taskType: profile.taskType,
+          samples: profile.samples,
+        })
+      } catch (e) {
+        log.warn("self-improve recording skipped", { sessionId, error: String(e) })
+      }
+
       return report
     })
 
