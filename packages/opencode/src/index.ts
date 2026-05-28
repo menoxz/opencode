@@ -35,6 +35,7 @@ import { DbCommand } from "./cli/cmd/db"
 import { EvalCommand } from "./cli/cmd/eval"
 import { SelfImproveCommand } from "./cli/cmd/self-improve"
 import { TasksCommand } from "./cli/cmd/tasks"
+import { DashboardCommand } from "./cli/cmd/dashboard"
 import path from "path"
 import { Global } from "@opencode-ai/core/global"
 import { JsonMigration } from "@/storage/json-migration"
@@ -187,6 +188,7 @@ const cli = yargs(args)
   .command(WatchCommand)
   .command(DaemonCommand)
   .command(TasksCommand)
+  .command(DashboardCommand)
   .command(SelfImproveCommand)
   .fail((msg, err) => {
     if (
