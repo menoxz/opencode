@@ -6,6 +6,7 @@ import * as Log from "@opencode-ai/core/util/log"
 import { SessionRevert } from "./revert"
 import { TriggerHandler } from "../daemon/trigger-handler"
 import { readUnacknowledged, acknowledgeAll } from "../daemon/notifications"
+import * as AutoMemory from "../daemon/auto-memory"
 import * as Session from "./session"
 import { Agent } from "../agent/agent"
 import { Provider } from "@/provider/provider"
@@ -118,6 +119,7 @@ function formatNotificationsSection(): string {
 
   const lines = notifications.map((n) => {
     const typeIcon =
+      n.type === "task_committed" ? "✅📝" :
       n.type === "task_success" ? "✅" :
       n.type === "task_failure" ? "❌" :
       n.type === "task_escalated" ? "⚠️" :
@@ -144,6 +146,43 @@ function formatNotificationsSection(): string {
     "",
     ...lines,
     `</daemon_notifications>`,
+    "",
+  ].join("\n")
+}
+
+// ── Learnings section ───────────────────────────────────────────────────
+
+function formatLearningsSection(): string {
+  const learnings = AutoMemory.readUnacknowledgedLearnings()
+  if (learnings.length === 0) return ""
+
+  const lines = learnings.map((l) => {
+    const summary = xmlEscape(l.summary)
+    const source = xmlEscape(l.source)
+    const files = l.diffs.map((d) => `      <file type="${xmlEscape(d.type)}">${xmlEscape(d.file)}</file>`).join("\n")
+    return [
+      `  <learning>`,
+      `    <id>${xmlEscape(l.id)}</id>`,
+      `    <source>${source}</source>`,
+      `    <summary>${summary}</summary>`,
+      l.commitHash ? `    <commit>${xmlEscape(l.commitHash)}</commit>` : "",
+      l.commitMessage ? `    <commitMessage>${xmlEscape(l.commitMessage)}</commitMessage>` : "",
+      l.model ? `    <model>${xmlEscape(l.model)}</model>` : "",
+      `    <filesChanged>${l.filesChanged}</filesChanged>`,
+      files ? `    <files>\n${files}\n    </files>` : "",
+      `  </learning>`,
+    ].join("\n")
+  })
+
+  return [
+    "",
+    `<daemon_learnings>`,
+    `The background daemon has processed ${learnings.length} task(s) autonomously since your last session.`,
+    `These actions were already performed — you don't need to repeat them.`,
+    `Review the changes for awareness:`,
+    "",
+    ...lines,
+    `</daemon_learnings>`,
     "",
   ].join("\n")
 }
@@ -1530,6 +1569,14 @@ export const layer = Layer.effect(
                 system.push(notificationsSection)
                 // Acknowledge them so they don't reappear next session
                 yield* Effect.sync(() => acknowledgeAll())
+              }
+
+              // Daemon learnings (auto-committed tasks from previous sessions)
+              const learningsSection = formatLearningsSection()
+              if (learningsSection) {
+                system.push(learningsSection)
+                // Acknowledge learnings so they don't reappear next session
+                yield* Effect.sync(() => AutoMemory.acknowledgeAllLearnings())
               }
             }
             const format = lastUser.format ?? { type: "text" as const }

@@ -5,6 +5,9 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import { writeNotification } from "./notifications"
 import { listPendingTasks, markTaskDone, type TaskItem } from "./trigger-handler"
+import { autoCommit, hasUncommittedChanges, type CommitResult, type DiffInfo } from "./auto-commit"
+import { isPRTrigger, createPR, pushBranchOnly } from "./auto-pr"
+import { storeLearning } from "./auto-memory"
 
 const log = Log.create({ service: "daemon.auto-executor" })
 
@@ -14,7 +17,7 @@ const TASK_TIMEOUT_MS = 10 * 60 * 1000 // 10 minutes max per task
 
 // ── Type for the headless result ─────────────────────────────────────────
 
-interface HeadlessResult {
+export interface HeadlessResult {
   type: "headless_result"
   sessionID: string
   success: boolean
@@ -25,7 +28,7 @@ interface HeadlessResult {
     files: number
     diffs: Array<{ file: string; type: string; diff?: string }>
   } | null
-  diffs: Array<{ file: string; type: string; diff?: string }>
+  diffs: Array<DiffInfo>
   agent: string | null
   model: string | null
 }
@@ -201,6 +204,88 @@ function formatDiffSummary(diffs: HeadlessResult["diffs"]): string {
   return `${diffs.length} file(s) changed:\n${lines.join("\n")}`
 }
 
+// ── Post-execution pipeline helpers ─────────────────────────────────────
+
+interface PipelineResult {
+  committed: boolean
+  commitHash?: string
+  commitMessage?: string
+  prUrl?: string
+  learningsStored: boolean
+}
+
+/**
+ * Run the post-execution pipeline: commit → memory → PR.
+ */
+function runPostPipeline(
+  task: TaskItem,
+  result: HeadlessResult,
+  repoDir: string,
+): PipelineResult {
+  const pipeline: PipelineResult = {
+    committed: false,
+    learningsStored: false,
+  }
+
+  const payload = task.payload as Record<string, unknown> | undefined
+  const hasDiffs = result.diffs && result.diffs.length > 0
+
+  // ── Step 1: Auto-commit ─────────────────────────────────────────────
+  let commit: CommitResult | null = null
+  if (hasDiffs && hasUncommittedChanges(repoDir)) {
+    log.info("Post-pipeline: auto-committing changes", { repoDir })
+    commit = autoCommit(repoDir, result.diffs)
+    if (commit) {
+      pipeline.committed = true
+      pipeline.commitHash = commit.hash
+      pipeline.commitMessage = commit.message
+      log.info("Post-pipeline: committed", { hash: commit.hash, files: commit.filesChanged })
+    }
+  } else {
+    log.info("Post-pipeline: no uncommitted changes to commit")
+  }
+
+  // ── Step 2: Store learnings ──────────────────────────────────────────
+  try {
+    storeLearning({
+      source: task.source,
+      taskId: task.triggerId,
+      summary: commit?.message ?? `Processed ${result.diffs.length} file(s)`,
+      filesChanged: result.diffs.length,
+      diffs: result.diffs,
+      commitHash: commit?.hash,
+      commitMessage: commit?.message,
+      model: result.model,
+      tags: [task.source, "auto-executed", ...(commit ? ["committed"] : [])],
+    })
+    pipeline.learningsStored = true
+  } catch (err) {
+    log.warn("Post-pipeline: failed to store learnings", { error: String(err) })
+  }
+
+  // ── Step 3: Push / PR (only for GitHub PR triggers) ─────────────────
+  if (isPRTrigger(payload)) {
+    if (commit) {
+      log.info("Post-pipeline: PR trigger detected, creating PR...")
+      const pr = createPR(
+        repoDir,
+        commit.message,
+        `Auto-generated from opencode headless task.\n\nTrigger: ${task.triggerId}\nSession: ${result.sessionID}\n\nChanges:\n${formatDiffSummary(result.diffs)}`,
+      )
+      if (pr) {
+        pipeline.prUrl = pr.url
+        log.info("Post-pipeline: PR created", { url: pr.url })
+      }
+    } else {
+      // If no commit was needed, still push the branch
+      const pushed = pushBranchOnly(repoDir)
+      if (pushed) log.info("Post-pipeline: branch pushed")
+    }
+  }
+
+  return pipeline
+}
+
 // ── Main entry point ────────────────────────────────────────────────────
 
 export const processNextTask = Effect.fnUntraced(function* () {
@@ -229,21 +314,47 @@ export const processNextTask = Effect.fnUntraced(function* () {
   const success = result?.success ?? (exitCode === 0 && !timedOut)
   const errorMessage = result?.error ?? (timedOut ? "Task timed out" : exitCode !== 0 ? `Exit code ${exitCode}` : null)
   const diffSummary = result ? formatDiffSummary(result.diffs ?? []) : ""
-  const details = [
-    diffSummary,
-    result?.summary ? `Summary: ${JSON.stringify(result.summary)}` : "",
-    result?.model ? `Model: ${result.model}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n")
 
-  if (success) {
-    writeNotification("task_success", "Task processed successfully", details, {
+  let pipelineResult: PipelineResult | null = null
+
+  if (success && result) {
+    // Run post-execution pipeline (commit → memory → PR)
+    pipelineResult = runPostPipeline(task, result, repoDir)
+
+    const notificationType = pipelineResult.committed ? "task_committed" : "task_success"
+    const notificationSummary = pipelineResult.committed
+      ? `Task committed: ${pipelineResult.commitHash?.slice(0, 8)}`
+      : "Task processed successfully"
+
+    const details = [
+      diffSummary,
+      pipelineResult.committed ? `Commit: ${pipelineResult.commitHash} (${pipelineResult.commitMessage})` : "",
+      result?.summary ? `Summary: ${JSON.stringify(result.summary)}` : "",
+      result?.model ? `Model: ${result.model}` : "",
+      pipelineResult.prUrl ? `PR: ${pipelineResult.prUrl}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n")
+
+    writeNotification(notificationType, notificationSummary, details, {
       taskId: task.triggerId,
       source: task.source,
     })
     markTaskDone(task.triggerId)
-    log.info("Auto-execution SUCCESS", { taskId: task.triggerId, diffs: result?.diffs?.length ?? 0 })
+    log.info("Auto-execution SUCCESS", {
+      taskId: task.triggerId,
+      diffs: result?.diffs?.length ?? 0,
+      committed: pipelineResult.committed,
+      prUrl: pipelineResult.prUrl,
+    })
+  } else if (success) {
+    // Success by exit code but no structured result (no diffs = no pipeline needed)
+    writeNotification("task_success", "Task processed successfully (exit code)", "", {
+      taskId: task.triggerId,
+      source: task.source,
+    })
+    markTaskDone(task.triggerId)
+    log.info("Auto-execution SUCCESS (exit code)", { taskId: task.triggerId })
   } else {
     const noteType = timedOut ? "task_escalated" : "task_failure"
     writeNotification(noteType, errorMessage ?? "Task failed", rawOutput.slice(0, 2000), {
@@ -256,8 +367,14 @@ export const processNextTask = Effect.fnUntraced(function* () {
   return {
     status: timedOut ? "timeout" as const : success ? "success" as const : "failure" as const,
     taskId: task.triggerId,
-    summary: success ? "Task completed" : errorMessage ?? "Task failed",
+    summary: success
+      ? pipelineResult?.committed
+        ? `Committed: ${pipelineResult.commitHash?.slice(0, 8)}`
+        : "Task completed"
+      : errorMessage ?? "Task failed",
     filesChanged: result?.diffs?.length ?? 0,
+    committed: pipelineResult?.committed ?? false,
+    prUrl: pipelineResult?.prUrl,
   }
 })
 

@@ -8,6 +8,7 @@ export type NotificationType =
   | "task_success"
   | "task_failure"
   | "task_escalated"
+  | "task_committed"
   | "critical_alert"
 
 export interface DaemonNotification {
