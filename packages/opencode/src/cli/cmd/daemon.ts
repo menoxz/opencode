@@ -6,6 +6,7 @@ import { cmd } from "./cmd"
 import { daemonDir, daemonHandler } from "./watch"
 import { AppRuntime } from "@/effect/app-runtime"
 import * as Log from "@opencode-ai/core/util/log"
+import { readLatestReport } from "../../daemon/idle"
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
@@ -278,6 +279,14 @@ const StatusCommand = cmd({
     process.stdout.write(`   PID: ${pid}${EOL}`)
     process.stdout.write(`   PID file: ${pidFile()}${EOL}`)
     process.stdout.write(`   Log file: ${logFile()}${EOL}`)
+
+    // Show the latest idle analysis report
+    const report = readLatestReport()
+    if (report) {
+      process.stdout.write(`${EOL}📊  Idle Analysis Report${EOL}`)
+      process.stdout.write(`   ${report.summary}${EOL}`)
+      process.stdout.write(`   Run: opencode tasks report for full details${EOL}`)
+    }
   },
 })
 
