@@ -242,6 +242,11 @@ export const RunCommand = effectCmd({
         type: "boolean",
         default: false,
         describe: "enable direct interactive demo slash commands; pass one as the message to run it immediately",
+      })
+      .option("headless", {
+        type: "boolean",
+        default: false,
+        describe: "run in headless mode: auto-approve permissions, output structured JSON result with diff",
       }),
   handler: Effect.fn("Cli.run")(function* (args) {
     const agentSvc = yield* Agent.Service
@@ -291,6 +296,19 @@ export const RunCommand = effectCmd({
         (!Number.isInteger(args["replay-limit"]) || args["replay-limit"] <= 0)
       ) {
         die("--replay-limit must be a positive integer")
+      }
+
+      if (args.headless && args.interactive) {
+        die("--headless cannot be used with --interactive")
+      }
+
+      if (args.headless && !process.stdout.isTTY && args.format !== "json") {
+        // In headless mode, force JSON format for structured output
+        // but the final output is always JSON regardless
+      }
+
+      if (args.headless && args.command) {
+        die("--headless cannot be used with --command")
       }
 
       if (args.interactive && !process.stdout.isTTY) {
@@ -369,23 +387,32 @@ export const RunCommand = effectCmd({
 
       const rules: Permission.Ruleset = args.interactive
         ? []
-        : [
-            {
-              permission: "question",
-              action: "deny",
-              pattern: "*",
-            },
-            {
-              permission: "plan_enter",
-              action: "deny",
-              pattern: "*",
-            },
-            {
-              permission: "plan_exit",
-              action: "deny",
-              pattern: "*",
-            },
-          ]
+        : args.headless
+          ? [
+              // In headless mode, auto-approve all permissions silently
+              {
+                permission: "question",
+                action: "deny",
+                pattern: "*",
+              },
+            ]
+          : [
+              {
+                permission: "question",
+                action: "deny",
+                pattern: "*",
+              },
+              {
+                permission: "plan_enter",
+                action: "deny",
+                pattern: "*",
+              },
+              {
+                permission: "plan_exit",
+                action: "deny",
+                pattern: "*",
+              },
+            ]
 
       function title() {
         if (args.title === undefined) return
@@ -767,6 +794,56 @@ export const RunCommand = effectCmd({
 
         if (!args.interactive) {
           const events = await client.event.subscribe()
+          let sessionError: string | undefined
+
+          if (args.headless) {
+            // Headless mode: wait for session to complete, then get structured result
+            const loopPromise = loop(client, events)
+
+            const model = pick(args.model)
+            const result = await client.session.prompt({
+              sessionID,
+              agent,
+              model,
+              variant: args.variant,
+              parts: [...files, { type: "text", text: message }],
+            })
+            if (result.error) {
+              process.exitCode = 1
+              // Continue waiting for loop to finish to get the full error
+            }
+
+            // Wait for the session to go idle
+            sessionError = await loopPromise
+
+            // Now fetch the session result
+            const [sessionInfo, sessionDiffs] = await Promise.all([
+              client.session
+                .get({ sessionID })
+                .then((r) => r.data ?? null)
+                .catch(() => null),
+              client.session
+                .diff({ sessionID })
+                .then((r) => r.data ?? null)
+                .catch(() => null),
+            ])
+
+            const output: Record<string, unknown> = {
+              type: "headless_result",
+              sessionID,
+              success: !sessionError && !result.error,
+              error: sessionError ?? (result.error ? "Prompt failed" : null),
+              summary: sessionInfo?.summary ?? null,
+              diffs: sessionDiffs ?? [],
+              agent,
+              model: model ? `${model.providerID}/${model.modelID}` : null,
+            }
+
+            process.stdout.write(JSON.stringify(output) + EOL)
+            if (sessionError || result.error) process.exitCode = 1
+            return
+          }
+
           loop(client, events).catch((e) => {
             console.error(e)
             process.exit(1)

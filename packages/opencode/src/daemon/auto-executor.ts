@@ -10,13 +10,30 @@ const log = Log.create({ service: "daemon.auto-executor" })
 
 // ── Configuration ───────────────────────────────────────────────────────
 
-const TASK_TIMEOUT_MS = 5 * 60 * 1000 // 5 minutes max per task
+const TASK_TIMEOUT_MS = 10 * 60 * 1000 // 10 minutes max per task
+
+// ── Type for the headless result ─────────────────────────────────────────
+
+interface HeadlessResult {
+  type: "headless_result"
+  sessionID: string
+  success: boolean
+  error: string | null
+  summary: {
+    additions: number
+    deletions: number
+    files: number
+    diffs: Array<{ file: string; type: string; diff?: string }>
+  } | null
+  diffs: Array<{ file: string; type: string; diff?: string }>
+  agent: string | null
+  model: string | null
+}
 
 // ── State tracking ──────────────────────────────────────────────────────
 
 let currentProcess: ChildProcess | null = null
 let currentTaskId: string | null = null
-let lastHeartbeat = 0
 
 // ── Prompt builder ──────────────────────────────────────────────────────
 
@@ -60,34 +77,23 @@ function buildAutoPrompt(task: TaskItem): string {
 
 // ── Task eligibility ────────────────────────────────────────────────────
 
-/**
- * Determine if a task is eligible for autonomous processing.
- * Some tasks are too complex or sensitive for auto-execution.
- */
 function isEligible(task: TaskItem): boolean {
-  // Always eligible for now — agent decides within the session.
-  // We can add filters later (e.g., skip if payload contains "breaking").
   return true
 }
 
 // ── Find the opencode binary ────────────────────────────────────────────
 
 function findBinary(): string | null {
-  // 1. Current process argv[0]
   const argv0 = process.argv[0]
   if (argv0 && (argv0.endsWith("opencode.exe") || argv0.endsWith("opencode"))) {
     return path.resolve(argv0)
   }
 
-  // 2. Known dev fork path relative to this source
   try {
-    // In dev: packages/opencode/src/daemon/auto-executor.ts
-    // binary: dist/bin/opencode.exe
     const devPath = path.resolve(__dirname, "..", "..", "..", "..", "dist", "bin", "opencode.exe")
     if (fs.existsSync(devPath)) return devPath
   } catch { /* __dirname unavailable */ }
 
-  // 3. Fall back to PATH
   const envPath = process.env.PATH || ""
   for (const dir of envPath.split(path.delimiter)) {
     const candidate = path.join(dir, "opencode.exe")
@@ -99,46 +105,40 @@ function findBinary(): string | null {
   return null
 }
 
-// ── Spawn and monitor ───────────────────────────────────────────────────
+// ── Spawn and parse headless result ──────────────────────────────────────
 
-function spawnRun(
+function spawnHeadless(
   task: TaskItem,
   prompt: string,
   cwd: string,
-): Promise<{ exitCode: number | null; output: string; timedOut: boolean }> {
+): Promise<{ result: HeadlessResult | null; exitCode: number | null; rawOutput: string; timedOut: boolean }> {
   return new Promise((resolve) => {
     const binary = findBinary()
     if (!binary) {
       log.error("Cannot find opencode binary for auto-execution")
-      resolve({ exitCode: null, output: "Binary not found", timedOut: false })
+      resolve({ result: null, exitCode: null, rawOutput: "Binary not found", timedOut: false })
       return
     }
 
-    log.info("Spawning opencode run", { binary, cwd, taskId: task.triggerId })
+    log.info("Spawning opencode headless", { binary, cwd, taskId: task.triggerId })
 
-    const proc = spawn(binary, ["run", "--format", "json", prompt], {
+    const proc = spawn(binary, ["run", "--headless", prompt], {
       cwd,
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
-      timeout: TASK_TIMEOUT_MS,
       env: {
         ...process.env,
         OPENCODE_DAEMON_AUTO: "1",
-        // Disable interactive prompts
-        OPENCODE_DANGEROUSLY_SKIP_PERMISSIONS: "1",
       },
     })
 
     currentProcess = proc
     currentTaskId = task.triggerId
-    lastHeartbeat = Date.now()
 
-    let output = ""
     const outputChunks: string[] = []
 
     proc.stdout?.on("data", (chunk: Buffer) => {
       outputChunks.push(chunk.toString())
-      lastHeartbeat = Date.now()
     })
 
     proc.stderr?.on("data", (chunk: Buffer) => {
@@ -146,166 +146,121 @@ function spawnRun(
     })
 
     const timer = setTimeout(() => {
-      // Timeout: kill the process
       log.warn("Auto-execution timed out", { taskId: task.triggerId, timeoutMs: TASK_TIMEOUT_MS })
       try { proc.kill("SIGTERM") } catch { /* best-effort */ }
-      // Give it a moment to die before resolving
       setTimeout(() => {
         currentProcess = null
         currentTaskId = null
-        resolve({ exitCode: null, output: outputChunks.join(""), timedOut: true })
+        resolve({ result: null, exitCode: null, rawOutput: outputChunks.join(""), timedOut: true })
       }, 2000)
     }, TASK_TIMEOUT_MS)
 
     proc.on("exit", (exitCode) => {
       clearTimeout(timer)
-      output = outputChunks.join("")
+      const rawOutput = outputChunks.join("")
       currentProcess = null
       currentTaskId = null
-      log.info("Auto-execution completed", { taskId: task.triggerId, exitCode })
-      resolve({ exitCode, output, timedOut: false })
+      log.info("Headless execution completed", { taskId: task.triggerId, exitCode })
+
+      // Parse the last JSON line as the headless result
+      const result = parseHeadlessResult(rawOutput)
+      resolve({ result, exitCode, rawOutput, timedOut: false })
     })
 
     proc.on("error", (err) => {
       clearTimeout(timer)
       currentProcess = null
       currentTaskId = null
-      log.error("Auto-execution error", { taskId: task.triggerId, error: err.message })
-      resolve({ exitCode: null, output: err.message, timedOut: false })
+      log.error("Headless execution error", { taskId: task.triggerId, error: err.message })
+      resolve({ result: null, exitCode: null, rawOutput: err.message, timedOut: false })
     })
   })
 }
 
-// ── Parse result ────────────────────────────────────────────────────────
+// ── Parse structured JSON from output ────────────────────────────────────
 
-function analyzeResult(
-  exitCode: number | null,
-  output: string,
-  _task: TaskItem,
-): { success: boolean; summary: string; details: string } {
-  if (exitCode === null) {
-    return {
-      success: false,
-      summary: "Task processing failed or timed out",
-      details: output.slice(0, 2000),
-    }
+function parseHeadlessResult(output: string): HeadlessResult | null {
+  // The headless result is the last JSON line in the output
+  const lines = output.trim().split("\n").filter((l) => l.trim())
+  for (let i = lines.length - 1; i >= 0; i--) {
+    try {
+      const parsed = JSON.parse(lines[i])
+      if (parsed?.type === "headless_result") {
+        return parsed as HeadlessResult
+      }
+    } catch { /* not JSON, skip */ }
   }
+  return null
+}
 
-  if (exitCode !== 0) {
-    return {
-      success: false,
-      summary: `Task failed with exit code ${exitCode}`,
-      details: output.slice(0, 2000),
-    }
-  }
+// ── Diff summary helper ─────────────────────────────────────────────────
 
-  // Exit code 0 — check output for evidence of meaningful work
-  const lower = output.toLowerCase()
-
-  // Look for signs of success
-  const hasCommits = lower.includes("committed") || lower.includes("commit") || lower.includes("pushed")
-  const hasEdits = lower.includes("edited") || lower.includes("modified") || lower.includes("created")
-  const hasErrors = lower.includes("error") || lower.includes("failed") || lower.includes("cannot")
-  const hasReport = lower.includes("✅") || lower.includes("done") || lower.includes("completed")
-
-  if (hasErrors && !hasCommits && !hasEdits) {
-    return {
-      success: false,
-      summary: "Task encountered errors during processing",
-      details: output.slice(0, 2000),
-    }
-  }
-
-  if (hasCommits || hasEdits || hasReport) {
-    return {
-      success: true,
-      summary: "Task processed successfully",
-      details: output.slice(0, 2000),
-    }
-  }
-
-  // Ambiguous — treat as success if exit code is 0
-  return {
-    success: true,
-    summary: "Task completed (exit 0)",
-    details: output.slice(0, 1000),
-  }
+function formatDiffSummary(diffs: HeadlessResult["diffs"]): string {
+  if (!diffs || diffs.length === 0) return "No file changes."
+  const lines = diffs.map((d) => `  ${d.type}: ${d.file}`)
+  return `${diffs.length} file(s) changed:\n${lines.join("\n")}`
 }
 
 // ── Main entry point ────────────────────────────────────────────────────
 
-/**
- * Process the next eligible pending task from the queue.
- *
- * Returns information about what happened (for logging/monitoring).
- */
 export const processNextTask = Effect.fnUntraced(function* () {
-  // Don't start a new task if one is already running
   if (currentProcess && currentTaskId) {
     log.info("Auto-executor already busy", { currentTaskId })
     return { status: "busy" as const, taskId: currentTaskId }
   }
 
-  // Find the next eligible pending task
   const pending = listPendingTasks().filter(isEligible)
   if (pending.length === 0) {
     return { status: "no_tasks" as const }
   }
 
-  // Pick the first one (oldest first = most urgent)
   const task = pending[0]
   log.info("Processing task autonomously", { id: task.triggerId, source: task.source })
 
-  // Determine working directory from payload
   const payload = task.payload as Record<string, unknown> | undefined
   const repoDir = (payload?.local_dir as string) || process.cwd()
-
-  // Build prompt
   const prompt = buildAutoPrompt(task)
 
-  // Spawn and wait
-  const { exitCode, output, timedOut } = yield* Effect.promise(() => spawnRun(task, prompt, repoDir))
+  const { result, exitCode, rawOutput, timedOut } = yield* Effect.promise(() =>
+    spawnHeadless(task, prompt, repoDir),
+  )
 
-  // Analyze result
-  const { success, summary, details } = analyzeResult(exitCode, output, task)
+  // Extract info from structured result or fall back to exit code
+  const success = result?.success ?? (exitCode === 0 && !timedOut)
+  const errorMessage = result?.error ?? (timedOut ? "Task timed out" : exitCode !== 0 ? `Exit code ${exitCode}` : null)
+  const diffSummary = result ? formatDiffSummary(result.diffs ?? []) : ""
+  const details = [
+    diffSummary,
+    result?.summary ? `Summary: ${JSON.stringify(result.summary)}` : "",
+    result?.model ? `Model: ${result.model}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n")
 
-  // Write notification
   if (success) {
-    writeNotification("task_success", summary, details, {
+    writeNotification("task_success", "Task processed successfully", details, {
       taskId: task.triggerId,
       source: task.source,
     })
-    // Mark task as done
     markTaskDone(task.triggerId)
+    log.info("Auto-execution SUCCESS", { taskId: task.triggerId, diffs: result?.diffs?.length ?? 0 })
   } else {
-    writeNotification(
-      timedOut ? "task_escalated" : "task_failure",
-      summary,
-      details,
-      { taskId: task.triggerId, source: task.source },
-    )
-    // Leave task pending for user intervention
+    const noteType = timedOut ? "task_escalated" : "task_failure"
+    writeNotification(noteType, errorMessage ?? "Task failed", rawOutput.slice(0, 2000), {
+      taskId: task.triggerId,
+      source: task.source,
+    })
+    log.warn("Auto-execution FAILED", { taskId: task.triggerId, error: errorMessage })
   }
-
-  log.info("Auto-execution result", {
-    taskId: task.triggerId,
-    success,
-    timedOut,
-    summary,
-  })
 
   return {
     status: timedOut ? "timeout" as const : success ? "success" as const : "failure" as const,
     taskId: task.triggerId,
-    summary,
+    summary: success ? "Task completed" : errorMessage ?? "Task failed",
+    filesChanged: result?.diffs?.length ?? 0,
   }
 })
 
-// ── Status check ────────────────────────────────────────────────────────
-
-/**
- * Check if the auto-executor is currently running a task.
- */
 export function isExecutorBusy(): boolean {
   return currentProcess !== null && currentTaskId !== null
 }
