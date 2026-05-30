@@ -48,6 +48,34 @@ export interface EvalRunOptions {
   record?: boolean
 }
 
+/** Regression detection report. */
+export interface RegressionReport {
+  suiteId: string
+  currentRunId: string
+  baselineRunId: string
+  passRate: { current: number; baseline: number; delta: number }
+  avgDurationMs: { current: number; baseline: number; delta: number }
+  severity: "none" | "minor" | "major" | "performance" | "behavior"
+  /** True if any major regression (passRate drop > 5%, or new failures). */
+  major: boolean
+  details: {
+    passRateRegression: boolean
+    durationRegression: boolean
+    behaviorRegression: boolean
+    newFailures: string[]
+    newPasses: string[]
+  }
+}
+
+/** Aggregated baseline from historical runs. */
+export interface EvalBaseline {
+  suiteId: string
+  passRate: number
+  avgDurationMs: number
+  runCount: number
+  scenarioResults: Record<string, { passRate: number; avgDurationMs: number }>
+}
+
 // ---------------------------------------------------------------------------
 // Service Interface
 // ---------------------------------------------------------------------------
@@ -62,6 +90,9 @@ export interface Interface {
   readonly compareRuns: (runIdA: string, runIdB: string) => Effect.Effect<EvalComparison | null>
   readonly runFullBenchmark: (opts?: Partial<EvalRunOptions>) => Effect.Effect<EvalRunReport>
   readonly recordRun: (results: ScenarioResult[], suiteId: string, suiteName: string) => Effect.Effect<EvalRunReport>
+  readonly detectRegression: (suiteId?: string) => Effect.Effect<RegressionReport | null>
+  readonly getBaseline: (suiteId: string) => Effect.Effect<EvalBaseline | null>
+  readonly compareToBaseline: (report: EvalRunReport) => Effect.Effect<RegressionReport | null>
 }
 
 // ---------------------------------------------------------------------------
@@ -336,6 +367,146 @@ export const layer = Layer.effect(
     const recordRun: Interface["recordRun"] = (results, suiteId, suiteName) =>
       metricsSvc.recordRun(results, suiteId, suiteName)
 
+    // ---- Regression detection ----
+
+    const detectRegression: Interface["detectRegression"] = (suiteId) =>
+      Effect.gen(function* () {
+        const reports = yield* metricsSvc.listReports(100)
+        const candidates = suiteId
+          ? reports.filter((r) => r.suiteId === suiteId)
+          : reports
+        if (candidates.length < 2) return null
+
+        const current = candidates[0]
+        const baseline = candidates[1]
+
+        const passRateDelta = current.passRate - baseline.passRate
+        const durationDelta = current.avgDurationPerScenario - baseline.avgDurationPerScenario
+
+        const newFailures: string[] = []
+        const newPasses: string[] = []
+        for (const sc of current.scenarios) {
+          const other = baseline.scenarios.find((s2) => s2.scenarioId === sc.scenarioId)
+          if (!other) continue
+          if (other.success && !sc.success) newFailures.push(sc.scenarioId)
+          if (!other.success && sc.success) newPasses.push(sc.scenarioId)
+        }
+
+        const passRateRegression = passRateDelta < -0.05
+        const durationRegression = baseline.avgDurationPerScenario > 0
+          ? durationDelta / baseline.avgDurationPerScenario > 0.2
+          : false
+        const behaviorRegression = newFailures.length > 0
+
+        let severity: RegressionReport["severity"] = "none"
+        if (passRateRegression && behaviorRegression) severity = "major"
+        else if (behaviorRegression) severity = "behavior"
+        else if (passRateRegression) severity = "major"
+        else if (durationRegression) severity = "performance"
+        else if (Math.abs(passRateDelta) > 0.02) severity = "minor"
+
+        return {
+          suiteId: current.suiteId,
+          currentRunId: current.runId,
+          baselineRunId: baseline.runId,
+          passRate: { current: current.passRate, baseline: baseline.passRate, delta: passRateDelta },
+          avgDurationMs: { current: current.avgDurationPerScenario, baseline: baseline.avgDurationPerScenario, delta: durationDelta },
+          severity,
+          major: severity === "major" || severity === "behavior",
+          details: { passRateRegression, durationRegression, behaviorRegression, newFailures, newPasses },
+        }
+      })
+
+    const getBaseline: Interface["getBaseline"] = (suiteId) =>
+      Effect.gen(function* () {
+        const all = yield* metricsSvc.listReports(100)
+        const candidates = all.filter((r) => r.suiteId === suiteId)
+        if (candidates.length === 0) return null
+
+        const recent = candidates.slice(0, Math.min(5, candidates.length))
+        const passRates = recent.map((r) => r.passRate).sort((a, b) => a - b)
+        const durations = recent.map((r) => r.avgDurationPerScenario).sort((a, b) => a - b)
+
+        const median = <T>(sorted: T[]): T => sorted[Math.floor(sorted.length / 2)]
+
+        // Per-scenario baseline across runs
+        const scenarioResults: Record<string, { passRate: number; avgDurationMs: number }> = {}
+        const scenarioPasses = new Map<string, number[]>()
+        const scenarioDurations = new Map<string, number[]>()
+
+        for (const r of recent) {
+          for (const s of r.scenarios) {
+            const passes = scenarioPasses.get(s.scenarioId) ?? []
+            passes.push(s.success ? 1 : 0)
+            scenarioPasses.set(s.scenarioId, passes)
+            const durs = scenarioDurations.get(s.scenarioId) ?? []
+            durs.push(s.durationMs)
+            scenarioDurations.set(s.scenarioId, durs)
+          }
+        }
+
+        for (const [scId, passes] of scenarioPasses) {
+          const durs = scenarioDurations.get(scId) ?? []
+          scenarioResults[scId] = {
+            passRate: passes.sort((a, b) => a - b)[Math.floor(passes.length / 2)],
+            avgDurationMs: durs.length > 0 ? median(durs.sort((a, b) => a - b)) : 0,
+          }
+        }
+
+        return {
+          suiteId,
+          passRate: median(passRates),
+          avgDurationMs: median(durations),
+          runCount: recent.length,
+          scenarioResults,
+        }
+      })
+
+    const compareToBaseline: Interface["compareToBaseline"] = (report) =>
+      Effect.gen(function* () {
+        const baseline = yield* getBaseline(report.suiteId)
+        if (!baseline) return null
+
+        const passRateDelta = report.passRate - baseline.passRate
+        const durationDelta = report.avgDurationPerScenario - baseline.avgDurationMs
+
+        const newFailures: string[] = []
+        const newPasses: string[] = []
+
+        for (const sc of report.scenarios) {
+          const bl = baseline.scenarioResults[sc.scenarioId]
+          if (!bl) continue
+          // Previously passing scenario that now fails
+          if (bl.passRate >= 0.5 && !sc.success) newFailures.push(sc.scenarioId)
+          // Previously failing scenario that now passes
+          if (bl.passRate < 0.5 && sc.success) newPasses.push(sc.scenarioId)
+        }
+
+        const passRateRegression = passRateDelta < -0.05
+        const durationRegression = baseline.avgDurationMs > 0
+          ? durationDelta / baseline.avgDurationMs > 0.2
+          : false
+        const behaviorRegression = newFailures.length > 0
+
+        let severity: RegressionReport["severity"] = "none"
+        if (passRateRegression && behaviorRegression) severity = "major"
+        else if (behaviorRegression) severity = "behavior"
+        else if (passRateRegression) severity = "major"
+        else if (durationRegression) severity = "performance"
+        else if (Math.abs(passRateDelta) > 0.02) severity = "minor"
+
+        return {
+          suiteId: report.suiteId,
+          currentRunId: report.runId,
+          baselineRunId: "",
+          passRate: { current: report.passRate, baseline: baseline.passRate, delta: passRateDelta },
+          avgDurationMs: { current: report.avgDurationPerScenario, baseline: baseline.avgDurationMs, delta: durationDelta },
+          severity,
+          major: severity === "major" || severity === "behavior",
+          details: { passRateRegression, durationRegression, behaviorRegression, newFailures, newPasses },
+        }
+      })
+
     return Service.of({
       runScenario: runScenario as any,
       runSuite: runSuite as any,
@@ -346,6 +517,9 @@ export const layer = Layer.effect(
       compareRuns: compareRuns as any,
       runFullBenchmark: runFullBenchmark as any,
       recordRun: recordRun as any,
+      detectRegression: detectRegression as any,
+      getBaseline: getBaseline as any,
+      compareToBaseline: compareToBaseline as any,
     })
   }),
 )

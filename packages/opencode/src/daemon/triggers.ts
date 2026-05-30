@@ -5,6 +5,9 @@ import * as path from "node:path"
 import { handlePendingTriggers, listPendingTasks } from "./trigger-handler"
 import { runIdleAnalysis } from "./idle"
 import { processNextTask, isExecutorBusy } from "./auto-executor"
+import { Eval } from "@/eval"
+import * as MemoryStore from "@/memory/store"
+import * as PatternDetector from "@/memory/patterns"
 
 const log = Log.create({ service: "daemon.triggers" })
 
@@ -107,12 +110,43 @@ export const ackTrigger = Effect.fnUntraced(function* (triggerId: string) {
 })
 
 /**
- * Periodic memory consolidation — defers to the memory tool which is
- * only available during agent sessions. Logs intent and leaves actual
- * consolidation to the next agent session.
+ * Periodic memory consolidation — runs decay, prune, and merge on the
+ * native memory store via MemoryStore (no Session dependency needed).
  */
 export const memoryConsolidate = Effect.fnUntraced(function* () {
-  log.info("Memory consolidation: deferred to next agent session")
+  log.info("Running memory consolidation via MemoryStore...")
+  try {
+    const store = yield* MemoryStore.Service
+    const { consolidate } = yield* Effect.promise(() => import("@/memory/consolidation"))
+    const stats = yield* consolidate(store as any, false)
+    log.info("Consolidation complete", {
+      decayed: stats.decayed, pruned: stats.pruned, merged: stats.merged,
+      remainingAfter: stats.remainingAfter,
+    })
+  } catch (err) {
+    log.warn("Memory consolidation skipped", { error: String(err) })
+  }
+})
+
+/**
+ * Periodic pattern detection — via MemoryStore directly.
+ */
+export const detectPatterns = Effect.fnUntraced(function* () {
+  log.info("Running pattern detection via MemoryStore...")
+  try {
+    const store = yield* MemoryStore.Service
+    const patterns = yield* PatternDetector.Service
+    const report = yield* patterns.detect(30)
+    if (report.recurringPatterns.length > 0 || report.antiPatterns.length > 0) {
+      log.info("Patterns detected", {
+        patterns: report.recurringPatterns.length,
+        antiPatterns: report.antiPatterns.length,
+        successPatterns: report.successPatterns.length,
+      })
+    }
+  } catch (err) {
+    log.warn("Pattern detection skipped", { error: String(err) })
+  }
 })
 
 /**
@@ -159,6 +193,40 @@ export const processQueue = Effect.fnUntraced(function* () {
   log.info("processQueue: attempting auto-execution", { pendingCount: pending.length })
   const result = yield* processNextTask()
   log.info("processQueue: result", { result })
+})
+
+/**
+ * Periodic sanity eval — runs the sanity suite and checks for regression.
+ * Requires Eval.Service to be in the Effect context (provided by AppRuntime).
+ */
+export const runSanityEval = Effect.fnUntraced(function* () {
+  log.info("Running auto sanity eval...")
+  try {
+    const evalSvc = yield* Eval.Service
+    const report = yield* evalSvc.runSuite("sanity")
+
+    const baselineOpt = yield* Effect.option(evalSvc.getBaseline("sanity"))
+    if (baselineOpt._tag === "Some") {
+      const bl = baselineOpt.value
+      if (bl) {
+        const regressionOpt = yield* Effect.option(evalSvc.compareToBaseline(report))
+        if (regressionOpt._tag === "Some") {
+          const reg = regressionOpt.value
+          if (reg && reg.major) {
+            log.warn("REGRESSION DETECTED in sanity suite!", {
+              passRate: `${(report.passRate * 100).toFixed(0)}%`,
+              baselinePassRate: `${(bl.passRate * 100).toFixed(0)}%`,
+              details: reg.details,
+            })
+          }
+        }
+      }
+    }
+
+    log.info("Auto eval complete", { passRate: `${(report.passRate * 100).toFixed(1)}%` })
+  } catch (error) {
+    log.error("runSanityEval failed", { error })
+  }
 })
 
 export * as TriggerChecker from "."

@@ -56,13 +56,15 @@ import { Npm } from "@opencode-ai/core/npm"
 import { memoMap } from "@opencode-ai/core/effect/memo-map"
 import { DataMigration } from "@/data-migration"
 import { BackgroundJob } from "@/background/job"
+import { Orchestrator } from "@/orchestrator"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EvalMetrics } from "@/eval/metrics"
 import { Eval } from "@/eval"
-/**
- * Self-contained Eval layer: Eval depends on EvalMetrics, provided explicitly.
- */
+import * as MemoryStore from "@/memory/store"
+import * as PatternDetector from "@/memory/patterns"
+
+/** Self-contained Eval layer: Eval depends on EvalMetrics. */
 const EvalLayer = Eval.defaultLayer.pipe(
   Layer.provide(EvalMetrics.defaultLayer),
 )
@@ -122,10 +124,16 @@ export const AppLayer = Layer.mergeAll(
   SyncEvent.defaultLayer,
   EventV2Bridge.defaultLayer,
   DataMigration.defaultLayer,
+  Orchestrator.defaultLayer,
+  MemoryStore.defaultLayer,
+  PatternDetector.defaultLayer,
   EvalLayer,
-).pipe(Layer.provideMerge(InstanceLayer.layer), Layer.provideMerge(Observability.layer))
+).pipe(
+  Layer.provideMerge(InstanceLayer.layer),
+  Layer.provideMerge(Observability.layer),
+)
 
-const rt = ManagedRuntime.make(AppLayer, { memoMap })
+const rt = ManagedRuntime.make(AppLayer as any, { memoMap })
 type Runtime = Pick<typeof rt, "runSync" | "runPromise" | "runPromiseExit" | "runFork" | "runCallback" | "dispose">
 
 /** Services provided by AppRuntime — i.e. what an Effect run via AppRuntime.runPromise can yield. */

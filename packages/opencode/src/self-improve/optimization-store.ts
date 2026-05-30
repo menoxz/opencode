@@ -46,6 +46,11 @@ export interface Interface {
   readonly listProfiles: (opts?: { modelId?: string; taskType?: string }) => Effect.Effect<ParameterProfile[]>
   readonly deleteProfile: (taskType: string, modelId: string) => Effect.Effect<boolean>
   readonly stats: () => Effect.Effect<OptimizationStats>
+
+  // User preference persistence for adaptive personality
+  readonly saveUserPreference: (key: string, value: string) => Effect.Effect<void>
+  readonly getUserPreference: (key: string) => Effect.Effect<string | null>
+  readonly getAllUserPreferences: () => Effect.Effect<Record<string, string>>
 }
 
 // ---------------------------------------------------------------------------
@@ -60,9 +65,14 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/Se
 
 const PROFILE_TAG = "adaptive-config"
 const PROFILE_PREFIX = "param-profile:"
+const USER_PREF_TAG = "user-preference"
 
 function profileSource(taskType: string, modelId: string): string {
   return `adaptive-config/${taskType}/${modelId}`
+}
+
+function preferenceSource(key: string): string {
+  return `user-preference/${key}`
 }
 
 // ---------------------------------------------------------------------------
@@ -150,12 +160,58 @@ export const layer = Layer.effect(
         return result
       })
 
+    const saveUserPreference: Interface["saveUserPreference"] = (key, value) =>
+      Effect.gen(function* () {
+        yield* memory.store({
+          content: JSON.stringify({ key, value }),
+          memoryType: "profile",
+          tags: [USER_PREF_TAG, key],
+          importance: 0.8,
+          projectId: "default",
+          source: preferenceSource(key),
+          confidence: 1.0,
+        })
+        log.info("user preference saved", { key })
+      })
+
+    const getUserPreference: Interface["getUserPreference"] = (key) =>
+      Effect.gen(function* () {
+        const src = preferenceSource(key)
+        const items = yield* memory.retrieve(src, { topK: 3, minScore: 0.1, projectId: "default" })
+        for (const r of items.results) {
+          if (r.entry.source === src) {
+            try {
+              const parsed = JSON.parse(r.entry.content) as { key: string; value: string }
+              return parsed.value
+            } catch { /* skip */ }
+          }
+        }
+        return null
+      })
+
+    const getAllUserPreferences: Interface["getAllUserPreferences"] = () =>
+      Effect.gen(function* () {
+        const items = yield* memory.list({ memoryType: "profile", pageSize: 100 })
+        const prefs: Record<string, string> = {}
+        for (const entry of items.entries) {
+          if (!entry.tags.includes(USER_PREF_TAG)) continue
+          try {
+            const parsed = JSON.parse(entry.content) as { key: string; value: string }
+            prefs[parsed.key] = parsed.value
+          } catch { /* skip */ }
+        }
+        return prefs
+      })
+
     return Service.of({
       saveProfile: saveProfile as any,
       getProfile: getProfile as any,
       listProfiles: listProfiles as any,
       deleteProfile: deleteProfile as any,
       stats: stats as any,
+      saveUserPreference: saveUserPreference as any,
+      getUserPreference: getUserPreference as any,
+      getAllUserPreferences: getAllUserPreferences as any,
     })
   }),
 )

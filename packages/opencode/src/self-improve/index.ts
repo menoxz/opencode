@@ -8,6 +8,7 @@ import { Effect, Context, Layer } from "effect"
 import * as Log from "@opencode-ai/core/util/log"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import * as SelfImproveOptMod from "./optimization-store"
+import * as MemoryMod from "@/memory"
 import type { ParameterProfile, OptimizationStats } from "./optimization-store"
 
 const log = Log.create({ service: "self-improve" })
@@ -49,6 +50,39 @@ export interface SelfImproveReport {
 }
 
 // ---------------------------------------------------------------------------
+// Adaptive Personality Types
+// ---------------------------------------------------------------------------
+
+export interface UserProfile {
+  preferredTools: string[]
+  preferredAgents: string[]
+  commonTaskTypes: string[]
+  communicationStyle: "concise" | "detailed" | "balanced"
+  errorSensitivity: "high" | "medium" | "low"
+  successRateByTaskType: Record<string, number>
+  sessionsCompleted: number
+  lastActive: number
+}
+
+export interface InteractionRecord {
+  sessionId: string
+  taskType: string
+  toolsUsed: string[]
+  agentsUsed: string[]
+  messageLength: "short" | "medium" | "long"
+  assistantResponseLength: "short" | "medium" | "long"
+  success: boolean
+  errorCount: number
+}
+
+export interface PersonalityConfig {
+  verbosity: number
+  toolSuggestions: boolean
+  errorPrevention: "relaxed" | "normal" | "strict"
+  exploration: "conservative" | "balanced" | "aggressive"
+}
+
+// ---------------------------------------------------------------------------
 // Service Interface
 // ---------------------------------------------------------------------------
 
@@ -61,6 +95,11 @@ export interface Interface {
   ) => Effect.Effect<{ temperature?: number; topP?: number; maxOutputTokens?: number; confidence: number }>
   readonly generateTips: () => Effect.Effect<ImprovementTip[]>
   readonly report: () => Effect.Effect<SelfImproveReport>
+
+  // Adaptive personality
+  readonly getUserProfile: () => Effect.Effect<UserProfile>
+  readonly recordInteraction: (interaction: InteractionRecord) => Effect.Effect<void>
+  readonly generatePersonalityConfig: () => Effect.Effect<PersonalityConfig>
 }
 
 // ---------------------------------------------------------------------------
@@ -222,11 +261,177 @@ export const layer = Layer.effect(
       return eff
     }
 
+    // -------------------------------------------------------------------
+    // Adaptive Personality
+    // -------------------------------------------------------------------
+
+    const memory = yield* MemoryMod.Service
+
+    const INTERACTION_TAG = "user-interaction"
+    const DEFAULT_PROJECT = "default"
+
+    const recordInteraction: Interface["recordInteraction"] = (interaction) =>
+      Effect.gen(function* () {
+        yield* memory.store({
+          content: JSON.stringify(interaction),
+          memoryType: "episodic",
+          tags: [INTERACTION_TAG, `session:${interaction.sessionId}`],
+          importance: 0.6,
+          projectId: DEFAULT_PROJECT,
+          source: `interaction/${interaction.sessionId}`,
+          confidence: 1.0,
+        })
+        log.info("interaction recorded", {
+          sessionId: interaction.sessionId,
+          taskType: interaction.taskType,
+          success: interaction.success,
+        })
+      })
+
+    const getUserProfile: Interface["getUserProfile"] = () =>
+      Effect.gen(function* () {
+        // Get stored user preferences
+        const prefs = yield* optStore.getAllUserPreferences()
+
+        // Get all interaction records
+        const items = yield* memory.list({ memoryType: "episodic", pageSize: 200 })
+        const interactions: InteractionRecord[] = []
+        for (const entry of items.entries) {
+          if (!entry.tags.includes(INTERACTION_TAG)) continue
+          try {
+            interactions.push(JSON.parse(entry.content) as InteractionRecord)
+          } catch { /* skip malformed entries */ }
+        }
+
+        const sessionsCompleted = interactions.length
+        const lastActive = sessionsCompleted > 0
+          ? Math.max(...interactions.map((i) => Date.now()))
+          : Date.now()
+
+        // Aggregate preferred tools (top 5 by frequency)
+        const toolCounts = new Map<string, number>()
+        for (const i of interactions) {
+          for (const t of i.toolsUsed) {
+            toolCounts.set(t, (toolCounts.get(t) ?? 0) + 1)
+          }
+        }
+        const preferredTools = [...toolCounts.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 5)
+          .map(([tool]) => tool)
+
+        // Aggregate preferred agents (top 5)
+        const agentCounts = new Map<string, number>()
+        for (const i of interactions) {
+          for (const a of i.agentsUsed) {
+            agentCounts.set(a, (agentCounts.get(a) ?? 0) + 1)
+          }
+        }
+        const preferredAgents = [...agentCounts.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 5)
+          .map(([agent]) => agent)
+
+        // Aggregate common task types (top 5)
+        const taskCounts = new Map<string, number>()
+        for (const i of interactions) {
+          taskCounts.set(i.taskType, (taskCounts.get(i.taskType) ?? 0) + 1)
+        }
+        const commonTaskTypes = [...taskCounts.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 5)
+          .map(([type]) => type)
+
+        // Compute success rate per task type
+        const taskSuccess: Record<string, { success: number; total: number }> = {}
+        for (const i of interactions) {
+          const acc = taskSuccess[i.taskType] ?? { success: 0, total: 0 }
+          acc.total++
+          if (i.success) acc.success++
+          taskSuccess[i.taskType] = acc
+        }
+        const successRateByTaskType: Record<string, number> = {}
+        for (const [type, acc] of Object.entries(taskSuccess)) {
+          successRateByTaskType[type] = acc.total > 0 ? acc.success / acc.total : 0
+        }
+
+        // Communication style from preference or derive from avg message length
+        let communicationStyle: UserProfile["communicationStyle"] = "balanced"
+        const storedStyle = prefs["communication-style"]
+        if (storedStyle === "concise" || storedStyle === "detailed" || storedStyle === "balanced") {
+          communicationStyle = storedStyle
+        } else if (interactions.length >= 3) {
+          const shortCount = interactions.filter((i) => i.messageLength === "short").length
+          const longCount = interactions.filter((i) => i.messageLength === "long").length
+          if (shortCount > longCount && shortCount > interactions.length / 2) {
+            communicationStyle = "concise"
+          } else if (longCount > shortCount && longCount > interactions.length / 2) {
+            communicationStyle = "detailed"
+          }
+        }
+
+        // Error sensitivity from preference or derive from error rate
+        let errorSensitivity: UserProfile["errorSensitivity"] = "medium"
+        const storedSensitivity = prefs["error-sensitivity"]
+        if (storedSensitivity === "high" || storedSensitivity === "medium" || storedSensitivity === "low") {
+          errorSensitivity = storedSensitivity
+        } else if (interactions.length >= 5) {
+          const totalErrors = interactions.reduce((s, i) => s + i.errorCount, 0)
+          const avgErrors = totalErrors / interactions.length
+          if (avgErrors > 2) {
+            errorSensitivity = "high"
+          } else if (avgErrors < 0.5) {
+            errorSensitivity = "low"
+          }
+        }
+
+        return {
+          preferredTools,
+          preferredAgents,
+          commonTaskTypes,
+          communicationStyle,
+          errorSensitivity,
+          successRateByTaskType,
+          sessionsCompleted,
+          lastActive,
+        } satisfies UserProfile
+      })
+
+    const generatePersonalityConfig: Interface["generatePersonalityConfig"] = () =>
+      Effect.gen(function* () {
+        const profile = yield* getUserProfile()
+
+        // Verbosity based on communication style
+        const verbosity = profile.communicationStyle === "concise" ? 0.3
+          : profile.communicationStyle === "detailed" ? 0.8
+          : 0.5
+
+        // Show tool suggestions when user has completed enough sessions
+        const toolSuggestions = profile.sessionsCompleted >= 3
+
+        // Error prevention based on sensitivity
+        const errorPrevention: PersonalityConfig["errorPrevention"] = 
+          profile.errorSensitivity === "high" ? "strict"
+          : profile.errorSensitivity === "low" ? "relaxed"
+          : "normal"
+
+        // Exploration based on experience level
+        const exploration: PersonalityConfig["exploration"] =
+          profile.sessionsCompleted < 5 ? "conservative"
+          : profile.sessionsCompleted > 20 ? "aggressive"
+          : "balanced"
+
+        return { verbosity, toolSuggestions, errorPrevention, exploration } satisfies PersonalityConfig
+      })
+
     return Service.of({
       recordOutcome: recordOutcome as any,
       getOptimalParams: getOptimalParams as any,
       generateTips: generateTips as any,
       report: report as any,
+      getUserProfile: getUserProfile as any,
+      recordInteraction: recordInteraction as any,
+      generatePersonalityConfig: generatePersonalityConfig as any,
     })
   }),
 )

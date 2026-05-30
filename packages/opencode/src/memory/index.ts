@@ -195,11 +195,9 @@ export const layer = Layer.effect(
 
     // Lazy-load sub-services to break circular module init
     const eMod = yield* Effect.promise(() => import("./embedding"))
-    const pMod = yield* Effect.promise(() => import("./post-mortem"))
     const ptMod = yield* Effect.promise(() => import("./patterns"))
 
     const embedding = yield* eMod.Service
-    const postMortem = yield* pMod.Service
     const patterns = yield* ptMod.Service
 
         // ---- store with auto-embedding ----
@@ -381,9 +379,19 @@ export const layer = Layer.effect(
 
     // ---- analyzeSession ----
     const analyzeSession = Effect.fnUntraced(function* (sessionId: string) {
-      const report = yield* postMortem.analyze(sessionId)
+      const pmMod = yield* Effect.promise(() => import("./post-mortem"))
+      const postMortemSvc = yield* Effect.option(Effect.service(pmMod.Service)).pipe(Effect.map((o: any) => o._tag === "Some" ? o.value : null))
+      if (!postMortemSvc) {
+        log.warn("PostMortem service not available — skipping session analysis", { sessionId })
+        return {
+          summary: { sessionId, taskDescription: "", duration: 0, toolsUsed: [], toolCallCount: 0, errors: [], success: true, keyDecisions: [], patternsFound: [], suggestions: [], fileChanges: [], tokenUsage: { input: 0, output: 0, total: 0, cost: 0 } },
+          learnings: [],
+          recommendations: [],
+        }
+      }
+      const report = yield* postMortemSvc.analyze(sessionId)
       // Auto-store learnings
-      const learnings = yield* postMortem.extractLearnings(report)
+      const learnings = yield* postMortemSvc.extractLearnings(report)
       for (const learning of learnings) {
         yield* store_({
           content: learning.content,
@@ -493,7 +501,6 @@ export const layer = Layer.effect(
 export const defaultLayer = layer.pipe(
   Layer.provide(Patterns.layer.pipe(Layer.provideMerge(MemoryStore.layer))),
   Layer.provide(Embedding.layer),
-  Layer.provide(PostMortem.layer),
 )
 
 export const use = serviceUse(Service)

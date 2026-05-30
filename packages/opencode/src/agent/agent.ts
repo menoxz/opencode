@@ -25,6 +25,9 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import * as Option from "effect/Option"
 import * as OtelTracer from "@effect/opentelemetry/Tracer"
 import { type DeepMutable } from "@opencode-ai/core/schema"
+import * as fs from "node:fs"
+import { EffectBridge } from "@/effect/bridge"
+import { isAgentFile, isConfigFile } from "@/hotreload"
 
 export const Info = Schema.Struct({
   name: Schema.String,
@@ -71,9 +74,10 @@ export interface Interface {
     },
     Provider.DefaultModelError
   >
+  readonly reload: () => Effect.Effect<number>
 }
 
-type State = Omit<Interface, "generate">
+type State = Omit<Interface, "generate" | "reload">
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Agent") {}
 
@@ -368,6 +372,45 @@ export const layer = Layer.effect(
       }),
     )
 
+    let watcherCleanup: (() => void) | null = null
+    let bridge: EffectBridge.Shape | null = null
+
+    const reload = Effect.fn("Agent.reload")(function* () {
+      yield* InstanceState.invalidate(state)
+      yield* InstanceState.get(state)
+      // Lazily set up watchers using EffectBridge for callback-to-Effect bridging
+      if (!bridge) bridge = yield* EffectBridge.make().pipe(Effect.catchAll(() => Effect.succeed(null as any)))
+      if (bridge) {
+        if (watcherCleanup) { watcherCleanup(); watcherCleanup = null }
+        const watchers: fs.FSWatcher[] = []
+        const timers = new Map<string, ReturnType<typeof setTimeout>>()
+        const DEBOUNCE_MS = 300
+        const cfgDirs = yield* config.directories()
+        const allDirs = [...new Set([...cfgDirs, Global.Path.config, path.join(Global.Path.config, "agents")])]
+        for (const dir of allDirs) {
+          if (!fs.existsSync(dir)) continue
+          try {
+            const w = fs.watch(dir, { recursive: true }, (eventType, filename) => {
+              if (!filename) return
+              const fp = path.join(dir, filename.toString())
+              clearTimeout(timers.get(fp))
+              timers.set(fp, setTimeout(() => {
+                timers.delete(fp)
+                bridge!.promise(reload()).catch((err) => console.error("agent reload error", err))
+              }, DEBOUNCE_MS))
+            })
+            watchers.push(w)
+          } catch { /* skip unwatchable dirs */ }
+        }
+        watcherCleanup = () => {
+          for (const w of watchers) w.close()
+          for (const t of timers.values()) clearTimeout(t)
+          timers.clear()
+        }
+      }
+      return (yield* InstanceState.useEffect(state, (s) => s.list())).length
+    })
+
     return Service.of({
       get: Effect.fn("Agent.get")(function* (agent: string) {
         return yield* InstanceState.useEffect(state, (s) => s.get(agent))
@@ -381,6 +424,7 @@ export const layer = Layer.effect(
       defaultAgent: Effect.fn("Agent.defaultAgent")(function* () {
         return yield* InstanceState.useEffect(state, (s) => s.defaultAgent())
       }),
+      reload,
       generate: Effect.fn("Agent.generate")(function* (input: {
         description: string
         model?: { providerID: ProviderID; modelID: ModelID }

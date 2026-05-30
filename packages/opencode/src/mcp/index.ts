@@ -31,6 +31,9 @@ import { EffectBridge } from "@/effect/bridge"
 import { InstanceState } from "@/effect/instance-state"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
+import { isConfigFile } from "@/hotreload"
+import * as fs from "fs"
+import path from "path"
 
 const log = Log.create({ service: "mcp" })
 const DEFAULT_TIMEOUT = 30_000
@@ -248,6 +251,7 @@ export interface Interface {
   readonly add: (name: string, mcp: ConfigMCP.Info) => Effect.Effect<{ status: Record<string, Status> | Status }>
   readonly connect: (name: string) => Effect.Effect<void, NotFoundError>
   readonly disconnect: (name: string) => Effect.Effect<void, NotFoundError>
+  readonly reload: () => Effect.Effect<void>
   readonly getPrompt: (
     clientName: string,
     name: string,
@@ -660,6 +664,110 @@ export const layer = Layer.effect(
       s.status[name] = { status: "disabled" }
     })
 
+    // --- Config file watcher for hot-reload ---
+    let mcpWatcherCleanup: (() => void) | null = null
+
+    const setupMcpWatchers = Effect.fnUntraced(function* () {
+      if (mcpWatcherCleanup) { mcpWatcherCleanup(); mcpWatcherCleanup = null }
+
+      const cfgDirs = yield* cfgSvc.directories()
+      const allDirs = [...new Set(cfgDirs)]
+
+      const watchers: fs.FSWatcher[] = []
+      const timers = new Map<string, ReturnType<typeof setTimeout>>()
+      const bridge = yield* EffectBridge.make()
+      const DEBOUNCE_MS = 300
+
+      const handleChange = (fp: string) => {
+        if (isConfigFile(fp)) {
+          log.info("config file change detected, reloading MCP", { file: fp })
+          bridge.promise(reload()).catch((err) => log.error("MCP reload error", { err }))
+        }
+      }
+
+      for (const dir of allDirs) {
+        if (!fs.existsSync(dir)) continue
+        try {
+          const w = fs.watch(dir, { recursive: false }, (eventType, filename) => {
+            if (!filename) return
+            const fp = path.join(dir, filename.toString())
+            clearTimeout(timers.get(fp))
+            timers.set(
+              fp,
+              setTimeout(() => {
+                timers.delete(fp)
+                handleChange(fp)
+              }, DEBOUNCE_MS),
+            )
+          })
+          watchers.push(w)
+        } catch (err) {
+          log.warn("cannot watch config directory", { dir, err })
+        }
+      }
+
+      mcpWatcherCleanup = () => {
+        for (const w of watchers) w.close()
+        for (const t of timers.values()) clearTimeout(t)
+        timers.clear()
+      }
+
+      if (allDirs.length > 0) log.info("MCP config watchers active", { dirs: allDirs.length })
+    })
+
+    // Initial watcher setup (resilient: InstanceRef may not be available yet)
+    yield* setupMcpWatchers().pipe(Effect.catchCause(() => Effect.void))
+
+    const reload = Effect.fn("MCP.reload")(function* () {
+      log.info("reloading MCP servers from config")
+      const s = yield* InstanceState.get(state)
+      const cfg = yield* cfgSvc.get()
+      const config = cfg.mcp ?? {}
+
+      // Disconnect servers no longer in config
+      for (const name of Object.keys(s.clients)) {
+        if (!config[name] || !isMcpConfigured(config[name])) {
+          yield* closeClient(s, name)
+          delete s.clients[name]
+          delete s.defs[name]
+          s.status[name] = { status: "disabled" }
+        }
+      }
+
+      // Connect new servers or reconnect changed ones
+      for (const [key, mcp] of Object.entries(config)) {
+        if (!isMcpConfigured(mcp)) continue
+        if (mcp.enabled === false) {
+          if (s.clients[key]) {
+            yield* closeClient(s, key)
+            delete s.clients[key]
+            delete s.defs[key]
+          }
+          s.status[key] = { status: "disabled" }
+          continue
+        }
+
+        // Reconnect if not connected or if it was previously disabled/failed
+        if (!s.clients[key]) {
+          const result = yield* create(key, mcp).pipe(Effect.catch(() => Effect.void))
+          if (result) {
+            s.status[key] = result.status
+            if (result.mcpClient) {
+              const bridge = yield* EffectBridge.make()
+              yield* closeClient(s, key)
+              s.clients[key] = result.mcpClient
+              s.defs[key] = result.defs!
+              watch(s, key, result.mcpClient, bridge, mcp.timeout)
+            }
+          }
+        }
+      }
+
+      // Re-establish config watchers
+      yield* setupMcpWatchers().pipe(Effect.catchCause(() => Effect.void))
+      log.info("MCP reload complete")
+    })
+
     const tools = Effect.fn("MCP.tools")(function* () {
       const result: Record<string, Tool> = {}
       const s = yield* InstanceState.get(state)
@@ -943,6 +1051,7 @@ export const layer = Layer.effect(
       add,
       connect,
       disconnect,
+      reload,
       getPrompt,
       readResource,
       startAuth,
