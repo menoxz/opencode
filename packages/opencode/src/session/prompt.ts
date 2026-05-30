@@ -7,6 +7,7 @@ import { SessionRevert } from "./revert"
 import { TriggerHandler } from "../daemon/trigger-handler"
 import { readUnacknowledged, acknowledgeAll } from "../daemon/notifications"
 import * as AutoMemory from "../daemon/auto-memory"
+import * as Memory from "@/memory"
 import * as Session from "./session"
 import { Agent } from "../agent/agent"
 import { Provider } from "@/provider/provider"
@@ -16,6 +17,7 @@ import type { JSONSchema7 } from "@ai-sdk/provider"
 import { SessionCompaction } from "./compaction"
 import { Bus } from "../bus"
 import { SystemPrompt } from "./system"
+import { SelfImprove } from "@/self-improve"
 import { Instruction } from "./instruction"
 import { Plugin } from "../plugin"
 import MAX_STEPS from "../session/prompt/max-steps.txt"
@@ -48,6 +50,8 @@ import { Cause, Effect, Exit, Latch, Layer, Option, Scope, Context, Schema, Type
 import * as EffectLogger from "@opencode-ai/core/effect/logger"
 import { InstanceState } from "@/effect/instance-state"
 import { TaskTool, type TaskPromptOps } from "@/tool/task"
+import { PlanEngine, type ExecutionPlan } from "@/plan-engine"
+import * as PostMortem from "@/memory/post-mortem"
 import { SessionRunState } from "./run-state"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -187,6 +191,50 @@ function formatLearningsSection(): string {
   ].join("\n")
 }
 
+/**
+ * Format an execution plan as an XML section for the system prompt.
+ * The plan is purely instructional — the LLM decides whether to follow it.
+ */
+function formatPlanSection(plan: ExecutionPlan): string {
+  const stepLines = plan.steps.flatMap((step, i) => {
+    const lines = [
+      `    <step index="${i + 1}" id="${xmlEscape(step.id)}">`,
+      `      <description>${xmlEscape(step.description)}</description>`,
+      `      <agent>${xmlEscape(step.agent)}</agent>`,
+    ]
+    if (step.depends.length > 0) {
+      lines.push(`      <depends>${step.depends.map(xmlEscape).join(", ")}</depends>`)
+    }
+    lines.push(`    </step>`)
+    return lines
+  })
+
+  const groupLines = plan.parallelGroups.map(
+    (group, i) => `    <group index="${i + 1}">${group.map(xmlEscape).join(", ")}</group>`,
+  )
+
+  return [
+    "",
+    `<auto_plan>`,
+    `A structured execution plan has been generated to help you organize this complex task:`,
+    `  <goal>${xmlEscape(plan.goal)}</goal>`,
+    `  <complexity>${plan.complexity}</complexity>`,
+    `  <estimatedTokens>${plan.estimatedTokens}</estimatedTokens>`,
+    `  <steps>`,
+    ...stepLines,
+    `  </steps>`,
+    `  <parallelGroups>`,
+    ...groupLines,
+    `  </parallelGroups>`,
+    `  <instruction>`,
+    `  This is a suggested plan — you may follow it, adapt it, or ignore it.`,
+    `  Use the task tool to delegate steps to sub-agents for parallel execution.`,
+    `  </instruction>`,
+    `</auto_plan>`,
+    "",
+  ].join("\n")
+}
+
 function xmlEscape(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
 }
@@ -242,6 +290,9 @@ export const layer = Layer.effect(
     const references = yield* Reference.Service
     const events = yield* EventV2Bridge.Service
     const flags = yield* RuntimeFlags.Service
+    const memory = yield* Memory.Service
+    const planEngine = yield* PlanEngine.Service
+    const selfImprove = yield* Effect.serviceOption(SelfImprove.Service).pipe(Effect.map(Option.getOrUndefined))
 
     const ops = Effect.fn("SessionPrompt.ops")(function* () {
       return {
@@ -1442,6 +1493,32 @@ export const layer = Layer.effect(
             continue
           }
 
+          // ── Auto-planning for complex tasks ──────────────────────────
+          // On the first step of the `build` agent, check if the task is complex
+          // and generate a structured execution plan as guidance for the LLM.
+          let executionPlan: ExecutionPlan | undefined
+          if (step === 1 && lastUser.agent === "build") {
+            const firstUserMsg = msgs.find((m) => m.info.role === "user")
+            const firstUserText = firstUserMsg?.parts
+              .filter((p) => p.type === "text" && !p.synthetic)
+              .map((p) => (p as MessageV2.TextPart).text)
+              .join("\n") ?? ""
+            if (firstUserText) {
+              const complexity = PlanEngine.heuristicComplexity(firstUserText)
+              if (complexity === "complex") {
+                yield* slog.info("auto-planning triggered for complex task")
+                const plan = yield* planEngine.generatePlan(firstUserText).pipe(Effect.option)
+                if (Option.isSome(plan)) {
+                  executionPlan = plan.value
+                  yield* slog.info("execution plan generated", {
+                    steps: executionPlan.steps.length,
+                    parallelGroups: executionPlan.parallelGroups.length,
+                  })
+                }
+              }
+            }
+          }
+
           const agent = yield* agents.get(lastUser.agent)
           if (!agent) {
             const available = (yield* agents.list()).filter((a) => !a.hidden).map((a) => a.name)
@@ -1557,6 +1634,10 @@ export const layer = Layer.effect(
               const adaptive = yield* sys.adaptivePrompt({ messages: msgs, agent })
               if (adaptive) system.push(adaptive)
 
+              // Inject personality context (learned user preferences)
+              const personality = yield* sys.personality()
+              if (personality) system.push(personality)
+
               // Pending trigger tasks from background daemon
               const pendingTasks = yield* Effect.sync(() => TriggerHandler.listPendingTasks())
               if (pendingTasks.length > 0) {
@@ -1577,6 +1658,11 @@ export const layer = Layer.effect(
                 system.push(learningsSection)
                 // Acknowledge learnings so they don't reappear next session
                 yield* Effect.sync(() => AutoMemory.acknowledgeAllLearnings())
+              }
+
+              // Auto-generated execution plan for complex tasks (guidance only)
+              if (executionPlan) {
+                system.push(formatPlanSection(executionPlan))
               }
             }
             const format = lastUser.format ?? { type: "text" as const }
@@ -1633,6 +1719,33 @@ export const layer = Layer.effect(
         }
 
         yield* compaction.prune({ sessionID }).pipe(Effect.ignore, Effect.forkIn(scope))
+
+        // Auto post-mortem (non-blocking, fire-and-forget)
+        // Uses the `memory` service captured during layer construction
+        yield* Effect.forkIn(scope)(
+          Effect.gen(function* () {
+            const report = yield* memory.analyzeSession(sessionID)
+            log.info("auto post-mortem completed", {
+              sessionID,
+              learningsStored: report.learnings.length,
+              success: report.summary.success,
+            })
+          }).pipe(Effect.ignore),
+        )
+
+        // Record interaction for adaptive personality (non-blocking)
+        if (selfImprove) {
+          yield* Effect.gen(function* () {
+            const lastMsg = yield* lastAssistant(sessionID)
+            if (lastMsg.parts.length > 1) {
+              yield* selfImprove.recordInteraction({
+                sessionId: sessionID, taskType: "general", toolsUsed: [],
+                agentsUsed: [], messageLength: "medium",
+                assistantResponseLength: "medium", success: true, errorCount: 0,
+              })
+            }
+          }).pipe(Effect.ignore, Effect.forkIn(scope))
+        }
 
         return yield* lastAssistant(sessionID)
       },
@@ -1807,10 +1920,13 @@ export const defaultLayer = Layer.suspend(() =>
         SystemPrompt.defaultLayer,
         LLM.defaultLayer,
         Reference.defaultLayer,
+        Memory.defaultLayer,
+        PlanEngine.defaultLayer,
 
         Bus.layer,
         CrossSpawnSpawner.defaultLayer,
         RuntimeFlags.defaultLayer,
+        PostMortem.defaultLayer,
       ),
     ),
   ),

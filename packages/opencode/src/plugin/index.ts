@@ -53,6 +53,7 @@ export interface Interface {
   ) => Effect.Effect<Output>
   readonly list: () => Effect.Effect<Hooks[]>
   readonly init: () => Effect.Effect<void>
+  readonly reload: () => Effect.Effect<void>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Plugin") {}
@@ -284,7 +285,16 @@ export const layer = Layer.effect(
       yield* InstanceState.get(state)
     })
 
-    return Service.of({ trigger, list, init })
+    const reload = Effect.fn("Plugin.reload")(function* () {
+      log.info("Reloading plugins...")
+      // Invalidate the cached state so the next get() re-runs the full init
+      yield* InstanceState.invalidate(state)
+      // Force re-initialization with fresh config
+      yield* InstanceState.get(state)
+      log.info("Plugins reloaded successfully")
+    })
+
+    return Service.of({ trigger, list, init, reload })
   }),
 )
 

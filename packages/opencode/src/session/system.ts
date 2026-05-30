@@ -1,39 +1,23 @@
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Option } from "effect"
 
 import { InstanceState } from "@/effect/instance-state"
 
-import PROMPT_ANTHROPIC from "./prompt/anthropic.txt"
-import PROMPT_DEFAULT from "./prompt/default.txt"
-import PROMPT_BEAST from "./prompt/beast.txt"
-import PROMPT_GEMINI from "./prompt/gemini.txt"
-import PROMPT_GPT from "./prompt/gpt.txt"
-import PROMPT_KIMI from "./prompt/kimi.txt"
-
-import PROMPT_CODEX from "./prompt/codex.txt"
-import PROMPT_DEEPSEEK from "./prompt/deepseek.txt"
-import PROMPT_TRINITY from "./prompt/trinity.txt"
+import PROMPT_CORE from "./prompt/core.txt"
 import type { Provider } from "@/provider/provider"
 import type { Agent } from "@/agent/agent"
 import { Permission } from "@/permission"
 import { Skill } from "@/skill"
 import { PromptComposer } from "@/prompt-composer"
+import { SelfImprove } from "@/self-improve"
 import type { MessageV2 } from "./message-v2"
 
-export function provider(model: Provider.Model) {
-  if (model.api.id.includes("gpt-4") || model.api.id.includes("o1") || model.api.id.includes("o3"))
-    return [PROMPT_BEAST]
-  if (model.api.id.includes("gpt")) {
-    if (model.api.id.includes("codex")) {
-      return [PROMPT_CODEX]
-    }
-    return [PROMPT_GPT]
-  }
-  if (model.api.id.includes("gemini-")) return [PROMPT_GEMINI]
-  if (model.api.id.includes("claude")) return [PROMPT_ANTHROPIC]
-  if (model.api.id.toLowerCase().includes("deepseek")) return [PROMPT_DEEPSEEK]
-  if (model.api.id.toLowerCase().includes("trinity")) return [PROMPT_TRINITY]
-  if (model.api.id.toLowerCase().includes("kimi")) return [PROMPT_KIMI]
-  return [PROMPT_DEFAULT]
+/**
+ * Single unified system prompt for all models.
+ * All model-specific variations removed — the core.txt contains only
+ * method-level instructions. Everything else is loaded via skills on demand.
+ */
+export function provider(_model: Provider.Model): string[] {
+  return [PROMPT_CORE]
 }
 
 export interface Interface {
@@ -44,6 +28,8 @@ export interface Interface {
     messages: MessageV2.WithParts[]
     agent: Agent.Info
   }) => Effect.Effect<string | undefined>
+  /** Personality context section — learned user preferences for prompt adaptation. */
+  readonly personality: () => Effect.Effect<string | undefined>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/SystemPrompt") {}
@@ -53,6 +39,7 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const skill = yield* Skill.Service
     const promptComposer = yield* PromptComposer.Service
+    const selfImprove = yield* Effect.serviceOption(SelfImprove.Service).pipe(Effect.map(Option.getOrUndefined))
 
     return Service.of({
       environment: Effect.fn("SystemPrompt.environment")(function* (model: Provider.Model) {
@@ -108,7 +95,6 @@ export const layer = Layer.effect(
         if (detected.confidence < 0.3) return
 
         // Compose adaptive system prompt using the full composer pipeline
-        // We pass only what we have available in this context
         const composed = yield* promptComposer.compose({
           basePrompt: "",
           taskMessage: lastUserText,
@@ -126,6 +112,39 @@ export const layer = Layer.effect(
           taskPrompt,
           `</task_context>`,
         ].join("\n")
+      }),
+
+      personality: Effect.fn("SystemPrompt.personality")(function* () {
+        if (!selfImprove) return
+        const profile = yield* selfImprove.getUserProfile()
+
+        // Only inject personality context when enough session data exists
+        if (profile.sessionsCompleted < 3) return
+
+        const config = yield* selfImprove.generatePersonalityConfig()
+
+        const lines: string[] = [
+          `<personality_context>`,
+          `  <verbosity level="${config.verbosity.toFixed(1)}">${profile.communicationStyle}</verbosity>`,
+          `  <tool_suggestions enabled="${config.toolSuggestions}" />`,
+          `  <error_prevention level="${config.errorPrevention}" />`,
+          `  <exploration mode="${config.exploration}" />`,
+        ]
+
+        if (profile.preferredTools.length > 0) {
+          lines.push(`  <preferred_tools>${profile.preferredTools.join(", ")}</preferred_tools>`)
+        }
+        if (profile.commonTaskTypes.length > 0) {
+          lines.push(`  <common_tasks>${profile.commonTaskTypes.join(", ")}</common_tasks>`)
+        }
+        if (profile.preferredAgents.length > 0) {
+          lines.push(`  <preferred_agents>${profile.preferredAgents.join(", ")}</preferred_agents>`)
+        }
+
+        lines.push(`  <sessions_completed>${profile.sessionsCompleted}</sessions_completed>`)
+        lines.push(`</personality_context>`)
+
+        return lines.join("\n")
       }),
     })
   }),

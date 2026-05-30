@@ -1,6 +1,13 @@
 <task-instruction type="feature">
 Build new functionality following a structured approach.
 
+## AUTO-PLANNING
+For complex multi-step feature implementations, the PlanEngine may generate a suggested
+execution plan (injected as <auto_plan> in your system prompt). Use this plan as guidance:
+- Review the suggested steps and adapt as needed
+- Delegate independent steps to sub-agents via the task tool for parallel execution
+- The plan is advisory — use your judgment to reorder or consolidate steps
+
 ## FIRST STEP — Cherche la bonne approche en ligne
 Avant d'écrire la première ligne de code :
 - Cherche les meilleures pratiques pour cette fonctionnalité

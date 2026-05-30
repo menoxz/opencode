@@ -34,6 +34,7 @@ import { ProviderID, ModelID } from "@/provider/schema"
 import { ToolJsonSchema } from "@/tool/json-schema"
 import { MessageID, SessionID } from "@/session/schema"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { Orchestrator } from "@/orchestrator"
 
 const node = CrossSpawnSpawner.defaultLayer
 const configLayer = TestConfig.layer({
@@ -67,7 +68,9 @@ const registryLayer = (opts: RegistryLayerOptions = {}) =>
       Layer.provide(Format.defaultLayer),
       Layer.provide(node),
       Layer.provide(Ripgrep.defaultLayer),
-      Layer.provide(Truncate.defaultLayer),
+      Layer.provide(Layer.mergeAll(Truncate.defaultLayer, Layer.succeed(Orchestrator.Service, {
+        plan: () => Effect.succeed({ success: true, results: [], totalDurationMs: 0, failedSteps: [] }),
+      }))),
     )
     .pipe(Layer.provide(RuntimeFlags.layer(opts.flags ?? {})))
 
@@ -78,6 +81,7 @@ const brokenPluginLayer = Layer.succeed(
   Plugin.Service,
   Plugin.Service.of({
     init: () => Effect.void,
+    reload: () => Effect.void,
     trigger: ((_name: unknown, _input: unknown, output: unknown) =>
       Effect.succeed(output)) as Plugin.Interface["trigger"],
     list: () =>
