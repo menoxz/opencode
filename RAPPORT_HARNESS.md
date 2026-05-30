@@ -3,7 +3,9 @@
 **Session** : 2026-05-30
 **Branche** : `dev`
 **Commit de départ** : `218269910` feat(system): add PromptComposer adaptive prompts
-**Commits réalisés** : 4 commits
+**Dernier commit** : `9c59635ff` fix: resolve typecheck errors in runner tests and bump to 1.17.1
+**Commits réalisés** : 6 commits
+**Version build** : 1.17.1 ✅ (`opencode --version`)
 
 ---
 
@@ -203,8 +205,23 @@
 | `6667be5df` | test(runner): add 15 edge case and stress tests | 1 file | +247 |
 | `766b3a630` | feat(daemon): add parallel task execution and rate limiting | 1 file | +192/-27 |
 | `eea7e0fbb` | ci(eval): add automated eval benchmark workflow | 2 files | +85 |
+| `9c59635ff` | fix: resolve typecheck errors in runner tests and bump to 1.17.1 | 2 files | +1/-3 |
+| `9691c180d` | docs: add harness improvement report (RAPPORT_HARNESS.md) | 1 file | +220 |
 
-**Total** : +1308 lignes, -171 lignes, 5 commits, 4 sous-agents
+**Total** : +1529 lignes, -174 lignes, 7 commits, 4 sous-agents
+
+## Build & Installation
+
+| Étape | Statut | Détail |
+|-------|--------|--------|
+| Build (`bun run script/build.ts --single`) | ✅ | Compilation réussie |
+| Smoke test (`--version`) | ✅ | Version `1.17.1` |
+| Copie vers npm global | ✅ | `→ C:\Users\jeanl\AppData\Roaming\npm\node_modules\opencode-ai\bin\opencode.exe` |
+| Vérification (`opencode --version`) | ✅ | `1.17.1` |
+| Typecheck | ✅ | `tsgo --noEmit` — 0 erreurs |
+| Tests Runner | ✅ | 40/40 |
+| Tests Pipeline | ✅ | 34/34 |
+| Tests Eval | ✅ | 34/34 |
 
 ---
 
