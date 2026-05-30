@@ -41,6 +41,12 @@ export interface ExpectedBehavior {
   requiredActions?: string[]
   /** Patterns that indicate failure if present. */
   antiPatterns?: string[]
+  /**
+   * Optional shell command that functionally validates this behavior.
+   * Runs via `child_process.execSync`. Exit code 0 = pass, non-zero = fail.
+   * When set, `autoEvaluate` runs this command instead of keyword matching.
+   */
+  validationCommand?: string
 }
 
 /** A single eval scenario definition. */
@@ -112,10 +118,12 @@ const helloWorld: EvalScenario = {
       requiredKeywords: ["hello_eval.py"],
       requiredActions: ["write"],
       antiPatterns: ["error", "fail"],
+      validationCommand: `node -e "require('fs').existsSync('hello_eval.py') && process.exit(0) || process.exit(1)"`,
     },
     {
       description: "Output contains the greeting",
       requiredKeywords: ["Hello, Eval Framework!"],
+      validationCommand: `node -e "const c = require('fs').readFileSync('hello_eval.py','utf-8'); c.includes('Hello, Eval Framework!') ? process.exit(0) : process.exit(1)"`,
     },
   ],
   category: "code-generation",
@@ -137,6 +145,7 @@ const fixSyntaxError: EvalScenario = {
       description: "Fixes the syntax error (remove semicolon after for condition)",
       requiredKeywords: ["fixed_calculate.js"],
       antiPatterns: ["for.*;.*;"],
+      validationCommand: `node -e "try { require('./fixed_calculate.js') } catch(e) { process.exit(1) }"`,
     },
     {
       description: "Produces valid JavaScript",
@@ -162,6 +171,7 @@ const refactorToArrow: EvalScenario = {
       description: "Uses arrow functions",
       requiredKeywords: ["=>"],
       antiPatterns: ["function add", "function multiply"],
+      validationCommand: `node -e "const m = require('./arrow_refactored.js'); typeof m === 'function' ? process.exit(0) : process.exit(1)"`,
     },
     {
       description: "Preserves correct logic",
@@ -186,6 +196,7 @@ const writeUnitTest: EvalScenario = {
     {
       description: "Creates a test file",
       requiredKeywords: ["test_calculator.py", "pytest", "def test_"],
+      validationCommand: `node -e "require('fs').existsSync('test_calculator.py') ? process.exit(0) : process.exit(1)"`,
     },
     {
       description: "Tests the divide function",

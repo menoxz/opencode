@@ -11,6 +11,9 @@
  * @module eval
  */
 
+import { execSync } from "node:child_process"
+import * as fs from "node:fs"
+import * as path from "node:path"
 import { Effect, Context, Layer } from "effect"
 import * as Log from "@opencode-ai/core/util/log"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
@@ -25,7 +28,9 @@ import {
   getScenario,
   getSuite,
   listScenarios,
+  type ExpectedBehavior,
 } from "./scenario"
+import { createSandbox, type SandboxOptions } from "./sandbox"
 import * as EvalMetricsMod from "./metrics"
 import type { EvalRunReport, EvalComparison, ScenarioMetrics } from "./metrics"
 
@@ -69,38 +74,113 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/Ev
 // Helpers
 // ---------------------------------------------------------------------------
 
+/** Result of running a validation command. */
+export interface ValidationResult {
+  passed: boolean
+  stdout: string
+  stderr: string
+  exitCode: number | null
+}
+
+/**
+ * Run a validation command synchronously and return pass/fail.
+ * Uses `child_process.execSync` under the hood.
+ *
+ * @param command - Shell command to execute
+ * @param cwd - Working directory to run the command in
+ * @returns ValidationResult with exit code and output
+ */
+export function validate(command: string, cwd?: string): ValidationResult {
+  const result: ValidationResult = { passed: false, stdout: "", stderr: "", exitCode: null }
+  try {
+    const out = execSync(command, {
+      cwd,
+      encoding: "utf-8",
+      timeout: 30_000,
+      stdio: "pipe",
+    })
+    result.passed = true
+    result.stdout = (out ?? "").toString()
+    result.exitCode = 0
+  } catch (err: unknown) {
+    if (err && typeof err === "object" && "status" in err) {
+      result.exitCode = (err as { status: number }).status
+    }
+    if (err && typeof err === "object" && "stdout" in err) {
+      result.stdout = ((err as { stdout: string }).stdout ?? "").toString()
+    }
+    if (err && typeof err === "object" && "stderr" in err) {
+      result.stderr = ((err as { stderr: string }).stderr ?? "").toString()
+    }
+    result.passed = false
+  }
+  return result
+}
+
+/**
+ * Evaluate a single expected behavior using functional validation (if available)
+ * or keyword/action matching as fallback.
+ */
+export function evaluateBehavior(
+  behavior: ExpectedBehavior,
+  output: string,
+  toolCalls: string[],
+  cwd?: string,
+): boolean {
+  // If behavior has a validation command AND we have a working directory, run it
+  if (behavior.validationCommand && cwd) {
+    const result = validate(behavior.validationCommand, cwd)
+    return result.passed
+  }
+
+  // Fallback: keyword + action + anti-pattern matching
+  let passed = true
+
+  if (behavior.requiredKeywords && behavior.requiredKeywords.length > 0) {
+    const found = behavior.requiredKeywords.some((kw) =>
+      output.toLowerCase().includes(kw.toLowerCase()),
+    )
+    if (!found) passed = false
+  }
+
+  if (behavior.requiredActions && behavior.requiredActions.length > 0) {
+    const found = behavior.requiredActions.some((action) =>
+      toolCalls.some((t) => t.includes(action)),
+    )
+    if (!found) passed = false
+  }
+
+  if (behavior.antiPatterns && behavior.antiPatterns.length > 0) {
+    const found = behavior.antiPatterns.some((ap) =>
+      output.toLowerCase().includes(ap.toLowerCase()),
+    )
+    if (found) passed = false
+  }
+
+  return passed
+}
+
 /**
  * Auto-evaluate whether a scenario succeeded based on expected behaviors.
+ * Uses functional validation (runs commands) when `validationCommand` is set
+ * and `cwd` is provided. Falls back to keyword matching otherwise.
+ *
+ * @param scenario - The scenario to evaluate
+ * @param output - The agent's output text
+ * @param toolCalls - List of tool calls made by the agent
+ * @param cwd - Optional working directory for running validation commands
  */
-export function autoEvaluate(scenario: EvalScenario, output: string, toolCalls: string[]): { matched: number; total: number } {
+export function autoEvaluate(
+  scenario: EvalScenario,
+  output: string,
+  toolCalls: string[],
+  cwd?: string,
+): { matched: number; total: number } {
   let matched = 0
   const total = scenario.expectedBehaviors.length
 
   for (const behavior of scenario.expectedBehaviors) {
-    let passed = true
-
-    if (behavior.requiredKeywords && behavior.requiredKeywords.length > 0) {
-      const found = behavior.requiredKeywords.some((kw) =>
-        output.toLowerCase().includes(kw.toLowerCase()),
-      )
-      if (!found) passed = false
-    }
-
-    if (behavior.requiredActions && behavior.requiredActions.length > 0) {
-      const found = behavior.requiredActions.some((action) =>
-        toolCalls.some((t) => t.includes(action)),
-      )
-      if (!found) passed = false
-    }
-
-    if (behavior.antiPatterns && behavior.antiPatterns.length > 0) {
-      const found = behavior.antiPatterns.some((ap) =>
-        output.toLowerCase().includes(ap.toLowerCase()),
-      )
-      if (found) passed = false
-    }
-
-    if (passed) matched++
+    if (evaluateBehavior(behavior, output, toolCalls, cwd)) matched++
   }
 
   return { matched, total }
@@ -123,6 +203,7 @@ export function simulateScenario(
     }
   }
 
+  // Simulation: no cwd, so validation commands fall back to keyword matching
   const { matched, total } = autoEvaluate(scenario, output, toolCalls)
   const completedAt = Date.now()
   const durationMs = completedAt - startedAt
@@ -143,6 +224,42 @@ export function simulateScenario(
     startedAt,
     completedAt,
   }
+}
+
+/**
+ * Run a scenario inside a sandboxed temporary directory.
+ *
+ * Creates an isolated temp directory with `createSandbox`, writes the
+ * scenario's `setupFiles` into it (if any), runs the scenario simulation,
+ * then cleans up the sandbox (unless `cleanup: false` is set).
+ *
+ * @param scenario - The scenario to execute
+ * @param opts - Execution options (mode, timeout, etc.)
+ * @param sandboxOpts - Sandbox isolation options
+ */
+export function executeScenarioInSandbox(
+  scenario: EvalScenario,
+  opts: EvalRunOptions,
+  sandboxOpts?: SandboxOptions & { writeSetupFiles?: boolean },
+): Effect.Effect<ScenarioResult> {
+  return createSandbox((sandboxDir) =>
+    Effect.gen(function* () {
+      // Write setupFiles into the sandbox directory if provided
+      if (scenario.setupFiles && sandboxOpts?.writeSetupFiles !== false) {
+        for (const file of scenario.setupFiles) {
+          const filePath = path.join(sandboxDir, file.path)
+          const dirName = path.dirname(filePath)
+          if (dirName !== sandboxDir) {
+            fs.mkdirSync(dirName, { recursive: true })
+          }
+          fs.writeFileSync(filePath, file.content)
+        }
+      }
+
+      return simulateScenario(scenario, opts)
+    }),
+    sandboxOpts,
+  )
 }
 
 // ---------------------------------------------------------------------------
