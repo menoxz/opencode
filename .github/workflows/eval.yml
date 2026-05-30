@@ -1,0 +1,84 @@
+name: eval
+
+on:
+  push:
+    branches:
+      - dev
+  pull_request:
+    branches:
+      - dev
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ format('{0}-{1}', github.workflow, github.event.pull_request.number || github.ref) }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/dev' }}
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  lint-typecheck:
+    name: lint + typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Run lint
+        run: bun run lint
+
+      - name: Run typecheck
+        run: bun typecheck
+
+  eval-tests:
+    name: eval tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Run eval tests
+        working-directory: packages/opencode
+        run: bun test src/eval/eval.test.ts
+
+  eval-benchmark:
+    name: eval benchmark (sanity)
+    runs-on: ubuntu-latest
+    needs: [lint-typecheck, eval-tests]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Run sanity benchmark
+        working-directory: packages/opencode
+        run: |
+          mkdir -p .artifacts
+          opencode eval run sanity > .artifacts/eval-report.txt 2>&1 || true
+
+      - name: Upload eval report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: eval-report-${{ github.run_attempt }}
+          path: packages/opencode/.artifacts/eval-report.txt
+          if-no-files-found: ignore
+          retention-days: 7
