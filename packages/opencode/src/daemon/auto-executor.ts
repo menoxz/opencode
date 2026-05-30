@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, Option } from "effect"
 import * as Log from "@opencode-ai/core/util/log"
 import { spawn, type ChildProcess } from "node:child_process"
 import * as fs from "node:fs"
@@ -15,6 +15,8 @@ const log = Log.create({ service: "daemon.auto-executor" })
 
 const TASK_TIMEOUT_MS = 10 * 60 * 1000 // 10 minutes max per task
 const MAX_RETRIES = 3 // Give up after this many failed attempts
+const BINARY_HEALTH_TIMEOUT_MS = 5000
+const BINARY_HEALTH_CACHE_INTERVAL_MS = 5 * 60 * 1000 // 5 minutes
 
 // ── Type for the headless result ─────────────────────────────────────────
 
@@ -38,6 +40,73 @@ export interface HeadlessResult {
 
 let currentProcess: ChildProcess | null = null
 let currentTaskId: string | null = null
+let lastVerifiedBinary: string | null = null
+let lastVerifiedTimestamp = 0
+
+// ── Async subprocess helper ───────────────────────────────────────────────
+
+/**
+ * Spawn a shell command and capture stdout/stderr/exitCode.
+ * Never rejects — always resolves with a result object.
+ */
+function execAsync(
+  cmd: string,
+  opts: { cwd: string; timeout?: number },
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  return new Promise((resolve) => {
+    const proc = spawn(cmd, [], {
+      cwd: opts.cwd,
+      shell: true,
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    })
+    const stdoutChunks: string[] = []
+    const stderrChunks: string[] = []
+    proc.stdout?.on("data", (chunk: Buffer) => stdoutChunks.push(chunk.toString()))
+    proc.stderr?.on("data", (chunk: Buffer) => stderrChunks.push(chunk.toString()))
+
+    let timedOut = false
+    const timer = opts.timeout
+      ? setTimeout(() => {
+          timedOut = true
+          try { proc.kill("SIGTERM") } catch { /* best-effort */ }
+        }, opts.timeout)
+      : undefined
+
+    const cleanup = () => { if (timer) clearTimeout(timer) }
+
+    proc.on("exit", (exitCode) => {
+      cleanup()
+      resolve({
+        stdout: stdoutChunks.join(""),
+        stderr: stderrChunks.join(""),
+        exitCode: timedOut ? -1 : (exitCode ?? -1),
+      })
+    })
+    proc.on("error", (err) => {
+      cleanup()
+      resolve({
+        stdout: stdoutChunks.join(""),
+        stderr: err.message,
+        exitCode: -1,
+      })
+    })
+  })
+}
+
+/**
+ * Safe Effect wrapper around execAsync that absorbs errors into a fallback.
+ * Returns Effect<..., never> so it composes cleanly inside Effect.gen.
+ */
+function execSafe(
+  cmd: string,
+  opts: { cwd: string; timeout?: number },
+): Effect.Effect<{ stdout: string; stderr: string; exitCode: number }> {
+  return Effect.promise(() => execAsync(cmd, opts)).pipe(
+    Effect.option,
+    Effect.map((opt) => opt._tag === "Some" ? opt.value : { stdout: "", stderr: "", exitCode: -1 }),
+  )
+}
 
 // ── Repo context helpers ─────────────────────────────────────────────────
 
@@ -47,124 +116,128 @@ interface RepoContext {
   uncommittedChanges: boolean
 }
 
-function getRepoContext(cwd: string): RepoContext {
-  const ctx: RepoContext = {
-    recentCommits: "(could not read git log)",
-    typecheckStatus: "(could not run typecheck)",
-    uncommittedChanges: false,
-  }
+function getRepoContext(cwd: string): Effect.Effect<RepoContext> {
+  return Effect.gen(function* () {
+    const ctx: RepoContext = {
+      recentCommits: "(could not read git log)",
+      typecheckStatus: "(could not run typecheck)",
+      uncommittedChanges: false,
+    }
 
-  try {
-    const { execSync } = require("node:child_process")
-    ctx.recentCommits = execSync("git log --oneline -5", { cwd, encoding: "utf-8", timeout: 5000 }).trim()
-  } catch { /* best-effort */ }
+    // Git log — best effort
+    const logResult = yield* execSafe("git log --oneline -5", { cwd, timeout: 5000 })
+    if (logResult.exitCode === 0 && logResult.stdout) {
+      ctx.recentCommits = logResult.stdout.trim()
+    }
 
-  try {
-    ctx.uncommittedChanges = hasUncommittedChanges(cwd)
-  } catch { /* best-effort */ }
+    // Uncommitted changes — best effort (sync call is fine inside Effect.gen)
+    try {
+      ctx.uncommittedChanges = hasUncommittedChanges(cwd)
+    } catch { /* best-effort */ }
 
-  // Check if package.json exists and has a typecheck script
-  try {
-    const pkgPath = path.join(cwd, "package.json")
-    if (fs.existsSync(pkgPath)) {
-      const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"))
-      if (pkg.scripts?.typecheck) {
-        const { execSync } = require("node:child_process")
-        try {
-          execSync("bun typecheck", { cwd, encoding: "utf-8", timeout: 30000, stdio: "pipe" })
-          ctx.typecheckStatus = "typecheck passes (no errors)"
-        } catch (e: unknown) {
-          const stderr = (e as { stderr?: string })?.stderr ?? String(e)
-          ctx.typecheckStatus = `typecheck FAILED:\n${stderr.slice(0, 1000)}`
+    // Check if package.json exists and has a typecheck script
+    try {
+      const pkgPath = path.join(cwd, "package.json")
+      if (fs.existsSync(pkgPath)) {
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"))
+        if (pkg.scripts?.typecheck) {
+          const tcResult = yield* execSafe("bun typecheck", { cwd, timeout: 30000 })
+          if (tcResult.exitCode === 0) {
+            ctx.typecheckStatus = "typecheck passes (no errors)"
+          } else {
+            ctx.typecheckStatus = `typecheck FAILED:\n${(tcResult.stderr || tcResult.stdout).slice(0, 1000)}`
+          }
+        } else {
+          ctx.typecheckStatus = "(no typecheck script in package.json)"
         }
       } else {
-        ctx.typecheckStatus = "(no typecheck script in package.json)"
+        ctx.typecheckStatus = "(no package.json found)"
       }
-    } else {
-      ctx.typecheckStatus = "(no package.json found)"
-    }
-  } catch { /* best-effort */ }
+    } catch { /* best-effort */ }
 
-  return ctx
+    return ctx
+  })
 }
 
 // ── Prompt builder ──────────────────────────────────────────────────────
 
-function buildAutoPrompt(task: TaskItem): string {
-  const payload = task.payload as Record<string, unknown> | undefined
-  const repo = (payload?.repo as string) ?? ""
-  const action = (payload?.action as string) ?? "process"
-  const description = (payload?.description as string) ?? ""
-  const repoDir = (payload?.local_dir as string) || process.cwd()
+function buildAutoPrompt(task: TaskItem): Effect.Effect<string> {
+  return Effect.gen(function* () {
+    const payload = task.payload as Record<string, unknown> | undefined
+    const repo = (payload?.repo as string) ?? ""
+    const action = (payload?.action as string) ?? "process"
+    const description = (payload?.description as string) ?? ""
+    const repoDir = (payload?.local_dir as string) || process.cwd()
 
-  const parts: string[] = [
-    "You are processing an autonomous task for the opencode daemon.",
-    `Task source: ${task.source}`,
-    `Task ID: ${task.triggerId}`,
-    "",
-  ]
+    const parts: string[] = [
+      "You are processing an autonomous task for the opencode daemon.",
+      `Task source: ${task.source}`,
+      `Task ID: ${task.triggerId}`,
+      "",
+    ]
 
-  if (repo) parts.push(`Repository: ${repo}`)
-  if (action) parts.push(`Action: ${action}`)
+    if (repo) parts.push(`Repository: ${repo}`)
+    if (action) parts.push(`Action: ${action}`)
 
-  // ── Previous failure context ─────────────────────────────────────────
-  const failures = findLearningsByTaskId(task.triggerId)
-  const prevFailures = failures.filter((f) => f.tags.includes("failed"))
-  if (prevFailures.length > 0) {
-    parts.push("")
-    parts.push("⚠️ Previous attempts for this task have FAILED:")
-    for (const f of prevFailures.slice(0, 3)) {
-      parts.push(`  [${f.timestamp}] ${f.summary}`)
-      if (f.diffs.length > 0) {
-        parts.push(`  Last changed files: ${f.diffs.map((d) => d.file).join(", ")}`)
+    // ── Previous failure context ─────────────────────────────────────────
+    const failures = findLearningsByTaskId(task.triggerId)
+    const prevFailures = failures.filter((f) => f.tags.includes("failed"))
+    if (prevFailures.length > 0) {
+      parts.push("")
+      parts.push("⚠️ Previous attempts for this task have FAILED:")
+      for (const f of prevFailures.slice(0, 3)) {
+        parts.push(`  [${f.timestamp}] ${f.summary}`)
+        if (f.diffs.length > 0) {
+          parts.push(`  Last changed files: ${f.diffs.map((d) => d.file).join(", ")}`)
+        }
       }
+      parts.push("  Try a different approach. Run typecheck before committing.")
+      parts.push("")
     }
-    parts.push("  Try a different approach. Run typecheck before committing.")
+
+    // ── Repo context ─────────────────────────────────────────────────────
+    const repoCtx = yield* getRepoContext(repoDir)
+    parts.push("── Repository state ──")
+    parts.push(repoCtx.recentCommits)
     parts.push("")
-  }
+    parts.push(`Typecheck: ${repoCtx.typecheckStatus}`)
+    parts.push(`Uncommitted changes: ${repoCtx.uncommittedChanges ? "yes" : "no"}`)
+    parts.push("")
 
-  // ── Repo context ─────────────────────────────────────────────────────
-  const repoCtx = getRepoContext(repoDir)
-  parts.push("── Repository state ──")
-  parts.push(repoCtx.recentCommits)
-  parts.push("")
-  parts.push(`Typecheck: ${repoCtx.typecheckStatus}`)
-  parts.push(`Uncommitted changes: ${repoCtx.uncommittedChanges ? "yes" : "no"}`)
-  parts.push("")
-
-  // ── Pending tasks context ────────────────────────────────────────────
-  const allPending = listPendingTasks()
-  const otherPending = allPending.filter((t) => t.triggerId !== task.triggerId)
-  if (otherPending.length > 0) {
-    parts.push(`There are ${otherPending.length} other pending task(s) in the queue:`)
-    for (const t of otherPending.slice(0, 5)) {
-      const tDesc = (t.payload as Record<string, unknown> | undefined)?.description as string | undefined
-      parts.push(`  - [${t.source}] ${tDesc || t.triggerId}`)
+    // ── Pending tasks context ────────────────────────────────────────────
+    const allPending = listPendingTasks()
+    const otherPending = allPending.filter((t) => t.triggerId !== task.triggerId)
+    if (otherPending.length > 0) {
+      parts.push(`There are ${otherPending.length} other pending task(s) in the queue:`)
+      for (const t of otherPending.slice(0, 5)) {
+        const tDesc = (t.payload as Record<string, unknown> | undefined)?.description as string | undefined
+        parts.push(`  - [${t.source}] ${tDesc || t.triggerId}`)
+      }
+      parts.push("")
     }
-    parts.push("")
-  }
 
-  // ── Context-specific instructions ────────────────────────────────────
-  if (task.source === "github") {
-    parts.push(description || "Review the pull request. Make changes if needed, then run typecheck and commit.")
-  } else if (task.source === "file-watcher") {
-    parts.push(`A file was modified: ${description || "unknown"}. Analyze the change for consistency.`)
-  } else if (task.source === "schedule") {
-    parts.push("This is a scheduled maintenance task.")
-  } else {
-    parts.push(description || "Process this task to completion.")
-  }
+    // ── Context-specific instructions ────────────────────────────────────
+    if (task.source === "github") {
+      parts.push(description || "Review the pull request. Make changes if needed, then run typecheck and commit.")
+    } else if (task.source === "file-watcher") {
+      parts.push(`A file was modified: ${description || "unknown"}. Analyze the change for consistency.`)
+    } else if (task.source === "schedule") {
+      parts.push("This is a scheduled maintenance task.")
+    } else {
+      parts.push(description || "Process this task to completion.")
+    }
 
-  parts.push(
-    "",
-    "Rules:",
-    "- Run `bun typecheck` before committing.",
-    "- Commit with a descriptive message if you make changes.",
-    "- If you cannot complete the task (missing info, permissions, ambiguity), explain why.",
-    "- Report what you did or why you couldn't proceed.",
-  )
+    parts.push(
+      "",
+      "Rules:",
+      "- Run `bun typecheck` before committing.",
+      "- Commit with a descriptive message if you make changes.",
+      "- If you cannot complete the task (missing info, permissions, ambiguity), explain why.",
+      "- Report what you did or why you couldn't proceed.",
+    )
 
-  return parts.join("\n")
+    return parts.join("\n")
+  })
 }
 
 // ── Task eligibility ────────────────────────────────────────────────────
@@ -224,6 +297,50 @@ function findBinary(): string | null {
   return null
 }
 
+// ── Binary health verification ────────────────────────────────────────────
+
+/**
+ * Verify that the opencode binary responds correctly by running `--version`.
+ * Caches the result to avoid re-checking on every task within the cache interval.
+ */
+function verifyBinary(binaryPath: string): boolean {
+  const now = Date.now()
+  if (lastVerifiedBinary === binaryPath && now - lastVerifiedTimestamp < BINARY_HEALTH_CACHE_INTERVAL_MS) {
+    return true
+  }
+
+  try {
+    const { spawnSync } = require("node:child_process")
+    const result = spawnSync(binaryPath, ["--version"], {
+      timeout: BINARY_HEALTH_TIMEOUT_MS,
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    })
+
+    const stdout = (result.stdout ?? "").trim()
+    const ok = result.status === 0 && stdout.toLowerCase().includes("opencode")
+
+    if (ok) {
+      log.info("Binary health check passed", { binary: binaryPath, version: stdout })
+      lastVerifiedBinary = binaryPath
+      lastVerifiedTimestamp = now
+    } else {
+      log.error("Binary health check FAILED", {
+        binary: binaryPath,
+        exitCode: result.status,
+        stdout,
+        stderr: (result.stderr ?? "").trim(),
+      })
+    }
+
+    return ok
+  } catch (err) {
+    log.error("Binary health check threw", { binary: binaryPath, error: String(err) })
+    return false
+  }
+}
+
 // ── Spawn and parse headless result ──────────────────────────────────────
 
 function spawnHeadless(
@@ -236,6 +353,12 @@ function spawnHeadless(
     if (!binary) {
       log.error("Cannot find opencode binary for auto-execution")
       resolve({ result: null, exitCode: null, rawOutput: "Binary not found", timedOut: false })
+      return
+    }
+
+    if (!verifyBinary(binary)) {
+      log.error("Binary health check failed, aborting auto-execution", { binary })
+      resolve({ result: null, exitCode: null, rawOutput: "Binary health check failed", timedOut: false })
       return
     }
 
@@ -326,20 +449,18 @@ function formatDiffSummary(diffs: HeadlessResult["diffs"]): string {
  * Run `bun typecheck` in the given directory.
  * Returns null if it passes, or the error output if it fails.
  */
-function runTypecheck(cwd: string): string | null {
-  try {
+function runTypecheck(cwd: string): Effect.Effect<string | null> {
+  return Effect.gen(function* () {
     const pkgPath = path.join(cwd, "package.json")
-    if (!fs.existsSync(pkgPath)) return null // no package.json = no typecheck
+    if (!fs.existsSync(pkgPath)) return null
     const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"))
-    if (!pkg.scripts?.typecheck) return null // no typecheck script
+    if (!pkg.scripts?.typecheck) return null
 
-    const { execSync } = require("node:child_process")
-    execSync("bun typecheck", { cwd, encoding: "utf-8", timeout: 60000, stdio: "pipe" })
-    return null // passes
-  } catch (e: unknown) {
-    const stderr = (e as { stderr?: string; stdout?: string })?.stderr ?? (e as { message?: string })?.message ?? String(e)
-    return stderr.slice(0, 1000)
-  }
+    const result = yield* execSafe("bun typecheck", { cwd, timeout: 60000 })
+
+    if (result.exitCode === 0) return null
+    return (result.stderr || result.stdout).slice(0, 1000)
+  })
 }
 
 // ── Post-execution pipeline helpers ─────────────────────────────────────
@@ -356,11 +477,11 @@ interface PipelineResult {
 /**
  * Run the post-execution pipeline: validate → commit → memory → PR.
  */
-function runPostPipeline(
+const runPostPipeline = Effect.fnUntraced(function* (
   task: TaskItem,
   result: HeadlessResult,
   repoDir: string,
-): PipelineResult {
+) {
   const pipeline: PipelineResult = {
     committed: false,
     learningsStored: false,
@@ -371,7 +492,7 @@ function runPostPipeline(
 
   // ── Step 0: Typecheck validation ────────────────────────────────────
   if (hasDiffs) {
-    const tcErr = runTypecheck(repoDir)
+    const tcErr = yield* runTypecheck(repoDir)
     if (tcErr) {
       pipeline.validationError = tcErr
       log.warn("Post-pipeline: typecheck FAILED, skipping commit", { repoDir })
@@ -438,7 +559,7 @@ function runPostPipeline(
   }
 
   return pipeline
-}
+})
 
 // ── Main entry point ────────────────────────────────────────────────────
 
@@ -458,7 +579,7 @@ export const processNextTask = Effect.fnUntraced(function* () {
 
   const payload = task.payload as Record<string, unknown> | undefined
   const repoDir = (payload?.local_dir as string) || process.cwd()
-  const prompt = buildAutoPrompt(task)
+  const prompt = yield* buildAutoPrompt(task)
 
   const { result, exitCode, rawOutput, timedOut } = yield* Effect.promise(() =>
     spawnHeadless(task, prompt, repoDir),
@@ -473,7 +594,7 @@ export const processNextTask = Effect.fnUntraced(function* () {
 
   if (success && result) {
     // Run post-execution pipeline (validate → commit → memory → PR)
-    pipelineResult = runPostPipeline(task, result, repoDir)
+    pipelineResult = yield* runPostPipeline(task, result, repoDir)
 
     // If typecheck validation failed, escalate but don't mark done
     if (pipelineResult.validationError) {
