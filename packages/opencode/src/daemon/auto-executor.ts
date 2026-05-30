@@ -1,4 +1,4 @@
-import { Effect, Option } from "effect"
+import { Effect, SynchronizedRef } from "effect"
 import * as Log from "@opencode-ai/core/util/log"
 import { spawn, type ChildProcess } from "node:child_process"
 import * as fs from "node:fs"
@@ -18,6 +18,15 @@ const MAX_RETRIES = 3 // Give up after this many failed attempts
 const BINARY_HEALTH_TIMEOUT_MS = 5000
 const BINARY_HEALTH_CACHE_INTERVAL_MS = 5 * 60 * 1000 // 5 minutes
 
+/** Max number of tasks that can execute concurrently */
+const MAX_CONCURRENT_TASKS = 3
+
+/** Rate limit window in ms (sliding window) */
+const RATE_LIMIT_WINDOW_MS = 60000
+
+/** Max tasks per rate limit window */
+const RATE_LIMIT_MAX_TASKS = 10
+
 // ── Type for the headless result ─────────────────────────────────────────
 
 export interface HeadlessResult {
@@ -36,12 +45,66 @@ export interface HeadlessResult {
   model: string | null
 }
 
-// ── State tracking ──────────────────────────────────────────────────────
+// ── Active task info ────────────────────────────────────────────────────
 
-let currentProcess: ChildProcess | null = null
-let currentTaskId: string | null = null
+interface ActiveTaskInfo {
+  process: ChildProcess
+  taskId: string
+  startedAt: number
+}
+
+// ── Concurrent state tracking ───────────────────────────────────────────
+
+/** Thread-safe map of currently executing tasks (taskId → process info) */
+const activeTasks = SynchronizedRef.makeUnsafe<Map<string, ActiveTaskInfo>>(new Map())
+
+/** Timestamps of recently started tasks for sliding window rate limiting */
+const taskTimestamps: number[] = []
+
 let lastVerifiedBinary: string | null = null
 let lastVerifiedTimestamp = 0
+
+// ── Rate limiter (sliding window) ────────────────────────────────────────
+
+/** Remove timestamps outside the current window */
+function cleanOldEntries(): void {
+  const cutoff = Date.now() - RATE_LIMIT_WINDOW_MS
+  let i = 0
+  while (i < taskTimestamps.length && taskTimestamps[i] <= cutoff) i++
+  if (i > 0) taskTimestamps.splice(0, i)
+}
+
+/** Returns true if a new task can be scheduled within the rate limit */
+function canSchedule(): boolean {
+  cleanOldEntries()
+  return taskTimestamps.length < RATE_LIMIT_MAX_TASKS
+}
+
+/** Record that a task was scheduled (adds current timestamp) */
+function recordScheduled(): void {
+  cleanOldEntries()
+  taskTimestamps.push(Date.now())
+}
+
+// ── Concurrent task helpers ──────────────────────────────────────────────
+
+/** Number of currently active (running) tasks */
+function countActiveTasks(): number {
+  return SynchronizedRef.getUnsafe(activeTasks).size
+}
+
+/** Get task IDs of all currently running tasks */
+function getActiveTaskIds(): string[] {
+  return Array.from(SynchronizedRef.getUnsafe(activeTasks).keys())
+}
+
+/** Remove a completed task from the active tasks map */
+function removeCompletedTask(taskId: string): void {
+  SynchronizedRef.update(activeTasks, (map) => {
+    map.delete(taskId)
+    return map
+  })
+}
 
 // ── Async subprocess helper ───────────────────────────────────────────────
 
@@ -374,8 +437,12 @@ function spawnHeadless(
       },
     })
 
-    currentProcess = proc
-    currentTaskId = task.triggerId
+    const taskId = task.triggerId
+    // Register the process in the concurrent map
+    SynchronizedRef.update(activeTasks, (map) => {
+      map.set(taskId, { process: proc, taskId, startedAt: Date.now() })
+      return map
+    })
 
     const outputChunks: string[] = []
 
@@ -387,12 +454,13 @@ function spawnHeadless(
       outputChunks.push(chunk.toString())
     })
 
+    const cleanupTask = () => removeCompletedTask(taskId)
+
     const timer = setTimeout(() => {
-      log.warn("Auto-execution timed out", { taskId: task.triggerId, timeoutMs: TASK_TIMEOUT_MS })
+      log.warn("Auto-execution timed out", { taskId, timeoutMs: TASK_TIMEOUT_MS })
       try { proc.kill("SIGTERM") } catch { /* best-effort */ }
       setTimeout(() => {
-        currentProcess = null
-        currentTaskId = null
+        cleanupTask()
         resolve({ result: null, exitCode: null, rawOutput: outputChunks.join(""), timedOut: true })
       }, 2000)
     }, TASK_TIMEOUT_MS)
@@ -400,9 +468,8 @@ function spawnHeadless(
     proc.on("exit", (exitCode) => {
       clearTimeout(timer)
       const rawOutput = outputChunks.join("")
-      currentProcess = null
-      currentTaskId = null
-      log.info("Headless execution completed", { taskId: task.triggerId, exitCode })
+      cleanupTask()
+      log.info("Headless execution completed", { taskId, exitCode })
 
       // Parse the last JSON line as the headless result
       const result = parseHeadlessResult(rawOutput)
@@ -411,9 +478,8 @@ function spawnHeadless(
 
     proc.on("error", (err) => {
       clearTimeout(timer)
-      currentProcess = null
-      currentTaskId = null
-      log.error("Headless execution error", { taskId: task.triggerId, error: err.message })
+      cleanupTask()
+      log.error("Headless execution error", { taskId, error: err.message })
       resolve({ result: null, exitCode: null, rawOutput: err.message, timedOut: false })
     })
   })
@@ -561,20 +627,24 @@ const runPostPipeline = Effect.fnUntraced(function* (
   return pipeline
 })
 
-// ── Main entry point ────────────────────────────────────────────────────
+// ── Task result type ─────────────────────────────────────────────────────
 
-export const processNextTask = Effect.fnUntraced(function* () {
-  if (currentProcess && currentTaskId) {
-    log.info("Auto-executor already busy", { currentTaskId })
-    return { status: "busy" as const, taskId: currentTaskId }
-  }
+export interface TaskResult {
+  status: "busy" | "no_tasks" | "rate_limited" | "success" | "failure" | "timeout" | "validation_failed"
+  taskId?: string
+  summary?: string
+  filesChanged?: number
+  committed?: boolean
+  prUrl?: string
+}
 
-  const pending = listPendingTasks().filter(isEligible)
-  if (pending.length === 0) {
-    return { status: "no_tasks" as const }
-  }
+// ── Single task executor ─────────────────────────────────────────────────
 
-  const task = pending[0]
+/**
+ * Execute a single task: spawn headless → validate → commit → memory → PR.
+ * Extracted from the original processNextTask for reuse in concurrent context.
+ */
+const executeSingleTask = Effect.fnUntraced(function* (task: TaskItem) {
   log.info("Processing task autonomously", { id: task.triggerId, source: task.source })
 
   const payload = task.payload as Record<string, unknown> | undefined
@@ -698,8 +768,103 @@ export const processNextTask = Effect.fnUntraced(function* () {
   }
 })
 
+// ── Main entry point (single task, backward compatible) ─────────────────
+
+export const processNextTask = Effect.fnUntraced(function* () {
+  const activeCount = countActiveTasks()
+  if (activeCount >= MAX_CONCURRENT_TASKS) {
+    log.info("Auto-executor at max concurrency", { activeCount, max: MAX_CONCURRENT_TASKS })
+    return { status: "busy" as const, taskId: getActiveTaskIds().join(",") }
+  }
+
+  if (!canSchedule()) {
+    log.info("Rate limit reached for processNextTask")
+    return { status: "rate_limited" as const }
+  }
+
+  const pending = listPendingTasks().filter(isEligible)
+  if (pending.length === 0) {
+    return { status: "no_tasks" as const }
+  }
+
+  const task = pending[0]
+  recordScheduled()
+  return yield* executeSingleTask(task)
+})
+
+// ── Parallel entry point ─────────────────────────────────────────────────
+
+/**
+ * Process ALL pending tasks respecting concurrency and rate limits.
+ * Drains the queue by running up to MAX_CONCURRENT_TASKS in parallel,
+ * respecting the sliding window rate limiter.
+ * Returns aggregated results for all processed tasks.
+ */
+export const processAllPendingTasks = Effect.fnUntraced(function* () {
+  const results: TaskResult[] = []
+
+  while (true) {
+    const pending = listPendingTasks().filter(isEligible)
+    if (pending.length === 0) break
+
+    const activeCount = countActiveTasks()
+    const availableSlots = MAX_CONCURRENT_TASKS - activeCount
+    if (availableSlots <= 0) {
+      log.info("processAllPendingTasks: all slots full, waiting for tasks to complete", { activeCount })
+      break
+    }
+
+    // Take up to availableSlots tasks from the pending queue
+    const batch = pending.slice(0, availableSlots)
+
+    // Filter by rate limit — only schedule what the window allows
+    const schedulable = batch.filter(() => canSchedule())
+    if (schedulable.length === 0) {
+      log.info("processAllPendingTasks: rate limit reached, deferring remaining tasks")
+      break
+    }
+
+    log.info("processAllPendingTasks: scheduling batch", {
+      batchSize: schedulable.length,
+      availableSlots,
+      totalPending: pending.length,
+    })
+
+    // Record scheduled timestamps for all tasks in this batch
+    for (const _ of schedulable) recordScheduled()
+
+    // Run the batch in true parallel (unbounded concurrency) using forEach to preserve element type
+    const batchResults = yield* Effect.forEach(
+      schedulable,
+      (task) => executeSingleTask(task),
+      { concurrency: "unbounded" },
+    )
+    results.push(...batchResults)
+  }
+
+  return results
+})
+
+// ── Cancel all running tasks ────────────────────────────────────────────
+
+/**
+ * Cancel all currently running tasks by sending SIGTERM to each process.
+ * Clears the active tasks map after cancellation.
+ */
+export function cancelAllTasks(): Effect.Effect<void> {
+  return Effect.sync(() => {
+    const entries = Array.from(SynchronizedRef.getUnsafe(activeTasks).entries())
+    for (const [, info] of entries) {
+      try { info.process.kill("SIGTERM") } catch { /* best-effort */ }
+    }
+    SynchronizedRef.update(activeTasks, () => new Map())
+  })
+}
+
+// ── Busy check ──────────────────────────────────────────────────────────
+
 export function isExecutorBusy(): boolean {
-  return currentProcess !== null && currentTaskId !== null
+  return countActiveTasks() > 0
 }
 
 export * as AutoExecutor from "./auto-executor"
