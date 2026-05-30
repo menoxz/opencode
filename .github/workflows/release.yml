@@ -30,7 +30,7 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Build binary
-        run: bun run build
+        run: bun run build -- --single
         working-directory: packages/opencode
       - name: Rename binary for release
         shell: bash
