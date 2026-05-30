@@ -511,4 +511,251 @@ describe("Runner", () => {
       expect(runner.busy).toBe(false)
     }),
   )
+
+  // --- edge case & stress tests ---
+
+  it.live(
+    "many concurrent ensureRunning calls share the same work",
+    Effect.gen(function* () {
+      const s = yield* Scope.Scope
+      const runner = Runner.make<string>(s)
+      const calls = yield* Ref.make(0)
+      const work = Effect.gen(function* () {
+        yield* Ref.update(calls, (n) => n + 1)
+        yield* Effect.sleep("50 millis")
+        return "shared"
+      })
+      const results = yield* Effect.all(
+        Array.from({ length: 50 }, () => runner.ensureRunning(work)),
+        { concurrency: "unbounded" },
+      )
+      expect(yield* Ref.get(calls)).toBe(1)
+      for (const r of results) expect(r).toBe("shared")
+    }),
+  )
+
+  it.live(
+    "concurrent startShell calls all fail with Busy except first",
+    Effect.gen(function* () {
+      const s = yield* Scope.Scope
+      const runner = Runner.make<string>(s)
+      const gate = yield* Deferred.make<void>()
+
+      const firstShell = yield* runner.startShell(Deferred.await(gate).pipe(Effect.as("first"))).pipe(Effect.forkChild)
+      yield* waitForState(runner, "Shell")
+
+      const exits = yield* Effect.all(
+        Array.from({ length: 19 }, () => runner.startShell(Effect.succeed("other")).pipe(Effect.exit)),
+        { concurrency: "unbounded" },
+      )
+      for (const exit of exits) {
+        expect(Exit.isFailure(exit)).toBe(true)
+        if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(Runner.Busy)
+      }
+
+      yield* Deferred.succeed(gate, undefined)
+      const result = yield* Fiber.join(firstShell)
+      expect(result).toBe("first")
+      expect(runner.busy).toBe(false)
+    }),
+  )
+
+  it.live(
+    "rapid cancel/restart cycle",
+    Effect.gen(function* () {
+      const s = yield* Scope.Scope
+      const runner = Runner.make<string>(s)
+      for (let i = 0; i < 10; i++) {
+        const fiber = yield* runner.ensureRunning(Effect.never.pipe(Effect.as("x"))).pipe(Effect.forkChild)
+        yield* Effect.yieldNow
+        yield* runner.cancel
+        yield* Fiber.await(fiber).pipe(Effect.ignore)
+      }
+      expect(runner.state._tag).toBe("Idle")
+      expect(runner.busy).toBe(false)
+    }),
+  )
+
+  it.live(
+    "ensureRunning with immediately-failing work",
+    Effect.gen(function* () {
+      const s = yield* Scope.Scope
+      const runner = Runner.make<string, string>(s)
+      const exit = yield* runner.ensureRunning(Effect.fail("sync-boom")).pipe(Effect.exit)
+      expect(Exit.isFailure(exit)).toBe(true)
+      expect(runner.state._tag).toBe("Idle")
+    }),
+  )
+
+  it.live(
+    "startShell with immediately-failing work",
+    Effect.gen(function* () {
+      const s = yield* Scope.Scope
+      const runner = Runner.make<string, string>(s)
+      const exit = yield* runner.startShell(Effect.fail("sync-boom")).pipe(Effect.exit)
+      expect(Exit.isFailure(exit)).toBe(true)
+      expect(runner.state._tag).toBe("Idle")
+    }),
+  )
+
+  it.live(
+    "cancel called while cancel is already in progress",
+    Effect.gen(function* () {
+      const s = yield* Scope.Scope
+      const runner = Runner.make<string>(s)
+      const fiber = yield* runner.ensureRunning(Effect.never.pipe(Effect.as("x"))).pipe(Effect.forkChild)
+      yield* waitForState(runner, "Running")
+
+      const [a, b] = yield* Effect.all([runner.cancel.pipe(Effect.exit), runner.cancel.pipe(Effect.exit)], {
+        concurrency: "unbounded",
+      })
+      expect(Exit.isSuccess(a)).toBe(true)
+      expect(Exit.isSuccess(b)).toBe(true)
+      expect(runner.busy).toBe(false)
+      yield* Fiber.await(fiber).pipe(Effect.ignore)
+    }),
+  )
+
+  it.live(
+    "work that defects (throws)",
+    Effect.gen(function* () {
+      const s = yield* Scope.Scope
+      const runner = Runner.make<string>(s)
+      const exit = yield* runner.ensureRunning(Effect.die("unexpected")).pipe(Effect.exit)
+      expect(Exit.isFailure(exit)).toBe(true)
+      expect(exit.cause.reasons.some(Cause.isDieReason)).toBe(true)
+      expect(runner.state._tag).toBe("Idle")
+    }),
+  )
+
+  it.live(
+    "shell that defects (throws)",
+    Effect.gen(function* () {
+      const s = yield* Scope.Scope
+      const runner = Runner.make<string>(s)
+      const exit = yield* runner.startShell(Effect.die("unexpected")).pipe(Effect.exit)
+      expect(Exit.isFailure(exit)).toBe(true)
+      expect(exit.cause.reasons.some(Cause.isDieReason)).toBe(true)
+      expect(runner.state._tag).toBe("Idle")
+    }),
+  )
+
+  it.live(
+    "ensureRunning with Effect.never is cancelled properly",
+    Effect.gen(function* () {
+      const s = yield* Scope.Scope
+      const runner = Runner.make<string>(s)
+      const fiber = yield* runner.ensureRunning(Effect.never.pipe(Effect.as("never"))).pipe(Effect.forkChild)
+      yield* waitForState(runner, "Running")
+      yield* runner.cancel
+      const exit = yield* Fiber.await(fiber)
+      expect(Exit.isFailure(exit)).toBe(true)
+      expect(runner.busy).toBe(false)
+    }),
+  )
+
+  it.live(
+    "startShell with Effect.never is cancelled properly",
+    Effect.gen(function* () {
+      const s = yield* Scope.Scope
+      const runner = Runner.make<string>(s)
+      const fiber = yield* runner.startShell(Effect.never.pipe(Effect.as("never"))).pipe(Effect.forkChild)
+      yield* waitForState(runner, "Shell")
+      yield* runner.cancel
+      const exit = yield* Fiber.await(fiber)
+      expect(Exit.isFailure(exit)).toBe(true)
+      expect(runner.busy).toBe(false)
+    }),
+  )
+
+  it.live(
+    "no fiber leak after many sequential ensureRunning calls",
+    Effect.gen(function* () {
+      const s = yield* Scope.Scope
+      const runner = Runner.make<string>(s)
+      for (let i = 0; i < 100; i++) {
+        const result = yield* runner.ensureRunning(Effect.succeed(`run-${i}`))
+        expect(result).toBe(`run-${i}`)
+        expect(runner.state._tag).toBe("Idle")
+      }
+    }),
+  )
+
+  it.live(
+    "no fiber leak after many cancel cycles",
+    Effect.gen(function* () {
+      const s = yield* Scope.Scope
+      const runner = Runner.make<string>(s)
+      for (let i = 0; i < 50; i++) {
+        const fiber = yield* runner.ensureRunning(Effect.never.pipe(Effect.as("x"))).pipe(Effect.forkChild)
+        yield* waitForState(runner, "Running")
+        yield* runner.cancel
+        yield* Fiber.await(fiber).pipe(Effect.ignore)
+        expect(runner.busy).toBe(false)
+      }
+    }),
+  )
+
+  it.live(
+    "onIdle fires exactly once per run",
+    Effect.gen(function* () {
+      const s = yield* Scope.Scope
+      const count = yield* Ref.make(0)
+      const runner = Runner.make<string>(s, {
+        onIdle: Ref.update(count, (n) => n + 1),
+      })
+      for (let i = 0; i < 5; i++) {
+        yield* runner.ensureRunning(Effect.succeed(`run-${i}`))
+      }
+      expect(yield* Ref.get(count)).toBe(5)
+    }),
+  )
+
+  it.live(
+    "onBusy fires exactly once per shell",
+    Effect.gen(function* () {
+      const s = yield* Scope.Scope
+      const count = yield* Ref.make(0)
+      const runner = Runner.make<string>(s, {
+        onBusy: Ref.update(count, (n) => n + 1),
+      })
+      for (let i = 0; i < 5; i++) {
+        yield* runner.startShell(Effect.succeed(`shell-${i}`))
+      }
+      expect(yield* Ref.get(count)).toBe(5)
+    }),
+  )
+
+  it.live(
+    "both onIdle and onBusy fire correctly in mixed shell/run cycles",
+    Effect.gen(function* () {
+      const s = yield* Scope.Scope
+      const idleCount = yield* Ref.make(0)
+      const busyCount = yield* Ref.make(0)
+      const runner = Runner.make<string>(s, {
+        onIdle: Ref.update(idleCount, (n) => n + 1),
+        onBusy: Ref.update(busyCount, (n) => n + 1),
+      })
+
+      yield* runner.ensureRunning(Effect.succeed("r1"))
+      expect(yield* Ref.get(idleCount)).toBe(1)
+      expect(yield* Ref.get(busyCount)).toBe(0)
+
+      yield* runner.startShell(Effect.succeed("s1"))
+      expect(yield* Ref.get(idleCount)).toBe(2)
+      expect(yield* Ref.get(busyCount)).toBe(1)
+
+      const gate = yield* Deferred.make<void>()
+      const sh = yield* runner.startShell(Deferred.await(gate).pipe(Effect.as("s2"))).pipe(Effect.forkChild)
+      yield* waitForState(runner, "Shell")
+      const run = yield* runner.ensureRunning(Effect.succeed("r2")).pipe(Effect.forkChild)
+      yield* waitForState(runner, "ShellThenRun")
+      yield* Deferred.succeed(gate, undefined)
+      yield* Fiber.await(sh)
+      yield* Fiber.await(run)
+
+      expect(yield* Ref.get(idleCount)).toBe(3)
+      expect(yield* Ref.get(busyCount)).toBe(2)
+    }),
+  )
 })
