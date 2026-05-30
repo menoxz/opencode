@@ -1,10 +1,10 @@
 import path from "path"
-import { pathToFileURL } from "url"
 import { Effect, Layer, Context, Schema } from "effect"
 import { NamedError } from "@opencode-ai/core/util/error"
 import type { Agent } from "@/agent/agent"
 import { Bus } from "@/bus"
 import { InstanceState } from "@/effect/instance-state"
+import { EffectBridge } from "@/effect/bridge"
 import { Global } from "@opencode-ai/core/global"
 import { Permission } from "@/permission"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
@@ -16,6 +16,8 @@ import * as Log from "@opencode-ai/core/util/log"
 import { Discovery } from "./discovery"
 import CUSTOMIZE_OPENCODE_SKILL_BODY from "./prompt/customize-opencode.md" with { type: "text" }
 import { isRecord } from "@/util/record"
+import { isSkillFile, isConfigFile } from "@/hotreload"
+import * as fs from "fs"
 
 const log = Log.create({ service: "skill" })
 const CLAUDE_EXTERNAL_DIR = ".claude"
@@ -99,6 +101,7 @@ export interface Interface {
   readonly all: () => Effect.Effect<Info[]>
   readonly dirs: () => Effect.Effect<string[]>
   readonly available: (agent?: Agent.Info) => Effect.Effect<Info[]>
+  readonly reload: () => Effect.Effect<number>
 }
 
 const add = Effect.fnUntraced(function* (state: State, match: string, bus: Bus.Interface) {
@@ -282,6 +285,60 @@ export const layer = Layer.effect(
       }),
     )
 
+    // --- Hot-reload file watcher ---
+    let watcherCleanup: (() => void) | null = null
+
+    const setupWatchers = Effect.fnUntraced(function* () {
+      if (watcherCleanup) { watcherCleanup(); watcherCleanup = null }
+
+      const s = yield* InstanceState.get(state)
+      const cfgDirs = yield* config.directories()
+      const allDirs = [...new Set([...Array.from(s.dirs), ...cfgDirs, Global.Path.config])]
+
+      const watchers: fs.FSWatcher[] = []
+      const timers = new Map<string, ReturnType<typeof setTimeout>>()
+      const bridge = yield* EffectBridge.make()
+      const DEBOUNCE_MS = 300
+
+      const handleChange = (fp: string) => {
+        if (isSkillFile(fp) || isConfigFile(fp)) {
+          bridge.promise(reload()).catch((err) => log.error("reload error", { err }))
+        }
+      }
+
+      for (const dir of allDirs) {
+        if (!fs.existsSync(dir)) continue
+        try {
+          const w = fs.watch(dir, { recursive: true }, (eventType, filename) => {
+            if (!filename) return
+            const fp = path.join(dir, filename.toString())
+            clearTimeout(timers.get(fp))
+            timers.set(
+              fp,
+              setTimeout(() => {
+                timers.delete(fp)
+                handleChange(fp)
+              }, DEBOUNCE_MS),
+            )
+          })
+          watchers.push(w)
+        } catch (err) {
+          log.warn("cannot watch directory", { dir, err })
+        }
+      }
+
+      watcherCleanup = () => {
+        for (const w of watchers) w.close()
+        for (const t of timers.values()) clearTimeout(t)
+        timers.clear()
+      }
+
+      log.info("hot-reload watchers active", { dirs: allDirs.length })
+    })
+
+    // Initial watcher setup (resilient: InstanceRef may not be available yet)
+    yield* setupWatchers().pipe(Effect.catchCause(() => Effect.void))
+
     const get = Effect.fn("Skill.get")(function* (name: string) {
       const s = yield* InstanceState.get(state)
       return s.skills[name]
@@ -310,7 +367,19 @@ export const layer = Layer.effect(
       return list.filter((skill) => Permission.evaluate("skill", skill.name, agent.permission).action !== "deny")
     })
 
-    return Service.of({ get, require, all, dirs, available })
+    const reload = Effect.fn("Skill.reload")(function* () {
+      // Invalidate both caches — next get() re-runs discovery + loading
+      yield* InstanceState.invalidate(discovered)
+      yield* InstanceState.invalidate(state)
+      const s = yield* InstanceState.get(state)
+      const count = Object.keys(s.skills).length
+      log.info("reload", { count })
+      // Re-establish watchers (dirs may have changed after re-discovery)
+      yield* setupWatchers().pipe(Effect.catchCause(() => Effect.void))
+      return count
+    })
+
+    return Service.of({ get, require, all, dirs, available, reload })
   }),
 )
 
@@ -335,7 +404,6 @@ export function fmt(list: Info[], opts: { verbose: boolean }) {
           "  <skill>",
           `    <name>${skill.name}</name>`,
           `    <description>${skill.description}</description>`,
-          `    <location>${pathToFileURL(skill.location).href}</location>`,
           "  </skill>",
         ]),
       "</available_skills>",
