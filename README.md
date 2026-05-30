@@ -7,7 +7,10 @@
     </picture>
   </a>
 </p>
-<p align="center">The open source AI coding agent.</p>
+<p align="center">The open source AI coding agent.
+
+> **Fork notice** — this is a community fork with additional features (hot reload, eval pipeline, memory consolidation, unified prompt).
+> Not affiliated with the official opencode. [See differences →](#fork-differences)</p>
 <p align="center">
   <a href="https://opencode.ai/discord"><img alt="Discord" src="https://img.shields.io/discord/1391832426048651334?style=flat-square&label=discord" /></a>
   <a href="https://www.npmjs.com/package/opencode-ai"><img alt="npm" src="https://img.shields.io/npm/v/opencode-ai?style=flat-square" /></a>
@@ -43,7 +46,22 @@
 
 ---
 
-### Installation
+### Installation (Fork)
+
+This fork adds hot reload, eval pipeline, memory consolidation, and unified prompt.
+Install via GitHub Releases:
+
+```bash
+# Linux / macOS
+curl -fsSL https://raw.githubusercontent.com/menoxz/opencode/dev/scripts/install.sh | bash
+
+# Windows (PowerShell)
+powershell -c "irm https://raw.githubusercontent.com/menoxz/opencode/dev/scripts/install.ps1 | iex"
+```
+
+Or download the binary directly from [releases](https://github.com/menoxz/opencode/releases).
+
+### Installation (Upstream)
 
 ```bash
 # YOLO
@@ -119,6 +137,21 @@ For more info on how to configure OpenCode, [**head over to our docs**](https://
 ### Contributing
 
 If you're interested in contributing to OpenCode, please read our [contributing docs](./CONTRIBUTING.md) before submitting a pull request.
+
+### Fork Differences
+
+This fork (`menoxz/opencode`) adds the following features on top of upstream:
+
+| Feature | Description |
+|---------|-------------|
+| **Hot Reload** | Agents, plugins, and MCP servers reload automatically on file change — no restart needed |
+| **Eval Pipeline** | SQLite-backed evaluation with regression detection, trend analysis, and compare CLI commands |
+| **Memory Consolidation** | Cross-session memory with auto-decay, pattern detection, and post-mortem analysis |
+| **Unified Prompt** | Single `core.txt` replaces 10 model-specific prompts — cleaner, smaller, easier to maintain |
+| **Continuous Improvement** | Methods are living documents — update existing skills with changelog instead of creating duplicates |
+| **Planner Integration** | Built-in `planner` agent auto-decomposes tasks before execution |
+
+Not affiliated with the official [anomalyco/opencode](https://github.com/anomalyco/opencode).
 
 ### Building on OpenCode
 

@@ -1,0 +1,68 @@
+# Build and release opencode fork binary for all platforms.
+# Triggered by pushing a tag matching v*, or manually via workflow_dispatch.
+name: release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version tag (e.g. v1.18.0)'
+        required: true
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x64
+          - os: windows-latest
+            target: win-x64
+          - os: macos-latest
+            target: darwin-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Build binary
+        run: bun run build
+        working-directory: packages/opencode
+      - name: Rename binary for release
+        shell: bash
+        run: |
+          cd dist/bin
+          ext=""
+          [ "${{ matrix.os }}" = "windows-latest" ] && ext=".exe"
+          mv opencode${ext} opencode-${{ matrix.target }}${ext}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: opencode-${{ matrix.target }}
+          path: dist/bin/opencode-${{ matrix.target }}*
+          if-no-files-found: error
+
+  release:
+    needs: [build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+      - name: Prepare release assets
+        shell: bash
+        run: |
+          mkdir -p assets
+          for dir in opencode-*/; do
+            cp "$dir"/* assets/
+          done
+          ls -la assets/
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: assets/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true
