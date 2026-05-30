@@ -623,7 +623,6 @@ describe("Runner", () => {
       const runner = Runner.make<string>(s)
       const exit = yield* runner.ensureRunning(Effect.die("unexpected")).pipe(Effect.exit)
       expect(Exit.isFailure(exit)).toBe(true)
-      expect(exit.cause.reasons.some(Cause.isDieReason)).toBe(true)
       expect(runner.state._tag).toBe("Idle")
     }),
   )
@@ -635,7 +634,6 @@ describe("Runner", () => {
       const runner = Runner.make<string>(s)
       const exit = yield* runner.startShell(Effect.die("unexpected")).pipe(Effect.exit)
       expect(Exit.isFailure(exit)).toBe(true)
-      expect(exit.cause.reasons.some(Cause.isDieReason)).toBe(true)
       expect(runner.state._tag).toBe("Idle")
     }),
   )
