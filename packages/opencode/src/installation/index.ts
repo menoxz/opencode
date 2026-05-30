@@ -151,7 +151,7 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProce
 
     const upgradeCurl = Effect.fnUntraced(
       function* (target: string) {
-        const response = yield* httpOk.execute(HttpClientRequest.get("https://opencode.ai/install"))
+        const response = yield* httpOk.execute(HttpClientRequest.get("https://raw.githubusercontent.com/menoxz/opencode/dev/scripts/install.sh"))
         const body = yield* response.text
         const bodyBytes = new TextEncoder().encode(body)
         const result = yield* appProcess.run(
@@ -180,6 +180,7 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProce
       method: Effect.fn("Installation.method")(function* () {
         if (process.execPath.includes(path.join(".opencode", "bin"))) return "curl" as Method
         if (process.execPath.includes(path.join(".local", "bin"))) return "curl" as Method
+        if (process.execPath.includes(path.join("opencode", "bin"))) return "curl" as Method
         const exec = process.execPath.toLowerCase()
 
         const checks: Array<{ name: Method; command: () => Effect.Effect<string> }> = [
@@ -261,7 +262,7 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProce
         }
 
         const response = yield* httpOk.execute(
-          HttpClientRequest.get("https://api.github.com/repos/anomalyco/opencode/releases/latest").pipe(
+          HttpClientRequest.get("https://api.github.com/repos/menoxz/opencode/releases/latest").pipe(
             HttpClientRequest.acceptJson,
           ),
         )
