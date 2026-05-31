@@ -29,6 +29,9 @@ jobs:
           bun-version: latest
       - name: Install dependencies
         run: bun install --frozen-lockfile
+      - name: Sync version with git tag
+        run: bun run script/sync-version.ts --fix
+        working-directory: packages/opencode
       - name: Build binary
         run: bun run build -- --single
         working-directory: packages/opencode
