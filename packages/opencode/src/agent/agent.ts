@@ -375,11 +375,11 @@ export const layer = Layer.effect(
     let watcherCleanup: (() => void) | null = null
     let bridge: EffectBridge.Shape | null = null
 
-    const reload = Effect.fn("Agent.reload")(function* () {
+    const reload: Interface["reload"] = Effect.fn("Agent.reload")(function* () {
       yield* InstanceState.invalidate(state)
       yield* InstanceState.get(state)
       // Lazily set up watchers using EffectBridge for callback-to-Effect bridging
-      if (!bridge) bridge = yield* EffectBridge.make().pipe(Effect.catchAll(() => Effect.succeed(null as any)))
+      if (!bridge) bridge = yield* EffectBridge.make().pipe(Effect.catchCause(() => Effect.succeed(null as any)))
       if (bridge) {
         if (watcherCleanup) { watcherCleanup(); watcherCleanup = null }
         const watchers: fs.FSWatcher[] = []

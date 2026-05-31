@@ -9,6 +9,7 @@ import { disposeAllInstances, tmpdir, tmpdirScoped } from "../fixture/fixture"
 import { Config, Effect, Layer, Queue, Schema } from "effect"
 import { HttpClient, HttpClientRequest, HttpRouter, HttpServer } from "effect/unstable/http"
 import * as Socket from "effect/unstable/socket/Socket"
+import { Provider, ModelNotFoundError } from "../../src/provider/provider"
 import { HttpApiApp } from "../../src/server/routes/instance/httpapi/server"
 import { Pty } from "../../src/pty"
 import { testEffect } from "../lib/effect"
@@ -28,7 +29,7 @@ const testStateLayer = Layer.effectDiscard(
   }),
 )
 
-const servedRoutes: Layer.Layer<never, Config.ConfigError, HttpServer.HttpServer> = HttpRouter.serve(
+const servedRoutes: Layer.Layer<never, any, HttpServer.HttpServer> = HttpRouter.serve(
   HttpApiApp.routes,
   { disableListenLog: true, disableLogger: true },
 )

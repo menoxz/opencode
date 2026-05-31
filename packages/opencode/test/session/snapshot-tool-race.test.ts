@@ -183,7 +183,7 @@ function makeHttp() {
   )
 }
 
-const it = testEffect(makeHttp())
+const it = testEffect(makeHttp() as unknown as Layer.Layer<never, any>)
 
 const providerCfg = (url: string) => ({
   provider: {

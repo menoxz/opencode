@@ -19,11 +19,9 @@ jobs:
         uses: ./.github/actions/setup-bun
 
       - name: Setup git committer
-        id: committer
-        uses: ./.github/actions/setup-git-committer
-        with:
-          opencode-app-id: ${{ vars.OPENCODE_APP_ID }}
-          opencode-app-secret: ${{ secrets.OPENCODE_APP_SECRET }}
+        run: |
+          git config --global user.email "bot@opencode.ai"
+          git config --global user.name "opencode"
 
       - name: Generate
         run: ./script/generate.ts

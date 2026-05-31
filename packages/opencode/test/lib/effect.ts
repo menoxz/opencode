@@ -25,7 +25,7 @@ function instanceArgs(
 
 const body = <A, E, R>(value: Body<A, E, R>) => Effect.suspend(() => (typeof value === "function" ? value() : value))
 
-type Runner = <A, E, R, E2>(value: Body<A, E, R | Scope.Scope>, layer: Layer.Layer<R, E2>) => Promise<A>
+type Runner = <A, E, E2>(value: Body<A, E, any>, layer: Layer.Layer<any, E2>) => Promise<A>
 
 const isolatedRun: Runner = (value, layer) =>
   Effect.gen(function* () {
@@ -57,62 +57,62 @@ const sharedRun: Runner = (value, layer) =>
   }).pipe(Effect.runPromise)
 
 const make = <R, E>(testLayer: Layer.Layer<R, E>, liveLayer: Layer.Layer<R, E>, run: Runner = isolatedRun) => {
-  const effect = <A, E2>(name: string, value: Body<A, E2, R | Scope.Scope>, opts?: number | TestOptions) =>
-    test(name, () => run(value, testLayer), opts)
+  const effect = <A, E2>(name: string, value: Body<A, E2, any>, opts?: number | TestOptions) =>
+    test(name, () => run(value, testLayer as any), opts)
 
-  effect.only = <A, E2>(name: string, value: Body<A, E2, R | Scope.Scope>, opts?: number | TestOptions) =>
-    test.only(name, () => run(value, testLayer), opts)
+  effect.only = <A, E2>(name: string, value: Body<A, E2, any>, opts?: number | TestOptions) =>
+    test.only(name, () => run(value, testLayer as any), opts)
 
-  effect.skip = <A, E2>(name: string, value: Body<A, E2, R | Scope.Scope>, opts?: number | TestOptions) =>
-    test.skip(name, () => run(value, testLayer), opts)
+  effect.skip = <A, E2>(name: string, value: Body<A, E2, any>, opts?: number | TestOptions) =>
+    test.skip(name, () => run(value, testLayer as any), opts)
 
-  const live = <A, E2>(name: string, value: Body<A, E2, R | Scope.Scope>, opts?: number | TestOptions) =>
-    test(name, () => run(value, liveLayer), opts)
+  const live = <A, E2>(name: string, value: Body<A, E2, any>, opts?: number | TestOptions) =>
+    test(name, () => run(value, liveLayer as any), opts)
 
-  live.only = <A, E2>(name: string, value: Body<A, E2, R | Scope.Scope>, opts?: number | TestOptions) =>
-    test.only(name, () => run(value, liveLayer), opts)
+  live.only = <A, E2>(name: string, value: Body<A, E2, any>, opts?: number | TestOptions) =>
+    test.only(name, () => run(value, liveLayer as any), opts)
 
-  live.skip = <A, E2>(name: string, value: Body<A, E2, R | Scope.Scope>, opts?: number | TestOptions) =>
-    test.skip(name, () => run(value, liveLayer), opts)
+  live.skip = <A, E2>(name: string, value: Body<A, E2, any>, opts?: number | TestOptions) =>
+    test.skip(name, () => run(value, liveLayer as any), opts)
 
   const instance = <A, E2>(
     name: string,
-    value: Body<A, E2, R | TestInstance | Scope.Scope>,
+    value: Body<A, E2, any>,
     options?: InstanceOptions | number | TestOptions,
     opts?: number | TestOptions,
   ) => {
     const args = instanceArgs(options, opts)
     return test(
       name,
-      () => run(body(value).pipe(withTmpdirInstance(args.instanceOptions)), liveLayer),
+      () => run(body(value).pipe(withTmpdirInstance(args.instanceOptions)), liveLayer as any),
       args.testOptions,
     )
   }
 
   instance.only = <A, E2>(
     name: string,
-    value: Body<A, E2, R | TestInstance | Scope.Scope>,
+    value: Body<A, E2, any>,
     options?: InstanceOptions | number | TestOptions,
     opts?: number | TestOptions,
   ) => {
     const args = instanceArgs(options, opts)
     return test.only(
       name,
-      () => run(body(value).pipe(withTmpdirInstance(args.instanceOptions)), liveLayer),
+      () => run(body(value).pipe(withTmpdirInstance(args.instanceOptions)), liveLayer as any),
       args.testOptions,
     )
   }
 
   instance.skip = <A, E2>(
     name: string,
-    value: Body<A, E2, R | TestInstance | Scope.Scope>,
+    value: Body<A, E2, any>,
     options?: InstanceOptions | number | TestOptions,
     opts?: number | TestOptions,
   ) => {
     const args = instanceArgs(options, opts)
     return test.skip(
       name,
-      () => run(body(value).pipe(withTmpdirInstance(args.instanceOptions)), liveLayer),
+      () => run(body(value).pipe(withTmpdirInstance(args.instanceOptions)), liveLayer as any),
       args.testOptions,
     )
   }

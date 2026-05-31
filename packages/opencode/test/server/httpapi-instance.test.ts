@@ -11,6 +11,7 @@ import { SessionPaths } from "../../src/server/routes/instance/httpapi/groups/se
 import { PermissionID } from "../../src/permission/schema"
 import { ProjectID } from "../../src/project/schema"
 import { QuestionID } from "../../src/question/schema"
+import { Provider, ModelNotFoundError } from "../../src/provider/provider"
 import { HttpApiApp } from "../../src/server/routes/instance/httpapi/server"
 import { HEADER as FenceHeader } from "../../src/server/shared/fence"
 import { resetDatabase } from "../fixture/db"
@@ -39,7 +40,7 @@ const testStateLayer = Layer.effectDiscard(
 // Mount the production HttpApi route tree on a real Node HTTP server bound to
 // 127.0.0.1:0 and a fetch-based HttpClient that prepends the server URL. This
 // keeps the test wired directly through the same route layer production uses.
-const servedRoutes: Layer.Layer<never, Config.ConfigError, HttpServer.HttpServer> = HttpRouter.serve(
+const servedRoutes: Layer.Layer<never, any, HttpServer.HttpServer> = HttpRouter.serve(
   HttpApiApp.routes,
   { disableListenLog: true, disableLogger: true },
 )

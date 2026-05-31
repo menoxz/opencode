@@ -6,6 +6,7 @@ import { HttpClient, HttpClientRequest, HttpRouter, HttpServer } from "effect/un
 import * as Socket from "effect/unstable/socket/Socket"
 import { Server } from "../../src/server/server"
 import { InstancePaths } from "../../src/server/routes/instance/httpapi/groups/instance"
+import { Provider, ModelNotFoundError } from "../../src/provider/provider"
 import { HttpApiApp } from "../../src/server/routes/instance/httpapi/server"
 import { resetDatabase } from "../fixture/db"
 import { testEffect } from "../lib/effect"
@@ -26,7 +27,7 @@ const testStateLayer = Layer.effectDiscard(
   }),
 )
 
-const servedRoutes: Layer.Layer<never, Config.ConfigError, HttpServer.HttpServer> = HttpRouter.serve(
+const servedRoutes: Layer.Layer<never, any, HttpServer.HttpServer> = HttpRouter.serve(
   HttpApiApp.routes,
   { disableListenLog: true, disableLogger: true },
 )

@@ -183,7 +183,7 @@ type RouteRequirements =
 
 export function createRoutes(
   corsOptions?: CorsOptions,
-): Layer.Layer<never, EffectConfig.ConfigError, RouteRequirements> {
+): Layer.Layer<never, EffectConfig.ConfigError | Provider.ModelNotFoundError, RouteRequirements> {
   return Layer.mergeAll(rootApiRoutes, eventApiRoutes, instanceRoutes, docRoute, uiRoute).pipe(
     Layer.provide([
       errorLayer,

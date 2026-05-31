@@ -69,7 +69,7 @@ const registryLayer = (opts: RegistryLayerOptions = {}) =>
       Layer.provide(node),
       Layer.provide(Ripgrep.defaultLayer),
       Layer.provide(Layer.mergeAll(Truncate.defaultLayer, Layer.succeed(Orchestrator.Service, {
-        plan: () => Effect.succeed({ success: true, results: [], totalDurationMs: 0, failedSteps: [] }),
+        plan: () => Effect.succeed({ success: true, results: [], totalDurationMs: 0, failedSteps: [], totalSteps: 0, parallelRounds: 0 }),
       }))),
     )
     .pipe(Layer.provide(RuntimeFlags.layer(opts.flags ?? {})))
