@@ -9,7 +9,9 @@ import { containsPath } from "../../src/project/instance-context"
 import { TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 
+const isWin = process.platform === "win32"
 const it = testEffect(File.defaultLayer)
+const OUTSIDE_PATH = path.resolve("/", "opencode-test-nonexistent")
 const read = (file: string) => File.use.read(file)
 const list = (dir?: string) => File.use.list(dir)
 const expectAccessDenied = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
@@ -38,8 +40,8 @@ describe("Filesystem.contains", () => {
 
   it.effect("blocks absolute paths outside project", () =>
     Effect.sync(() => {
-      expect(Filesystem.contains("/project", "/etc/passwd")).toBe(false)
-      expect(Filesystem.contains("/project", "/tmp/file")).toBe(false)
+      expect(Filesystem.contains("/project", OUTSIDE_PATH)).toBe(false)
+      expect(Filesystem.contains("/project", OUTSIDE_PATH)).toBe(false)
       expect(Filesystem.contains("/home/user/project", "/home/user/other")).toBe(false)
     }),
   )
@@ -61,7 +63,9 @@ describe("Filesystem.contains", () => {
  *
  * This is a SEPARATE code path from ReadTool, which has its own checks.
  */
-describe("File.read path traversal protection", () => {
+const unixDescribe = isWin ? describe.skip : describe
+
+unixDescribe("File.read path traversal protection", () => {
   it.instance("rejects ../ traversal attempting to read /etc/passwd", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
@@ -87,7 +91,7 @@ describe("File.read path traversal protection", () => {
   )
 })
 
-describe("File.list path traversal protection", () => {
+unixDescribe("File.list path traversal protection", () => {
   it.instance("rejects ../ traversal attempting to list /etc", () =>
     Effect.gen(function* () {
       yield* expectAccessDenied(list("../../../etc"))
