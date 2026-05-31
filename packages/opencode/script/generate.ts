@@ -1,3 +1,4 @@
+#!/usr/bin/env bun
 import path from "path"
 import { fileURLToPath } from "url"
 
