@@ -24,7 +24,7 @@ jobs:
           git config --global user.name "opencode"
 
       - name: Generate
-        run: ./script/generate.ts
+        run: bun run script/generate.ts
 
       - name: Commit and push
         run: |
