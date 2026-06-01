@@ -10,6 +10,7 @@ import { Skill } from "@/skill"
 import { PromptComposer } from "@/prompt-composer"
 import { SelfImprove } from "@/self-improve"
 import type { MessageV2 } from "./message-v2"
+import { rankDocuments } from "@/memory/search"
 
 /**
  * Single unified system prompt for all models.
@@ -18,38 +19,6 @@ import type { MessageV2 } from "./message-v2"
  */
 export function provider(_model: Provider.Model): string[] {
   return [PROMPT_CORE]
-}
-
-// Common English stop words for keyword extraction
-const STOP_WORDS = new Set([
-  "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
-  "have", "has", "had", "do", "does", "did", "will", "would", "could",
-  "should", "may", "might", "can", "shall", "to", "of", "in", "for",
-  "on", "with", "at", "by", "from", "as", "into", "through", "during",
-  "before", "after", "above", "below", "between", "out", "off", "over",
-  "under", "again", "further", "then", "once", "here", "there", "when",
-  "where", "why", "how", "all", "each", "every", "both", "few", "more",
-  "most", "other", "some", "such", "no", "nor", "not", "only", "own",
-  "same", "so", "than", "too", "very", "just", "because", "but", "and",
-  "or", "if", "while", "about", "up", "what", "which", "who", "whom",
-  "this", "that", "these", "those", "am", "it", "its", "my", "your",
-  "his", "her", "our", "their", "me", "him", "us", "them", "i", "you",
-  "he", "she", "we", "they", "please", "help", "need", "want", "like",
-  "make", "get", "use", "let", "tell", "ask", "try", "say", "see",
-])
-
-function extractKeywords(text: string): string[] {
-  return text
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((w) => w.length > 2 && !STOP_WORDS.has(w) && !/^\d+$/.test(w))
-}
-
-function scoreSkillRelevance(skill: { name: string; description?: string }, keywords: string[]): number {
-  if (keywords.length === 0) return 1
-  const text = `${skill.name} ${skill.description ?? ""}`.toLowerCase()
-  const hits = keywords.filter((kw) => text.includes(kw)).length
-  return hits / keywords.length
 }
 
 const MAX_RELEVANT_SKILLS = 30
@@ -98,18 +67,20 @@ export const layer = Layer.effect(
 
         let list = yield* skill.available(agent)
 
-        // Relevance filter: rank skills by keyword overlap with the user's message
+        // BM25 relevance filter: rank skills by semantic + keyword match
         if (lastUserMessage && list.length > MAX_RELEVANT_SKILLS) {
-          const keywords = extractKeywords(lastUserMessage)
-          if (keywords.length > 0) {
-            const scored = list
-              .map((s) => ({ skill: s, score: scoreSkillRelevance(s, keywords) }))
-              .sort((a, b) => b.score - a.score)
-            // Keep skills above threshold or top N, whichever yields more
-            const aboveThreshold = scored.filter((s) => s.score > 0)
-            list = aboveThreshold.length >= 3
-              ? aboveThreshold.map((s) => s.skill)
-              : scored.slice(0, MAX_RELEVANT_SKILLS).map((s) => s.skill)
+          const docs = list.map((s) => ({
+            id: s.name,
+            content: `${s.name} ${s.description ?? ""}`,
+            importance: 1.0 as const,
+            confidence: 1.0 as const,
+          }))
+          const ranked = rankDocuments(lastUserMessage, docs, MAX_RELEVANT_SKILLS)
+          const kept = new Set(ranked.filter((r) => r.score > 0).map((r) => r.id))
+          if (kept.size >= 3) {
+            list = list.filter((s) => kept.has(s.name))
+          } else {
+            list = list.slice(0, MAX_RELEVANT_SKILLS)
           }
         }
 
