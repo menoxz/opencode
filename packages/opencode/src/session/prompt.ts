@@ -1630,7 +1630,20 @@ export const layer = Layer.effect(
             ])
             const system = [...env, ...instructions]
             if (step === 1) {
-              const skills = yield* sys.skills(agent)
+              // Extract the last user message for skill relevance filtering
+              const lastUserText = (() => {
+                for (const m of msgs.toReversed()) {
+                  if (m.info.role !== "user") continue
+                  for (const p of m.parts) {
+                    if (p.type === "text" && !(p as any).synthetic && typeof (p as any).text === "string") {
+                      return (p as any).text as string
+                    }
+                  }
+                }
+                return undefined
+              })()
+
+              const skills = yield* sys.skills(agent, lastUserText)
               if (skills) system.push(skills)
 
               const adaptive = yield* sys.adaptivePrompt({ messages: msgs, agent })
