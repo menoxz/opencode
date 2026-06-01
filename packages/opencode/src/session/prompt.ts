@@ -1623,14 +1623,16 @@ export const layer = Layer.effect(
 
             yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
 
-            const [skills, env, instructions, modelMsgs] = yield* Effect.all([
-              sys.skills(agent),
+            const [env, instructions, modelMsgs] = yield* Effect.all([
               sys.environment(model),
               instruction.system().pipe(Effect.orDie),
               MessageV2.toModelMessagesEffect(msgs, model),
             ])
-            const system = [...env, ...instructions, ...(skills ? [skills] : [])]
+            const system = [...env, ...instructions]
             if (step === 1) {
+              const skills = yield* sys.skills(agent)
+              if (skills) system.push(skills)
+
               const adaptive = yield* sys.adaptivePrompt({ messages: msgs, agent })
               if (adaptive) system.push(adaptive)
 
