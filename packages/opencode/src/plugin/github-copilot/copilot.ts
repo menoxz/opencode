@@ -162,6 +162,22 @@ export async function CopilotAuthPlugin(input: PluginInput): Promise<Hooks> {
             delete headers["x-api-key"]
             delete headers["authorization"]
 
+            // GitHub Copilot (Azure OpenAI) does not support the service_tier
+            // parameter that some model variants (e.g. gpt-5.5-fast) include.
+            const cleanBody = iife(() => {
+              try {
+                const parsed = typeof init?.body === "string" ? JSON.parse(init.body) : init?.body
+                if (!parsed || parsed.service_tier == null) return init?.body
+                const { service_tier: _, ...rest } = parsed
+                return JSON.stringify(rest)
+              } catch {
+                return init?.body
+              }
+            })
+            if (cleanBody !== init?.body) {
+              init = { ...init, body: cleanBody }
+            }
+
             return fetch(request, {
               ...init,
               headers,
