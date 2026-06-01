@@ -1263,8 +1263,19 @@ export const layer = Layer.effect(
           const providerID = ProviderID.make(p.id)
           if (disabled.has(providerID)) continue
 
-          const provider = database[providerID]
-          if (!provider) continue
+          // Check both the models-dev database and the user's config for this provider.
+          const dbEntry = database[providerID]
+          const cfgEntry = configProviders.find(([id]) => id === providerID)
+          if (!dbEntry && !cfgEntry) continue
+
+          const provider = dbEntry ?? ({
+            id: providerID,
+            name: providerID,
+            env: [],
+            models: {},
+            options: {},
+          } as any)
+
           const pluginAuth = yield* auth.get(providerID).pipe(Effect.orDie)
 
           provider.models = yield* Effect.promise(async () => {
@@ -1280,6 +1291,9 @@ export const layer = Layer.effect(
               ]),
             )
           })
+
+          // Persist populated models so the config loop below can merge them.
+          database[providerID] = provider
         }
 
         // extend database from config

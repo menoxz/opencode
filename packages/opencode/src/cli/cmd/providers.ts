@@ -10,6 +10,7 @@ import path from "path"
 import os from "os"
 import { Config } from "@/config/config"
 import { Global } from "@opencode-ai/core/global"
+import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { Plugin } from "../../plugin"
 import type { Hooks } from "@opencode-ai/plugin"
 import { Process } from "@/util/process"
@@ -240,7 +241,12 @@ export const ProvidersCommand = cmd({
   aliases: ["auth"],
   describe: "manage AI providers and credentials",
   builder: (yargs) =>
-    yargs.command(ProvidersListCommand).command(ProvidersLoginCommand).command(ProvidersLogoutCommand).demandCommand(),
+    yargs
+      .command(ProvidersListCommand)
+      .command(ProvidersLoginCommand)
+      .command(ProvidersLogoutCommand)
+      .command(ProvidersImportCopilotCommand)
+      .demandCommand(),
   async handler() {},
 })
 
@@ -511,5 +517,140 @@ export const ProvidersLogoutCommand = effectCmd({
     })
     yield* Effect.orDie(authSvc.remove(yield* promptValue(selected)))
     yield* Prompt.outro("Logout successful")
+  }),
+})
+
+const WINDOWS_CREDENTIAL_SCRIPT = `
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+public static class WinCred {
+    [DllImport("advapi32.dll", SetLastError=true, CharSet=CharSet.Unicode)]
+    private static extern bool CredRead(string target, int type, int flags, out IntPtr credential);
+    [DllImport("advapi32.dll", SetLastError=true, CharSet=CharSet.Unicode)]
+    private static extern bool CredFree(IntPtr buffer);
+    [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]
+    private struct CREDENTIALW {
+        public int Flags; public int Type; public string TargetName; public string Comment;
+        public long LastWritten; public int CredentialBlobSize; public IntPtr CredentialBlob;
+        public int Persist; public int AttributeCount; public IntPtr Attributes;
+        public string TargetAlias; public string UserName;
+    }
+    public static string Read(string target) {
+        IntPtr ptr;
+        if (!CredRead(target, 1, 0, out ptr))
+            return null;
+        try {
+            var cred = Marshal.PtrToStructure<CREDENTIALW>(ptr);
+            byte[] blob = new byte[cred.CredentialBlobSize];
+            Marshal.Copy(cred.CredentialBlob, blob, 0, cred.CredentialBlobSize);
+            return Encoding.Unicode.GetString(blob).TrimEnd('\\0');
+        } finally { CredFree(ptr); }
+    }
+}
+"@; $t = [WinCred]::Read("git:https://github.com"); if ($t) { Write-Host $t } else { Write-Error "not found"; exit 1 }
+`
+
+export const ProvidersImportCopilotCommand = effectCmd({
+  command: "import-copilot",
+  describe: "import GitHub Copilot token from OS credential store (Windows Credential Manager)",
+  // No project instance needed.
+  instance: false,
+  handler: Effect.fn("Cli.providers.importCopilot")(function* (_args) {
+    const authSvc = yield* Auth.Service
+
+    UI.empty()
+    yield* Prompt.intro("Import GitHub Copilot")
+
+    if (process.platform !== "win32") {
+      yield* Prompt.log.error("This command currently only supports Windows (Credential Manager)")
+      yield* Prompt.outro("Done")
+      return
+    }
+
+    // 1. Extract token from Windows Credential Manager
+    yield* Prompt.log.info("Reading GitHub token from Windows Credential Manager...")
+    const spinner = Prompt.spinner()
+    yield* spinner.start("Reading credential...")
+
+    const result = yield* cliTry("Failed to read credential: ", () =>
+      Process.run(
+        ["powershell", "-NoProfile", "-Command", WINDOWS_CREDENTIAL_SCRIPT],
+        { timeout: 15_000, nothrow: true },
+      ),
+    )
+    const exitCode = result.code
+    const stdout = result.stdout.toString("utf-8").trim()
+    const stderr = result.stderr.toString("utf-8").trim()
+
+    if (exitCode !== 0 || !stdout) {
+      yield* spinner.stop("Failed to read credential", 1)
+      yield* Prompt.log.error(
+        stderr.includes("not found")
+          ? "No GitHub credential found. Make sure you have authenticated with GitHub via VS Code or Git."
+          : `Failed to read credential: ${stderr || "unknown error"}`,
+      )
+      yield* Prompt.outro("Done")
+      return
+    }
+
+    const token = stdout.split("\n")[0]?.trim()
+    if (!token || !token.startsWith("gho_")) {
+      yield* spinner.stop("Invalid token", 1)
+      yield* Prompt.log.error("The credential is not a valid GitHub OAuth token")
+      yield* Prompt.outro("Done")
+      return
+    }
+
+    yield* spinner.stop("Token extracted", 0)
+    yield* Prompt.log.success(`Found GitHub token (${token.length} chars)`)
+
+    // 2. Verify token against Copilot API
+    yield* Prompt.log.info("Verifying token against GitHub Copilot API...")
+    const verifySpinner = Prompt.spinner()
+    yield* verifySpinner.start("Verifying...")
+
+    const verified = yield* Effect.tryPromise({
+      try: async () => {
+        const res = await fetch("https://api.githubcopilot.com/models", {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "User-Agent": `opencode/${InstallationVersion}`,
+          },
+          signal: AbortSignal.timeout(10_000),
+        })
+        return res.ok
+      },
+      catch: () => new CliError({ message: "" }),
+    }).pipe(Effect.catch(() => Effect.succeed(false)))
+
+    if (!verified) {
+      yield* verifySpinner.stop("Verification failed", 1)
+      yield* Prompt.log.error(
+        "The token does not have access to GitHub Copilot. Make sure your GitHub account has an active Copilot subscription.",
+      )
+      yield* Prompt.outro("Done")
+      return
+    }
+
+    yield* verifySpinner.stop("Verified", 0)
+    yield* Prompt.log.success("Token is valid! GitHub Copilot access confirmed.")
+
+    // 3. Save to auth.json
+    yield* Prompt.log.info("Saving credential to opencode auth.json...")
+    yield* Effect.orDie(
+      authSvc.set("github-copilot", {
+        type: "oauth",
+        refresh: token,
+        access: token,
+        expires: 0,
+      }),
+    )
+
+    yield* Prompt.log.success("GitHub Copilot credential saved!")
+    yield* Prompt.outro(
+      "Done — you can now use GitHub Copilot with opencode. Run `opencode auth list` to verify.",
+    )
   }),
 })
