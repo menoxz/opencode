@@ -239,6 +239,78 @@ function xmlEscape(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
 }
 
+// ── D3: Methodology auto-check ──────────────────────────────────────────
+// Injected at the end of every system prompt to force self-validation.
+const METHODOLOGY_AUTO_CHECK = `
+<methodology_check>
+  Before responding, verify you have followed the required methodology steps for this task type.
+  Check:
+  1. Did you RESEARCH FIRST? (google_search before writing code)
+  2. Did you check MEMORY FIRST? (memory_retrieve before deciding)
+  3. Did you PLAN before ACT? (analyze, decompose, identify files)
+  4. Did you follow the SWE Loop? (PLAN → ACT → OBSERVE → REFLECT)
+  5. Did you use tools yourself instead of delegating to the user?
+  If you skipped any mandatory step, acknowledge it explicitly and correct your approach.
+</methodology_check>`
+
+// ── A2: Adaptive methodology reminder ──────────────────────────────────
+// Generates a contextual reminder based on step and tool activity.
+function buildMethodologyReminder(step: number, messages: MessageV2.WithParts[]): string | undefined {
+  // Check if any tool calls have been made in this session
+  const hasToolActivity = messages.some((m) =>
+    m.info.role === "assistant" &&
+    m.parts.some((p) => p.type === "tool" && (p as any).state?.status === "success"),
+  )
+
+  // Check if google_search was used
+  const hasSearchedWeb = messages.some((m) =>
+    m.info.role === "assistant" &&
+    m.parts.some((p) => p.type === "tool" && (p as any).tool === "google_search" && (p as any).state?.status === "success"),
+  )
+
+  // Check if memory_retrieve was used
+  const hasMemoryRetrieved = messages.some((m) =>
+    m.info.role === "assistant" &&
+    m.parts.some((p) =>
+      p.type === "tool" &&
+      ((p as any).tool === "memory_retrieve" || (p as any).tool === "memory") &&
+      (p as any).state?.status === "success",
+    ),
+  )
+
+  const parts: string[] = []
+  parts.push(`<methodology_reminder step="${step}">`)
+
+  if (step === 1) {
+    // First step: emphasize the starting methodology
+    parts.push("  You are at the START of this task.")
+    if (!hasSearchedWeb) {
+      parts.push("  <remind type=\"research\" critical=\"true\">RESEARCH FIRST — search the web before writing code</remind>")
+    }
+    if (!hasMemoryRetrieved) {
+      parts.push("  <remind type=\"memory\" critical=\"true\">MEMORY FIRST — retrieve relevant context before deciding</remind>")
+    }
+    parts.push("  <remind type=\"plan\" critical=\"true\">PLAN before ACT — analyze, decompose, identify files</remind>")
+  } else if (hasToolActivity) {
+    // Subsequent steps with tool activity: emphasize OBSERVE + REFLECT
+    parts.push("  You have made tool calls — now follow the SWE Loop:")
+    parts.push("  <remind type=\"observe\">OBSERVE — compare actual vs expected results</remind>")
+    parts.push("  <remind type=\"reflect\">REFLECT — evaluate, adjust, store learnings in memory</remind>")
+    parts.push("  <remind type=\"continue\">Continue the PLAN → ACT → OBSERVE → REFLECT cycle</remind>")
+    if (!hasMemoryRetrieved) {
+      parts.push("  <remind type=\"memory\">Store what you learned in memory using memory_store</remind>")
+    }
+  } else {
+    // Subsequent steps without tool activity
+    parts.push("  Continue following the SWE Loop: PLAN → ACT → OBSERVE → REFLECT")
+    parts.push("  <remind type=\"stuck-protocol\">If stuck &gt;2min → google → docs → implement</remind>")
+    parts.push("  <remind type=\"tools\">Use tools yourself — do not delegate to the user</remind>")
+  }
+
+  parts.push("</methodology_reminder>")
+  return parts.join("\n")
+}
+
 const log = Log.create({ service: "session.prompt" })
 const elog = EffectLogger.create({ service: "session.prompt" })
 
@@ -1680,6 +1752,12 @@ export const layer = Layer.effect(
                 system.push(formatPlanSection(executionPlan))
               }
             }
+
+            // ── Methodology enforcement: A2 adaptive reminder + D3 auto-check ──
+            const methodReminder = buildMethodologyReminder(step, msgs)
+            if (methodReminder) system.push(methodReminder)
+            system.push(METHODOLOGY_AUTO_CHECK)
+
             const format = lastUser.format ?? { type: "text" as const }
             if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
             const result = yield* handle.process({

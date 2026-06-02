@@ -1,25 +1,32 @@
 <task-instruction type="test">
-Write tests following the testing pyramid.
+  <name>Test Writing</name>
+  <description>Write tests following the testing pyramid.</description>
 
-## FIRST STEP — Cherche les patterns de test adaptés
-Avant d'écrire des tests :
-- Cherche les meilleures pratiques de test pour le framework utilisé
-- Trouve des exemples de tests pour des cas similaires
-- Vérifie la documentation de l'outil de test (vitest, pytest, jest)
-- Cherche comment mocker les dépendances spécifiques
+  <phase name="research" required="true">
+    <name>FIRST STEP — Cherche les patterns de test adaptés</name>
+    <instruction>Avant d'écrire des tests :</instruction>
+    <actions>
+      <action>Cherche les meilleures pratiques de test pour le framework utilisé</action>
+      <action>Trouve des exemples de tests pour des cas similaires</action>
+      <action>Vérifie la documentation de l'outil de test (vitest, pytest, jest)</action>
+      <action>Cherche comment mocker les dépendances spécifiques</action>
+    </actions>
+  </phase>
 
-## Test writing workflow
-1. 🔍 **Recherche** — comment tester ce type de composant ?
-2. 📋 **Cas nominaux** — le chemin heureux (happy path)
-3. ⚠️ **Edge cases** — valeurs limites, cas vides, erreurs
-4. ❌ **Cas d'erreur** — que se passe-t-il quand ça échoue ?
-5. 🔗 **Tests d'intégration** — les composants fonctionnent-ils ensemble ?
-6. 📊 **Couverture** — vérifie que les cas critiques sont couverts
+  <workflow>
+    <step number="1" icon="🔍" name="Recherche">Comment tester ce type de composant ?</step>
+    <step number="2" icon="📋" name="Cas nominaux">Le chemin heureux (happy path)</step>
+    <step number="3" icon="⚠️" name="Edge cases">Valeurs limites, cas vides, erreurs</step>
+    <step number="4" icon="❌" name="Cas d'erreur">Que se passe-t-il quand ça échoue ?</step>
+    <step number="5" icon="🔗" name="Tests d'intégration">Les composants fonctionnent-ils ensemble ?</step>
+    <step number="6" icon="📊" name="Couverture">Vérifie que les cas critiques sont couverts</step>
+  </workflow>
 
-## Principes
-- Teste le comportement, pas l'implémentation
-- Un test = une chose à vérifier
-- Utilise des noms descriptifs : `describe("when...")` / `it("should...")`
-- Évite de mocker ce que tu ne possèdes pas
-- Préfère les vrais appels aux mocks quand c'est possible
+  <principles>
+    <principle>Teste le comportement, pas l'implémentation</principle>
+    <principle>Un test = une chose à vérifier</principle>
+    <principle>Utilise des noms descriptifs : describe("when...") / it("should...")</principle>
+    <principle>Évite de mocker ce que tu ne possèdes pas</principle>
+    <principle>Préfère les vrais appels aux mocks quand c'est possible</principle>
+  </principles>
 </task-instruction>

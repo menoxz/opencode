@@ -1,31 +1,44 @@
 <task-instruction type="feature">
-Build new functionality following a structured approach.
+  <name>Feature Implementation</name>
+  <description>Build new functionality following a structured approach.</description>
 
-## AUTO-PLANNING
-For complex multi-step feature implementations, the PlanEngine may generate a suggested
-execution plan (injected as <auto_plan> in your system prompt). Use this plan as guidance:
-- Review the suggested steps and adapt as needed
-- Delegate independent steps to sub-agents via the task tool for parallel execution
-- The plan is advisory — use your judgment to reorder or consolidate steps
+  <phase name="auto-planning">
+    <description>
+      For complex multi-step feature implementations, the PlanEngine may generate a suggested
+      execution plan (injected as &lt;auto_plan&gt; in your system prompt). Use this plan as guidance:
+    </description>
+    <actions>
+      <action>Review the suggested steps and adapt as needed</action>
+      <action>Delegate independent steps to sub-agents via the task tool for parallel execution</action>
+      <action>The plan is advisory — use your judgment to reorder or consolidate steps</action>
+    </actions>
+  </phase>
 
-## FIRST STEP — Cherche la bonne approche en ligne
-Avant d'écrire la première ligne de code :
-- Cherche les meilleures pratiques pour cette fonctionnalité
-- Trouve des librairies existantes qui résolvent déjà le problème
-- Vérifie la documentation de l'API / framework
-- Regarde des exemples d'implémentation similaires
+  <phase name="research" required="true">
+    <name>FIRST STEP — Cherche la bonne approche en ligne</name>
+    <instruction>Avant d'écrire la première ligne de code :</instruction>
+    <actions>
+      <action>Cherche les meilleures pratiques pour cette fonctionnalité</action>
+      <action>Trouve des librairies existantes qui résolvent déjà le problème</action>
+      <action>Vérifie la documentation de l'API / framework</action>
+      <action>Regarde des exemples d'implémentation similaires</action>
+    </actions>
+  </phase>
 
-## Development workflow
-1. 🔍 **Recherche** — quelle est la meilleure approche connue ?
-2. 📖 **Comprends** — lis le code existant, comprends les conventions
-3. 📋 **Planifie** — design l'implémentation avant de coder
-4. ✏️ **Implémente** — écris du code minimal et correct
-5. 🧪 **Teste** — vérifie avec tests unitaires ET intégration
-6. 👀 **Revue** — cherche les edge cases, erreurs, sécurité
+  <workflow>
+    <step number="1" icon="🔍" name="Recherche">Quelle est la meilleure approche connue ?</step>
+    <step number="2" icon="📖" name="Compréhension">Lis le code existant, comprends les conventions</step>
+    <step number="3" icon="📋" name="Planification">Design l'implémentation avant de coder</step>
+    <step number="4" icon="✏️" name="Implémentation">Écris du code minimal et correct</step>
+    <step number="5" icon="🧪" name="Test">Vérifie avec tests unitaires ET intégration</step>
+    <step number="6" icon="👀" name="Revue">Cherche les edge cases, erreurs, sécurité</step>
+  </workflow>
 
-## Principes
-- Suis les patterns existants dans le codebase
-- Garde les changements focalisés — une feature par PR/commit
-- Ajoute des tests pour la nouvelle fonctionnalité
-- Mets à jour la documentation si l'API change
-- Considère la rétrocompatibilité
+  <principles>
+    <principle>Suis les patterns existants dans le codebase</principle>
+    <principle>Garde les changements focalisés — une feature par PR/commit</principle>
+    <principle>Ajoute des tests pour la nouvelle fonctionnalité</principle>
+    <principle>Mets à jour la documentation si l'API change</principle>
+    <principle>Considère la rétrocompatibilité</principle>
+  </principles>
+</task-instruction>

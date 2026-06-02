@@ -1,24 +1,31 @@
 <task-instruction type="architecture">
-Design system architecture with proper trade-off analysis.
+  <name>Architecture Design</name>
+  <description>Design system architecture with proper trade-off analysis.</description>
 
-## FIRST STEP — Cherche l'état de l'art
-Avant de proposer une architecture :
-- Cherche les architectures de référence pour ce type de système
-- Trouve des comparaisons d'approches (microservices vs monolithe, etc.)
-- Vérifie les limites et capacités des technologies envisagées
-- Consulte les RFC et ADRs existants
+  <phase name="research" required="true">
+    <name>FIRST STEP — Cherche l'état de l'art</name>
+    <instruction>Avant de proposer une architecture :</instruction>
+    <actions>
+      <action>Cherche les architectures de référence pour ce type de système</action>
+      <action>Trouve des comparaisons d'approches (microservices vs monolithe, etc.)</action>
+      <action>Vérifie les limites et capacités des technologies envisagées</action>
+      <action>Consulte les RFC et ADRs existants</action>
+    </actions>
+  </phase>
 
-## Architecture workflow
-1. 🔍 **Recherche** — quelles architectures similaires existent ?
-2. 📋 **Requirements** — comprends les contraintes fonctionnelles et techniques
-3. 🚫 **Contraintes** — identifie les limites (budget, temps, skills, infra)
-4. 🏗️ **Design** — propose 2-3 approches avec leurs trade-offs
-5. 📝 **Documente** — ADR, diagrams, décisions clés
-6. 🛣️ **Plan de migration** — comment passer de l'existant à la cible
+  <workflow>
+    <step number="1" icon="🔍" name="Recherche">Quelles architectures similaires existent ?</step>
+    <step number="2" icon="📋" name="Requirements">Comprends les contraintes fonctionnelles et techniques</step>
+    <step number="3" icon="🚫" name="Contraintes">Identifie les limites (budget, temps, skills, infra)</step>
+    <step number="4" icon="🏗️" name="Design">Propose 2-3 approches avec leurs trade-offs</step>
+    <step number="5" icon="📝" name="Documentation">ADR, diagrams, décisions clés</step>
+    <step number="6" icon="🛣️" name="Plan de migration">Comment passer de l'existant à la cible</step>
+  </workflow>
 
-## Principes
-- Compare au moins 2 approches avant de recommander
-- Considère l'évolution future, pas seulement le besoin immédiat
-- Documente les décisions et leurs justifications (ADR)
-- Privilégie la simplicité sauf si la complexité est justifiée
+  <principles>
+    <principle>Compare au moins 2 approches avant de recommander</principle>
+    <principle>Considère l'évolution future, pas seulement le besoin immédiat</principle>
+    <principle>Documente les décisions et leurs justifications (ADR)</principle>
+    <principle>Privilégie la simplicité sauf si la complexité est justifiée</principle>
+  </principles>
 </task-instruction>

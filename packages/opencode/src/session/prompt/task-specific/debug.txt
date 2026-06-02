@@ -1,27 +1,34 @@
 <task-instruction type="debug">
-Systematically diagnose and resolve errors.
+  <name>Systematic Debugging</name>
+  <description>Systematically diagnose and resolve errors.</description>
 
-## FIRST STEP — Cherche l'erreur en ligne
-Avant toute expérimentation, cherche sur le web :
-- Le message d'erreur exact (stack trace complet)
-- Des issues GitHub avec la même stack trace
-- La documentation de l'API / framework concerné
-- Des solutions connues sur Stack Overflow, forums, etc.
+  <phase name="research" required="true">
+    <name>FIRST STEP — Cherche l'erreur en ligne</name>
+    <instruction>Avant toute expérimentation, cherche sur le web :</instruction>
+    <actions>
+      <action>Le message d'erreur exact (stack trace complet)</action>
+      <action>Des issues GitHub avec la même stack trace</action>
+      <action>La documentation de l'API / framework concerné</action>
+      <action>Des solutions connues sur Stack Overflow, forums, etc.</action>
+    </actions>
+  </phase>
 
-## Systematic debugging protocol
-1. 🔍 **Cherche l'erreur en ligne** — ne devine pas, Google est ton ami
-2. 📖 **Comprends l'erreur** — lis le stack trace et le message complet
-3. 🔬 **Reproduis** — crée un cas de reproduction minimal
-4. 🎯 **Isole** — binary search / divide and conquer
-5. 💡 **Formule une hypothèse** — comportement attendu vs réel
-6. 🧪 **Teste l'hypothèse** — une expérience à la fois
-7. 🔧 **Corrige** — applique la correction minimale
-8. ✅ **Vérifie** — confirme le fix + pas de régressions
+  <protocol name="systematic-debugging">
+    <step number="1" icon="🔍" name="Recherche erreur">Cherche l'erreur en ligne — ne devine pas, Google est ton ami</step>
+    <step number="2" icon="📖" name="Compréhension">Lis le stack trace et le message complet</step>
+    <step number="3" icon="🔬" name="Reproduction">Crée un cas de reproduction minimal</step>
+    <step number="4" icon="🎯" name="Isolement">Binary search / divide and conquer</step>
+    <step number="5" icon="💡" name="Hypothèse">Comportement attendu vs réel</step>
+    <step number="6" icon="🧪" name="Test hypothèse">Une expérience à la fois</step>
+    <step number="7" icon="🔧" name="Correction">Applique la correction minimale</step>
+    <step number="8" icon="✅" name="Vérification">Confirme le fix + pas de régressions</step>
+  </protocol>
 
-## Common checks
-- Type errors → check interfaces, generics, null/undefined
-- Runtime errors → check async flows, error boundaries, edge cases
-- Logic errors → trace through the algorithm step by step
-- Integration errors → check API contracts, data formats
-- Performance issues → profile before optimizing
+  <common-checks>
+    <check type="type-errors">Check interfaces, generics, null/undefined</check>
+    <check type="runtime-errors">Check async flows, error boundaries, edge cases</check>
+    <check type="logic-errors">Trace through the algorithm step by step</check>
+    <check type="integration-errors">Check API contracts, data formats</check>
+    <check type="performance-issues">Profile before optimizing</check>
+  </common-checks>
 </task-instruction>

@@ -1,23 +1,30 @@
 <task-instruction type="refactor">
-Improve code structure without changing behavior.
+  <name>Refactoring</name>
+  <description>Improve code structure without changing behavior.</description>
 
-## FIRST STEP — Cherche les meilleures pratiques de refactoring
-Avant de commencer :
-- Cherche des patterns de refactoring pour le problème spécifique
-- Vérifie la documentation sur les migrations API si applicable
-- Trouve des exemples de la structure cible
+  <phase name="research" required="true">
+    <name>FIRST STEP — Cherche les meilleures pratiques de refactoring</name>
+    <instruction>Avant de commencer :</instruction>
+    <actions>
+      <action>Cherche des patterns de refactoring pour le problème spécifique</action>
+      <action>Vérifie la documentation sur les migrations API si applicable</action>
+      <action>Trouve des exemples de la structure cible</action>
+    </actions>
+  </phase>
 
-## Refactoring workflow
-1. 🔍 **Recherche** — quels patterns de refactoring sont les plus adaptés ?
-2. 🗺️ **Cartographie** — comprends l'architecture actuelle et tous les appelants
-3. 📋 **Planifie** — design la structure cible, identifie les points d'extraction
-4. ✂️ **Exécute par incréments** — un petit changement à la fois
-5. ✅ **Valide après chaque étape** — les tests doivent passer à chaque commit
-6. 🧹 **Nettoie** — supprime le code mort, mets à jour les imports
+  <workflow>
+    <step number="1" icon="🔍" name="Recherche">Quels patterns de refactoring sont les plus adaptés ?</step>
+    <step number="2" icon="🗺️" name="Cartographie">Comprends l'architecture actuelle et tous les appelants</step>
+    <step number="3" icon="📋" name="Planification">Design la structure cible, identifie les points d'extraction</step>
+    <step number="4" icon="✂️" name="Exécution">Un petit changement à la fois</step>
+    <step number="5" icon="✅" name="Validation">Les tests doivent passer à chaque commit</step>
+    <step number="6" icon="🧹" name="Nettoyage">Supprime le code mort, mets à jour les imports</step>
+  </workflow>
 
-## Principes
-- Ne change JAMAIS le comportement pendant un refactoring
-- Chaque commit doit être une transformation atomique sûre
-- Garde les PR reviewables — max 200 lignes changées par PR
-- Run la suite de tests complète après chaque changement significatif
+  <principles>
+    <principle>Ne change JAMAIS le comportement pendant un refactoring</principle>
+    <principle>Chaque commit doit être une transformation atomique sûre</principle>
+    <principle>Garde les PR reviewables — max 200 lignes changées par PR</principle>
+    <principle>Run la suite de tests complète après chaque changement significatif</principle>
+  </principles>
 </task-instruction>

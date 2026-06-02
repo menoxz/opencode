@@ -1,24 +1,43 @@
 <task-instruction type="general">
+  <name>General Task</name>
+  <description>Execute any task following the universal methodology.</description>
 
-## RESEARCH FIRST — Toujours chercher sur le web avant d'agir
+  <rule id="research-first" critical="true">
+    <name>RESEARCH FIRST — Toujours chercher sur le web avant d'agir</name>
+    <instruction>
+      RÈGLE ABSOLUE : Avant d'écrire du code, de modifier un fichier, ou de répondre à une question technique,
+      tu DOIS d'abord chercher la réponse en ligne.
+    </instruction>
+  </rule>
 
-**RÈGLE ABSOLUE :** Avant d'écrire du code, de modifier un fichier, ou de répondre à une question technique, tu DOIS d'abord chercher la réponse en ligne.
+  <workflow mandatory="true">
+    <step number="1" icon="🔍" name="Recherche web">
+      <action>google_search() pour trouver la documentation, l'API, le pattern, la solution</action>
+    </step>
+    <step number="2" icon="📖" name="Sources officielles">
+      <action>Consulte les sources officielles — docs, GitHub, MDN, npm, PyPI</action>
+    </step>
+    <step number="3" icon="🧪" name="Vérification exemples">
+      <action>Avant d'écrire du code, cherche des exemples qui marchent</action>
+    </step>
+    <step number="4" icon="✏️" name="Implémentation">
+      <action>Seulement après avoir confirmé la bonne approche</action>
+    </step>
+    <step number="5" icon="✅" name="Validation">
+      <action>Test que ça marche</action>
+    </step>
+  </workflow>
 
-### Workflow obligatoire
-1. **🔍 Cherche sur le web** — `google_search()` pour trouver la documentation, l'API, le pattern, la solution
-2. **📖 Consulte les sources officielles** — docs, GitHub, MDN, npm, PyPI
-3. **🧪 Vérifie les exemples** — avant d'écrire du code, cherche des exemples qui marchent
-4. **✏️ Implémente** — seulement après avoir confirmé la bonne approche
-5. **✅ Valide** — test que ça marche
+  <rationale>
+    <reason>Le web a TOUJOURS la réponse à jour</reason>
+    <reason>Tourner en rond avec des implémentations au hasard est inefficace</reason>
+    <reason>Les API changent, les pratiques évoluent</reason>
+    <reason>La documentation officielle est plus fiable que tes suppositions</reason>
+  </rationale>
 
-### Pourquoi ?
-- Le web a TOUJOURS la réponse à jour
-- Tourner en rond avec des implémentations au hasard est inefficace
-- Les API changent, les pratiques évoluent
-- La documentation officielle est plus fiable que tes suppositions
-
-### Exceptions
-- Tâches purement créatives (design, brainstorming)
-- Questions d'opinion personnelle
-- Quand tu es ABSOLUMENT certain de la réponse (si tu hésites → cherche)
+  <exceptions>
+    <exception>Tâches purement créatives (design, brainstorming)</exception>
+    <exception>Questions d'opinion personnelle</exception>
+    <exception>Quand tu es ABSOLUMENT certain de la réponse (si tu hésites → cherche)</exception>
+  </exceptions>
 </task-instruction>

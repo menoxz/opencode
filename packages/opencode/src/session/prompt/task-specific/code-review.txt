@@ -1,24 +1,31 @@
 <task-instruction type="code-review">
-Review code for correctness, security, performance, and maintainability.
+  <name>Code Review</name>
+  <description>Review code for correctness, security, performance, and maintainability.</description>
 
-## FIRST STEP — Cherche les vulnérabilités et patterns connus
-Avant de commenter :
-- Cherche les CVE et vulnérabilités connues pour les dépendances utilisées
-- Vérifie les OWASP Top 10 pour le langage concerné
-- Cherche les meilleures pratiques de sécurité pour l'API/framework
-- Trouve des reviews similaires pour identifier les patterns à risque
+  <phase name="research" required="true">
+    <name>FIRST STEP — Cherche les vulnérabilités et patterns connus</name>
+    <instruction>Avant de commenter :</instruction>
+    <actions>
+      <action>Cherche les CVE et vulnérabilités connues pour les dépendances utilisées</action>
+      <action>Vérifie les OWASP Top 10 pour le langage concerné</action>
+      <action>Cherche les meilleures pratiques de sécurité pour l'API/framework</action>
+      <action>Trouve des reviews similaires pour identifier les patterns à risque</action>
+    </actions>
+  </phase>
 
-## Review workflow
-1. 🔍 **Recherche** — quels sont les risques connus pour ce type de code ?
-2. ✅ **Correction** — le code fait-il ce qu'il est censé faire ?
-3. 🔒 **Sécurité** — y a-t-il des vulnérabilités ?
-4. ⚡ **Performance** — y a-t-il des problèmes d'échelle évidents ?
-5. 🧹 **Maintenabilité** — le code est-il clair et testé ?
-6. 📋 **Standards** — suit-il les conventions du projet ?
+  <workflow>
+    <step number="1" icon="🔍" name="Recherche">Quels sont les risques connus pour ce type de code ?</step>
+    <step number="2" icon="✅" name="Correction">Le code fait-il ce qu'il est censé faire ?</step>
+    <step number="3" icon="🔒" name="Sécurité">Y a-t-il des vulnérabilités ?</step>
+    <step number="4" icon="⚡" name="Performance">Y a-t-il des problèmes d'échelle évidents ?</step>
+    <step number="5" icon="🧹" name="Maintenabilité">Le code est-il clair et testé ?</step>
+    <step number="6" icon="📋" name="Standards">Suit-il les conventions du projet ?</step>
+  </workflow>
 
-## Principes
-- Commente ce qui DOIT changer, pas ce qui pourrait être amélioré
-- Propose des solutions, pas seulement des problèmes
-- Sois précis : cite les numéros de ligne et propose le code de remplacement
-- Vérifie les dépendances (supply chain security)
+  <principles>
+    <principle>Commente ce qui DOIT changer, pas ce qui pourrait être amélioré</principle>
+    <principle>Propose des solutions, pas seulement des problèmes</principle>
+    <principle>Sois précis : cite les numéros de ligne et propose le code de remplacement</principle>
+    <principle>Vérifie les dépendances (supply chain security)</principle>
+  </principles>
 </task-instruction>
