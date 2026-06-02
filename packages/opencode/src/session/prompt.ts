@@ -253,6 +253,67 @@ const METHODOLOGY_AUTO_CHECK = `
   If you skipped any mandatory step, acknowledge it explicitly and correct your approach.
 </methodology_check>`
 
+// ── Matrix: Methodology injection mode ─────────────────────────────────
+// Determines how much methodology boilerplate to inject based on
+// step number and task complexity. Objective (zero LLM cost).
+type MethodologyMode = "full" | "light" | "quick"
+
+function parseUserFlags(text: string): MethodologyMode | undefined {
+  // User can override with explicit flags
+  if (text.includes("/quick")) return "quick"
+  if (text.includes("/full")) return "full"
+  return undefined
+}
+
+function getCurrentTaskText(msgs: MessageV2.WithParts[]): string {
+  for (const m of msgs.toReversed()) {
+    if (m.info.role !== "user") continue
+    const text = m.parts
+      .filter((p) => p.type === "text" && !(p as any).synthetic)
+      .map((p) => (p as any).text)
+      .join("\n")
+    if (text.trim()) return text
+  }
+  return ""
+}
+
+function computeMethodologyMode(step: number, msgs: MessageV2.WithParts[]): MethodologyMode {
+  const currentTaskText = getCurrentTaskText(msgs)
+
+  // 1. User flags override everything
+  const flagOverride = parseUserFlags(currentTaskText)
+  if (flagOverride) return flagOverride
+
+  // 2. Heuristic complexity analysis (zero LLM cost)
+  const heuristic = PlanEngine.heuristicComplexity(currentTaskText)
+
+  // 3. Matrix: step × complexity
+  //
+  //            | step=1 | step=2-5 | step>5
+  //  simple    | light  | quick    | quick
+  //  moderate  | full   | light    | quick
+  //  complex   | full   | full     | light
+  //
+  // Rationale:
+  // - First step needs context injection (skills, notifications, etc.)
+  //   but trivial tasks don't need the 5-question auto-check.
+  // - Early session still enforces methodology for complex tasks.
+  // - Deep session drops to minimal for everything except complex tasks,
+  //   which still get light enforcement.
+  // - User flags /quick or /full override the matrix entirely.
+
+  if (step === 1) {
+    if (heuristic === "simple") return "light"
+    return "full"
+  } else if (step <= 5) {
+    if (heuristic === "complex") return "full"
+    return "light"
+  } else {
+    if (heuristic === "complex") return "light"
+    return "quick"
+  }
+}
+
 // ── A2: Adaptive methodology reminder ──────────────────────────────────
 // Generates a contextual reminder based on step and tool activity.
 function buildMethodologyReminder(step: number, messages: MessageV2.WithParts[]): string | undefined {
@@ -1753,10 +1814,15 @@ export const layer = Layer.effect(
               }
             }
 
-            // ── Methodology enforcement: A2 adaptive reminder + D3 auto-check ──
-            const methodReminder = buildMethodologyReminder(step, msgs)
-            if (methodReminder) system.push(methodReminder)
-            system.push(METHODOLOGY_AUTO_CHECK)
+            // ── Methodology enforcement (matrix: step × complexity) ──
+            const mode = computeMethodologyMode(step, msgs)
+            if (mode !== "quick") {
+              const methodReminder = buildMethodologyReminder(step, msgs)
+              if (methodReminder) system.push(methodReminder)
+            }
+            if (mode === "full") {
+              system.push(METHODOLOGY_AUTO_CHECK)
+            }
 
             const format = lastUser.format ?? { type: "text" as const }
             if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
