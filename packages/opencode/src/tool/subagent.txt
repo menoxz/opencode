@@ -1,0 +1,8 @@
+List all active sub-agents spawned by the current session. Returns their ID, agent type, description, and running time.
+
+Use this to:
+- Check if background sub-agents are still running
+- See what work has been delegated to sub-agents
+- Monitor parallel tasks
+
+Note: this only shows sub-agents created by the current session (not sub-agents of sub-agents). Completed sub-agents remain listed with their final state.

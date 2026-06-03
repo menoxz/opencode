@@ -1815,7 +1815,11 @@ export const layer = Layer.effect(
             }
 
             // ── Methodology enforcement (matrix: step × complexity) ──
-            const mode = computeMethodologyMode(step, msgs)
+            const baseMode = computeMethodologyMode(step, msgs)
+            // Sub-agents (sessions with a parentID) are capped at "light":
+            // they get contextual reminders when needed but never the
+            // 5-question auto-check — the parent agent owns methodology.
+            const mode = session.parentID && baseMode === "full" ? "light" : baseMode
             if (mode !== "quick") {
               const methodReminder = buildMethodologyReminder(step, msgs)
               if (methodReminder) system.push(methodReminder)
