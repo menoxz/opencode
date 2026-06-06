@@ -3,6 +3,7 @@ import { AppRuntime } from "@/effect/app-runtime"
 import { effectCmd } from "../effect-cmd"
 import { create as createDaemon } from "../../daemon/index"
 import { checkTriggers, memoryConsolidate, tunnelHealthCheck, processQueue, detectPatterns, runSanityEval } from "../../daemon/triggers"
+import { processMCPCommands } from "../../daemon/mcp-control"
 import { every_30s, every_5m, every_1m, every_6h, every_24h, every_1h } from "../../daemon/scheduler"
 import { subscribeFileChanges, startFileWatcher } from "../../daemon/file-watcher"
 import { listenForTriggers } from "../../daemon/ws-push"
@@ -81,6 +82,7 @@ export const daemonHandler = Effect.fn("Daemon.handler")(function* (
 
   // Register periodic tasks
   yield* daemon.register("trigger-check", checkTriggers, every_30s)
+  yield* daemon.register("mcp-control", processMCPCommands as unknown as () => Effect.Effect<void>, every_30s)
   yield* daemon.register("memory-consolidate", memoryConsolidate as unknown as () => Effect.Effect<void>, every_6h)
   yield* daemon.register("pattern-detection", detectPatterns as unknown as () => Effect.Effect<void>, every_24h)
   yield* daemon.register("tunnel-health", tunnelHealthCheck, every_1m)
