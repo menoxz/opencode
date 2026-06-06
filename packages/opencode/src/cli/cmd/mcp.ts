@@ -98,6 +98,8 @@ export const McpCommand = cmd({
     yargs
       .command(McpAddCommand)
       .command(McpListCommand)
+      .command(McpConnectCommand)
+      .command(McpDisconnectCommand)
       .command(McpAuthCommand)
       .command(McpLogoutCommand)
       .command(McpDebugCommand)
@@ -163,6 +165,105 @@ export const McpListCommand = effectCmd({
     }
 
     prompts.outro(`${servers.length} server(s)`)
+  }),
+})
+
+export const McpConnectCommand = effectCmd({
+  command: "connect [name]",
+  describe: "connect an MCP server",
+  builder: (yargs) =>
+    yargs.positional("name", {
+      describe: "name of the MCP server to connect",
+      type: "string",
+    }),
+  handler: Effect.fn("Cli.mcp.connect")(function* (args) {
+    UI.empty()
+
+    const cfg = yield* Config.Service
+    const config = yield* cfg.get()
+    const servers = configuredServers(config)
+
+    let serverName = args.name
+    if (!serverName) {
+      const options = servers.map(([name, _cfg]) => ({ label: name, value: name }))
+      const selected = yield* Effect.promise(() =>
+        prompts.select({
+          message: "Select MCP server to connect",
+          options,
+        }),
+      )
+      if (prompts.isCancel(selected)) throw new UI.CancelledError()
+      serverName = selected
+    }
+
+    const spinner = prompts.spinner()
+    spinner.start(`Connecting ${serverName}...`)
+
+    yield* MCP.Service.use((mcp) => mcp.connect(serverName)).pipe(
+      Effect.tap(() => Effect.sync(() => spinner.stop(`✅ Connected ${serverName}`))),
+      Effect.catchCause((cause) =>
+        Effect.sync(() => {
+          spinner.stop(`❌ Failed to connect ${serverName}`, 1)
+          const error = Cause.squash(cause)
+          prompts.log.error(error instanceof Error ? error.message : String(error))
+        }),
+      ),
+    )
+
+    prompts.outro("Done")
+  }),
+})
+
+export const McpDisconnectCommand = effectCmd({
+  command: "disconnect [name]",
+  describe: "disconnect an MCP server",
+  builder: (yargs) =>
+    yargs.positional("name", {
+      describe: "name of the MCP server to disconnect",
+      type: "string",
+    }),
+  handler: Effect.fn("Cli.mcp.disconnect")(function* (args) {
+    UI.empty()
+
+    const cfg = yield* Config.Service
+    const mcp = yield* MCP.Service
+    const config = yield* cfg.get()
+    const statuses = yield* mcp.status()
+    const servers = configuredServers(config).filter(([name]) => statuses[name]?.status === "connected")
+
+    let serverName = args.name
+    if (!serverName) {
+      if (servers.length === 0) {
+        prompts.log.warn("No connected MCP servers")
+        prompts.outro("Done")
+        return
+      }
+      const options = servers.map(([name]) => ({ label: name, value: name }))
+      const selected = yield* Effect.promise(() =>
+        prompts.select({
+          message: "Select MCP server to disconnect",
+          options,
+        }),
+      )
+      if (prompts.isCancel(selected)) throw new UI.CancelledError()
+      serverName = selected
+    }
+
+    const spinner = prompts.spinner()
+    spinner.start(`Disconnecting ${serverName}...`)
+
+    yield* mcp.disconnect(serverName).pipe(
+      Effect.tap(() => Effect.sync(() => spinner.stop(`✅ Disconnected ${serverName}`))),
+      Effect.catchCause((cause) =>
+        Effect.sync(() => {
+          spinner.stop(`❌ Failed to disconnect ${serverName}`, 1)
+          const error = Cause.squash(cause)
+          prompts.log.error(error instanceof Error ? error.message : String(error))
+        }),
+      ),
+    )
+
+    prompts.outro("Done")
   }),
 })
 
