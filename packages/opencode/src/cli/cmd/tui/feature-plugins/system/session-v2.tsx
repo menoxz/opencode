@@ -350,7 +350,7 @@ function AssistantMessage(props: {
           <text fg={theme.textMuted}>{props.message.error}</text>
         </box>
       </Show>
-      <Show when={props.last || final() || props.message.error}>
+      <Show when={(props.last && !props.message.finish) || final() || props.message.error}>
         <box paddingLeft={3} flexShrink={0}>
           <text marginTop={1}>
             <span style={{ fg: local.agent.color(props.message.agent) }}>▣ </span>
