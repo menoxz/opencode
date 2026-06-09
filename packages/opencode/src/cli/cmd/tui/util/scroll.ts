@@ -22,17 +22,17 @@ export class DynamicScrollAccel implements ScrollAcceleration {
     this.lastTime = now
 
     if (elapsed < 80) {
-      // Défilement très rapide : accélération importante
-      this.multiplier = Math.min(this.multiplier + 2, 15)
+      // Défilement rapide : accélération modérée
+      this.multiplier = Math.min(this.multiplier + 1, 4)
     } else if (elapsed < 150) {
-      // Défilement modéré : accélération douce
-      this.multiplier = Math.min(this.multiplier + 1, 8)
+      // Défilement moyen : accélération très douce
+      this.multiplier = Math.min(this.multiplier + 0.5, 2.5)
     } else if (elapsed > 350) {
       // Temps mort long : réinitialisation
       this.multiplier = 1
     } else {
       // Décroissance progressive
-      this.multiplier = Math.max(1, this.multiplier - 1)
+      this.multiplier = Math.max(1, this.multiplier - 0.5)
     }
 
     return Math.round(this.baseSpeed * this.multiplier)
@@ -54,7 +54,6 @@ export function getScrollAcceleration(
     return new CustomSpeedScroll(tuiConfig.scroll_speed)
   }
 
-  // Par défaut, nous utilisons désormais notre accélération dynamique (vitesse de base 3)
-  // au lieu d'une vitesse linéaire plate et lente de 3.
-  return new DynamicScrollAccel(3)
+  // Par défaut, nous utilisons désormais notre accélération dynamique (vitesse de base 1.5 pour un défilement très doux)
+  return new DynamicScrollAccel(1.5)
 }
