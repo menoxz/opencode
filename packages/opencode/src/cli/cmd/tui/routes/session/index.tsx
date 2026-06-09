@@ -7,6 +7,7 @@ import {
   For,
   Match,
   on,
+  onCleanup,
   onMount,
   Show,
   Switch,
@@ -1518,10 +1519,24 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
   // Reasoning is finalized when the server sets `time.end` (see processor.ts).
   // Flips independently of the parent message completing.
   const isDone = createMemo(() => props.part.time.end !== undefined)
+  
+  // Real-time ticking for ongoing reasoning
+  const [now, setNow] = createSignal(Date.now())
+  
+  createEffect(() => {
+    if (isDone()) return
+    const interval = setInterval(() => {
+      setNow(Date.now())
+    }, 250)
+    onCleanup(() => clearInterval(interval))
+  })
+
   const inMinimal = createMemo(() => ctx.thinkingMode() === "hide")
   const duration = createMemo(() => {
     const end = props.part.time.end
-    return end === undefined ? 0 : Math.max(0, end - props.part.time.start)
+    return end === undefined
+      ? Math.max(0, now() - props.part.time.start)
+      : Math.max(0, end - props.part.time.start)
   })
   const summary = createMemo(() => reasoningSummary(content()))
   const syntax = createMemo(() => generateSubtleSyntax(theme))
@@ -1540,7 +1555,7 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
             open={!inMinimal() || expanded()}
             done={isDone()}
             title={summary().title}
-            duration={isDone() ? Locale.duration(duration()) : undefined}
+            duration={Locale.duration(duration())}
           />
         </box>
         <Show when={(!inMinimal() || expanded()) && summary().body}>
