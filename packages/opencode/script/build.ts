@@ -14,8 +14,25 @@ process.chdir(dir)
 
 const generated = await import("./generate.ts")
 
-import { Script } from "@opencode-ai/script"
 import pkg from "../package.json"
+
+// 🔒 Guard: dev builds are not allowed — force version from package.json
+process.env.OPENCODE_VERSION = pkg.version
+const { Script } = await import("@opencode-ai/script")
+
+if (Script.version.startsWith("0.0.0-")) {
+  console.error("")
+  console.error("=".repeat(60))
+  console.error("  BUILD BLOCKED: Dev version detected")
+  console.error(`  Detected:    ${Script.version}`)
+  console.error(`  Package.json: ${pkg.version}`)
+  console.error("")
+  console.error("  You MUST bump the version in packages/opencode/package.json")
+  console.error("  before building. Use a proper semver (e.g., 1.18.13).")
+  console.error("=".repeat(60))
+  console.error("")
+  process.exit(1)
+}
 
 // Load migrations from migration directories
 const migrationDirs = (

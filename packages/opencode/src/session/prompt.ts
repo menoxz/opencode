@@ -1626,32 +1626,6 @@ export const layer = Layer.effect(
             continue
           }
 
-          // ── Auto-planning for complex tasks ──────────────────────────
-          // On the first step of the `build` agent, check if the task is complex
-          // and generate a structured execution plan as guidance for the LLM.
-          let executionPlan: ExecutionPlan | undefined
-          if (step === 1 && lastUser.agent === "build") {
-            const firstUserMsg = msgs.find((m) => m.info.role === "user")
-            const firstUserText = firstUserMsg?.parts
-              .filter((p) => p.type === "text" && !p.synthetic)
-              .map((p) => (p as MessageV2.TextPart).text)
-              .join("\n") ?? ""
-            if (firstUserText) {
-              const complexity = PlanEngine.heuristicComplexity(firstUserText)
-              if (complexity === "complex") {
-                yield* slog.info("auto-planning triggered for complex task")
-                const plan = yield* planEngine.generatePlan(firstUserText).pipe(Effect.option)
-                if (Option.isSome(plan)) {
-                  executionPlan = plan.value
-                  yield* slog.info("execution plan generated", {
-                    steps: executionPlan.steps.length,
-                    parallelGroups: executionPlan.parallelGroups.length,
-                  })
-                }
-              }
-            }
-          }
-
           const agent = yield* agents.get(lastUser.agent)
           if (!agent) {
             const available = (yield* agents.list()).filter((a) => !a.hidden).map((a) => a.name)
@@ -1660,13 +1634,6 @@ export const layer = Layer.effect(
             yield* bus.publish(Session.Event.Error, { sessionID, error: error.toObject() })
             throw error
           }
-          const maxSteps = agent.steps ?? Infinity
-          const isLastStep = step >= maxSteps
-          msgs = yield* SessionReminders.apply({ messages: msgs, agent, session }).pipe(
-            Effect.provideService(RuntimeFlags.Service, flags),
-            Effect.provideService(AppFileSystem.Service, fsys),
-            Effect.provideService(Session.Service, sessions),
-          )
 
           const msg: MessageV2.Assistant = {
             id: MessageID.ascending(),
@@ -1684,6 +1651,55 @@ export const layer = Layer.effect(
             sessionID,
           }
           yield* sessions.updateMessage(msg)
+
+          // ── Auto-planning for complex tasks ──────────────────────────
+          // On the first step of the `build` agent, check if the task is complex
+          // and generate a structured execution plan as guidance for the LLM.
+          let executionPlan: ExecutionPlan | undefined
+          if (step === 1 && (lastUser.agent === "build" || lastUser.agent === "orchestrator")) {
+            const firstUserMsg = msgs.find((m) => m.info.role === "user")
+            const firstUserText = firstUserMsg?.parts
+              .filter((p) => p.type === "text" && !p.synthetic)
+              .map((p) => (p as MessageV2.TextPart).text)
+              .join("\n") ?? ""
+            if (firstUserText) {
+              const complexity = PlanEngine.heuristicComplexity(firstUserText)
+              if (complexity === "complex") {
+                yield* slog.info("auto-planning triggered for complex task")
+                
+                // Inform user in TUI that auto-planning is in progress
+                const planPart: MessageV2.ReasoningPart = {
+                  type: "reasoning",
+                  id: PartID.ascending(),
+                  messageID: msg.id,
+                  sessionID,
+                  text: "Planning and decomposing complex task... 📋",
+                  time: { start: Date.now() },
+                }
+                yield* sessions.updatePart(planPart)
+
+                const plan = yield* planEngine.generatePlan(firstUserText).pipe(Effect.option)
+                if (Option.isSome(plan)) {
+                  executionPlan = plan.value
+                  yield* slog.info("execution plan generated", {
+                    steps: executionPlan.steps.length,
+                    parallelGroups: executionPlan.parallelGroups.length,
+                  })
+                }
+
+                // Clear temporary reasoning part before starting model generation
+                yield* sessions.removePart({ sessionID, messageID: msg.id, partID: planPart.id })
+              }
+            }
+          }
+
+          const maxSteps = agent.steps ?? Infinity
+          const isLastStep = step >= maxSteps
+          msgs = yield* SessionReminders.apply({ messages: msgs, agent, session }).pipe(
+            Effect.provideService(RuntimeFlags.Service, flags),
+            Effect.provideService(AppFileSystem.Service, fsys),
+            Effect.provideService(Session.Service, sessions),
+          )
 
           const finalizeInterruptedAssistant = Effect.gen(function* () {
             if (msg.time.completed) return
@@ -1762,23 +1778,25 @@ export const layer = Layer.effect(
               MessageV2.toModelMessagesEffect(msgs, model),
             ])
             const system = [...env, ...instructions]
-            if (step === 1) {
-              // Extract the last user message for skill relevance filtering
-              const lastUserText = (() => {
-                for (const m of msgs.toReversed()) {
-                  if (m.info.role !== "user") continue
-                  for (const p of m.parts) {
-                    if (p.type === "text" && !(p as any).synthetic && typeof (p as any).text === "string") {
-                      return (p as any).text as string
-                    }
+
+            // Extract the last user message for skill relevance filtering (every turn)
+            const lastUserText = (() => {
+              for (const m of msgs.toReversed()) {
+                if (m.info.role !== "user") continue
+                for (const p of m.parts) {
+                  if (p.type === "text" && !(p as any).synthetic && typeof (p as any).text === "string") {
+                    return (p as any).text as string
                   }
                 }
-                return undefined
-              })()
+              }
+              return undefined
+            })()
 
-              const skills = yield* sys.skills(agent, lastUserText)
-              if (skills) system.push(skills)
+            // Inject available skills every turn so the agent can always discover them
+            const skills = yield* sys.skills(agent, lastUserText)
+            if (skills) system.push(skills)
 
+            if (step === 1) {
               const adaptive = yield* sys.adaptivePrompt({ messages: msgs, agent })
               if (adaptive) system.push(adaptive)
 

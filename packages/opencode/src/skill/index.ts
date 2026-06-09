@@ -286,65 +286,72 @@ export const layer = Layer.effect(
     )
 
     // --- Hot-reload file watcher ---
-    let watcherCleanup: (() => void) | null = null
+    // Uses a single fs.watch on ~/.config/opencode/ to detect SKILL.md changes.
+    // On Windows, fs.watch may fire with filename=null on buffer overflow — we
+    // treat that as a signal to reload everything.
+    let _started = false
+    let _watcher: fs.FSWatcher | null = null
+    const _timers = new Map<string, ReturnType<typeof setTimeout>>()
+    const DEBOUNCE_MS = 300
 
     const setupWatchers = Effect.fnUntraced(function* () {
-      if (watcherCleanup) { watcherCleanup(); watcherCleanup = null }
+      // Close previous watcher
+      if (_watcher) { _watcher.close(); _watcher = null }
+      for (const t of _timers.values()) clearTimeout(t)
+      _timers.clear()
 
-      const s = yield* InstanceState.get(state)
-      const cfgDirs = yield* config.directories()
-      const allDirs = [...new Set([...Array.from(s.dirs), ...cfgDirs, Global.Path.config])]
-
-      const watchers: fs.FSWatcher[] = []
-      const timers = new Map<string, ReturnType<typeof setTimeout>>()
       const bridge = yield* EffectBridge.make()
-      const DEBOUNCE_MS = 300
-
-      const handleChange = (fp: string) => {
-        if (isSkillFile(fp) || isConfigFile(fp)) {
+      const trigger = (fp: string) => {
+        if (!isSkillFile(fp) && !isConfigFile(fp)) return
+        clearTimeout(_timers.get(fp))
+        _timers.set(fp, setTimeout(() => {
+          _timers.delete(fp)
           bridge.promise(reload()).catch((err) => log.error("reload error", { err }))
-        }
+        }, DEBOUNCE_MS))
       }
 
-      for (const dir of allDirs) {
-        if (!fs.existsSync(dir)) continue
-        try {
-          const w = fs.watch(dir, { recursive: true }, (eventType, filename) => {
-            if (!filename) return
-            const fp = path.join(dir, filename.toString())
-            clearTimeout(timers.get(fp))
-            timers.set(
-              fp,
-              setTimeout(() => {
-                timers.delete(fp)
-                handleChange(fp)
-              }, DEBOUNCE_MS),
-            )
-          })
-          watchers.push(w)
-        } catch (err) {
-          log.warn("cannot watch directory", { dir, err })
-        }
+      // Watch the global config directory recursively — covers all skills/
+      const watchDir = Global.Path.config
+      if (!fs.existsSync(watchDir)) {
+        log.warn("config directory not found, cannot watch for skill changes", { dir: watchDir })
+        return
       }
 
-      watcherCleanup = () => {
-        for (const w of watchers) w.close()
-        for (const t of timers.values()) clearTimeout(t)
-        timers.clear()
+      try {
+        _watcher = fs.watch(watchDir, { recursive: true }, (eventType, filename) => {
+          if (!filename) {
+            // Windows: null filename means buffer overflow → reload all
+            trigger(watchDir)
+            return
+          }
+          trigger(path.join(watchDir, filename.toString()))
+        })
+        log.info("hot-reload watchers active", { dir: watchDir })
+      } catch (err) {
+        log.warn("cannot start file watcher for skills", { dir: watchDir, err })
       }
-
-      log.info("hot-reload watchers active", { dirs: allDirs.length })
     })
 
-    // Initial watcher setup (resilient: InstanceRef may not be available yet)
-    yield* setupWatchers().pipe(Effect.catchCause(() => Effect.void))
+    const ensureStarted = Effect.fnUntraced(function* () {
+      if (_started) return
+      log.info("ensureStarted: setting up watchers")
+      yield* setupWatchers().pipe(
+        Effect.catchCause((cause) =>
+          Effect.sync(() => log.warn("ensureStarted: setupWatchers failed", { cause: String(cause) })),
+        ),
+      )
+      _started = true
+      log.info("ensureStarted: done")
+    })
 
     const get = Effect.fn("Skill.get")(function* (name: string) {
+      yield* ensureStarted()
       const s = yield* InstanceState.get(state)
       return s.skills[name]
     })
 
     const require = Effect.fn("Skill.require")(function* (name: string) {
+      yield* ensureStarted()
       const s = yield* InstanceState.get(state)
       const info = s.skills[name]
       if (info) return info
@@ -352,15 +359,18 @@ export const layer = Layer.effect(
     })
 
     const all = Effect.fn("Skill.all")(function* () {
+      yield* ensureStarted()
       const s = yield* InstanceState.get(state)
       return Object.values(s.skills)
     })
 
     const dirs = Effect.fn("Skill.dirs")(function* () {
+      yield* ensureStarted()
       return (yield* InstanceState.get(discovered)).dirs
     })
 
     const available = Effect.fn("Skill.available")(function* (agent?: Agent.Info) {
+      yield* ensureStarted()
       const s = yield* InstanceState.get(state)
       const list = Object.values(s.skills).toSorted((a, b) => a.name.localeCompare(b.name))
       if (!agent) return list
@@ -368,6 +378,7 @@ export const layer = Layer.effect(
     })
 
     const reload = Effect.fn("Skill.reload")(function* () {
+      yield* ensureStarted()
       // Invalidate both caches — next get() re-runs discovery + loading
       yield* InstanceState.invalidate(discovered)
       yield* InstanceState.invalidate(state)

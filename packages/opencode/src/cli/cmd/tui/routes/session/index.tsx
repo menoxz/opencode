@@ -1416,8 +1416,9 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
   const messages = createMemo(() => sync.data.message[props.message.sessionID] ?? [])
   const model = createMemo(() => Model.name(ctx.providers(), props.message.providerID, props.message.modelID))
 
+  const hasTools = createMemo(() => props.parts.some((part) => part.type === "tool"))
   const final = createMemo(() => {
-    return props.message.finish && !["tool-calls", "unknown"].includes(props.message.finish)
+    return !hasTools() && props.message.finish && !["tool-calls", "unknown"].includes(props.message.finish)
   })
 
   const duration = createMemo(() => {

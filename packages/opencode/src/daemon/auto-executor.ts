@@ -515,12 +515,22 @@ function formatDiffSummary(diffs: HeadlessResult["diffs"]): string {
  * Run `bun typecheck` in the given directory.
  * Returns null if it passes, or the error output if it fails.
  */
-function runTypecheck(cwd: string): Effect.Effect<string | null> {
+function runTypecheck(cwd: string, diffs?: Array<DiffInfo>): Effect.Effect<string | null> {
   return Effect.gen(function* () {
     const pkgPath = path.join(cwd, "package.json")
     if (!fs.existsSync(pkgPath)) return null
     const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"))
     if (!pkg.scripts?.typecheck) return null
+
+    if (diffs && diffs.length > 0) {
+      const hasCodeChanges = diffs.some((d) => /\.[cm]?[jt]sx?$/.test(d.file))
+      if (!hasCodeChanges) {
+        log.info("Post-pipeline: skipping typecheck since no TS/JS files were modified", {
+          files: diffs.map((d) => d.file),
+        })
+        return null
+      }
+    }
 
     const result = yield* execSafe("bun typecheck", { cwd, timeout: 60000 })
 
@@ -558,7 +568,7 @@ const runPostPipeline = Effect.fnUntraced(function* (
 
   // ── Step 0: Typecheck validation ────────────────────────────────────
   if (hasDiffs) {
-    const tcErr = yield* runTypecheck(repoDir)
+    const tcErr = yield* runTypecheck(repoDir, result.diffs)
     if (tcErr) {
       pipeline.validationError = tcErr
       log.warn("Post-pipeline: typecheck FAILED, skipping commit", { repoDir })

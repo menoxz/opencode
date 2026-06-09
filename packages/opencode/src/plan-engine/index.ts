@@ -27,8 +27,12 @@ import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { Provider } from "@/provider/provider"
 import { ProviderTransform } from "@/provider/transform"
 import { ModelID, ProviderID } from "@/provider/schema"
-import { generateObject, type LanguageModel } from "ai"
+import { generateObject, jsonSchema, type LanguageModel } from "ai"
 import { Plugin } from "@/plugin"
+import { AppFileSystem } from "@opencode-ai/core/filesystem"
+import { Global } from "@opencode-ai/core/global"
+import crypto from "crypto"
+import path from "path"
 
 const log = Log.create({ service: "plan-engine" })
 
@@ -172,6 +176,12 @@ const ExecutionPlanSchema = Schema.Struct({
   complexity: Schema.Literals(["simple", "moderate", "complex"]),
 })
 
+// Helper to compute local plan cache path
+function getPlanCachePath(task: string): string {
+  const hash = crypto.createHash("sha256").update(task).digest("hex")
+  return path.join(Global.Path.config, "cache", "plans", `${hash}.json`)
+}
+
 // ---------------------------------------------------------------------------
 // Layer
 // ---------------------------------------------------------------------------
@@ -181,6 +191,7 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const provider = yield* Provider.Service
     const plugin = yield* Plugin.Service
+    const afs = yield* AppFileSystem.Service
 
     const analyzeComplexity = Effect.fn("PlanEngine.analyzeComplexity")(function* (
       task: string,
@@ -208,6 +219,19 @@ export const layer = Layer.effect(
     ) {
       log.info("generating execution plan", { taskLength: task.length })
 
+      // Try local plan cache first
+      const cachePath = getPlanCachePath(task)
+      const cachedText = yield* afs.readFileStringSafe(cachePath)
+      if (cachedText) {
+        try {
+          const cachedPlan = JSON.parse(cachedText) as ExecutionPlan
+          log.info("plan cache hit", { taskLength: task.length, path: cachePath })
+          return cachedPlan
+        } catch (e) {
+          log.warn("failed to parse cached plan, falling back to generation", { error: String(e) })
+        }
+      }
+
       // 1. Determine complexity
       const { complexity } = yield* analyzeComplexity(task, options)
 
@@ -231,71 +255,85 @@ export const layer = Layer.effect(
 
       // 3. For complex tasks, generate structured plan via LLM
       const modelInfo = options?.providerId && options?.modelId
-        ? { providerID: options.providerId as any, modelID: options.modelId as any }
+        ? { providerID: options.providerId as ProviderID, modelID: options.modelId as ModelID }
         : yield* provider.defaultModel()
 
       const resolved = yield* provider.getModel(modelInfo.providerID, modelInfo.modelID)
+      const language = yield* provider.getLanguage(resolved)
 
       // Available agents for plan steps
-      const agentsStr = ["build", "plan", "general", "explore"].join(", ")
+      const agentsStr = ["build", "plan", "general", "explore", "orchestrator"].join(", ")
 
       const systemPrompt = `You are a senior software architect. Your job is to break down coding tasks into an optimal execution plan.
 
 Rules:
 1. Analyze the task and split it into parallelizable steps
-2. Each step should be independent and focused on ONE deliverable
-3. Group independent steps together for parallel execution
-4. Use dependency tracking (depends) to express ordering constraints
-5. For research/exploration, use agent "explore"
-6. For implementation, use agent "build"
-7. Keep step prompts focused — each step should produce ONE concrete outcome
-8. Prefer more smaller steps over fewer large ones (better parallelism)
-9. Identify the goal clearly
+2. Each step must include ALL required fields: id, description, agent, prompt, depends
+3. The "prompt" field must contain the full instructions for the agent to execute
+4. Group independent steps together for parallel execution
+5. Use dependency tracking (depends) to express ordering constraints
+6. For research/exploration, use agent "explore"
+7. For implementation, use agent "build"
+8. Keep step prompts focused — each step should produce ONE concrete outcome
+9. Prefer more smaller steps over fewer large ones (better parallelism)
+10. Identify the goal clearly
+11. Set complexity to one of: "simple", "moderate", "complex"
 
 Available agents: ${agentsStr}
 
 The task is:
-${task}`
+${task}
+
+Return ONLY valid JSON. Do not include markdown, backticks, or any text outside the JSON object.`
 
       // Call the LLM for structured plan generation
-      const stepsData: Array<{
-        id: string; description: string; agent?: string; prompt: string;
-        depends?: string[]; optional?: boolean
-      }> = yield* Effect.promise(async () => {
-        const genResult = await generateObject({
-          model: resolved.api as unknown as LanguageModel,
-          schema: Object.assign(
-            Schema.toStandardSchemaV1(ExecutionPlanSchema),
-            Schema.toStandardJSONSchemaV1(ExecutionPlanSchema),
-          ) as any,
+      const schemaJSON = Schema.toStandardJSONSchemaV1(ExecutionPlanSchema)
+      const genResult = yield* Effect.promise(async () => {
+        return await generateObject({
+          model: language,
+          schema: jsonSchema(schemaJSON as unknown as Record<string, unknown>),
           system: systemPrompt,
-          prompt: `Create an execution plan for this task. Break it into parallelizable steps where possible.`,
+          prompt: `Create an execution plan in JSON format for this task. Include ALL required fields: each step must have id, description, agent, prompt, and depends. The plan must have goal, steps (array), and complexity ("simple"/"moderate"/"complex"). Break it into parallelizable steps where possible.`,
           temperature: 0.3,
         })
-        return (genResult.object as any).steps ?? []
       })
 
-      // 4. Compute parallel groups from dependencies
-      const stepMap = new Map(stepsData.map((s) => [s.id, s]))
-      const dependsOn = new Map<string, Set<string>>()
-      for (const step of stepsData) {
-        dependsOn.set(step.id, new Set(step.depends ?? []))
-      }
+      // 4. Extract and normalize plan with fallbacks for missing LLM fields
+      const rawPlan = (genResult.object as Record<string, unknown>) ?? {}
+      const rawSteps = (rawPlan.steps as Array<Record<string, unknown>> | undefined) ?? []
+      const rawStepsTyped: Array<{
+        id: string; description: string; agent?: string; prompt: string;
+        depends?: string[]; optional?: boolean
+      }> = rawSteps.map((s) => ({
+        id: String(s.id ?? ""),
+        description: String(s.description ?? ""),
+        agent: s.agent as string | undefined,
+        prompt: String(s.prompt ?? ""),
+        depends: Array.isArray(s.depends) ? (s.depends as string[]) : [],
+        optional: Boolean(s.optional),
+      }))
+      const stepsData = rawStepsTyped.length > 0 ? rawStepsTyped : [{
+        id: "step-1",
+        description: task.slice(0, 100),
+        agent: "build",
+        prompt: task,
+        depends: [] as string[],
+      }]
 
-      // Group steps that can run in parallel (same depth level)
+      // Compute parallel groups from dependencies
+      const stepMap = new Map(stepsData.map((s: any) => [s.id, s]))
       const depthMap = new Map<string, number>()
       function computeDepth(id: string): number {
         if (depthMap.has(id)) return depthMap.get(id)!
-        const step = stepMap.get(id)
+        const step = stepMap.get(id) as any
         if (!step || !step.depends || step.depends.length === 0) {
           depthMap.set(id, 0)
           return 0
         }
-        const maxDepth = Math.max(...step.depends.map(computeDepth)) + 1
+        const maxDepth = Math.max(...step.depends.map(computeDepth as any)) + 1
         depthMap.set(id, maxDepth)
         return maxDepth
       }
-
       for (const step of stepsData) computeDepth(step.id)
 
       const groups = new Map<number, string[]>()
@@ -308,19 +346,19 @@ ${task}`
         .map(([, steps]) => steps)
 
       const plan: ExecutionPlan = {
-        goal: task.slice(0, 200),
+        goal: (rawPlan.goal as string) ?? task.slice(0, 200),
         steps: stepsData.map((s) => ({
           id: s.id,
           description: s.description,
           agent: s.agent || "build",
-          prompt: s.prompt,
+          prompt: s.prompt || s.description || task,
           depends: s.depends ?? [],
           complexity: 0.5,
           optional: s.optional,
         })),
         parallelGroups,
         estimatedTokens: estimateTokens(task, stepsData.length),
-        complexity: complexity as "simple" | "moderate" | "complex",
+        complexity: (rawPlan.complexity as ExecutionPlan["complexity"]) ?? complexity,
       }
 
       log.info("plan generated", {
@@ -328,6 +366,14 @@ ${task}`
         parallelGroups: plan.parallelGroups.length,
         complexity: plan.complexity,
       })
+
+      // Write to cache
+      yield* afs.writeWithDirs(cachePath, JSON.stringify(plan, null, 2)).pipe(
+        Effect.catch((err: unknown) => {
+          log.warn("failed to write plan cache", { error: String(err) })
+          return Effect.void
+        })
+      )
 
       return plan
     })
@@ -344,6 +390,7 @@ export const defaultLayer = Layer.suspend(() =>
   layer.pipe(
     Layer.provide(Provider.defaultLayer),
     Layer.provide(Plugin.defaultLayer),
+    Layer.provide(AppFileSystem.defaultLayer),
   )
 )
 

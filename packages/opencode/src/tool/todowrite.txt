@@ -1,5 +1,7 @@
 Create and maintain a structured task list for the current coding session. Tracks progress, organizes multi-step work, and surfaces status to the user.
 
+When you create or update TODOs, the tool will automatically suggest matching skills (if any) based on task descriptions. Always load suggested skills with the `skill()` tool.
+
 ## When to use
 Use proactively when:
 - The task requires 3+ distinct steps or actions (not just 3 tool calls for a single conceptual step)

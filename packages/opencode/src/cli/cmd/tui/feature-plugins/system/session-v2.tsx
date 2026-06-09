@@ -310,7 +310,8 @@ function AssistantMessage(props: {
     const variant = props.message.model.variant ? `/${props.message.model.variant}` : ""
     return `${props.message.model.providerID}/${props.message.model.id}${variant}`
   })
-  const final = createMemo(() => props.message.finish && !["tool-calls", "unknown"].includes(props.message.finish))
+  const hasTools = createMemo(() => props.message.content.some((part) => part.type === "tool"))
+  const final = createMemo(() => !hasTools() && props.message.finish && !["tool-calls", "unknown"].includes(props.message.finish))
   return (
     <>
       <For each={props.message.content}>

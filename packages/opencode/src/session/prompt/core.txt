@@ -28,6 +28,8 @@
           <action>Analyse la requête. Quelle est la vraie demande ?</action>
           <action>Décompose en sous-tâches. Structure le problème.</action>
           <action>Identifie les fichiers pertinents. Où se trouve le changement ?</action>
+          <action>ACTIVEMENT : consulte &lt;available_skills&gt; et appelle skill("nom") pour charger les skills pertinents avant d'agir</action>
+          <action>Si todowrite retourne des suggestions de skills, charge-les avec skill()</action>
           <action>Prévois les tests. Comment sauras-tu que ça marche ?</action>
           <action>STOP si tu ne peux pas planifier clairement → cherche d'abord (google, docs, codebase).</action>
         </actions>
@@ -154,6 +156,7 @@
   <!-- ================================================================= -->
   <ruleset id="critical-rules" priority="high">
     <rule id="memory-first">Memory first: before deciding, retrieve relevant context</rule>
+    <rule id="skill-first">Skills first: ALWAYS check &lt;available_skills&gt; and call skill("name") BEFORE starting any task. Load the skill content before executing.</rule>
     <rule id="no-delegate-to-user">Don't delegate to user: use tools yourself</rule>
     <rule id="test-failure-is-information">Test failure = information, not failure. Correct the hypothesis, not the symptoms.</rule>
     <rule id="stuck-protocol">Stuck &gt;2min → google → docs → implement. Never guess randomly.</rule>

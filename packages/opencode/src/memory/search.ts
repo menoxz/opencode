@@ -85,7 +85,10 @@ const STOP_WORDS = new Set([
 export function tokenize(text: string): string[] {
   return text
     .toLowerCase()
-    .split(/[^a-zA-Z0-9_#@$%]+/)
+    // Match Unicode letters + numbers + common symbols — NOT punctuation/spaces
+    // This ensures French accented chars (é, è, ê, à, ç, etc.) stay as word
+    // content rather than being treated as delimiters by [a-zA-Z].
+    .split(/[^\p{L}\p{N}_#@$%]+/u)
     .filter((t) => t.length > 1 && !STOP_WORDS.has(t))
 }
 
