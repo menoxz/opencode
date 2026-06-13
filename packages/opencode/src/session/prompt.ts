@@ -2185,7 +2185,7 @@ export const defaultLayer = Layer.suspend(() =>
         LLM.defaultLayer,
         Reference.defaultLayer,
         Memory.defaultLayer,
-        PlanEngine.defaultLayer,
+        // 🔇 PlanEngine.defaultLayer, — désactivé : auto_plan cause des dysfonctionnements
 
         Bus.layer,
         CrossSpawnSpawner.defaultLayer,
