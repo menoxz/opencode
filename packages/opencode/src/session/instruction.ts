@@ -10,6 +10,7 @@ import { withTransientReadRetry } from "@/util/effect-http-client"
 import { Global } from "@opencode-ai/core/global"
 import type { MessageV2 } from "./message-v2"
 import type { MessageID } from "./schema"
+import { SessionContextRollout } from "./context-rollout"
 
 const files = (disableClaudeCodePrompt: boolean) => [
   "AGENTS.md",
@@ -32,6 +33,22 @@ function extract(messages: MessageV2.WithParts[]) {
     }
   }
   return paths
+}
+
+function renderInstruction(filepath: string, content: string, mode: SessionContextRollout.InjectionInstructionsMode) {
+  if (mode === "off") return undefined
+  if (mode === "full") return `Instructions from: ${filepath}\n${content}`
+  const lines = content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 6)
+  return [
+    `Instructions from: ${filepath}`,
+    "<summary>",
+    ...(lines.length ? lines.map((line) => `- ${line}`) : ["- instruction file loaded in summary mode"]),
+    "</summary>",
+  ].join("\n")
 }
 
 export interface Interface {
@@ -153,17 +170,25 @@ export const layer: Layer.Layer<
 
     const system = Effect.fn("Instruction.system")(function* () {
       const config = yield* cfg.get()
+      const rollout = SessionContextRollout.resolve(config)
       const paths = yield* systemPaths()
       const urls = (config.instructions ?? []).filter(
         (item) => item.startsWith("https://") || item.startsWith("http://"),
       )
+      if (rollout.injectionInstructions === "off") return []
 
       const files = yield* Effect.forEach(Array.from(paths), read, { concurrency: 8 })
       const remote = yield* Effect.forEach(urls, fetch, { concurrency: 4 })
 
       return [
-        ...Array.from(paths).flatMap((item, i) => (files[i] ? [`Instructions from: ${item}\n${files[i]}`] : [])),
-        ...urls.flatMap((item, i) => (remote[i] ? [`Instructions from: ${item}\n${remote[i]}`] : [])),
+        ...Array.from(paths).flatMap((item, i) => {
+          const rendered = files[i] ? renderInstruction(item, files[i], rollout.injectionInstructions) : undefined
+          return rendered ? [rendered] : []
+        }),
+        ...urls.flatMap((item, i) => {
+          const rendered = remote[i] ? renderInstruction(item, remote[i], rollout.injectionInstructions) : undefined
+          return rendered ? [rendered] : []
+        }),
       ]
     })
 
@@ -180,6 +205,8 @@ export const layer: Layer.Layer<
       filepath: string,
       messageID: MessageID,
     ) {
+      const rollout = SessionContextRollout.resolve(yield* cfg.get())
+      if (rollout.injectionInstructions === "off") return []
       const sys = yield* systemPaths()
       const already = extract(messages)
       const results: { filepath: string; content: string }[] = []
@@ -206,11 +233,12 @@ export const layer: Layer.Layer<
           current = path.dirname(current)
           continue
         }
-
+        
         set.add(found)
         const content = yield* read(found)
-        if (content) {
-          results.push({ filepath: found, content: `Instructions from: ${found}\n${content}` })
+        const rendered = content ? renderInstruction(found, content, rollout.injectionInstructions) : undefined
+        if (rendered) {
+          results.push({ filepath: found, content: rendered })
         }
 
         current = path.dirname(current)

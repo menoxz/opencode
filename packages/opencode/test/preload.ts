@@ -13,19 +13,24 @@ afterAll(async () => {
   const { Database } = await import("../src/storage/db")
   Database.close()
   const busy = (error: unknown) =>
-    typeof error === "object" && error !== null && "code" in error && error.code === "EBUSY"
+    process.platform === "win32" && typeof error === "object" && error !== null && "code" in error && error.code === "EBUSY"
   const rm = async (left: number): Promise<void> => {
     Bun.gc(true)
     await sleep(100)
-    return fs.rm(dir, { recursive: true, force: true }).catch((error) => {
+    return fs.rm(dir, {
+      recursive: true,
+      force: true,
+      maxRetries: process.platform === "win32" ? 10 : 0,
+      retryDelay: 100,
+    }).catch((error) => {
       if (!busy(error)) throw error
-      if (left <= 1) throw error
+      if (left <= 1) return
       return rm(left - 1)
     })
   }
 
   // Windows can keep SQLite WAL handles alive until GC finalizers run, so we
-  // force GC and retry teardown to avoid flaky EBUSY in test cleanup.
+  // force GC, let fs.rm retry, and ignore the final busy temp-dir cleanup.
   await rm(30)
 })
 

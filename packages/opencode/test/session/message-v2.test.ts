@@ -1356,6 +1356,521 @@ describe("session.message-v2.toModelMessage", () => {
     const texts = (result[0].content as any[]).filter((p) => p.type === "text")
     expect(texts.map((t) => t.text)).toStrictEqual(["", "hello"])
   })
+
+  test("summarizes only older tool outputs while keeping the two most recent tool turns full in summary mode", async () => {
+    const userID1 = "m-user-read-summary-1"
+    const assistantID1 = "m-assistant-read-summary-1"
+    const userID2 = "m-user-read-summary-2"
+    const assistantID2 = "m-assistant-read-summary-2"
+    const userID3 = "m-user-read-summary-3"
+    const assistantID3 = "m-assistant-read-summary-3"
+    const input: MessageV2.WithParts[] = [
+      {
+        info: userInfo(userID1),
+        parts: [
+          {
+            ...basePart(userID1, "u1-read-summary-1"),
+            type: "text",
+            text: "inspect older file",
+          },
+        ] as MessageV2.Part[],
+      },
+      {
+        info: assistantInfo(assistantID1, userID1),
+        parts: [
+          {
+            ...basePart(assistantID1, "a1-read-summary-1"),
+            type: "tool",
+            callID: "call-read-summary-1",
+            tool: "read",
+            state: {
+              status: "completed",
+              input: { filePath: "/tmp/example-1.txt", offset: 10, limit: 2 },
+              output: "alpha\nbeta\ngamma",
+              title: "Read",
+              metadata: {},
+              time: { start: 0, end: 1 },
+            },
+          },
+        ] as MessageV2.Part[],
+      },
+      {
+        info: userInfo(userID2),
+        parts: [
+          {
+            ...basePart(userID2, "u1-read-summary-2"),
+            type: "text",
+            text: "inspect recent file",
+          },
+        ] as MessageV2.Part[],
+      },
+      {
+        info: assistantInfo(assistantID2, userID2),
+        parts: [
+          {
+            ...basePart(assistantID2, "a1-read-summary-2"),
+            type: "tool",
+            callID: "call-read-summary-2",
+            tool: "read",
+            state: {
+              status: "completed",
+              input: { filePath: "/tmp/example-2.txt", offset: 0, limit: 1 },
+              output: "recent file content",
+              title: "Read",
+              metadata: {},
+              time: { start: 0, end: 1 },
+            },
+          },
+        ] as MessageV2.Part[],
+      },
+      {
+        info: userInfo(userID3),
+        parts: [
+          {
+            ...basePart(userID3, "u1-read-summary-3"),
+            type: "text",
+            text: "inspect latest file",
+          },
+        ] as MessageV2.Part[],
+      },
+      {
+        info: assistantInfo(assistantID3, userID3),
+        parts: [
+          {
+            ...basePart(assistantID3, "a1-read-summary-3"),
+            type: "tool",
+            callID: "call-read-summary-3",
+            tool: "read",
+            state: {
+              status: "completed",
+              input: { filePath: "/tmp/example-3.txt", offset: 3, limit: 4 },
+              output: "latest file content",
+              title: "Read",
+              metadata: {},
+              time: { start: 0, end: 1 },
+            },
+          },
+        ] as MessageV2.Part[],
+      },
+    ]
+
+    expect(await MessageV2.toModelMessages(input, model, { replayToolOutputs: "summary" })).toStrictEqual([
+      {
+        role: "user",
+        content: [{ type: "text", text: "inspect older file" }],
+      },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool-call",
+            toolCallId: "call-read-summary-1",
+            toolName: "read",
+            input: { filePath: "/tmp/example-1.txt", offset: 10, limit: 2 },
+            providerExecuted: undefined,
+          },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "call-read-summary-1",
+            toolName: "read",
+            output: {
+              type: "text",
+              value:
+                "[Historical tool result summary]\ntool: read\nreference: /tmp/example-1.txt\nwindow: offset=10 limit=2\nmetrics: chars=16 lines=3 bytes=16 attachments=0",
+            },
+          },
+        ],
+      },
+      {
+        role: "user",
+        content: [{ type: "text", text: "inspect recent file" }],
+      },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool-call",
+            toolCallId: "call-read-summary-2",
+            toolName: "read",
+            input: { filePath: "/tmp/example-2.txt", offset: 0, limit: 1 },
+            providerExecuted: undefined,
+          },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "call-read-summary-2",
+            toolName: "read",
+            output: { type: "text", value: "recent file content" },
+          },
+        ],
+      },
+      {
+        role: "user",
+        content: [{ type: "text", text: "inspect latest file" }],
+      },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool-call",
+            toolCallId: "call-read-summary-3",
+            toolName: "read",
+            input: { filePath: "/tmp/example-3.txt", offset: 3, limit: 4 },
+            providerExecuted: undefined,
+          },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "call-read-summary-3",
+            toolName: "read",
+            output: { type: "text", value: "latest file content" },
+          },
+        ],
+      },
+    ])
+  })
+
+  test("omits raw historical tool outputs while preserving tool-result pairing in off mode", async () => {
+    const userID = "m-user-tool-off"
+    const assistantID = "m-assistant-tool-off"
+    const input: MessageV2.WithParts[] = [
+      {
+        info: userInfo(userID),
+        parts: [
+          {
+            ...basePart(userID, "u1-tool-off"),
+            type: "text",
+            text: "run tool",
+          },
+        ] as MessageV2.Part[],
+      },
+      {
+        info: assistantInfo(assistantID, userID),
+        parts: [
+          {
+            ...basePart(assistantID, "a1-tool-off"),
+            type: "tool",
+            callID: "call-tool-off",
+            tool: "bash",
+            state: {
+              status: "completed",
+              input: { cmd: "ls" },
+              output: "file-a\nfile-b",
+              title: "Shell",
+              metadata: {},
+              time: { start: 0, end: 1 },
+            },
+          },
+        ] as MessageV2.Part[],
+      },
+    ]
+
+    expect(await MessageV2.toModelMessages(input, model, { replayToolOutputs: "off" })).toStrictEqual([
+      {
+        role: "user",
+        content: [{ type: "text", text: "run tool" }],
+      },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool-call",
+            toolCallId: "call-tool-off",
+            toolName: "bash",
+            input: { cmd: "ls" },
+            providerExecuted: undefined,
+          },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "call-tool-off",
+            toolName: "bash",
+            output: {
+              type: "text",
+              value: "[Historical tool result omitted]\ntool: bash\nreference: call-tool-off",
+            },
+          },
+        ],
+      },
+    ])
+  })
+
+  test("summarizes historical tool inputs when rollout disables full input replay", async () => {
+    const userID1 = "m-user-tool-input-summary-1"
+    const assistantID1 = "m-assistant-tool-input-summary-1"
+    const userID2 = "m-user-tool-input-summary-2"
+    const assistantID2 = "m-assistant-tool-input-summary-2"
+    const userID3 = "m-user-tool-input-summary-3"
+    const assistantID3 = "m-assistant-tool-input-summary-3"
+    const input: MessageV2.WithParts[] = [
+      {
+        info: userInfo(userID1),
+        parts: [{ ...basePart(userID1, "u1-tool-input-summary-1"), type: "text", text: "older" }] as MessageV2.Part[],
+      },
+      {
+        info: assistantInfo(assistantID1, userID1),
+        parts: [
+          {
+            ...basePart(assistantID1, "a1-tool-input-summary-1"),
+            type: "tool",
+            callID: "call-tool-input-summary-1",
+            tool: "read",
+            state: {
+              status: "completed",
+              input: { filePath: "/tmp/example-1.txt", offset: 10, limit: 2, extra: "hidden" },
+              output: "older file content",
+              title: "Read",
+              metadata: {},
+              time: { start: 0, end: 1 },
+            },
+          },
+        ] as MessageV2.Part[],
+      },
+      {
+        info: userInfo(userID2),
+        parts: [{ ...basePart(userID2, "u1-tool-input-summary-2"), type: "text", text: "recent" }] as MessageV2.Part[],
+      },
+      {
+        info: assistantInfo(assistantID2, userID2),
+        parts: [
+          {
+            ...basePart(assistantID2, "a1-tool-input-summary-2"),
+            type: "tool",
+            callID: "call-tool-input-summary-2",
+            tool: "read",
+            state: {
+              status: "completed",
+              input: { filePath: "/tmp/example-2.txt", offset: 0, limit: 1, extra: "kept-recent" },
+              output: "recent file content",
+              title: "Read",
+              metadata: {},
+              time: { start: 0, end: 1 },
+            },
+          },
+        ] as MessageV2.Part[],
+      },
+      {
+        info: userInfo(userID3),
+        parts: [{ ...basePart(userID3, "u1-tool-input-summary-3"), type: "text", text: "latest" }] as MessageV2.Part[],
+      },
+      {
+        info: assistantInfo(assistantID3, userID3),
+        parts: [
+          {
+            ...basePart(assistantID3, "a1-tool-input-summary-3"),
+            type: "tool",
+            callID: "call-tool-input-summary-3",
+            tool: "read",
+            state: {
+              status: "completed",
+              input: { filePath: "/tmp/example-3.txt", offset: 3, limit: 4, extra: "kept-latest" },
+              output: "latest file content",
+              title: "Read",
+              metadata: {},
+              time: { start: 0, end: 1 },
+            },
+          },
+        ] as MessageV2.Part[],
+      },
+    ]
+
+    expect(await MessageV2.toModelMessages(input, model, { replayToolInputs: "summary" })).toStrictEqual([
+      {
+        role: "user",
+        content: [{ type: "text", text: "older" }],
+      },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool-call",
+            toolCallId: "call-tool-input-summary-1",
+            toolName: "read",
+            input: { extra: "hidden", filePath: "/tmp/example-1.txt", limit: 2, offset: 10 },
+            providerExecuted: undefined,
+          },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "call-tool-input-summary-1",
+            toolName: "read",
+            output: { type: "text", value: "older file content" },
+          },
+        ],
+      },
+      {
+        role: "user",
+        content: [{ type: "text", text: "recent" }],
+      },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool-call",
+            toolCallId: "call-tool-input-summary-2",
+            toolName: "read",
+            input: { filePath: "/tmp/example-2.txt", offset: 0, limit: 1, extra: "kept-recent" },
+            providerExecuted: undefined,
+          },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "call-tool-input-summary-2",
+            toolName: "read",
+            output: { type: "text", value: "recent file content" },
+          },
+        ],
+      },
+      {
+        role: "user",
+        content: [{ type: "text", text: "latest" }],
+      },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool-call",
+            toolCallId: "call-tool-input-summary-3",
+            toolName: "read",
+            input: { filePath: "/tmp/example-3.txt", offset: 3, limit: 4, extra: "kept-latest" },
+            providerExecuted: undefined,
+          },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "call-tool-input-summary-3",
+            toolName: "read",
+            output: { type: "text", value: "latest file content" },
+          },
+        ],
+      },
+    ])
+  })
+
+  test("does not mutate stored tool inputs while replaying summarized historical inputs", async () => {
+    const userID1 = "m-user-tool-input-mutation-1"
+    const assistantID1 = "m-assistant-tool-input-mutation-1"
+    const userID2 = "m-user-tool-input-mutation-2"
+    const assistantID2 = "m-assistant-tool-input-mutation-2"
+    const originalInput = {
+      filePath: "/tmp/example-1.txt",
+      nested: {
+        long: "x".repeat(120),
+      },
+      items: [1, 2, 3, 4, 5, 6],
+    }
+    const input: MessageV2.WithParts[] = [
+      {
+        info: userInfo(userID1),
+        parts: [{ ...basePart(userID1, "u1-tool-input-mutation-1"), type: "text", text: "older" }] as MessageV2.Part[],
+      },
+      {
+        info: assistantInfo(assistantID1, userID1),
+        parts: [
+          {
+            ...basePart(assistantID1, "a1-tool-input-mutation-1"),
+            type: "tool",
+            callID: "call-tool-input-mutation-1",
+            tool: "read",
+            state: {
+              status: "completed",
+              input: originalInput,
+              output: "older file content",
+              title: "Read",
+              metadata: {},
+              time: { start: 0, end: 1 },
+            },
+          },
+        ] as MessageV2.Part[],
+      },
+      {
+        info: userInfo(userID2),
+        parts: [{ ...basePart(userID2, "u1-tool-input-mutation-2"), type: "text", text: "recent" }] as MessageV2.Part[],
+      },
+      {
+        info: assistantInfo(assistantID2, userID2),
+        parts: [
+          {
+            ...basePart(assistantID2, "a1-tool-input-mutation-2"),
+            type: "tool",
+            callID: "call-tool-input-mutation-2",
+            tool: "read",
+            state: {
+              status: "completed",
+              input: { filePath: "/tmp/example-2.txt" },
+              output: "recent file content",
+              title: "Read",
+              metadata: {},
+              time: { start: 0, end: 1 },
+            },
+          },
+        ] as MessageV2.Part[],
+      },
+    ]
+
+    const before = structuredClone(originalInput)
+    await MessageV2.toModelMessages(input, model, { replayToolInputs: "summary" })
+    expect(originalInput).toStrictEqual(before)
+  })
+
+  test("drops historical reasoning blocks when rollout disables reasoning replay", async () => {
+    const assistantID = "m-assistant-no-replay-reasoning"
+    const input: MessageV2.WithParts[] = [
+      {
+        info: assistantInfo(assistantID, "m-parent"),
+        parts: [
+          {
+            ...basePart(assistantID, "p1-no-replay-reasoning"),
+            type: "reasoning",
+            text: "internal chain of thought",
+            metadata: { openai: { reasoning: "meta" } },
+            time: { start: 0 },
+          },
+          {
+            ...basePart(assistantID, "p2-no-replay-reasoning"),
+            type: "text",
+            text: "final answer",
+          },
+        ] as MessageV2.Part[],
+      },
+    ]
+
+    expect(await MessageV2.toModelMessages(input, model, { replayReasoning: "off" })).toStrictEqual([
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "final answer" }],
+      },
+    ])
+  })
 })
 
 describe("session.message-v2.fromError", () => {

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, test } from "bun:test"
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
 import { APICallError } from "ai"
 import { Cause, Deferred, Effect, Exit, Fiber, Layer, Schema } from "effect"
 import * as Stream from "effect/Stream"
@@ -1502,6 +1502,47 @@ describe("session.compaction.process", () => {
       expect(part?.type).toBe("compaction")
       expect(part?.tail_start_id).toBe(keep.id)
     }).pipe(withCompaction({ config: cfg({ tail_turns: 2, preserve_recent_tokens: 500 }) })),
+  )
+
+  itCompaction.instance(
+    "passes replay_tool_inputs rollout to model message conversion during compaction",
+    Effect.gen(function* () {
+      const calls: Array<unknown> = []
+      const original = MessageV2.toModelMessagesEffect
+      spyOn(MessageV2, "toModelMessagesEffect").mockImplementation(((...args: Parameters<typeof MessageV2.toModelMessagesEffect>) => {
+        calls.push(args[2])
+        return original(...args)
+      }) as typeof MessageV2.toModelMessagesEffect)
+      const ssn = yield* SessionNs.Service
+      const session = yield* ssn.create({})
+      yield* createUserMessage(session.id, "older")
+      yield* createUserMessage(session.id, "keep this turn")
+      yield* createCompactionMarker(session.id)
+
+      const msgs = yield* ssn.messages({ sessionID: session.id })
+      const parent = msgs.at(-1)?.info.id
+      expect(parent).toBeTruthy()
+      yield* SessionCompaction.use.process({ parentID: parent!, messages: msgs, sessionID: session.id, auto: false })
+
+      expect(calls).toContainEqual(
+        expect.objectContaining({
+          replayToolInputs: "summary",
+        }),
+      )
+    }).pipe(
+      withCompaction({
+        config: TestConfig.layer({
+          get: () => {
+            const base = Schema.decodeUnknownSync(Config.Info)({}) as Config.Info
+            return Effect.succeed({
+              ...base,
+              compaction: { tail_turns: 1, preserve_recent_tokens: 500 },
+              experimental: { context_rollout: { replay_tool_inputs: "summary" } },
+            } satisfies Config.Info)
+          },
+        }),
+      }),
+    ),
   )
 })
 

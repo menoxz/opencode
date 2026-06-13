@@ -566,4 +566,48 @@ description: A skill in the .opencode/skills directory.
       { git: true },
     ),
   )
+
+  it.effect("formats described skills in verbose, compact, and caveman modes", () =>
+    Effect.sync(() => {
+      const list: Skill.Info[] = [
+        {
+          name: "zeta-skill",
+          description: "Zeta skill.",
+          location: "/tmp/zeta-skill/SKILL.md",
+          content: "# zeta-skill",
+        },
+        {
+          name: "alpha-skill",
+          description: "Alpha skill.",
+          location: "/tmp/alpha-skill/SKILL.md",
+          content: "# alpha-skill",
+        },
+      ]
+
+      expect(Skill.fmt(list, { mode: "verbose" })).toBe([
+        "<available_skills>",
+        "  <skill>",
+        "    <name>alpha-skill</name>",
+        "    <description>Alpha skill.</description>",
+        "  </skill>",
+        "  <skill>",
+        "    <name>zeta-skill</name>",
+        "    <description>Zeta skill.</description>",
+        "  </skill>",
+        "</available_skills>",
+      ].join("\n"))
+
+      expect(Skill.fmt(list, { mode: "summary" })).toBe([
+        "## Available Skills",
+        "- **alpha-skill**: Alpha skill.",
+        "- **zeta-skill**: Zeta skill.",
+      ].join("\n"))
+
+      expect(Skill.fmt(list, { mode: "caveman" })).toBe([
+        "SKILLS:",
+        "- alpha-skill :: Alpha skill.",
+        "- zeta-skill :: Zeta skill.",
+      ].join("\n"))
+    }),
+  )
 })

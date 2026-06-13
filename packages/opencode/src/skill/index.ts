@@ -403,10 +403,17 @@ export const defaultLayer = layer.pipe(
   Layer.provide(RuntimeFlags.defaultLayer),
 )
 
-export function fmt(list: Info[], opts: { verbose: boolean }) {
+export type FormatMode = "verbose" | "summary" | "caveman"
+
+function formatMode(opts: { verbose: boolean } | { mode: FormatMode }): FormatMode {
+  return "mode" in opts ? opts.mode : opts.verbose ? "verbose" : "summary"
+}
+
+export function fmt(list: Info[], opts: { verbose: boolean } | { mode: FormatMode }) {
   const described = list.filter((skill) => skill.description !== undefined)
   if (described.length === 0) return "No skills are currently available."
-  if (opts.verbose) {
+  const mode = formatMode(opts)
+  if (mode === "verbose") {
     return [
       "<available_skills>",
       ...described
@@ -418,6 +425,14 @@ export function fmt(list: Info[], opts: { verbose: boolean }) {
           "  </skill>",
         ]),
       "</available_skills>",
+    ].join("\n")
+  }
+  if (mode === "caveman") {
+    return [
+      "SKILLS:",
+      ...described
+        .toSorted((a, b) => a.name.localeCompare(b.name))
+        .map((skill) => `- ${skill.name} :: ${skill.description}`),
     ].join("\n")
   }
 

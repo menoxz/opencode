@@ -6,6 +6,7 @@ import { Skill } from "../../src/skill"
 import { Permission } from "../../src/permission"
 import { SystemPrompt } from "../../src/session/system"
 import { PromptComposer } from "../../src/prompt-composer"
+import { TestConfig } from "../fixture/config"
 import { testEffect } from "../lib/effect"
 
 const skills: Skill.Info[] = [
@@ -44,6 +45,7 @@ const build: Agent.Info = {
 const it = testEffect(
   SystemPrompt.layer.pipe(
     Layer.provide(PromptComposer.defaultLayer),
+    Layer.provide(TestConfig.layer({ get: () => Effect.succeed({}) })),
     Layer.provide(
       Layer.succeed(
         Skill.Service,
@@ -74,14 +76,15 @@ describe("session.system", () => {
 
       expect(first).toBe(second)
 
-      const alpha = output.indexOf("<name>alpha-skill</name>")
-      const middle = output.indexOf("<name>middle-skill</name>")
-      const zeta = output.indexOf("<name>zeta-skill</name>")
+      const alpha = output.indexOf("- **alpha-skill**: Alpha skill.")
+      const middle = output.indexOf("- **middle-skill**: Middle skill.")
+      const zeta = output.indexOf("- **zeta-skill**: Zeta skill.")
 
       expect(alpha).toBeGreaterThan(-1)
       expect(middle).toBeGreaterThan(alpha)
       expect(zeta).toBeGreaterThan(middle)
       expect(output).not.toContain("manual-skill")
+      expect(output).not.toContain("<available_skills>")
     }),
   )
 })

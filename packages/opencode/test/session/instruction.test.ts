@@ -212,9 +212,45 @@ describe("Instruction.system", () => {
 
         const rules = yield* svc.system()
         expect(rules).toHaveLength(2)
+        expect(rules[0]).toContain(`Instructions from: ${path.join(globalTmp, "AGENTS.md")}`)
+        expect(rules[0]).toContain("summary")
+        expect(rules[0]).not.toBe(`Instructions from: ${path.join(globalTmp, "AGENTS.md")}\n# Global Instructions`)
+        expect(rules[1]).toContain(`Instructions from: ${path.join(projectTmp, "AGENTS.md")}`)
+        expect(rules[1]).toContain("summary")
+        expect(rules[1]).not.toBe(`Instructions from: ${path.join(projectTmp, "AGENTS.md")}\n# Project Instructions`)
+      }).pipe(provideInstance(projectTmp), provideInstruction({ home: globalTmp, config: globalTmp }))
+    }),
+  )
+
+  it.live("loads full AGENTS.md when configured with full injection", () =>
+    Effect.gen(function* () {
+      const globalTmp = yield* tmpWithFiles({ "AGENTS.md": "# Global Instructions" })
+      const projectTmp = yield* tmpWithFiles({ "AGENTS.md": "# Project Instructions" })
+
+      const fullConfig = TestConfig.layer({
+        get: () =>
+          Effect.succeed({
+            instruction_injection: {
+              agents: "full",
+            },
+          }),
+      })
+
+      const fullInstruction = Instruction.layer.pipe(
+        Layer.provide(fullConfig),
+        Layer.provide(AppFileSystem.defaultLayer),
+        Layer.provide(FetchHttpClient.layer),
+        Layer.provide(Global.layerWith({ home: globalTmp, config: globalTmp })),
+        Layer.provide(RuntimeFlags.layer({})),
+      )
+
+      yield* Effect.gen(function* () {
+        const svc = yield* Instruction.Service
+        const rules = yield* svc.system()
+        expect(rules).toHaveLength(2)
         expect(rules[0]).toBe(`Instructions from: ${path.join(globalTmp, "AGENTS.md")}\n# Global Instructions`)
         expect(rules[1]).toBe(`Instructions from: ${path.join(projectTmp, "AGENTS.md")}\n# Project Instructions`)
-      }).pipe(provideInstance(projectTmp), provideInstruction({ home: globalTmp, config: globalTmp }))
+      }).pipe(provideInstance(projectTmp), Effect.provide(fullInstruction))
     }),
   )
 
@@ -249,5 +285,18 @@ describe("Instruction.systemPaths global config", () => {
         expect(paths.has(path.join(globalTmp, "AGENTS.md"))).toBe(true)
       }).pipe(provideInstance(projectTmp), provideInstruction({ home: globalTmp, config: globalTmp }))
     }),
+  )
+
+  it.live("summarizes nearby AGENTS.md when resolving file reads", () =>
+    withFiles({ "subdir/AGENTS.md": "# Subdir Instructions", "subdir/nested/file.ts": "const x = 1" }, (dir) =>
+      Effect.gen(function* () {
+        const svc = yield* Instruction.Service
+        const results = yield* svc.resolve([], path.join(dir, "subdir", "nested", "file.ts"), MessageID.make("msg_message-test-4"))
+        expect(results).toHaveLength(1)
+        expect(results[0].content).toContain(`Instructions from: ${path.join(dir, "subdir", "AGENTS.md")}`)
+        expect(results[0].content).toContain("summary")
+        expect(results[0].content).not.toBe(`Instructions from: ${path.join(dir, "subdir", "AGENTS.md")}\n# Subdir Instructions`)
+      }),
+    ),
   )
 })

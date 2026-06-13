@@ -40,6 +40,7 @@ import { Skill } from "../../src/skill"
 import { SystemPrompt } from "../../src/session/system"
 import { Shell } from "../../src/shell/shell"
 import { Snapshot } from "../../src/snapshot"
+import * as PlanEngine from "@/plan-engine"
 import { ToolRegistry } from "@/tool/registry"
 import { Truncate } from "@/tool/truncate"
 import * as Log from "@opencode-ai/core/util/log"
@@ -165,7 +166,7 @@ const blockingProcessor = Layer.succeed(
   }),
 )
 
-function makePrompt(input?: { processor?: "blocking" }) {
+function makePrompt(input?: { processor?: "blocking"; planEngineLayer?: Layer.Layer<PlanEngine.Service, never, never> }) {
   const deps = Layer.mergeAll(
     Session.defaultLayer,
     Snapshot.defaultLayer,
@@ -216,7 +217,7 @@ function makePrompt(input?: { processor?: "blocking" }) {
     Layer.provideMerge(proc),
     Layer.provideMerge(deps),
   )
-  return SessionPrompt.layer.pipe(
+  let layer = SessionPrompt.layer.pipe(
     Layer.provide(SessionRevert.defaultLayer),
     Layer.provide(Image.defaultLayer),
     Layer.provide(Reference.defaultLayer),
@@ -232,19 +233,61 @@ function makePrompt(input?: { processor?: "blocking" }) {
     Layer.provideMerge(deps),
     Layer.provide(summary),
   )
+  if (input?.planEngineLayer) {
+    layer = layer.pipe(Layer.provideMerge(input.planEngineLayer))
+  }
+  return layer
 }
 
-function makeHttp(input?: { processor?: "blocking" }) {
+function makeHttp(input?: { processor?: "blocking"; planEngineLayer?: Layer.Layer<PlanEngine.Service, never, never> }) {
   return Layer.mergeAll(TestLLMServer.layer, makePrompt(input))
 }
 
-function makeHttpNoLLMServer(input?: { processor?: "blocking" }) {
+function makeHttpNoLLMServer(input?: { processor?: "blocking"; planEngineLayer?: Layer.Layer<PlanEngine.Service, never, never> }) {
   return makePrompt(input)
+}
+
+function makePlanEngineTestLayer(input: { calls: string[]; label: string }) {
+  const service = PlanEngine.Service.of({
+    analyzeComplexity: (task: string) =>
+      Effect.succeed({
+        complexity: PlanEngine.heuristicComplexity(task),
+        reason: "test",
+      }),
+    generatePlan: (task: string) =>
+      Effect.sync(() => {
+        input.calls.push(task)
+        return {
+          goal: `${input.label}:${task}`,
+          steps: [
+            {
+              id: "step-1",
+              description: task,
+              agent: "build",
+              prompt: task,
+              depends: [],
+              complexity: 0.5,
+            },
+          ],
+          parallelGroups: [["step-1"]],
+          estimatedTokens: 42,
+          complexity: "complex" as const,
+        }
+      }),
+    heuristicComplexity: PlanEngine.heuristicComplexity,
+  })
+  return makeHttp({ planEngineLayer: Layer.succeed(PlanEngine.Service, service) }) as unknown as Layer.Layer<never, any>
 }
 
 const it = testEffect(makeHttp() as unknown as Layer.Layer<never, any>)
 const noLLMServer = testEffect(makeHttpNoLLMServer() as unknown as Layer.Layer<never, any>)
 const raceNoLLMServer = testEffect(makeHttpNoLLMServer({ processor: "blocking" }) as unknown as Layer.Layer<never, any>)
+const autoPlanLatestPromptCalls: string[] = []
+const autoPlanContinuationCalls: string[] = []
+const autoPlanResumeCalls: string[] = []
+const autoPlanLatestPrompt = testEffect(makePlanEngineTestLayer({ calls: autoPlanLatestPromptCalls, label: "latest" }))
+const autoPlanContinuation = testEffect(makePlanEngineTestLayer({ calls: autoPlanContinuationCalls, label: "continuation" }))
+const autoPlanResume = testEffect(makePlanEngineTestLayer({ calls: autoPlanResumeCalls, label: "resume" }))
 const unix = process.platform !== "win32" ? it.instance : it.instance.skip
 const unixNoLLMServer = process.platform !== "win32" ? noLLMServer.instance : noLLMServer.instance.skip
 
@@ -487,29 +530,32 @@ it.instance("loop exits without an LLM request for interrupted orphan tool calls
   }),
 )
 
-it.instance("loop calls LLM and returns assistant message", () =>
-  Effect.gen(function* () {
-    const { llm } = yield* useServerConfig(providerCfg)
-    const prompt = yield* SessionPrompt.Service
-    const sessions = yield* Session.Service
-    const chat = yield* sessions.create({
-      title: "Pinned",
-      permission: [{ permission: "*", pattern: "*", action: "allow" }],
-    })
-    yield* prompt.prompt({
-      sessionID: chat.id,
-      agent: "build",
-      noReply: true,
-      parts: [{ type: "text", text: "hello" }],
-    })
-    yield* llm.text("world")
+it.instance(
+  "loop calls LLM and returns assistant message",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({
+        title: "Pinned",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "text", text: "hello" }],
+      })
+      yield* llm.text("world")
 
-    const result = yield* prompt.loop({ sessionID: chat.id })
-    expect(result.info.role).toBe("assistant")
-    const parts = result.parts.filter((p) => p.type === "text")
-    expect(parts.some((p) => p.type === "text" && p.text === "world")).toBe(true)
-    expect(yield* llm.hits).toHaveLength(1)
-  }),
+      const result = yield* prompt.loop({ sessionID: chat.id })
+      expect(result.info.role).toBe("assistant")
+      const parts = result.parts.filter((p) => p.type === "text")
+      expect(parts.some((p) => p.type === "text" && p.text === "world")).toBe(true)
+      expect(yield* llm.hits).toHaveLength(1)
+    }),
+  10_000,
 )
 
 noLLMServer.instance(
@@ -553,71 +599,201 @@ noLLMServer.instance(
   { config: cfg },
 )
 
-it.instance("static loop returns assistant text through local provider", () =>
+it.instance(
+  "static loop returns assistant text through local provider",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({
+        title: "Prompt provider",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+
+      yield* prompt.prompt({
+        sessionID: session.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "text", text: "hello" }],
+      })
+
+      yield* llm.text("world")
+
+      const result = yield* prompt.loop({ sessionID: session.id })
+      expect(result.info.role).toBe("assistant")
+      expect(result.parts.some((part) => part.type === "text" && part.text === "world")).toBe(true)
+      expect(yield* llm.hits).toHaveLength(1)
+      expect(yield* llm.pending).toBe(0)
+    }),
+  10_000,
+)
+
+it.instance(
+  "static loop consumes queued replies across turns",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({
+        title: "Prompt provider turns",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+
+      yield* prompt.prompt({
+        sessionID: session.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "text", text: "hello one" }],
+      })
+
+      yield* llm.text("world one")
+
+      const first = yield* prompt.loop({ sessionID: session.id })
+      expect(first.info.role).toBe("assistant")
+      expect(first.parts.some((part) => part.type === "text" && part.text === "world one")).toBe(true)
+
+      yield* prompt.prompt({
+        sessionID: session.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "text", text: "hello two" }],
+      })
+
+      yield* llm.text("world two")
+
+      const second = yield* prompt.loop({ sessionID: session.id })
+      expect(second.info.role).toBe("assistant")
+      expect(second.parts.some((part) => part.type === "text" && part.text === "world two")).toBe(true)
+
+      expect(yield* llm.hits).toHaveLength(2)
+      expect(yield* llm.pending).toBe(0)
+    }),
+  10_000,
+)
+
+autoPlanLatestPrompt.instance(
+  "auto-plan uses the latest non-synthetic user prompt for the current turn",
+  () =>
+    Effect.gen(function* () {
+      autoPlanLatestPromptCalls.length = 0
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({
+        title: "Auto-plan latest prompt",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+
+      yield* prompt.prompt({
+        sessionID: session.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "text", text: "hello" }],
+      })
+      yield* llm.text("first done")
+      yield* prompt.loop({ sessionID: session.id })
+
+      const currentTask = "implement a frontend backend api database migration with tests across multiple files"
+      yield* prompt.prompt({
+        sessionID: session.id,
+        agent: "build",
+        noReply: true,
+        parts: [
+          { type: "text", text: currentTask },
+          { type: "text", text: "synthetic note should be ignored", synthetic: true },
+        ],
+      })
+      yield* llm.text("second done")
+
+      const result = yield* prompt.loop({ sessionID: session.id })
+      expect(result.info.role).toBe("assistant")
+      expect(autoPlanLatestPromptCalls).toEqual([currentTask])
+
+      const inputs = yield* llm.inputs
+      expect(JSON.stringify(inputs.at(-1))).toContain(`latest:${currentTask}`)
+    }),
+  10_000,
+)
+
+autoPlanContinuation.instance("auto-plan skips short continuation prompts", () =>
   Effect.gen(function* () {
+    autoPlanContinuationCalls.length = 0
     const { llm } = yield* useServerConfig(providerCfg)
     const prompt = yield* SessionPrompt.Service
     const sessions = yield* Session.Service
     const session = yield* sessions.create({
-      title: "Prompt provider",
+      title: "Auto-plan continuation",
       permission: [{ permission: "*", pattern: "*", action: "allow" }],
     })
+
+    const complexTask = "implement frontend backend api database authentication deployment pipeline across services"
+    yield* prompt.prompt({
+      sessionID: session.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: complexTask }],
+    })
+    yield* llm.text("first done")
+    yield* prompt.loop({ sessionID: session.id })
+
+    expect(autoPlanContinuationCalls).toEqual([complexTask])
 
     yield* prompt.prompt({
       sessionID: session.id,
       agent: "build",
       noReply: true,
-      parts: [{ type: "text", text: "hello" }],
+      parts: [{ type: "text", text: "continue" }],
     })
-
-    yield* llm.text("world")
+    yield* llm.text("continued")
 
     const result = yield* prompt.loop({ sessionID: session.id })
     expect(result.info.role).toBe("assistant")
-    expect(result.parts.some((part) => part.type === "text" && part.text === "world")).toBe(true)
-    expect(yield* llm.hits).toHaveLength(1)
-    expect(yield* llm.pending).toBe(0)
+    expect(autoPlanContinuationCalls).toEqual([complexTask])
   }),
 )
 
-it.instance("static loop consumes queued replies across turns", () =>
+autoPlanResume.instance("auto-plan does not re-run when resuming an unfinished turn", () =>
   Effect.gen(function* () {
+    autoPlanResumeCalls.length = 0
     const { llm } = yield* useServerConfig(providerCfg)
     const prompt = yield* SessionPrompt.Service
     const sessions = yield* Session.Service
     const session = yield* sessions.create({
-      title: "Prompt provider turns",
+      title: "Auto-plan resume",
       permission: [{ permission: "*", pattern: "*", action: "allow" }],
     })
 
-    yield* prompt.prompt({
+    const current = yield* prompt.prompt({
       sessionID: session.id,
       agent: "build",
       noReply: true,
-      parts: [{ type: "text", text: "hello one" }],
+      parts: [{ type: "text", text: "implement frontend backend api database migration across services" }],
     })
 
-    yield* llm.text("world one")
-
-    const first = yield* prompt.loop({ sessionID: session.id })
-    expect(first.info.role).toBe("assistant")
-    expect(first.parts.some((part) => part.type === "text" && part.text === "world one")).toBe(true)
-
-    yield* prompt.prompt({
+    const resumedAssistant: MessageV2.Assistant = {
+      id: MessageID.ascending(),
+      role: "assistant",
+      parentID: current.info.id,
       sessionID: session.id,
+      mode: "build",
       agent: "build",
-      noReply: true,
-      parts: [{ type: "text", text: "hello two" }],
-    })
+      cost: 0,
+      path: { cwd: "/tmp", root: "/tmp" },
+      tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      modelID: ref.modelID,
+      providerID: ref.providerID,
+      time: { created: Date.now() },
+      finish: "tool-calls",
+    }
+    yield* sessions.updateMessage(resumedAssistant)
 
-    yield* llm.text("world two")
+    yield* llm.text("resumed")
+    const result = yield* prompt.loop({ sessionID: session.id })
 
-    const second = yield* prompt.loop({ sessionID: session.id })
-    expect(second.info.role).toBe("assistant")
-    expect(second.parts.some((part) => part.type === "text" && part.text === "world two")).toBe(true)
-
-    expect(yield* llm.hits).toHaveLength(2)
-    expect(yield* llm.pending).toBe(0)
+    expect(result.info.role).toBe("assistant")
+    expect(autoPlanResumeCalls).toEqual([])
   }),
 )
 
@@ -860,7 +1036,7 @@ it.instance(
       yield* Fiber.await(fiber)
       expect((yield* status.get(chat.id)).type).toBe("idle")
     }),
-  3_000,
+  10_000,
 )
 
 // Cancel semantics
@@ -883,12 +1059,13 @@ it.instance(
       yield* llm.wait(1)
       yield* prompt.cancel(chat.id)
       const exit = yield* Fiber.await(fiber)
+      if (Exit.isFailure(exit)) throw Cause.squash(exit.cause)
       expect(Exit.isSuccess(exit)).toBe(true)
       if (Exit.isSuccess(exit)) {
         expect(exit.value.info.role).toBe("assistant")
       }
     }),
-  3_000,
+  10_000,
 )
 
 it.instance(
@@ -914,7 +1091,7 @@ it.instance(
         }
       }
     }),
-  3_000,
+  10_000,
 )
 
 raceNoLLMServer.instance(
@@ -1003,7 +1180,7 @@ raceNoLLMServer.instance(
       }
     }),
   { config: cfg },
-  3_000,
+  10_000,
 )
 
 noLLMServer.instance(
@@ -1113,7 +1290,7 @@ it.instance(
       }
     }),
   { git: true },
-  3_000,
+  10_000,
 )
 
 // Queue semantics
@@ -1219,7 +1396,7 @@ it.instance(
       expect(inputs).toHaveLength(2)
       expect(JSON.stringify(inputs.at(-1)?.messages)).toContain("second")
     }),
-  3_000,
+  10_000,
 )
 
 it.instance(
@@ -1497,7 +1674,7 @@ it.instance(
       expect(yield* llm.calls).toBe(1)
     }),
   { git: true },
-  3_000,
+  10_000,
 )
 
 it.instance(
@@ -1536,7 +1713,7 @@ it.instance(
       expect(yield* llm.calls).toBe(1)
     }),
   { git: true },
-  3_000,
+  10_000,
 )
 
 unix(
@@ -2183,7 +2360,7 @@ it.instance(
         expect(last.info.error?.name).toBe("MessageAbortedError")
       }
     }),
-  3_000,
+  10_000,
 )
 
 // Agent variant

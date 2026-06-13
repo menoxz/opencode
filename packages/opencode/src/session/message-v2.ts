@@ -284,6 +284,127 @@ function truncateToolOutput(text: string, maxChars?: number) {
   return `${text.slice(0, maxChars)}\n[Tool output truncated for compaction: omitted ${omitted} chars]`
 }
 
+type ReplayToolInputsMode = "full" | "summary" | "off"
+type ReplayToolOutputsMode = "full" | "summary" | "off"
+type ReplayReasoningMode = "on" | "off"
+const RECENT_TOOL_TURNS_IN_FULL = 2
+const TOOL_INPUT_SUMMARY_MAX_DEPTH = 3
+const TOOL_INPUT_SUMMARY_MAX_KEYS = 8
+const TOOL_INPUT_SUMMARY_MAX_ITEMS = 5
+const TOOL_INPUT_SUMMARY_MAX_STRING = 80
+
+function toolResultReference(part: ToolPart) {
+  const candidates = ["filePath", "path", "url", "uri"]
+  for (const key of candidates) {
+    const value = part.state.input[key]
+    if (typeof value === "string" && value) return value
+  }
+  return part.callID
+}
+
+function summarizeToolOutput(part: ToolPart, outputText: string, attachments: FilePart[], mode: ReplayToolOutputsMode) {
+  if (mode === "full") return outputText
+  const reference = toolResultReference(part)
+  if (mode === "off") {
+    return [`[Historical tool result omitted]`, `tool: ${part.tool}`, `reference: ${reference}`].join("\n")
+  }
+  const lines = outputText === "" ? 0 : outputText.split("\n").length
+  const bytes = Buffer.byteLength(outputText, "utf-8")
+  const window = [
+    typeof part.state.input.offset === "number" ? `offset=${part.state.input.offset}` : undefined,
+    typeof part.state.input.limit === "number" ? `limit=${part.state.input.limit}` : undefined,
+  ].filter((value): value is string => !!value)
+  return [
+    `[Historical tool result summary]`,
+    `tool: ${part.tool}`,
+    `reference: ${reference}`,
+    ...(window.length ? [`window: ${window.join(" ")}`] : []),
+    `metrics: chars=${outputText.length} lines=${lines} bytes=${bytes} attachments=${attachments.length}`,
+  ].join("\n")
+}
+
+function recentToolOutputMessageIDs(input: WithParts[], replayToolOutputs: ReplayToolOutputsMode) {
+  if (replayToolOutputs !== "summary") return new Set<string>()
+  return new Set(
+    input
+      .filter(
+        (msg) =>
+          msg.info.role === "assistant" &&
+          msg.parts.some((part) => part.type === "tool" && part.state.status === "completed"),
+      )
+      .slice(-RECENT_TOOL_TURNS_IN_FULL)
+      .map((msg) => msg.info.id),
+  )
+}
+
+function recentToolInputMessageIDs(input: WithParts[], replayToolInputs: ReplayToolInputsMode) {
+  if (replayToolInputs !== "summary") return new Set<string>()
+  return new Set(
+    input
+      .filter((msg) => msg.info.role === "assistant" && msg.parts.some((part) => part.type === "tool"))
+      .slice(-RECENT_TOOL_TURNS_IN_FULL)
+      .map((msg) => msg.info.id),
+  )
+}
+
+function summarizeToolInputValue(value: unknown, depth: number, seen: Set<object>): unknown {
+  if (value === null) return null
+  if (typeof value === "string")
+    return value.length <= TOOL_INPUT_SUMMARY_MAX_STRING
+      ? value
+      : `${value.slice(0, TOOL_INPUT_SUMMARY_MAX_STRING)}… [${value.length} chars]`
+  if (typeof value === "number" || typeof value === "boolean") return value
+  if (typeof value === "bigint") return `[bigint:${value.toString()}]`
+  if (typeof value === "undefined") return "[undefined]"
+  if (typeof value === "function") return "[function]"
+  if (typeof value === "symbol") return `[symbol:${String(value.description ?? "").trim()}]`
+  if (Array.isArray(value)) {
+    if (seen.has(value)) return ["[Circular]"]
+    seen.add(value)
+    if (depth >= TOOL_INPUT_SUMMARY_MAX_DEPTH) {
+      seen.delete(value)
+      return [`[Array(${value.length})]`]
+    }
+    const summarized = value
+      .slice(0, TOOL_INPUT_SUMMARY_MAX_ITEMS)
+      .map((item) => summarizeToolInputValue(item, depth + 1, seen))
+    seen.delete(value)
+    return value.length > TOOL_INPUT_SUMMARY_MAX_ITEMS
+      ? [...summarized, `[+${value.length - TOOL_INPUT_SUMMARY_MAX_ITEMS} more items]`]
+      : summarized
+  }
+  if (typeof value !== "object") return `[${typeof value}]`
+  if (seen.has(value)) return "[Circular]"
+  seen.add(value)
+  const entries = Object.entries(value).sort(([left], [right]) => left.localeCompare(right))
+  if (depth >= TOOL_INPUT_SUMMARY_MAX_DEPTH) {
+    seen.delete(value)
+    return {
+      __type: "object",
+      keys: entries.slice(0, TOOL_INPUT_SUMMARY_MAX_KEYS).map(([key]) => key),
+      ...(entries.length > TOOL_INPUT_SUMMARY_MAX_KEYS
+        ? { truncated_keys: entries.length - TOOL_INPUT_SUMMARY_MAX_KEYS }
+        : {}),
+    }
+  }
+  const summarized = Object.fromEntries(
+    entries
+      .slice(0, TOOL_INPUT_SUMMARY_MAX_KEYS)
+      .map(([key, item]) => [key, summarizeToolInputValue(item, depth + 1, seen)]),
+  )
+  seen.delete(value)
+  return entries.length > TOOL_INPUT_SUMMARY_MAX_KEYS
+    ? { ...summarized, __truncated_keys: entries.length - TOOL_INPUT_SUMMARY_MAX_KEYS }
+    : summarized
+}
+
+function summarizeToolInput(input: Record<string, any>, mode: ReplayToolInputsMode) {
+  if (mode === "full") return input
+  if (mode === "off") return { omitted: true, tool_input: "historical" }
+  const summary = summarizeToolInputValue(input, 0, new Set<object>())
+  return typeof summary === "object" && summary !== null ? summary : { value: summary }
+}
+
 export const ToolStateError = Schema.Struct({
   status: Schema.Literal("error"),
   input: Schema.Record(Schema.String, Schema.Any),
@@ -630,10 +751,20 @@ function providerMeta(metadata: Record<string, any> | undefined) {
 export const toModelMessagesEffect = Effect.fnUntraced(function* (
   input: WithParts[],
   model: Provider.Model,
-  options?: { stripMedia?: boolean; toolOutputMaxChars?: number },
+  options?: {
+    stripMedia?: boolean
+    toolOutputMaxChars?: number
+    replayToolInputs?: ReplayToolInputsMode
+    replayToolOutputs?: ReplayToolOutputsMode
+    replayReasoning?: ReplayReasoningMode
+  },
 ) {
   const result: UIMessage[] = []
   const toolNames = new Set<string>()
+  const replayToolInputs = options?.replayToolInputs ?? "full"
+  const replayToolOutputs = options?.replayToolOutputs ?? "full"
+  const recentToolTurns = recentToolOutputMessageIDs(input, replayToolOutputs)
+  const recentToolInputTurns = recentToolInputMessageIDs(input, replayToolInputs)
   // Track media from tool results that need to be injected as user messages
   // for providers that don't support that media type in tool results.
   //
@@ -787,34 +918,38 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
           })
         if (part.type === "tool") {
           toolNames.add(part.tool)
+          const toolInputReplayMode = recentToolInputTurns.has(msg.info.id) ? "full" : replayToolInputs
           if (part.state.status === "completed") {
+            const toolReplayMode = recentToolTurns.has(msg.info.id) ? "full" : replayToolOutputs
             const outputText = part.state.time.compacted
               ? "[Old tool result content cleared]"
               : truncateToolOutput(part.state.output, options?.toolOutputMaxChars)
             const attachments = part.state.time.compacted || options?.stripMedia ? [] : (part.state.attachments ?? [])
+            const replayedOutputText = summarizeToolOutput(part, outputText, attachments, toolReplayMode)
 
             // For providers that don't support media in tool results, extract media files
             // (images, PDFs) to be sent as a separate user message
-            const mediaAttachments = attachments.filter((a) => isMedia(a.mime))
+            const replayAttachments = toolReplayMode === "full" ? attachments : []
+            const mediaAttachments = replayAttachments.filter((a) => isMedia(a.mime))
             const extractedMedia = mediaAttachments.filter((a) => !supportsMediaInToolResult(a))
             if (extractedMedia.length > 0) {
               media.push(...extractedMedia)
             }
-            const finalAttachments = attachments.filter((a) => !isMedia(a.mime) || supportsMediaInToolResult(a))
+            const finalAttachments = replayAttachments.filter((a) => !isMedia(a.mime) || supportsMediaInToolResult(a))
 
             const output =
               finalAttachments.length > 0
                 ? {
-                    text: outputText,
+                    text: replayedOutputText,
                     attachments: finalAttachments,
                   }
-                : outputText
+                : replayedOutputText
 
             assistantMessage.parts.push({
               type: ("tool-" + part.tool) as `tool-${string}`,
               state: "output-available",
               toolCallId: part.callID,
-              input: part.state.input,
+              input: summarizeToolInput(part.state.input, toolInputReplayMode),
               output,
               ...(part.metadata?.providerExecuted ? { providerExecuted: true } : {}),
               ...(differentModel ? {} : { callProviderMetadata: providerMeta(part.metadata) }),
@@ -827,7 +962,7 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
                 type: ("tool-" + part.tool) as `tool-${string}`,
                 state: "output-available",
                 toolCallId: part.callID,
-                input: part.state.input,
+                input: summarizeToolInput(part.state.input, toolInputReplayMode),
                 output,
                 ...(part.metadata?.providerExecuted ? { providerExecuted: true } : {}),
                 ...(differentModel ? {} : { callProviderMetadata: providerMeta(part.metadata) }),
@@ -837,7 +972,7 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
                 type: ("tool-" + part.tool) as `tool-${string}`,
                 state: "output-error",
                 toolCallId: part.callID,
-                input: part.state.input,
+                input: summarizeToolInput(part.state.input, toolInputReplayMode),
                 errorText: part.state.error,
                 ...(part.metadata?.providerExecuted ? { providerExecuted: true } : {}),
                 ...(differentModel ? {} : { callProviderMetadata: providerMeta(part.metadata) }),
@@ -851,13 +986,14 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
               type: ("tool-" + part.tool) as `tool-${string}`,
               state: "output-error",
               toolCallId: part.callID,
-              input: part.state.input,
+              input: summarizeToolInput(part.state.input, toolInputReplayMode),
               errorText: "[Tool execution was interrupted]",
               ...(part.metadata?.providerExecuted ? { providerExecuted: true } : {}),
               ...(differentModel ? {} : { callProviderMetadata: providerMeta(part.metadata) }),
             })
         }
         if (part.type === "reasoning") {
+          if (options?.replayReasoning === "off") continue
           if (differentModel) {
             if (part.text.trim().length > 0)
               assistantMessage.parts.push({
@@ -915,7 +1051,13 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
 export function toModelMessages(
   input: WithParts[],
   model: Provider.Model,
-  options?: { stripMedia?: boolean; toolOutputMaxChars?: number },
+  options?: {
+    stripMedia?: boolean
+    toolOutputMaxChars?: number
+    replayToolInputs?: ReplayToolInputsMode
+    replayToolOutputs?: ReplayToolOutputsMode
+    replayReasoning?: ReplayReasoningMode
+  },
 ): Promise<ModelMessage[]> {
   return Effect.runPromise(toModelMessagesEffect(input, model, options).pipe(Effect.provide(EffectLogger.layer)))
 }

@@ -20,6 +20,7 @@ import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { SessionEvent } from "@opencode-ai/core/session-event"
+import { SessionContextRollout } from "./context-rollout"
 
 const log = Log.create({ service: "session.compaction" })
 
@@ -163,7 +164,12 @@ function splitTurn(input: {
   turn: Turn
   model: Provider.Model
   budget: number
-  estimate: (input: { messages: MessageV2.WithParts[]; model: Provider.Model }) => Effect.Effect<number>
+  estimate: (input: {
+    messages: MessageV2.WithParts[]
+    model: Provider.Model
+    rollout: SessionContextRollout.Info
+  }) => Effect.Effect<number>
+  rollout: SessionContextRollout.Info
 }) {
   return Effect.gen(function* () {
     if (input.budget <= 0) return undefined
@@ -172,6 +178,7 @@ function splitTurn(input: {
       const size = yield* input.estimate({
         messages: input.messages.slice(start, input.turn.end),
         model: input.model,
+        rollout: input.rollout,
       })
       if (size > input.budget) continue
       return {
@@ -237,8 +244,13 @@ export const layer = Layer.effect(
     const estimate = Effect.fn("SessionCompaction.estimate")(function* (input: {
       messages: MessageV2.WithParts[]
       model: Provider.Model
+      rollout: SessionContextRollout.Info
     }) {
-      const msgs = yield* MessageV2.toModelMessagesEffect(input.messages, input.model)
+      const msgs = yield* MessageV2.toModelMessagesEffect(input.messages, input.model, {
+        replayToolInputs: input.rollout.replayToolInputs,
+        replayToolOutputs: input.rollout.replayToolOutputs,
+        replayReasoning: input.rollout.replayReasoning,
+      })
       return Token.estimate(JSON.stringify(msgs))
     })
 
@@ -246,6 +258,7 @@ export const layer = Layer.effect(
       messages: MessageV2.WithParts[]
       cfg: Config.Info
       model: Provider.Model
+      rollout: SessionContextRollout.Info
     }) {
       const limit = input.cfg.compaction?.tail_turns ?? DEFAULT_TAIL_TURNS
       if (limit <= 0) return { head: input.messages, tail_start_id: undefined }
@@ -259,6 +272,7 @@ export const layer = Layer.effect(
           estimate({
             messages: input.messages.slice(turn.start, turn.end),
             model: input.model,
+            rollout: input.rollout,
           }),
         { concurrency: 1 },
       )
@@ -280,6 +294,7 @@ export const layer = Layer.effect(
           model: input.model,
           budget: remaining,
           estimate,
+          rollout: input.rollout,
         })
         if (split) keep = split
         else if (!keep) log.info("tail fallback", { budget, size, total })
@@ -385,6 +400,7 @@ export const layer = Layer.effect(
         ? yield* provider.getModel(agent.model.providerID, agent.model.modelID).pipe(Effect.orDie)
         : yield* provider.getModel(userMessage.model.providerID, userMessage.model.modelID).pipe(Effect.orDie)
       const cfg = yield* config.get()
+      const rollout = SessionContextRollout.resolve(cfg)
       const history = compactionPart && messages.at(-1)?.info.id === input.parentID ? messages.slice(0, -1) : messages
       const prior = completedCompactions(history)
       const hidden = new Set(prior.flatMap((item) => [item.userIndex, item.assistantIndex]))
@@ -393,6 +409,7 @@ export const layer = Layer.effect(
         messages: history.filter((_, index) => !hidden.has(index)),
         cfg,
         model,
+        rollout,
       })
       // Allow plugins to inject context or replace compaction prompt.
       const compacting = yield* plugin.trigger(
@@ -406,6 +423,9 @@ export const layer = Layer.effect(
       const modelMessages = yield* MessageV2.toModelMessagesEffect(msgs, model, {
         stripMedia: true,
         toolOutputMaxChars: TOOL_OUTPUT_MAX_CHARS,
+        replayToolInputs: rollout.replayToolInputs,
+        replayToolOutputs: rollout.replayToolOutputs,
+        replayReasoning: rollout.replayReasoning,
       })
       const ctx = yield* InstanceState.context
       const msg: MessageV2.Assistant = {

@@ -26,7 +26,9 @@ import { NonNegativeInt, PositiveInt, type DeepMutable } from "@opencode-ai/core
 import { ConfigAgent } from "./agent"
 import { ConfigAttachment } from "./attachment"
 import { ConfigCommand } from "./command"
+import { ConfigContextRollout } from "./context-rollout"
 import { ConfigFormatter } from "./formatter"
+import { ConfigInstructionInjection } from "./instruction-injection"
 import { ConfigLayout } from "./layout"
 import { ConfigLSP } from "./lsp"
 import { ConfigManaged } from "./managed"
@@ -241,6 +243,9 @@ export const Info = Schema.Struct({
   instructions: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
     description: "Additional instruction files or patterns to include",
   }),
+  instruction_injection: Schema.optional(ConfigInstructionInjection.Info).annotate({
+    description: "Stable instruction injection controls for AGENTS.md and related files.",
+  }),
   layout: Schema.optional(ConfigLayout.Layout).annotate({ description: "@deprecated Always uses stretch layout." }),
   permission: Schema.optional(ConfigPermission.Info),
   tools: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)),
@@ -297,6 +302,9 @@ export const Info = Schema.Struct({
       }),
       continue_loop_on_deny: Schema.optional(Schema.Boolean).annotate({
         description: "Continue the agent loop when a tool call is denied",
+      }),
+      context_rollout: Schema.optional(ConfigContextRollout.Info).annotate({
+        description: "Experimental rollout controls for context-reduction optimization flags.",
       }),
       mcp_timeout: Schema.optional(PositiveInt).annotate({
         description: "Timeout in milliseconds for model context protocol (MCP) requests",

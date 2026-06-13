@@ -11,6 +11,8 @@ import { PromptComposer } from "@/prompt-composer"
 import { SelfImprove } from "@/self-improve"
 import type { MessageV2 } from "./message-v2"
 import { rankDocuments } from "@/memory/search"
+import { Config } from "@/config/config"
+import { SessionContextRollout } from "./context-rollout"
 
 /**
  * Single unified system prompt for all models.
@@ -41,6 +43,7 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const skill = yield* Skill.Service
+    const config = yield* Config.Service
     const promptComposer = yield* PromptComposer.Service
     const selfImprove = yield* Effect.serviceOption(SelfImprove.Service).pipe(Effect.map(Option.getOrUndefined))
 
@@ -65,6 +68,9 @@ export const layer = Layer.effect(
       skills: Effect.fn("SystemPrompt.skills")(function* (agent: Agent.Info, lastUserMessage?: string) {
         if (Permission.disabled(["skill"], agent.permission).has("skill")) return
 
+        const settings = yield* config.get()
+        const rollout = SessionContextRollout.resolve(settings)
+
         let list = yield* skill.available(agent)
 
         // BM25 relevance filter: rank skills by semantic + keyword match
@@ -87,7 +93,9 @@ export const layer = Layer.effect(
         return [
           "Skills provide specialized instructions and workflows for specific tasks.",
           "Use the skill tool to load a skill when a task matches its description.",
-          Skill.fmt(list, { verbose: true }),
+          Skill.fmt(list, {
+            mode: rollout.injectionSkills === "verbose" ? "verbose" : settings.instruction_injection?.skills === "caveman" ? "caveman" : "summary",
+          }),
         ].join("\n")
       }),
 
@@ -173,6 +181,7 @@ export const layer = Layer.effect(
 export const defaultLayer = layer.pipe(
   Layer.provide(Skill.defaultLayer),
   Layer.provide(PromptComposer.defaultLayer),
+  Layer.provide(Config.defaultLayer),
 )
 
 export * as SystemPrompt from "./system"

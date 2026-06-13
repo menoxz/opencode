@@ -33,6 +33,7 @@ import { pathToFileURL, fileURLToPath } from "url"
 import { Config } from "@/config/config"
 import { ConfigMarkdown } from "@/config/markdown"
 import { SessionSummary } from "./summary"
+import { SessionContextRollout } from "./context-rollout"
 import { NamedError } from "@opencode-ai/core/util/error"
 import { SessionProcessor } from "./processor"
 import { Tool } from "@/tool/tool"
@@ -239,97 +240,134 @@ function xmlEscape(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
 }
 
-// ── D3: Methodology auto-check ──────────────────────────────────────────
-// Injected at the end of every system prompt to force self-validation.
-const METHODOLOGY_AUTO_CHECK = `
-<methodology_check>
-  Before responding, verify you have followed the required methodology steps for this task type.
-  Check:
-  1. Did you RESEARCH FIRST? (google_search before writing code)
-  2. Did you check MEMORY FIRST? (memory_retrieve before deciding)
-  3. Did you PLAN before ACT? (analyze, decompose, identify files)
-  4. Did you follow the SWE Loop? (PLAN → ACT → OBSERVE → REFLECT)
-  5. Did you use tools yourself instead of delegating to the user?
-  If you skipped any mandatory step, acknowledge it explicitly and correct your approach.
-</methodology_check>`
+const METHODOLOGY_AUTO_CHECK = [
+  `<methodology_check>`,
+  `Before responding, self-check mandatory method adherence:`,
+  `research_first|memory_first|plan_before_act|SWE_loop|use_tools_yourself|evaluate_result|learn_if_repeatable`,
+  `If any mandatory step was skipped: say it explicitly, then correct course before answering.`,
+  `</methodology_check>`,
+].join("\n")
 
-// ── Matrix: Methodology injection mode ─────────────────────────────────
-// Determines how much methodology boilerplate to inject based on
-// step number and task complexity. Objective (zero LLM cost).
-type MethodologyMode = "full" | "light" | "quick"
+type MethodologyMode = SessionContextRollout.SystemBoilerplateMode
 
 function parseUserFlags(text: string): MethodologyMode | undefined {
-  // User can override with explicit flags
-  if (text.includes("/quick")) return "quick"
+  if (text.includes("/minimal") || text.includes("/quick")) return "minimal"
+  if (text.includes("/light")) return "light"
   if (text.includes("/full")) return "full"
   return undefined
 }
 
+function getUserPromptText(msg: MessageV2.WithParts): string {
+  if (msg.info.role !== "user") return ""
+  return msg.parts
+    .filter((p): p is MessageV2.TextPart => p.type === "text" && !p.synthetic && !p.ignored)
+    .map((p) => p.text)
+    .join("\n")
+    .trim()
+}
+
 function getCurrentTaskText(msgs: MessageV2.WithParts[]): string {
   for (const m of msgs.toReversed()) {
-    if (m.info.role !== "user") continue
-    const text = m.parts
-      .filter((p) => p.type === "text" && !(p as any).synthetic)
-      .map((p) => (p as any).text)
-      .join("\n")
+    const text = getUserPromptText(m)
     if (text.trim()) return text
   }
   return ""
 }
 
-function computeMethodologyMode(step: number, msgs: MessageV2.WithParts[]): MethodologyMode {
+const AUTO_PLAN_CONTINUATION_TOKENS = new Set([
+  "ok",
+  "okay",
+  "continue",
+  "continuer",
+  "commence",
+  "commencer",
+  "reprends",
+  "reprendre",
+  "poursuis",
+  "poursuivre",
+  "resume",
+  "reprend",
+  "go",
+  "suite",
+  "next",
+  "vas",
+  "y",
+])
+
+const AUTO_PLAN_CONTINUATION_FILLER_TOKENS = new Set([
+  "please",
+  "pls",
+  "stp",
+  "svp",
+  "now",
+  "maintenant",
+  "alors",
+])
+
+function isContinuationPrompt(text: string): boolean {
+  const normalized = text
+    .toLowerCase()
+    .trim()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+
+  if (!normalized) return false
+
+  const tokens = normalized.split(/\s+/).filter(Boolean)
+  if (tokens.length === 0 || tokens.length > 4) return false
+
+  let hasContinuationToken = false
+  for (const token of tokens) {
+    if (AUTO_PLAN_CONTINUATION_FILLER_TOKENS.has(token)) continue
+    if (AUTO_PLAN_CONTINUATION_TOKENS.has(token)) {
+      hasContinuationToken = true
+      continue
+    }
+    return false
+  }
+
+  return hasContinuationToken
+}
+
+function computeMethodologyMode(
+  step: number,
+  msgs: MessageV2.WithParts[],
+  rollout: SessionContextRollout.Info,
+): MethodologyMode {
   const currentTaskText = getCurrentTaskText(msgs)
 
-  // 1. User flags override everything
   const flagOverride = parseUserFlags(currentTaskText)
   if (flagOverride) return flagOverride
 
-  // 2. Heuristic complexity analysis (zero LLM cost)
+  if (rollout.systemBoilerplate === "full") return "full"
+
   const heuristic = PlanEngine.heuristicComplexity(currentTaskText)
 
-  // 3. Matrix: step × complexity
-  //
-  //            | step=1 | step=2-5 | step>5
-  //  simple    | light  | quick    | quick
-  //  moderate  | full   | light    | quick
-  //  complex   | full   | full     | light
-  //
-  // Rationale:
-  // - First step needs context injection (skills, notifications, etc.)
-  //   but trivial tasks don't need the 5-question auto-check.
-  // - Early session still enforces methodology for complex tasks.
-  // - Deep session drops to minimal for everything except complex tasks,
-  //   which still get light enforcement.
-  // - User flags /quick or /full override the matrix entirely.
-
-  if (step === 1) {
-    if (heuristic === "simple") return "light"
-    return "full"
-  } else if (step <= 5) {
-    if (heuristic === "complex") return "full"
-    return "light"
-  } else {
-    if (heuristic === "complex") return "light"
-    return "quick"
+  if (rollout.systemBoilerplate === "minimal") {
+    if (step === 1 && heuristic !== "simple") return "light"
+    if (heuristic === "complex" && step <= 3) return "light"
+    return "minimal"
   }
+
+  if (step > 5 && heuristic === "simple") return "minimal"
+  return "light"
 }
 
-// ── A2: Adaptive methodology reminder ──────────────────────────────────
-// Generates a contextual reminder based on step and tool activity.
-function buildMethodologyReminder(step: number, messages: MessageV2.WithParts[]): string | undefined {
-  // Check if any tool calls have been made in this session
+function buildMethodologyReminder(
+  step: number,
+  mode: Exclude<MethodologyMode, "full"> | "full",
+  messages: MessageV2.WithParts[],
+): string | undefined {
   const hasToolActivity = messages.some((m) =>
     m.info.role === "assistant" &&
     m.parts.some((p) => p.type === "tool" && (p as any).state?.status === "success"),
   )
 
-  // Check if google_search was used
   const hasSearchedWeb = messages.some((m) =>
     m.info.role === "assistant" &&
     m.parts.some((p) => p.type === "tool" && (p as any).tool === "google_search" && (p as any).state?.status === "success"),
   )
 
-  // Check if memory_retrieve was used
   const hasMemoryRetrieved = messages.some((m) =>
     m.info.role === "assistant" &&
     m.parts.some((p) =>
@@ -339,11 +377,28 @@ function buildMethodologyReminder(step: number, messages: MessageV2.WithParts[])
     ),
   )
 
+  if (mode === "minimal") {
+    if (step === 1) {
+      return [
+        `<methodology_reminder step="${step}" mode="minimal">`,
+        `START: PLAN before ACT.${!hasMemoryRetrieved ? ` MEMORY FIRST.` : ""}${!hasSearchedWeb ? ` RESEARCH if unclear.` : ""}`,
+        `</methodology_reminder>`,
+      ].join("\n")
+    }
+    if (hasToolActivity) {
+      return [
+        `<methodology_reminder step="${step}" mode="minimal">`,
+        `SWE-loop: OBSERVE results → REFLECT → continue.`,
+        `</methodology_reminder>`,
+      ].join("\n")
+    }
+    return
+  }
+
   const parts: string[] = []
-  parts.push(`<methodology_reminder step="${step}">`)
+  parts.push(`<methodology_reminder step="${step}" mode="${mode}">`)
 
   if (step === 1) {
-    // First step: emphasize the starting methodology
     parts.push("  You are at the START of this task.")
     if (!hasSearchedWeb) {
       parts.push("  <remind type=\"research\" critical=\"true\">RESEARCH FIRST — search the web before writing code</remind>")
@@ -353,16 +408,15 @@ function buildMethodologyReminder(step: number, messages: MessageV2.WithParts[])
     }
     parts.push("  <remind type=\"plan\" critical=\"true\">PLAN before ACT — analyze, decompose, identify files</remind>")
   } else if (hasToolActivity) {
-    // Subsequent steps with tool activity: emphasize OBSERVE + REFLECT
     parts.push("  You have made tool calls — now follow the SWE Loop:")
     parts.push("  <remind type=\"observe\">OBSERVE — compare actual vs expected results</remind>")
     parts.push("  <remind type=\"reflect\">REFLECT — evaluate, adjust, store learnings in memory</remind>")
+    parts.push("  <remind type=\"learn\">LEARN — will this task repeat? Update or create a skill for it</remind>")
     parts.push("  <remind type=\"continue\">Continue the PLAN → ACT → OBSERVE → REFLECT cycle</remind>")
     if (!hasMemoryRetrieved) {
       parts.push("  <remind type=\"memory\">Store what you learned in memory using memory_store</remind>")
     }
   } else {
-    // Subsequent steps without tool activity
     parts.push("  Continue following the SWE Loop: PLAN → ACT → OBSERVE → REFLECT")
     parts.push("  <remind type=\"stuck-protocol\">If stuck &gt;2min → google → docs → implement</remind>")
     parts.push("  <remind type=\"tools\">Use tools yourself — do not delegate to the user</remind>")
@@ -423,8 +477,8 @@ export const layer = Layer.effect(
     const references = yield* Reference.Service
     const events = yield* EventV2Bridge.Service
     const flags = yield* RuntimeFlags.Service
-    const memory = yield* Memory.Service
-    const planEngine = yield* PlanEngine.Service
+    const memory = yield* Effect.serviceOption(Memory.Service).pipe(Effect.map(Option.getOrUndefined))
+    const planEngine = yield* Effect.serviceOption(PlanEngine.Service).pipe(Effect.map(Option.getOrUndefined))
     const selfImprove = yield* Effect.serviceOption(SelfImprove.Service).pipe(Effect.map(Option.getOrUndefined))
 
     const ops = Effect.fn("SessionPrompt.ops")(function* () {
@@ -445,9 +499,16 @@ export const layer = Layer.effect(
       const parts: Types.DeepMutable<PromptInput["parts"]> = [{ type: "text", text: template }]
       const files = ConfigMarkdown.files(template)
       const seen = new Set<string>()
+      const seenReferenceMessages = new Set<string>()
       const mentionSource = (match: RegExpMatchArray) => {
         const start = match.index ?? 0
         return { value: match[0], start, end: start + match[0].length }
+      }
+      const pushReference = (part: ReturnType<typeof referenceTextPart>) => {
+        const key = JSON.stringify(part.metadata?.reference)
+        if (seenReferenceMessages.has(key)) return
+        seenReferenceMessages.add(key)
+        parts.push(part)
       }
       yield* Effect.forEach(
         files,
@@ -463,7 +524,7 @@ export const layer = Layer.effect(
           if (reference) {
             const source = mentionSource(match)
             if (reference.kind === "invalid") {
-              parts.push(
+              pushReference(
                 referenceTextPart({ reference, source, target: slash === -1 ? undefined : name.slice(slash + 1) }),
               )
               return
@@ -471,14 +532,14 @@ export const layer = Layer.effect(
 
             yield* references.ensure(reference.path)
             if (slash === -1) {
-              parts.push(referenceTextPart({ reference, source }))
+              pushReference(referenceTextPart({ reference, source }))
               return
             }
 
             const target = name.slice(slash + 1)
             const targetPath = path.resolve(reference.path, target)
             if (!AppFileSystem.contains(reference.path, targetPath)) {
-              parts.push(
+              pushReference(
                 referenceTextPart({
                   reference,
                   source,
@@ -492,7 +553,7 @@ export const layer = Layer.effect(
 
             const info = yield* fsys.stat(targetPath).pipe(Effect.option)
             if (Option.isNone(info)) {
-              parts.push(
+              pushReference(
                 referenceTextPart({
                   reference,
                   source,
@@ -544,6 +605,8 @@ export const layer = Layer.effect(
     }) {
       if (input.session.parentID) return
       if (!Session.isDefaultTitle(input.session.title)) return
+      const last = input.history[input.history.length - 1]
+      if (last?.info.role === "assistant") return
 
       const real = (m: MessageV2.WithParts) =>
         m.info.role === "user" && !m.parts.every((p) => "synthetic" in p && p.synthetic)
@@ -565,9 +628,14 @@ export const layer = Layer.effect(
         ? yield* provider.getModel(ag.model.providerID, ag.model.modelID)
         : ((yield* provider.getSmallModel(input.providerID)) ??
           (yield* provider.getModel(input.providerID, input.modelID)))
+      const promptRollout = SessionContextRollout.resolve(yield* config.get())
       const msgs = onlySubtasks
         ? [{ role: "user" as const, content: subtasks.map((p) => p.prompt).join("\n") }]
-        : yield* MessageV2.toModelMessagesEffect(context, mdl)
+        : yield* MessageV2.toModelMessagesEffect(context, mdl, {
+            replayToolInputs: promptRollout.replayToolInputs,
+            replayToolOutputs: promptRollout.replayToolOutputs,
+            replayReasoning: promptRollout.replayReasoning,
+          })
       const text = yield* llm
         .stream({
           agent: ag,
@@ -1539,8 +1607,7 @@ export const layer = Layer.effect(
       throw new Error("Impossible")
     })
 
-    const runLoop: (sessionID: SessionID) => Effect.Effect<MessageV2.WithParts> = Effect.fn("SessionPrompt.run")(
-      function* (sessionID: SessionID) {
+    const runLoop = Effect.fn("SessionPrompt.run")(function* (sessionID: SessionID) {
         const ctx = yield* InstanceState.context
         const slog = elog.with({ sessionID })
         let structured: unknown
@@ -1556,6 +1623,10 @@ export const layer = Layer.effect(
           const { user: lastUser, assistant: lastAssistant, finished: lastFinished, tasks } = MessageV2.latest(msgs)
 
           if (!lastUser) throw new Error("No user message found in stream. This should never happen.")
+
+          const hasPriorAssistantForCurrentUser = msgs.some(
+            (message) => message.info.role === "assistant" && message.info.parentID === lastUser.id,
+          )
 
           const lastAssistantMsg = msgs.findLast(
             (msg) => msg.info.role === "assistant" && msg.info.id === lastAssistant?.id,
@@ -1656,15 +1727,18 @@ export const layer = Layer.effect(
           // On the first step of the `build` agent, check if the task is complex
           // and generate a structured execution plan as guidance for the LLM.
           let executionPlan: ExecutionPlan | undefined
-          if (step === 1 && (lastUser.agent === "build" || lastUser.agent === "orchestrator")) {
-            const firstUserMsg = msgs.find((m) => m.info.role === "user")
-            const firstUserText = firstUserMsg?.parts
-              .filter((p) => p.type === "text" && !p.synthetic)
-              .map((p) => (p as MessageV2.TextPart).text)
-              .join("\n") ?? ""
-            if (firstUserText) {
-              const complexity = PlanEngine.heuristicComplexity(firstUserText)
-              if (complexity === "complex") {
+          if (
+            step === 1 &&
+            !hasPriorAssistantForCurrentUser &&
+            (lastUser.agent === "build" || lastUser.agent === "orchestrator")
+          ) {
+            const currentUserMsg = msgs.findLast(
+              (candidate) => candidate.info.role === "user" && candidate.info.id === lastUser.id,
+            )
+            const currentUserText = currentUserMsg ? getUserPromptText(currentUserMsg) : ""
+            if (currentUserText && !isContinuationPrompt(currentUserText)) {
+              const complexity = PlanEngine.heuristicComplexity(currentUserText)
+              if (complexity === "complex" && planEngine) {
                 yield* slog.info("auto-planning triggered for complex task")
                 
                 // Inform user in TUI that auto-planning is in progress
@@ -1678,7 +1752,7 @@ export const layer = Layer.effect(
                 }
                 yield* sessions.updatePart(planPart)
 
-                const plan = yield* planEngine.generatePlan(firstUserText).pipe(Effect.option)
+                const plan = yield* planEngine.generatePlan(currentUserText).pipe(Effect.option)
                 if (Option.isSome(plan)) {
                   executionPlan = plan.value
                   yield* slog.info("execution plan generated", {
@@ -1752,20 +1826,24 @@ export const layer = Layer.effect(
             if (step === 1)
               yield* summary.summarize({ sessionID, messageID: lastUser.id }).pipe(Effect.ignore, Effect.forkIn(scope))
 
+            const promptRollout = SessionContextRollout.resolve(yield* config.get())
+
             if (step > 1 && lastFinished) {
               for (const m of msgs) {
                 if (m.info.role !== "user" || m.info.id <= lastFinished.id) continue
                 for (const p of m.parts) {
                   if (p.type !== "text" || p.ignored || p.synthetic) continue
                   if (!p.text.trim()) continue
-                  p.text = [
-                    "<system-reminder>",
-                    "The user sent the following message:",
-                    p.text,
-                    "",
-                    "Please address this message and continue with your tasks.",
-                    "</system-reminder>",
-                  ].join("\n")
+                  p.text = promptRollout.cavemanSyntheticArtifacts === "on"
+                    ? ["REMINDER:", p.text, "Do it. Continue."].join("\n")
+                    : [
+                        "<system-reminder>",
+                        "The user sent the following message:",
+                        p.text,
+                        "",
+                        "Please address this message and continue with your tasks.",
+                        "</system-reminder>",
+                      ].join("\n")
                 }
               }
             }
@@ -1775,22 +1853,16 @@ export const layer = Layer.effect(
             const [env, instructions, modelMsgs] = yield* Effect.all([
               sys.environment(model),
               instruction.system().pipe(Effect.orDie),
-              MessageV2.toModelMessagesEffect(msgs, model),
+              MessageV2.toModelMessagesEffect(msgs, model, {
+                replayToolInputs: promptRollout.replayToolInputs,
+                replayToolOutputs: promptRollout.replayToolOutputs,
+                replayReasoning: promptRollout.replayReasoning,
+              }),
             ])
             const system = [...env, ...instructions]
 
             // Extract the last user message for skill relevance filtering (every turn)
-            const lastUserText = (() => {
-              for (const m of msgs.toReversed()) {
-                if (m.info.role !== "user") continue
-                for (const p of m.parts) {
-                  if (p.type === "text" && !(p as any).synthetic && typeof (p as any).text === "string") {
-                    return (p as any).text as string
-                  }
-                }
-              }
-              return undefined
-            })()
+            const lastUserText = getCurrentTaskText(msgs) || undefined
 
             // Inject available skills every turn so the agent can always discover them
             const skills = yield* sys.skills(agent, lastUserText)
@@ -1833,14 +1905,11 @@ export const layer = Layer.effect(
             }
 
             // ── Methodology enforcement (matrix: step × complexity) ──
-            const baseMode = computeMethodologyMode(step, msgs)
-            // Sub-agents (sessions with a parentID) are capped at "light":
-            // they get contextual reminders when needed but never the
-            // 5-question auto-check — the parent agent owns methodology.
+            const baseMode = computeMethodologyMode(step, msgs, promptRollout)
             const mode = session.parentID && baseMode === "full" ? "light" : baseMode
-            if (mode !== "quick") {
-              const methodReminder = buildMethodologyReminder(step, msgs)
-              if (methodReminder) system.push(methodReminder)
+            const methodReminder = buildMethodologyReminder(step, mode, msgs)
+            if (methodReminder) {
+              system.push(methodReminder)
             }
             if (mode === "full") {
               system.push(METHODOLOGY_AUTO_CHECK)
@@ -1902,17 +1971,19 @@ export const layer = Layer.effect(
         yield* compaction.prune({ sessionID }).pipe(Effect.ignore, Effect.forkIn(scope))
 
         // Auto post-mortem (non-blocking, fire-and-forget)
-        // Uses the `memory` service captured during layer construction
-        yield* Effect.forkIn(scope)(
-          Effect.gen(function* () {
-            const report = yield* memory.analyzeSession(sessionID)
-            log.info("auto post-mortem completed", {
-              sessionID,
-              learningsStored: report.learnings.length,
-              success: report.summary.success,
-            })
-          }).pipe(Effect.ignore),
-        )
+        // Memory is optional in some tests / lightweight runtimes.
+        if (memory) {
+          yield* Effect.forkIn(scope)(
+            Effect.gen(function* () {
+              const report = yield* memory.analyzeSession(sessionID)
+              log.info("auto post-mortem completed", {
+                sessionID,
+                learningsStored: report.learnings.length,
+                success: report.summary.success,
+              })
+            }).pipe(Effect.ignore),
+          )
+        }
 
         // Record interaction for adaptive personality (non-blocking)
         if (selfImprove) {
@@ -1929,13 +2000,16 @@ export const layer = Layer.effect(
         }
 
         return yield* lastAssistant(sessionID)
-      },
-    )
+      }) as (sessionID: SessionID) => Effect.Effect<MessageV2.WithParts>
 
     const loop: (input: LoopInput) => Effect.Effect<MessageV2.WithParts> = Effect.fn("SessionPrompt.loop")(function* (
       input: LoopInput,
     ) {
-      return yield* state.ensureRunning(input.sessionID, lastAssistant(input.sessionID), runLoop(input.sessionID))
+      return yield* state.ensureRunning(
+        input.sessionID,
+        lastAssistant(input.sessionID) as Effect.Effect<MessageV2.WithParts>,
+        runLoop(input.sessionID) as Effect.Effect<MessageV2.WithParts>,
+      )
     })
 
     const shell: (input: ShellInput) => Effect.Effect<MessageV2.WithParts, Session.BusyError> = Effect.fn(
@@ -2075,25 +2149,34 @@ export const layer = Layer.effect(
 
 export const defaultLayer = Layer.suspend(() =>
   layer.pipe(
-    Layer.provide(SessionRunState.defaultLayer),
-    Layer.provide(SessionStatus.defaultLayer),
-    Layer.provide(SessionCompaction.defaultLayer),
-    Layer.provide(SessionProcessor.defaultLayer),
-    Layer.provide(Command.defaultLayer),
-    Layer.provide(Permission.defaultLayer),
-    Layer.provide(MCP.defaultLayer),
-    Layer.provide(LSP.defaultLayer),
-    Layer.provide(ToolRegistry.defaultLayer),
-    Layer.provide(Truncate.defaultLayer),
-    Layer.provide(Provider.defaultLayer),
-    Layer.provide(Config.defaultLayer),
-    Layer.provide(Instruction.defaultLayer),
-    Layer.provide(AppFileSystem.defaultLayer),
-    Layer.provide(Plugin.defaultLayer),
-    Layer.provide(Session.defaultLayer),
-    Layer.provide(SessionRevert.defaultLayer),
-    Layer.provide(SessionSummary.defaultLayer),
-    Layer.provide(Image.defaultLayer),
+    Layer.provide(
+      Layer.mergeAll(
+        SessionRunState.defaultLayer,
+        SessionStatus.defaultLayer,
+        SessionCompaction.defaultLayer,
+        SessionProcessor.defaultLayer,
+        Command.defaultLayer,
+        Permission.defaultLayer,
+        MCP.defaultLayer,
+        LSP.defaultLayer,
+        ToolRegistry.defaultLayer,
+        Truncate.defaultLayer,
+      ),
+    ),
+    Layer.provide(
+      Layer.mergeAll(
+        Provider.defaultLayer,
+        Config.defaultLayer,
+        Instruction.defaultLayer,
+        AppFileSystem.defaultLayer,
+        Plugin.defaultLayer,
+        Session.defaultLayer,
+        SessionRevert.defaultLayer,
+        SessionSummary.defaultLayer,
+        SessionContextRollout.defaultLayer,
+        Image.defaultLayer,
+      ),
+    ),
     Layer.provide(
       Layer.mergeAll(
         EventV2Bridge.defaultLayer,
