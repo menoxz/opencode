@@ -638,7 +638,7 @@ export function RunFooterView(props: RunFooterViewProps) {
                               <Show when={busy() || exiting() || duration().length > 0}>
                                 <span style={{ fg: theme().muted }}>· </span>
                               </Show>
-                              {info().count} <span style={{ fg: theme().muted }}>{info().label}</span>
+                              {`${info().count}`} <span style={{ fg: theme().muted }}>{info().label}</span>
                               <span style={{ fg: theme().muted }}> · </span>
                               <span style={{ fg: theme().highlight }}>↓</span>
                               <span style={{ fg: theme().muted }}> to view</span>
@@ -663,7 +663,7 @@ export function RunFooterView(props: RunFooterViewProps) {
                           <>
                             <Show when={queue() > 0}>
                               <text id="run-direct-footer-queue" fg={theme().muted} wrapMode="none" truncate>
-                                {queue()} queued
+                                {`${queue()} queued`}
                               </text>
                             </Show>
                             <Show when={usage().length > 0}>

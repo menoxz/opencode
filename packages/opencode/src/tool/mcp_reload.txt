@@ -1,0 +1,1 @@
+Reload all MCP servers from the opencode.json configuration. This re-reads the MCP configuration and connects/disconnects servers as needed. Use this after modifying opencode.json to apply changes without restarting the daemon. Requires user confirmation.

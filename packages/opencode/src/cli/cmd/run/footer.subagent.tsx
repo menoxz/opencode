@@ -139,7 +139,7 @@ export function RunFooterSubagentBody(props: {
               </text>
               <Show when={props.total() > 1 && props.index() > 0}>
                 <text fg={footer().muted} wrapMode="none" truncate flexShrink={0}>
-                  {props.index()} of {props.total()}
+                  {`${props.index()} of ${props.total()}`}
                 </text>
               </Show>
             </box>

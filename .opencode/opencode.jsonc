@@ -3,6 +3,13 @@
   "provider": {},
   "permission": {},
   "mcp": {},
+  "experimental": {
+    "context_rollout": {
+      "replay_tool_inputs": "summary",
+      "replay_reasoning": "off",
+      "system_boilerplate": "light",
+    },
+  },
   "tools": {
     "github-triage": false,
     "github-pr-search": false,

@@ -216,7 +216,7 @@ export function RunEntryContent(props: {
                 </box>
               ) : (
                 <text width="100%" wrapMode="word" fg={theme().block.diffRemoved}>
-                  -{item.deletions ?? 0} line{item.deletions === 1 ? "" : "s"}
+                  {`-${item.deletions ?? 0} line${item.deletions === 1 ? "" : "s"}`}
                 </text>
               )}
             </box>

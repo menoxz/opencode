@@ -1,0 +1,1 @@
+Connect to a specific MCP server by name. Use this when a server is disconnected and you want to re-establish the connection. Requires user confirmation. The server must be configured in opencode.json.

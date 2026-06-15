@@ -185,6 +185,7 @@ Two ways to define an agent. Use the file form for anything non-trivial.
       "description": "Reviews PRs for style violations.",
       "mode": "subagent",
       "model": "anthropic/claude-sonnet-4-6",
+      "temperature": 0.7,
       "permission": { "edit": "deny", "bash": "ask" },
       "prompt": "You are a strict PR reviewer..."
     }
@@ -203,6 +204,7 @@ Two ways to define an agent. Use the file form for anything non-trivial.
 description: Reviews PRs for style violations.
 mode: subagent
 model: anthropic/claude-sonnet-4-6
+temperature: 0.7
 permission:
   edit: deny
   bash: ask

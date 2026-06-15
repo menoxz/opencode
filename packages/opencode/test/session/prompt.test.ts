@@ -797,6 +797,101 @@ autoPlanResume.instance("auto-plan does not re-run when resuming an unfinished t
   }),
 )
 
+it.instance("goal draft is created from recent history when current prompt is short", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const session = yield* sessions.create({
+      title: "Goal from history",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+
+    const longPrompt = "Implémente une API de gestion des utilisateurs avec validation, pagination, logs et tests automatisés"
+    yield* prompt.prompt({
+      sessionID: session.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: longPrompt }],
+    })
+    yield* llm.text("first done")
+    yield* prompt.loop({ sessionID: session.id })
+
+    yield* sessions.setGoalState({
+      sessionID: session.id,
+      goalState: {
+        status: "skipped",
+        source: "user",
+        goal: "",
+        dod: [],
+        outOfScope: [],
+        compressed: "",
+        version: 1,
+        updatedAt: Date.now(),
+      },
+    })
+
+    yield* prompt.prompt({
+      sessionID: session.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "continue" }],
+    })
+    yield* llm.text("second done")
+    yield* prompt.loop({ sessionID: session.id })
+
+    const updated = yield* sessions.get(session.id)
+    const goalState = updated.goalState
+    expect(goalState).toBeDefined()
+    expect(goalState?.status).toBe("draft")
+    expect(goalState?.goal.length).toBeGreaterThan(0)
+    expect(goalState?.goal.toLowerCase()).not.toContain("continue")
+    expect(goalState?.dod.length).toBeGreaterThan(0)
+
+    const inputs = yield* llm.inputs
+    const system = JSON.stringify(inputs.at(-1))
+    const taskContractMatches = system.match(/<task-contract/g) ?? []
+    expect(taskContractMatches.length).toBe(1)
+  }),
+)
+
+it.instance("goal draft is created on later turn when session has no goal", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const session = yield* sessions.create({
+      title: "Goal later turn",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+
+    yield* prompt.prompt({
+      sessionID: session.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "Prépare un script de migration de base de données" }],
+    })
+    yield* llm.text("first done")
+    yield* prompt.loop({ sessionID: session.id })
+
+    yield* sessions.setGoalState({ sessionID: session.id, goalState: null })
+
+    yield* prompt.prompt({
+      sessionID: session.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "ok" }],
+    })
+    yield* llm.text("second done")
+    yield* prompt.loop({ sessionID: session.id })
+
+    const updated = yield* sessions.get(session.id)
+    expect(updated.goalState).toBeDefined()
+    expect(updated.goalState?.status).toBe("draft")
+    expect(updated.goalState?.dod.length).toBeGreaterThan(0)
+  }),
+)
+
 it.instance("loop continues when finish is tool-calls", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig(providerCfg)

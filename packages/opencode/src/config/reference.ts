@@ -1,5 +1,6 @@
 export * as ConfigReference from "./reference"
 
+import path from "path"
 import { Schema } from "effect"
 
 const Git = Schema.Struct({
@@ -49,7 +50,7 @@ export function validateAlias(name: string) {
 
 export function normalizeEntry(entry: Entry): NormalizedEntry {
   if (typeof entry === "string") {
-    if (entry.startsWith(".") || entry.startsWith("/") || entry.startsWith("~")) {
+    if (entry.startsWith(".") || entry.startsWith("/") || entry.startsWith("~") || path.isAbsolute(entry)) {
       return { kind: "local", path: entry }
     }
     return { kind: "git", repository: entry }

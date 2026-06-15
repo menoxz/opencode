@@ -1,0 +1,1 @@
+List all configured MCP servers with their connection status, type (local or remote), number of tools available, and any error messages. Use this to check which MCP servers are available and their health.

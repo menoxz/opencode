@@ -87,6 +87,15 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
     }),
   )
 
+  const compactLine = createMemo(() => {
+    const c = compact()
+    const l = TASK_CONTRACT_SIDEBAR_COPY
+    const objText = c.objective.text || "-"
+    const dodText = `${c.dod.summary}${c.dod.hidden > 0 ? `…+${c.dod.hidden}` : ""}`
+    const oosText = `${c.outOfScope.summary}${c.outOfScope.hidden > 0 ? `…+${c.outOfScope.hidden}` : ""}`
+    return `▸ ${l.objectiveLabel}: ${objText} | ${l.dodLabel}(${c.dod.total}): ${dodText} | ${l.outOfScopeLabel}(${c.outOfScope.total}): ${oosText}`
+  })
+
   const toggleExpanded = () => setExpanded((prev) => !prev)
 
   return (
@@ -102,11 +111,9 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
           <text fg={theme().textMuted}>{TASK_CONTRACT_SIDEBAR_COPY.emptyState}</text>
         </Show>
         <Show when={details().hasGoal}>
-          <box paddingLeft={2} gap={1}>
+          <box paddingLeft={0} gap={expanded() ? 1 : 0}>
             <Show when={!expanded()}>
-              <text fg={theme().text} wrapMode="none" truncate width="100%">{compactLines().objectiveLine}</text>
-              <text fg={theme().text} wrapMode="none" truncate width="100%">{compactLines().dodLine}</text>
-              <text fg={theme().textMuted} wrapMode="none" truncate width="100%">{compactLines().oosLine}</text>
+              <text fg={theme().text} wrapMode="none" truncate width="100%">{compactLine()}</text>
             </Show>
 
             <Show when={expanded()}>
@@ -115,46 +122,32 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
                 {details().goal}
               </text>
               <Show when={details().dod.length > 0}>
-                <box paddingLeft={1} gap={0}>
-                  <text fg={theme().textMuted}>{TASK_CONTRACT_SIDEBAR_COPY.dodLabel} ({details().dod.length})</text>
+                <box gap={0}>
+                  <text fg={theme().textMuted}>{TASK_CONTRACT_SIDEBAR_COPY.dodLabel}({details().dod.length})</text>
                   <For each={details().dod}>
-                    {(item, index) => (
-                      <>
-                        <box flexDirection="row" paddingLeft={1} gap={1}>
-                          <text fg={theme().textMuted}>•</text>
-                          <text fg={theme().text} wrapMode="word">
-                            {truncateItem(item)}
-                          </text>
-                        </box>
-                        <Show when={index() < details().dod.length - 1}>
-                          <text fg={theme().textMuted} paddingLeft={2}>
-                            ┆
-                          </text>
-                        </Show>
-                      </>
+                    {(item) => (
+                      <box flexDirection="row" gap={1}>
+                        <text fg={theme().textMuted}>•</text>
+                        <text fg={theme().text} wrapMode="word">
+                          {truncateItem(item)}
+                        </text>
+                      </box>
                     )}
                   </For>
                 </box>
               </Show>
 
               <Show when={details().outOfScope.length > 0}>
-                <box paddingLeft={1} gap={0}>
-                  <text fg={theme().warning}>{TASK_CONTRACT_SIDEBAR_COPY.outOfScopeLabel} ({details().outOfScope.length})</text>
+                <box gap={0}>
+                  <text fg={theme().warning}>{TASK_CONTRACT_SIDEBAR_COPY.outOfScopeLabel}({details().outOfScope.length})</text>
                   <For each={details().outOfScope}>
-                    {(item, index) => (
-                      <>
-                        <box flexDirection="row" paddingLeft={1} gap={1}>
-                          <text fg={theme().warning}>◦</text>
-                          <text fg={theme().textMuted} wrapMode="word">
-                            {truncateItem(item)}
-                          </text>
-                        </box>
-                        <Show when={index() < details().outOfScope.length - 1}>
-                          <text fg={theme().textMuted} paddingLeft={2}>
-                            ┆
-                          </text>
-                        </Show>
-                      </>
+                    {(item) => (
+                      <box flexDirection="row" gap={1}>
+                        <text fg={theme().warning}>◦</text>
+                        <text fg={theme().textMuted} wrapMode="word">
+                          {truncateItem(item)}
+                        </text>
+                      </box>
                     )}
                   </For>
                 </box>

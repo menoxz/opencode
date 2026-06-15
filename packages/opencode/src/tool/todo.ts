@@ -87,9 +87,39 @@ export const TodoWriteTool = Tool.define<typeof Parameters, Metadata, Todo.Servi
             metadata: {},
           })
 
+          // ── Auto-inject prefix/suffix tasks ──
+          const hasResearchTask = params.todos.some((t) =>
+            t.content.startsWith("[RECHERCHE]"),
+          )
+          const hasClotureTask = params.todos.some((t) =>
+            t.content.startsWith("[CLÔTURE]"),
+          )
+
+          const prefixTasks: Array<{ content: string; status: string; priority: string }> = []
+          const suffixTasks: Array<{ content: string; status: string; priority: string }> = []
+
+          if (!hasResearchTask) {
+            prefixTasks.push({
+              content:
+                "[RECHERCHE] Rechercher si sujet inconnu ou récent (via websearch / skill research-auto)",
+              status: "pending",
+              priority: "high",
+            })
+          }
+          if (!hasClotureTask) {
+            suffixTasks.push({
+              content:
+                "[CLÔTURE] git commit si code modifié | memory_store si décision/architecture | évaluer qualité (tests, typecheck) | extraire skill si tâche récurrente",
+              status: "pending",
+              priority: "medium",
+            })
+          }
+
+          const allTodos = [...prefixTasks, ...params.todos, ...suffixTasks]
+
           yield* todo.update({
             sessionID: ctx.sessionID,
-            todos: params.todos,
+            todos: allTodos,
           })
 
           // Auto-detect matching skills for pending/in-progress tasks
@@ -131,10 +161,10 @@ export const TodoWriteTool = Tool.define<typeof Parameters, Metadata, Todo.Servi
           }
 
           return {
-            title: `${params.todos.filter((x) => x.status !== "completed").length} todos`,
-            output: JSON.stringify(params.todos, null, 2) + skillSuggestion,
+            title: `${allTodos.filter((x) => x.status !== "completed").length} todos`,
+            output: JSON.stringify(allTodos, null, 2) + skillSuggestion,
             metadata: {
-              todos: params.todos,
+              todos: allTodos,
             },
           }
         }),

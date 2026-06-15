@@ -928,7 +928,7 @@ function ApplyPatch(props: ToolProps) {
                 when={stringValue(file.patch)}
                 fallback={
                   <text fg={theme.diffRemoved}>
-                    -{numberValue(file.deletions) ?? 0} line{numberValue(file.deletions) === 1 ? "" : "s"}
+                    {`-${numberValue(file.deletions) ?? 0} line${numberValue(file.deletions) === 1 ? "" : "s"}`}
                   </text>
                 }
               >
@@ -971,7 +971,7 @@ function ApplyPatch(props: ToolProps) {
 
 function TodoWrite(props: ToolProps) {
   const { theme } = useTheme()
-  const todos = createMemo(() => arrayValue(props.input.todos).flatMap((item) => (isRecord(item) ? [item] : [])))
+  const todos = createMemo(() => arrayValue(props.metadata.todos ?? props.input.todos).flatMap((item) => (isRecord(item) ? [item] : [])))
   return (
     <Switch>
       <Match when={todos().length > 0 && props.part.state.status === "completed"}>
@@ -1020,7 +1020,7 @@ function Question(props: ToolProps) {
       </Match>
       <Match when={true}>
         <InlineTool icon="→" pending="Asking questions..." complete={questions().length} part={props.part}>
-          Asked {questions().length} question{questions().length === 1 ? "" : "s"}
+          {`Asked ${questions().length} question${questions().length === 1 ? "" : "s"}`}
         </InlineTool>
       </Match>
     </Switch>

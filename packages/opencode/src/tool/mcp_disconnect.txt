@@ -1,0 +1,1 @@
+Disconnect a specific MCP server by name. Use this to gracefully disconnect a server and free its resources. All tools from the disconnected server will be removed from the session. Requires user confirmation.
