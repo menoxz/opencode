@@ -69,6 +69,9 @@ import { referencePromptMetadata, referenceTextPart } from "./prompt/reference"
 import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
 import { LLMEvent } from "@opencode-ai/llm"
+import { Question } from "@/question"
+import type { GoalState } from "./goal-state"
+import { compressGoalState, formatGoalContext } from "./compaction"
 
 
 // @ts-ignore
@@ -272,6 +275,33 @@ function getCurrentTaskText(msgs: MessageV2.WithParts[]): string {
     if (text.trim()) return text
   }
   return ""
+}
+
+function isValidGoalState(goalState: GoalState | null | undefined): goalState is GoalState {
+  if (!goalState) return false
+  if (goalState.status === "skipped") return false
+  if (!goalState.goal?.trim()) return false
+  if (!Array.isArray(goalState.dod)) return false
+  return goalState.dod.some((item) => item?.trim().length > 0)
+}
+
+function buildGoalSourceText(input: { msgs: MessageV2.WithParts[]; lastUserID: MessageID }): string {
+  const currentUserMsg = input.msgs.findLast(
+    (candidate) => candidate.info.role === "user" && candidate.info.id === input.lastUserID,
+  )
+  const currentUserText = currentUserMsg ? getUserPromptText(currentUserMsg).trim() : ""
+  const isShortPrompt = currentUserText.length > 0 && currentUserText.length < 40
+  const useFallback = !currentUserText || isShortPrompt || isContinuationPrompt(currentUserText)
+  if (!useFallback) return currentUserText
+
+  const recentUserTexts = input.msgs
+    .filter((m) => m.info.role === "user")
+    .map((m) => getUserPromptText(m).trim())
+    .filter(Boolean)
+    .filter((text) => !isContinuationPrompt(text) || text.length > 40)
+    .slice(-3)
+
+  return recentUserTexts.join("\n") || currentUserText
 }
 
 const AUTO_PLAN_CONTINUATION_TOKENS = new Set([
@@ -1767,6 +1797,13 @@ export const layer = Layer.effect(
             }
           }
 
+          // ── Ensure Goal/DoD state (non-blocking, every turn) ──
+          const goalState = yield* ensureGoalState({
+            sessionID,
+            msgs,
+            lastUserID: lastUser.id,
+          })
+
           const maxSteps = agent.steps ?? Infinity
           const isLastStep = step >= maxSteps
           msgs = yield* SessionReminders.apply({ messages: msgs, agent, session }).pipe(
@@ -1867,6 +1904,12 @@ export const layer = Layer.effect(
             // Inject available skills every turn so the agent can always discover them
             const skills = yield* sys.skills(agent, lastUserText)
             if (skills) system.push(skills)
+
+            // Inject task contract (Goal/DoD) once per turn if available
+            if (!system.some((entry) => entry.includes("<task-contract")) && goalState.status !== "skipped") {
+              const goalCtx = formatGoalContext(goalState)
+              if (goalCtx) system.push(goalCtx)
+            }
 
             if (step === 1) {
               const adaptive = yield* sys.adaptivePrompt({ messages: msgs, agent })
@@ -2001,6 +2044,49 @@ export const layer = Layer.effect(
 
         return yield* lastAssistant(sessionID)
       }) as (sessionID: SessionID) => Effect.Effect<MessageV2.WithParts>
+
+    const ensureGoalState = Effect.fn("SessionPrompt.ensureGoalState")(function* (input: {
+      sessionID: SessionID
+      msgs: MessageV2.WithParts[]
+      lastUserID: MessageID
+    }) {
+      const currentSession = yield* sessions.get(input.sessionID).pipe(Effect.option)
+      const existing = Option.isSome(currentSession) ? currentSession.value.goalState : undefined
+      const previousVersion = Option.isSome(currentSession) ? (currentSession.value.goalState?.version ?? 0) : 0
+      if (isValidGoalState(existing)) return existing
+
+      const sourceText = buildGoalSourceText({ msgs: input.msgs, lastUserID: input.lastUserID })
+      const draft = generateGoalDraft(sourceText)
+      const goal =
+        draft?.goal?.trim() ||
+        sourceText
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .find(Boolean) ||
+        "Continuer la tâche demandée par l'utilisateur"
+      const nextState: GoalState = {
+        status: "draft",
+        source: "auto",
+        goal,
+        dod: draft?.dod?.length
+          ? draft.dod
+          : ["Produire une réponse utile et actionnable alignée avec la demande en cours."],
+        outOfScope: draft?.outOfScope ?? [],
+        compressed: "",
+        version: previousVersion + 1,
+        updatedAt: Date.now(),
+      }
+
+      try {
+        nextState.compressed = compressGoalState(nextState)
+      } catch {
+        // keep non-blocking behavior
+      }
+
+      yield* sessions.setGoalState({ sessionID: input.sessionID, goalState: nextState })
+
+      return nextState
+    })
 
     const loop: (input: LoopInput) => Effect.Effect<MessageV2.WithParts> = Effect.fn("SessionPrompt.loop")(function* (
       input: LoopInput,
@@ -2161,6 +2247,7 @@ export const defaultLayer = Layer.suspend(() =>
         LSP.defaultLayer,
         ToolRegistry.defaultLayer,
         Truncate.defaultLayer,
+        Question.defaultLayer,
       ),
     ),
     Layer.provide(
@@ -2298,5 +2385,50 @@ const bashRegex = /!`([^`]+)`/g
 const argsRegex = /(?:\[Image\s+\d+\]|"[^"]*"|'[^']*'|[^\s"']+)/gi
 const placeholderRegex = /\$(\d+)/g
 const quoteTrimRegex = /^["']|["']$/g
+
+/**
+ * Generate a goal/DoD draft from user text using simple heuristics.
+ * Accepts both direct prompt text and enriched text built from recent history.
+ * Returns undefined only when no meaningful source text is available.
+ */
+function generateGoalDraft(userText: string): { goal: string; dod: string[]; outOfScope: string[] } | undefined {
+  const text = userText.trim()
+  if (!text) return undefined
+
+  const lines = text.split("\n").map(l => l.trim()).filter(Boolean)
+  let goal = ""
+  const dod: string[] = []
+  const oos: string[] = []
+
+  // First meaningful sentence = goal
+  for (const line of lines) {
+    const clean = line.replace(/^[#>\s]*/, "")
+    if (!goal && clean.length > 10 && !clean.startsWith("-") && !clean.startsWith("*")) {
+      const sentence = (clean.split(/[.!?]\s/)[0] ?? clean).slice(0, 200)
+      goal = sentence
+      break
+    }
+  }
+
+  // Bullet items = DoD or OOS
+  for (const line of lines) {
+    if (!line.startsWith("-") && !line.startsWith("*")) continue
+    const item = line.replace(/^[-*\s]+/, "").trim()
+    if (!item || item.length < 3) continue
+    const lower = item.toLowerCase()
+    if (lower.includes("hors scope") || lower.includes("out of scope") || lower.includes("ne pas ") || lower.includes("exclu")) {
+      oos.push(item)
+    } else if (!lower.startsWith("goal") && !lower.startsWith("objectif")) {
+      dod.push(item)
+    }
+  }
+
+  if (!goal) return undefined
+  if (dod.length === 0) {
+    dod.push("Fournir une implémentation/réponse exploitable qui adresse explicitement l'objectif.")
+  }
+
+  return { goal, dod, outOfScope: oos }
+}
 
 export * as SessionPrompt from "./prompt"

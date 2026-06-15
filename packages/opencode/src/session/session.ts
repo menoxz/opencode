@@ -31,6 +31,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { Snapshot } from "@/snapshot"
 import { ProjectID } from "../project/schema"
 import { WorkspaceID } from "../control-plane/schema"
+import { GoalState } from "./goal-state"
 import { SessionID, MessageID, PartID } from "./schema"
 import { ModelID, ProviderID } from "@/provider/schema"
 
@@ -102,6 +103,7 @@ export function fromRow(row: SessionRow): Info {
     share,
     revert,
     permission: row.permission ? [...row.permission] : undefined,
+    goalState: row.goal_state ?? undefined,
     time: {
       created: row.time_created,
       updated: row.time_updated,
@@ -137,6 +139,7 @@ export function toRow(info: Info) {
     tokens_cache_write: (info.tokens ?? EmptyTokens).cache.write,
     revert: info.revert ?? null,
     permission: info.permission,
+    goal_state: info.goalState,
     time_created: info.time.created,
     time_updated: info.time.updated,
     time_compacting: info.time.compacting,
@@ -223,6 +226,7 @@ export const Info = Schema.Struct({
   version: Schema.String,
   time: Time,
   permission: optionalOmitUndefined(Permission.Ruleset),
+  goalState: Schema.optional(GoalState),
   revert: optionalOmitUndefined(Revert),
 }).annotate({ identifier: "Session" })
 export type Info = Types.DeepMutable<Schema.Schema.Type<typeof Info>>
@@ -247,6 +251,7 @@ export const CreateInput = Schema.optional(
     agent: Schema.optional(Schema.String),
     model: Schema.optional(Model),
     permission: Schema.optional(Permission.Ruleset),
+    goalState: Schema.optional(GoalState),
     workspaceID: Schema.optional(WorkspaceID),
   }),
 )
@@ -322,6 +327,7 @@ const UpdatedInfo = Schema.Struct({
   version: Schema.optional(Schema.NullOr(Schema.String)),
   time: Schema.optional(UpdatedTime),
   permission: Schema.optional(Schema.NullOr(Permission.Ruleset)),
+  goalState: Schema.optional(Schema.NullOr(GoalState)),
   revert: Schema.optional(Schema.NullOr(Revert)),
 })
 
@@ -471,6 +477,10 @@ export interface Interface {
   }) => Effect.Effect<void>
   readonly clearRevert: (sessionID: SessionID) => Effect.Effect<void>
   readonly setSummary: (input: { sessionID: SessionID; summary: Info["summary"] }) => Effect.Effect<void>
+  readonly setGoalState: (input: {
+    sessionID: SessionID
+    goalState: GoalState | null
+  }) => Effect.Effect<void>
   readonly diff: (sessionID: SessionID) => Effect.Effect<Snapshot.FileDiff[]>
   readonly messages: (input: { sessionID: SessionID; limit?: number }) => Effect.Effect<MessageV2.WithParts[], NotFound>
   readonly children: (parentID: SessionID) => Effect.Effect<Info[]>
@@ -758,6 +768,16 @@ export const layer: Layer.Layer<
       yield* patch(input.sessionID, { time: { updated: Date.now() }, summary: input.summary })
     })
 
+    const setGoalState = Effect.fn("Session.setGoalState")(function* (input: {
+      sessionID: SessionID
+      goalState: GoalState | null
+    }) {
+      yield* patch(input.sessionID, {
+        goalState: input.goalState,
+        time: { updated: Date.now() },
+      })
+    })
+
     const diff = Effect.fn("Session.diff")(function* (sessionID: SessionID) {
       return yield* storage
         .read<Snapshot.FileDiff[]>(["session_diff", sessionID])
@@ -848,6 +868,7 @@ export const layer: Layer.Layer<
       setRevert,
       clearRevert,
       setSummary,
+      setGoalState,
       diff,
       messages,
       children,

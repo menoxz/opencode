@@ -61,6 +61,7 @@ import type { PromptInfo } from "../../component/prompt/history"
 import { DialogConfirm } from "@tui/ui/dialog-confirm"
 import { DialogTimeline } from "./dialog-timeline"
 import { DialogForkFromTimeline } from "./dialog-fork-from-timeline"
+import { DialogGoalEdit } from "./dialog-goal-edit"
 import { DialogSessionRename } from "../../component/dialog-session-rename"
 import { Sidebar } from "./sidebar"
 import { SubagentFooter } from "./subagent-footer.tsx"
@@ -91,6 +92,13 @@ import { SessionRetry } from "@/session/retry"
 import { getRevertDiffFiles } from "../../util/revert-diff"
 import { OPENCODE_BASE_MODE, useBindings, useCommandShortcut, useOpencodeKeymap } from "../../keymap"
 import { PathFormatterProvider, usePathFormatter } from "../../context/path-format"
+import {
+  buildGoalEditTemplate,
+  MINIMAL_DOD_ITEM,
+  normalizeGoalList,
+  parseGoalEditInput,
+  serializeGoalStateCompressed,
+} from "./goal-edit-parser"
 
 addDefaultParsers(parsers.parsers)
 
@@ -173,6 +181,85 @@ function use() {
   const ctx = useContext(context)
   if (!ctx) throw new Error("useContext must be used within a Session component")
   return ctx
+}
+
+const GOAL_CONTINUATION_TOKENS = new Set([
+  "ok",
+  "okay",
+  "continue",
+  "continuer",
+  "commence",
+  "commencer",
+  "reprends",
+  "reprendre",
+  "poursuis",
+  "poursuivre",
+  "resume",
+  "reprend",
+  "go",
+  "suite",
+  "next",
+  "vas",
+  "y",
+])
+
+const GOAL_CONTINUATION_FILLER_TOKENS = new Set(["please", "pls", "stp", "svp", "now", "maintenant", "alors"])
+
+function isGoalContinuationPrompt(text: string): boolean {
+  const normalized = text
+    .toLowerCase()
+    .trim()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+  if (!normalized) return false
+  const tokens = normalized.split(/\s+/).filter(Boolean)
+  if (tokens.length === 0 || tokens.length > 4) return false
+
+  let hasContinuation = false
+  for (const token of tokens) {
+    if (GOAL_CONTINUATION_FILLER_TOKENS.has(token)) continue
+    if (GOAL_CONTINUATION_TOKENS.has(token)) {
+      hasContinuation = true
+      continue
+    }
+    return false
+  }
+  return hasContinuation
+}
+
+function generateGoalDraftFromText(userText: string): { goal: string; dod: string[]; outOfScope: string[] } | undefined {
+  const text = userText.trim()
+  if (!text) return undefined
+  const lines = text.split("\n").map((line) => line.trim()).filter(Boolean)
+  let goal = ""
+  const dod: string[] = []
+  const oos: string[] = []
+
+  for (const line of lines) {
+    const clean = line.replace(/^[#>\s]*/, "")
+    if (!goal && clean.length > 10 && !clean.startsWith("-") && !clean.startsWith("*")) {
+      goal = (clean.split(/[.!?]\s/)[0] ?? clean).slice(0, 200)
+      break
+    }
+  }
+
+  for (const line of lines) {
+    if (!line.startsWith("-") && !line.startsWith("*")) continue
+    const item = line.replace(/^[-*\s]+/, "").trim()
+    if (!item || item.length < 3) continue
+    const lower = item.toLowerCase()
+    if (lower.includes("hors scope") || lower.includes("out of scope") || lower.includes("ne pas ") || lower.includes("exclu")) {
+      oos.push(item)
+    } else if (!lower.startsWith("goal") && !lower.startsWith("objectif")) {
+      dod.push(item)
+    }
+  }
+
+  if (!goal) return undefined
+  if (dod.length === 0) {
+    dod.push("Produire une réponse utile et actionnable alignée avec la demande en cours.")
+  }
+  return { goal, dod, outOfScope: oos }
 }
 
 export function Session() {
@@ -444,6 +531,65 @@ export function Session() {
     }
   }
 
+  const isGoalStateValid = (gs: any) => {
+    if (!gs || gs.status === "skipped") return false
+    if (typeof gs.goal !== "string" || gs.goal.trim().length === 0) return false
+    if (!Array.isArray(gs.dod)) return false
+    return gs.dod.some((item: unknown) => typeof item === "string" && item.trim().length > 0)
+  }
+
+  const buildGoalSourceFromSession = () => {
+    const msgs = sync.data.message[route.sessionID] ?? []
+    const userTexts = msgs
+      .filter((m) => m.role === "user")
+      .map((m) => {
+        const parts = sync.data.part[m.id] ?? []
+        return parts
+          .filter((p): p is TextPart => p.type === "text" && !p.synthetic && !p.ignored)
+          .map((p) => p.text)
+          .join("\n")
+          .trim()
+      })
+      .filter(Boolean)
+
+    const last = userTexts.at(-1) ?? ""
+    const shouldFallback = !last || last.length < 40 || isGoalContinuationPrompt(last)
+    if (!shouldFallback) return last
+
+    return userTexts.filter((text) => !isGoalContinuationPrompt(text) || text.length > 40).slice(-3).join("\n") || last
+  }
+
+  const buildGoalStatePayload = (forceRegenerate: boolean) => {
+    const now = Date.now()
+    const currentGoalState = (session() as any)?.goalState
+    const sourceText = buildGoalSourceFromSession()
+    const draft = generateGoalDraftFromText(sourceText)
+    const goal =
+      draft?.goal?.trim() ||
+      sourceText
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .find(Boolean) ||
+      "Continuer la tâche demandée par l'utilisateur"
+
+    const next = {
+      status: "draft",
+      source: "auto",
+      goal,
+      dod: draft?.dod?.length
+        ? [...draft.dod]
+        : ["Produire une réponse utile et actionnable alignée avec la demande en cours."],
+      outOfScope: [...(draft?.outOfScope ?? [])],
+      compressed: "",
+      version: forceRegenerate ? ((currentGoalState?.version ?? 0) + 1) : (currentGoalState?.version ?? 1),
+      updatedAt: now,
+    }
+
+    next.compressed = serializeGoalStateCompressed(next.goal, next.dod, next.outOfScope)
+
+    return next
+  }
+
   const sessionCommandList = createMemo(() => [
     {
       title: session()?.share?.url ? "Copy share link" : "Share session",
@@ -563,6 +709,168 @@ export function Session() {
           providerID: selectedModel.providerID,
         })
         dialog.clear()
+      },
+    },
+    {
+      title: "Goal: Approve",
+      value: "session.goal.approve",
+      category: "Session",
+      slash: {
+        name: "goal-approve",
+        aliases: ["approve-goal"],
+      },
+      enabled: (() => {
+        const s = session()
+        if (!s) return false
+        const gs = (s as any).goalState
+        return gs && gs.status !== "approved" && gs.status !== "skipped"
+      })(),
+      run: async () => {
+        const s = session()
+        if (!s) return
+        const gs = (s as any).goalState
+        if (!gs) return
+        const confirmed = await DialogConfirm.show(
+          dialog,
+          "Approve Goal",
+          `Approve the current goal to guide this task?\n\n"${gs.goal}"`,
+        )
+        if (confirmed !== true) return
+        const updated = { ...gs, status: "approved", source: "user", updatedAt: Date.now() }
+        await sdk.client.session.update({
+          sessionID: route.sessionID,
+          goalState: updated,
+        } as any)
+        dialog.clear()
+        toast.show({ message: "Goal approved ✅", variant: "success", duration: 3000 })
+      },
+    },
+    {
+      title: "Goal: Generate",
+      value: "session.goal.generate",
+      category: "Session",
+      slash: {
+        name: "goal-generate",
+        aliases: ["generate-goal"],
+      },
+      run: async () => {
+        const s = session()
+        if (!s) return
+        const gs = (s as any).goalState
+        if (isGoalStateValid(gs)) {
+          toast.show({ message: "Goal already available ✅", variant: "info", duration: 2500 })
+          dialog.clear()
+          return
+        }
+
+        const next = buildGoalStatePayload(false)
+        await sdk.client.session.update({
+          sessionID: route.sessionID,
+          goalState: next,
+        } as any)
+        dialog.clear()
+        toast.show({ message: "Goal generated ✨", variant: "success", duration: 3000 })
+      },
+    },
+    {
+      title: "Goal: Regenerate",
+      value: "session.goal.regenerate",
+      category: "Session",
+      slash: {
+        name: "goal-regenerate",
+        aliases: ["regen-goal"],
+      },
+      run: async () => {
+        const next = buildGoalStatePayload(true)
+        await sdk.client.session.update({
+          sessionID: route.sessionID,
+          goalState: next,
+        } as any)
+        dialog.clear()
+        toast.show({ message: "Goal regenerated 🔄", variant: "success", duration: 3000 })
+      },
+    },
+    {
+      title: "Goal: Edit",
+      value: "session.goal.edit",
+      category: "Session",
+      slash: {
+        name: "goal-edit",
+        aliases: ["edit-goal"],
+      },
+      run: async () => {
+        const s = session()
+        if (!s) return
+        const gs = (s as any).goalState
+        if (!gs) return
+        const result = await DialogGoalEdit.show(dialog, {
+          value: buildGoalEditTemplate(gs),
+        })
+        if (result === undefined || result === null) return
+        const parsed = parseGoalEditInput(result)
+        if (!parsed.goal) {
+          toast.show({
+            message: "Goal cannot be empty",
+            variant: "error",
+            duration: 3000,
+          })
+          return
+        }
+
+        const previousDod = normalizeGoalList(gs.dod)
+        const dod = parsed.dod.length > 0 ? parsed.dod : previousDod.length > 0 ? previousDod : [MINIMAL_DOD_ITEM]
+        const outOfScope = parsed.outOfScope
+        const updated = {
+          ...gs,
+          status: "edited",
+          source: "user",
+          goal: parsed.goal,
+          dod,
+          outOfScope,
+          compressed: serializeGoalStateCompressed(parsed.goal, dod, outOfScope),
+          version: (gs.version || 1) + 1,
+          updatedAt: Date.now(),
+        }
+        await sdk.client.session.update({
+          sessionID: route.sessionID,
+          goalState: updated,
+        } as any)
+        dialog.clear()
+        toast.show({ message: "Goal updated ✏️", variant: "success", duration: 3000 })
+      },
+    },
+    {
+      title: "Goal: Skip",
+      value: "session.goal.skip",
+      category: "Session",
+      slash: {
+        name: "goal-skip",
+        aliases: ["skip-goal"],
+      },
+      enabled: (() => {
+        const s = session()
+        if (!s) return false
+        const gs = (s as any).goalState
+        return gs && gs.status !== "skipped"
+      })(),
+      run: async () => {
+        const s = session()
+        if (!s) return
+        const gs = (s as any).goalState
+        if (!gs) return
+        const confirmed = await DialogConfirm.show(
+          dialog,
+          "Skip Goal",
+          "Skip the current goal? The task contract will no longer be injected into the system prompt.",
+        )
+        if (confirmed !== true) return
+        const updated = { ...gs, status: "skipped", source: "user", updatedAt: Date.now() }
+        await sdk.client.session.update({
+          sessionID: route.sessionID,
+          goalState: updated,
+        } as any)
+        dialog.clear()
+        toast.show({ message: "Goal skipped ⏭️", variant: "info", duration: 3000 })
       },
     },
     {
@@ -1124,9 +1432,14 @@ export function Session() {
                 verticalScrollbarOptions={{
                   paddingLeft: 1,
                   visible: showScrollbar(),
-                  trackOptions: {
+                  showArrows: true,
+                  arrowOptions: {
+                    foregroundColor: theme.textMuted,
                     backgroundColor: theme.backgroundElement,
-                    foregroundColor: theme.border,
+                  },
+                  trackOptions: {
+                    backgroundColor: theme.backgroundPanel,
+                    foregroundColor: theme.borderActive,
                   },
                 }}
                 stickyScroll={true}
@@ -1172,7 +1485,7 @@ export function Session() {
                                 paddingLeft={2}
                                 backgroundColor={hover() ? theme.backgroundElement : theme.backgroundPanel}
                               >
-                                <text fg={theme.textMuted}>{revert()!.reverted.length} message reverted</text>
+                                <text fg={theme.textMuted}>{`${revert()!.reverted.length} message reverted`}</text>
                                 <text fg={theme.textMuted}>
                                   <span style={{ fg: theme.text }}>{redoShortcut()}</span> or /redo to restore
                                 </text>
@@ -2257,7 +2570,7 @@ function ApplyPatch(props: ToolProps<typeof ApplyPatchTool>) {
                 when={file.type !== "delete"}
                 fallback={
                   <text fg={theme.diffRemoved}>
-                    -{file.deletions} line{file.deletions !== 1 ? "s" : ""}
+                    {`-${file.deletions} line${file.deletions !== 1 ? "s" : ""}`}
                   </text>
                 }
               >
@@ -2283,7 +2596,7 @@ function TodoWrite(props: ToolProps<typeof TodoWriteTool>) {
       <Match when={props.metadata.todos?.length}>
         <BlockTool title="# Todos" part={props.part}>
           <box>
-            <For each={props.input.todos ?? []}>
+            <For each={props.metadata.todos ?? props.input.todos ?? []}>
               {(todo) => <TodoItem status={todo.status} content={todo.content} />}
             </For>
           </box>
@@ -2325,7 +2638,7 @@ function Question(props: ToolProps<typeof QuestionTool>) {
       </Match>
       <Match when={true}>
         <InlineTool icon="→" pending="Asking questions..." complete={count()} part={props.part}>
-          Asked {count()} question{count() !== 1 ? "s" : ""}
+          {`Asked ${count()} question${count() !== 1 ? "s" : ""}`}
         </InlineTool>
       </Match>
     </Switch>

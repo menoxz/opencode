@@ -11,6 +11,7 @@ export type InjectionSkillsMode = "verbose" | "short"
 export type InjectionInstructionsMode = "full" | "summary" | "off"
 export type SystemBoilerplateMode = "full" | "light" | "minimal"
 export type CavemanSyntheticArtifactsMode = "on" | "off"
+export type GoalDodMode = "on" | "off"
 
 export type Info = {
   replayToolInputs: ReplayToolInputsMode
@@ -20,6 +21,7 @@ export type Info = {
   injectionInstructions: InjectionInstructionsMode
   systemBoilerplate: SystemBoilerplateMode
   cavemanSyntheticArtifacts: CavemanSyntheticArtifactsMode
+  goalDod: GoalDodMode
 }
 
 export const DEFAULTS: Info = {
@@ -30,6 +32,7 @@ export const DEFAULTS: Info = {
   injectionInstructions: "summary",
   systemBoilerplate: "full",
   cavemanSyntheticArtifacts: "on",
+  goalDod: "on",
 }
 
 export function resolve(config: Config.Info, _flags?: Pick<RuntimeFlags.Info, never>): Info {
@@ -49,6 +52,7 @@ export function resolve(config: Config.Info, _flags?: Pick<RuntimeFlags.Info, ne
     cavemanSyntheticArtifacts:
       rollout?.caveman_synthetic_artifacts ??
       (syntheticInjection === "normal" ? "off" : syntheticInjection ? "on" : DEFAULTS.cavemanSyntheticArtifacts),
+    goalDod: rollout?.goal_dod ?? DEFAULTS.goalDod,
   }
 }
 

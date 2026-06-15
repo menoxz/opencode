@@ -139,6 +139,52 @@ describe("tool.registry", () => {
     }),
   )
 
+  it.instance("registers and dispatches goal-contract tools", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const ids = yield* registry.ids()
+
+      expect(ids).toContain("create_objectif")
+      expect(ids).toContain("create_objective")
+      expect(ids).toContain("edit_objectif")
+      expect(ids).toContain("edit_objective")
+      expect(ids).toContain("suggest_objectif")
+      expect(ids).toContain("apply_contract_from_prompt")
+
+      const agents = yield* Agent.Service
+      const build = yield* agents.get("build")
+      const tools = yield* registry.tools({
+        providerID: ProviderID.opencode,
+        modelID: ModelID.make("test"),
+        agent: build,
+      })
+      const suggest = tools.find((tool) => tool.id === "suggest_objectif")
+      if (!suggest) throw new Error("suggest_objectif tool not found")
+
+      const result = yield* suggest.execute(
+        { prompt: "Objectif: Created from registry dispatch\nDoD:\n- listé\n- dispatchable" },
+        {
+          sessionID: SessionID.make("ses_registry_test"),
+          messageID: MessageID.ascending(),
+          agent: build.name,
+          abort: new AbortController().signal,
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        } satisfies Tool.Context,
+      )
+
+      const parsed = JSON.parse(result.output) as {
+        status: string
+        action?: string
+        suggestion?: { objective?: string }
+      }
+      expect(parsed.status).toBe("ok")
+      expect(parsed.action).toBe("suggest")
+      expect(parsed.suggestion?.objective).toBe("Created from registry dispatch")
+    }),
+  )
+
   it.instance("hides task background parameter unless experimental background subagents are enabled", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service

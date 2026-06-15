@@ -3097,6 +3097,16 @@ export class Session2 extends HeyApiClient {
         variant?: string
       }
       permission?: PermissionRuleset
+      goalState?: {
+        status: "draft" | "pending_user" | "approved" | "edited" | "skipped"
+        source: "auto" | "user"
+        goal: string
+        dod: Array<string>
+        outOfScope: Array<string>
+        compressed?: string
+        version: number
+        updatedAt: number
+      }
       workspaceID?: string
     },
     options?: Options<never, ThrowOnError>,
@@ -3113,6 +3123,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "agent" },
             { in: "body", key: "model" },
             { in: "body", key: "permission" },
+            { in: "body", key: "goalState" },
             { in: "body", key: "workspaceID" },
           ],
         },
@@ -3239,6 +3250,16 @@ export class Session2 extends HeyApiClient {
       time?: {
         archived?: number
       }
+      goalState?: {
+        status: "draft" | "pending_user" | "approved" | "edited" | "skipped"
+        source: "auto" | "user"
+        goal: string
+        dod: Array<string>
+        outOfScope: Array<string>
+        compressed?: string
+        version: number
+        updatedAt: number
+      } | null
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -3253,6 +3274,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "title" },
             { in: "body", key: "permission" },
             { in: "body", key: "time" },
+            { in: "body", key: "goalState" },
           ],
         },
       ],

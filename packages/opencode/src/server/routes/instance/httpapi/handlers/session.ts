@@ -1,5 +1,6 @@
 import { Agent } from "@/agent/agent"
 import { Bus } from "@/bus"
+import { GoalState } from "@/session/goal-state"
 import { Command } from "@/command"
 import { Permission } from "@/permission"
 import { PermissionID } from "@/permission/schema"
@@ -167,6 +168,13 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
         ? {
             ...decoded,
             permission: decoded.permission ? [...decoded.permission] : undefined,
+            goalState: decoded.goalState
+              ? {
+                  ...decoded.goalState,
+                  dod: [...decoded.goalState.dod],
+                  outOfScope: [...decoded.goalState.outOfScope],
+                }
+              : undefined,
           }
         : decoded
       return yield* create({ payload })
@@ -193,6 +201,20 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       }
       if (ctx.payload.time?.archived !== undefined) {
         yield* session.setArchived({ sessionID: ctx.params.sessionID, time: ctx.payload.time.archived })
+      }
+      if (ctx.payload.goalState !== undefined) {
+        if (ctx.payload.goalState === null) {
+          yield* session.setGoalState({ sessionID: ctx.params.sessionID, goalState: null })
+        } else {
+          yield* session.setGoalState({
+            sessionID: ctx.params.sessionID,
+            goalState: {
+              ...ctx.payload.goalState,
+              dod: [...ctx.payload.goalState.dod],
+              outOfScope: [...ctx.payload.goalState.outOfScope],
+            },
+          })
+        }
       }
       return yield* requireSession(ctx.params.sessionID)
     })

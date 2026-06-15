@@ -1,6 +1,7 @@
 import { BusEvent } from "@/bus/bus-event"
 import { Bus } from "@/bus"
 import * as Session from "./session"
+import type { GoalState } from "./goal-state"
 import { SessionID, MessageID, PartID } from "./schema"
 import { Provider } from "@/provider/provider"
 import { MessageV2 } from "./message-v2"
@@ -76,6 +77,57 @@ Rules:
 - Use terse bullets, not prose paragraphs.
 - Preserve exact file paths, commands, error strings, and identifiers when known.
 - Do not mention the summary process or that context was compacted.`
+
+// ── GoalState compression utilities ──────────────────────────────────────────
+
+/** Compress a GoalState into an ultra-compact string for prompt injection. */
+export function compressGoalState(state: GoalState): string {
+  const goal = state.goal
+    .split(/[.!?]\s/)[0]!
+    .replace(/\n/g, " ")
+    .trim()
+    .slice(0, 200)
+
+  const dod = state.dod
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .join("|")
+
+  const oos = state.outOfScope
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .join("|")
+
+  const lines: string[] = [`GOAL: ${goal}`]
+  if (dod) lines.push(`DOD: ${dod}`)
+  if (oos) lines.push(`OOS: ${oos}`)
+
+  return lines.join("\n") + "\n"
+}
+
+/**
+ * Format a GoalState as an XML task-contract block for system prompt injection.
+ * Returns empty string when status is "skipped".
+ */
+export function formatGoalContext(state: GoalState): string {
+  if (state.status === "skipped") return ""
+
+  const body = state.compressed ?? compressGoalState(state)
+  return `<task-contract status="${state.status}">\n${body}</task-contract>\n`
+}
+
+/** Status badge for TUI — always French labels. */
+export function formatGoalStatusBadge(state: GoalState): string {
+  const labels: Record<GoalState["status"], string> = {
+    approved: "approuvé",
+    draft: "brouillon",
+    skipped: "ignoré",
+    edited: "édité",
+    pending_user: "en attente",
+  }
+  return `[Goal: ${labels[state.status]}]`
+}
+
 type Turn = {
   start: number
   end: number

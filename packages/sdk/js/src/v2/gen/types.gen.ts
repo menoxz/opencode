@@ -786,6 +786,16 @@ export type Session = {
     archived?: number
   }
   permission?: PermissionRuleset
+  goalState?: {
+    status: "draft" | "pending_user" | "approved" | "edited" | "skipped"
+    source: "auto" | "user"
+    goal: string
+    dod: Array<string>
+    outOfScope: Array<string>
+    compressed?: string
+    version: number
+    updatedAt: number
+  }
   revert?: {
     messageID: string
     partID?: string
@@ -6064,6 +6074,16 @@ export type SessionCreateData = {
       variant?: string
     }
     permission?: PermissionRuleset
+    goalState?: {
+      status: "draft" | "pending_user" | "approved" | "edited" | "skipped"
+      source: "auto" | "user"
+      goal: string
+      dod: Array<string>
+      outOfScope: Array<string>
+      compressed?: string
+      version: number
+      updatedAt: number
+    }
     workspaceID?: string
   }
   path?: never
@@ -6197,6 +6217,16 @@ export type SessionUpdateData = {
     time?: {
       archived?: number
     }
+    goalState?: {
+      status: "draft" | "pending_user" | "approved" | "edited" | "skipped"
+      source: "auto" | "user"
+      goal: string
+      dod: Array<string>
+      outOfScope: Array<string>
+      compressed?: string
+      version: number
+      updatedAt: number
+    } | null
   }
   path: {
     sessionID: string

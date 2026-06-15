@@ -1,5 +1,13 @@
 import { SubagentListTool } from "./subagent"
 import { PlanExitTool } from "./plan"
+import {
+  ApplyContractFromPromptTool,
+  CreateObjectifTool,
+  CreateObjectiveTool,
+  EditObjectifTool,
+  EditObjectiveTool,
+  SuggestObjectifTool,
+} from "./goal-contract"
 import { Session } from "@/session/session"
 import { QuestionTool } from "./question"
 import { ShellTool } from "./shell"
@@ -136,6 +144,12 @@ export const layer: Layer.Layer<
     const patchtool = yield* ApplyPatchTool
     const skilltool = yield* SkillTool
     const subagentlist = yield* SubagentListTool
+    const createObjectif = yield* CreateObjectifTool
+    const createObjective = yield* CreateObjectiveTool
+    const editObjectif = yield* EditObjectifTool
+    const editObjective = yield* EditObjectiveTool
+    const suggestObjectif = yield* SuggestObjectifTool
+    const applyContractFromPrompt = yield* ApplyContractFromPromptTool
     const agent = yield* Agent.Service
 
     const state = yield* InstanceState.make<State>(
@@ -274,6 +288,12 @@ export const layer: Layer.Layer<
           repo_overview: Tool.init(repoOverview),
           skill: Tool.init(skilltool),
           subagent: Tool.init(subagentlist),
+          create_objectif: Tool.init(createObjectif),
+          create_objective: Tool.init(createObjective),
+          edit_objectif: Tool.init(editObjectif),
+          edit_objective: Tool.init(editObjective),
+          suggest_objectif: Tool.init(suggestObjectif),
+          apply_contract_from_prompt: Tool.init(applyContractFromPrompt),
           patch: Tool.init(patchtool),
           question: Tool.init(question),
           lsp: Tool.init(lsptool),
@@ -298,6 +318,12 @@ export const layer: Layer.Layer<
             ...(flags.experimentalScout ? [tool.repo_clone, tool.repo_overview] : []),
             tool.skill,
             tool.subagent,
+            tool.create_objectif,
+            tool.create_objective,
+            tool.edit_objectif,
+            tool.edit_objective,
+            tool.suggest_objectif,
+            tool.apply_contract_from_prompt,
             tool.patch,
             ...(flags.experimentalLspTool ? [tool.lsp] : []),
             ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),

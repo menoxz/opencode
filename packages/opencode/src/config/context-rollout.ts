@@ -9,6 +9,7 @@ const InjectionSkills = Schema.Literals(["verbose", "short"])
 const InjectionInstructions = Schema.Literals(["full", "summary", "off"])
 const SystemBoilerplate = Schema.Literals(["full", "light", "minimal"])
 const CavemanSyntheticArtifacts = Schema.Literals(["on", "off"])
+const GoalDod = Schema.Literals(["on", "off"])
 
 export const Info = Schema.Struct({
   replay_tool_inputs: Schema.optional(ReplayToolInputs).annotate({
@@ -31,6 +32,9 @@ export const Info = Schema.Struct({
   }),
   caveman_synthetic_artifacts: Schema.optional(CavemanSyntheticArtifacts).annotate({
     description: "Controls caveman compression for synthetic prompt artifacts only.",
+  }),
+  goal_dod: Schema.optional(GoalDod).annotate({
+    description: "Controls the Goal/DoD feature rollout.",
   }),
 }).annotate({
   identifier: "ConfigContextRollout",

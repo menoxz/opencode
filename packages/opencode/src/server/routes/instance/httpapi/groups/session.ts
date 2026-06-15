@@ -1,5 +1,6 @@
 import { Permission } from "@/permission"
 import { PermissionID } from "@/permission/schema"
+import { GoalState } from "@/session/goal-state"
 import { ModelID, ProviderID } from "@/provider/schema"
 import { Session } from "@/session/session"
 import { MessageV2 } from "@/session/message-v2"
@@ -51,6 +52,7 @@ export const UpdatePayload = Schema.Struct({
       archived: Schema.optional(Session.ArchivedTimestamp),
     }),
   ),
+  goalState: Schema.optional(Schema.NullOr(GoalState)),
 })
 export const ForkPayload = Schema.Struct(Struct.omit(Session.ForkInput.fields, ["sessionID"]))
 export const InitPayload = Schema.Struct({
