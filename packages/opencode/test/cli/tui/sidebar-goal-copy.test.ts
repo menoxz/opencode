@@ -5,11 +5,11 @@ import { formatTaskContractCompact } from "../../../src/cli/cmd/tui/feature-plug
 describe("sidebar goal copy", () => {
   test("uses contract-oriented labels and empty-state fallback", () => {
     expect(TASK_CONTRACT_SIDEBAR_COPY.sectionTitle).toBe("TASK CONTRACT")
-    expect(TASK_CONTRACT_SIDEBAR_COPY.objectiveLabel).toBe("Objective")
+    expect(TASK_CONTRACT_SIDEBAR_COPY.objectiveLabel).toBe("Obj")
     expect(TASK_CONTRACT_SIDEBAR_COPY.panelExpandHint).toBe("expand")
     expect(TASK_CONTRACT_SIDEBAR_COPY.panelCollapseHint).toBe("collapse")
-    expect(TASK_CONTRACT_SIDEBAR_COPY.dodLabel).toBe("Definition of Done")
-    expect(TASK_CONTRACT_SIDEBAR_COPY.outOfScopeLabel).toBe("Out of Scope")
+    expect(TASK_CONTRACT_SIDEBAR_COPY.dodLabel).toBe("DoD")
+    expect(TASK_CONTRACT_SIDEBAR_COPY.outOfScopeLabel).toBe("OOS")
     expect(TASK_CONTRACT_SIDEBAR_COPY.emptyState).toBe("no contract defined")
   })
 
@@ -26,5 +26,18 @@ describe("sidebar goal copy", () => {
     expect(preview.objective.truncated).toBe(true)
     expect(preview.objective.text.includes("\n")).toBe(false)
     expect(preview.objective.text.endsWith("…")).toBe(true)
+  })
+
+  test("builds compact DoD/OOS summaries with overflow marker", () => {
+    const preview = formatTaskContractCompact({
+      goal: "Obj",
+      dod: ["first dod", "second dod", "third dod"],
+      outOfScope: ["first oos", "second oos"],
+    })
+
+    expect(preview.dod.summary).toBe("first dod")
+    expect(preview.dod.hidden).toBe(2)
+    expect(preview.outOfScope.summary).toBe("first oos")
+    expect(preview.outOfScope.hidden).toBe(1)
   })
 })

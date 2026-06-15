@@ -3,6 +3,7 @@ import type { InternalTuiPlugin } from "../../plugin/internal"
 import { createMemo, Show, createSignal, For } from "solid-js"
 import {
   formatTaskContractCompact,
+  formatTaskContractCompactLines,
   MAX_DOD_PREVIEW,
   MAX_OOS_PREVIEW,
 } from "./task-contract-compact"
@@ -12,12 +13,11 @@ const id = "internal:sidebar-goal"
 export const TASK_CONTRACT_SIDEBAR_COPY = {
   sectionTitle: "TASK CONTRACT",
   emptyState: "no contract defined",
-  objectiveLabel: "Objective",
+  objectiveLabel: "Obj",
   panelExpandHint: "expand",
   panelCollapseHint: "collapse",
-  dodLabel: "Definition of Done",
-  outOfScopeLabel: "Out of Scope",
-  moreItemsSuffix: "items",
+  dodLabel: "DoD",
+  outOfScopeLabel: "OOS",
 } as const
 
 function truncateItem(value: string, max = 140) {
@@ -79,6 +79,14 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
     }),
   )
 
+  const compactLines = createMemo(() =>
+    formatTaskContractCompactLines(compact(), {
+      objective: TASK_CONTRACT_SIDEBAR_COPY.objectiveLabel,
+      dod: TASK_CONTRACT_SIDEBAR_COPY.dodLabel,
+      oos: TASK_CONTRACT_SIDEBAR_COPY.outOfScopeLabel,
+    }),
+  )
+
   const toggleExpanded = () => setExpanded((prev) => !prev)
 
   return (
@@ -95,55 +103,20 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
         </Show>
         <Show when={details().hasGoal}>
           <box paddingLeft={2} gap={1}>
-            <text fg={theme().textMuted}>{TASK_CONTRACT_SIDEBAR_COPY.objectiveLabel}</text>
-            <text fg={theme().text} wrapMode={expanded() ? "word" : "none"} truncate={!expanded()} width="100%">
-              {expanded() ? details().goal : compact().objective.text}
-            </text>
-
             <Show when={!expanded()}>
-              <text fg={theme().textMuted}>
-                {TASK_CONTRACT_SIDEBAR_COPY.dodLabel}: {compact().dod.total}
-              </text>
-              <For each={compact().dod.visible}>
-                {(item) => (
-                  <box flexDirection="row" paddingLeft={1} gap={1}>
-                    <text fg={theme().textMuted}>•</text>
-                    <text fg={theme().text} wrapMode="word">
-                      {truncateItem(item)}
-                    </text>
-                  </box>
-                )}
-              </For>
-              <Show when={compact().dod.hidden > 0}>
-                <text fg={theme().textMuted} paddingLeft={2}>
-                  … +{compact().dod.hidden} {TASK_CONTRACT_SIDEBAR_COPY.moreItemsSuffix}
-                </text>
-              </Show>
-
-              <text fg={theme().warning}>
-                {TASK_CONTRACT_SIDEBAR_COPY.outOfScopeLabel}: {compact().outOfScope.total}
-              </text>
-              <For each={compact().outOfScope.visible}>
-                {(item) => (
-                  <box flexDirection="row" paddingLeft={1} gap={1}>
-                    <text fg={theme().warning}>◦</text>
-                    <text fg={theme().textMuted} wrapMode="word">
-                      {truncateItem(item)}
-                    </text>
-                  </box>
-                )}
-              </For>
-              <Show when={compact().outOfScope.hidden > 0}>
-                <text fg={theme().textMuted} paddingLeft={2}>
-                  … +{compact().outOfScope.hidden} {TASK_CONTRACT_SIDEBAR_COPY.moreItemsSuffix}
-                </text>
-              </Show>
+              <text fg={theme().text} wrapMode="none" truncate width="100%">{compactLines().objectiveLine}</text>
+              <text fg={theme().text} wrapMode="none" truncate width="100%">{compactLines().dodLine}</text>
+              <text fg={theme().textMuted} wrapMode="none" truncate width="100%">{compactLines().oosLine}</text>
             </Show>
 
             <Show when={expanded()}>
+              <text fg={theme().textMuted}>{TASK_CONTRACT_SIDEBAR_COPY.objectiveLabel}: </text>
+              <text fg={theme().text} wrapMode="word" width="100%">
+                {details().goal}
+              </text>
               <Show when={details().dod.length > 0}>
-                <box paddingLeft={1} paddingTop={1} gap={0}>
-                  <text fg={theme().textMuted}>{TASK_CONTRACT_SIDEBAR_COPY.dodLabel}</text>
+                <box paddingLeft={1} gap={0}>
+                  <text fg={theme().textMuted}>{TASK_CONTRACT_SIDEBAR_COPY.dodLabel} ({details().dod.length})</text>
                   <For each={details().dod}>
                     {(item, index) => (
                       <>
@@ -165,8 +138,8 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
               </Show>
 
               <Show when={details().outOfScope.length > 0}>
-                <box paddingLeft={1} paddingTop={1} gap={0}>
-                  <text fg={theme().warning}>{TASK_CONTRACT_SIDEBAR_COPY.outOfScopeLabel}</text>
+                <box paddingLeft={1} gap={0}>
+                  <text fg={theme().warning}>{TASK_CONTRACT_SIDEBAR_COPY.outOfScopeLabel} ({details().outOfScope.length})</text>
                   <For each={details().outOfScope}>
                     {(item, index) => (
                       <>
