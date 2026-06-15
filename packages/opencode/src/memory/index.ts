@@ -46,7 +46,7 @@ import {
   type HybridDocument,
 } from "./search"
 import { consolidate, type ConsolidationStore } from "./consolidation"
-import type { Interface as EmbeddingInterface } from "./embedding"
+import { extractKeywords, type Interface as EmbeddingInterface } from "./embedding"
 import type { PostMortemReport } from "./post-mortem"
 import type { PatternReport } from "./patterns"
 
@@ -81,6 +81,14 @@ export interface MemoryEntry {
   confidence: number
   /** True if this memory has a vector embedding stored */
   hasEmbedding: boolean
+  /** Context when this memory was encoded */
+  encodingContext?: string
+  /** Query context associated with this memory */
+  queryContext?: string
+  /** How many times this memory has been accessed */
+  accessCount?: number
+  /** Last access timestamp */
+  lastAccessAt?: number
 }
 
 /** Search result with relevance score. */
@@ -154,6 +162,22 @@ export interface Interface {
 
   /** Get the embedding service (for direct access if needed). */
   readonly embedding: EmbeddingInterface
+
+  /** Record feedback on a memory (positive/negative) and adjust confidence/importance. */
+  readonly feedback: (id: string, type: "positive" | "negative") => Effect.Effect<void>
+
+  /** Generate cue variants for a memory to improve recall. */
+  readonly generateCueVariants: (id: string) => Effect.Effect<string[]>
+
+  /** Get the memory graph centered on a memory with configurable depth. */
+  readonly graph: (memoryId: string, depth?: number) => Effect.Effect<{
+    center: MemoryEntry | null
+    nodes: MemoryEntry[]
+    links: Array<{ source: string; target: string; type: string; strength: number }>
+  }>
+
+  /** Find the shortest graph path between two memories. */
+  readonly graphPath: (fromId: string, toId: string) => Effect.Effect<MemoryEntry[]>
 }
 
 // ---------------------------------------------------------------------------
@@ -166,12 +190,22 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/Me
 // Helpers
 // ---------------------------------------------------------------------------
 
+export function parseRowTags(rawTags: string): string[] {
+  try {
+    const parsed = JSON.parse(rawTags)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((tag): tag is string => typeof tag === "string")
+  } catch {
+    return []
+  }
+}
+
 function rowToEntry(row: MemoryStore.MemoryRow): MemoryEntry {
   return {
     id: row.id,
     content: row.content,
     memoryType: row.memory_type,
-    tags: JSON.parse(row.tags) as string[],
+    tags: parseRowTags(row.tags),
     importance: row.importance,
     projectId: row.project_id,
     source: row.source,
@@ -208,11 +242,16 @@ export const layer = Layer.effect(
       const vec = yield* embedding.embed(entry.content)
       const modelName = embedding.isUsingAI ? "ai-sdk" : "local-n-gram"
 
+      // Auto-tag: extract keywords from content if tags are empty or insufficient
+      const finalTags = (entry.tags && entry.tags.length >= 2)
+        ? entry.tags
+        : [...new Set([...(entry.tags ?? []), ...extractKeywords(entry.content, 5)])]
+
       // Insert with embedding
       const id = yield* store.insert({
         content: entry.content,
         memory_type: entry.memoryType,
-        tags: JSON.stringify(entry.tags),
+        tags: JSON.stringify(finalTags),
         importance: entry.importance,
         project_id: entry.projectId,
         source: entry.source,
@@ -220,6 +259,12 @@ export const layer = Layer.effect(
         embedding: JSON.stringify(vec),
         embedding_model: modelName,
       })
+
+      // Store encoding context data if provided
+      if (entry.encodingContext || entry.queryContext) {
+        yield* store.setEncodingData(id, entry.encodingContext ?? null, entry.queryContext ?? null)
+      }
+
       log.info("stored memory with embedding", { id, type: entry.memoryType, dim: vec.length })
       return id
     })
@@ -268,6 +313,40 @@ export const layer = Layer.effect(
           })
         : scored
 
+      // Spreading activation boost (memory linking — Phase 0)
+      // Memories strongly linked to high-scoring results get a small boost
+      const LINK_BOOST_FACTOR = 0.1
+      const LINK_INJECTED_BOOST_FACTOR = 0.2
+      const MIN_LINK_STRENGTH = 0.3
+
+      if (filtered && filtered.length > 0) {
+        const scoredDocMap = new Map(filtered.map(d => [d.id, d]))
+        const boostAmounts = new Map<string, number>()
+
+        for (const doc of filtered) {
+          const links = yield* store.getStrongLinks(doc.id, MIN_LINK_STRENGTH)
+          for (const link of links) {
+            // Determine which end of the link is the target
+            const targetId = link.sourceMemoryId === doc.id ? link.targetMemoryId : link.sourceMemoryId
+            if (scoredDocMap.has(targetId)) {
+              const currentBoost = boostAmounts.get(targetId) ?? 0
+              boostAmounts.set(targetId, currentBoost + link.strength * doc.score * LINK_BOOST_FACTOR)
+            }
+          }
+        }
+
+        // Apply boosts
+        for (const [id, boost] of boostAmounts) {
+          const doc = scoredDocMap.get(id)
+          if (doc) {
+            doc.score += boost
+          }
+        }
+
+        // Re-sort
+        filtered.sort((a, b) => b.score - a.score)
+      }
+
       const entries = filtered.map((s) => {
         const row = allRows.get(s.id)!
         return rowToEntry(row)
@@ -284,6 +363,36 @@ export const layer = Layer.effect(
           vectorScore: s.vectorScore,
         }
       })
+
+      // Phase 0 — Reconsolidation side-effects (fire and forget)
+      // Boost confidence for retrieved memories, create links between co-retrieved ones
+      const now = Date.now()
+      const injectedIds = new Set(
+        results
+          .filter(r => contextText.includes(r.entry.content.substring(0, 50)))
+          .map(r => r.entry.id),
+      )
+
+      for (const result of results) {
+        const isInjected = injectedIds.has(result.entry.id)
+        const boost = isInjected ? 0.05 : 0.02
+        const newConfidence = Math.min(1.0, result.entry.confidence + boost)
+
+        yield* store.updateAccessStats(result.entry.id, now)
+        yield* store.incrementSearchCount(result.entry.id)
+        yield* store.updateConfidence(result.entry.id, newConfidence)
+      }
+
+      // Create links between co-retrieved memories
+      for (let i = 0; i < results.length; i++) {
+        for (let j = i + 1; j < results.length; j++) {
+          yield* store.createOrUpdateLink({
+            sourceMemoryId: results[i].entry.id,
+            targetMemoryId: results[j].entry.id,
+            linkType: "co-retrieved",
+          })
+        }
+      }
 
       return { entries, contextText, results }
     })
@@ -482,6 +591,71 @@ export const layer = Layer.effect(
       return report
     })
 
+    // ---- feedback ----
+    const feedback = Effect.fn("Memory.feedback")(function* (id: string, type: "positive" | "negative") {
+      const entry = yield* store.findById(id)
+      if (!entry) return
+
+      yield* store.setFeedback(id, type)
+
+      if (type === "positive") {
+        const newConfidence = Math.min(1.0, (entry.confidence ?? 1.0) + 0.1)
+        yield* store.updateConfidence(id, newConfidence)
+      } else {
+        const newConfidence = Math.max(0.1, (entry.confidence ?? 1.0) - 0.3)
+        const newImportance = Math.max(0.1, entry.importance - 0.1)
+        yield* store.updateConfidence(id, newConfidence)
+        yield* store.updateImportance(id, newImportance)
+      }
+    })
+
+    // ---- generateCueVariants ----
+    const generateCueVariants = Effect.fn("Memory.generateCueVariants")(function* (id: string) {
+      const entry = yield* store.findById(id)
+      if (!entry) return []
+
+      const variants = yield* embedding.generateCueVariants(entry.content)
+
+      if (variants.length > 0) {
+        yield* store.setCueVariants(id, variants)
+      }
+      return variants
+    })
+
+    // ---- graph ----
+    const graph = Effect.fn("Memory.graph")(function* (memoryId: string, depth: number = 1) {
+      const center = yield* store.findById(memoryId)
+      if (!center) return { center: null, nodes: [], links: [] }
+
+      const linkedRows = yield* store.getLinkedMemories(memoryId, depth)
+      const allLinks = yield* store.getAllLinks()
+
+      const nodeIds = new Set(linkedRows.map(m => m.id))
+      nodeIds.add(memoryId)
+
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const relevantLinks = allLinks
+        .filter(l => nodeIds.has(l.source_memory_id) && nodeIds.has(l.target_memory_id))
+        .map(l => ({
+          source: l.source_memory_id,
+          target: l.target_memory_id,
+          type: l.link_type,
+          strength: l.strength,
+        }))
+
+      return {
+        center: rowToEntry(center),
+        nodes: linkedRows.map(rowToEntry),
+        links: relevantLinks,
+      }
+    })
+
+    // ---- graphPath ----
+    const graphPath = Effect.fn("Memory.graphPath")(function* (fromId: string, toId: string) {
+      const pathRows = yield* store.getShortestPath(fromId, toId)
+      return pathRows.map(rowToEntry)
+    })
+
     return Service.of({
       store: store_ as any,
       retrieve: retrieve as any,
@@ -491,6 +665,10 @@ export const layer = Layer.effect(
       consolidate: consolidate_ as any,
       stats: stats as any,
       health: health as any,
+      feedback: feedback as any,
+      generateCueVariants: generateCueVariants as any,
+      graph: graph as any,
+      graphPath: graphPath as any,
       analyzeSession: analyzeSession as any,
       detectPatterns: detectPatterns as any,
       embedding: embedding as any,
@@ -498,9 +676,11 @@ export const layer = Layer.effect(
   }),
 )
 
-export const defaultLayer = layer.pipe(
-  Layer.provide(Patterns.layer.pipe(Layer.provideMerge(MemoryStore.layer))),
-  Layer.provide(Embedding.layer),
+export const defaultLayer = Layer.suspend(() =>
+  layer.pipe(
+    Layer.provide(Patterns.layer.pipe(Layer.provideMerge(MemoryStore.layer))),
+    Layer.provide(Embedding.layer),
+  ),
 )
 
 export const use = serviceUse(Service)

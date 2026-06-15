@@ -16,7 +16,7 @@
  */
 
 import { Effect, Context, Layer, Schema, Option } from "effect"
-import { embed as aiEmbed, type EmbeddingModel } from "ai"
+import { embed as aiEmbed, generateText as aiGenerateText, type EmbeddingModel } from "ai"
 import * as Log from "@opencode-ai/core/util/log"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { Provider } from "@/provider/provider"
@@ -70,6 +70,12 @@ export interface Interface {
    * Check if we're using real AI embeddings or local fallback.
    */
   readonly isUsingAI: boolean
+
+  /**
+   * Generate alternative search query variants for a piece of content.
+   * Uses the LLM provider if available, falls back to simple text extraction.
+   */
+  readonly generateCueVariants: (content: string) => Effect.Effect<string[]>
 }
 
 // ---------------------------------------------------------------------------
@@ -161,6 +167,107 @@ export function cosineSimilarity(a: EmbeddingVector, b: EmbeddingVector): number
 }
 
 // ---------------------------------------------------------------------------
+// Keyword extraction (pure utility, no Effect)
+// ---------------------------------------------------------------------------
+
+const STOP_WORDS = new Set([
+  "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for",
+  "of", "with", "by", "from", "as", "is", "was", "are", "were", "be",
+  "been", "being", "have", "has", "had", "do", "does", "did", "will",
+  "would", "could", "should", "may", "might", "shall", "can", "need",
+  "this", "that", "these", "those", "it", "its", "we", "they", "them",
+  "he", "she", "his", "her", "not", "no", "nor", "so", "if", "then",
+  "else", "when", "where", "why", "how", "which", "what", "who", "whom",
+  "about", "into", "over", "after", "before", "between", "under", "again",
+  "further", "once", "here", "there", "all", "each", "every", "both",
+  "few", "more", "most", "other", "some", "such", "only", "own", "same",
+  "too", "very", "just", "also", "than", "then", "because", "while",
+  // French stop words
+  "le", "la", "les", "un", "une", "des", "du", "de", "ce", "cet", "cette",
+  "ces", "et", "ou", "mais", "donc", "car", "ni", "par", "pour", "sur",
+  "dans", "avec", "sans", "est", "sont", "fait", "pas", "que", "qui",
+  "quoi", "dont", "où", "comment", "pourquoi", "quand", "je", "tu", "il",
+  "elle", "nous", "vous", "ils", "elles", "mon", "ton", "son", "notre",
+  "votre", "leur", "au", "aux", "ne", "se", "me", "te",
+])
+
+/**
+ * Extract meaningful keywords from text for auto-tagging.
+ * Tokenizes content, counts word frequency, filters stop words,
+ * returns top N most frequent meaningful words (min 3 chars).
+ *
+ * Pure function — no Effect, no DB, no LLM calls.
+ * Cost: O(n) string processing, negligible.
+ */
+export function extractKeywords(text: string, maxKeywords: number = 5): string[] {
+  // Tokenize: split on non-alphanumeric (but keep French accented chars)
+  const tokens = text.toLowerCase().split(/[^a-z0-9\u00C0-\u024F]+/).filter(Boolean)
+
+  // Count frequency
+  const freq = new Map<string, number>()
+  for (const token of tokens) {
+    if (token.length < 3) continue // skip very short tokens
+    if (STOP_WORDS.has(token)) continue // skip stop words
+    freq.set(token, (freq.get(token) ?? 0) + 1)
+  }
+
+  // Sort by frequency descending, take top N
+  return [...freq.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, maxKeywords)
+    .map(([word]) => word)
+}
+
+// ---------------------------------------------------------------------------
+// Cue variant generation helpers
+// ---------------------------------------------------------------------------
+
+/** Max cue variants accepted from LLM output. */
+const MAX_CUE_VARIANTS = 5
+
+/** Maximum characters per cue variant. */
+const MAX_CUE_VARIANT_LENGTH = 200
+
+/**
+ * Parse and validate LLM cue variants JSON safely.
+ * Returns null when payload is invalid.
+ */
+export function parseCueVariantsOutput(rawText: string): string[] | null {
+  try {
+    const parsed = JSON.parse(rawText.trim())
+    if (!Array.isArray(parsed)) return null
+
+    const normalized = parsed
+      .filter((v): v is string => typeof v === "string")
+      .map((v) => v.trim().slice(0, MAX_CUE_VARIANT_LENGTH))
+      .filter((v) => v.length > 0)
+      .slice(0, MAX_CUE_VARIANTS)
+
+    if (normalized.length === 0) return null
+    return normalized
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Generate simple text-based search query variants without an LLM.
+ * Extracts first sentence, first 60 chars, and first 30 chars.
+ */
+function generateSimpleVariants(content: string): string[] {
+  const variants: string[] = []
+  // First sentence as variant
+  const sentences = content.split(/[.!?\n]+/).filter(s => s.trim().length > 10)
+  if (sentences.length > 0) variants.push(sentences[0].trim())
+  // First 60 chars
+  if (content.length > 20) variants.push(content.slice(0, 60).trim())
+  // First 30 chars
+  if (content.length > 15) variants.push(content.slice(0, 30).trim())
+  // Deduplicate
+  return [...new Set(variants)].slice(0, MAX_CUE_VARIANTS)
+}
+
+// ---------------------------------------------------------------------------
 // Layer
 // ---------------------------------------------------------------------------
 
@@ -239,9 +346,53 @@ export const layer = Layer.effect(
       return texts.map(localEmbed)
     })
 
+    const generateCueVariants = Effect.fn("EmbeddingService.generateCueVariants")(function* (content: string) {
+      // Try to use the LLM provider for intelligent query variant generation
+      if (provider) {
+        const modelInfo = yield* provider.defaultModel().pipe(
+          Effect.catch(() => Effect.succeed(null as { providerID: string; modelID: string } | null)),
+        )
+
+        if (modelInfo) {
+          const resolved = yield* provider.getModel(modelInfo.providerID as any, modelInfo.modelID as any).pipe(
+            Effect.catch(() => Effect.succeed(null as any)),
+          )
+
+          if (resolved) {
+            try {
+              const language = yield* provider.getLanguage(resolved).pipe(
+                Effect.catchTag("ProviderModelNotFoundError", () => Effect.succeed(null)),
+              )
+              if (!language) {
+                return generateSimpleVariants(content)
+              }
+              const result: any = yield* Effect.promise(() =>
+                (aiGenerateText as any)({
+                  model: language,
+                  prompt: `Generate 3-5 alternative search queries (short phrases, 2-8 words each) that would retrieve this information. Return ONLY a JSON array of strings:\n\n${content}`,
+                  maxTokens: 200,
+                  temperature: 0.7,
+                }),
+              )
+
+              const parsed = parseCueVariantsOutput(result.text)
+              if (parsed) {
+                return parsed
+              }
+            } catch {
+              // LLM call failed — fall through to simple fallback
+            }
+          }
+        }
+      }
+
+      return generateSimpleVariants(content)
+    })
+
     return Service.of({
       embed,
       embedMany,
+      generateCueVariants,
       cosineSimilarity,
       dimension: DEFAULT_DIMENSION,
       isUsingAI: usingAI,

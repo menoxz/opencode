@@ -2,12 +2,13 @@
  * MemoryConsolidation — Automatic memory decay, pruning, and deduplication.
  *
  * Consolidation policy:
- * 1. Decay confidence of old memories:
- *    - > 7 days old:   confidence *= 0.9  (‑0.1 relative)
- *    - > 30 days old:  confidence *= 0.7  (‑0.3 relative)
- *    - > 90 days old:  confidence *= 0.5  (‑0.5 relative)
- * 2. Prune (delete) memories with confidence < 0.1
- * 3. Merge near-duplicate memories (content similarity > 80%)
+ * 1. Decay confidence using exponential forgetting curve: confidence *= e^(-λ * daysSinceAccess)
+ *    - λ is per memory type (semantic=0.01, episodic=0.05, procedural=0.005, profile=0.02)
+ *    - λ can be overridden per memory via `forgetting_rate` field
+ * 2. Spaced repetition: stable memories (conf >= 0.8, access > 5) are flagged for slower decay
+ * 3. Accelerated decay: unused memories (conf < 0.3, access <= 2, age > 30d) are flagged for pruning
+ * 4. Prune (delete) memories with confidence < 0.1
+ * 5. Merge near-duplicate memories (content similarity > 80%)
  *
  * This module is a helper consumed by the main Memory service in `index.ts`.
  * It is NOT an Effect service — it exports pure functions that receive a
@@ -41,11 +42,31 @@ export interface ConsolidationStore {
 // Constants
 // ---------------------------------------------------------------------------
 
-const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
-const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000
-const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000
 const PRUNE_THRESHOLD = 0.1
 const SIMILARITY_THRESHOLD = 0.8
+
+// Forgetting rates (λ) per memory type
+// Half-life = ln(2) / λ
+const FORGETTING_RATES: Record<string, number> = {
+  semantic: 0.01,    // half-life ~69 days — facts persist
+  episodic: 0.05,    // half-life ~14 days — events fade faster
+  procedural: 0.005, // half-life ~139 days — how-to knowledge
+  profile: 0.02,     // half-life ~35 days — user preferences
+  learning: 0.01,    // half-life ~69 days — same as semantic
+  pattern: 0.005,    // half-life ~139 days — same as procedural
+}
+
+const DEFAULT_FORGETTING_RATE = 0.01
+
+// Spaced repetition parameters
+const SPACED_REPETITION_CONFIDENCE_THRESHOLD = 0.8
+const SPACED_REPETITION_ACCESS_THRESHOLD = 5
+const SPACED_REPETITION_LAMBDA_REDUCTION = 0.95
+
+const ACCELERATED_DECAY_CONFIDENCE_THRESHOLD = 0.3
+const ACCELERATED_DECAY_ACCESS_THRESHOLD = 2
+const ACCELERATED_DECAY_AGE_DAYS = 30
+const ACCELERATED_DECAY_LAMBDA_INCREASE = 1.05
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -82,16 +103,6 @@ function contentSimilarity(a: string, b: string): number {
   return union === 0 ? 0 : intersection / union
 }
 
-/**
- * Compute the decay multiplier based on age.
- */
-function decayMultiplier(ageMs: number): number {
-  if (ageMs > NINETY_DAYS_MS) return 0.5
-  if (ageMs > THIRTY_DAYS_MS) return 0.7
-  if (ageMs > SEVEN_DAYS_MS) return 0.9
-  return 1.0
-}
-
 // ---------------------------------------------------------------------------
 // Consolidation
 // ---------------------------------------------------------------------------
@@ -122,8 +133,16 @@ export function consolidate(
 
     // Phase 1: decay & identify pruning candidates
     for (const row of allRows) {
-      const ageMs = now - row.created_at
-      const multiplier = decayMultiplier(ageMs)
+      // Compute days since last access (or since creation if never accessed)
+      const daysSinceAccess = (row.last_access_at ?? row.created_at)
+        ? (now - (row.last_access_at ?? row.created_at)) / 86400000
+        : (now - row.created_at) / 86400000
+
+      // Get forgetting rate: per-memory override, or type default, or global default
+      const lambda = (row.forgetting_rate ?? FORGETTING_RATES[row.memory_type]) ?? DEFAULT_FORGETTING_RATE
+
+      // Exponential forgetting curve: R = e^(-λ * t)
+      const multiplier = Math.exp(-lambda * Math.max(0, daysSinceAccess))
 
       if (multiplier < 1.0) {
         const newConfidence = row.confidence * multiplier
@@ -132,7 +151,7 @@ export function consolidate(
 
         if (dryRun) {
           details.push(
-            `[DRY RUN] Would decay "${row.id}" confidence ${row.confidence.toFixed(3)} → ${newConfidence.toFixed(3)} (age=${Math.round(ageMs / 86400000)}d)`,
+            `[DRY RUN] Would decay "${row.id}" confidence ${row.confidence.toFixed(3)} → ${newConfidence.toFixed(3)} (λ=${lambda}, age=${Math.round(daysSinceAccess)}d)`,
           )
         }
         decayed++
@@ -146,6 +165,23 @@ export function consolidate(
             )
           }
           pruned++
+        }
+
+        // Spaced repetition: if memory is stable, slow down its decay
+        if (newConfidence >= SPACED_REPETITION_CONFIDENCE_THRESHOLD && (row.access_count ?? 0) > SPACED_REPETITION_ACCESS_THRESHOLD) {
+          // This memory survives well — give it slower decay
+          // Note: we don't modify the row here, we just track it
+          details.push(`Spaced repetition: ${row.id} (conf=${newConfidence.toFixed(2)}, accesses=${row.access_count})`)
+        }
+
+        // Accelerated decay: low confidence, low access, old
+        const ageDays = (now - row.created_at) / 86400000
+        if (newConfidence < ACCELERATED_DECAY_CONFIDENCE_THRESHOLD &&
+            (row.access_count ?? 0) < ACCELERATED_DECAY_ACCESS_THRESHOLD &&
+            ageDays > ACCELERATED_DECAY_AGE_DAYS) {
+          // This memory isn't being used — accelerate its decay
+          // Note: λ adjustment happens during Phase 2 sleep cycle, not here
+          details.push(`Candidate for accelerated decay: ${row.id} (age=${Math.round(ageDays)}d, accesses=${row.access_count})`)
         }
       } else {
         activeIds.add(row.id)

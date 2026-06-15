@@ -32,6 +32,8 @@ import * as Truncate from "./truncate"
 import { ApplyPatchTool } from "./apply_patch"
 import { Glob } from "@opencode-ai/core/util/glob"
 import path from "path"
+import fs from "fs/promises"
+import { existsSync } from "fs"
 import { pathToFileURL } from "url"
 import { Effect, Layer, Context } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/unstable/http"
@@ -199,18 +201,50 @@ export const layer: Layer.Layer<
         }
 
         const dirs = yield* config.directories()
-        const matches = dirs.flatMap((dir) =>
-          Glob.scanSync("{tool,tools}/*.{js,ts}", { cwd: dir, absolute: true, dot: true, symlink: true }),
-        )
-        if (matches.length) yield* config.waitForDependencies()
-        for (const match of matches) {
-          const namespace = path.basename(match, path.extname(match))
-          // `match` is an absolute filesystem path from `Glob.scanSync(..., { absolute: true })`.
-          // Import it as `file://` so Node on Windows accepts the dynamic import.
-          const mod = yield* Effect.promise(() => import(pathToFileURL(match).href))
-          for (const [id, def] of Object.entries(mod)) {
-            if (!isPluginTool(def)) continue
-            custom.push(fromPlugin(id === "default" ? namespace : `${namespace}_${id}`, def))
+        const scans = dirs.filter((dir) => existsSync(dir)).map((dir) => ({
+          dir,
+          matches: Glob.scanSync("{tool,tools}/*.{js,ts}", { cwd: dir, absolute: true, dot: true, symlink: false }),
+        }))
+        if (scans.some((scan) => scan.matches.length > 0)) yield* config.waitForDependencies()
+        for (const scan of scans) {
+          const rootPath = path.resolve(scan.dir)
+          const realRootPath = yield* Effect.promise(() => fs.realpath(rootPath)).pipe(
+            Effect.catch(() => Effect.succeed(rootPath)),
+          )
+
+          for (const match of scan.matches) {
+            const resolvedMatch = path.resolve(match)
+            if (!isPathWithinDirectory(resolvedMatch, rootPath)) {
+              log.warn("ignoring custom tool outside configured directory", {
+                root: rootPath,
+                match,
+                resolvedMatch,
+              })
+              continue
+            }
+
+            const realMatchPath = yield* Effect.promise(() => fs.realpath(resolvedMatch)).pipe(
+              Effect.catch(() => Effect.succeed(resolvedMatch)),
+            )
+            if (!isPathWithinDirectory(realMatchPath, realRootPath)) {
+              log.warn("ignoring custom tool resolved outside configured directory", {
+                root: rootPath,
+                realRootPath,
+                match,
+                resolvedMatch,
+                realMatchPath,
+              })
+              continue
+            }
+
+            const namespace = path.basename(resolvedMatch, path.extname(resolvedMatch))
+            // `resolvedMatch` is an absolute filesystem path from `Glob.scanSync(..., { absolute: true })`.
+            // Import it as `file://` so Node on Windows accepts the dynamic import.
+            const mod = yield* Effect.promise(() => import(pathToFileURL(resolvedMatch).href))
+            for (const [id, def] of Object.entries(mod)) {
+              if (!isPluginTool(def)) continue
+              custom.push(fromPlugin(id === "default" ? namespace : `${namespace}_${id}`, def))
+            }
           }
         }
 
@@ -287,7 +321,7 @@ export const layer: Layer.Layer<
       const count = (yield* skill.available(agent)).length
       if (count === 0) return "No skills are currently available."
       return [
-        "Available skills are listed in your system prompt with their full descriptions.",
+        "Available skills are listed in your system prompt.",
         "Check that list to find a matching skill, then use this tool to load it.",
         `${count} skill(s) currently available.`,
       ].join("\n")
@@ -367,28 +401,33 @@ export const layer: Layer.Layer<
 export const defaultLayer = Layer.suspend(() =>
   layer
     .pipe(
-      Layer.provide(Config.defaultLayer),
-      Layer.provide(Plugin.defaultLayer),
-      Layer.provide(Question.defaultLayer),
-      Layer.provide(Todo.defaultLayer),
-      Layer.provide(Skill.defaultLayer),
-      Layer.provide(Agent.defaultLayer),
-      Layer.provide(Session.defaultLayer),
-      Layer.provide(BackgroundJob.defaultLayer),
-      Layer.provide(Provider.defaultLayer),
-      Layer.provide(Layer.mergeAll(Git.defaultLayer, RepositoryCache.defaultLayer)),
-      Layer.provide(Reference.defaultLayer),
-      Layer.provide(LSP.defaultLayer),
-      Layer.provide(Instruction.defaultLayer),
-      Layer.provide(AppFileSystem.defaultLayer),
-      Layer.provide(Bus.layer),
-      Layer.provide(FetchHttpClient.layer),
-      Layer.provide(Format.defaultLayer),
-      Layer.provide(CrossSpawnSpawner.defaultLayer),
-      Layer.provide(Ripgrep.defaultLayer),
-      Layer.provide(Truncate.defaultLayer),
+      Layer.provide(
+        Layer.mergeAll(
+          Config.defaultLayer,
+          Plugin.defaultLayer,
+          Question.defaultLayer,
+          Todo.defaultLayer,
+          Skill.defaultLayer,
+          Agent.defaultLayer,
+          Session.defaultLayer,
+          BackgroundJob.defaultLayer,
+          Provider.defaultLayer,
+          Git.defaultLayer,
+          RepositoryCache.defaultLayer,
+          Reference.defaultLayer,
+          LSP.defaultLayer,
+          Instruction.defaultLayer,
+          AppFileSystem.defaultLayer,
+          Bus.layer,
+          FetchHttpClient.layer,
+          Format.defaultLayer,
+          CrossSpawnSpawner.defaultLayer,
+          Ripgrep.defaultLayer,
+          Truncate.defaultLayer,
+          RuntimeFlags.defaultLayer,
+        ),
+      ),
     )
-    .pipe(Layer.provide(RuntimeFlags.defaultLayer)),
 )
 
 function isZodType(value: unknown): value is z.ZodType {
@@ -465,6 +504,12 @@ function normalizeZodJsonSchema(value: unknown): unknown {
 
 function isJsonSchemaObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function isPathWithinDirectory(candidatePath: string, rootPath: string): boolean {
+  const relative = path.relative(rootPath, candidatePath)
+  if (relative === "" || relative === ".") return true
+  return !relative.startsWith("..") && !path.isAbsolute(relative)
 }
 
 export * as ToolRegistry from "./registry"

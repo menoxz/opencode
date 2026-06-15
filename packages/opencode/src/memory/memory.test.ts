@@ -5,7 +5,8 @@
 
 import { describe, it, expect } from "bun:test"
 import { tokenize, scoreBM25, hybridRank, rankDocuments, assembleContextText } from "./search"
-import { cosineSimilarity } from "./embedding"
+import { cosineSimilarity, extractKeywords, parseCueVariantsOutput } from "./embedding"
+import { parseRowTags } from "./index"
 
 // ---------------------------------------------------------------------------
 // Tokenization
@@ -211,6 +212,83 @@ describe("search pipeline integration", () => {
     const text = assembleContextText(ranked, 400)
     expect(text).toContain("JWT")
     expect(text).toContain("[score=")
+  })
+})
+
+// ---------------------------------------------------------------------------
+// extractKeywords (from embedding.ts)
+// ---------------------------------------------------------------------------
+
+describe("extractKeywords", () => {
+  it("extracts meaningful keywords", () => {
+    const result = extractKeywords("riverbank riverbank riverbank fox jumps", 3)
+    expect(result.length).toBe(3)
+    expect(result[0]).toBe("riverbank") // most frequent word
+  })
+
+  it("returns fewer keywords when text is short", () => {
+    const result = extractKeywords("hello world", 5)
+    expect(result.length).toBe(2)
+    expect(result).toContain("hello")
+    expect(result).toContain("world")
+  })
+
+  it("handles French text with accents", () => {
+    const result = extractKeywords("la mémoire est une fonction cognitive qui nous permet de retenir des informations", 3)
+    expect(result.length).toBeGreaterThanOrEqual(1)
+    // Should include meaningful French words, not stop words
+    expect(result).not.toContain("la")
+    expect(result).not.toContain("est")
+    expect(result).not.toContain("des")
+  })
+
+  it("returns empty array for stop-words-only text", () => {
+    const result = extractKeywords("the and or but in on at", 5)
+    expect(result.length).toBe(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Security hardening parsers
+// ---------------------------------------------------------------------------
+
+describe("parseCueVariantsOutput", () => {
+  it("accepts only string[] and normalizes output", () => {
+    const raw = JSON.stringify([
+      "  first variant  ",
+      "",
+      "second variant",
+      123,
+      "x".repeat(250),
+      "third",
+      "fourth",
+      "fifth",
+      "sixth",
+    ])
+
+    const result = parseCueVariantsOutput(raw)
+    expect(result).toEqual([
+      "first variant",
+      "second variant",
+      "x".repeat(200),
+      "third",
+      "fourth",
+    ])
+  })
+
+  it("returns null for malformed LLM output (caller must fallback)", () => {
+    const result = parseCueVariantsOutput("not-json")
+    expect(result).toBeNull()
+  })
+})
+
+describe("parseRowTags", () => {
+  it("returns [] when tags JSON is invalid", () => {
+    expect(parseRowTags("{bad-json")).toEqual([])
+  })
+
+  it("returns only string tags when array contains mixed types", () => {
+    expect(parseRowTags('["a", 1, true, "b"]')).toEqual(["a", "b"])
   })
 })
 

@@ -15,7 +15,7 @@ import { sqliteTable, text, real, integer } from "drizzle-orm/sqlite-core"
 import { drizzle } from "drizzle-orm/bun-sqlite"
 import { Database } from "bun:sqlite"
 import { type SQLiteBunDatabase } from "drizzle-orm/bun-sqlite"
-import { eq, and, sql, like, or, desc, asc } from "drizzle-orm"
+import { eq, and, sql, like, or, desc, asc, gte, inArray } from "drizzle-orm"
 import { Effect, Context, Layer } from "effect"
 import { randomUUID } from "crypto"
 import path from "path"
@@ -44,10 +44,35 @@ export const memoryTable = sqliteTable("memory", {
   embedding: text(),
   /** Model identifier used to generate the embedding */
   embedding_model: text(),
+  /** How many times this memory has been accessed */
+  access_count: integer().notNull().default(0),
+  /** Timestamp of the last access */
+  last_access_at: integer(),
+  /** Forgetting rate for decay-based pruning */
+  forgetting_rate: real(),
+  /** Contextual information when the memory was encoded */
+  encoding_context: text(),
+  /** Query context associated with this memory */
+  query_context: text(),
+  feedback: text(),
+  cue_variants: text(),
+  search_count: integer().notNull().default(0),
+})
+
+export const memoryLinksTable = sqliteTable("memory_links", {
+  id: text().primaryKey(),
+  source_memory_id: text().notNull().references(() => memoryTable.id, { onDelete: "cascade" }),
+  target_memory_id: text().notNull().references(() => memoryTable.id, { onDelete: "cascade" }),
+  link_type: text().notNull().default("co-retrieved"),
+  strength: real().notNull().default(0.5),
+  co_occurrence_count: integer().notNull().default(1),
+  created_at: integer().notNull(),
+  updated_at: integer().notNull(),
 })
 
 export type MemoryRow = typeof memoryTable.$inferSelect
-export type MemoryInsert = Omit<MemoryRow, "id" | "created_at" | "updated_at">
+export type MemoryInsert = Omit<MemoryRow, "id" | "created_at" | "updated_at" | "access_count" | "last_access_at" | "forgetting_rate" | "encoding_context" | "query_context" | "feedback" | "cue_variants" | "search_count">
+export type LinkRow = typeof memoryLinksTable.$inferSelect
 
 // ---------------------------------------------------------------------------
 // Interface
@@ -84,6 +109,23 @@ export interface Interface {
     byType: Record<string, number>
     averageConfidence: number
   }>
+  readonly updateAccessStats: (id: string, now: number) => Effect.Effect<void>
+  readonly createOrUpdateLink: (params: { sourceMemoryId: string; targetMemoryId: string; linkType: string }) => Effect.Effect<void>
+  readonly getStrongLinks: (memoryId: string, minStrength: number) => Effect.Effect<Array<{ sourceMemoryId: string; targetMemoryId: string; strength: number; linkType: string }>>
+  readonly pruneLinks: (minStrength: number, maxAgeDays: number) => Effect.Effect<number>
+  readonly getAllMemories: () => Effect.Effect<MemoryRow[]>
+  readonly batchUpdateConfidence: (updates: Array<{ id: string; confidence: number }>) => Effect.Effect<void>
+  readonly setEncodingData: (id: string, context: string | null, queryContext: string | null) => Effect.Effect<void>
+  readonly setFeedback: (id: string, feedback: "positive" | "negative" | null) => Effect.Effect<void>
+  readonly getFeedbackStats: () => Effect.Effect<{ positive: number; negative: number; total: number }>
+  readonly setCueVariants: (id: string, variants: string[]) => Effect.Effect<void>
+  readonly getLinkedMemories: (memoryId: string, maxDepth: number) => Effect.Effect<MemoryRow[]>
+  readonly getShortestPath: (fromId: string, toId: string) => Effect.Effect<MemoryRow[]>
+  readonly getGraphStats: () => Effect.Effect<{ nodeCount: number; edgeCount: number; avgDegree: number }>
+  readonly getAllLinks: () => Effect.Effect<LinkRow[]>
+  readonly incrementSearchCount: (id: string) => Effect.Effect<void>
+  readonly updateImportance: (id: string, importance: number) => Effect.Effect<void>
+  readonly getFeedbackCounts: () => Effect.Effect<{ positive: number; negative: number; none: number }>
   readonly close: () => Effect.Effect<void>
 }
 
@@ -133,6 +175,34 @@ function createTables(sqlite: Database): void {
   // Add columns if they don't exist (for DBs created before this migration)
   try { sqlite.exec(`ALTER TABLE memory ADD COLUMN embedding TEXT`); } catch {}
   try { sqlite.exec(`ALTER TABLE memory ADD COLUMN embedding_model TEXT`); } catch {}
+  try { sqlite.exec(`ALTER TABLE memory ADD COLUMN access_count INTEGER NOT NULL DEFAULT 0;`); } catch {}
+  try { sqlite.exec(`ALTER TABLE memory ADD COLUMN last_access_at INTEGER;`); } catch {}
+  try { sqlite.exec(`ALTER TABLE memory ADD COLUMN forgetting_rate REAL;`); } catch {}
+  try { sqlite.exec(`ALTER TABLE memory ADD COLUMN encoding_context TEXT;`); } catch {}
+  try { sqlite.exec(`ALTER TABLE memory ADD COLUMN query_context TEXT;`); } catch {}
+  try { sqlite.exec(`ALTER TABLE memory ADD COLUMN feedback TEXT;`); } catch {}
+  try { sqlite.exec(`ALTER TABLE memory ADD COLUMN cue_variants TEXT;`); } catch {}
+  try { sqlite.exec(`ALTER TABLE memory ADD COLUMN search_count INTEGER NOT NULL DEFAULT 0;`); } catch {}
+
+  // New tables (IF NOT EXISTS handles re-creation safely)
+  sqlite.exec(`CREATE TABLE IF NOT EXISTS memory_links (
+    id TEXT PRIMARY KEY,
+    source_memory_id TEXT NOT NULL REFERENCES memory(id) ON DELETE CASCADE,
+    target_memory_id TEXT NOT NULL REFERENCES memory(id) ON DELETE CASCADE,
+    link_type TEXT NOT NULL DEFAULT 'co-retrieved',
+    strength REAL NOT NULL DEFAULT 0.5,
+    co_occurrence_count INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );`)
+
+  // Indexes for memory_links
+  sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_links_source ON memory_links(source_memory_id);`)
+  sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_links_target ON memory_links(target_memory_id);`)
+  sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_links_strength ON memory_links(strength);`)
+  // Additional indexes for new columns
+  sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_mem_access_count ON memory(access_count);`)
+  sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_mem_forgetting_rate ON memory(forgetting_rate);`)
 }
 
 export const layer = Layer.effect(
@@ -417,6 +487,295 @@ export const layer = Layer.effect(
       }
     })
 
+    // ---- updateAccessStats ----
+    const updateAccessStats = Effect.fn("MemoryStore.updateAccessStats")(function* (id: string, now: number) {
+      yield* sync(() =>
+        db
+          .update(memoryTable)
+          .set({ access_count: sql`access_count + 1`, last_access_at: now, updated_at: now })
+          .where(eq(memoryTable.id, id))
+          .run(),
+      )
+    })
+
+    // ---- createOrUpdateLink ----
+    const createOrUpdateLink = Effect.fn("MemoryStore.createOrUpdateLink")(function* (params: {
+      sourceMemoryId: string
+      targetMemoryId: string
+      linkType: string
+    }) {
+      const existing = yield* sync(() =>
+        db
+          .select()
+          .from(memoryLinksTable)
+          .where(
+            and(
+              eq(memoryLinksTable.source_memory_id, params.sourceMemoryId),
+              eq(memoryLinksTable.target_memory_id, params.targetMemoryId),
+              eq(memoryLinksTable.link_type, params.linkType),
+            ),
+          )
+          .get(),
+      )
+
+      if (existing) {
+        const newCount = existing.co_occurrence_count + 1
+        const newStrength = Math.min(1.0, newCount / (newCount + 10))
+        yield* sync(() =>
+          db
+            .update(memoryLinksTable)
+            .set({ co_occurrence_count: newCount, strength: newStrength, updated_at: Date.now() })
+            .where(eq(memoryLinksTable.id, existing.id))
+            .run(),
+        )
+      } else {
+        yield* sync(() =>
+          db
+            .insert(memoryLinksTable)
+            .values({
+              id: randomUUID(),
+              source_memory_id: params.sourceMemoryId,
+              target_memory_id: params.targetMemoryId,
+              link_type: params.linkType,
+              strength: 0.09,
+              co_occurrence_count: 1,
+              created_at: Date.now(),
+              updated_at: Date.now(),
+            })
+            .run(),
+        )
+      }
+    })
+
+    // ---- getStrongLinks ----
+    const getStrongLinks = Effect.fn("MemoryStore.getStrongLinks")(function* (memoryId: string, minStrength: number) {
+      const links = yield* sync(() =>
+        db
+          .select()
+          .from(memoryLinksTable)
+          .where(
+            and(
+              or(
+                eq(memoryLinksTable.source_memory_id, memoryId),
+                eq(memoryLinksTable.target_memory_id, memoryId),
+              ),
+              gte(memoryLinksTable.strength, minStrength),
+            ),
+          )
+          .all(),
+      )
+
+      return links.map((l) => ({
+        sourceMemoryId: l.source_memory_id,
+        targetMemoryId: l.target_memory_id,
+        strength: l.strength,
+        linkType: l.link_type,
+      }))
+    })
+
+    // ---- pruneLinks ----
+    const pruneLinks = Effect.fn("MemoryStore.pruneLinks")(function* (
+      minStrength: number,
+      maxAgeDays: number,
+    ) {
+      const cutoff = Date.now() - maxAgeDays * 86400000
+      yield* sync(() =>
+        db
+          .delete(memoryLinksTable)
+          .where(
+            or(
+              sql`${memoryLinksTable.strength} < ${minStrength}`,
+              sql`${memoryLinksTable.created_at} < ${cutoff}`,
+            ),
+          )
+          .run(),
+      )
+      // Return count of remaining links is not available from bun:sqlite driver
+      return 0
+    })
+
+    // ---- getAllMemories ----
+    const getAllMemories = Effect.fn("MemoryStore.getAllMemories")(function* () {
+      const rows = yield* sync(() => db.select().from(memoryTable).all())
+      return rows
+    })
+
+    // ---- batchUpdateConfidence ----
+    const batchUpdateConfidence = Effect.fn("MemoryStore.batchUpdateConfidence")(function* (
+      updates: Array<{ id: string; confidence: number }>,
+    ) {
+      const now = Date.now()
+      for (const { id, confidence } of updates) {
+        yield* sync(() =>
+          db
+            .update(memoryTable)
+            .set({ confidence, updated_at: now })
+            .where(eq(memoryTable.id, id))
+            .run(),
+        )
+      }
+    })
+
+    // ---- setEncodingData ----
+    const setEncodingData = Effect.fn("MemoryStore.setEncodingData")(function* (
+      id: string,
+      context: string | null,
+      queryContext: string | null,
+    ) {
+      yield* sync(() =>
+        db
+          .update(memoryTable)
+          .set({ encoding_context: context, query_context: queryContext, updated_at: Date.now() })
+          .where(eq(memoryTable.id, id))
+          .run(),
+      )
+    })
+
+    // ---- setFeedback ----
+    const setFeedback = Effect.fn("MemoryStore.setFeedback")(function* (id: string, feedback: "positive" | "negative" | null) {
+      yield* sync(() =>
+        db.update(memoryTable).set({ feedback, updated_at: Date.now() }).where(eq(memoryTable.id, id)).run(),
+      )
+    })
+
+    // ---- getFeedbackStats ----
+    const getFeedbackStats = Effect.fn("MemoryStore.getFeedbackStats")(function* () {
+      const counts = yield* sync(() => {
+        const pos = db.select({ count: sql<number>`count(*)` }).from(memoryTable).where(eq(memoryTable.feedback, "positive")).get()
+        const neg = db.select({ count: sql<number>`count(*)` }).from(memoryTable).where(eq(memoryTable.feedback, "negative")).get()
+        const tot = db.select({ count: sql<number>`count(*)` }).from(memoryTable).get()
+        return { positive: pos?.count ?? 0, negative: neg?.count ?? 0, total: tot?.count ?? 0 }
+      })
+      return counts
+    })
+
+    // ---- setCueVariants ----
+    const setCueVariants = Effect.fn("MemoryStore.setCueVariants")(function* (id: string, variants: string[]) {
+      yield* sync(() =>
+        db.update(memoryTable).set({ cue_variants: JSON.stringify(variants), updated_at: Date.now() }).where(eq(memoryTable.id, id)).run(),
+      )
+    })
+
+    // ---- getLinkedMemories ----
+    const getLinkedMemories = Effect.fn("MemoryStore.getLinkedMemories")(function* (memoryId: string, maxDepth: number) {
+      if (maxDepth <= 0) return []
+      const visited = new Set<string>()
+      const queue: Array<{ id: string; depth: number }> = [{ id: memoryId, depth: 0 }]
+      visited.add(memoryId)
+      const neighborIds = new Set<string>()
+      while (queue.length > 0) {
+        const current = queue.shift()!
+        if (current.depth >= maxDepth) continue
+        const links = yield* sync(() =>
+          db.select().from(memoryLinksTable).where(
+            or(eq(memoryLinksTable.source_memory_id, current.id), eq(memoryLinksTable.target_memory_id, current.id)),
+          ).all(),
+        )
+        for (const link of links) {
+          const neighbor = link.source_memory_id === current.id ? link.target_memory_id : link.source_memory_id
+          if (!visited.has(neighbor)) {
+            visited.add(neighbor)
+            neighborIds.add(neighbor)
+            queue.push({ id: neighbor, depth: current.depth + 1 })
+          }
+        }
+      }
+      if (neighborIds.size === 0) return []
+      const ids = [...neighborIds]
+      const rows = yield* sync(() =>
+        db.select().from(memoryTable).where(inArray(memoryTable.id, ids)).all(),
+      )
+      return rows
+    })
+
+    // ---- getShortestPath ----
+    const getShortestPath = Effect.fn("MemoryStore.getShortestPath")(function* (fromId: string, toId: string) {
+      if (fromId === toId) {
+        const row = yield* findById(fromId)
+        return row ? [row] : []
+      }
+      const queue: Array<{ nodeId: string; path: string[] }> = [{ nodeId: fromId, path: [fromId] }]
+      const visited = new Set<string>()
+      visited.add(fromId)
+      while (queue.length > 0) {
+        const { nodeId, path } = queue.shift()!
+        const links = yield* sync(() =>
+          db.select().from(memoryLinksTable).where(
+            or(eq(memoryLinksTable.source_memory_id, nodeId), eq(memoryLinksTable.target_memory_id, nodeId)),
+          ).all(),
+        )
+        for (const link of links) {
+          const neighbor = link.source_memory_id === nodeId ? link.target_memory_id : link.source_memory_id
+          if (neighbor === toId) {
+            const fullPath = [...path, toId]
+            const rows = yield* sync(() =>
+              db.select().from(memoryTable).where(inArray(memoryTable.id, fullPath)).all(),
+            )
+            const rowMap = new Map(rows.map(r => [r.id, r]))
+            return fullPath.map(id => rowMap.get(id)).filter((r): r is MemoryRow => r !== undefined)
+          }
+          if (!visited.has(neighbor)) {
+            visited.add(neighbor)
+            queue.push({ nodeId: neighbor, path: [...path, neighbor] })
+          }
+        }
+      }
+      return []
+    })
+
+    // ---- getGraphStats ----
+    const getGraphStats = Effect.fn("MemoryStore.getGraphStats")(function* () {
+      const stats = yield* sync(() => {
+        const n = db.select({ count: sql<number>`count(*)` }).from(memoryTable).get()
+        const e = db.select({ count: sql<number>`count(*)` }).from(memoryLinksTable).get()
+        const s = db.select({ count: sql<number>`COUNT(DISTINCT source_memory_id)` }).from(memoryLinksTable).get()
+        return { nodeCount: n?.count ?? 0, edgeCount: e?.count ?? 0, uniqueSourceNodes: s?.count ?? 0 }
+      })
+      return {
+        nodeCount: stats.nodeCount,
+        edgeCount: stats.edgeCount,
+        avgDegree: stats.edgeCount / Math.max(stats.uniqueSourceNodes, 1),
+      }
+    })
+
+    // ---- getAllLinks ----
+    const getAllLinks = Effect.fn("MemoryStore.getAllLinks")(function* () {
+      return yield* sync(() => db.select().from(memoryLinksTable).all())
+    })
+
+    // ---- incrementSearchCount ----
+    const incrementSearchCount = Effect.fn("MemoryStore.incrementSearchCount")(function* (id: string) {
+      yield* sync(() =>
+        db
+          .update(memoryTable)
+          .set({ search_count: sql`search_count + 1`, updated_at: Date.now() })
+          .where(eq(memoryTable.id, id))
+          .run(),
+      )
+    })
+
+    // ---- updateImportance ----
+    const updateImportance = Effect.fn("MemoryStore.updateImportance")(function* (id: string, importance: number) {
+      yield* sync(() =>
+        db
+          .update(memoryTable)
+          .set({ importance, updated_at: Date.now() })
+          .where(eq(memoryTable.id, id))
+          .run(),
+      )
+    })
+
+    // ---- getFeedbackCounts ----
+    const getFeedbackCounts = Effect.fn("MemoryStore.getFeedbackCounts")(function* () {
+      const counts = yield* sync(() => {
+        const pos = db.select({ count: sql<number>`count(*)` }).from(memoryTable).where(eq(memoryTable.feedback, "positive")).get()
+        const neg = db.select({ count: sql<number>`count(*)` }).from(memoryTable).where(eq(memoryTable.feedback, "negative")).get()
+        const none = db.select({ count: sql<number>`count(*)` }).from(memoryTable).where(sql`${memoryTable.feedback} IS NULL`).get()
+        return { positive: pos?.count ?? 0, negative: neg?.count ?? 0, none: none?.count ?? 0 }
+      })
+      return counts
+    })
+
     // ---- close ----
     const close = Effect.fn("MemoryStore.close")(function* () {
       yield* sync(() => {
@@ -438,6 +797,23 @@ export const layer = Layer.effect(
       count,
       getAll,
       stats,
+      updateAccessStats,
+      createOrUpdateLink,
+      getStrongLinks,
+      pruneLinks,
+      getAllMemories,
+      batchUpdateConfidence,
+      setEncodingData,
+      setFeedback,
+      getFeedbackStats,
+      setCueVariants,
+      getLinkedMemories,
+      getShortestPath,
+      getGraphStats,
+      getAllLinks,
+      incrementSearchCount,
+      updateImportance,
+      getFeedbackCounts,
       close,
     })
   }),

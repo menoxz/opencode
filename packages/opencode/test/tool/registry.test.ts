@@ -1,4 +1,4 @@
-import { afterEach, describe, expect } from "bun:test"
+import { describe, expect } from "bun:test"
 import path from "path"
 import fs from "fs/promises"
 import { fileURLToPath, pathToFileURL } from "url"
@@ -6,7 +6,7 @@ import { Effect, Layer, Result, Schema } from "effect"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { ToolRegistry } from "@/tool/registry"
 import { Tool } from "@/tool/tool"
-import { disposeAllInstances, TestInstance } from "../fixture/fixture"
+import { TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { TestConfig } from "../fixture/config"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
@@ -35,6 +35,7 @@ import { ToolJsonSchema } from "@/tool/json-schema"
 import { MessageID, SessionID } from "@/session/schema"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Orchestrator } from "@/orchestrator"
+import { MCP } from "@/mcp"
 
 const node = CrossSpawnSpawner.defaultLayer
 const configLayer = TestConfig.layer({
@@ -72,6 +73,7 @@ const registryLayer = (opts: RegistryLayerOptions = {}) =>
         plan: () => Effect.succeed({ success: true, results: [], totalDurationMs: 0, failedSteps: [], totalSteps: 0, parallelRounds: 0 }),
       }))),
     )
+    .pipe(Layer.provide(MCP.defaultLayer))
     .pipe(Layer.provide(RuntimeFlags.layer(opts.flags ?? {})))
 
 // Fake Plugin.Service that returns a single plugin whose `tool` map contains
@@ -99,17 +101,13 @@ const brokenPluginLayer = Layer.succeed(
   }),
 )
 
-const it = testEffect(Layer.mergeAll(registryLayer(), node, Agent.defaultLayer))
+const it = testEffect(Layer.mergeAll(registryLayer(), node, Agent.defaultLayer) as unknown as Layer.Layer<never, never>)
 const scout = testEffect(
-  Layer.mergeAll(registryLayer({ flags: { experimentalScout: true } }), node, Agent.defaultLayer),
+  Layer.mergeAll(registryLayer({ flags: { experimentalScout: true } }), node, Agent.defaultLayer) as unknown as Layer.Layer<never, never>,
 )
 const withBrokenPlugin = testEffect(
-  Layer.mergeAll(registryLayer({ plugin: brokenPluginLayer }), node, Agent.defaultLayer),
+  Layer.mergeAll(registryLayer({ plugin: brokenPluginLayer }), node, Agent.defaultLayer) as unknown as Layer.Layer<never, never>,
 )
-
-afterEach(async () => {
-  await disposeAllInstances()
-})
 
 describe("tool.registry", () => {
   it.instance("hides repo research tools unless experimental", () =>
@@ -287,6 +285,45 @@ describe("tool.registry", () => {
       const registry = yield* ToolRegistry.Service
       const ids = yield* registry.ids()
       expect(ids).toContain("hello")
+    }),
+  )
+
+  it.instance("does not load symlinked custom tools that point outside configured directory", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const opencode = path.join(test.directory, ".opencode")
+      const tools = path.join(opencode, "tools")
+      const outsideDir = path.join(test.directory, "outside-tools")
+      yield* Effect.promise(() => fs.mkdir(tools, { recursive: true }))
+      yield* Effect.promise(() => fs.mkdir(outsideDir, { recursive: true }))
+
+      const outsideTool = path.join(outsideDir, "escape.ts")
+      yield* Effect.promise(() =>
+        Bun.write(
+          outsideTool,
+          [
+            "export default {",
+            "  description: 'outside tool',",
+            "  args: {},",
+            "  execute: async () => 'outside',",
+            "}",
+            "",
+          ].join("\n"),
+        ),
+      )
+
+      const symlinkPath = path.join(tools, "escape.ts")
+      const symlinkCreated = yield* Effect.promise(() =>
+        fs
+          .symlink(outsideTool, symlinkPath, "file")
+          .then(() => true)
+          .catch(() => false),
+      )
+      if (!symlinkCreated) return
+
+      const registry = yield* ToolRegistry.Service
+      const ids = yield* registry.ids()
+      expect(ids).not.toContain("escape")
     }),
   )
 
