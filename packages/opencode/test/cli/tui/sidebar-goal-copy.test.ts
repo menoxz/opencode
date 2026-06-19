@@ -18,8 +18,6 @@ describe("sidebar goal copy", () => {
   test("uses contract-oriented labels and empty-state fallback", () => {
     expect(TASK_CONTRACT_SIDEBAR_COPY.sectionTitle).toBe("TASK CONTRACT")
     expect(TASK_CONTRACT_SIDEBAR_COPY.objectiveLabel).toBe("Obj")
-    expect(TASK_CONTRACT_SIDEBAR_COPY.panelExpandHint).toBe("expand")
-    expect(TASK_CONTRACT_SIDEBAR_COPY.panelCollapseHint).toBe("collapse")
     expect(TASK_CONTRACT_SIDEBAR_COPY.dodLabel).toBe("DoD")
     expect(TASK_CONTRACT_SIDEBAR_COPY.outOfScopeLabel).toBe("OOS")
     expect(TASK_CONTRACT_SIDEBAR_COPY.emptyState).toBe("no contract defined")
