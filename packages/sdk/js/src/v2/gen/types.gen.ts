@@ -744,6 +744,18 @@ export type PermissionRule = {
 
 export type PermissionRuleset = Array<PermissionRule>
 
+export type GoalState = {
+  status: "draft" | "pending_user" | "approved" | "edited" | "completed" | "skipped"
+  source: "auto" | "user"
+  goal: string
+  dod: Array<string>
+  outOfScope: Array<string>
+  compressed?: string
+  anchorUserID?: string
+  version: number
+  updatedAt: number
+}
+
 export type Session = {
   id: string
   slug: string
@@ -786,16 +798,7 @@ export type Session = {
     archived?: number
   }
   permission?: PermissionRuleset
-  goalState?: {
-    status: "draft" | "pending_user" | "approved" | "edited" | "skipped"
-    source: "auto" | "user"
-    goal: string
-    dod: Array<string>
-    outOfScope: Array<string>
-    compressed?: string
-    version: number
-    updatedAt: number
-  }
+  goalState?: GoalState
   revert?: {
     messageID: string
     partID?: string
@@ -1170,6 +1173,12 @@ export type McpRemoteConfig = {
   timeout?: number
 }
 
+export type ConfigInstructionInjection = {
+  agents?: "full" | "summary" | "off"
+  skills?: "full" | "summary" | "caveman"
+  synthetic?: "normal" | "compact" | "caveman"
+}
+
 /**
  * @deprecated Always uses stretch layout.
  */
@@ -1184,6 +1193,17 @@ export type ImageAttachmentConfig = {
 
 export type AttachmentConfig = {
   image?: ImageAttachmentConfig
+}
+
+export type ConfigContextRollout = {
+  replay_tool_inputs?: "full" | "summary" | "off"
+  replay_tool_outputs?: "full" | "summary" | "off"
+  replay_reasoning?: "on" | "off"
+  injection_skills?: "verbose" | "short"
+  injection_instructions?: "full" | "summary" | "off"
+  system_boilerplate?: "full" | "light" | "minimal"
+  caveman_synthetic_artifacts?: "on" | "off"
+  goal_dod?: "on" | "off"
 }
 
 export type Config = {
@@ -1295,6 +1315,7 @@ export type Config = {
             }
       }
   instructions?: Array<string>
+  instruction_injection?: ConfigInstructionInjection
   layout?: LayoutConfig
   permission?: PermissionConfig
   tools?: {
@@ -1321,6 +1342,7 @@ export type Config = {
     openTelemetry?: boolean
     primary_tools?: Array<string>
     continue_loop_on_deny?: boolean
+    context_rollout?: ConfigContextRollout
     mcp_timeout?: number
   }
 }
@@ -1526,6 +1548,7 @@ export type GlobalSession = {
     archived?: number
   }
   permission?: PermissionRuleset
+  goalState?: GoalState
   revert?: {
     messageID: string
     partID?: string
@@ -2089,6 +2112,7 @@ export type SyncEventSessionUpdated = {
         archived?: number | null
       }
       permission?: PermissionRuleset | null
+      goalState?: GoalState | null
       revert?: {
         messageID: string
         partID?: string
@@ -6074,16 +6098,7 @@ export type SessionCreateData = {
       variant?: string
     }
     permission?: PermissionRuleset
-    goalState?: {
-      status: "draft" | "pending_user" | "approved" | "edited" | "skipped"
-      source: "auto" | "user"
-      goal: string
-      dod: Array<string>
-      outOfScope: Array<string>
-      compressed?: string
-      version: number
-      updatedAt: number
-    }
+    goalState?: GoalState
     workspaceID?: string
   }
   path?: never
@@ -6217,16 +6232,7 @@ export type SessionUpdateData = {
     time?: {
       archived?: number
     }
-    goalState?: {
-      status: "draft" | "pending_user" | "approved" | "edited" | "skipped"
-      source: "auto" | "user"
-      goal: string
-      dod: Array<string>
-      outOfScope: Array<string>
-      compressed?: string
-      version: number
-      updatedAt: number
-    } | null
+    goalState?: GoalState
   }
   path: {
     sessionID: string

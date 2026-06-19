@@ -13,7 +13,7 @@ import { Plugin } from "@/plugin"
 import { Config } from "@/config/config"
 import { NotFoundError } from "@/storage/storage"
 import { ModelID, ProviderID } from "@/provider/schema"
-import { Effect, Layer, Context, Schema } from "effect"
+import { Effect, Layer, Context, Schema, Option } from "effect"
 import * as DateTime from "effect/DateTime"
 import { InstanceState } from "@/effect/instance-state"
 import { isOverflow as overflow, usable } from "./overflow"
@@ -112,6 +112,11 @@ export function compressGoalState(state: GoalState): string {
 export function formatGoalContext(state: GoalState): string {
   if (state.status === "skipped") return ""
 
+  if (state.status === "completed") {
+    const goal = state.goal.replace(/\n/g, " ").trim().slice(0, 200)
+    return `<task-contract status="completed">\nGOAL (DONE): ${goal}\nThis objective is achieved. Do not redo it. Await a new objective from the user.\n</task-contract>\n`
+  }
+
   const body = state.compressed ?? compressGoalState(state)
   return `<task-contract status="${state.status}">\n${body}</task-contract>\n`
 }
@@ -124,6 +129,7 @@ export function formatGoalStatusBadge(state: GoalState): string {
     skipped: "ignoré",
     edited: "édité",
     pending_user: "en attente",
+    completed: "terminé",
   }
   return `[Goal: ${labels[state.status]}]`
 }
@@ -469,7 +475,24 @@ export const layer = Layer.effect(
         { sessionID: input.sessionID },
         { context: [], prompt: undefined },
       )
-      const nextPrompt = compacting.prompt ?? buildPrompt({ previousSummary, context: compacting.context })
+      // Align the summary's "## Goal" section with the session's current objective
+      // (active or completed) rather than letting it be re-derived from raw history,
+      // which could resurrect a previously finished objective. Only relevant on the
+      // default buildPrompt path (a plugin-provided prompt ignores `context`).
+      let context: string[] = compacting.context
+      if (compacting.prompt === undefined) {
+        const sessionInfo = yield* session.get(input.sessionID).pipe(Effect.option)
+        const gs = Option.isSome(sessionInfo) ? sessionInfo.value.goalState : undefined
+        if (gs && gs.status !== "skipped" && gs.goal?.trim()) {
+          const goal = gs.goal.replace(/\n/g, " ").trim().slice(0, 200)
+          const hint =
+            gs.status === "completed"
+              ? `For the "## Goal" section: the user's objective "${goal}" is COMPLETED. State the objective and that it is done; do not invent a different goal from the history.`
+              : `For the "## Goal" section: use the user's current active objective verbatim: "${goal}". Do not derive a different goal from the history.`
+          context = [...context, hint]
+        }
+      }
+      const nextPrompt = compacting.prompt ?? buildPrompt({ previousSummary, context })
       const msgs = structuredClone(selected.head)
       yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
       const modelMessages = yield* MessageV2.toModelMessagesEffect(msgs, model, {

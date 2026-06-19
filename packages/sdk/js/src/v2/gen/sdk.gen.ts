@@ -80,6 +80,7 @@ import type {
   GlobalHealthResponses,
   GlobalUpgradeErrors,
   GlobalUpgradeResponses,
+  GoalState,
   InstanceDisposeErrors,
   InstanceDisposeResponses,
   LspStatusErrors,
@@ -3097,16 +3098,7 @@ export class Session2 extends HeyApiClient {
         variant?: string
       }
       permission?: PermissionRuleset
-      goalState?: {
-        status: "draft" | "pending_user" | "approved" | "edited" | "skipped"
-        source: "auto" | "user"
-        goal: string
-        dod: Array<string>
-        outOfScope: Array<string>
-        compressed?: string
-        version: number
-        updatedAt: number
-      }
+      goalState?: GoalState
       workspaceID?: string
     },
     options?: Options<never, ThrowOnError>,
@@ -3250,16 +3242,7 @@ export class Session2 extends HeyApiClient {
       time?: {
         archived?: number
       }
-      goalState?: {
-        status: "draft" | "pending_user" | "approved" | "edited" | "skipped"
-        source: "auto" | "user"
-        goal: string
-        dod: Array<string>
-        outOfScope: Array<string>
-        compressed?: string
-        version: number
-        updatedAt: number
-      } | null
+      goalState?: GoalState
     },
     options?: Options<never, ThrowOnError>,
   ) {

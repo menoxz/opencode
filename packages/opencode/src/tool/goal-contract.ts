@@ -1,5 +1,7 @@
-import { Effect, Schema } from "effect"
+import { Effect, Exit, Schema } from "effect"
 import { Session } from "@/session/session"
+import { Question } from "@/question"
+import { RuntimeFlags } from "@/effect/runtime-flags"
 import * as Tool from "./tool"
 import {
   MINIMAL_DOD_ITEM,
@@ -16,7 +18,7 @@ type ContractSuggestion = {
 
 type ContractToolResponse = {
   status: "ok" | "error"
-  action: "create" | "edit" | "suggest" | "apply"
+  action: "create" | "edit" | "suggest" | "apply" | "complete"
   updatedFields: string[]
   warnings: string[]
   suggestion?: ContractSuggestion
@@ -27,6 +29,7 @@ type ContractToolResponse = {
     dod: string[]
     outOfScope: string[]
     compressed?: string
+    anchorUserID?: string
     version: number
     updatedAt: number
   }
@@ -397,3 +400,175 @@ export const ApplyContractFromPromptTool = Tool.define(
     } satisfies Tool.DefWithoutID<typeof PromptParameters, Metadata>
   }),
 )
+
+const CompleteParameters = Schema.Struct({
+  summary: Schema.optional(Schema.String).annotate({
+    description: "Short summary of what was accomplished for the current objective (shown to the user for confirmation).",
+  }),
+})
+
+function lastUserMessageID(messages: Tool.Context["messages"]): string | undefined {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i]
+    if (msg?.info.role === "user") return msg.info.id
+  }
+  return undefined
+}
+
+/** Variant of responseResult that overrides the human-readable `output` (F6). */
+function responseWithOutput(result: ContractToolResponse, output: string) {
+  return {
+    title: `Contract ${result.action}`,
+    output,
+    metadata: { result },
+  }
+}
+
+function completeToolDefinition() {
+  return Effect.gen(function* () {
+    const sessions = yield* Session.Service
+    const question = yield* Question.Service
+    const flags = yield* RuntimeFlags.Service
+    const questionEnabled = ["app", "cli", "desktop"].includes(flags.client) || flags.enableQuestionTool
+
+    return {
+      description:
+        "Mark the current task objective as achieved. Prompts the user to confirm before finalizing; on confirmation the objective stops being injected as 'to do', and the next substantial user prompt derives a fresh objective. On rejection, the user's feedback (what is still missing) is returned so you keep working.",
+      parameters: CompleteParameters,
+      execute: (params: Schema.Schema.Type<typeof CompleteParameters>, ctx: Tool.Context<Metadata>) =>
+        Effect.gen(function* () {
+          const session = yield* sessions.get(ctx.sessionID).pipe(Effect.orDie)
+          const previous = session.goalState ?? null
+
+          if (!previous || !previous.goal?.trim()) {
+            return responseResult({
+              status: "error",
+              action: "complete",
+              updatedFields: [],
+              warnings: ["No active objective to complete."],
+            })
+          }
+          if (previous.status === "completed") {
+            return responseResult({
+              status: "ok",
+              action: "complete",
+              updatedFields: [],
+              warnings: ["Objective already completed."],
+              goalState: previous,
+            })
+          }
+          if (previous.status === "skipped") {
+            return responseResult({
+              status: "error",
+              action: "complete",
+              updatedFields: [],
+              warnings: ["Objective tracking is skipped for this session; nothing to complete."],
+            })
+          }
+
+          const markCompleted = Effect.gen(function* () {
+            const next = {
+              ...previous,
+              status: "completed" as const,
+              anchorUserID: lastUserMessageID(ctx.messages),
+              version: (previous.version ?? 0) + 1,
+              updatedAt: Date.now(),
+            }
+            yield* sessions.setGoalState({ sessionID: ctx.sessionID, goalState: next })
+            return next
+          })
+
+          // F3 — headless / non-interactive (sub-agent, CI): no UI to confirm.
+          // Avoid deadlocking on a Deferred that never resolves; complete directly.
+          if (!questionEnabled) {
+            const next = yield* markCompleted
+            return responseWithOutput(
+              {
+                status: "ok",
+                action: "complete",
+                updatedFields: ["status"],
+                warnings: ["No interactive UI available; objective marked completed without confirmation."],
+                goalState: next,
+              },
+              `Objective marked as completed (no interactive confirmation available).\nObjective: ${previous.goal}`,
+            )
+          }
+
+          const summaryLine = params.summary?.trim() ? `\n\nWhat was done: ${params.summary.trim()}` : ""
+          const askExit = yield* question
+            .ask({
+              sessionID: ctx.sessionID,
+              questions: [
+                {
+                  question: `Is this objective achieved?\n\nObjective: ${previous.goal}${summaryLine}`,
+                  header: "Objective reached?",
+                  options: [
+                    { label: "Yes, objective reached", description: "Mark the objective as completed." },
+                    {
+                      label: "No — something is missing",
+                      description: "Tell the agent what still needs to be done (type your answer).",
+                    },
+                  ],
+                },
+              ],
+              tool: ctx.callID ? { messageID: ctx.messageID, callID: ctx.callID } : undefined,
+            })
+            .pipe(Effect.exit)
+
+          // Dismissed (QuestionRejectedError): leave the objective active, keep working.
+          if (Exit.isFailure(askExit)) {
+            return responseWithOutput(
+              {
+                status: "ok",
+                action: "complete",
+                updatedFields: [],
+                warnings: ["User dismissed the confirmation; objective left active."],
+                goalState: previous,
+              },
+              "User dismissed the completion confirmation. The objective is NOT marked done — continue working on it.",
+            )
+          }
+
+          const answers = askExit.value
+          const reply = answers[0]?.[0] ?? ""
+          const confirmed = /^yes/i.test(reply.trim())
+
+          if (!confirmed) {
+            return responseWithOutput(
+              {
+                status: "ok",
+                action: "complete",
+                updatedFields: [],
+                warnings: [],
+                goalState: previous,
+              },
+              `User says the objective is NOT done: "${reply || "No"}". Continue working on it and address the feedback before completing again.`,
+            )
+          }
+
+          const next = yield* markCompleted
+          return responseWithOutput(
+            {
+              status: "ok",
+              action: "complete",
+              updatedFields: ["status"],
+              warnings: [],
+              goalState: next,
+            },
+            `Objective confirmed as completed by the user.\nObjective: ${previous.goal}\nAwait the user's next objective.`,
+          )
+        }),
+    } satisfies Tool.DefWithoutID<typeof CompleteParameters, Metadata>
+  })
+}
+
+export const CompleteObjectifTool = Tool.define<
+  typeof CompleteParameters,
+  Metadata,
+  Question.Service | RuntimeFlags.Service | Session.Service
+>("complete_objectif", completeToolDefinition())
+export const CompleteObjectiveTool = Tool.define<
+  typeof CompleteParameters,
+  Metadata,
+  Question.Service | RuntimeFlags.Service | Session.Service
+>("complete_objective", completeToolDefinition())

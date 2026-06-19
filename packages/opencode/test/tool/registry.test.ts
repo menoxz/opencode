@@ -149,6 +149,8 @@ describe("tool.registry", () => {
       expect(ids).toContain("edit_objectif")
       expect(ids).toContain("edit_objective")
       expect(ids).toContain("suggest_objectif")
+      expect(ids).toContain("complete_objectif")
+      expect(ids).toContain("complete_objective")
       expect(ids).toContain("apply_contract_from_prompt")
 
       const agents = yield* Agent.Service

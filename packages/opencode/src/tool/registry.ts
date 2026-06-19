@@ -2,6 +2,8 @@ import { SubagentListTool } from "./subagent"
 import { PlanExitTool } from "./plan"
 import {
   ApplyContractFromPromptTool,
+  CompleteObjectifTool,
+  CompleteObjectiveTool,
   CreateObjectifTool,
   CreateObjectiveTool,
   EditObjectifTool,
@@ -149,6 +151,8 @@ export const layer: Layer.Layer<
     const editObjectif = yield* EditObjectifTool
     const editObjective = yield* EditObjectiveTool
     const suggestObjectif = yield* SuggestObjectifTool
+    const completeObjectif = yield* CompleteObjectifTool
+    const completeObjective = yield* CompleteObjectiveTool
     const applyContractFromPrompt = yield* ApplyContractFromPromptTool
     const agent = yield* Agent.Service
 
@@ -293,6 +297,8 @@ export const layer: Layer.Layer<
           edit_objectif: Tool.init(editObjectif),
           edit_objective: Tool.init(editObjective),
           suggest_objectif: Tool.init(suggestObjectif),
+          complete_objectif: Tool.init(completeObjectif),
+          complete_objective: Tool.init(completeObjective),
           apply_contract_from_prompt: Tool.init(applyContractFromPrompt),
           patch: Tool.init(patchtool),
           question: Tool.init(question),
@@ -323,6 +329,8 @@ export const layer: Layer.Layer<
             tool.edit_objectif,
             tool.edit_objective,
             tool.suggest_objectif,
+            tool.complete_objectif,
+            tool.complete_objective,
             tool.apply_contract_from_prompt,
             tool.patch,
             ...(flags.experimentalLspTool ? [tool.lsp] : []),

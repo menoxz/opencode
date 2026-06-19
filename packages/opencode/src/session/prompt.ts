@@ -1911,6 +1911,22 @@ export const layer = Layer.effect(
               if (goalCtx) system.push(goalCtx)
             }
 
+            // Nudge the agent to drive the objective lifecycle (only while an objective
+            // is actively being worked on — not when skipped or already completed).
+            const goalActive =
+              goalState.status !== "skipped" && goalState.status !== "completed" && goalState.goal?.trim()
+            if (goalActive && !system.some((entry) => entry.includes("<goal_reminder"))) {
+              system.push(
+                [
+                  "<goal_reminder>",
+                  "- Read the user's latest message FIRST and compare it to the current objective above.",
+                  "- If the latest message diverges from the current objective: pivot via `edit_objectif`/`edit_objective` (update goal + DoD), or if the previous objective is done first call `complete_objectif`/`complete_objective`.",
+                  "- When you believe the current objective is achieved (e.g. your last todo is done), call `complete_objectif`/`complete_objective`. It asks the user to confirm before finalizing; on \"No\" it returns what is still missing so you keep working.",
+                  "</goal_reminder>",
+                ].join("\n") + "\n",
+              )
+            }
+
             if (step === 1) {
               const adaptive = yield* sys.adaptivePrompt({ messages: msgs, agent })
               if (adaptive) system.push(adaptive)
@@ -2053,7 +2069,23 @@ export const layer = Layer.effect(
       const currentSession = yield* sessions.get(input.sessionID).pipe(Effect.option)
       const existing = Option.isSome(currentSession) ? currentSession.value.goalState : undefined
       const previousVersion = Option.isSome(currentSession) ? (currentSession.value.goalState?.version ?? 0) : 0
-      if (isValidGoalState(existing)) return existing
+
+      // A completed objective must NOT be resurrected within the same turn, nor on a
+      // continuation prompt ("ok"/"continue"), which would fall back to old user text
+      // (buildGoalSourceText) and make the agent redo the finished work. Only a real,
+      // substantial new prompt (new lastUserID) re-derives a fresh objective.
+      if (existing && existing.status === "completed") {
+        if (existing.anchorUserID === input.lastUserID) return existing
+        const currentUserMsg = input.msgs.findLast(
+          (candidate) => candidate.info.role === "user" && candidate.info.id === input.lastUserID,
+        )
+        const currentUserText = currentUserMsg ? getUserPromptText(currentUserMsg).trim() : ""
+        const isSubstantial = currentUserText.length >= 40 && !isContinuationPrompt(currentUserText)
+        if (!isSubstantial) return existing
+        // else: fall through to regeneration from the new prompt below
+      } else if (isValidGoalState(existing)) {
+        return existing
+      }
 
       const sourceText = buildGoalSourceText({ msgs: input.msgs, lastUserID: input.lastUserID })
       const draft = generateGoalDraft(sourceText)
@@ -2073,6 +2105,7 @@ export const layer = Layer.effect(
           : ["Produire une réponse utile et actionnable alignée avec la demande en cours."],
         outOfScope: draft?.outOfScope ?? [],
         compressed: "",
+        anchorUserID: input.lastUserID,
         version: previousVersion + 1,
         updatedAt: Date.now(),
       }
