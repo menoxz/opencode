@@ -26,6 +26,7 @@ import { SessionID, MessageID } from "@/session/schema"
 import { Session } from "@/session/session"
 import { SessionPrompt } from "@/session/prompt"
 import { Agent } from "@/agent/agent"
+import { RuntimeFlags } from "@/effect/runtime-flags"
 import type { MessageV2 } from "@/session/message-v2"
 
 const log = Log.create({ service: "orchestrator" })
@@ -69,12 +70,18 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Orchestrator") {}
 
+export function dagRuntimeGuard(flags: { experimentalDagOrchestration: boolean }): string | undefined {
+  if (flags.experimentalDagOrchestration) return undefined
+  return "DAG orchestration runtime is disabled. Set OPENCODE_EXPERIMENTAL_DAG_ORCHESTRATION=true to opt in."
+}
+
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const agent = yield* Agent.Service
     const sessions = yield* Session.Service
     const prompt = yield* SessionPrompt.Service
+    const runtimeFlags = yield* RuntimeFlags.Service
 
     // ---- Execute a single step with retries ----
     const executeStep = (step: DAGStep, parentSessionID: SessionID): Effect.Effect<DAGResult> => {
@@ -145,6 +152,8 @@ export const layer = Layer.effect(
 
     // ---- Execute the full DAG with parallel group execution ----
     const plan = Effect.fn("Orchestrator.plan")(function* (steps: DAGStep[]) {
+      const guardError = dagRuntimeGuard(runtimeFlags)
+      if (guardError) return yield* Effect.fail(new Error(guardError))
       log.info(`starting orchestration with ${steps.length} steps`)
       const startAll = Date.now()
       const results = new Map<string, DAGResult>()
@@ -300,6 +309,7 @@ export const defaultLayer = Layer.suspend(() =>
     Layer.provide(Agent.defaultLayer),
     Layer.provide(Session.defaultLayer),
     Layer.provide(SessionPrompt.defaultLayer),
+    Layer.provide(RuntimeFlags.defaultLayer),
   )
 )
 

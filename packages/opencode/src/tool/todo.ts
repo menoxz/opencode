@@ -87,12 +87,12 @@ export const TodoWriteTool = Tool.define<typeof Parameters, Metadata, Todo.Servi
             metadata: {},
           })
 
-          // ── Auto-inject prefix/suffix tasks ──
+          // ── Auto-inject prefix/suffix tasks (MANDATORY — must be executed, never skipped) ──
           const hasResearchTask = params.todos.some((t) =>
-            t.content.startsWith("[RECHERCHE]"),
+            t.content.startsWith("[RESEARCH]"),
           )
-          const hasClotureTask = params.todos.some((t) =>
-            t.content.startsWith("[CLÔTURE]"),
+          const hasCloseTask = params.todos.some((t) =>
+            t.content.startsWith("[CLOSE]"),
           )
 
           const prefixTasks: Array<{ content: string; status: string; priority: string }> = []
@@ -101,15 +101,15 @@ export const TodoWriteTool = Tool.define<typeof Parameters, Metadata, Todo.Servi
           if (!hasResearchTask) {
             prefixTasks.push({
               content:
-                "[RECHERCHE] Rechercher si sujet inconnu ou récent (via websearch / skill research-auto)",
+                "[RESEARCH] If the topic is NOT mastered at 100%, research it FIRST (websearch / docs / codebase / existing skill) — NO guessing, NO creativity. Load an existing skill when one applies.",
               status: "pending",
               priority: "high",
             })
           }
-          if (!hasClotureTask) {
+          if (!hasCloseTask) {
             suffixTasks.push({
               content:
-                "[CLÔTURE] git commit si code modifié | memory_store si décision/architecture | évaluer qualité (tests, typecheck) | extraire skill si tâche récurrente",
+                "[CLOSE] git commit if code changed | memory_store if decision/architecture | evaluate quality (tests, typecheck) | extract a skill if recurring task",
               status: "pending",
               priority: "medium",
             })

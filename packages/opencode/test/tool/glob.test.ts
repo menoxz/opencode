@@ -18,6 +18,7 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Git } from "@/git"
 import { Permission } from "../../src/permission"
 import type * as Tool from "../../src/tool/tool"
+import { Service as ToolCacheService } from "../../src/tool/cache"
 
 const referenceLayer = (flags: Partial<RuntimeFlags.Info> = {}) =>
   Reference.layer.pipe(
@@ -34,6 +35,7 @@ const toolLayer = (flags: Partial<RuntimeFlags.Info> = {}) =>
     Truncate.defaultLayer,
     Agent.defaultLayer,
     Git.defaultLayer,
+    ToolCacheService.defaultLayer,
     referenceLayer(flags),
   )
 
@@ -97,7 +99,33 @@ const git = Effect.fn("GlobToolTest.git")(function* (cwd: string, args: string[]
   })
 })
 
+const invalidateCache = Effect.fn("GlobToolTest.invalidateCache")(function* (pattern?: string) {
+  const cache = yield* ToolCacheService
+  return yield* cache.invalidate(pattern)
+})
+
 describe("tool.glob", () => {
+  it.instance("caches glob results and refreshes after invalidation", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const info = yield* GlobTool
+      const glob = yield* info.init()
+      yield* Effect.promise(() => Bun.write(path.join(test.directory, "a.ts"), "export const a = 1\n"))
+
+      const first = yield* glob.execute({ pattern: "*.ts", path: test.directory }, ctx)
+      expect(first.output).toContain("a.ts")
+
+      yield* Effect.promise(() => Bun.write(path.join(test.directory, "b.ts"), "export const b = 1\n"))
+      const cached = yield* glob.execute({ pattern: "*.ts", path: test.directory }, ctx)
+      expect(cached.output).toContain("a.ts")
+      expect(cached.output).not.toContain("b.ts")
+
+      yield* invalidateCache(test.directory)
+      const fresh = yield* glob.execute({ pattern: "*.ts", path: test.directory }, ctx)
+      expect(fresh.output).toContain("b.ts")
+    }),
+  )
+
   it.instance("matches files from a directory path", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance

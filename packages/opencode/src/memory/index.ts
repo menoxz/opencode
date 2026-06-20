@@ -543,8 +543,12 @@ export const layer = Layer.effect(
           paramsUsed: {},
         }
 
-        // Compute updated profile (pure math, no I/O)
-        const profile = siMod.updateProfile(null, outcome)
+        const source = `self-improve/${outcome.taskType}/${outcome.modelId}`
+        const existingEntries = (yield* list({ memoryType: "procedural", pageSize: 200 })).entries
+        const existingProfile = siMod.storedProfileFromMemoryEntries(existingEntries, source)
+
+        // Compute updated profile cumulatively (pure math, no external service dependency)
+        const profile = siMod.updateProfile(existingProfile, outcome)
 
         // Persist via memory store (already available)
         yield* store_({
@@ -553,7 +557,7 @@ export const layer = Layer.effect(
           tags: ["self-improve", "param-profile", profile.taskType, profile.modelId],
           importance: 0.7,
           projectId: "default",
-          source: `self-improve/${profile.taskType}/${profile.modelId}`,
+          source,
           confidence: Math.min(1, profile.samples / 10),
         })
         log.info("self-improve profile recorded", {

@@ -5,7 +5,7 @@
 
 <method id=swe-loop mandatory=true>→SWE-loop: PLAN→ACT→OBSERVE→REFLECT. Not optional—each step in order.
 <steps>
-<step n=1>PLAN: analyze request|decompose subtasks|identify files|load skills via skill()|plan tests|if unclear→google+docs+codebase STOP</step>
+<step n=1>PLAN: analyze request|decompose subtasks|identify files|load skills via skill()|plan tests. IF request ambiguous OR subject not mastered 100% THEN google→read docs→grep codebase; IF still unclear THEN STOP+ask user.</step>
 <step n=2>ACT: execute 1 unit|production-ready 1st intention|one at a time|verify each step</step>
 <step n=3>OBSERVE: read output|check errors|compare w/ expected|capture facts</step>
 <step n=4>REFLECT: evaluate result|adjust approach|store in memory|next cycle or done</step>

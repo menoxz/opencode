@@ -1,6 +1,7 @@
 import { AppProcess } from "@opencode-ai/core/process"
-import { Effect, Layer, Context, Stream } from "effect"
+import { Effect, Layer, Context, Option, Stream } from "effect"
 import { ChildProcess } from "effect/unstable/process"
+import { DEFAULT_TTL, Service as ToolCacheService } from "@/tool/cache"
 
 const cfg = [
   "--no-optional-locks",
@@ -103,6 +104,7 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const appProcess = yield* AppProcess.Service
+    const toolCache = yield* Effect.serviceOption(ToolCacheService).pipe(Effect.map(Option.getOrUndefined))
     const encoder = new TextEncoder()
     const stdin = (text: string) => Stream.make(encoder.encode(text))
 
@@ -212,7 +214,10 @@ export const layer = Layer.effect(
     })
 
     const status = Effect.fn("Git.status")(function* (cwd: string) {
-      return nuls(
+      const key = `git_status:${cwd}`
+      const cached = toolCache ? yield* toolCache.get(key) : null
+      if (cached) return cached.data as Item[]
+      const result = nuls(
         yield* text(["status", "--porcelain=v1", "--untracked-files=all", "--no-renames", "-z", "--", "."], {
           cwd,
         }),
@@ -222,18 +227,25 @@ export const layer = Layer.effect(
         const code = item.slice(0, 2)
         return [{ file, code, status: kind(code) } satisfies Item]
       })
+      if (toolCache) yield* toolCache.set(key, result, DEFAULT_TTL.git_status)
+      return result
     })
 
     const diff = Effect.fn("Git.diff")(function* (cwd: string, ref: string) {
+      const key = `git_diff:${cwd}:${ref}`
+      const cached = toolCache ? yield* toolCache.get(key) : null
+      if (cached) return cached.data as Item[]
       const list = nuls(
         yield* text(["diff", "--no-ext-diff", "--no-renames", "--name-status", "-z", ref, "--", "."], { cwd }),
       )
-      return list.flatMap((code, idx) => {
+      const result = list.flatMap((code, idx) => {
         if (idx % 2 !== 0) return []
         const file = list[idx + 1]
         if (!code || !file) return []
         return [{ file, code, status: kind(code) } satisfies Item]
       })
+      if (toolCache) yield* toolCache.set(key, result, DEFAULT_TTL.git_diff)
+      return result
     })
 
     const stats = Effect.fn("Git.stats")(function* (cwd: string, ref: string) {
@@ -319,7 +331,9 @@ export const layer = Layer.effect(
     })
 
     const applyPatch = Effect.fn("Git.applyPatch")(function* (cwd: string, patch: string) {
-      return yield* run(["apply", "-"], { cwd, stdin: stdin(patch) })
+      const result = yield* run(["apply", "-"], { cwd, stdin: stdin(patch) })
+      if (result.exitCode === 0 && toolCache) yield* toolCache.invalidate(cwd)
+      return result
     })
 
     return Service.of({
@@ -342,6 +356,6 @@ export const layer = Layer.effect(
   }),
 )
 
-export const defaultLayer = layer.pipe(Layer.provide(AppProcess.defaultLayer))
+export const defaultLayer = layer.pipe(Layer.provide(Layer.mergeAll(AppProcess.defaultLayer, ToolCacheService.defaultLayer)))
 
 export * as Git from "."

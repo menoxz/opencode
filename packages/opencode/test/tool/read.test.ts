@@ -12,6 +12,7 @@ import { Permission } from "../../src/permission"
 import { SessionID, MessageID } from "../../src/session/schema"
 import { Instruction } from "../../src/session/instruction"
 import { ReadTool } from "../../src/tool/read"
+import { Service as ToolCacheService } from "../../src/tool/cache"
 import { Truncate } from "@/tool/truncate"
 import { Tool } from "@/tool/tool"
 import { Filesystem } from "@/util/filesystem"
@@ -53,6 +54,7 @@ const readLayer = (flags: Partial<RuntimeFlags.Info> = {}) =>
     LSP.defaultLayer,
     referenceLayer(flags),
     Truncate.defaultLayer,
+    ToolCacheService.defaultLayer,
   )
 
 const it = testEffect(readLayer())
@@ -133,6 +135,11 @@ const load = Effect.fn("ReadToolTest.load")(function* (p: string) {
   const fs = yield* AppFileSystem.Service
   return yield* fs.readFileString(p)
 })
+
+const invalidateCache = Effect.fn("ReadToolTest.invalidateCache")(function* (pattern?: string) {
+  const cache = yield* ToolCacheService
+  return yield* cache.invalidate(pattern)
+})
 const asks = () => {
   const items: Array<Omit<Permission.Request, "id" | "sessionID" | "tool">> = []
   return {
@@ -148,6 +155,26 @@ const asks = () => {
 }
 
 describe("tool.read external_directory permission", () => {
+  it.live("caches file reads and returns fresh content after invalidation", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped()
+      const file = path.join(dir, "cached.txt")
+      yield* put(file, "first")
+
+      const first = yield* exec(dir, { filePath: file })
+      expect(first.output).toContain("first")
+
+      yield* put(file, "second")
+      const cached = yield* exec(dir, { filePath: file })
+      expect(cached.output).toContain("first")
+      expect(cached.output).not.toContain("second")
+
+      yield* invalidateCache(file)
+      const fresh = yield* exec(dir, { filePath: file })
+      expect(fresh.output).toContain("second")
+    }),
+  )
+
   it.live("allows reading absolute path inside project directory", () =>
     Effect.gen(function* () {
       const dir = yield* tmpdirScoped()

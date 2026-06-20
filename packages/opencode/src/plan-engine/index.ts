@@ -157,6 +157,54 @@ export function heuristicComplexity(task: string): string {
   return Complexity.SIMPLE
 }
 
+export function validateExecutionPlan(plan: ExecutionPlan): ExecutionPlan {
+  const ids = new Set<string>()
+  for (const step of plan.steps) {
+    if (ids.has(step.id)) throw new Error(`Duplicate plan step id: ${step.id}`)
+    ids.add(step.id)
+  }
+
+  for (const step of plan.steps) {
+    for (const dep of step.depends) {
+      if (!ids.has(dep)) throw new Error(`Plan step ${step.id} has missing dependency: ${dep}`)
+    }
+  }
+
+  const visiting = new Set<string>()
+  const visited = new Set<string>()
+  const byID = new Map(plan.steps.map((step) => [step.id, step]))
+  const depth = new Map<string, number>()
+
+  function visit(id: string): number {
+    if (depth.has(id)) return depth.get(id)!
+    if (visiting.has(id)) throw new Error(`Plan dependency cycle detected at step: ${id}`)
+    if (visited.has(id)) return depth.get(id) ?? 0
+    visiting.add(id)
+    const step = byID.get(id)!
+    const value = step.depends.length === 0 ? 0 : Math.max(...step.depends.map(visit)) + 1
+    visiting.delete(id)
+    visited.add(id)
+    depth.set(id, value)
+    return value
+  }
+
+  for (const step of plan.steps) visit(step.id)
+
+  const groups = new Map<number, string[]>()
+  for (const [id, value] of depth) {
+    const group = groups.get(value) ?? []
+    group.push(id)
+    groups.set(value, group)
+  }
+
+  return {
+    ...plan,
+    parallelGroups: Array.from(groups.entries())
+      .sort(([a], [b]) => a - b)
+      .map(([, steps]) => steps.sort((a, b) => a.localeCompare(b))),
+  }
+}
+
 // ---------------------------------------------------------------------------
 // LLM-based structured plan generation schema
 // ---------------------------------------------------------------------------
@@ -345,7 +393,7 @@ Return ONLY valid JSON. Do not include markdown, backticks, or any text outside 
         .sort(([a], [b]) => a - b)
         .map(([, steps]) => steps)
 
-      const plan: ExecutionPlan = {
+      const plan: ExecutionPlan = validateExecutionPlan({
         goal: (rawPlan.goal as string) ?? task.slice(0, 200),
         steps: stepsData.map((s) => ({
           id: s.id,
@@ -359,7 +407,7 @@ Return ONLY valid JSON. Do not include markdown, backticks, or any text outside 
         parallelGroups,
         estimatedTokens: estimateTokens(task, stepsData.length),
         complexity: (rawPlan.complexity as ExecutionPlan["complexity"]) ?? complexity,
-      }
+      })
 
       log.info("plan generated", {
         steps: plan.steps.length,

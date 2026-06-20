@@ -8,6 +8,7 @@ import { assertExternalDirectoryEffect } from "./external-directory"
 import DESCRIPTION from "./grep.txt"
 import * as Tool from "./tool"
 import { Reference } from "@/reference/reference"
+import { DEFAULT_TTL, Service as ToolCacheService } from "./cache"
 
 const MAX_LINE_LENGTH = 2000
 
@@ -27,6 +28,7 @@ export const GrepTool = Tool.define(
     const fs = yield* AppFileSystem.Service
     const rg = yield* Ripgrep.Service
     const reference = yield* Reference.Service
+    const cache = yield* ToolCacheService
 
     return {
       description: DESCRIPTION,
@@ -69,6 +71,10 @@ export const GrepTool = Tool.define(
           const cwd = info?.type === "Directory" ? search : path.dirname(search)
           const file = info?.type === "Directory" ? undefined : [path.relative(cwd, search)]
 
+          const cacheKey = `grep:${search}:${params.pattern}:${params.include ?? ""}`
+          const cached = yield* cache.get(cacheKey)
+          if (cached) return cached.data as Tool.ExecuteResult
+
           const result = yield* rg.search({
             cwd,
             pattern: params.pattern,
@@ -76,7 +82,10 @@ export const GrepTool = Tool.define(
             file,
             signal: ctx.abort,
           })
-          if (result.items.length === 0) return empty
+          if (result.items.length === 0) {
+            yield* cache.set(cacheKey, empty, DEFAULT_TTL.grep)
+            return empty
+          }
 
           const rows = result.items.map((item) => ({
             path: AppFileSystem.resolve(
@@ -113,7 +122,10 @@ export const GrepTool = Tool.define(
           const limit = 100
           const truncated = matches.length > limit
           const final = truncated ? matches.slice(0, limit) : matches
-          if (final.length === 0) return empty
+          if (final.length === 0) {
+            yield* cache.set(cacheKey, empty, DEFAULT_TTL.grep)
+            return empty
+          }
 
           const total = matches.length
           const output = [`Found ${total} matches${truncated ? ` (showing first ${limit})` : ""}`]
@@ -142,7 +154,7 @@ export const GrepTool = Tool.define(
             output.push("(Some paths were inaccessible and skipped)")
           }
 
-          return {
+          const outputResult = {
             title: params.pattern,
             metadata: {
               matches: total,
@@ -150,6 +162,8 @@ export const GrepTool = Tool.define(
             },
             output: output.join("\n"),
           }
+          yield* cache.set(cacheKey, outputResult, DEFAULT_TTL.grep)
+          return outputResult
         }).pipe(Effect.orDie),
     }
   }),

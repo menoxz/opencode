@@ -10,6 +10,7 @@ import { assertExternalDirectoryEffect } from "./external-directory"
 import { Instruction } from "../session/instruction"
 import { isPdfAttachment, sniffAttachmentMime } from "@/util/media"
 import { Reference } from "@/reference/reference"
+import { Service as ToolCacheService, DEFAULT_TTL } from "./cache"
 
 const DEFAULT_READ_LIMIT = 2000
 const MAX_LINE_LENGTH = 2000
@@ -43,6 +44,7 @@ export const ReadTool = Tool.define(
     const instruction = yield* Instruction.Service
     const lsp = yield* LSP.Service
     const reference = yield* Reference.Service
+    const cache = yield* ToolCacheService
     const scope = yield* Scope.Scope
 
     const miss = Effect.fn("ReadTool.miss")(function* (filepath: string) {
@@ -292,6 +294,10 @@ export const ReadTool = Tool.define(
         return yield* Effect.fail(new Error(`Cannot read binary file: ${filepath}`))
       }
 
+      const cacheKey = `read:${filepath}:${params.offset || 1}:${params.limit ?? DEFAULT_READ_LIMIT}`
+      const cached = yield* cache.get(cacheKey)
+      if (cached) return cached.data as Tool.ExecuteResult
+
       const file = yield* lines(filepath, { limit: params.limit ?? DEFAULT_READ_LIMIT, offset: params.offset || 1 })
       if (file.count < file.offset && !(file.count === 0 && file.offset === 1)) {
         return yield* Effect.fail(
@@ -320,7 +326,7 @@ export const ReadTool = Tool.define(
         output += `\n\n<system-reminder>\n${loaded.map((item) => item.content).join("\n\n")}\n</system-reminder>`
       }
 
-      return {
+      const result = {
         title,
         output,
         metadata: {
@@ -329,6 +335,8 @@ export const ReadTool = Tool.define(
           loaded: loaded.map((item) => item.filepath),
         },
       }
+      yield* cache.set(cacheKey, result, DEFAULT_TTL.read)
+      return result
     })
 
     return {

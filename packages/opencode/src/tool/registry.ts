@@ -66,6 +66,7 @@ import { Permission } from "@/permission"
 import { Reference } from "@/reference/reference"
 import { BackgroundJob } from "@/background/job"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { Service as ToolCacheService } from "./cache"
 
 const log = Log.create({ service: "tool.registry" })
 
@@ -117,6 +118,7 @@ export const layer: Layer.Layer<
   | Format.Service
   | Truncate.Service
   | RuntimeFlags.Service
+  | ToolCacheService
 > = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -459,6 +461,7 @@ export const defaultLayer = Layer.suspend(() =>
           Ripgrep.defaultLayer,
           Truncate.defaultLayer,
           RuntimeFlags.defaultLayer,
+          ToolCacheService.defaultLayer,
         ),
       ),
     )

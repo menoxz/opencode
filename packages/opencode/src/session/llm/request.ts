@@ -8,10 +8,11 @@ import type { Provider } from "@/provider/provider"
 import { ProviderTransform } from "@/provider/transform"
 import { SystemPrompt } from "../system"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
-import { Effect, Record } from "effect"
+import { Effect, Option, Record } from "effect"
 import { jsonSchema, tool as aiTool, type ModelMessage, type Tool } from "ai"
 import type { Plugin } from "@/plugin"
 import { mergeDeep } from "remeda"
+import { SelfImprove } from "@/self-improve"
 
 const USER_AGENT = `opencode/${InstallationVersion}`
 
@@ -102,7 +103,7 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
           ...input.messages,
         ]
 
-  const params = yield* input.plugin.trigger(
+  let params = yield* input.plugin.trigger(
     "chat.params",
     {
       sessionID: input.sessionID,
@@ -121,6 +122,14 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
       options,
     },
   )
+
+  const selfImprove = yield* Effect.serviceOption(SelfImprove.Service).pipe(Effect.map(Option.getOrUndefined))
+  if (selfImprove && !input.small && input.agent.name !== "general") {
+    const learned = yield* selfImprove
+      .getOptimalParams(input.agent.name, `${input.model.providerID}/${input.model.id}`, params)
+      .pipe(Effect.catch(() => Effect.succeed({ ...params, confidence: 0 })))
+    params = SelfImprove.applyLearnedParams(params, learned)
+  }
 
   const { headers } = yield* input.plugin.trigger(
     "chat.headers",

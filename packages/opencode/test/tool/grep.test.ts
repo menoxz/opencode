@@ -21,6 +21,7 @@ import { Config } from "@/config/config"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Git } from "@/git"
 import { Filesystem } from "@/util/filesystem"
+import { Service as ToolCacheService } from "../../src/tool/cache"
 
 const referenceLayer = (flags: Partial<RuntimeFlags.Info> = {}) =>
   Reference.layer.pipe(
@@ -37,6 +38,7 @@ const toolLayer = (flags: Partial<RuntimeFlags.Info> = {}) =>
     Truncate.defaultLayer,
     Agent.defaultLayer,
     Git.defaultLayer,
+    ToolCacheService.defaultLayer,
     referenceLayer(flags),
   )
 
@@ -89,7 +91,33 @@ const git = Effect.fn("GrepToolTest.git")(function* (cwd: string, args: string[]
   })
 })
 
+const invalidateCache = Effect.fn("GrepToolTest.invalidateCache")(function* (pattern?: string) {
+  const cache = yield* ToolCacheService
+  return yield* cache.invalidate(pattern)
+})
+
 describe("tool.grep", () => {
+  it.instance("caches grep results and refreshes after invalidation", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const info = yield* GrepTool
+      const grep = yield* info.init()
+      const file = path.join(test.directory, "test.txt")
+      yield* Effect.promise(() => Bun.write(file, "alpha\n"))
+
+      const first = yield* grep.execute({ pattern: "alpha", path: test.directory }, ctx)
+      expect(first.output).toContain("alpha")
+
+      yield* Effect.promise(() => Bun.write(file, "beta\n"))
+      const cached = yield* grep.execute({ pattern: "alpha", path: test.directory }, ctx)
+      expect(cached.output).toContain("alpha")
+
+      yield* invalidateCache(test.directory)
+      const fresh = yield* grep.execute({ pattern: "alpha", path: test.directory }, ctx)
+      expect(fresh.output).toBe("No files found")
+    }),
+  )
+
   it.live("basic search", () =>
     Effect.gen(function* () {
       const info = yield* GrepTool

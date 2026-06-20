@@ -66,6 +66,29 @@ describe("session.context-rollout.resolve", () => {
     })
   })
 
+  test("resolves measured profile while preserving explicit overrides", () => {
+    const parsed = ConfigParse.schema(
+      Config.Info,
+      {
+        experimental: {
+          context_rollout: {
+            profile: "measured",
+            replay_tool_outputs: "off",
+          },
+        },
+      },
+      "test:config",
+    )
+
+    expect(SessionContextRollout.resolve(parsed)).toEqual({
+      ...SessionContextRollout.DEFAULTS,
+      replayToolInputs: "summary",
+      replayToolOutputs: "off",
+      replayReasoning: "off",
+      systemBoilerplate: "light",
+    })
+  })
+
   test("uses stable instruction injection alias as fallback when rollout flag is absent", () => {
     const parsed = ConfigParse.schema(
       Config.Info,

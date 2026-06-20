@@ -14,6 +14,7 @@ import {
   type EvalScenario,
 } from "./scenario"
 import { autoEvaluate, validate, evaluateBehavior, executeScenarioInSandbox } from "./index"
+import { commandExecutor, runScenarioReal, type RealScenarioExecutor } from "./real-runner"
 import { createSandbox } from "./sandbox"
 import { mkdtempSync, writeFileSync, existsSync, rmSync, readFileSync, mkdirSync } from "node:fs"
 import { join, dirname } from "node:path"
@@ -438,6 +439,61 @@ describe("Sandbox isolation", () => {
     expect(result.scenarioId).toBe("hello-world")
     expect(result.success).toBe(true)
     expect(result.scenarioName).toBe("Hello World")
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Real runner opt-in
+// ---------------------------------------------------------------------------
+
+describe("real runner", () => {
+  test("runs a scenario in a sandbox and evaluates validation commands against real files", async () => {
+    const executor: RealScenarioExecutor = ({ cwd }) =>
+      Effect.sync(() => {
+        writeFileSync(join(cwd, "hello_eval.py"), `print("Hello, Eval Framework!")`)
+        return {
+          output: "Created hello_eval.py with Hello, Eval Framework!",
+          toolCalls: ["write"],
+          tokensUsed: 42,
+          errors: [],
+        }
+      })
+
+    const result = await Effect.runPromise(runScenarioReal(getScenario("hello-world")!, executor))
+
+    expect(result.success).toBe(true)
+    expect(result.behaviorsMatched).toBe(result.behaviorsTotal)
+    expect(result.toolCalls).toBe(1)
+    expect(result.tokensUsed).toBe(42)
+    expect(result.output).toContain("[Real]")
+  })
+
+  test("fails when the real executor does not satisfy functional validation", async () => {
+    const executor: RealScenarioExecutor = () =>
+      Effect.succeed({
+        output: "Claimed hello_eval.py was created",
+        toolCalls: ["write"],
+        tokensUsed: 1,
+        errors: [],
+      })
+
+    const result = await Effect.runPromise(runScenarioReal(getScenario("hello-world")!, executor))
+
+    expect(result.success).toBe(false)
+    expect(result.behaviorsMatched).toBe(0)
+  })
+
+  test("commandExecutor runs a real command in the sandbox", async () => {
+    const result = await Effect.runPromise(
+      runScenarioReal(
+        getScenario("hello-world")!,
+        commandExecutor(`node -e "require('fs').writeFileSync('hello_eval.py', 'print(\\\"Hello, Eval Framework!\\\")')"`),
+      ),
+    )
+
+    expect(result.success).toBe(true)
+    expect(result.toolCalls).toBe(1)
+    expect(result.output).toContain("command")
   })
 })
 

@@ -7,6 +7,8 @@ STATES: pending=not started|in_progress=actively working (exactly ONE)|completed
 
 RULES: real-time status updates|mark completed only after done+verified|exactly one in_progress at a time|blocked→keep in_progress+add blocker todo|preserve user commands verbatim (flags, args, order)|specific+actionable items, break large work
 
+MANDATORY AUTO-INJECTED TASKS: two tasks are auto-injected on every list — [RESEARCH] (first) and [CLOSE] (last). These are NOT optional and NOT decorative. You MUST actually execute them and mark them `completed` like any other task. NEVER cancel, delete, or silently skip them. [RESEARCH] runs BEFORE any acting task: if the subject is not mastered at 100%, research first (no guessing/creativity) and load an existing skill when one applies. [CLOSE] runs AFTER the work: commit/memory/quality/skill-extraction. If you ignore them the task is considered INCOMPLETE.
+
 EXAMPLES
 USE: "Add dark mode toggle and run tests" → multi-step+verification
 SKIP: "How to print Hello World?" → informational

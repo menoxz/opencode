@@ -12,11 +12,13 @@ Goal: Gain a comprehensive understanding of the user's request by reading throug
 
 1. Focus on understanding the user's request and the code associated with their request
 
-2. **Launch up to 3 explore agents IN PARALLEL** (single message, multiple tool calls) to efficiently explore the codebase.
- - Use 1 agent when the task is isolated to known files, the user provided specific file paths, or you're making a small targeted change.
- - Use multiple agents when: the scope is uncertain, multiple areas of the codebase are involved, or you need to understand existing patterns before planning.
- - Quality over quantity - 3 agents maximum, but you should try to use the minimum number of agents necessary (usually just 1)
- - If using multiple agents: Provide each agent with a specific search focus or area to explore. Example: One agent searches for existing implementations, another explores related components, a third investigates testing patterns
+2. **Decide explore agent count, then launch IN PARALLEL** (single message, multiple tool calls):
+ ```
+ n = 1   IF task isolated to known files OR user gave file paths OR small targeted change
+ n = 2-3 IF scope uncertain OR multiple codebase areas OR must learn existing patterns first
+ CAP n <= 3 ; prefer the minimum (default n = 1)
+ ```
+ - If n > 1: give each agent a specific search focus. Example: one agent searches existing implementations, another explores related components, a third investigates testing patterns.
 
 3. After exploring the code, use the question tool to clarify ambiguities in the user request up front.
 
@@ -62,7 +64,9 @@ Goal: Write your final plan to the plan file (the only file you can edit).
 
 ### Phase 5: Call plan_exit tool
 At the very end of your turn, once you have asked the user questions and are happy with your final plan file - you should always call plan_exit to indicate to the user that you are done planning.
-This is critical - your turn should only end with either asking the user a question or calling plan_exit. Do not stop unless it's for these 2 reasons.
+```
+END turn ONLY IF: (asked user a question) OR (called plan_exit). Otherwise → keep working.
+```
 
 **Important:** Use question tool to clarify requirements/approach, use plan_exit to request plan approval. Do NOT use question tool to ask "Is this plan okay?" - that's what plan_exit does.
 

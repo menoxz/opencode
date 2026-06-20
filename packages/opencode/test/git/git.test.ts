@@ -16,6 +16,12 @@ const scopedTmpdir = (options?: Parameters<typeof tmpdir>[0]) =>
     (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
   )
 
+const scopedNonGitTmpdir = () =>
+  Effect.acquireRelease(
+    Effect.promise(() => fs.mkdtemp(path.join("C:\\jeanluc\\", "opencode-git-test-"))).pipe(Effect.map((path) => ({ path }))),
+    (tmp) => Effect.promise(() => fs.rm(tmp.path, { recursive: true, force: true })),
+  )
+
 describe("Git", () => {
   it.live("branch() returns current branch name", () =>
     Effect.gen(function* () {
@@ -29,7 +35,7 @@ describe("Git", () => {
 
   it.live("branch() returns undefined for non-git directories", () =>
     Effect.gen(function* () {
-      const tmp = yield* scopedTmpdir()
+      const tmp = yield* scopedNonGitTmpdir()
       const git = yield* Git.Service
       const branch = yield* git.branch(tmp.path)
       expect(branch).toBeUndefined()
@@ -73,6 +79,46 @@ describe("Git", () => {
           }),
         ]),
       )
+    }),
+  )
+
+  it.live("status() and diff() cache results until applyPatch() invalidates the repository cache", () =>
+    Effect.gen(function* () {
+      const tmp = yield* scopedTmpdir({ git: true })
+      yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, "tracked.txt"), "one\n", "utf-8"))
+      yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, "other.txt"), "keep\n", "utf-8"))
+      yield* Effect.promise(() => $`git add .`.cwd(tmp.path).quiet())
+      yield* Effect.promise(() => $`git commit --no-gpg-sign -m "add files"`.cwd(tmp.path).quiet())
+      yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, "tracked.txt"), "two\n", "utf-8"))
+
+      const git = yield* Git.Service
+      const firstStatus = yield* git.status(tmp.path)
+      const firstDiff = yield* git.diff(tmp.path, "HEAD")
+      expect(firstStatus.map((item) => item.file)).toContain("tracked.txt")
+      expect(firstDiff.map((item) => item.file)).toContain("tracked.txt")
+
+      yield* Effect.promise(() => fs.rm(path.join(tmp.path, "other.txt")))
+      const cachedStatus = yield* git.status(tmp.path)
+      const cachedDiff = yield* git.diff(tmp.path, "HEAD")
+      expect(cachedStatus.map((item) => item.file)).not.toContain("other.txt")
+      expect(cachedDiff.map((item) => item.file)).not.toContain("other.txt")
+
+      const apply = yield* git.applyPatch(
+        tmp.path,
+        "diff --git a/applied.txt b/applied.txt\n" +
+          "new file mode 100644\n" +
+          "index 0000000..5b6d30a\n" +
+          "--- /dev/null\n" +
+          "+++ b/applied.txt\n" +
+          "@@ -0,0 +1 @@\n" +
+          "+applied\n",
+      )
+      expect(apply.exitCode).toBe(0)
+
+      const refreshedStatus = yield* git.status(tmp.path)
+      const refreshedDiff = yield* git.diff(tmp.path, "HEAD")
+      expect(refreshedStatus.map((item) => item.file)).toEqual(expect.arrayContaining(["applied.txt", "other.txt"]))
+      expect(refreshedDiff.map((item) => item.file)).toContain("other.txt")
     }),
   )
 

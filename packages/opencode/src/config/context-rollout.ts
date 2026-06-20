@@ -10,8 +10,12 @@ const InjectionInstructions = Schema.Literals(["full", "summary", "off"])
 const SystemBoilerplate = Schema.Literals(["full", "light", "minimal"])
 const CavemanSyntheticArtifacts = Schema.Literals(["on", "off"])
 const GoalDod = Schema.Literals(["on", "off"])
+const Profile = Schema.Literals(["baseline", "measured"])
 
 export const Info = Schema.Struct({
+  profile: Schema.optional(Profile).annotate({
+    description: "Applies a named context profile before per-field overrides. 'baseline' preserves defaults; 'measured' uses conservative context reductions.",
+  }),
   replay_tool_inputs: Schema.optional(ReplayToolInputs).annotate({
     description: "Controls how historical tool inputs are replayed into model context.",
   }),

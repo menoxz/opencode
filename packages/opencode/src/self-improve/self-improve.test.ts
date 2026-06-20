@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from "bun:test"
-import { updateProfile, type SessionOutcome } from "./index"
+import { applyLearnedParams, storedProfileFromMemoryEntries, updateProfile, type SessionOutcome } from "./index"
 
 // ---------------------------------------------------------------------------
 // Profile update logic (pure function, no Effect deps needed)
@@ -122,6 +122,39 @@ describe("SessionOutcome validation", () => {
     }
     expect(outcome.success).toBe(false)
     expect(outcome.errors.length).toBe(2)
+  })
+})
+
+describe("applyLearnedParams", () => {
+  it("keeps current params when confidence is below threshold", () => {
+    const current = { temperature: 0.7, topP: 0.9, maxOutputTokens: 4000 }
+    expect(applyLearnedParams(current, { temperature: 0.2, confidence: 0.59 })).toEqual(current)
+  })
+
+  it("applies learned params when confidence meets threshold", () => {
+    expect(
+      applyLearnedParams(
+        { temperature: 0.7, topP: 0.9, maxOutputTokens: 4000 },
+        { temperature: 0.2, topP: 0.8, confidence: 0.6 },
+      ),
+    ).toEqual({ temperature: 0.2, topP: 0.8, maxOutputTokens: 4000 })
+  })
+})
+
+describe("storedProfileFromMemoryEntries", () => {
+  it("returns the matching serialized profile with the most samples", () => {
+    const source = "self-improve/bug-fix/unknown"
+    const profile = storedProfileFromMemoryEntries(
+      [
+        { source, content: JSON.stringify({ taskType: "bug-fix", modelId: "unknown", samples: 1, avgSuccessRate: 1, avgTokensUsed: 10, avgToolCalls: 1, updatedAt: 1 }) },
+        { source: "other", content: JSON.stringify({ samples: 99 }) },
+        { source, content: "not-json" },
+        { source, content: JSON.stringify({ taskType: "bug-fix", modelId: "unknown", samples: 3, avgSuccessRate: 0.8, avgTokensUsed: 20, avgToolCalls: 2, updatedAt: 2 }) },
+      ],
+      source,
+    )
+    expect(profile?.samples).toBe(3)
+    expect(profile?.avgSuccessRate).toBe(0.8)
   })
 })
 

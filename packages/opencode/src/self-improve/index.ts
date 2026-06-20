@@ -161,6 +161,37 @@ function computeParamAdjustment(
   }
 }
 
+export function applyLearnedParams<T extends { temperature?: number; topP?: number; maxOutputTokens?: number }>(
+  current: T,
+  learned: { temperature?: number; topP?: number; maxOutputTokens?: number; confidence: number },
+  threshold = 0.6,
+): T {
+  if (learned.confidence < threshold) return current
+  return {
+    ...current,
+    ...(learned.temperature === undefined ? {} : { temperature: learned.temperature }),
+    ...(learned.topP === undefined ? {} : { topP: learned.topP }),
+    ...(learned.maxOutputTokens === undefined ? {} : { maxOutputTokens: learned.maxOutputTokens }),
+  }
+}
+
+export function storedProfileFromMemoryEntries(
+  entries: Iterable<{ source?: string; content: string }>,
+  source: string,
+): ParameterProfile | null {
+  let best: ParameterProfile | null = null
+  for (const entry of entries) {
+    if (entry.source !== source) continue
+    try {
+      const parsed = JSON.parse(entry.content) as ParameterProfile
+      if (!best || (parsed.samples ?? 0) > (best.samples ?? 0)) best = parsed
+    } catch {
+      // Ignore corrupt legacy entries and keep scanning for a usable cumulative profile.
+    }
+  }
+  return best
+}
+
 // ---------------------------------------------------------------------------
 // Layer
 // ---------------------------------------------------------------------------

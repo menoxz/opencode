@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Option, Schema } from "effect"
 import * as path from "path"
 import { Effect } from "effect"
 import * as Tool from "./tool"
@@ -14,6 +14,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { trimDiff } from "./edit"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import * as Bom from "@/util/bom"
+import { Service as ToolCacheService } from "./cache"
 
 const MAX_PROJECT_DIAGNOSTICS_FILES = 5
 
@@ -70,6 +71,8 @@ export const WriteTool = Tool.define(
             file: filepath,
             event: exists ? "change" : "add",
           })
+          const cache = yield* Effect.serviceOption(ToolCacheService).pipe(Effect.map(Option.getOrUndefined))
+          if (cache) yield* cache.invalidate(filepath)
 
           let output = "Wrote file successfully."
           yield* lsp.touchFile(filepath, "document")

@@ -8,6 +8,7 @@ import { assertExternalDirectoryEffect } from "./external-directory"
 import DESCRIPTION from "./glob.txt"
 import * as Tool from "./tool"
 import { Reference } from "@/reference/reference"
+import { DEFAULT_TTL, Service as ToolCacheService } from "./cache"
 
 export const Parameters = Schema.Struct({
   pattern: Schema.String.annotate({ description: "The glob pattern to match files against" }),
@@ -22,6 +23,7 @@ export const GlobTool = Tool.define(
     const rg = yield* Ripgrep.Service
     const fs = yield* AppFileSystem.Service
     const reference = yield* Reference.Service
+    const cache = yield* ToolCacheService
 
     return {
       description: DESCRIPTION,
@@ -50,6 +52,10 @@ export const GlobTool = Tool.define(
             bypass: yield* reference.contains(search),
             kind: "directory",
           })
+
+          const cacheKey = `glob:${search}:${params.pattern}`
+          const cached = yield* cache.get(cacheKey)
+          if (cached) return cached.data as Tool.ExecuteResult
 
           const limit = 100
           let truncated = false
@@ -89,7 +95,7 @@ export const GlobTool = Tool.define(
             }
           }
 
-          return {
+          const result = {
             title: path.relative(ins.worktree, search),
             metadata: {
               count: files.length,
@@ -97,6 +103,8 @@ export const GlobTool = Tool.define(
             },
             output: output.join("\n"),
           }
+          yield* cache.set(cacheKey, result, DEFAULT_TTL.glob)
+          return result
         }).pipe(Effect.orDie),
     }
   }),

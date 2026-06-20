@@ -3,6 +3,7 @@ import { Effect, Duration, Schedule } from "effect"
 import { effectCmd } from "../effect-cmd"
 import { cmd } from "./cmd"
 import { Eval } from "@/eval"
+import { commandExecutor, runScenarioReal } from "@/eval/real-runner"
 
 function parseModelArg(value: string): { providerID: string; modelID: string } {
   const [providerID, ...rest] = value.split("/")
@@ -62,7 +63,7 @@ const ListCommand = effectCmd({
 
 const RunCommand = effectCmd({
   command: "run [target]",
-  describe: "run an evaluation scenario or suite in simulation mode (no LLM needed)",
+  describe: "run an evaluation scenario or suite",
   builder: (yargs) =>
     yargs
       .positional("target", {
@@ -77,6 +78,12 @@ const RunCommand = effectCmd({
         type: "string",
         alias: ["m"],
         describe: "model to use in the format of provider/model — only for real-agent runs",
+      })
+      .option("runner", {
+        type: "string",
+        choices: ["simulated", "real"] as const,
+        default: "simulated",
+        describe: "runner mode: simulated is deterministic; real is opt-in and uses real scenario validation",
       }),
   handler: Effect.fn("Cli.eval.run")(function* (args) {
     if (!args.target) {
@@ -87,6 +94,9 @@ const RunCommand = effectCmd({
     const svc = yield* Eval.Service
     const agentArg: string | undefined = args.agent
     const modelArg = args.model ? parseModelArg(args.model) : undefined
+    const runner = args.runner ?? "simulated"
+
+    const realCommand = process.env.OPENCODE_EVAL_REAL_COMMAND
 
     // Try scenario (single)
     const scenario = svc.getScenario(args.target)
@@ -94,6 +104,25 @@ const RunCommand = effectCmd({
       process.stdout.write("Running scenario: " + scenario.name + "..." + EOL)
       if (agentArg) process.stdout.write("  Agent:      " + agentArg + EOL)
       if (modelArg) process.stdout.write("  Model:      " + modelArg.providerID + "/" + modelArg.modelID + EOL)
+      if (runner === "real") {
+        if (!realCommand) {
+          process.stdout.write(
+            "Real eval CLI requires OPENCODE_EVAL_REAL_COMMAND for this iteration." + EOL +
+              "The command runs in the scenario sandbox; SessionPrompt LLM execution remains a future integration." + EOL,
+          )
+          return
+        }
+        const sc = yield* runScenarioReal(scenario, commandExecutor(realCommand))
+        const report = yield* svc.recordRun([sc], scenario.id, scenario.name)
+        process.stdout.write("" + EOL)
+        process.stdout.write("  Result:     " + (sc.success ? "PASS" : "FAIL") + EOL)
+        process.stdout.write("  Behaviors:  " + sc.behaviorsMatched + "/" + sc.behaviorsTotal + EOL)
+        process.stdout.write("  Duration:   " + sc.durationMs + "ms" + EOL)
+        process.stdout.write("  Tokens:     " + sc.tokensUsed + EOL)
+        if (sc.errors.length > 0) process.stdout.write("  Errors:     " + sc.errors.join(", ") + EOL)
+        process.stdout.write("  Run ID:     " + report.runId + EOL)
+        return
+      }
       const result = yield* svc.runSuite(args.target, { mode: "auto", record: false })
       // runSuite returns a report — extract first scenario
       const report = yield* svc.recordRun(result.scenarios, scenario.id, scenario.name)
@@ -115,6 +144,30 @@ const RunCommand = effectCmd({
       process.stdout.write("Running suite: " + suite.name + " (" + suite.scenarios.length + " scenarios)..." + EOL)
       if (agentArg) process.stdout.write("  Agent:      " + agentArg + EOL)
       if (modelArg) process.stdout.write("  Model:      " + modelArg.providerID + "/" + modelArg.modelID + EOL)
+      if (runner === "real") {
+        if (!realCommand) {
+          process.stdout.write(
+            "Real eval CLI requires OPENCODE_EVAL_REAL_COMMAND for this iteration." + EOL +
+              "The command runs in each scenario sandbox; SessionPrompt LLM execution remains a future integration." + EOL,
+          )
+          return
+        }
+        const results = []
+        for (const sc of suite.scenarios) results.push(yield* runScenarioReal(sc, commandExecutor(realCommand)))
+        const report = yield* svc.recordRun(results, suite.id, suite.name)
+        process.stdout.write("" + EOL)
+        for (const sc of report.scenarios) {
+          process.stdout.write("  [" + sc.scenarioId + "] " + sc.scenarioName + "... " + EOL)
+          process.stdout.write("    " + (sc.success ? "✓ PASS" : "✗ FAIL") + "  " + sc.behaviorsMatched + "/" + sc.behaviorsTotal + "  " + sc.durationMs + "ms" + EOL)
+        }
+        process.stdout.write("" + EOL)
+        process.stdout.write("  Suite:      " + suite.name + EOL)
+        process.stdout.write("  Passed:     " + report.passed + "/" + report.totalScenarios + EOL)
+        process.stdout.write("  Pass rate:  " + (report.passRate * 100).toFixed(1) + "%" + EOL)
+        process.stdout.write("  Duration:   " + report.durationMs + "ms" + EOL)
+        process.stdout.write("  Run ID:     " + report.runId + EOL)
+        return
+      }
       const report = yield* svc.runSuite(args.target)
       process.stdout.write("" + EOL)
       for (const sc of report.scenarios) {

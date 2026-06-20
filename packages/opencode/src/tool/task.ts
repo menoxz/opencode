@@ -51,8 +51,15 @@ export const Parameters = Schema.Struct({
   }),
 })
 
+function escapeTaskMarkup(text: string) {
+  return text
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+}
+
 function output(sessionID: SessionID, text: string) {
-  return [`<task id="${sessionID}" state="completed">`, "<task_result>", text, "</task_result>", "</task>"].join("\n")
+  return [`<task id="${sessionID}" state="completed">`, "<task_result>", escapeTaskMarkup(text), "</task_result>", "</task>"].join("\n")
 }
 
 function backgroundOutput(sessionID: SessionID) {
@@ -80,9 +87,9 @@ function backgroundMessage(input: {
       : `Background task failed: ${input.description}`
   return [
     `<task id="${input.sessionID}" state="${input.state}">`,
-    `<summary>${title}</summary>`,
+    `<summary>${escapeTaskMarkup(title)}</summary>`,
     `<${tag}>`,
-    input.text,
+    escapeTaskMarkup(input.text),
     `</${tag}>`,
     "</task>",
   ].join("\n")
@@ -91,6 +98,29 @@ function backgroundMessage(input: {
 function errorText(error: unknown) {
   if (error instanceof Error) return error.message
   return String(error)
+}
+
+function validateTaskSession(input: {
+  taskID: SessionID
+  session: Session.Info
+  parentSessionID: SessionID
+  subagent: Agent.Info
+}) {
+  if (input.session.parentID !== input.parentSessionID) {
+    return Effect.fail(
+      new Error(
+        `Cannot resume task ${input.taskID}: it does not belong to parent session ${input.parentSessionID}.`,
+      ),
+    )
+  }
+  if (input.session.agent && input.session.agent !== input.subagent.name) {
+    return Effect.fail(
+      new Error(
+        `Cannot resume task ${input.taskID}: it was created for agent ${input.session.agent}, not ${input.subagent.name}.`,
+      ),
+    )
+  }
+  return Effect.succeed(input.session)
 }
 
 export const TaskTool = Tool.define(
@@ -132,18 +162,33 @@ export const TaskTool = Tool.define(
         return yield* Effect.fail(new Error(`Unknown agent type: ${params.subagent_type} is not a valid agent type`))
       }
 
-      const session = params.task_id
-        ? yield* sessions.get(SessionID.make(params.task_id)).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
-        : undefined
       const parent = yield* sessions.get(ctx.sessionID)
       const parentAgent = parent.agent
         ? yield* agent.get(parent.agent).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
+        : undefined
+      const session = params.task_id
+        ? yield* sessions
+            .get(SessionID.make(params.task_id))
+            .pipe(
+              Effect.catchCause(() =>
+                Effect.fail(new Error(`Cannot resume task ${params.task_id}: task_id does not exist.`)),
+              ),
+              Effect.andThen((item) =>
+                validateTaskSession({
+                  taskID: SessionID.make(params.task_id!),
+                  session: item,
+                  parentSessionID: ctx.sessionID,
+                  subagent: next,
+                }),
+              ),
+            )
         : undefined
       const nextSession =
         session ??
         (yield* sessions.create({
           parentID: ctx.sessionID,
           title: params.description + ` (@${next.name} subagent)`,
+          agent: next.name,
           permission: [
             ...deriveSubagentSessionPermission({
               parentSessionPermission: parent.permission ?? [],
