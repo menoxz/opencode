@@ -11,7 +11,7 @@ The opencode fork has a hot-reload system that watches files and invalidates cac
 | Component | Watcher? | Cache Invalidation | Notification |
 |-----------|----------|-------------------|--------------|
 | Skills (`src/skill/index.ts`) | ✅ fs.watch, 300ms debounce | ✅ `Skill.reload()` | Next LLM turn |
-| Agents (`src/agent/agent.ts`) | ✅ fs.watch, 300ms debounce | ✅ `Agent.reload()` | Next LLM turn |
+| Agents (`src/agent/agent.ts`) | ✅ fs.watch, 300ms debounce (wired in ADR-009) | ✅ `Agent.reload()` (wired in ADR-009) | Next LLM turn |
 | Instructions (`src/session/instruction.ts`) | ❌ No watcher | ✅ `Instruction.system()` re-reads every turn | N/A |
 | Config (`opencode.json`) | ✅ fs.watch (multiple watchers) | ✅ Triggers `MCP.reload()` | Next LLM turn |
 | MCP servers | ✅ `setupMcpWatchers()` in `mcp/index.ts` | ✅ Calls `reload()` | Next LLM turn |
