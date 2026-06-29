@@ -6,6 +6,11 @@ import { errorMessage } from "@/util/error"
 type Result = Awaited<ReturnType<typeof streamText>>
 type AISDKEvent = Result["fullStream"] extends AsyncIterable<infer T> ? T : never
 
+// Stable placeholder used when a tool event arrives before (or without) its
+// matching tool-input-start, so toolNames has no recorded name yet. Centralised
+// so the fallback stays consistent across delta/end/result/error branches.
+const UNKNOWN_TOOL = "unknown"
+
 export function adapterState() {
   return {
     step: 0,
@@ -96,10 +101,11 @@ export function toLLMEvents(
 
     case "text-start":
       return Effect.sync(() => {
-        state.currentTextID = currentTextID(state, event.id)
+        // currentTextID() already records the id on state; reuse the return value.
+        const id = currentTextID(state, event.id)
         return [
           LLMEvent.textStart({
-            id: state.currentTextID,
+            id,
             providerMetadata: providerMetadata(event.providerMetadata),
           }),
         ]
@@ -128,10 +134,11 @@ export function toLLMEvents(
 
     case "reasoning-start":
       return Effect.sync(() => {
-        state.currentReasoningID = currentReasoningID(state, event.id)
+        // currentReasoningID() already records the id on state; reuse the return value.
+        const id = currentReasoningID(state, event.id)
         return [
           LLMEvent.reasoningStart({
-            id: state.currentReasoningID,
+            id,
             providerMetadata: providerMetadata(event.providerMetadata),
           }),
         ]
@@ -174,7 +181,7 @@ export function toLLMEvents(
       return Effect.succeed([
         LLMEvent.toolInputDelta({
           id: event.id,
-          name: state.toolNames[event.id] ?? "unknown",
+          name: state.toolNames[event.id] ?? UNKNOWN_TOOL,
           text: event.delta ?? "",
         }),
       ])
@@ -183,7 +190,7 @@ export function toLLMEvents(
       return Effect.succeed([
         LLMEvent.toolInputEnd({
           id: event.id,
-          name: state.toolNames[event.id] ?? "unknown",
+          name: state.toolNames[event.id] ?? UNKNOWN_TOOL,
           providerMetadata: providerMetadata(event.providerMetadata),
         }),
       ])
@@ -204,7 +211,7 @@ export function toLLMEvents(
 
     case "tool-result":
       return Effect.sync(() => {
-        const name = state.toolNames[event.toolCallId] ?? "unknown"
+        const name = state.toolNames[event.toolCallId] ?? UNKNOWN_TOOL
         delete state.toolNames[event.toolCallId]
         return [
           LLMEvent.toolResult({
@@ -219,7 +226,7 @@ export function toLLMEvents(
 
     case "tool-error":
       return Effect.sync(() => {
-        const name = state.toolNames[event.toolCallId] ?? ("toolName" in event ? event.toolName : "unknown")
+        const name = state.toolNames[event.toolCallId] ?? ("toolName" in event ? event.toolName : UNKNOWN_TOOL)
         delete state.toolNames[event.toolCallId]
         return [
           LLMEvent.toolError({
@@ -233,6 +240,8 @@ export function toLLMEvents(
       })
 
     case "error":
+      // Preserve the original AI SDK error value verbatim so the session layer keeps
+      // full provider/cause context for diagnostics. Do not wrap or stringify here.
       return Effect.fail(event.error)
 
     case "abort":
@@ -241,6 +250,7 @@ export function toLLMEvents(
     case "raw":
     case "tool-output-denied":
     case "tool-approval-request":
+      // Intentionally session-invisible: no LLMEvent shape exists for these yet.
       return Effect.succeed([])
 
     default: {

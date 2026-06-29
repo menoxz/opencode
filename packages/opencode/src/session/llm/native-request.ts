@@ -55,7 +55,9 @@ const textPart = (part: Record<string, unknown>) => ({
 
 const mediaPart = (part: Record<string, unknown>) => {
   if (typeof part.data !== "string" && !(part.data instanceof Uint8Array))
-    throw new Error("Native LLM request adapter only supports file parts with string or Uint8Array data")
+    throw new Error(
+      `Native LLM request adapter only supports file parts with string or Uint8Array data, received ${part.data === null ? "null" : typeof part.data}`,
+    )
   return {
     type: "media" as const,
     mediaType: typeof part.mediaType === "string" ? part.mediaType : "application/octet-stream",
@@ -78,7 +80,10 @@ const toolResult = (part: Record<string, unknown>) => {
 }
 
 const contentPart = (part: unknown) => {
-  if (!isRecord(part)) throw new Error("Native LLM request adapter only supports object content parts")
+  if (!isRecord(part))
+    throw new Error(
+      `Native LLM request adapter only supports object content parts, received ${part === null ? "null" : Array.isArray(part) ? "array" : typeof part}`,
+    )
   if (part.type === "text") return textPart(part)
   if (part.type === "file") return mediaPart(part)
   if (part.type === "reasoning")
@@ -103,17 +108,23 @@ const content = (value: ModelMessage["content"]) =>
   typeof value === "string" ? [{ type: "text" as const, text: value }] : value.map(contentPart)
 
 const messages = (input: readonly ModelMessage[]) => {
-  const system = input.flatMap((message) => (message.role === "system" ? [SystemPart.make(message.content)] : []))
-  const messages = input.flatMap((message) => {
-    if (message.role === "system") return []
-    return [
+  const system: SystemPart[] = []
+  const messages: Message[] = []
+  // Single pass: split system prompts from conversational messages without
+  // walking the input twice.
+  for (const message of input) {
+    if (message.role === "system") {
+      system.push(SystemPart.make(message.content))
+      continue
+    }
+    messages.push(
       Message.make({
         role: message.role,
         content: content(message.content),
         native: isRecord(message.providerOptions) ? { providerOptions: message.providerOptions } : undefined,
       }),
-    ]
-  })
+    )
+  }
   return { system, messages }
 }
 
@@ -147,16 +158,19 @@ const baseURL = (input: Provider.Model | RequestInput) =>
 
 const requireBaseURL = (model: Provider.Model, url: string | undefined) => {
   if (url) return url
-  throw new Error(`Native LLM request adapter requires a base URL for ${model.providerID}/${model.id}`)
+  throw new Error(
+    `Native LLM request adapter requires a base URL for ${model.providerID}/${model.id} (${model.api.npm})`,
+  )
 }
 
 export const model = (input: Provider.Model | RequestInput, headers?: Record<string, string>) => {
   const model = "model" in input ? input.model : input
   const url = baseURL(input)
+  const mergedHeaders = { ...model.headers, ...headers }
   const options = {
     ...("model" in input && input.apiKey ? { apiKey: input.apiKey } : {}),
     ...(url ? { baseURL: url } : {}),
-    headers: Object.keys({ ...model.headers, ...headers }).length === 0 ? undefined : { ...model.headers, ...headers },
+    headers: Object.keys(mergedHeaders).length === 0 ? undefined : mergedHeaders,
     limits: {
       context: model.limit.context,
       output: model.limit.output,

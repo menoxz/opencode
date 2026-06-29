@@ -23,10 +23,23 @@ export type ReferencePromptMetadata = typeof ReferencePromptMetadata.Type
 
 const decodeReferencePromptMetadata = Schema.decodeUnknownOption(ReferencePromptMetadata)
 
+/**
+ * Decode arbitrary part metadata into ReferencePromptMetadata. Returns undefined
+ * when absent or malformed. Called once per text part on the prompt-build hot path,
+ * so nullish input is fast-pathed to skip Schema decoding (no-op: the decoder would
+ * yield undefined anyway, since null/undefined can never satisfy the Struct).
+ */
 export function referencePromptMetadata(input: unknown) {
+  if (input === undefined || input === null) return undefined
   return Option.getOrUndefined(decodeReferencePromptMetadata(input))
 }
 
+/**
+ * Build the synthetic text part injected for a configured @reference. The body is
+ * derived purely from `input` (no behavior depends on order of optional fields).
+ * For "invalid" references with no explicit problem, the reference's own message is
+ * surfaced as the Problem line so failures stay visible to the model.
+ */
 export function referenceTextPart(input: {
   reference: Reference.Resolved
   source: ReferencePromptMetadata["source"]

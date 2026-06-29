@@ -30,6 +30,11 @@ function usage(part: MessageV2.Part | (typeof PartTable.$inferSelect)["data"]): 
 }
 
 function applyUsage(db: TxOrDb, sessionID: Session.Info["id"], value: Usage, sign = 1) {
+  // Skip a pure no-op SQL write: a zero-delta update only self-assigns
+  // time_updated and touches no real column. Streaming step-finish parts can
+  // carry zeroed cost/tokens, so guard them out cheaply.
+  const t = value.tokens
+  if (!value.cost && !t.input && !t.output && !t.reasoning && !t.cache.read && !t.cache.write) return
   db.update(SessionTable)
     .set({
       cost: sql`${SessionTable.cost} + ${value.cost * sign}`,
@@ -144,14 +149,20 @@ export default [
   }),
 
   SyncEvent.project(MessageV2.Event.Removed, (db, data) => {
+    const start = Date.now()
+    let reverted = 0
     for (const row of db
       .select()
       .from(PartTable)
       .where(and(eq(PartTable.message_id, data.messageID), eq(PartTable.session_id, data.sessionID)))
       .all()) {
       const previous = usage(row.data)
-      if (previous) applyUsage(db, data.sessionID, previous, -1)
+      if (previous) {
+        applyUsage(db, data.sessionID, previous, -1)
+        reverted++
+      }
     }
+    log.debug("message removed", { messageID: data.messageID, reverted, ms: Date.now() - start })
     db.delete(MessageTable)
       .where(and(eq(MessageTable.id, data.messageID), eq(MessageTable.session_id, data.sessionID)))
       .run()
@@ -192,7 +203,7 @@ export default [
       if (next) applyUsage(db, sessionID, next)
     } catch (err) {
       if (!foreign(err)) throw err
-      log.warn("ignored late part update", { partID: id, messageID, sessionID })
+      log.warn("ignored late part update", { partID: id, messageID, sessionID, type: rest.type })
     }
   }),
 
