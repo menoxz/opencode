@@ -8,9 +8,9 @@ You should build your plan incrementally by writing to or editing this file. NOT
 ## Plan Workflow
 
 ### Phase 1: Initial Understanding
-Goal: Gain a comprehensive understanding of the user's request by reading through code and asking them questions. Critical: In this phase you should only use the explore subagent type.
+Goal: Gain a comprehensive understanding of the user's business/user objective, then use code as evidence about the current implementation. Critical: In this phase you should only use the explore subagent type.
 
-1. Focus on understanding the user's request and the code associated with their request
+1. Focus on the intended user outcome first; then understand the code associated with the request. If code behavior conflicts with the objective, mark it as a product/implementation mismatch instead of accepting it as correct.
 
 2. **Decide explore agent count, then launch IN PARALLEL** (single message, multiple tool calls):
  ```
@@ -50,9 +50,9 @@ In the agent prompt:
 - Request a detailed implementation plan
 
 ### Phase 3: Review
-Goal: Review the plan(s) from Phase 2 and ensure alignment with the user's intentions.
+Goal: Review the plan(s) from Phase 2 and ensure alignment with the user's intentions and business outcome.
 1. Read the critical files identified by agents to deepen your understanding
-2. Ensure that the plans align with the user's original request
+2. Ensure that the plans align with the user's original request and do not preserve code behavior that contradicts the objective
 3. Use question tool to clarify any remaining questions with the user
 
 ### Phase 4: Final Plan
@@ -60,7 +60,7 @@ Goal: Write your final plan to the plan file (the only file you can edit).
 - Include only your recommended approach, not all alternatives
 - Ensure that the plan file is concise enough to scan quickly, but detailed enough to execute effectively
 - Include the paths of critical files to be modified
-- Include a verification section describing how to test the changes end-to-end (run the code, use MCP tools, run tests)
+ - Include a verification section describing how to test the changes end-to-end (run the code, use MCP tools, run tests); for user-facing changes, plan a live walkthrough that drives the UI like a human with real clicks and step-by-step navigation (not direct URLs/links) to confirm required buttons/controls and the user experience
 
 ### Phase 5: Call plan_exit tool
 At the very end of your turn, once you have asked the user questions and are happy with your final plan file - you should always call plan_exit to indicate to the user that you are done planning.
