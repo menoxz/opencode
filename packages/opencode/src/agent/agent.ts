@@ -374,54 +374,84 @@ export const layer = Layer.effect(
 
     let watcherCleanup: (() => void) | null = null
     let bridge: EffectBridge.Shape | null = null
+    let started = false
 
+    // Invalidate the cached agent state so the next access re-parses agent
+    // files from disk. Agent definitions (including `.md` files) are loaded via
+    // the Config service, so its cache must be invalidated first; then the
+    // Agent state is rebuilt. Because the system prompt is rebuilt every chat
+    // turn with a fresh agent lookup, this is enough for updated agent
+    // instructions to take effect in the CURRENT running session.
     const reload: Interface["reload"] = Effect.fn("Agent.reload")(function* () {
+      yield* config.invalidate()
       yield* InstanceState.invalidate(state)
-      yield* InstanceState.get(state)
-      // Lazily set up watchers using EffectBridge for callback-to-Effect bridging
-      if (!bridge) bridge = yield* EffectBridge.make().pipe(Effect.catchCause(() => Effect.succeed(null as any)))
-      if (bridge) {
-        if (watcherCleanup) { watcherCleanup(); watcherCleanup = null }
-        const watchers: fs.FSWatcher[] = []
-        const timers = new Map<string, ReturnType<typeof setTimeout>>()
-        const DEBOUNCE_MS = 300
-        const cfgDirs = yield* config.directories()
-        const allDirs = [...new Set([...cfgDirs, Global.Path.config, path.join(Global.Path.config, "agents")])]
-        for (const dir of allDirs) {
-          if (!fs.existsSync(dir)) continue
-          try {
-            const w = fs.watch(dir, { recursive: true }, (eventType, filename) => {
-              if (!filename) return
-              const fp = path.join(dir, filename.toString())
-              clearTimeout(timers.get(fp))
-              timers.set(fp, setTimeout(() => {
-                timers.delete(fp)
-                bridge!.promise(reload()).catch((err) => console.error("agent reload error", err))
-              }, DEBOUNCE_MS))
-            })
-            watchers.push(w)
-          } catch { /* skip unwatchable dirs */ }
-        }
-        watcherCleanup = () => {
-          for (const w of watchers) w.close()
-          for (const t of timers.values()) clearTimeout(t)
-          timers.clear()
-        }
-      }
       return (yield* InstanceState.useEffect(state, (s) => s.list())).length
     })
 
+    // Lazily arm file watchers on agent/config directories. Armed once on
+    // first access; a debounced change triggers reload() (invalidate only),
+    // so the watcher itself is not re-created on every edit.
+    const ensureWatching = Effect.fnUntraced(function* () {
+      if (started) return
+      started = true
+      // In pure mode (tests / sandboxes) we do not arm file watchers; reload()
+      // can still be invoked directly to invalidate caches.
+      if (flags.pure) return
+      if (!bridge) bridge = yield* EffectBridge.make().pipe(Effect.catchCause(() => Effect.succeed(null as any)))
+      if (!bridge) return
+      if (watcherCleanup) { watcherCleanup(); watcherCleanup = null }
+      const watchers: fs.FSWatcher[] = []
+      const timers = new Map<string, ReturnType<typeof setTimeout>>()
+      const DEBOUNCE_MS = 300
+      const cfgDirs = yield* config.directories()
+      const allDirs = [...new Set([...cfgDirs, Global.Path.config, path.join(Global.Path.config, "agents")])]
+      for (const dir of allDirs) {
+        if (!fs.existsSync(dir)) continue
+        try {
+          const w = fs.watch(dir, { recursive: true }, (eventType, filename) => {
+            if (!filename) return
+            const fp = path.join(dir, filename.toString())
+            // Only react to agent definition or config files.
+            if (!isAgentFile(fp) && !isConfigFile(fp)) return
+            clearTimeout(timers.get(fp))
+            timers.set(fp, setTimeout(() => {
+              timers.delete(fp)
+              bridge!.promise(reload()).catch((err) => console.error("agent reload error", err))
+            }, DEBOUNCE_MS))
+          })
+          watchers.push(w)
+        } catch { /* skip unwatchable dirs */ }
+      }
+      watcherCleanup = () => {
+        for (const w of watchers) w.close()
+        for (const t of timers.values()) clearTimeout(t)
+        timers.clear()
+      }
+    })
+
+    // Close any armed file watcher when the layer scope is torn down so the
+    // process (and tests) do not leak fs.watch handles.
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        if (watcherCleanup) { watcherCleanup(); watcherCleanup = null }
+      }),
+    )
+
     return Service.of({
       get: Effect.fn("Agent.get")(function* (agent: string) {
+        yield* ensureWatching()
         return yield* InstanceState.useEffect(state, (s) => s.get(agent))
       }),
       list: Effect.fn("Agent.list")(function* () {
+        yield* ensureWatching()
         return yield* InstanceState.useEffect(state, (s) => s.list())
       }),
       defaultInfo: Effect.fn("Agent.defaultInfo")(function* () {
+        yield* ensureWatching()
         return yield* InstanceState.useEffect(state, (s) => s.defaultInfo())
       }),
       defaultAgent: Effect.fn("Agent.defaultAgent")(function* () {
+        yield* ensureWatching()
         return yield* InstanceState.useEffect(state, (s) => s.defaultAgent())
       }),
       reload,

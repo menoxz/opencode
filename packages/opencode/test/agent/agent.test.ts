@@ -26,6 +26,9 @@ const agentLayer = (flags: Partial<RuntimeFlags.Info> = {}) =>
 
 const it = testEffect(agentLayer())
 const scout = testEffect(agentLayer({ experimentalScout: true }))
+// Pure-mode runner: file watchers are not armed, so reload() can be tested
+// deterministically without leaking fs.watch handles into teardown.
+const pureIt = testEffect(agentLayer({ pure: true }))
 
 // Helper to evaluate permission for a tool with wildcard pattern
 function evalPerm(agent: Agent.Info | undefined, permission: string): Permission.Action | undefined {
@@ -729,4 +732,60 @@ it.instance(
       },
     },
   },
+)
+
+// Hot-reload: editing an agent definition file on disk and invalidating the
+// cache must surface the new instructions on the next access — the same path
+// a running session takes when it re-resolves its agent each turn.
+pureIt.instance("reload picks up edited agent instructions without restart", () =>
+  Effect.gen(function* () {
+    // Flag.OPENCODE_PURE reads process.env directly (not the layer flag), so set it
+    // here to skip the detached npm install that would otherwise hang teardown.
+    const prevPure = process.env.OPENCODE_PURE
+    process.env.OPENCODE_PURE = "1"
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        if (prevPure === undefined) delete process.env.OPENCODE_PURE
+        else process.env.OPENCODE_PURE = prevPure
+      }),
+    )
+
+    const test = yield* TestInstance
+    const agentFile = path.join(test.directory, ".opencode", "agent", "live-reload.md")
+
+    yield* Effect.promise(() =>
+      Bun.write(
+        agentFile,
+        `---
+description: Live reload pilot agent.
+mode: subagent
+---
+
+ORIGINAL INSTRUCTIONS`,
+      ),
+    )
+
+    const before = yield* load((svc) => svc.get("live-reload"))
+    expect(before?.prompt).toContain("ORIGINAL INSTRUCTIONS")
+
+    // Simulate the agent editing its own instruction file.
+    yield* Effect.promise(() =>
+      Bun.write(
+        agentFile,
+        `---
+description: Live reload pilot agent.
+mode: subagent
+---
+
+UPDATED INSTRUCTIONS`,
+      ),
+    )
+
+    // Invalidate the cache the way the file watcher does on a change event.
+    yield* load((svc) => svc.reload())
+
+    const after = yield* load((svc) => svc.get("live-reload"))
+    expect(after?.prompt).toContain("UPDATED INSTRUCTIONS")
+    expect(after?.prompt).not.toContain("ORIGINAL INSTRUCTIONS")
+  }),
 )
