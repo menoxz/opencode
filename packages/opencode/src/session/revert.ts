@@ -12,6 +12,10 @@ import { SessionSummary } from "./summary"
 
 const log = Log.create({ service: "session.revert" })
 
+function countParts(messages: MessageV2.WithParts[]) {
+  return messages.reduce((sum, msg) => sum + msg.parts.length, 0)
+}
+
 export const RevertInput = Schema.Struct({
   sessionID: SessionID,
   messageID: MessageID,
@@ -68,24 +72,59 @@ export const layer = Layer.effect(
         }
       }
 
-      if (!rev) return session
+      if (!rev) {
+        log.warn("revert target not found", {
+          sessionID: input.sessionID,
+          messageID: input.messageID,
+          partID: input.partID,
+          messageCount: all.length,
+          partCount: countParts(all),
+          activeRevert: session.revert
+            ? {
+                messageID: session.revert.messageID,
+                partID: session.revert.partID,
+                hasSnapshot: !!session.revert.snapshot,
+              }
+            : undefined,
+        })
+        return session
+      }
 
       rev.snapshot = session.revert?.snapshot ?? (yield* snap.track())
-      if (session.revert?.snapshot) yield* snap.restore(session.revert.snapshot)
+      if (session.revert?.snapshot) {
+        log.info("restoring existing revert snapshot before applying new revert", {
+          sessionID: input.sessionID,
+          snapshot: session.revert.snapshot,
+        })
+        yield* snap.restore(session.revert.snapshot)
+      }
       yield* snap.revert(patches)
       if (rev.snapshot) rev.diff = yield* snap.diff(rev.snapshot)
       const range = all.filter((msg) => msg.info.id >= rev.messageID)
       const diffs = yield* summary.computeDiff({ messages: range })
+      const summaryTotals = {
+        additions: diffs.reduce((sum, x) => sum + x.additions, 0),
+        deletions: diffs.reduce((sum, x) => sum + x.deletions, 0),
+        files: diffs.length,
+      }
+      log.info("revert prepared", {
+        sessionID: input.sessionID,
+        requestedMessageID: input.messageID,
+        requestedPartID: input.partID,
+        revertMessageID: rev.messageID,
+        revertPartID: rev.partID,
+        snapshot: rev.snapshot,
+        restoredPatchCount: patches.length,
+        affectedMessageCount: range.length,
+        affectedPartCount: countParts(range),
+        diffSummary: summaryTotals,
+      })
       yield* storage.write(["session_diff", input.sessionID], diffs).pipe(Effect.ignore)
       yield* bus.publish(Session.Event.Diff, { sessionID: input.sessionID, diff: diffs })
       yield* sessions.setRevert({
         sessionID: input.sessionID,
         revert: rev,
-        summary: {
-          additions: diffs.reduce((sum, x) => sum + x.additions, 0),
-          deletions: diffs.reduce((sum, x) => sum + x.deletions, 0),
-          files: diffs.length,
-        },
+        summary: summaryTotals,
       })
       return yield* sessions.get(input.sessionID).pipe(Effect.orDie)
     })
@@ -94,8 +133,25 @@ export const layer = Layer.effect(
       log.info("unreverting", input)
       yield* state.assertNotBusy(input.sessionID)
       const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
-      if (!session.revert) return session
-      if (session.revert.snapshot) yield* snap.restore(session.revert.snapshot)
+      if (!session.revert) {
+        log.warn("unrevert requested without active revert", { sessionID: input.sessionID })
+        return session
+      }
+      if (session.revert.snapshot) {
+        log.info("restoring revert snapshot", {
+          sessionID: input.sessionID,
+          messageID: session.revert.messageID,
+          partID: session.revert.partID,
+          snapshot: session.revert.snapshot,
+        })
+        yield* snap.restore(session.revert.snapshot)
+      } else {
+        log.warn("unrevert has no snapshot to restore", {
+          sessionID: input.sessionID,
+          messageID: session.revert.messageID,
+          partID: session.revert.partID,
+        })
+      }
       yield* sessions.clearRevert(input.sessionID)
       return yield* sessions.get(input.sessionID).pipe(Effect.orDie)
     })
@@ -107,6 +163,7 @@ export const layer = Layer.effect(
       const messageID = session.revert.messageID
       const remove = [] as MessageV2.WithParts[]
       let target: MessageV2.WithParts | undefined
+      let removedPartCount = 0
       for (const msg of msgs) {
         if (msg.info.id < messageID) continue
         if (msg.info.id > messageID) {
@@ -138,7 +195,40 @@ export const layer = Layer.effect(
               partID: part.id,
             })
           }
+          removedPartCount = removeParts.length
+        } else {
+          log.warn("revert cleanup part target not found", {
+            sessionID,
+            messageID: target.info.id,
+            partID,
+            availablePartCount: target.parts.length,
+          })
         }
+      } else if (session.revert.partID) {
+        log.warn("revert cleanup message target not found", {
+          sessionID,
+          messageID: session.revert.messageID,
+          partID: session.revert.partID,
+          messageCount: msgs.length,
+        })
+      }
+      if (remove.length === 0 && removedPartCount === 0) {
+        log.warn("revert cleanup completed without removing messages or parts", {
+          sessionID,
+          messageID: session.revert.messageID,
+          partID: session.revert.partID,
+          messageCount: msgs.length,
+          partCount: countParts(msgs),
+        })
+      } else {
+        log.info("revert cleanup removed messages and parts", {
+          sessionID,
+          messageID: session.revert.messageID,
+          partID: session.revert.partID,
+          removedMessageCount: remove.length,
+          removedPartCount,
+          removedMessageIDs: remove.map((msg) => msg.info.id),
+        })
       }
       yield* sessions.clearRevert(sessionID)
     })

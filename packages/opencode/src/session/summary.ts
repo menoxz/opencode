@@ -70,6 +70,16 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/SessionSummary") {}
 
+function diffStats(diffs: Snapshot.FileDiff[]) {
+  let additions = 0
+  let deletions = 0
+  for (const diff of diffs) {
+    additions += diff.additions
+    deletions += diff.deletions
+  }
+  return { additions, deletions, files: diffs.length }
+}
+
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -82,15 +92,8 @@ export const layer = Layer.effect(
       let from: string | undefined
       let to: string | undefined
       for (const item of input.messages) {
-        if (!from) {
-          for (const part of item.parts) {
-            if (part.type === "step-start" && part.snapshot) {
-              from = part.snapshot
-              break
-            }
-          }
-        }
         for (const part of item.parts) {
+          if (!from && part.type === "step-start" && part.snapshot) from = part.snapshot
           if (part.type === "step-finish" && part.snapshot) to = part.snapshot
         }
       }
@@ -102,29 +105,66 @@ export const layer = Layer.effect(
       sessionID: SessionID
       messageID: MessageID
     }) {
+      const started = Date.now()
       const all = yield* sessions.messages({ sessionID: input.sessionID }).pipe(Effect.orDie)
-      if (!all.length) return
+      if (!all.length) {
+        yield* Effect.logDebug("session summary skipped").pipe(
+          Effect.annotateLogs({
+            sessionID: input.sessionID,
+            messageID: input.messageID,
+            reason: "empty_messages",
+            elapsedMs: Date.now() - started,
+          }),
+        )
+        return
+      }
 
+      const diffStarted = Date.now()
       const diffs = yield* computeDiff({ messages: all })
+      const totals = diffStats(diffs)
       yield* sessions.setSummary({
         sessionID: input.sessionID,
-        summary: {
-          additions: diffs.reduce((sum, x) => sum + x.additions, 0),
-          deletions: diffs.reduce((sum, x) => sum + x.deletions, 0),
-          files: diffs.length,
-        },
+        summary: totals,
       })
       yield* storage.write(["session_diff", input.sessionID], diffs).pipe(Effect.ignore)
       yield* bus.publish(Session.Event.Diff, { sessionID: input.sessionID, diff: diffs })
 
-      const messages = all.filter(
-        (m) => m.info.id === input.messageID || (m.info.role === "assistant" && m.info.parentID === input.messageID),
+      let messageDiffs: Snapshot.FileDiff[] | undefined
+      const target = all.find((m) => m.info.id === input.messageID)
+      const targetIsUser = target?.info.role === "user"
+      const diffElapsedMs = Date.now() - diffStarted
+      let messageDiffElapsedMs: number | undefined
+      if (target && targetIsUser) {
+        const messageDiffStarted = Date.now()
+        const messages = all.filter(
+          (m) => m.info.id === input.messageID || (m.info.role === "assistant" && m.info.parentID === input.messageID),
+        )
+        messageDiffs = yield* computeDiff({ messages })
+        messageDiffElapsedMs = Date.now() - messageDiffStarted
+        target.info.summary = {
+          ...(typeof target.info.summary === "object" && target.info.summary !== null ? target.info.summary : {}),
+          diffs: messageDiffs,
+        }
+        yield* sessions.updateMessage(target.info)
+      }
+
+      yield* Effect.logDebug("session summary generated").pipe(
+        Effect.annotateLogs({
+          sessionID: input.sessionID,
+          messageID: input.messageID,
+          messages: all.length,
+          diffFiles: totals.files,
+          diffAdditions: totals.additions,
+          diffDeletions: totals.deletions,
+          diffElapsedMs,
+          messageSummaryUpdated: Boolean(messageDiffs),
+          messageDiffFiles: messageDiffs?.length,
+          messageDiffElapsedMs,
+          targetRole: target?.info.role,
+          targetFound: Boolean(target),
+          elapsedMs: Date.now() - started,
+        }),
       )
-      const target = messages.find((m) => m.info.id === input.messageID)
-      if (!target || target.info.role !== "user") return
-      const msgDiffs = yield* computeDiff({ messages })
-      target.info.summary = { ...target.info.summary, diffs: msgDiffs }
-      yield* sessions.updateMessage(target.info)
     })
 
     const diff = Effect.fn("SessionSummary.diff")(function* (input: { sessionID: SessionID; messageID?: MessageID }) {
