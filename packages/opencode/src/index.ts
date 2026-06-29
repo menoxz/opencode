@@ -34,6 +34,7 @@ import { SessionCommand } from "./cli/cmd/session"
 import { DbCommand } from "./cli/cmd/db"
 import { EvalCommand } from "./cli/cmd/eval"
 import { SelfImproveCommand } from "./cli/cmd/self-improve"
+import { SkillIngestCommand } from "./cli/cmd/skill-ingest"
 import { TasksCommand } from "./cli/cmd/tasks"
 import { DashboardCommand } from "./cli/cmd/dashboard"
 import path from "path"
@@ -190,6 +191,7 @@ const cli = yargs(args)
   .command(TasksCommand)
   .command(DashboardCommand)
   .command(SelfImproveCommand)
+  .command(SkillIngestCommand)
   .fail((msg, err) => {
     if (
       msg?.startsWith("Unknown argument") ||

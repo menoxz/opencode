@@ -1,5 +1,8 @@
+import { type SecurityMode, SECURITY_GATED_TOOLS } from "./security"
 import { SubagentListTool } from "./subagent"
+import { SessionContextTool, SessionInfoTool } from "./session-info"
 import { PlanExitTool } from "./plan"
+import { PlanningTool } from "./planning"
 import {
   ApplyContractFromPromptTool,
   CompleteObjectifTool,
@@ -88,7 +91,13 @@ export interface Interface {
   readonly ids: () => Effect.Effect<string[]>
   readonly all: () => Effect.Effect<Tool.Def[]>
   readonly named: () => Effect.Effect<{ task: TaskDef; read: ReadDef }>
-  readonly tools: (model: { providerID: ProviderID; modelID: ModelID; agent: Agent.Info }) => Effect.Effect<Tool.Def[]>
+  readonly tools: (model: {
+    providerID: ProviderID
+    modelID: ModelID
+    agent: Agent.Info
+    forceWriteTools?: boolean
+    securityMode?: SecurityMode
+  }) => Effect.Effect<Tool.Def[]>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/ToolRegistry") {}
@@ -136,6 +145,7 @@ export const layer: Layer.Layer<
     const todo = yield* TodoWriteTool
     const lsptool = yield* LspTool
     const plan = yield* PlanExitTool
+    const planning = yield* PlanningTool
     const webfetch = yield* WebFetchTool
     const websearch = yield* WebSearchTool
     const repoClone = yield* RepoCloneTool
@@ -148,6 +158,8 @@ export const layer: Layer.Layer<
     const patchtool = yield* ApplyPatchTool
     const skilltool = yield* SkillTool
     const subagentlist = yield* SubagentListTool
+    const sessionContext = yield* SessionContextTool
+    const sessionInfo = yield* SessionInfoTool
     const createObjectif = yield* CreateObjectifTool
     const createObjective = yield* CreateObjectiveTool
     const editObjectif = yield* EditObjectifTool
@@ -275,7 +287,8 @@ export const layer: Layer.Layer<
           }
         }
 
-        yield* config.get()
+        const cfg = yield* config.get()
+        const planningEnabled = cfg.experimental?.planning?.enabled === true
         const questionEnabled = ["app", "cli", "desktop"].includes(flags.client) || flags.enableQuestionTool
 
         const tool = yield* Effect.all({
@@ -294,6 +307,8 @@ export const layer: Layer.Layer<
           repo_overview: Tool.init(repoOverview),
           skill: Tool.init(skilltool),
           subagent: Tool.init(subagentlist),
+          session_context: Tool.init(sessionContext),
+          session_info: Tool.init(sessionInfo),
           create_objectif: Tool.init(createObjectif),
           create_objective: Tool.init(createObjective),
           edit_objectif: Tool.init(editObjectif),
@@ -306,6 +321,7 @@ export const layer: Layer.Layer<
           question: Tool.init(question),
           lsp: Tool.init(lsptool),
           plan: Tool.init(plan),
+          planning: Tool.init(planning),
         })
 
         return {
@@ -326,6 +342,8 @@ export const layer: Layer.Layer<
             ...(flags.experimentalScout ? [tool.repo_clone, tool.repo_overview] : []),
             tool.skill,
             tool.subagent,
+            tool.session_context,
+            tool.session_info,
             tool.create_objectif,
             tool.create_objective,
             tool.edit_objectif,
@@ -337,6 +355,7 @@ export const layer: Layer.Layer<
             tool.patch,
             ...(flags.experimentalLspTool ? [tool.lsp] : []),
             ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
+            ...(planningEnabled ? [tool.planning] : []),
           ],
           task: tool.task,
           read: tool.read,
@@ -379,7 +398,14 @@ export const layer: Layer.Layer<
     })
 
     const tools: Interface["tools"] = Effect.fn("ToolRegistry.tools")(function* (input) {
+      const mode = input.securityMode ?? "interactive-tui"
       const filtered = (yield* all()).filter((tool) => {
+        // Security: gate write/bash in eval mode
+        if (SECURITY_GATED_TOOLS.has(tool.id)) {
+          if (mode === "eval") return false
+          if (mode === "cli-batch" && !input.forceWriteTools) return false
+        }
+
         if (tool.id === WebSearchTool.id) {
           return webSearchEnabled(input.providerID, { exa: flags.enableExa, parallel: flags.enableParallel })
         }

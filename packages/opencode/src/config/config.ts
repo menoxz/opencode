@@ -294,6 +294,15 @@ export const Info = Schema.Struct({
     Schema.Struct({
       disable_paste_summary: Schema.optional(Schema.Boolean),
       batch_tool: Schema.optional(Schema.Boolean).annotate({ description: "Enable the batch tool" }),
+      planning: Schema.optional(
+        Schema.Struct({
+          enabled: Schema.optional(Schema.Boolean),
+          maxNodes: Schema.optional(PositiveInt),
+          allowParallel: Schema.optional(Schema.Boolean),
+        }),
+      ).annotate({
+        description: "Enable the dormant plan-engine 'planning' tool (DAG validation). Off by default.",
+      }),
       openTelemetry: Schema.optional(Schema.Boolean).annotate({
         description: "Enable OpenTelemetry spans for AI SDK calls (using the 'experimental_telemetry' flag)",
       }),
@@ -308,6 +317,20 @@ export const Info = Schema.Struct({
       }),
       mcp_timeout: Schema.optional(PositiveInt).annotate({
         description: "Timeout in milliseconds for model context protocol (MCP) requests",
+      }),
+      postmortem: Schema.optional(
+        Schema.Struct({
+          llm_decisions: Schema.optional(Schema.Boolean).annotate({
+            description:
+              "Opt-in LLM enrichment of post-mortem key decisions. Free models only, fail-safe. Default false.",
+          }),
+          llm_model: Schema.optional(Schema.String).annotate({
+            description:
+              "Explicit provider/model id for post-mortem enrichment. Overrides the free auto-pick.",
+          }),
+        }),
+      ).annotate({
+        description: "Experimental controls for session post-mortem analysis.",
       }),
     }),
   ),

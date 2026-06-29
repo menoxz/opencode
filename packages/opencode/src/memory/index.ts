@@ -493,7 +493,7 @@ export const layer = Layer.effect(
       if (!postMortemSvc) {
         log.warn("PostMortem service not available — skipping session analysis", { sessionId })
         return {
-          summary: { sessionId, taskDescription: "", duration: 0, toolsUsed: [], toolCallCount: 0, errors: [], success: true, keyDecisions: [], patternsFound: [], suggestions: [], fileChanges: [], tokenUsage: { input: 0, output: 0, total: 0, cost: 0 } },
+          summary: { sessionId, projectId: "global", taskDescription: "", duration: 0, toolsUsed: [], toolCallCount: 0, errors: [], success: true, keyDecisions: [], patternsFound: [], suggestions: [], fileChanges: [], tokenUsage: { input: 0, output: 0, total: 0, cost: 0 } },
           learnings: [],
           recommendations: [],
         }
@@ -510,7 +510,7 @@ export const layer = Layer.effect(
             : "procedural",
           tags: learning.tags,
           importance: learning.confidence,
-          projectId: report.summary.sessionId,
+          projectId: report.summary.projectId || report.summary.sessionId,
           source: "post-mortem",
           confidence: learning.confidence,
         })

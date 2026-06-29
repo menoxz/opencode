@@ -218,7 +218,7 @@ const PlanStepSchema = Schema.Struct({
   optional: Schema.optional(Schema.Boolean),
 })
 
-const ExecutionPlanSchema = Schema.Struct({
+export const ExecutionPlanSchema = Schema.Struct({
   goal: Schema.String,
   steps: Schema.Array(PlanStepSchema),
   complexity: Schema.Literals(["simple", "moderate", "complex"]),

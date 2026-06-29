@@ -23,6 +23,131 @@ Le système runtime est donc déjà riche en observabilité naturelle : messages
 
 Conclusion : le runtime agent est architecturé pour être observable, mais le harness actuel teste surtout la plomberie de reporting et non la qualité réelle des agents. L'amélioration prioritaire est de créer un runner d'évaluation réel branché sur `SessionPrompt`/API session et sur les événements `message.*`.
 
+### 1.1 Guide utilisateur — comment mieux piloter opencode
+
+Cette section transforme l'analyse backend en règles d'usage. L'objectif business n'est pas seulement de comprendre le code : il est de savoir comment obtenir plus vite une réponse fiable, complète et de qualité.
+
+#### Ce qui arrive réellement à votre prompt
+
+Quand vous envoyez un prompt, opencode ne livre pas uniquement votre texte au modèle. Il fabrique une requête backend composée de :
+
+```txt
+SYSTEM FINAL =
+  PROMPT_CORE opencode ou prompt custom de l'agent
+  + environnement runtime
+  + instructions globales/projet
+  + liste de skills proposée
+  + bloc descriptif available_capabilities selon mode
+  + task-contract / goal reminder éventuels
+  + user.system éventuel
+
+MESSAGES = historique converti en messages modèle + rappels backend éphémères
+TOOLS = vrais outils AI SDK résolus séparément par le registry/MCP/permissions
+```
+
+Références backend vérifiées :
+
+- assemblage final du system : `packages/opencode/src/session/llm/request.ts:55-65` ;
+- insertion du system dans les messages modèle : `packages/opencode/src/session/llm/request.ts:93-104` ;
+- base `PROMPT_CORE` unique : `packages/opencode/src/session/system.ts:20-25`, contenu dans `packages/opencode/src/session/prompt/core.txt:1-136` ;
+- construction `env + instructions + skills + toolList + task-contract` : `packages/opencode/src/session/prompt.ts:2088-2115` ;
+- résolution des vrais tools : `packages/opencode/src/session/tools.ts:50-229`.
+
+#### Défaut pratique n°1 — `available_capabilities` est incomplet par design
+
+Le bloc :
+
+```xml
+<available_capabilities>
+  The following tools are available for file and command operations:
+  - write_file
+  - bash
+  - read
+  - edit
+  - glob
+  - grep
+</available_capabilities>
+```
+
+vient de `SystemPrompt.toolList()` et n'est injecté qu'en mode `interactive-tui`. Voir `packages/opencode/src/session/system.ts:181-199`.
+
+Ce bloc est **descriptif**, pas contractuel. Il ne liste qu'un sous-ensemble lisible des capacités fichier/commande. Les vrais outils disponibles au LLM sont construits ailleurs, par `SessionTools.resolve()` : registry interne, plugins, MCP, permissions, cache, provider, modèle, etc. Voir `packages/opencode/src/session/tools.ts:50-229`.
+
+Conséquence utilisateur : ne déduisez pas les outils réels uniquement depuis `available_capabilities`. Le modèle peut avoir d'autres tools exposés dans la requête `tools`, ou au contraire certains outils listés peuvent être bloqués par permissions/sécurité.
+
+Bon usage :
+
+- pour une tâche fichier/code, demandez explicitement : « inspecte les fichiers pertinents avec grep/read avant de modifier » ;
+- pour une tâche risquée, précisez les restrictions : « ne lance pas de commande destructive », « lecture seule », « ne commit pas » ;
+- pour un diagnostic outil, demandez au modèle de vérifier le code/registry plutôt que de raisonner depuis `available_capabilities`.
+
+Impact business :
+
+| Critère | Effet | Recommandation |
+|---|---|---|
+| Efficacité | Le bloc aide le modèle à se souvenir des outils courants mais peut masquer les vrais tools. | Formuler l'action attendue, pas seulement « utilise tes outils ». |
+| Performance | Texte court, peu coûteux. | Garder descriptif ; ne pas surcharger avec tous les tools. |
+| Qualité | Risque d'erreur si le modèle croit que la liste est exhaustive. | Demander vérification backend en cas de doute. |
+| Vitesse | Accélère les cas simples fichier/commande. | Pour cas complexes, préciser le workflow attendu. |
+
+#### Défaut pratique n°2 — les skills sont proposés, pas automatiquement appliqués
+
+Les skills sont injectés dans le system prompt par :
+
+```ts
+const skills = yield* sys.skills(agent, lastUserText)
+if (skills) system.push(skills)
+```
+
+Référence : `packages/opencode/src/session/prompt.ts:2099-2104`.
+
+La sélection côté backend est limitée : `MAX_RELEVANT_SKILLS = 30` dans `packages/opencode/src/session/system.ts:27`, avec ranking par pertinence (`rankDocuments`) et accès au `Skill.Service`. Le résultat est une **liste de skills et de descriptions** : elle indique au modèle quels skills existent et quand les charger, mais elle ne remplace pas l'appel explicite au tool `skill()`.
+
+Conséquence utilisateur : si vous dites seulement « fais le build », le modèle peut ne pas charger le skill `fork-build` s'il n'identifie pas correctement le besoin. Si vous dites « utilise le skill fork-build et suis-le exactement », vous réduisez l'ambiguïté et les essais inutiles.
+
+Bon usage :
+
+- nommez le skill quand vous le connaissez : « utilise `fork-build` », « utilise `docx` », « utilise `formio-gnspd` » ;
+- si vous ne connaissez pas le skill, décrivez le domaine : « tâche de déploiement du fork opencode », « création formulaire FormIO GNSPD » ;
+- pour les procédures critiques, ajoutez : « suis le skill, ne fais rien d'autre » ;
+- pour éviter la surcharge, ne demandez pas de charger tous les skills ; demandez le skill pertinent.
+
+Impact business :
+
+| Critère | Effet | Recommandation |
+|---|---|---|
+| Efficacité | Les skills apportent procédures et garde-fous métier. | Citer le skill ou le domaine métier dès le prompt. |
+| Performance | Lister/ranker des skills coûte du contexte ; charger un skill ajoute encore du contexte. | Charger uniquement le skill utile. |
+| Qualité | Un skill chargé au bon moment évite les protocoles inventés. | Pour build/deploy, docs, FormIO, etc., exiger le skill. |
+| Vitesse | Bon skill = moins d'itérations ; mauvais/absent = trial-and-error. | Donner le nom exact du skill quand possible. |
+
+#### Défaut pratique n°3 — richesse du system prompt = qualité, mais aussi latence et dilution
+
+Le system prompt opencode est volontairement riche : identité agent, objectif business, DoD, sécurité, instructions projet, skills, environnement. C'est utile pour les tâches complexes, mais cette richesse peut ralentir les tâches simples et diluer la demande si l'objectif utilisateur est vague.
+
+Bon usage :
+
+- donnez un objectif business clair : « optimiser qualité et fiabilité », « aller vite sans modifier le code », « audit lecture seule » ;
+- donnez une Definition of Done courte et vérifiable ;
+- indiquez le hors-périmètre : « pas de commit », « pas de déploiement », « backend seulement » ;
+- pour une question ponctuelle, demandez explicitement une réponse courte sans exploration large.
+
+Exemple de prompt efficace :
+
+```txt
+Objectif : diagnostiquer côté backend pourquoi le tool planning n'est pas disponible en session réelle.
+DoD : citer fichiers/lignes, dire s'il manque un tool ou seulement une config, ne pas modifier le code.
+Hors périmètre : TUI, build, déploiement.
+Utilise grep/read ; si un skill s'applique, charge-le d'abord.
+```
+
+Pourquoi c'est meilleur :
+
+- efficacité : l'agent sait quel résultat produit de la valeur ;
+- performance : il évite recherches et outils hors sujet ;
+- qualité : les critères de complétude sont vérifiables ;
+- vitesse : moins d'allers-retours de clarification.
+
 ---
 
 ## 2. Vue d'ensemble des composants
