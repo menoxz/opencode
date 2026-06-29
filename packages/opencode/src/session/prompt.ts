@@ -1,5 +1,6 @@
 import path from "path"
 import os from "os"
+import { createHash } from "node:crypto"
 import { SessionID, MessageID, PartID } from "./schema"
 import { MessageV2 } from "./message-v2"
 import * as Log from "@opencode-ai/core/util/log"
@@ -32,6 +33,7 @@ import { Command } from "../command"
 import { pathToFileURL, fileURLToPath } from "url"
 import { Config } from "@/config/config"
 import { ConfigMarkdown } from "@/config/markdown"
+import type { ConfigAttachment } from "@/config/attachment"
 import { SessionSummary } from "./summary"
 import { SessionContextRollout } from "./context-rollout"
 import { NamedError } from "@opencode-ai/core/util/error"
@@ -44,6 +46,7 @@ import { Shell } from "@/shell/shell"
 import { ShellID } from "@/tool/shell/id"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { Truncate } from "@/tool/truncate"
+import { Service as ToolCacheService } from "@/tool/cache"
 import { Image } from "@/image/image"
 import { decodeDataUrl } from "@/util/data-url"
 import { Process } from "@/util/process"
@@ -54,6 +57,8 @@ import { TaskTool, type TaskPromptOps } from "@/tool/task"
 import { PlanEngine, type ExecutionPlan } from "@/plan-engine"
 import * as PostMortem from "@/memory/post-mortem"
 import { SessionRunState } from "./run-state"
+import * as PromptMethodology from "./prompt-methodology"
+import { createPromptContextSummary, createPromptInjectionCache } from "./prompt-context-summary"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { SessionEvent } from "@opencode-ai/core/session-event"
@@ -82,13 +87,13 @@ const decodeMessagePart = Schema.decodeUnknownExit(MessageV2.Part)
 
 const STRUCTURED_OUTPUT_DESCRIPTION = `Use this tool to return your final response in the requested structured format.
 
-IMPORTANT:
-- You MUST call this tool exactly once at the end of your response
-- The input must be valid JSON matching the required schema
-- Complete all necessary research and tool calls BEFORE calling this tool
-- This tool provides your final answer - no further actions are taken after calling it`
+Guidelines:
+- Call this tool once when you are ready to provide the final structured response.
+- The input must be valid JSON matching the requested schema.
+- Complete useful research, tool calls, and verification before calling it.
+- Treat the tool call as the final answer for this turn.`
 
-const STRUCTURED_OUTPUT_SYSTEM_PROMPT = `IMPORTANT: The user has requested structured output. You MUST use the StructuredOutput tool to provide your final response. Do NOT respond with plain text - you MUST call the StructuredOutput tool with your answer formatted according to the schema.`
+const STRUCTURED_OUTPUT_SYSTEM_PROMPT = `The user requested structured output. Provide the final response through the StructuredOutput tool using JSON that matches the requested schema.`
 
 /**
  * Format pending trigger tasks as an XML section for the system prompt.
@@ -231,8 +236,8 @@ function formatPlanSection(plan: ExecutionPlan): string {
     ...groupLines,
     `  </parallelGroups>`,
     `  <instruction>`,
-    `  This is a suggested plan — you may follow it, adapt it, or ignore it.`,
-    `  Use the task tool to delegate steps to sub-agents for parallel execution.`,
+    `  Treat this as guidance: follow or adapt it when it helps the user's objective.`,
+    `  Use sub-agents only for useful independent work; keep verification ownership in the main flow.`,
     `  </instruction>`,
     `</auto_plan>`,
     "",
@@ -245,9 +250,9 @@ function xmlEscape(s: string): string {
 
 const METHODOLOGY_AUTO_CHECK = [
   `<methodology_check>`,
-  `Before responding, self-check mandatory method adherence:`,
-  `research_first|memory_first|plan_before_act|SWE_loop|use_tools_yourself|evaluate_result|learn_if_repeatable`,
-  `If any mandatory step was skipped: say it explicitly, then correct course before answering.`,
+  `Before responding, do a proportional self-check aligned with the task complexity:`,
+  `objective_fit|context_used_when_relevant|plan_for_non_trivial_work|tool_outputs_observed|verification_or_limits|scope_drift`,
+  `If a useful check was skipped, correct course briefly instead of adding process narration.`,
   `</methodology_check>`,
 ].join("\n")
 
@@ -388,72 +393,7 @@ function buildMethodologyReminder(
   mode: Exclude<MethodologyMode, "full"> | "full",
   messages: MessageV2.WithParts[],
 ): string | undefined {
-  const hasToolActivity = messages.some((m) =>
-    m.info.role === "assistant" &&
-    m.parts.some((p) => p.type === "tool" && (p as any).state?.status === "success"),
-  )
-
-  const hasSearchedWeb = messages.some((m) =>
-    m.info.role === "assistant" &&
-    m.parts.some((p) => p.type === "tool" && (p as any).tool === "google_search" && (p as any).state?.status === "success"),
-  )
-
-  const hasMemoryRetrieved = messages.some((m) =>
-    m.info.role === "assistant" &&
-    m.parts.some((p) =>
-      p.type === "tool" &&
-      ((p as any).tool === "memory_retrieve" || (p as any).tool === "memory") &&
-      (p as any).state?.status === "success",
-    ),
-  )
-
-  if (mode === "minimal") {
-    if (step === 1) {
-      return [
-        `<methodology_reminder step="${step}" mode="minimal">`,
-        `START: PLAN before ACT.${!hasMemoryRetrieved ? ` MEMORY FIRST.` : ""}${!hasSearchedWeb ? ` RESEARCH if unclear.` : ""}`,
-        `</methodology_reminder>`,
-      ].join("\n")
-    }
-    if (hasToolActivity) {
-      return [
-        `<methodology_reminder step="${step}" mode="minimal">`,
-        `SWE-loop: OBSERVE results → REFLECT → continue.`,
-        `</methodology_reminder>`,
-      ].join("\n")
-    }
-    return
-  }
-
-  const parts: string[] = []
-  parts.push(`<methodology_reminder step="${step}" mode="${mode}">`)
-
-  if (step === 1) {
-    parts.push("  You are at the START of this task.")
-    if (!hasSearchedWeb) {
-      parts.push("  <remind type=\"research\" critical=\"true\">RESEARCH FIRST — search the web before writing code</remind>")
-    }
-    if (!hasMemoryRetrieved) {
-      parts.push("  <remind type=\"memory\" critical=\"true\">MEMORY FIRST — retrieve relevant context before deciding</remind>")
-    }
-    parts.push("  <remind type=\"plan\" critical=\"true\">PLAN before ACT — analyze, decompose, identify files</remind>")
-  } else if (hasToolActivity) {
-    parts.push("  You have made tool calls — now follow the SWE Loop:")
-    parts.push("  <remind type=\"observe\">OBSERVE — compare actual vs expected results</remind>")
-    parts.push("  <remind type=\"reflect\">REFLECT — evaluate, adjust, store learnings in memory</remind>")
-    parts.push("  <remind type=\"learn\">LEARN — will this task repeat? Update or create a skill for it</remind>")
-    parts.push("  <remind type=\"continue\">Continue the PLAN → ACT → OBSERVE → REFLECT cycle</remind>")
-    if (!hasMemoryRetrieved) {
-      parts.push("  <remind type=\"memory\">Store what you learned in memory using memory_store</remind>")
-    }
-  } else {
-    parts.push("  Continue following the SWE Loop: PLAN → ACT → OBSERVE → REFLECT")
-    parts.push("  <remind type=\"stuck-protocol\">If stuck &gt;2min → google → docs → implement</remind>")
-    parts.push("  <remind type=\"tools\">Use tools yourself — do not delegate to the user</remind>")
-  }
-
-  parts.push("</methodology_reminder>")
-  return parts.join("\n")
+  return PromptMethodology.buildMethodologyReminder({ step, mode, messages })
 }
 
 const log = Log.create({ service: "session.prompt" })
@@ -507,6 +447,7 @@ export const layer = Layer.effect(
     const references = yield* Reference.Service
     const events = yield* EventV2Bridge.Service
     const flags = yield* RuntimeFlags.Service
+    const toolCache = yield* ToolCacheService
     const memory = yield* Effect.serviceOption(Memory.Service).pipe(Effect.map(Option.getOrUndefined))
     const planEngine = yield* Effect.serviceOption(PlanEngine.Service).pipe(Effect.map(Option.getOrUndefined))
     const selfImprove = yield* Effect.serviceOption(SelfImprove.Service).pipe(Effect.map(Option.getOrUndefined))
@@ -517,6 +458,174 @@ export const layer = Layer.effect(
         resolvePromptParts: (template: string) => resolvePromptParts(template),
         prompt: (input: PromptInput) => prompt(input).pipe(Effect.catch(Effect.die)),
       } satisfies TaskPromptOps
+    })
+
+    const VISION_CACHE_TTL = 24 * 60 * 60 * 1000
+
+    function imagePayloadHash(url: string) {
+      const comma = url.indexOf(",")
+      return createHash("sha256").update(comma === -1 ? url : url.slice(comma + 1)).digest("hex")
+    }
+
+    const visionAnalysis = Effect.fn("SessionPrompt.visionAnalysis")(function* (input: {
+      attachment: MessageV2.FilePart
+      imageConfig: ConfigAttachment.Image
+      user: MessageV2.User
+      sessionID: SessionID
+      agent: Agent.Info
+      promptRollout: ReturnType<typeof SessionContextRollout.resolve>
+    }) {
+      const vision = input.imageConfig.vision_model
+      if (!vision) {
+        return [
+          `ERROR: Cannot read ${input.attachment.filename ? `"${input.attachment.filename}"` : "image"}: the active model does not support image input.`,
+          "Configure attachment.image.vision_model from the TUI or opencode config to enable fallback image reading.",
+        ].join(" ")
+      }
+
+      const visionModel = yield* provider.getModel(ProviderID.make(vision.providerID), ModelID.make(vision.modelID))
+      if (!visionModel.capabilities.input.image) {
+        return `ERROR: Configured vision model ${vision.providerID}/${vision.modelID} does not support image input. Choose a vision-capable model.`
+      }
+
+      const hash = imagePayloadHash(input.attachment.url)
+      const cacheKey = [
+        "vision-analysis",
+        input.attachment.mime,
+        hash,
+        visionModel.providerID,
+        visionModel.id,
+        input.imageConfig.auto_resize ?? "default-resize",
+        input.imageConfig.max_width ?? "default-width",
+        input.imageConfig.max_height ?? "default-height",
+        input.imageConfig.max_base64_bytes ?? "default-bytes",
+      ].join(":")
+      if (input.imageConfig.cache !== false) {
+        const cached = yield* toolCache.get(cacheKey)
+        if (cached && typeof cached.data === "string") return cached.data
+      }
+
+      const filePart: MessageV2.FilePart = {
+        id: PartID.ascending(),
+        sessionID: input.sessionID,
+        messageID: input.user.id,
+        type: "file",
+        mime: input.attachment.mime,
+        filename: input.attachment.filename,
+        url: input.attachment.url,
+      }
+      const normalized = yield* image.normalize(filePart).pipe(
+        Effect.catchIf(
+          (error) => error instanceof Image.ResizerUnavailableError,
+          () => Effect.succeed(filePart),
+        ),
+      )
+      const message: MessageV2.WithParts = {
+        info: {
+          ...input.user,
+          model: {
+            providerID: visionModel.providerID,
+            modelID: visionModel.id,
+          },
+        },
+        parts: [
+          {
+            id: PartID.ascending(),
+            sessionID: input.sessionID,
+            messageID: input.user.id,
+            type: "text",
+            text: [
+              "Analyze this image for a downstream coding agent.",
+              "Return concise but complete text: visible text/OCR, UI elements, diagrams, errors, file names, and any details needed to answer user requests.",
+              "Do not mention that you are a separate vision model.",
+            ].join(" "),
+          },
+          {
+            ...normalized,
+            id: PartID.ascending(),
+            sessionID: input.sessionID,
+            messageID: input.user.id,
+          },
+        ],
+      }
+      const modelMsgs = yield* MessageV2.toModelMessagesEffect([message], visionModel, {
+        replayToolInputs: input.promptRollout.replayToolInputs,
+        replayToolOutputs: input.promptRollout.replayToolOutputs,
+        replayReasoning: input.promptRollout.replayReasoning,
+      })
+      const text = yield* llm
+        .stream({
+          agent: { ...input.agent, options: {}, temperature: 0 },
+          user: input.user,
+          system: [],
+          tools: {},
+          model: visionModel,
+          sessionID: input.sessionID,
+          retries: 1,
+          toolChoice: "none",
+          messages: modelMsgs,
+        })
+        .pipe(
+          Stream.filter(LLMEvent.is.textDelta),
+          Stream.map((e) => e.text),
+          Stream.mkString,
+          Effect.orDie,
+        )
+      const trimmed = text.trim() || "No image details returned by the configured vision model."
+      const result = [
+        `[Image analysis by ${visionModel.providerID}/${visionModel.id}]`,
+        input.attachment.filename ? `filename: ${input.attachment.filename}` : undefined,
+        `mime: ${input.attachment.mime}`,
+        `sha256: ${hash}`,
+        trimmed,
+      ]
+        .filter((line): line is string => Boolean(line))
+        .join("\n")
+      if (input.imageConfig.cache !== false) yield* toolCache.set(cacheKey, result, VISION_CACHE_TTL)
+      return result
+    })
+
+    const applyVisionFallback = Effect.fn("SessionPrompt.applyVisionFallback")(function* (input: {
+      messages: MessageV2.WithParts[]
+      model: Provider.Model
+      user: MessageV2.User
+      sessionID: SessionID
+      agent: Agent.Info
+      imageConfig: ConfigAttachment.Image | undefined
+      promptRollout: ReturnType<typeof SessionContextRollout.resolve>
+    }) {
+      if (input.model.capabilities.input.image) return input.messages
+      const imageConfig = input.imageConfig ?? {}
+      const next: MessageV2.WithParts[] = []
+      for (const msg of input.messages) {
+        let changed = false
+        const parts: MessageV2.Part[] = []
+        for (const part of msg.parts) {
+          if (part.type === "file" && part.mime.startsWith("image/")) {
+            changed = true
+            const analysis = yield* visionAnalysis({
+              attachment: part,
+              imageConfig,
+              user: input.user,
+              sessionID: input.sessionID,
+              agent: input.agent,
+              promptRollout: input.promptRollout,
+            })
+            parts.push({
+              id: PartID.ascending(),
+              sessionID: part.sessionID,
+              messageID: part.messageID,
+              type: "text",
+              synthetic: true,
+              text: analysis,
+            })
+            continue
+          }
+          parts.push(part)
+        }
+        next.push(changed ? { ...msg, parts } : msg)
+      }
+      return next
     })
 
     const cancel = Effect.fn("SessionPrompt.cancel")(function* (sessionID: SessionID) {
@@ -1613,7 +1722,21 @@ export const layer = Layer.effect(
     )(function* (input: PromptInput) {
       const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
       yield* revert.cleanup(session)
+      const createUserMessageStart = Date.now()
       const message = yield* createUserMessage(input)
+      log.info("prompt context summary", {
+        sessionID: input.sessionID,
+        step: 0,
+        sections: [
+          {
+            section: "createUserMessage",
+            added: true,
+            reason: "persist user prompt before assistant loop",
+            size: message.parts.reduce((sum, part) => sum + ("text" in part && typeof part.text === "string" ? part.text.length : 0), 0),
+            durationMs: Date.now() - createUserMessageStart,
+          },
+        ],
+      })
       yield* sessions.touch(input.sessionID)
 
       const permissions: Permission.Rule[] = []
@@ -1643,12 +1766,21 @@ export const layer = Layer.effect(
         let structured: unknown
         let step = 0
         const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
+        const injectionCache = createPromptInjectionCache()
 
         while (true) {
+          const contextSummary = createPromptContextSummary(step + 1)
           yield* status.set(sessionID, { type: "busy" })
           yield* slog.info("loop", { step })
 
+          const messageFilteringStart = Date.now()
           let msgs = yield* MessageV2.filterCompactedEffect(sessionID)
+          contextSummary.add(
+            "messageFiltering",
+            "filter compacted messages before latest-state selection",
+            msgs,
+            Date.now() - messageFilteringStart,
+          )
 
           const { user: lastUser, assistant: lastAssistant, finished: lastFinished, tasks } = MessageV2.latest(msgs)
 
@@ -1798,19 +1930,23 @@ export const layer = Layer.effect(
           }
 
           // ── Ensure Goal/DoD state (non-blocking, every turn) ──
+          const goalStateStart = Date.now()
           const goalState = yield* ensureGoalState({
             sessionID,
             msgs,
             lastUserID: lastUser.id,
           })
+          contextSummary.add("goal", "ensure task contract state", goalState, Date.now() - goalStateStart)
 
           const maxSteps = agent.steps ?? Infinity
           const isLastStep = step >= maxSteps
+          const remindersStart = Date.now()
           msgs = yield* SessionReminders.apply({ messages: msgs, agent, session }).pipe(
             Effect.provideService(RuntimeFlags.Service, flags),
             Effect.provideService(AppFileSystem.Service, fsys),
             Effect.provideService(Session.Service, sessions),
           )
+          contextSummary.add("reminders", "apply session reminders to message history", msgs, Date.now() - remindersStart)
 
           const finalizeInterruptedAssistant = Effect.gen(function* () {
             if (msg.time.completed) return
@@ -1835,6 +1971,13 @@ export const layer = Layer.effect(
             const bypassAgentCheck = lastUserMsg?.parts.some((p) => p.type === "agent") ?? false
             const promptOps = yield* ops()
 
+            // Security mode detection:
+            // - Set OPENCODE_SECURITY=eval to strip write/shell from model entirely
+            // - Set OPENCODE_SECURITY=cli-batch to show tools but require explicit approval
+            // - Default (interactive-tui): write/shell always visible and executable
+            const securityMode = (process.env.OPENCODE_SECURITY ?? "interactive-tui") as "interactive-tui" | "eval" | "cli-batch"
+            const forceWriteTools = securityMode === "interactive-tui" || securityMode === "cli-batch"
+            const toolResolutionStart = Date.now()
             const tools = yield* SessionTools.resolve({
               agent,
               session,
@@ -1843,13 +1986,21 @@ export const layer = Layer.effect(
               bypassAgentCheck,
               messages: msgs,
               promptOps,
+              forceWriteTools,
+              securityMode,
             }).pipe(
               Effect.provideService(Plugin.Service, plugin),
               Effect.provideService(Permission.Service, permission),
               Effect.provideService(ToolRegistry.Service, registry),
               Effect.provideService(MCP.Service, mcp),
               Effect.provideService(Truncate.Service, truncate),
+              Effect.provideService(Config.Service, config),
+              Effect.provideService(Provider.Service, provider),
+              Effect.provideService(Image.Service, image),
+              Effect.provideService(LLM.Service, llm),
+              Effect.provideService(ToolCacheService, toolCache),
             )
+            contextSummary.add("toolResolution", "resolve enabled tool definitions", Object.keys(tools), Date.now() - toolResolutionStart)
 
             if (lastUser.format?.type === "json_schema") {
               tools["StructuredOutput"] = createStructuredOutputTool({
@@ -1863,7 +2014,8 @@ export const layer = Layer.effect(
             if (step === 1)
               yield* summary.summarize({ sessionID, messageID: lastUser.id }).pipe(Effect.ignore, Effect.forkIn(scope))
 
-            const promptRollout = SessionContextRollout.resolve(yield* config.get())
+            const cfg = yield* config.get()
+            const promptRollout = SessionContextRollout.resolve(cfg)
 
             if (step > 1 && lastFinished) {
               for (const m of msgs) {
@@ -1872,13 +2024,13 @@ export const layer = Layer.effect(
                   if (p.type !== "text" || p.ignored || p.synthetic) continue
                   if (!p.text.trim()) continue
                   p.text = promptRollout.cavemanSyntheticArtifacts === "on"
-                    ? ["REMINDER:", p.text, "Do it. Continue."].join("\n")
+                    ? ["REMINDER:", p.text, "Address it if still relevant, then continue toward the current objective."].join("\n")
                     : [
                         "<system-reminder>",
                         "The user sent the following message:",
                         p.text,
                         "",
-                        "Please address this message and continue with your tasks.",
+                        "Address this message if it is still relevant, then continue toward the current objective.",
                         "</system-reminder>",
                       ].join("\n")
                 }
@@ -1887,28 +2039,72 @@ export const layer = Layer.effect(
 
             yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
 
-            const [env, instructions, modelMsgs] = yield* Effect.all([
+            const preparedMsgs = yield* applyVisionFallback({
+              messages: msgs,
+              model,
+              user: lastUser,
+              sessionID,
+              agent,
+              imageConfig: cfg.attachment?.image,
+              promptRollout,
+            })
+
+            const [env, instructions] = yield* Effect.all([
               sys.environment(model),
               instruction.system().pipe(Effect.orDie),
-              MessageV2.toModelMessagesEffect(msgs, model, {
-                replayToolInputs: promptRollout.replayToolInputs,
-                replayToolOutputs: promptRollout.replayToolOutputs,
-                replayReasoning: promptRollout.replayReasoning,
-              }),
             ])
+            const modelMessageConversionStart = Date.now()
+            const modelMsgs = yield* MessageV2.toModelMessagesEffect(preparedMsgs, model, {
+              replayToolInputs: promptRollout.replayToolInputs,
+              replayToolOutputs: promptRollout.replayToolOutputs,
+              replayReasoning: promptRollout.replayReasoning,
+            })
+            contextSummary.add(
+              "modelMessageConversion",
+              "convert session messages for provider model",
+              modelMsgs,
+              Date.now() - modelMessageConversionStart,
+            )
             const system = [...env, ...instructions]
 
             // Extract the last user message for skill relevance filtering (every turn)
             const lastUserText = getCurrentTaskText(msgs) || undefined
 
             // Inject available skills every turn so the agent can always discover them
-            const skills = yield* sys.skills(agent, lastUserText)
+            const skillsStart = Date.now()
+            const skillsKey = `skills:${agent.name}:${createHash("sha1").update(lastUserText ?? "").digest("hex")}`
+            const cachedSkills = injectionCache.get(skillsKey)
+            const skills = cachedSkills.cached ? cachedSkills.value : injectionCache.set(skillsKey, yield* sys.skills(agent, lastUserText))
             if (skills) system.push(skills)
+            contextSummary.add("skills", skills ? "inject relevant skill summary" : "no relevant skill summary", skills, Date.now() - skillsStart, { cached: cachedSkills.cached })
+
+            // Conditionally advertise write/shell tools based on security mode
+            const toolListStart = Date.now()
+            const cachedToolList = injectionCache.get(`toolList:${securityMode}`)
+            const toolList = cachedToolList.cached ? cachedToolList.value : injectionCache.set(`toolList:${securityMode}`, yield* sys.toolList(securityMode as any))
+            if (toolList) system.push(toolList)
+            contextSummary.add(
+              "toolList",
+              toolList ? `inject tool list for security mode ${securityMode}` : "no tool list available",
+              toolList,
+              Date.now() - toolListStart,
+              { cached: cachedToolList.cached },
+            )
 
             // Inject task contract (Goal/DoD) once per turn if available
             if (!system.some((entry) => entry.includes("<task-contract")) && goalState.status !== "skipped") {
-              const goalCtx = formatGoalContext(goalState)
+              const goalInjectionStart = Date.now()
+              const goalKey = `goal:${createHash("sha1").update(JSON.stringify(goalState)).digest("hex")}`
+              const cachedGoal = injectionCache.get(goalKey)
+              const goalCtx = cachedGoal.cached ? cachedGoal.value : injectionCache.set(goalKey, formatGoalContext(goalState))
               if (goalCtx) system.push(goalCtx)
+              contextSummary.add(
+                "goal",
+                goalCtx ? "inject task contract context" : "task contract produced no context",
+                goalCtx,
+                Date.now() - goalInjectionStart,
+                { cached: cachedGoal.cached },
+              )
             }
 
             // Nudge the agent to drive the objective lifecycle (only while an objective
@@ -1916,35 +2112,43 @@ export const layer = Layer.effect(
             const goalActive =
               goalState.status !== "skipped" && goalState.status !== "completed" && goalState.goal?.trim()
             if (goalActive && !system.some((entry) => entry.includes("<goal_reminder"))) {
-              system.push(
-                [
+              const goalReminderStart = Date.now()
+              const cachedGoalReminder = injectionCache.get("goalReminder:active")
+              const goalReminderText = [
                   "<goal_reminder>",
-                  "- Read the user's latest message FIRST and compare it to the current objective above.",
-                  "- If the latest message diverges from the current objective: pivot via `edit_objectif`/`edit_objective` (update goal + DoD), or if the previous objective is done first call `complete_objectif`/`complete_objective`.",
-                  "- When you believe the current objective is achieved (e.g. your last todo is done), call `complete_objectif`/`complete_objective`. It asks the user to confirm before finalizing; on \"No\" it returns what is still missing so you keep working.",
+                  "- Compare the user's latest message with the current objective before acting.",
+                  "- If the latest message changes the objective, update it with `edit_objectif`/`edit_objective`; if the previous objective is already satisfied, complete it first.",
+                  "- Before finishing, verify the objective and DoD against the actual result and todo state.",
+                  "- When objective and DoD are satisfied, call `complete_objectif`/`complete_objective`; it completes without routine user approval.",
                   "</goal_reminder>",
-                ].join("\n") + "\n",
-              )
+                ].join("\n") + "\n"
+              const goalReminder = cachedGoalReminder.cached && cachedGoalReminder.value !== undefined
+                ? cachedGoalReminder.value
+                : (injectionCache.set("goalReminder:active", goalReminderText) ?? goalReminderText)
+              system.push(goalReminder)
+              contextSummary.add("goal", "inject active objective lifecycle reminder", goalReminder, Date.now() - goalReminderStart, { cached: cachedGoalReminder.cached })
             }
 
+            const stepOneTail: string[] = []
             if (step === 1) {
               const adaptive = yield* sys.adaptivePrompt({ messages: msgs, agent })
-              if (adaptive) system.push(adaptive)
+              if (adaptive) stepOneTail.push(adaptive)
 
               // Inject personality context (learned user preferences)
               const personality = yield* sys.personality()
-              if (personality) system.push(personality)
+              if (personality) stepOneTail.push(personality)
 
               // Pending trigger tasks from background daemon
+              const daemonStart = Date.now()
               const pendingTasks = yield* Effect.sync(() => TriggerHandler.listPendingTasks())
               if (pendingTasks.length > 0) {
-                system.push(formatPendingTasksSection(pendingTasks))
+                stepOneTail.push(formatPendingTasksSection(pendingTasks))
               }
 
               // Daemon notifications (results of auto-execution)
               const notificationsSection = formatNotificationsSection()
               if (notificationsSection) {
-                system.push(notificationsSection)
+                stepOneTail.push(notificationsSection)
                 // Acknowledge them so they don't reappear next session
                 yield* Effect.sync(() => acknowledgeAll())
               }
@@ -1952,30 +2156,43 @@ export const layer = Layer.effect(
               // Daemon learnings (auto-committed tasks from previous sessions)
               const learningsSection = formatLearningsSection()
               if (learningsSection) {
-                system.push(learningsSection)
+                stepOneTail.push(learningsSection)
                 // Acknowledge learnings so they don't reappear next session
                 yield* Effect.sync(() => AutoMemory.acknowledgeAllLearnings())
               }
 
               // Auto-generated execution plan for complex tasks (guidance only)
               if (executionPlan) {
-                system.push(formatPlanSection(executionPlan))
+                stepOneTail.push(formatPlanSection(executionPlan))
               }
+              contextSummary.add("daemon", "inject first-step adaptive/personality/daemon/plan context", stepOneTail, Date.now() - daemonStart)
             }
 
             // ── Methodology enforcement (matrix: step × complexity) ──
+            const methodologyStart = Date.now()
             const baseMode = computeMethodologyMode(step, msgs, promptRollout)
             const mode = session.parentID && baseMode === "full" ? "light" : baseMode
+            // Methodology guidance is volatile per-step (depends on step/mode/tool-activity).
+            // Keep it OUT of system[] so the cached system prefix stays stable across steps;
+            // relocate it to the conversation tail as an ephemeral guidance message instead.
             const methodReminder = buildMethodologyReminder(step, mode, msgs)
-            if (methodReminder) {
-              system.push(methodReminder)
-            }
-            if (mode === "full") {
-              system.push(METHODOLOGY_AUTO_CHECK)
-            }
+            const methodologyTail: string[] = []
+            const emittedMethodReminder = injectionCache.emitOnce("methodology", methodReminder)
+            if (emittedMethodReminder.value) methodologyTail.push(emittedMethodReminder.value)
+            if (mode === "full") methodologyTail.push(METHODOLOGY_AUTO_CHECK)
+            const methodologyMessage = methodologyTail.length ? methodologyTail.join("\n") : undefined
+            const stepOneMessage = stepOneTail.length ? stepOneTail.join("\n\n") : undefined
+            contextSummary.add(
+              "methodology",
+              emittedMethodReminder.skipped ? "skip unchanged methodology reminder already emitted in this run" : `inject ${mode} methodology reminder`,
+              methodologyMessage,
+              Date.now() - methodologyStart,
+              { cached: emittedMethodReminder.skipped },
+            )
 
             const format = lastUser.format ?? { type: "text" as const }
             if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
+            const handleProcessStart = Date.now()
             const result = yield* handle.process({
               user: lastUser,
               agent,
@@ -1983,11 +2200,18 @@ export const layer = Layer.effect(
               sessionID,
               parentSessionID: session.parentID,
               system,
-              messages: [...modelMsgs, ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS }] : [])],
+              messages: [
+                ...modelMsgs,
+                ...(stepOneMessage ? [{ role: "user" as const, content: PromptMethodology.wrapInjectedGuidance(stepOneMessage)! }] : []),
+                ...(methodologyMessage ? [{ role: "user" as const, content: PromptMethodology.wrapInjectedGuidance(methodologyMessage)! }] : []),
+                ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS }] : []),
+              ],
               tools,
               model,
               toolChoice: format.type === "json_schema" ? "required" : undefined,
             })
+            contextSummary.add("handleProcess", "run provider/model processing", handle.message, Date.now() - handleProcessStart)
+            log.info("prompt context summary", { sessionID, ...contextSummary.snapshot() })
 
             if (structured !== undefined) {
               handle.message.structured = structured
@@ -2124,11 +2348,39 @@ export const layer = Layer.effect(
     const loop: (input: LoopInput) => Effect.Effect<MessageV2.WithParts> = Effect.fn("SessionPrompt.loop")(function* (
       input: LoopInput,
     ) {
-      return yield* state.ensureRunning(
-        input.sessionID,
-        lastAssistant(input.sessionID) as Effect.Effect<MessageV2.WithParts>,
-        runLoop(input.sessionID) as Effect.Effect<MessageV2.WithParts>,
-      )
+      const arm = () =>
+        state.ensureRunning(
+          input.sessionID,
+          lastAssistant(input.sessionID) as Effect.Effect<MessageV2.WithParts>,
+          runLoop(input.sessionID) as Effect.Effect<MessageV2.WithParts>,
+        )
+
+      // Coalesced re-arm against a lost-wakeup race.
+      //
+      // A queued user prompt can be persisted in the narrow window after the
+      // active run takes its final message read (and decides to break) but
+      // before the runner transitions to idle. Concurrent loop callers share
+      // that run's `done` latch, so they return its (now stale) assistant and
+      // would leave the queued prompt unprocessed forever.
+      //
+      // After a run settles, re-check: if a user message is newer than the
+      // latest assistant, arm again. `state.ensureRunning` re-fetches the
+      // runner per call (the idle runner is removed from the session map), so
+      // this starts a real fresh run once the previous one is idle rather than
+      // re-joining a finished one. The predicate is the exact inverse of
+      // runLoop's break invariant (assistant newer than user), so a normally
+      // completed turn never re-arms and there is no livelock.
+      const hasQueuedUser = Effect.gen(function* () {
+        const msgs = yield* MessageV2.filterCompactedEffect(input.sessionID)
+        const { user, assistant } = MessageV2.latest(msgs)
+        return !!(user && assistant && user.id > assistant.id)
+      })
+
+      let result = yield* arm()
+      while (yield* hasQueuedUser) {
+        result = yield* arm()
+      }
+      return result
     })
 
     const shell: (input: ShellInput) => Effect.Effect<MessageV2.WithParts, Session.BusyError> = Effect.fn(
@@ -2281,6 +2533,7 @@ export const defaultLayer = Layer.suspend(() =>
         ToolRegistry.defaultLayer,
         Truncate.defaultLayer,
         Question.defaultLayer,
+        ToolCacheService.defaultLayer,
       ),
     ),
     Layer.provide(
