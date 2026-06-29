@@ -121,12 +121,15 @@ export const layer = Layer.effect(
       }
       let aborted = false
       const slog = log.clone().tag("session.id", input.sessionID).tag("messageID", input.assistantMessage.id)
+      let streamEventCounts: Partial<Record<StreamEvent["type"], number>> = {}
 
       const parse = (e: unknown) =>
         MessageV2.fromError(e, {
           providerID: input.model.providerID,
           aborted,
         })
+
+      const duration = (start: number | undefined, end = Date.now()) => (start ? end - start : undefined)
 
       const settleToolCall = Effect.fn("SessionProcessor.settleToolCall")(function* (toolCallID: string) {
         const done = ctx.toolcalls[toolCallID]?.done
@@ -176,6 +179,7 @@ export const layer = Layer.effect(
       ) {
         const match = yield* readToolCall(toolCallID)
         if (!match || match.part.state.status !== "running") return
+        const end = Date.now()
         yield* session.updatePart({
           ...match.part,
           state: {
@@ -184,9 +188,17 @@ export const layer = Layer.effect(
             output: output.output,
             metadata: output.metadata,
             title: output.title,
-            time: { start: match.part.state.time.start, end: Date.now() },
+            time: { start: match.part.state.time.start, end },
             attachments: output.attachments,
           },
+        })
+        slog.debug("tool.completed", {
+          toolCallID,
+          tool: match.part.tool,
+          duration: duration(match.part.state.time.start, end),
+          outputLength: output.output.length,
+          attachments: output.attachments?.length ?? 0,
+          providerExecuted: match.part.metadata?.providerExecuted === true,
         })
         yield* settleToolCall(toolCallID)
       })
@@ -194,18 +206,28 @@ export const layer = Layer.effect(
       const failToolCall = Effect.fn("SessionProcessor.failToolCall")(function* (toolCallID: string, error: unknown) {
         const match = yield* readToolCall(toolCallID)
         if (!match || match.part.state.status !== "running") return false
+        const end = Date.now()
+        const blocked = error instanceof Permission.RejectedError || error instanceof Question.RejectedError
         yield* session.updatePart({
           ...match.part,
           state: {
             status: "error",
             input: match.part.state.input,
             error: errorMessage(error),
-            time: { start: match.part.state.time.start, end: Date.now() },
+            time: { start: match.part.state.time.start, end },
           },
         })
-        if (error instanceof Permission.RejectedError || error instanceof Question.RejectedError) {
+        if (blocked) {
           ctx.blocked = ctx.shouldBreak
         }
+        slog.warn("tool.failed", {
+          toolCallID,
+          tool: match.part.tool,
+          duration: duration(match.part.state.time.start, end),
+          blocked,
+          shouldBreak: ctx.shouldBreak,
+          error: errorMessage(error),
+        })
         yield* settleToolCall(toolCallID)
         return true
       })
@@ -274,6 +296,11 @@ export const layer = Layer.effect(
           sessionID: part.sessionID,
           inputEnded: false,
         }
+        slog.debug("tool.created", {
+          toolCallID: input.id,
+          tool: input.name,
+          providerExecuted: input.providerExecuted === true,
+        })
         return { call: ctx.toolcalls[input.id], part }
       })
 
@@ -303,6 +330,7 @@ export const layer = Layer.effect(
       const toolInput = (value: unknown): Record<string, any> => (isRecord(value) ? value : { value })
 
       const handleEvent = Effect.fnUntraced(function* (value: StreamEvent) {
+        streamEventCounts[value.type] = (streamEventCounts[value.type] ?? 0) + 1
         switch (value.type) {
           case "reasoning-start":
             if (value.id in ctx.reasoningMap) return
@@ -420,6 +448,13 @@ export const layer = Layer.effect(
                 ? { ...value.providerMetadata, providerExecuted: true }
                 : value.providerMetadata,
             }))
+            slog.debug("tool.running", {
+              toolCallID: value.id,
+              tool: value.name,
+              inputEnded: toolCall.call.inputEnded,
+              providerExecuted: toolCall.part.metadata?.providerExecuted === true,
+              inputKeys: Object.keys(input),
+            })
 
             const parts = MessageV2.parts(ctx.assistantMessage.id)
             const recentParts = parts.slice(-DOOM_LOOP_THRESHOLD)
@@ -553,6 +588,7 @@ export const layer = Layer.effect(
             return
 
           case "step-finish": {
+            const stepFinishStart = Date.now()
             const completedSnapshot = yield* snapshot.track()
             yield* Effect.forEach(Object.keys(ctx.reasoningMap), finishReasoning)
             const usage = Session.getUsage({
@@ -588,6 +624,7 @@ export const layer = Layer.effect(
             })
             yield* session.updateMessage(ctx.assistantMessage)
             if (ctx.snapshot) {
+              const patchStart = Date.now()
               const patch = yield* snapshot.patch(ctx.snapshot)
               if (patch.files.length) {
                 yield* session.updatePart({
@@ -599,6 +636,10 @@ export const layer = Layer.effect(
                   files: patch.files,
                 })
               }
+              slog.debug("step.patch", {
+                duration: duration(patchStart),
+                files: patch.files.length,
+              })
               ctx.snapshot = undefined
             }
             yield* summary
@@ -613,6 +654,13 @@ export const layer = Layer.effect(
             ) {
               ctx.needsCompaction = true
             }
+            slog.debug("step.finished", {
+              duration: duration(stepFinishStart),
+              reason: value.reason,
+              cost: usage.cost,
+              tokens: usage.tokens,
+              needsCompaction: ctx.needsCompaction,
+            })
             return
           }
 
@@ -689,8 +737,13 @@ export const layer = Layer.effect(
       })
 
       const cleanup = Effect.fn("SessionProcessor.cleanup")(function* () {
+        const cleanupStart = Date.now()
+        let patchFiles = 0
+        let interruptedTools = 0
         if (ctx.snapshot) {
+          const patchStart = Date.now()
           const patch = yield* snapshot.patch(ctx.snapshot)
+          patchFiles = patch.files.length
           if (patch.files.length) {
             yield* session.updatePart({
               id: PartID.ascending(),
@@ -701,6 +754,10 @@ export const layer = Layer.effect(
               files: patch.files,
             })
           }
+          slog.debug("cleanup.patch", {
+            duration: duration(patchStart),
+            files: patch.files.length,
+          })
           ctx.snapshot = undefined
         }
 
@@ -742,10 +799,19 @@ export const layer = Layer.effect(
               time: { start: "time" in part.state ? part.state.time.start : end, end },
             },
           })
+          interruptedTools++
         }
         ctx.toolcalls = {}
         ctx.assistantMessage.time.completed = Date.now()
         yield* session.updateMessage(ctx.assistantMessage)
+        slog.info("cleanup", {
+          duration: duration(cleanupStart),
+          patchFiles,
+          interruptedTools,
+          blocked: ctx.blocked,
+          needsCompaction: ctx.needsCompaction,
+          error: !!ctx.assistantMessage.error,
+        })
       })
 
       const halt = Effect.fn("SessionProcessor.halt")(function* (e: unknown) {
@@ -778,15 +844,18 @@ export const layer = Layer.effect(
       })
 
       const process = Effect.fn("SessionProcessor.process")(function* (streamInput: LLM.StreamInput) {
-        slog.info("process")
+        const processStart = Date.now()
+        slog.info("process", { providerID: input.model.providerID, modelID: input.model.id })
         ctx.needsCompaction = false
         ctx.shouldBreak = (yield* config.get()).experimental?.continue_loop_on_deny !== true
+        streamEventCounts = {}
 
         return yield* Effect.gen(function* () {
           yield* Effect.gen(function* () {
             ctx.currentText = undefined
             ctx.reasoningMap = {}
             yield* status.set(ctx.sessionID, { type: "busy" })
+            const streamStart = Date.now()
             const stream = llm.stream(streamInput)
 
             yield* stream.pipe(
@@ -794,6 +863,11 @@ export const layer = Layer.effect(
               Stream.takeUntil(() => ctx.needsCompaction),
               Stream.runDrain,
             )
+            slog.info("stream.drained", {
+              duration: duration(streamStart),
+              events: streamEventCounts,
+              needsCompaction: ctx.needsCompaction,
+            })
           }).pipe(
             Effect.onInterrupt(() =>
               Effect.gen(function* () {
@@ -844,6 +918,12 @@ export const layer = Layer.effect(
 
           if (ctx.needsCompaction) return "compact"
           if (ctx.blocked || ctx.assistantMessage.error) return "stop"
+          slog.info("process.completed", {
+            duration: duration(processStart),
+            blocked: ctx.blocked,
+            needsCompaction: ctx.needsCompaction,
+            error: !!ctx.assistantMessage.error,
+          })
           return "continue"
         })
       })

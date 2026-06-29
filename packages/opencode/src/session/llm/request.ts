@@ -52,6 +52,20 @@ export type Prepared = {
 const mergeOptions = (target: Record<string, any>, source: Record<string, any> | undefined): Record<string, any> =>
   mergeDeep(target, source ?? {}) as Record<string, any>
 
+const approxSize = (value: unknown) => JSON.stringify(value)?.length ?? 0
+
+const summarizeMessages = (messages: ModelMessage[]) => ({
+  count: messages.length,
+  approxChars: approxSize(messages),
+  roles: messages.reduce(
+    (acc, message) => {
+      acc[message.role] = (acc[message.role] ?? 0) + 1
+      return acc
+    },
+    {} as Record<string, number>,
+  ),
+})
+
 export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: PrepareInput) {
   const isOpenaiOauth = input.provider.id === "openai" && input.auth?.type === "oauth"
   const system = [
@@ -70,7 +84,11 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
     { sessionID: input.sessionID, model: input.model },
     { system },
   )
-  if (system.length > 2 && system[0] === header) {
+  const systemTransformChangedHeader = system[0] !== header
+  // Preserve provider behavior: only collapse plugin-added fragments when the
+  // original header is still intact. If a plugin rewrites/removes/reorders the
+  // header, keep its exact system array to avoid guessing intent.
+  if (system.length > 2 && !systemTransformChangedHeader) {
     const rest = system.slice(1)
     system.length = 0
     system.push(header, rest.join("\n"))
@@ -164,33 +182,73 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
     })
   }
 
+  const sortedTools = Object.fromEntries(Object.entries(tools).toSorted(([a], [b]) => a.localeCompare(b)))
   const opencodeProjectID = input.model.providerID.startsWith("opencode")
     ? (yield* InstanceState.context).project.id
     : undefined
+  const resolvedHeaders = {
+    ...(input.model.providerID.startsWith("opencode")
+      ? {
+          ...(opencodeProjectID ? { "x-opencode-project": opencodeProjectID } : {}),
+          "x-opencode-session": input.sessionID,
+          "x-opencode-request": input.user.id,
+          "x-opencode-client": input.flags.client,
+          "User-Agent": USER_AGENT,
+        }
+      : {
+          "x-session-affinity": input.sessionID,
+          ...(input.parentSessionID ? { "x-parent-session-id": input.parentSessionID } : {}),
+          "User-Agent": USER_AGENT,
+        }),
+    ...input.model.headers,
+    ...headers,
+  }
+
+  const toolNames = Object.keys(sortedTools)
+  const diagnostics = {
+    provider: input.provider.id,
+    model: input.model.id,
+    sessionID: input.sessionID,
+    small: input.small === true,
+    isWorkflow: input.isWorkflow === true,
+    openaiOauth: isOpenaiOauth,
+    system: {
+      count: system.length,
+      approxChars: approxSize(system),
+      headerApproxChars: approxSize(header),
+      transformChangedHeader: systemTransformChangedHeader,
+    },
+    messages: summarizeMessages(messages),
+    tools: {
+      count: toolNames.length,
+      approxChars: approxSize(sortedTools),
+      names: toolNames,
+    },
+    params: {
+      temperature: params.temperature,
+      topP: params.topP,
+      topK: params.topK,
+      maxOutputTokens: params.maxOutputTokens,
+      optionsApproxChars: approxSize(params.options),
+    },
+    headers: {
+      count: Object.keys(resolvedHeaders).length,
+      customCount: Object.keys(headers).length,
+      names: Object.keys(resolvedHeaders),
+    },
+    messageTransformOptions: {
+      keys: Object.keys(options),
+    },
+  }
+  yield* Effect.logDebug("prepared LLM request payload").pipe(Effect.annotateLogs({ "llm.request": diagnostics }))
 
   return {
     system,
     messages,
-    tools: Object.fromEntries(Object.entries(tools).toSorted(([a], [b]) => a.localeCompare(b))),
+    tools: sortedTools,
     params,
     messageTransformOptions: options,
-    headers: {
-      ...(input.model.providerID.startsWith("opencode")
-        ? {
-            ...(opencodeProjectID ? { "x-opencode-project": opencodeProjectID } : {}),
-            "x-opencode-session": input.sessionID,
-            "x-opencode-request": input.user.id,
-            "x-opencode-client": input.flags.client,
-            "User-Agent": USER_AGENT,
-          }
-        : {
-            "x-session-affinity": input.sessionID,
-            ...(input.parentSessionID ? { "x-parent-session-id": input.parentSessionID } : {}),
-            "User-Agent": USER_AGENT,
-          }),
-      ...input.model.headers,
-      ...headers,
-    },
+    headers: resolvedHeaders,
   }
 })
 
