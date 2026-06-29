@@ -51,10 +51,12 @@ function createDefaultTitle(isChild = false) {
   return (isChild ? childTitlePrefix : parentTitlePrefix) + new Date().toISOString()
 }
 
+const defaultTitleRegex = new RegExp(
+  `^(${parentTitlePrefix}|${childTitlePrefix})\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$`,
+)
+
 export function isDefaultTitle(title: string) {
-  return new RegExp(
-    `^(${parentTitlePrefix}|${childTitlePrefix})\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$`,
-  ).test(title)
+  return defaultTitleRegex.test(title)
 }
 
 type SessionRow = typeof SessionTable.$inferSelect
@@ -114,6 +116,7 @@ export function fromRow(row: SessionRow): Info {
 }
 
 export function toRow(info: Info) {
+  const tokens = info.tokens ?? EmptyTokens
   return {
     id: info.id,
     project_id: info.projectID,
@@ -132,11 +135,11 @@ export function toRow(info: Info) {
     summary_files: info.summary?.files,
     summary_diffs: info.summary?.diffs,
     cost: info.cost ?? 0,
-    tokens_input: (info.tokens ?? EmptyTokens).input,
-    tokens_output: (info.tokens ?? EmptyTokens).output,
-    tokens_reasoning: (info.tokens ?? EmptyTokens).reasoning,
-    tokens_cache_read: (info.tokens ?? EmptyTokens).cache.read,
-    tokens_cache_write: (info.tokens ?? EmptyTokens).cache.write,
+    tokens_input: tokens.input,
+    tokens_output: tokens.output,
+    tokens_reasoning: tokens.reasoning,
+    tokens_cache_read: tokens.cache.read,
+    tokens_cache_write: tokens.cache.write,
     revert: info.revert ?? null,
     permission: info.permission,
     goal_state: info.goalState,

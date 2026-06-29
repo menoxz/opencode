@@ -91,7 +91,8 @@ export function stream(input: StreamInput): StreamResult {
   // OpenAI's official wire field names, so this is identity, not translation
   // — if a field ever needs to differ between the two surfaces, the
   // translation belongs here, not split across both packages.
-  const diagnostics = streamDiagnostics(input, current)
+  const requestHeaders = { ...providerHeaders(input.provider.options.headers), ...input.headers }
+  const diagnostics = streamDiagnostics(input, current, requestHeaders)
   const started = Date.now()
   log.debug("native stream request", diagnostics)
   let stream: Stream.Stream<LLMEvent, unknown>
@@ -109,7 +110,7 @@ export function stream(input: StreamInput): StreamResult {
           topK: input.topK,
           maxOutputTokens: input.maxOutputTokens,
           providerOptions: ProviderTransform.providerOptions(input.model, input.providerOptions ?? {}),
-          headers: { ...providerHeaders(input.provider.options.headers), ...input.headers },
+          headers: requestHeaders,
         }),
         tools: nativeTools(input.tools, input),
       })
@@ -159,7 +160,11 @@ function providerHeaders(value: unknown): Record<string, string> | undefined {
   )
 }
 
-function streamDiagnostics(input: StreamInput, runtime: Extract<RuntimeStatus, { type: "supported" }>): Diagnostics {
+function streamDiagnostics(
+  input: StreamInput,
+  runtime: Extract<RuntimeStatus, { type: "supported" }>,
+  headers: Record<string, string>,
+): Diagnostics {
   return {
     providerID: input.provider.id,
     modelID: input.model.id,
@@ -167,7 +172,7 @@ function streamDiagnostics(input: StreamInput, runtime: Extract<RuntimeStatus, {
     toolCount: Object.keys(input.tools).length,
     hasBaseURL: runtime.baseURL !== undefined,
     hasProviderOptions: Object.keys(input.providerOptions ?? {}).length > 0,
-    headerNames: [...new Set([...Object.keys(providerHeaders(input.provider.options.headers) ?? {}), ...Object.keys(input.headers)])],
+    headerNames: Object.keys(headers),
   }
 }
 

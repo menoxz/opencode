@@ -183,11 +183,10 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
   }
 
   const sortedTools = Object.fromEntries(Object.entries(tools).toSorted(([a], [b]) => a.localeCompare(b)))
-  const opencodeProjectID = input.model.providerID.startsWith("opencode")
-    ? (yield* InstanceState.context).project.id
-    : undefined
+  const isOpencodeProvider = input.model.providerID.startsWith("opencode")
+  const opencodeProjectID = isOpencodeProvider ? (yield* InstanceState.context).project.id : undefined
   const resolvedHeaders = {
-    ...(input.model.providerID.startsWith("opencode")
+    ...(isOpencodeProvider
       ? {
           ...(opencodeProjectID ? { "x-opencode-project": opencodeProjectID } : {}),
           "x-opencode-session": input.sessionID,
@@ -205,6 +204,7 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
   }
 
   const toolNames = Object.keys(sortedTools)
+  const headerNames = Object.keys(resolvedHeaders)
   const diagnostics = {
     provider: input.provider.id,
     model: input.model.id,
@@ -232,9 +232,9 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
       optionsApproxChars: approxSize(params.options),
     },
     headers: {
-      count: Object.keys(resolvedHeaders).length,
+      count: headerNames.length,
       customCount: Object.keys(headers).length,
-      names: Object.keys(resolvedHeaders),
+      names: headerNames,
     },
     messageTransformOptions: {
       keys: Object.keys(options),
