@@ -1,5 +1,5 @@
 import path from "path"
-import { Effect, Layer, Context } from "effect"
+import { Effect, Layer, Context, Option } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { Config } from "@/config/config"
 import { InstanceState } from "@/effect/instance-state"
@@ -8,9 +8,12 @@ import { Flag } from "@opencode-ai/core/flag/flag"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { withTransientReadRetry } from "@/util/effect-http-client"
 import { Global } from "@opencode-ai/core/global"
+import * as Log from "@opencode-ai/core/util/log"
 import type { MessageV2 } from "./message-v2"
 import type { MessageID } from "./schema"
 import { SessionContextRollout } from "./context-rollout"
+
+const log = Log.create({ service: "session.instruction" })
 
 const files = (disableClaudeCodePrompt: boolean) => [
   "AGENTS.md",
@@ -51,6 +54,10 @@ function renderInstruction(filepath: string, content: string, mode: SessionConte
   ].join("\n")
 }
 
+function elapsed(start: number) {
+  return Date.now() - start
+}
+
 export interface Interface {
   readonly clear: (messageID: MessageID) => Effect.Effect<void>
   readonly systemPaths: () => Effect.Effect<Set<string>, AppFileSystem.Error>
@@ -88,6 +95,8 @@ export const layer: Layer.Layer<
         Effect.succeed({
           // Track which instruction files have already been attached for a given assistant message.
           claims: new Map<MessageID, Set<string>>(),
+          // Cache file reads only when size/mtime prove the content is unchanged.
+          reads: new Map<string, { signature: string; content: string }>(),
         }),
       ),
     )
@@ -104,18 +113,45 @@ export const layer: Layer.Layer<
         .pipe(Effect.catch(() => Effect.succeed([] as string[])))
     })
 
-    const read = Effect.fnUntraced(function* (filepath: string) {
-      return yield* fs.readFileString(filepath).pipe(Effect.catch(() => Effect.succeed("")))
+    const read = Effect.fn("Instruction.read")(function* (filepath: string) {
+      const start = Date.now()
+      const stat = yield* fs.stat(filepath).pipe(Effect.catch(() => Effect.succeed(undefined)))
+      if (!stat) {
+        log.debug("instruction file skipped", { filepath, reason: "missing", duration: elapsed(start) })
+        return ""
+      }
+      const mtime = stat.mtime.pipe(
+        Option.map((time) => time.getTime()),
+        Option.getOrElse(() => 0),
+      )
+      const signature = `${stat.size}:${mtime}`
+      const store = yield* InstanceState.get(state)
+      const cached = store.reads.get(filepath)
+      if (cached?.signature === signature) {
+        log.debug("instruction file cache hit", { filepath, bytes: cached.content.length, duration: elapsed(start) })
+        return cached.content
+      }
+      const content = yield* fs.readFileString(filepath).pipe(Effect.catch(() => Effect.succeed("")))
+      store.reads.set(filepath, { signature, content })
+      log.debug("instruction file read", { filepath, bytes: content.length, duration: elapsed(start) })
+      return content
     })
 
     const fetch = Effect.fnUntraced(function* (url: string) {
+      const start = Date.now()
       const res = yield* http.execute(HttpClientRequest.get(url)).pipe(
         Effect.timeout(5000),
         Effect.catch(() => Effect.succeed(null)),
       )
-      if (!res) return ""
+      if (!res) {
+        log.debug("instruction file skipped", { filepath: url, source: "remote", reason: "empty-or-error", duration: elapsed(start) })
+        return ""
+      }
       const body = yield* res.arrayBuffer.pipe(Effect.catch(() => Effect.succeed(new ArrayBuffer(0))))
-      return new TextDecoder().decode(body)
+      const content = new TextDecoder().decode(body)
+      if (content) log.debug("instruction file read", { filepath: url, source: "remote", bytes: content.length, duration: elapsed(start) })
+      else log.debug("instruction file skipped", { filepath: url, source: "remote", reason: "empty", duration: elapsed(start) })
+      return content
     })
 
     const clear = Effect.fn("Instruction.clear")(function* (messageID: MessageID) {
@@ -123,16 +159,20 @@ export const layer: Layer.Layer<
       s.claims.delete(messageID)
     })
 
-    const systemPaths = Effect.fn("Instruction.systemPaths")(function* () {
+    const discoverSystemPaths = Effect.fn("Instruction.discoverSystemPaths")(function* () {
+      const start = Date.now()
       const config = yield* cfg.get()
       const ctx = yield* InstanceState.context
       const paths = new Set<string>()
 
       for (const file of globalFiles) {
         if (yield* fs.existsSafe(file)) {
-          paths.add(path.resolve(file))
+          const filepath = path.resolve(file)
+          paths.add(filepath)
+          log.debug("instruction file found", { filepath, source: "global" })
           break
         }
+        log.debug("instruction file skipped", { filepath: file, source: "global", reason: "missing" })
       }
 
       // The first project-level match wins so we don't stack AGENTS.md/CLAUDE.md from every ancestor.
@@ -142,15 +182,25 @@ export const layer: Layer.Layer<
             .findUp(file, ctx.directory, ctx.worktree)
             .pipe(Effect.catch(() => Effect.succeed([])))
           if (matches.length > 0) {
-            matches.forEach((item) => paths.add(path.resolve(item)))
+            matches.forEach((item) => {
+              const filepath = path.resolve(item)
+              paths.add(filepath)
+              log.debug("instruction file found", { filepath, source: "project", target: file })
+            })
             break
           }
+          log.debug("instruction file skipped", { source: "project", target: file, reason: "missing" })
         }
+      } else {
+        log.debug("instruction discovery skipped", { source: "project", reason: "disabled" })
       }
 
       if (config.instructions) {
         for (const raw of config.instructions) {
-          if (raw.startsWith("https://") || raw.startsWith("http://")) continue
+          if (raw.startsWith("https://") || raw.startsWith("http://")) {
+            log.debug("instruction file skipped", { filepath: raw, source: "config", reason: "remote" })
+            continue
+          }
           const instruction = raw.startsWith("~/") ? path.join(global.home, raw.slice(2)) : raw
           const matches = yield* (
             path.isAbsolute(instruction)
@@ -161,35 +211,61 @@ export const layer: Layer.Layer<
                 })
               : relative(instruction)
           ).pipe(Effect.catch(() => Effect.succeed([] as string[])))
-          matches.forEach((item) => paths.add(path.resolve(item)))
+          if (matches.length === 0) {
+            log.debug("instruction file skipped", { filepath: raw, source: "config", reason: "missing" })
+          }
+          matches.forEach((item) => {
+            const filepath = path.resolve(item)
+            paths.add(filepath)
+            log.debug("instruction file found", { filepath, source: "config", pattern: raw })
+          })
         }
       }
 
+      log.debug("instruction paths discovered", { count: paths.size, duration: elapsed(start) })
       return paths
     })
 
+    const systemPaths = Effect.fn("Instruction.systemPaths")(function* () {
+      return yield* discoverSystemPaths()
+    })
+
     const system = Effect.fn("Instruction.system")(function* () {
+      const start = Date.now()
       const config = yield* cfg.get()
       const rollout = SessionContextRollout.resolve(config)
       const paths = yield* systemPaths()
       const urls = (config.instructions ?? []).filter(
         (item) => item.startsWith("https://") || item.startsWith("http://"),
       )
-      if (rollout.injectionInstructions === "off") return []
+      if (rollout.injectionInstructions === "off") {
+        log.debug("instruction injection skipped", { reason: "disabled", paths: paths.size, urls: urls.length })
+        return []
+      }
 
       const files = yield* Effect.forEach(Array.from(paths), read, { concurrency: 8 })
       const remote = yield* Effect.forEach(urls, fetch, { concurrency: 4 })
 
-      return [
+      const result = [
         ...Array.from(paths).flatMap((item, i) => {
           const rendered = files[i] ? renderInstruction(item, files[i], rollout.injectionInstructions) : undefined
+          if (!rendered) log.debug("instruction file skipped", { filepath: item, reason: "empty-or-disabled" })
           return rendered ? [rendered] : []
         }),
         ...urls.flatMap((item, i) => {
           const rendered = remote[i] ? renderInstruction(item, remote[i], rollout.injectionInstructions) : undefined
+          if (!rendered) log.debug("instruction file skipped", { filepath: item, source: "remote", reason: "empty-or-disabled" })
           return rendered ? [rendered] : []
         }),
       ]
+      log.debug("instruction system loaded", {
+        paths: paths.size,
+        urls: urls.length,
+        applied: result.length,
+        mode: rollout.injectionInstructions,
+        duration: elapsed(start),
+      })
+      return result
     })
 
     const find = Effect.fn("Instruction.find")(function* (dir: string) {

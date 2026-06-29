@@ -30,6 +30,12 @@ import { LLMRequestPrep } from "./llm/request"
 const log = Log.create({ service: "llm" })
 export const OUTPUT_TOKEN_MAX = ProviderTransform.OUTPUT_TOKEN_MAX
 
+const elapsed = (started: number) => Date.now() - started
+const errorDetails = (error: unknown) => {
+  if (error instanceof Error) return { name: error.name, message: error.message }
+  return { message: String(error) }
+}
+
 export type StreamInput = {
   user: MessageV2.User
   sessionID: string
@@ -79,6 +85,7 @@ const live: Layer.Layer<
     const flags = yield* RuntimeFlags.Service
 
     const run = Effect.fn("LLM.run")(function* (input: StreamRequest) {
+      const runStarted = Date.now()
       const l = log
         .clone()
         .tag("providerID", input.model.providerID)
@@ -92,6 +99,7 @@ const live: Layer.Layer<
         providerID: input.model.providerID,
       })
 
+      const resolutionStarted = Date.now()
       const [language, cfg, item, info] = yield* Effect.all(
         [
           provider.getLanguage(input.model),
@@ -101,8 +109,14 @@ const live: Layer.Layer<
         ],
         { concurrency: "unbounded" },
       )
+      l.info("provider/auth/config resolved", {
+        duration: elapsed(resolutionStarted),
+        providerID: input.model.providerID,
+        modelID: input.model.id,
+      })
 
       const isWorkflow = language instanceof GitLabWorkflowLanguageModel
+      const prepStarted = Date.now()
       const prepared = yield* LLMRequestPrep.prepare({
         ...input,
         provider: item,
@@ -110,6 +124,14 @@ const live: Layer.Layer<
         plugin,
         flags,
         isWorkflow,
+      })
+      l.info("request prepared", {
+        duration: elapsed(prepStarted),
+        messages: prepared.messages.length,
+        tools: Object.keys(prepared.tools).length,
+        activeTools: Object.keys(prepared.tools).filter((x) => x !== "invalid").length,
+        maxRetries: input.retries ?? 0,
+        maxOutputTokens: prepared.params.maxOutputTokens,
       })
 
       // Wire up toolExecutor for DWS workflow models so that tool calls
@@ -218,6 +240,7 @@ const live: Layer.Layer<
       // Runtime seam: native is an opt-in adapter over @opencode-ai/llm. It
       // either returns a ready LLMEvent stream or a concrete fallback reason.
       if (flags.experimentalNativeLlm) {
+        const nativeStarted = Date.now()
         const native = LLMNativeRuntime.stream({
           model: input.model,
           provider: item,
@@ -233,6 +256,11 @@ const live: Layer.Layer<
           providerOptions: prepared.params.options,
           headers: prepared.headers,
           abort: input.abort,
+        })
+        l.info("native runtime evaluated", {
+          duration: elapsed(nativeStarted),
+          status: native.type,
+          reason: native.type === "unsupported" ? native.reason : undefined,
         })
         if (native.type === "supported") {
           yield* Effect.logInfo("llm runtime selected").pipe(
@@ -267,76 +295,87 @@ const live: Layer.Layer<
       )
       // Default runtime path: AI SDK owns provider execution and tool dispatch;
       // LLMAISDK.toLLMEvents below normalizes fullStream parts for the processor.
-      return {
-        type: "ai-sdk" as const,
-        result: streamText({
-          onError(error) {
-            l.error("stream error", {
-              error,
+      const aiSdkStarted = Date.now()
+      const result = streamText({
+        onError(error) {
+          l.error("ai-sdk stream error", {
+            runtime: "ai-sdk",
+            maxRetries: input.retries ?? 0,
+            error: errorDetails(error),
+          })
+        },
+        async experimental_repairToolCall(failed) {
+          const lower = failed.toolCall.toolName.toLowerCase()
+          if (lower !== failed.toolCall.toolName && prepared.tools[lower]) {
+            l.info("repairing tool call", {
+              tool: failed.toolCall.toolName,
+              repaired: lower,
             })
-          },
-          async experimental_repairToolCall(failed) {
-            const lower = failed.toolCall.toolName.toLowerCase()
-            if (lower !== failed.toolCall.toolName && prepared.tools[lower]) {
-              l.info("repairing tool call", {
-                tool: failed.toolCall.toolName,
-                repaired: lower,
-              })
-              return {
-                ...failed.toolCall,
-                toolName: lower,
-              }
-            }
             return {
               ...failed.toolCall,
-              input: JSON.stringify({
-                tool: failed.toolCall.toolName,
-                error: failed.error.message,
-              }),
-              toolName: "invalid",
+              toolName: lower,
             }
-          },
-          temperature: prepared.params.temperature,
-          topP: prepared.params.topP,
-          topK: prepared.params.topK,
-          providerOptions: ProviderTransform.providerOptions(input.model, prepared.params.options),
-          activeTools: Object.keys(prepared.tools).filter((x) => x !== "invalid"),
-          tools: prepared.tools,
-          toolChoice: input.toolChoice,
-          maxOutputTokens: prepared.params.maxOutputTokens,
-          abortSignal: input.abort,
-          headers: prepared.headers,
-          maxRetries: input.retries ?? 0,
-          messages: prepared.messages,
-          model: wrapLanguageModel({
-            model: language,
-            middleware: [
-              {
-                specificationVersion: "v3" as const,
-                async transformParams(args) {
-                  if (args.type === "stream") {
-                    // @ts-expect-error
-                    args.params.prompt = ProviderTransform.message(
-                      args.params.prompt,
-                      input.model,
-                      prepared.messageTransformOptions,
-                    )
-                  }
-                  return args.params
-                },
+          }
+          return {
+            ...failed.toolCall,
+            input: JSON.stringify({
+              tool: failed.toolCall.toolName,
+              error: failed.error.message,
+            }),
+            toolName: "invalid",
+          }
+        },
+        temperature: prepared.params.temperature,
+        topP: prepared.params.topP,
+        topK: prepared.params.topK,
+        providerOptions: ProviderTransform.providerOptions(input.model, prepared.params.options),
+        activeTools: Object.keys(prepared.tools).filter((x) => x !== "invalid"),
+        tools: prepared.tools,
+        toolChoice: input.toolChoice,
+        maxOutputTokens: prepared.params.maxOutputTokens,
+        abortSignal: input.abort,
+        headers: prepared.headers,
+        maxRetries: input.retries ?? 0,
+        messages: prepared.messages,
+        model: wrapLanguageModel({
+          model: language,
+          middleware: [
+            {
+              specificationVersion: "v3" as const,
+              async transformParams(args) {
+                if (args.type === "stream") {
+                  // @ts-expect-error
+                  args.params.prompt = ProviderTransform.message(
+                    args.params.prompt,
+                    input.model,
+                    prepared.messageTransformOptions,
+                  )
+                }
+                return args.params
               },
-            ],
-          }),
-          experimental_telemetry: {
-            isEnabled: cfg.experimental?.openTelemetry,
-            functionId: "session.llm",
-            tracer: telemetryTracer,
-            metadata: {
-              userId: cfg.username ?? "unknown",
-              sessionId: input.sessionID,
             },
-          },
+          ],
         }),
+        experimental_telemetry: {
+          isEnabled: cfg.experimental?.openTelemetry,
+          functionId: "session.llm",
+          tracer: telemetryTracer,
+          metadata: {
+            userId: cfg.username ?? "unknown",
+            sessionId: input.sessionID,
+          },
+        },
+      })
+      l.info("ai-sdk stream initialized", {
+        duration: elapsed(aiSdkStarted),
+        totalDuration: elapsed(runStarted),
+        maxRetries: input.retries ?? 0,
+        messages: prepared.messages.length,
+        tools: Object.keys(prepared.tools).length,
+      })
+      return {
+        type: "ai-sdk" as const,
+        result,
       }
     })
 
@@ -344,6 +383,19 @@ const live: Layer.Layer<
       Stream.scoped(
         Stream.unwrap(
           Effect.gen(function* () {
+            const streamStarted = Date.now()
+            const l = log
+              .clone()
+              .tag("providerID", input.model.providerID)
+              .tag("modelID", input.model.id)
+              .tag("session.id", input.sessionID)
+              .tag("small", (input.small ?? false).toString())
+              .tag("agent", input.agent.name)
+              .tag("mode", input.agent.mode)
+            l.info("stream lifecycle started", {
+              providerID: input.model.providerID,
+              modelID: input.model.id,
+            })
             const ctrl = yield* Effect.acquireRelease(
               Effect.sync(() => new AbortController()),
               (ctrl) => Effect.sync(() => ctrl.abort()),
@@ -351,16 +403,38 @@ const live: Layer.Layer<
 
             const result = yield* run({ ...input, abort: ctrl.signal })
 
-            if (result.type === "native") return result.stream
+            const llmStream = (() => {
+              if (result.type === "native") return result.stream
 
-            // Adapter seam: both runtimes expose the same LLMEvent stream. Native
-            // already returns one; AI SDK streams are converted here.
-            const state = LLMAISDK.adapterState()
-            return Stream.fromAsyncIterable(result.result.fullStream, (e) =>
-              e instanceof Error ? e : new Error(String(e)),
-            ).pipe(
-              Stream.mapEffect((event) => LLMAISDK.toLLMEvents(state, event)),
-              Stream.flatMap((events) => Stream.fromIterable(events)),
+              // Adapter seam: both runtimes expose the same LLMEvent stream. Native
+              // already returns one; AI SDK streams are converted here.
+              const state = LLMAISDK.adapterState()
+              return Stream.fromAsyncIterable(result.result.fullStream, (e) =>
+                e instanceof Error ? e : new Error(String(e)),
+              ).pipe(
+                Stream.mapEffect((event) => LLMAISDK.toLLMEvents(state, event)),
+                Stream.flatMap((events) => Stream.fromIterable(events)),
+              )
+            })()
+
+            return llmStream.pipe(
+              Stream.tapError((error) =>
+                Effect.sync(() => {
+                  l.error("stream lifecycle failed", {
+                    runtime: result.type,
+                    duration: elapsed(streamStarted),
+                    error: errorDetails(error),
+                  })
+                }),
+              ),
+              Stream.ensuring(
+                Effect.sync(() => {
+                  l.info("stream lifecycle finished", {
+                    runtime: result.type,
+                    duration: elapsed(streamStarted),
+                  })
+                }),
+              ),
             )
           }),
         ),
