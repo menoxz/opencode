@@ -15,3 +15,29 @@ export const GoalState = Schema.Struct({
   updatedAt: Schema.Finite,
 }).annotate({ identifier: "GoalState" })
 export type GoalState = Types.DeepMutable<Schema.Schema.Type<typeof GoalState>>
+export type GoalStatus = GoalState["status"]
+
+// Terminal statuses: the objective is finished and must not be revived this turn.
+const TERMINAL_STATUSES: readonly GoalStatus[] = ["completed", "skipped"]
+
+/** True once the objective is done/skipped — used to stop injecting it as "to do". */
+export const isTerminalStatus = (status: GoalStatus): boolean => TERMINAL_STATUSES.includes(status)
+
+/** Non-empty objective text. Centralizes the repeated `goal?.trim()` guard. */
+export const hasObjective = (gs: GoalState | null | undefined): gs is GoalState =>
+  !!gs && !!gs.goal?.trim()
+
+/** Eligible for prompt injection: has text and not explicitly skipped. */
+export const isInjectableGoal = (gs: GoalState | null | undefined): gs is GoalState =>
+  hasObjective(gs) && gs.status !== "skipped"
+
+/** Actively worked on: injectable and not yet completed. Mirrors prompt.ts goalActive. */
+export const isActiveGoal = (gs: GoalState | null | undefined): gs is GoalState =>
+  isInjectableGoal(gs) && gs.status !== "completed"
+
+/** Bump version + timestamp monotonically; guards against clock-skew regressions. */
+export const touchGoalState = (gs: GoalState): GoalState => ({
+  ...gs,
+  version: gs.version + 1,
+  updatedAt: Math.max(Date.now(), gs.updatedAt + 1),
+})

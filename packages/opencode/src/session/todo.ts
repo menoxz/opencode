@@ -6,6 +6,13 @@ import { Database } from "@/storage/db"
 import { eq } from "drizzle-orm"
 import { asc } from "drizzle-orm"
 import { TodoTable } from "./session.sql"
+import * as Log from "@opencode-ai/core/util/log"
+
+const log = Log.create({ service: "session.todo" })
+
+function elapsed(start: number) {
+  return Date.now() - start
+}
 
 export const Info = Schema.Struct({
   content: Schema.String.annotate({ description: "Brief description of the task" }),
@@ -39,10 +46,12 @@ export const layer = Layer.effect(
     const bus = yield* Bus.Service
 
     const update = Effect.fn("Todo.update")(function* (input: { sessionID: SessionID; todos: Info[] }) {
+      const start = Date.now()
+      const count = input.todos.length
       yield* Effect.sync(() =>
         Database.transaction((db) => {
           db.delete(TodoTable).where(eq(TodoTable.session_id, input.sessionID)).run()
-          if (input.todos.length === 0) return
+          if (count === 0) return
           db.insert(TodoTable)
             .values(
               input.todos.map((todo, position) => ({
@@ -56,15 +65,18 @@ export const layer = Layer.effect(
             .run()
         }),
       )
+      log.debug("update", { sessionID: input.sessionID, count, ms: elapsed(start) })
       yield* bus.publish(Event.Updated, input)
     })
 
     const get = Effect.fn("Todo.get")(function* (sessionID: SessionID) {
+      const start = Date.now()
       const rows = yield* Effect.sync(() =>
         Database.use((db) =>
           db.select().from(TodoTable).where(eq(TodoTable.session_id, sessionID)).orderBy(asc(TodoTable.position)).all(),
         ),
       )
+      log.debug("get", { sessionID, count: rows.length, ms: elapsed(start) })
       return rows.map((row) => ({
         content: row.content,
         status: row.status,

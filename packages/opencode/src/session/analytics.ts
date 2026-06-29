@@ -65,28 +65,34 @@ export const layer = Layer.effect(
       durationMs: number,
       success: boolean,
     ) {
+      // No-op guard: ignore empty tool names so aggregates stay clean.
+      if (!toolName) {
+        log.warn("recordToolCall skipped: empty toolName")
+        return
+      }
+      // Clamp NaN/negative durations to 0 to keep totals trustworthy.
+      const duration = Number.isFinite(durationMs) && durationMs > 0 ? durationMs : 0
       yield* Ref.update(toolUsage, (map) => {
-        const next = new Map(map)
-        const existing = next.get(toolName)
+        // Mutate in place: the map is owned by this Ref and never leaked,
+        // avoiding an O(n) Map copy on every tool call.
+        const existing = map.get(toolName)
         if (existing) {
-          next.set(toolName, {
-            count: existing.count + 1,
-            totalDuration: existing.totalDuration + durationMs,
-            errors: existing.errors + (success ? 0 : 1),
-          })
+          existing.count += 1
+          existing.totalDuration += duration
+          existing.errors += success ? 0 : 1
         } else {
-          next.set(toolName, {
-            count: 1,
-            totalDuration: durationMs,
-            errors: success ? 0 : 1,
-          })
+          map.set(toolName, { count: 1, totalDuration: duration, errors: success ? 0 : 1 })
         }
-        return next
+        return map
       })
+      log.debug("tool call", { tool: toolName, durationMs: duration, success })
     })
 
     const recordError = Effect.fn("SessionAnalytics.recordError")(function* (error: string) {
+      // No-op guard: skip empty/blank errors.
+      if (!error || !error.trim()) return
       yield* Ref.update(errors, (e) => [...e, error])
+      log.error("session error recorded", { error })
     })
 
     const getMetrics = Effect.fn("SessionAnalytics.getMetrics")(function* () {
@@ -103,11 +109,19 @@ export const layer = Layer.effect(
         })
       }
 
+      const totalToolCalls = toolUsageList.reduce((sum, t) => sum + t.callCount, 0)
+      log.debug("metrics snapshot", {
+        tools: toolUsageList.length,
+        totalToolCalls,
+        errors: errs.length,
+        uptimeMs: Date.now() - startTime,
+      })
+
       return {
         sessionId: "current",
         startTime,
         endTime: Date.now(),
-        totalToolCalls: toolUsageList.reduce((sum, t) => sum + t.callCount, 0),
+        totalToolCalls,
         toolUsage: toolUsageList,
         errors: errs,
       } satisfies SessionMetrics
@@ -116,6 +130,7 @@ export const layer = Layer.effect(
     const reset = Effect.fn("SessionAnalytics.reset")(function* () {
       yield* Ref.set(toolUsage, new Map())
       yield* Ref.set(errors, [])
+      log.info("analytics reset")
     })
 
     return Service.of({ recordToolCall, recordError, getMetrics, reset })

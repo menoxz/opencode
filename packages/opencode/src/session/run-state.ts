@@ -64,13 +64,19 @@ export const layer = Layer.effect(
         onInterrupt,
       })
       data.runners.set(sessionID, next)
+      yield* Effect.logDebug("session runner created").pipe(
+        Effect.annotateLogs({ sessionID, runners: data.runners.size }),
+      )
       return next
     })
 
     const assertNotBusy = Effect.fn("SessionRunState.assertNotBusy")(function* (sessionID: SessionID) {
       const data = yield* InstanceState.get(state)
       const existing = data.runners.get(sessionID)
-      if (existing?.busy) yield* busyError(sessionID)
+      if (existing?.busy) {
+        yield* Effect.logDebug("session busy assertion failed").pipe(Effect.annotateLogs({ sessionID }))
+        yield* busyError(sessionID)
+      }
     })
 
     const cancel = Effect.fn("SessionRunState.cancel")(function* (sessionID: SessionID) {
@@ -81,6 +87,7 @@ export const layer = Layer.effect(
         yield* status.set(sessionID, { type: "idle" })
         return
       }
+      yield* Effect.logDebug("session cancel requested").pipe(Effect.annotateLogs({ sessionID }))
       yield* existing.cancel
     })
 
@@ -100,7 +107,14 @@ export const layer = Layer.effect(
     ) {
       return yield* (yield* runner(sessionID, onInterrupt))
         .startShell(work, ready)
-        .pipe(Effect.catchTag("RunnerBusy", () => Effect.fail(busyError(sessionID))))
+        .pipe(
+          Effect.catchTag("RunnerBusy", () =>
+            Effect.gen(function* () {
+              yield* Effect.logDebug("session shell rejected: busy").pipe(Effect.annotateLogs({ sessionID }))
+              return yield* busyError(sessionID)
+            }),
+          ),
+        )
     })
 
     return Service.of({ assertNotBusy, cancel, ensureRunning, startShell })

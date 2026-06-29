@@ -60,22 +60,39 @@ const layer = Layer.effect(
 
         // Validate steps
         const steps: Step[] = []
+        let invalidCount = 0
         for (const s of stepsRaw) {
           const decoded = Schema.decodeUnknownOption(StepSchema)(s)
           if (Option.isSome(decoded)) steps.push(decoded.value)
-          else log.warn("Invalid auto_execute step", { step: s })
+          else {
+            invalidCount++
+            log.warn("Invalid auto_execute step", { step: s })
+          }
         }
+        if (steps.length === 0) {
+          log.warn("Auto-execute: no valid steps", { provided: stepsRaw.length, invalid: invalidCount })
+          return { results: [], totalDurationMs: 0, failedCount: 0 } as PipelineReport
+        }
+
+        // Build the tool index once instead of fetching the registry per step.
+        const allTools = yield* toolRegistry.all()
+        const toolIndex = new Map(allTools.map((t) => [t.id, t] as const))
+        log.info("Auto-execute pipeline starting", {
+          steps: steps.length,
+          invalid: invalidCount,
+          tools: toolIndex.size,
+        })
 
         const results: StepResult[] = []
         const startAll = Date.now()
 
-        for (const step of steps) {
+        for (const [idx, step] of steps.entries()) {
           const stepStart = Date.now()
-          log.info(`Auto-execute: ${step.description || step.tool}`)
+          log.info(`Auto-execute [${idx + 1}/${steps.length}] ${step.description || step.tool}`)
 
           try {
             const result = yield* Effect.timeout(
-              executeToolCall(toolRegistry, step),
+              executeToolCall(toolIndex, step),
               Duration.millis(step.timeout ?? 30000),
             ).pipe(
               Effect.catch((err: unknown) =>
@@ -87,12 +104,14 @@ const layer = Layer.effect(
               throw new Error((result as any).error)
             }
 
+            const durationMs = Date.now() - stepStart
             results.push({
               step,
               success: true,
               data: result,
-              durationMs: Date.now() - stepStart,
+              durationMs,
             })
+            log.info(`Auto-execute [${idx + 1}/${steps.length}] ok`, { tool: step.tool, duration: `${durationMs}ms` })
           } catch (err: any) {
             const errorMsg = err?.message ?? String(err)
             results.push({
@@ -131,12 +150,11 @@ const layer = Layer.effect(
 // --- Helpers ---
 
 function executeToolCall(
-  toolRegistry: ToolRegistry.Interface,
+  toolIndex: ReadonlyMap<string, Tool.Def>,
   step: Step,
 ): Effect.Effect<Tool.ExecuteResult> {
   return Effect.gen(function* () {
-    const allTools = yield* toolRegistry.all()
-    const toolDef = allTools.find((t) => t.id === step.tool)
+    const toolDef = toolIndex.get(step.tool)
     if (!toolDef) {
       throw new Error(`Tool "${step.tool}" not found in registry`)
     }
