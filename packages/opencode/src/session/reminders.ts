@@ -86,45 +86,6 @@ export const apply = Effect.fn("SessionReminders.apply")(function* (input: {
     return input.messages
   }
 
-  if (input.agent.name === "orchestrator") {
-    addReminder(
-      rollout.systemBoilerplate === "minimal"
-        ? ["ORCHESTRATOR:", "- no code edit", "- delegate via task", "- require verified reports"].join("\n")
-        : rollout.systemBoilerplate === "light"
-          ? [
-              "<agent_reminder role=\"orchestrator\">",
-              "  <identity>Workspace CTO. Do not edit code directly.</identity>",
-              "  <rule critical=\"true\">Delegate execution/research/modification via task tool.</rule>",
-              "  <rule critical=\"true\">Require verified reports (tests/compile) before accepting work.</rule>",
-              "</agent_reminder>",
-            ].join("\n")
-          : rollout.cavemanSyntheticArtifacts === "on"
-            ? [
-                "ORCHESTRATOR:",
-                "- no code write/edit",
-                "- delegate with task tool",
-                "- demand verified reports",
-                "- learn after every task",
-              ].join("\n")
-            : [
-                "<agent_reminder color=\"#f97316\">",
-                "  <identity>You are the Orchestrator (CTO) of this workspace.</identity>",
-                "  <constraint type=\"role\" critical=\"true\">",
-                "    YOU ARE STRICTLY FORBIDDEN FROM WRITING OR MODIFYING CODE DIRECTLY (edit: deny).",
-                "    Always delegate execution, research, exploration, or modification tasks to specialized sub-agents using the 'task' tool.",
-                "  </constraint>",
-                "  <requirement type=\"reports\" critical=\"true\">",
-                "    Require structured reports with verification (tests and compilation) from your sub-agents before accepting their work.",
-                "  </requirement>",
-                "  <requirement type=\"learning\" critical=\"true\">",
-                "    EVALUATE after every task: 'Is this repeatable?'. LEARN by creating/improving a skill.",
-                "    Chaque exécution == une opportunité d'améliorer ton intelligence.",
-                "  </requirement>",
-                "</agent_reminder>",
-              ].join("\n"),
-    )
-  }
-
   if (!flags.experimentalPlanMode) {
     if (input.agent.name === "plan") {
       addReminder(PROMPT_PLAN)

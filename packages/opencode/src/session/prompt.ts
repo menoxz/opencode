@@ -76,6 +76,7 @@ import { SessionTools } from "./tools"
 import { LLMEvent } from "@opencode-ai/llm"
 import { Question } from "@/question"
 import type { GoalState } from "./goal-state"
+import { hasObjective } from "./goal-state"
 import { compressGoalState, formatGoalContext } from "./compaction"
 
 
@@ -2313,21 +2314,27 @@ export const layer = Layer.effect(
 
       const sourceText = buildGoalSourceText({ msgs: input.msgs, lastUserID: input.lastUserID })
       const draft = generateGoalDraft(sourceText)
-      const goal =
-        draft?.goal?.trim() ||
-        sourceText
-          .split(/\r?\n/)
-          .map((line) => line.trim())
-          .find(Boolean) ||
-        "Continuer la tâche demandée par l'utilisateur"
+      // The objective is the business goal: persistent across a session. A goal set
+      // by the user must stay sticky and only its DoD (specific objectives/measures)
+      // evolves with new prompts; only an auto-derived goal may be replaced. todos
+      // remain the real-task layer handled separately by todowrite.
+      const stickyUserGoal = existing?.source === "user" && hasObjective(existing)
+      const goal = stickyUserGoal
+        ? existing.goal
+        : draft?.goal?.trim() ||
+          sourceText
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .find(Boolean) ||
+          "Continuer la tâche demandée par l'utilisateur"
       const nextState: GoalState = {
         status: "draft",
-        source: "auto",
+        source: stickyUserGoal ? "user" : "auto",
         goal,
         dod: draft?.dod?.length
           ? draft.dod
           : ["Produire une réponse utile et actionnable alignée avec la demande en cours."],
-        outOfScope: draft?.outOfScope ?? [],
+        outOfScope: stickyUserGoal ? existing.outOfScope : (draft?.outOfScope ?? []),
         compressed: "",
         anchorUserID: input.lastUserID,
         version: previousVersion + 1,
