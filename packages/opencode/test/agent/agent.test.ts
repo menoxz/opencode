@@ -789,3 +789,132 @@ UPDATED INSTRUCTIONS`,
     expect(after?.prompt).not.toContain("ORIGINAL INSTRUCTIONS")
   }),
 )
+
+// Evaluate whether a named skill is exposed to an agent — the same call
+// Skill.available() makes when building the skill list for the prompt.
+function skillAllowed(agent: Agent.Info | undefined, skillName: string): boolean {
+  if (!agent) return false
+  return Permission.evaluate("skill", skillName, agent.permission).action !== "deny"
+}
+
+// A `skills` whitelist restricts the agent to the listed names; everything else
+// is hidden. This is the core of "specialized agent sees only its own skills".
+it.instance(
+  "skills field restricts the agent to the listed skills",
+  () =>
+    Effect.gen(function* () {
+      const agent = yield* load((svc) => svc.get("build"))
+      expect(skillAllowed(agent, "restaurant-design-api")).toBe(true)
+      expect(skillAllowed(agent, "restaurant-qa-validation")).toBe(true)
+      // Not in the whitelist → hidden.
+      expect(skillAllowed(agent, "github-webhooks")).toBe(false)
+      expect(skillAllowed(agent, "anything-else")).toBe(false)
+    }),
+  {
+    config: {
+      agent: {
+        build: { skills: ["restaurant-design-api", "restaurant-qa-validation"] },
+      },
+    },
+  },
+)
+
+// Wildcard patterns are supported (same matcher as every other permission key).
+it.instance(
+  "skills field supports wildcard patterns",
+  () =>
+    Effect.gen(function* () {
+      const agent = yield* load((svc) => svc.get("build"))
+      expect(skillAllowed(agent, "restaurant-design-api")).toBe(true)
+      expect(skillAllowed(agent, "restaurant-qa-validation")).toBe(true)
+      expect(skillAllowed(agent, "github-webhooks")).toBe(false)
+    }),
+  {
+    config: {
+      agent: {
+        build: { skills: ["restaurant-*"] },
+      },
+    },
+  },
+)
+
+// Back-compat: no `skills` field means the agent keeps access to every skill,
+// exactly as before this feature existed.
+it.instance(
+  "omitting skills field grants access to all skills",
+  () =>
+    Effect.gen(function* () {
+      const agent = yield* load((svc) => svc.get("build"))
+      expect(skillAllowed(agent, "restaurant-design-api")).toBe(true)
+      expect(skillAllowed(agent, "github-webhooks")).toBe(true)
+      expect(skillAllowed(agent, "any-skill-name")).toBe(true)
+    }),
+  {
+    config: {
+      agent: {
+        build: {},
+      },
+    },
+  },
+)
+
+// An empty `skills: []` is an explicit "no skills" — distinct from omitting it.
+it.instance(
+  "empty skills array hides every skill",
+  () =>
+    Effect.gen(function* () {
+      const agent = yield* load((svc) => svc.get("build"))
+      expect(skillAllowed(agent, "restaurant-design-api")).toBe(false)
+      expect(skillAllowed(agent, "github-webhooks")).toBe(false)
+    }),
+  {
+    config: {
+      agent: {
+        build: { skills: [] },
+      },
+    },
+  },
+)
+
+// A whitelisted skill name that doesn't exist is harmless: it simply never
+// matches a real skill, and the rest of the whitelist still applies.
+it.instance(
+  "non-existent skill name in whitelist is inert",
+  () =>
+    Effect.gen(function* () {
+      const agent = yield* load((svc) => svc.get("build"))
+      expect(skillAllowed(agent, "restaurant-design-api")).toBe(true)
+      expect(skillAllowed(agent, "does-not-exist")).toBe(true) // listed, so allowed if it existed
+      expect(skillAllowed(agent, "github-webhooks")).toBe(false) // not listed
+    }),
+  {
+    config: {
+      agent: {
+        build: { skills: ["restaurant-design-api", "does-not-exist"] },
+      },
+    },
+  },
+)
+
+// An explicit `permission.skill` set by the user wins over the `skills` sugar,
+// so power users keep full control.
+it.instance(
+  "explicit permission.skill overrides the skills field",
+  () =>
+    Effect.gen(function* () {
+      const agent = yield* load((svc) => svc.get("build"))
+      // skills would allow only restaurant-*, but permission.skill re-opens all.
+      expect(skillAllowed(agent, "github-webhooks")).toBe(true)
+      expect(skillAllowed(agent, "restaurant-design-api")).toBe(true)
+    }),
+  {
+    config: {
+      agent: {
+        build: {
+          skills: ["restaurant-*"],
+          permission: { skill: "allow" },
+        },
+      },
+    },
+  },
+)

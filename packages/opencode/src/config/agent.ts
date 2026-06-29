@@ -30,6 +30,10 @@ const AgentSchema = Schema.StructWithRest(
     tools: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)).annotate({
       description: "@deprecated Use 'permission' field instead",
     }),
+    skills: Schema.optional(Schema.Array(Schema.String)).annotate({
+      description:
+        "Restrict this agent to a specific set of skills. Each entry is a skill name or wildcard pattern (e.g. 'restaurant-*'). When set, only matching skills are exposed to the agent; all others are hidden. Omit the field to grant access to every skill (default). Translated into 'permission.skill' rules.",
+    }),
     disable: Schema.optional(Schema.Boolean),
     description: Schema.optional(Schema.String).annotate({ description: "Description of when to use the agent" }),
     mode: Schema.optional(Schema.Literals(["subagent", "primary", "all"])),
@@ -66,6 +70,7 @@ const KNOWN_KEYS = new Set([
   "permission",
   "disable",
   "tools",
+  "skills",
 ])
 
 // Post-parse normalisation:
@@ -88,6 +93,15 @@ const normalize = (agent: Schema.Schema.Type<typeof AgentSchema>): Schema.Schema
       continue
     }
     permission[tool] = action
+  }
+  // Translate the `skills` whitelist into `permission.skill` rules: deny all,
+  // then re-allow each listed name/pattern. Evaluation is findLast over
+  // order-preserved keys, so listed entries win over the leading "*": "deny".
+  // Placed before the Object.assign below so an explicit permission.skill wins.
+  if (agent.skills !== undefined) {
+    const skill: Record<string, ConfigPermission.Action> = { "*": "deny" }
+    for (const pattern of agent.skills) skill[pattern] = "allow"
+    permission.skill = skill
   }
   globalThis.Object.assign(permission, agent.permission)
 
