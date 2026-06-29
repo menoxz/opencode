@@ -31,6 +31,7 @@ import {
   type ExpectedBehavior,
 } from "./scenario"
 import { createSandbox, type SandboxOptions } from "./sandbox"
+import { runScenarioReal, commandExecutor, headlessSessionExecutor } from "./real-runner"
 import * as EvalMetricsMod from "./metrics"
 import type { EvalRunReport, EvalComparison, ScenarioMetrics } from "./metrics"
 
@@ -42,7 +43,7 @@ const log = Log.create({ service: "eval" })
 
 /** Options for running an evaluation. */
 export interface EvalRunOptions {
-  mode: "auto" | "manual"
+  mode: "auto" | "manual" | "real"
   timeoutSeconds?: number
   failFast?: boolean
   record?: boolean
@@ -309,6 +310,25 @@ export const layer = Layer.effect(
         const resolved = typeof scenario === "string" ? getScenario(scenario) : scenario
         if (!resolved) return yield* Effect.die(new Error(`Scenario not found: ${scenario}`))
         const options = { ...defaultOptions, ...opts }
+        if (options.mode === "real") {
+          // Prefer a REAL opencode headless LLM session when the scenario has a prompt.
+          if (resolved.taskPrompt?.trim()) {
+            return yield* runScenarioReal(resolved, headlessSessionExecutor(), {
+              timeoutSeconds: options.timeoutSeconds,
+            })
+          }
+          // Fallback: deterministic shell command in the sandbox.
+          const command = process.env.OPENCODE_EVAL_REAL_COMMAND
+          if (!command)
+            return yield* Effect.die(
+              new Error(
+                "Real eval mode requires a scenario taskPrompt or OPENCODE_EVAL_REAL_COMMAND (runs in scenario sandbox)",
+              ),
+            )
+          return yield* runScenarioReal(resolved, commandExecutor(command), {
+            timeoutSeconds: options.timeoutSeconds,
+          })
+        }
         return simulateScenario(resolved, options)
       })
 

@@ -2,7 +2,7 @@ import { Effect } from "effect"
 import * as Log from "@opencode-ai/core/util/log"
 import * as fs from "node:fs"
 import * as path from "node:path"
-import { handlePendingTriggers, listPendingTasks } from "./trigger-handler"
+import { handlePendingTriggers, listPendingTasks, writeTask } from "./trigger-handler"
 import { runIdleAnalysis } from "./idle"
 import { processNextTask, isExecutorBusy } from "./auto-executor"
 import { Eval } from "@/eval"
@@ -203,7 +203,10 @@ export const runSanityEval = Effect.fnUntraced(function* () {
   log.info("Running auto sanity eval...")
   try {
     const evalSvc = yield* Eval.Service
-    const report = yield* evalSvc.runSuite("sanity")
+    // Gated REAL runner: default stays simulated; OPENCODE_DAEMON_EVAL_REAL=1 → real headless sessions.
+    const real = process.env.OPENCODE_DAEMON_EVAL_REAL === "1"
+    if (real) log.info("sanity eval: REAL runner enabled (OPENCODE_DAEMON_EVAL_REAL=1)")
+    const report = yield* evalSvc.runSuite("sanity", real ? { mode: "real" } : undefined)
 
     const baselineOpt = yield* Effect.option(evalSvc.getBaseline("sanity"))
     if (baselineOpt._tag === "Some") {
@@ -218,6 +221,27 @@ export const runSanityEval = Effect.fnUntraced(function* () {
               baselinePassRate: `${(bl.passRate * 100).toFixed(0)}%`,
               details: reg.details,
             })
+
+            // PROPOSE: enqueue an investigation task. Idempotent — one stable
+            // id means an unresolved regression won't spam the queue.
+            const taskId = "eval-regression-sanity"
+            const exists = listPendingTasks().some((t) => t.triggerId === taskId)
+            if (!exists) {
+              const failing = reg.details.newFailures
+              writeTask({
+                id: taskId,
+                source: "eval-regression",
+                payload: {
+                  objective: "Investigate sanity eval regression",
+                  suite: "sanity",
+                  passRate: report.passRate,
+                  baselinePassRate: bl.passRate,
+                  failingScenarios: failing,
+                  details: reg.details,
+                },
+              })
+              log.info("PROPOSE: enqueued eval-regression task", { taskId, failing: failing.length })
+            }
           }
         }
       }

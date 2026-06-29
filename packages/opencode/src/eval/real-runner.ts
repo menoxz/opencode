@@ -1,6 +1,6 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
-import { execSync } from "node:child_process"
+import { execSync, spawnSync } from "node:child_process"
 import { Effect } from "effect"
 import { autoEvaluate, type EvalRunOptions } from "./index"
 import { createSandbox, type SandboxOptions } from "./sandbox"
@@ -41,6 +41,78 @@ export function commandExecutor(command: string): RealScenarioExecutor {
           toolCalls: ["command"],
           errors: [err.message ?? String(error)],
         }
+      }
+    })
+}
+
+/** Headless result JSON emitted by `opencode run --headless`. */
+interface HeadlessResult {
+  type: "headless_result"
+  sessionID: string
+  success: boolean
+  error: string | null
+  summary: { additions: number; deletions: number; files: number } | null
+  diffs?: Array<{ file: string; type: string }>
+  agent: string | null
+  model: string | null
+}
+
+/** Locate the opencode binary spawn can execute. argv0 → PATH. */
+function findOpencodeBinary(): string {
+  const argv0 = process.argv[0] ?? ""
+  if (/opencode(\.exe)?$/i.test(argv0) && fs.existsSync(argv0)) return argv0
+  const names =
+    process.platform === "win32" ? ["opencode.exe", "opencode.cmd", "opencode.bat"] : ["opencode"]
+  for (const dir of (process.env.PATH ?? "").split(path.delimiter)) {
+    if (!dir) continue
+    for (const name of names) {
+      const candidate = path.join(dir, name)
+      if (fs.existsSync(candidate)) return candidate
+    }
+  }
+  return "opencode"
+}
+
+function parseHeadlessResult(output: string): HeadlessResult | null {
+  const lines = output.trim().split("\n").filter((l) => l.trim())
+  for (let i = lines.length - 1; i >= 0; i--) {
+    try {
+      const parsed = JSON.parse(lines[i])
+      if (parsed?.type === "headless_result") return parsed as HeadlessResult
+    } catch { /* not JSON, skip */ }
+  }
+  return null
+}
+
+/**
+ * Real LLM session executor: spawns `opencode run --headless <taskPrompt>` in the
+ * scenario sandbox, then asserts scenario expectations against the model response
+ * and the files it produced. Mirrors daemon/auto-executor spawnHeadless.
+ */
+export function headlessSessionExecutor(binaryPath?: string): RealScenarioExecutor {
+  return ({ scenario, cwd, timeoutSeconds }) =>
+    Effect.sync(() => {
+      const binary = binaryPath ?? findOpencodeBinary()
+      const result = spawnSync(binary, ["run", "--headless", scenario.taskPrompt], {
+        cwd,
+        encoding: "utf-8",
+        timeout: timeoutSeconds * 1_000,
+        maxBuffer: 64 * 1024 * 1024,
+        windowsHide: true,
+        env: { ...process.env, OPENCODE_DAEMON_AUTO: "1" },
+      })
+      const rawOutput = `${result.stdout ?? ""}${result.stderr ?? ""}`.trim()
+      const headless = parseHeadlessResult(rawOutput)
+      const toolCalls = (headless?.diffs ?? []).map((d) => `${d.type}:${d.file}`)
+      const errors: string[] = []
+      if (result.error) errors.push(result.error.message)
+      if (headless && !headless.success) errors.push(headless.error ?? "headless session failed")
+      if (!headless && result.status !== 0)
+        errors.push(`headless exited ${result.status} (no headless_result)`)
+      return {
+        output: `[headless ${headless?.model ?? binary}]\n${rawOutput}`,
+        toolCalls,
+        errors,
       }
     })
 }
