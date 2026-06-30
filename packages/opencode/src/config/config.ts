@@ -332,6 +332,20 @@ export const Info = Schema.Struct({
       ).annotate({
         description: "Experimental controls for session post-mortem analysis.",
       }),
+      memory: Schema.optional(
+        Schema.Struct({
+          synthesis: Schema.optional(Schema.Boolean).annotate({
+            description:
+              "Opt-in 'REM' memory synthesis: an offline LLM pass that generalises clusters of episodic memories into new semantic memories. Free models only, fail-safe. Default false.",
+          }),
+          synthesis_model: Schema.optional(Schema.String).annotate({
+            description:
+              "Explicit provider/model id for memory synthesis. Overrides the free auto-pick.",
+          }),
+        }),
+      ).annotate({
+        description: "Experimental controls for the native memory subsystem.",
+      }),
     }),
   ),
 }).annotate({ identifier: "Config" })

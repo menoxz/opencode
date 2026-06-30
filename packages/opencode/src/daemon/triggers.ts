@@ -126,6 +126,16 @@ export const memoryConsolidate = Effect.fnUntraced(function* () {
   } catch (err) {
     log.warn("Memory consolidation skipped", { error: String(err) })
   }
+
+  // 'REM' synthesis pass — offline generalisation of episodic clusters into
+  // semantic memories. Opt-in (experimental.memory.synthesis), free-model only,
+  // fail-safe. Isolated from consolidation: its failure never affects the above.
+  try {
+    const { runSynthesis } = yield* Effect.promise(() => import("@/memory/synthesis-runner"))
+    yield* runSynthesis(false)
+  } catch (err) {
+    log.warn("Memory synthesis skipped", { error: String(err) })
+  }
 })
 
 /**
