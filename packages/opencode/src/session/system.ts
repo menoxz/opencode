@@ -12,6 +12,7 @@ import { SelfImprove } from "@/self-improve"
 import type { MessageV2 } from "./message-v2"
 import { rankDocuments } from "@/memory/search"
 import { Config } from "@/config/config"
+import { Shell } from "@/shell/shell"
 import { SessionContextRollout } from "./context-rollout"
 
 /**
@@ -24,6 +25,45 @@ export function provider(_model: Provider.Model): string[] {
 }
 
 const MAX_RELEVANT_SKILLS = 30
+
+/**
+ * Multi-shell + tasks guidance injected into every agent's system prompt.
+ * Reminds the model that shells differ across platforms, and surfaces any
+ * named tasks defined in config / tasks.json so it can run them via the
+ * `tasks` tool instead of hand-rolling fragile shell one-liners.
+ */
+function tasksAndShellGuidance(cfg: Config.Info): string {
+  const shell = Shell.acceptable(cfg.shell)
+  const shellName = shell ? Shell.name(shell) : "the platform default shell"
+  const tasks = cfg.tasks ?? {}
+  const taskNames = Object.keys(tasks)
+
+  const lines: string[] = [
+    `<shell-and-tasks>`,
+    `Shell: commands run through ${shellName} on ${process.platform}.`,
+    `Shell syntax is NOT portable — POSIX shells (bash/zsh/sh) and PowerShell (pwsh)`,
+    `differ on quoting, env vars, pipes, path separators, and command chaining.`,
+    `Detect the active shell before writing commands; do not assume bash on Windows`,
+    `(no \`tail\`/\`head\`/\`grep\` in pwsh — use \`Select-Object\`/\`Select-String\`).`,
+    `Prefer cross-platform tools and absolute paths.`,
+    ``,
+    `Tasks: prefer the \`tasks\` tool for repeatable project commands (build, test,`,
+    `lint, run) instead of re-typing shell one-liners. Tasks come from the \`tasks\``,
+    `key of opencode config and/or a workspace tasks.json (VSCode-style), support`,
+    `dependsOn ordering, and stream running/done/failed status to the UI.`,
+  ]
+  if (taskNames.length > 0) {
+    lines.push(``, `Defined tasks (run with the \`tasks\` tool, action='run'):`)
+    for (const name of taskNames) {
+      const t = tasks[name]!
+      lines.push(`  • ${name}: ${t.description ?? t.command}`)
+    }
+  } else {
+    lines.push(``, `No tasks are defined yet; use action='list' on the \`tasks\` tool to confirm.`)
+  }
+  lines.push(`</shell-and-tasks>`)
+  return lines.join("\n")
+}
 
 export interface Interface {
   readonly environment: (model: Provider.Model) => Effect.Effect<string[]>
@@ -50,6 +90,7 @@ export const layer = Layer.effect(
     return Service.of({
       environment: Effect.fn("SystemPrompt.environment")(function* (model: Provider.Model) {
         const ctx = yield* InstanceState.context
+        const cfg = yield* config.get()
         return [
           [
             `You are powered by the model named ${model.api.id}. The exact model ID is ${model.providerID}/${model.api.id}`,
@@ -62,6 +103,7 @@ export const layer = Layer.effect(
             `  Today's date: ${new Date().toDateString()}`,
             `</env>`,
           ].join("\n"),
+          tasksAndShellGuidance(cfg),
         ]
       }),
 

@@ -3,6 +3,7 @@ import { SubagentListTool } from "./subagent"
 import { SessionContextTool, SessionInfoTool } from "./session-info"
 import { PlanExitTool } from "./plan"
 import { PlanningTool } from "./planning"
+import { TasksTool } from "./tasks"
 import {
   ApplyContractFromPromptTool,
   CompleteObjectifTool,
@@ -146,6 +147,7 @@ export const layer: Layer.Layer<
     const lsptool = yield* LspTool
     const plan = yield* PlanExitTool
     const planning = yield* PlanningTool
+    const tasks = yield* TasksTool
     const webfetch = yield* WebFetchTool
     const websearch = yield* WebSearchTool
     const repoClone = yield* RepoCloneTool
@@ -300,6 +302,7 @@ export const layer: Layer.Layer<
           edit: Tool.init(edit),
           write: Tool.init(writetool),
           task: Tool.init(task),
+          tasks: Tool.init(tasks),
           fetch: Tool.init(webfetch),
           todo: Tool.init(todo),
           search: Tool.init(websearch),

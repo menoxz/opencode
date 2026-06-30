@@ -42,6 +42,7 @@ import { ConfigProvider } from "./provider"
 import { ConfigReference } from "./reference"
 import { ConfigServer } from "./server"
 import { ConfigSkills } from "./skills"
+import { ConfigTasks } from "./tasks"
 import { ConfigVariable } from "./variable"
 import { Npm } from "@opencode-ai/core/npm"
 import { withTransientReadRetry } from "@/util/effect-http-client"
@@ -146,6 +147,9 @@ export const Info = Schema.Struct({
   }),
   command: Schema.optional(Schema.Record(Schema.String, ConfigCommand.Info)).annotate({
     description: "Command configuration, see https://opencode.ai/docs/commands",
+  }),
+  tasks: Schema.optional(ConfigTasks.Map).annotate({
+    description: "Named, repeatable shell tasks (VSCode tasks.json-style). Run via the tasks tool.",
   }),
   skills: Schema.optional(ConfigSkills.Info).annotate({ description: "Additional skill folder paths" }),
   reference: Schema.optional(ConfigReference.Info).annotate({
