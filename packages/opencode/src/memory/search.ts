@@ -30,10 +30,14 @@ export interface SearchOptions {
   tokenBudget?: number
   /** Project ID to scope the search (optional) */
   projectId?: string
+  /** Session ID to boost context matches (optional) */
+  sessionId?: string
   /** Hybrid score weight: 0 = pure vector, 1 = pure BM25 (default: 0.4) */
   alpha?: number
   /** Minimum score threshold to include result (default: 0) */
   minScore?: number
+  /** Composite ranker weights for recency/importance/feedback/diversity */
+  rank?: RankWeights
 }
 
 export interface HybridDocument {
@@ -43,6 +47,18 @@ export interface HybridDocument {
   confidence: number
   /** Optional vector embedding for semantic scoring */
   embedding?: EmbeddingVector
+  /** UNIX timestamp of memory creation (ms) */
+  createdAt?: number
+  /** UNIX timestamp of last access (ms) */
+  lastAccessAt?: number
+  /** Explicit user feedback: +1 upvote, -1 downvote, 0 neutral */
+  feedback?: number
+  /** Project scope */
+  projectId?: string
+  /** Memory type: procedural/semantic/episodic/profile/pattern/... */
+  memoryType?: string
+  /** Session that produced the encoding */
+  sessionId?: string
 }
 
 export interface ScoredDocument {
@@ -55,6 +71,26 @@ export interface ScoredDocument {
   bm25Score: number
   /** Vector component score (for debugging) */
   vectorScore: number
+  /** Composite component score (for debugging) */
+  compositeScore?: number
+}
+
+/** Weighting options for the composite memory ranker. */
+export interface RankWeights {
+  /** Base relevance weight (default: 1.0) */
+  relevance?: number
+  /** Recency boost weight (default: 0.5) */
+  recency?: number
+  /** Importance signal weight (default: 0.4) */
+  importance?: number
+  /** Confidence signal weight (default: 0.2) */
+  confidence?: number
+  /** Explicit feedback signal weight (default: 0.3) */
+  feedback?: number
+  /** Same project/session context boost weight (default: 0.25) */
+  context?: number
+  /** Diversity penalty weight via maximal marginal relevance (default: 0.4) */
+  diversity?: number
 }
 
 // ---------------------------------------------------------------------------
@@ -150,13 +186,86 @@ export function scoreBM25(
 // Hybrid ranking (BM25 + vector cosine similarity)
 // ---------------------------------------------------------------------------
 
+function minutesSince(timestamp: number): number {
+  return (Date.now() - timestamp) / (60 * 1000)
+}
+
+function recencyScore(minutes: number, halfLifeMinutes: number): number {
+  // exponential decay: 1.0 when fresh, 0.5 at halfLife, ~0 far away
+  const x = minutes / halfLifeMinutes
+  return Math.exp(-0.693 * x)
+}
+
+function cosineDistance(a: EmbeddingVector, b: EmbeddingVector): number {
+  const sim = cosineSimilarity(a, b)
+  return 1 - Math.max(-1, Math.min(1, sim))
+}
+
+/** Apply Maximal Marginal Relevance to diversify results while keeping relevance. */
+function applyMMR(
+  scoredDocs: ScoredDocument[],
+  embeddings: Map<string, EmbeddingVector>,
+  topK: number,
+  lambda: number,
+  minScore: number,
+): ScoredDocument[] {
+  if (scoredDocs.length === 0) return []
+  const pool = [...scoredDocs]
+  const selected: ScoredDocument[] = []
+  const selectedEmbeddings: EmbeddingVector[] = []
+
+  // Always pick the top relevant document first
+  const first = pool.shift()
+  if (!first) return []
+  selected.push(first)
+  const firstEmb = embeddings.get(first.id)
+  if (firstEmb) selectedEmbeddings.push(firstEmb)
+
+  while (selected.length < topK && pool.length > 0) {
+    let bestIdx = -1
+    let bestMmr = -Infinity
+
+    for (let i = 0; i < pool.length; i++) {
+      const doc = pool[i]
+      if ((doc.compositeScore ?? 0) < minScore) continue
+      const emb = embeddings.get(doc.id)
+      let redundancy = 0
+      if (emb && selectedEmbeddings.length > 0) {
+        redundancy = Math.max(...selectedEmbeddings.map((se) => 1 - cosineDistance(emb, se)))
+      }
+      const mmr = lambda * (doc.compositeScore ?? 0) - (1 - lambda) * redundancy
+      if (mmr > bestMmr) {
+        bestMmr = mmr
+        bestIdx = i
+      }
+    }
+
+    if (bestIdx === -1) break
+    const chosen = pool.splice(bestIdx, 1)[0]
+    selected.push(chosen)
+    const chosenEmb = embeddings.get(chosen.id)
+    if (chosenEmb) selectedEmbeddings.push(chosenEmb)
+  }
+
+  return selected
+}
+
 /**
- * Rank documents using hybrid BM25 + vector cosine similarity scoring.
+ * Rank documents using a composite memory model.
  *
- * Each document receives a final score:
- *   score = α * bm25_norm + (1-α) * vector_norm
+ *   composite = relevance
+ *             + recencyWeight    * recency
+ *             + importanceWeight * importance
+ *             + confidenceWeight * confidence
+ *             + feedbackWeight   * feedback
+ *             + contextWeight    * contextBoost
  *
- * Where bm25_norm and vector_norm are min-max normalized to [0, 1].
+ * Then results are re-ranked with Maximal Marginal Relevance to ensure
+ * diversity (procedural vs semantic vs episodic etc.) and avoid echo chambers.
+ *
+ * The public `score` preserves the original hybrid BM25/vector relevance for
+ * API compatibility; `compositeScore` in the returned object exposes the
+ * enriched score for observability.
  */
 export function hybridRank(
   query: string,
@@ -165,14 +274,16 @@ export function hybridRank(
   topK: number = 10,
   alpha: number = DEFAULT_ALPHA,
   minScore: number = 0,
+  contextProjectId?: string,
+  contextSessionId?: string,
+  weights: RankWeights = {},
 ): ScoredDocument[] {
   if (docs.length === 0) return []
 
-  // Phase 1: Compute BM25 scores
+  // Phase 1: Base relevance (BM25 + vector)
   const bm25Results = scoreBM25(query, docs)
   const bm25Map = new Map(bm25Results.map((r) => [r.id, r.score]))
 
-  // Phase 2: Compute vector cosine similarity scores
   const vectorResults: { id: string; score: number }[] = docs.map((d) => {
     if (queryVector && d.embedding && d.embedding.length > 0) {
       const sim = cosineSimilarity(queryVector, d.embedding)
@@ -182,40 +293,79 @@ export function hybridRank(
   })
   const vectorMap = new Map(vectorResults.map((r) => [r.id, r.score]))
 
-  // Phase 3: Normalize BM25 scores to [0, 1]
   const bm25Scores = bm25Results.map((r) => r.score)
-  const bm25Min = Math.min(...bm25Scores, 0)
   const bm25Max = Math.max(...bm25Scores, 0.001)
-
-  // Phase 4: Normalize vector scores to [0, 1]
   const vecScores = vectorResults.map((r) => r.score)
-  const vecMin = Math.min(...vecScores, 0)
   const vecMax = Math.max(...vecScores, 0.001)
 
-  // Phase 5: Fuse scores
-  const fused: ScoredDocument[] = docs.map((d) => {
+  const relevanceMap = new Map<string, number>()
+  for (const d of docs) {
     const rawBm25 = bm25Map.get(d.id) ?? 0
     const rawVec = vectorMap.get(d.id) ?? 0
+    const relevance = alpha * (rawBm25 / bm25Max) + (1 - alpha) * (rawVec / vecMax)
+    relevanceMap.set(d.id, relevance)
+  }
 
-    const bm25Norm = (rawBm25 - bm25Min) / (bm25Max - bm25Min)
-    const vecNorm = (rawVec - vecMin) / (vecMax - vecMin)
+  // Phase 2: Composite scoring
+  const now = Date.now()
+  const wRelevance = weights.relevance ?? 1.0
+  const wRecency = weights.recency ?? 0.5
+  const wImportance = weights.importance ?? 0.4
+  const wConfidence = weights.confidence ?? 0.2
+  const wFeedback = weights.feedback ?? 0.3
+  const wContext = weights.context ?? 0.25
 
-    const finalScore = alpha * bm25Norm + (1 - alpha) * vecNorm
+  const candidates: ScoredDocument[] = docs.map((d) => {
+    const relevance = relevanceMap.get(d.id) ?? 0
+    const createdMin = d.createdAt ? Math.max(0, (now - d.createdAt) / (60 * 1000)) : Number.POSITIVE_INFINITY
+    const accessMin = d.lastAccessAt
+      ? Math.max(0, (now - d.lastAccessAt) / (60 * 1000))
+      : createdMin
+
+    const recency =
+      recencyScore(createdMin, 60 * 24) * 0.35 +
+      recencyScore(accessMin, 60 * 6) * 0.65
+
+    const importance = d.importance ?? 0.5
+    const confidence = d.confidence ?? 0.75
+    const feedback = (d.feedback ?? 0) * 0.15
+
+    let contextBoost = 0
+    if (contextProjectId && d.projectId === contextProjectId) contextBoost += 0.2
+    if (contextSessionId && d.sessionId === contextSessionId) contextBoost += 0.1
+
+    const composite =
+      relevance * wRelevance +
+      recency * wRecency * 0.3 +
+      importance * wImportance * 0.15 +
+      confidence * wConfidence * 0.1 +
+      feedback * wFeedback +
+      contextBoost * wContext
 
     return {
       id: d.id,
       content: d.content,
-      importance: d.importance,
-      confidence: d.confidence,
-      score: finalScore,
-      bm25Score: rawBm25,
-      vectorScore: rawVec,
+      importance: d.importance ?? 0.5,
+      confidence: d.confidence ?? 0.75,
+      score: relevance, // keep original relevance for callers
+      bm25Score: bm25Map.get(d.id) ?? 0,
+      vectorScore: vectorMap.get(d.id) ?? 0,
+      compositeScore: composite,
     }
   })
 
-  // Phase 6: Sort, filter, slice
-  fused.sort((a, b) => b.score - a.score)
-  return fused.filter((r) => r.score >= minScore).slice(0, topK)
+  candidates.sort((a, b) => (b.compositeScore ?? 0) - (a.compositeScore ?? 0))
+
+  // Phase 3: Maximal Marginal Relevance for diversity
+  const embeddings = new Map<string, EmbeddingVector>()
+  for (const d of docs) {
+    if (d.embedding) embeddings.set(d.id, d.embedding)
+  }
+  const lambda = 1 - (weights.diversity ?? 0.4)
+  const selected = applyMMR(candidates, embeddings, topK, lambda, minScore / 4)
+
+  // final sort by composite score for presentation
+  return selected.sort((a, b) => (b.compositeScore ?? 0) - (a.compositeScore ?? 0))
 }
 
 /**

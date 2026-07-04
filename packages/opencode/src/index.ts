@@ -37,6 +37,7 @@ import { SelfImproveCommand } from "./cli/cmd/self-improve"
 import { SkillIngestCommand } from "./cli/cmd/skill-ingest"
 import { TasksCommand } from "./cli/cmd/tasks"
 import { DashboardCommand } from "./cli/cmd/dashboard"
+import { MemoryCommand } from "./cli/cmd/memory"
 import path from "path"
 import { Global } from "@opencode-ai/core/global"
 import { JsonMigration } from "@/storage/json-migration"
@@ -192,6 +193,7 @@ const cli = yargs(args)
   .command(DashboardCommand)
   .command(SelfImproveCommand)
   .command(SkillIngestCommand)
+  .command(MemoryCommand)
   .fail((msg, err) => {
     if (
       msg?.startsWith("Unknown argument") ||

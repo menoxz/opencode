@@ -82,7 +82,7 @@ export interface Interface {
     skills?: string
     contextFiles?: string[]
     toolHistory?: string[]
-  }) => Effect.Effect<string[]>
+  }) => Effect.Effect<{ sections: string[]; memories: Array<{ id: string; content: string }> }>
 }
 
 // ---------------------------------------------------------------------------
@@ -306,6 +306,7 @@ export const layer = Layer.effect(
 
       // Build the system prompt array
       const system: string[] = []
+      const memories: Array<{ id: string; content: string }> = []
 
       // 0. Auto-memory: retrieve relevant past context from memory store
       const memoryRows = yield* memoryStore.search(input.taskMessage, 5)
@@ -318,6 +319,7 @@ export const layer = Layer.effect(
           "",
         ].join("\n")
         system.push(memorySection)
+        memories.push(...memoryRows.map((r: any) => ({ id: r.id, content: r.content })))
       } else {
         log.info("auto-memory: no relevant context found")
       }
@@ -347,7 +349,7 @@ export const layer = Layer.effect(
         sections: system.length,
       })
 
-      return system
+      return { sections: system, memories }
     })
 
     return Service.of({

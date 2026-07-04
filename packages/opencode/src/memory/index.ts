@@ -44,6 +44,7 @@ import {
   assembleContextText,
   type SearchOptions,
   type HybridDocument,
+  type RankWeights,
 } from "./search"
 import { consolidate, type ConsolidationStore } from "./consolidation"
 import { extractKeywords, type Interface as EmbeddingInterface } from "./embedding"
@@ -85,10 +86,12 @@ export interface MemoryEntry {
   encodingContext?: string
   /** Query context associated with this memory */
   queryContext?: string
-  /** How many times this memory has been accessed */
+  /** Times this memory has been retrieved */
   accessCount?: number
-  /** Last access timestamp */
+  /** Last retrieval timestamp */
   lastAccessAt?: number
+  /** Explicit user feedback: -1 downvote, 0 neutral, +1 upvote */
+  feedback?: number
 }
 
 /** Search result with relevance score. */
@@ -166,6 +169,12 @@ export interface Interface {
   /** Record feedback on a memory (positive/negative) and adjust confidence/importance. */
   readonly feedback: (id: string, type: "positive" | "negative") => Effect.Effect<void>
 
+  /** Record an outcome for a memory retrieved in context, so the retrieveur learns. */
+  readonly recordUsage: (
+    id: string,
+    outcome: "useful" | "not-useful" | "neutral",
+  ) => Effect.Effect<void>
+
   /** Generate cue variants for a memory to improve recall. */
   readonly generateCueVariants: (id: string) => Effect.Effect<string[]>
 
@@ -178,6 +187,41 @@ export interface Interface {
 
   /** Find the shortest graph path between two memories. */
   readonly graphPath: (fromId: string, toId: string) => Effect.Effect<MemoryEntry[]>
+
+  /** Mirror: a self-reflective digest of the memory store. */
+  readonly mirror: (opts?: { sinceMs?: number; topK?: number }) => Effect.Effect<MirrorReport>
+}
+
+/** A reflective snapshot of what the agent remembers. */
+export interface MirrorReport {
+  /** Snapshot timestamp in ms. */
+  now: number
+  /** Human-readable window. */
+  windowMs: number
+  /** Total memories in store. */
+  total: number
+  /** Memories created inside the window. */
+  createdInWindow: number
+  /** Memories updated (or accessed) inside the window. */
+  touchedInWindow: number
+  /** Type breakdown. */
+  byType: Record<string, number>
+  /** Top projects by stored memory count. */
+  topProjects: Array<{ projectId: string; count: number }>
+  /** Top tags across all memories. */
+  topTags: Array<{ tag: string; count: number }>
+  /** Most important recent memory per type. */
+  highlights: Array<{
+    type: string
+    content: string
+    importance: number
+    projectId: string
+    ageHours: number
+  }>
+  /** "State of mind" derived from dominant memory types. */
+  stateOfMind: string
+  /** Average confidence trend (0-1). */
+  averageConfidence: number
 }
 
 // ---------------------------------------------------------------------------
@@ -200,6 +244,12 @@ export function parseRowTags(rawTags: string): string[] {
   }
 }
 
+function feedbackToScore(feedback: string | null): number {
+  if (feedback === "positive") return 1
+  if (feedback === "negative") return -1
+  return 0
+}
+
 function rowToEntry(row: MemoryStore.MemoryRow): MemoryEntry {
   return {
     id: row.id,
@@ -213,6 +263,11 @@ function rowToEntry(row: MemoryStore.MemoryRow): MemoryEntry {
     updatedAt: row.updated_at,
     confidence: row.confidence,
     hasEmbedding: row.embedding !== null,
+    encodingContext: row.encoding_context ?? undefined,
+    queryContext: row.query_context ?? undefined,
+    accessCount: row.access_count ?? 0,
+    lastAccessAt: row.last_access_at ?? undefined,
+    feedback: feedbackToScore(row.feedback),
   }
 }
 
@@ -300,10 +355,25 @@ export const layer = Layer.effect(
         importance: row.importance,
         confidence: row.confidence,
         embedding: row.embedding ? (JSON.parse(row.embedding) as number[]) : undefined,
+        createdAt: row.created_at,
+        lastAccessAt: row.last_access_at ?? undefined,
+        feedback: feedbackToScore(row.feedback),
+        projectId: row.project_id,
+        memoryType: row.memory_type,
       }))
 
-      // Hybrid rank
-      const scored = hybridRank(query, queryVec, docs, topK, alpha, minScore)
+      // Hybrid + composite rank
+      const scored = hybridRank(
+        query,
+        queryVec,
+        docs,
+        topK,
+        alpha,
+        minScore,
+        opts?.projectId,
+        undefined,
+        opts?.rank,
+      )
 
       // Apply project filter if needed
       const filtered = opts?.projectId
@@ -365,7 +435,7 @@ export const layer = Layer.effect(
       })
 
       // Phase 0 — Reconsolidation side-effects (fire and forget)
-      // Boost confidence for retrieved memories, create links between co-retrieved ones
+      // Record usage for each retrieved memory and link co-retrieved ones
       const now = Date.now()
       const injectedIds = new Set(
         results
@@ -375,12 +445,7 @@ export const layer = Layer.effect(
 
       for (const result of results) {
         const isInjected = injectedIds.has(result.entry.id)
-        const boost = isInjected ? 0.05 : 0.02
-        const newConfidence = Math.min(1.0, result.entry.confidence + boost)
-
-        yield* store.updateAccessStats(result.entry.id, now)
-        yield* store.incrementSearchCount(result.entry.id)
-        yield* store.updateConfidence(result.entry.id, newConfidence)
+        yield* recordUsage(result.entry.id, isInjected ? "useful" : "neutral")
       }
 
       // Create links between co-retrieved memories
@@ -613,6 +678,30 @@ export const layer = Layer.effect(
       }
     })
 
+    // ---- recordUsage: implicit learning loop ----
+    const recordUsage = Effect.fn("Memory.recordUsage")(function* (
+      id: string,
+      outcome: "useful" | "not-useful" | "neutral",
+    ) {
+      const entry = yield* store.findById(id)
+      if (!entry) return
+
+      const now = Date.now()
+      const currentConfidence = entry.confidence ?? 1.0
+      const currentImportance = entry.importance ?? 0.5
+
+      if (outcome === "useful") {
+        yield* store.updateConfidence(id, Math.min(1.0, currentConfidence + 0.1))
+        yield* store.updateImportance(id, Math.min(1.0, currentImportance + 0.05))
+      } else if (outcome === "not-useful") {
+        yield* store.updateConfidence(id, Math.max(0.1, currentConfidence - 0.2))
+        yield* store.updateImportance(id, Math.max(0.1, currentImportance - 0.05))
+      }
+
+      yield* store.updateAccessStats(id, now)
+      yield* store.incrementSearchCount(id)
+    })
+
     // ---- generateCueVariants ----
     const generateCueVariants = Effect.fn("Memory.generateCueVariants")(function* (id: string) {
       const entry = yield* store.findById(id)
@@ -660,6 +749,104 @@ export const layer = Layer.effect(
       return pathRows.map(rowToEntry)
     })
 
+    // ---- mirror: self-reflective digest ----
+    const mirror = Effect.fn("Memory.mirror")(function* (
+      opts?: { sinceMs?: number; topK?: number },
+    ) {
+      const now = Date.now()
+      const windowMs = opts?.sinceMs ?? 1000 * 60 * 60 * 24 // 24h
+      const topK = opts?.topK ?? 5
+      const cutoff = now - windowMs
+
+      const allRows = yield* store.getAll()
+      const entries = allRows.map(rowToEntry)
+
+      const total = entries.length
+      const createdInWindow = entries.filter((e) => e.createdAt >= cutoff).length
+      const touchedInWindow = entries.filter(
+        (e) => e.createdAt >= cutoff || (e.updatedAt ?? 0) >= cutoff || (e.lastAccessAt ?? 0) >= cutoff,
+      ).length
+
+      const byType: Record<string, number> = {}
+      const projectCounts: Record<string, number> = {}
+      const tagCounts: Record<string, number> = {}
+      let confidenceSum = 0
+
+      for (const e of entries) {
+        byType[e.memoryType] = (byType[e.memoryType] ?? 0) + 1
+        projectCounts[e.projectId] = (projectCounts[e.projectId] ?? 0) + 1
+        for (const tag of e.tags) {
+          tagCounts[tag] = (tagCounts[tag] ?? 0) + 1
+        }
+        confidenceSum += e.confidence ?? 1
+      }
+
+      const topProjects = Object.entries(projectCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, topK)
+        .map(([projectId, count]) => ({ projectId, count }))
+
+      const topTags = Object.entries(tagCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, topK)
+        .map(([tag, count]) => ({ tag, count }))
+
+      const latestByType = new Map<string, MemoryEntry>()
+      for (const e of entries.filter((e) => e.createdAt >= cutoff || e.updatedAt >= cutoff)) {
+        const current = latestByType.get(e.memoryType)
+        if (!current || e.createdAt > current.createdAt) {
+          latestByType.set(e.memoryType, e)
+        }
+      }
+
+      const highlights = Array.from(latestByType.values())
+        .sort((a, b) => b.importance - a.importance)
+        .slice(0, topK)
+        .map((e) => ({
+          type: e.memoryType,
+          content: e.content.slice(0, 160) + (e.content.length > 160 ? "…" : ""),
+          importance: e.importance,
+          projectId: e.projectId,
+          ageHours: Math.round((now - e.createdAt) / (1000 * 60 * 60)),
+        }))
+
+      const stateOfMind = (() => {
+        const ranked = Object.entries(byType).sort((a, b) => b[1] - a[1])
+        if (ranked.length === 0) return "tabula rasa — no memory yet"
+        const [dominant] = ranked
+        switch (dominant[0]) {
+          case "procedural":
+            return "operational — accumulating know-how"
+          case "semantic":
+            return "curious — building knowledge graphs"
+          case "episodic":
+            return "experiential — learning from past runs"
+          case "profile":
+            return "attentive — tuning to user preferences"
+          case "pattern":
+            return "analytical — detecting recurring structures"
+          case "learning":
+            return "adaptive — integrating new lessons"
+          default:
+            return `focused on ${dominant[0]}`
+        }
+      })()
+
+      return {
+        now,
+        windowMs,
+        total,
+        createdInWindow,
+        touchedInWindow,
+        byType,
+        topProjects,
+        topTags,
+        highlights,
+        stateOfMind,
+        averageConfidence: total > 0 ? confidenceSum / total : 0,
+      } satisfies MirrorReport
+    })
+
     return Service.of({
       store: store_ as any,
       retrieve: retrieve as any,
@@ -670,9 +857,11 @@ export const layer = Layer.effect(
       stats: stats as any,
       health: health as any,
       feedback: feedback as any,
+      recordUsage: recordUsage as any,
       generateCueVariants: generateCueVariants as any,
       graph: graph as any,
       graphPath: graphPath as any,
+      mirror: mirror as any,
       analyzeSession: analyzeSession as any,
       detectPatterns: detectPatterns as any,
       embedding: embedding as any,
@@ -688,6 +877,8 @@ export const defaultLayer = Layer.suspend(() =>
 )
 
 export const use = serviceUse(Service)
+
+export { reflectUse, reflectAndRecord } from "./reflect-use"
 
 // ---------------------------------------------------------------------------
 // Self-reexport

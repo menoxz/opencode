@@ -72,7 +72,7 @@ export interface Interface {
   readonly adaptivePrompt: (input: {
     messages: MessageV2.WithParts[]
     agent: Agent.Info
-  }) => Effect.Effect<string | undefined>
+  }) => Effect.Effect<{ prompt: string | undefined; memories: Array<{ id: string; content: string }> }>
   /** Personality context section — learned user preferences for prompt adaptation. */
   readonly personality: () => Effect.Effect<string | undefined>
 }
@@ -145,7 +145,9 @@ export const layer = Layer.effect(
         messages: MessageV2.WithParts[]
         agent: Agent.Info
       }) {
-        if (Permission.disabled(["skill"], input.agent.permission).has("skill")) return
+        if (Permission.disabled(["skill"], input.agent.permission).has("skill")) {
+          return { prompt: undefined as string | undefined, memories: [] as Array<{ id: string; content: string }> }
+        }
 
         // Extract the latest user text message to detect task type
         let lastUserText: string | undefined
@@ -159,29 +161,32 @@ export const layer = Layer.effect(
           if (lastUserText) break
         }
 
-        if (!lastUserText) return
+        if (!lastUserText) return { prompt: undefined as string | undefined, memories: [] as Array<{ id: string; content: string }> }
 
         const detected = yield* promptComposer.detect(lastUserText)
-        if (detected.confidence < 0.3) return
+        if (detected.confidence < 0.3) return { prompt: undefined as string | undefined, memories: [] as Array<{ id: string; content: string }> }
 
         // Compose adaptive system prompt using the full composer pipeline
-        const composed = yield* promptComposer.compose({
+        const { sections: composed, memories } = yield* promptComposer.compose({
           basePrompt: "",
           taskMessage: lastUserText,
           environmentInfo: [],
           instructions: [],
         })
 
-        if (!composed || composed.length === 0) return
+        if (!composed || composed.length === 0) return { prompt: undefined as string | undefined, memories }
 
         const taskPrompt = promptComposer.getTaskPrompt(detected.type)
-        if (!taskPrompt) return
+        if (!taskPrompt) return { prompt: undefined as string | undefined, memories }
 
-        return [
-          `<task_context type="${detected.type}" confidence="${(detected.confidence * 100).toFixed(0)}%">`,
-          taskPrompt,
-          `</task_context>`,
-        ].join("\n")
+        return {
+          prompt: [
+            `<task_context type="${detected.type}" confidence="${(detected.confidence * 100).toFixed(0)}%">`,
+            taskPrompt,
+            `</task_context>`,
+          ].join("\n"),
+          memories,
+        }
       }),
 
       personality: Effect.fn("SystemPrompt.personality")(function* () {

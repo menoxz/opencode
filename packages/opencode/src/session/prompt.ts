@@ -9,6 +9,7 @@ import { TriggerHandler } from "../daemon/trigger-handler"
 import { readUnacknowledged, acknowledgeAll } from "../daemon/notifications"
 import * as AutoMemory from "../daemon/auto-memory"
 import * as Memory from "@/memory"
+import * as ReflectUse from "@/memory/reflect-use"
 import * as Session from "./session"
 import { Agent } from "../agent/agent"
 import { Provider } from "@/provider/provider"
@@ -1783,7 +1784,11 @@ export const layer = Layer.effect(
             Date.now() - messageFilteringStart,
           )
 
-          const { user: lastUser, assistant: lastAssistant, finished: lastFinished, tasks } = MessageV2.latest(msgs)
+          const latest = MessageV2.latest(msgs)
+          const lastUser = latest.user
+          const lastAssistant = latest.assistant
+          const lastFinished = latest.finished
+          const tasks = latest.tasks
 
           if (!lastUser) throw new Error("No user message found in stream. This should never happen.")
 
@@ -1957,7 +1962,7 @@ export const layer = Layer.effect(
             })
             msg.time.completed = Date.now()
             yield* sessions.updateMessage(msg)
-          })
+            })
 
           const handle = yield* processor
             .create({
@@ -2131,9 +2136,11 @@ export const layer = Layer.effect(
             }
 
             const stepOneTail: string[] = []
+            const turnMemories: Array<{ id: string; content: string }> = []
             if (step === 1) {
-              const adaptive = yield* sys.adaptivePrompt({ messages: msgs, agent })
+              const { prompt: adaptive, memories } = yield* sys.adaptivePrompt({ messages: msgs, agent })
               if (adaptive) stepOneTail.push(adaptive)
+              turnMemories.push(...memories)
 
               // Inject personality context (learned user preferences)
               const personality = yield* sys.personality()
@@ -2243,6 +2250,32 @@ export const layer = Layer.effect(
                 overflow: !handle.message.finish,
               })
             }
+
+            // Auto memory-use reflection (non-blocking, fire-and-forget)
+            // Uses the bundled free model to judge if retrieved memories helped.
+            if (memory && turnMemories.length > 0) {
+              const userText = getUserPromptText(lastUser)
+              const assistantText = handle.message.parts
+                .filter((p): p is MessageV2.TextPart => p.type === "text")
+                .filter((p) => !p.tool && !p.ignored)
+                .map((p) => p.text)
+                .join("\n")
+                .trim()
+
+              if (userText && assistantText) {
+                yield* Effect.forkIn(scope)(
+                  ReflectUse.reflectAndRecord(
+                    {
+                      userMessage: userText,
+                      assistantMessage: assistantText,
+                      memories: turnMemories,
+                    },
+                    memory,
+                  ).pipe(Effect.ignore),
+                )
+              }
+            }
+
             return "continue" as const
           }).pipe(
             Effect.ensuring(instruction.clear(handle.message.id)),

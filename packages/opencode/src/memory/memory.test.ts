@@ -102,6 +102,45 @@ describe("hybridRank", () => {
       expect(r.score).toBeLessThan(0.5)
     }
   })
+
+  it("should boost fresh and positively-feedbacked memories", () => {
+    const now = Date.now()
+    const old = now - 1000 * 60 * 60 * 48 // 48h ago
+    const recent = now - 1000 * 60 * 5 // 5m ago
+    const content = "react patterns"
+    const rankedDocs = [
+      { id: "old", content, importance: 1, confidence: 1, createdAt: old },
+      { id: "fresh-and-loved", content, importance: 1, confidence: 1, createdAt: recent, feedback: 1 },
+    ]
+    const results = hybridRank("react patterns", null, rankedDocs, 2, 1.0, 0, undefined, undefined, {
+      recency: 1,
+      feedback: 1,
+    })
+    expect(results[0].id).toBe("fresh-and-loved")
+  })
+
+  it("should include the most diverse candidate thanks to MMR", () => {
+    const embeddings = [
+      [1, 0, 0, 0],
+      [0.99, 0.01, 0, 0],
+      [0.98, 0.02, 0, 0],
+      [0, 0, 1, 0],
+    ]
+    const divDocs = [
+      { id: "d1", content: "cluster alpha one", importance: 1, confidence: 1, embedding: embeddings[0] },
+      { id: "d2", content: "cluster alpha two", importance: 1, confidence: 1, embedding: embeddings[1] },
+      { id: "d3", content: "cluster alpha three", importance: 1, confidence: 1, embedding: embeddings[2] },
+      { id: "d4", content: "cluster beta orthogonal", importance: 1, confidence: 1, embedding: embeddings[3] },
+    ]
+    // Query exactly matches the orthogonal d4 vector, so d4 is top relevant.
+    // With high diversity, d4 must stay selected (MMR never drops the best).
+    const results = hybridRank("beta orthogonal", [0, 0, 1, 0], divDocs, 3, 0, 0, undefined, undefined, {
+      relevance: 1,
+      diversity: 0.9,
+    })
+    const ids = results.map((r) => r.id)
+    expect(ids).toContain("d4")
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -128,8 +167,8 @@ describe("rankDocuments", () => {
 
 describe("assembleContextText", () => {
   const results = [
-    { id: "1", content: "Test content one", importance: 1, confidence: 1, score: 0.9, bm25Score: 0.9, vectorScore: 0 },
-    { id: "2", content: "Test content two", importance: 1, confidence: 1, score: 0.5, bm25Score: 0.5, vectorScore: 0 },
+    { id: "1", content: "Test content one", importance: 1, confidence: 1, score: 0.9, bm25Score: 0.9, vectorScore: 0, compositeScore: 0 },
+    { id: "2", content: "Test content two", importance: 1, confidence: 1, score: 0.5, bm25Score: 0.5, vectorScore: 0, compositeScore: 0 },
   ]
 
   it("should produce formatted context text", () => {
