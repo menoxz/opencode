@@ -71,6 +71,7 @@ import { Reference } from "@/reference/reference"
 import { BackgroundJob } from "@/background/job"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Service as ToolCacheService } from "./cache"
+import { Service as SearchIndexService } from "./search-index"
 
 const log = Log.create({ service: "tool.registry" })
 
@@ -129,6 +130,7 @@ export const layer: Layer.Layer<
   | Truncate.Service
   | RuntimeFlags.Service
   | ToolCacheService
+  | SearchIndexService
 > = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -491,6 +493,7 @@ export const defaultLayer = Layer.suspend(() =>
           Truncate.defaultLayer,
           RuntimeFlags.defaultLayer,
           ToolCacheService.defaultLayer,
+          SearchIndexService.defaultLayer,
         ),
       ),
     )

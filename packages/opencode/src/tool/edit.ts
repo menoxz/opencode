@@ -19,6 +19,7 @@ import { assertExternalDirectoryEffect } from "./external-directory"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import * as Bom from "@/util/bom"
 import { Service as ToolCacheService } from "./cache"
+import { Service as SearchIndexService } from "./search-index"
 
 function normalizeLineEndings(text: string): string {
   return text.replaceAll("\r\n", "\n")
@@ -119,6 +120,10 @@ export const EditTool = Tool.define(
                   yield* cache.invalidate(filePath)
                   yield* cache.invalidateStat(filePath)
                 }
+                const searchIndex = yield* Effect.serviceOption(SearchIndexService).pipe(
+                  Effect.map(Option.getOrUndefined),
+                )
+                if (searchIndex) yield* searchIndex.updateFile(filePath, contentNew)
                 return
               }
 
@@ -168,6 +173,10 @@ export const EditTool = Tool.define(
                 yield* cache.invalidate(filePath)
                 yield* cache.invalidateStat(filePath)
               }
+              const searchIndex = yield* Effect.serviceOption(SearchIndexService).pipe(
+                Effect.map(Option.getOrUndefined),
+              )
+              if (searchIndex) yield* searchIndex.updateFile(filePath, contentNew)
               diff = trimDiff(
                 createTwoFilesPatch(
                   filePath,

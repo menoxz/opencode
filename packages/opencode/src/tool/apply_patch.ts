@@ -15,6 +15,7 @@ import { File } from "../file"
 import { Format } from "../format"
 import * as Bom from "@/util/bom"
 import { Service as ToolCacheService } from "./cache"
+import { Service as SearchIndexService } from "./search-index"
 
 export const Parameters = Schema.Struct({
   patchText: Schema.String.annotate({ description: "The full patch text that describes all changes to be made" }),
@@ -268,6 +269,19 @@ export const ApplyPatchTool = Tool.define(
         for (const update of updates) {
           yield* cache.invalidate(update.file)
           yield* cache.invalidateStat(update.file)
+        }
+      }
+      const searchIndex = yield* Effect.serviceOption(SearchIndexService).pipe(Effect.map(Option.getOrUndefined))
+      if (searchIndex) {
+        for (const update of updates) {
+          if (update.event === "unlink") {
+            yield* searchIndex.removeFile(update.file)
+            continue
+          }
+          const content = yield* afs
+            .readFileStringSafe(update.file)
+            .pipe(Effect.catch(() => Effect.succeed(undefined)))
+          if (content !== undefined) yield* searchIndex.updateFile(update.file, content)
         }
       }
 

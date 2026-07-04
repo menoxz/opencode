@@ -15,6 +15,7 @@ import { trimDiff } from "./edit"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import * as Bom from "@/util/bom"
 import { Service as ToolCacheService } from "./cache"
+import { Service as SearchIndexService } from "./search-index"
 
 const MAX_PROJECT_DIAGNOSTICS_FILES = 5
 
@@ -76,6 +77,8 @@ export const WriteTool = Tool.define(
             yield* cache.invalidate(filepath)
             yield* cache.invalidateStat(filepath)
           }
+          const searchIndex = yield* Effect.serviceOption(SearchIndexService).pipe(Effect.map(Option.getOrUndefined))
+          if (searchIndex) yield* searchIndex.updateFile(filepath, contentNew)
 
           let output = "Wrote file successfully."
           yield* lsp.touchFile(filepath, "document")

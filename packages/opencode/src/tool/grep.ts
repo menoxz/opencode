@@ -9,6 +9,7 @@ import DESCRIPTION from "./grep.txt"
 import * as Tool from "./tool"
 import { Reference } from "@/reference/reference"
 import { DEFAULT_TTL, Service as ToolCacheService } from "./cache"
+import { Service as SearchIndexService } from "./search-index"
 
 const MAX_LINE_LENGTH = 2000
 
@@ -29,6 +30,7 @@ export const GrepTool = Tool.define(
     const rg = yield* Ripgrep.Service
     const reference = yield* Reference.Service
     const cache = yield* ToolCacheService
+    const searchIndex = yield* SearchIndexService
 
     return {
       description: DESCRIPTION,
@@ -69,11 +71,33 @@ export const GrepTool = Tool.define(
           const search = AppFileSystem.resolve(requested)
           const info = yield* fs.stat(search).pipe(Effect.catch(() => Effect.succeed(undefined)))
           const cwd = info?.type === "Directory" ? search : path.dirname(search)
-          const file = info?.type === "Directory" ? undefined : [path.relative(cwd, search)]
+          let file = info?.type === "Directory" ? undefined : [path.relative(cwd, search)]
+
+          // Real index-based narrowing (trigram index, see search-index.ts):
+          // when searching an entire directory (not a single file) without an
+          // --include glob (kept separate to avoid combining two filters in
+          // v1), ask the index for a candidate file list. If it can safely
+          // narrow the pattern, ripgrep only scans those files instead of the
+          // whole directory. `null` means "no safe restriction possible" or
+          // "index not ready" — falls back to the exact pre-existing
+          // unrestricted behavior, same results either way.
+          if (file === undefined && !params.include) {
+            const candidates = yield* searchIndex.queryCandidates(cwd, params.pattern).pipe(
+              Effect.catch(() => Effect.succeed(null)),
+            )
+            if (candidates !== null) file = candidates
+          }
 
           const cacheKey = `grep:${search}:${params.pattern}:${params.include ?? ""}`
           const cached = yield* cache.get(cacheKey)
           if (cached) return cached.data as Tool.ExecuteResult
+
+          if (file !== undefined && file.length === 0) {
+            // Index proved no file can contain the pattern: skip ripgrep
+            // entirely (0 files to scan is a valid, correct answer).
+            yield* cache.set(cacheKey, empty, DEFAULT_TTL.grep)
+            return empty
+          }
 
           const result = yield* rg.search({
             cwd,

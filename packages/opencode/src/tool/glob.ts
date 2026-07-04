@@ -10,6 +10,14 @@ import * as Tool from "./tool"
 import { Reference } from "@/reference/reference"
 import { DEFAULT_TTL, Service as ToolCacheService } from "./cache"
 
+// Note: glob.ts deliberately does NOT use SearchIndexService (see
+// search-index.ts). That index narrows searches by file *content*
+// (trigrams), which doesn't help glob — glob matches by *file name/path*
+// pattern, already delegated to ripgrep --files + a glob filter. A
+// content-trigram index cannot safely predict which file *names* match a
+// glob. If file-name search ever becomes slow enough to warrant it, a
+// separate name/path index would be the right tool, not this one.
+
 export const Parameters = Schema.Struct({
   pattern: Schema.String.annotate({ description: "The glob pattern to match files against" }),
   path: Schema.optional(Schema.String).annotate({
