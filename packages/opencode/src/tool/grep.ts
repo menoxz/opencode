@@ -1,6 +1,6 @@
 import path from "path"
 import { Schema } from "effect"
-import { Effect, Option } from "effect"
+import { Effect } from "effect"
 import { InstanceState } from "@/effect/instance-state"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { Ripgrep } from "../file/ripgrep"
@@ -98,15 +98,9 @@ export const GrepTool = Tool.define(
             (yield* Effect.forEach(
               [...new Set(rows.map((row) => row.path))],
               Effect.fnUntraced(function* (file) {
-                const info = yield* fs.stat(file).pipe(Effect.catch(() => Effect.succeed(undefined)))
-                if (!info || info.type === "Directory") return undefined
-                return [
-                  file,
-                  info.mtime.pipe(
-                    Option.map((time) => time.getTime()),
-                    Option.getOrElse(() => 0),
-                  ) ?? 0,
-                ] as const
+                const info = yield* cache.getStatMtime(fs, file)
+                if (!info || info.isDirectory) return undefined
+                return [file, info.mtime] as const
               }),
               { concurrency: 16 },
             )).filter((entry): entry is readonly [string, number] => Boolean(entry)),

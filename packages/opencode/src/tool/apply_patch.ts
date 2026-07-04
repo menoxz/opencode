@@ -1,5 +1,5 @@
 import * as path from "path"
-import { Effect, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 import * as Tool from "./tool"
 import { Bus } from "../bus"
 import { FileWatcher } from "../file/watcher"
@@ -14,6 +14,7 @@ import DESCRIPTION from "./apply_patch.txt"
 import { File } from "../file"
 import { Format } from "../format"
 import * as Bom from "@/util/bom"
+import { Service as ToolCacheService } from "./cache"
 
 export const Parameters = Schema.Struct({
   patchText: Schema.String.annotate({ description: "The full patch text that describes all changes to be made" }),
@@ -260,6 +261,14 @@ export const ApplyPatchTool = Tool.define(
       // Publish file change events
       for (const update of updates) {
         yield* bus.publish(FileWatcher.Event.Updated, update)
+      }
+
+      const cache = yield* Effect.serviceOption(ToolCacheService).pipe(Effect.map(Option.getOrUndefined))
+      if (cache) {
+        for (const update of updates) {
+          yield* cache.invalidate(update.file)
+          yield* cache.invalidateStat(update.file)
+        }
       }
 
       // Notify LSP of file changes and collect diagnostics

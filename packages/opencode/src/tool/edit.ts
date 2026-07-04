@@ -4,7 +4,7 @@
 // https://github.com/cline/cline/blob/main/evals/diff-edits/diff-apply/diff-06-26-25.ts
 
 import * as path from "path"
-import { Effect, Schema, Semaphore } from "effect"
+import { Effect, Option, Schema, Semaphore } from "effect"
 import * as Tool from "./tool"
 import { LSP } from "@/lsp/lsp"
 import { createTwoFilesPatch, diffLines } from "diff"
@@ -18,6 +18,7 @@ import { Snapshot } from "@/snapshot"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import * as Bom from "@/util/bom"
+import { Service as ToolCacheService } from "./cache"
 
 function normalizeLineEndings(text: string): string {
   return text.replaceAll("\r\n", "\n")
@@ -113,6 +114,11 @@ export const EditTool = Tool.define(
                   file: filePath,
                   event: existed ? "change" : "add",
                 })
+                const cache = yield* Effect.serviceOption(ToolCacheService).pipe(Effect.map(Option.getOrUndefined))
+                if (cache) {
+                  yield* cache.invalidate(filePath)
+                  yield* cache.invalidateStat(filePath)
+                }
                 return
               }
 
@@ -157,6 +163,11 @@ export const EditTool = Tool.define(
                 file: filePath,
                 event: "change",
               })
+              const cache = yield* Effect.serviceOption(ToolCacheService).pipe(Effect.map(Option.getOrUndefined))
+              if (cache) {
+                yield* cache.invalidate(filePath)
+                yield* cache.invalidateStat(filePath)
+              }
               diff = trimDiff(
                 createTwoFilesPatch(
                   filePath,

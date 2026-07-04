@@ -72,7 +72,10 @@ export const WriteTool = Tool.define(
             event: exists ? "change" : "add",
           })
           const cache = yield* Effect.serviceOption(ToolCacheService).pipe(Effect.map(Option.getOrUndefined))
-          if (cache) yield* cache.invalidate(filepath)
+          if (cache) {
+            yield* cache.invalidate(filepath)
+            yield* cache.invalidateStat(filepath)
+          }
 
           let output = "Wrote file successfully."
           yield* lsp.touchFile(filepath, "document")

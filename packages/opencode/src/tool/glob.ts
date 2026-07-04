@@ -1,5 +1,5 @@
 import path from "path"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import * as Stream from "effect/Stream"
 import { InstanceState } from "@/effect/instance-state"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
@@ -63,13 +63,8 @@ export const GlobTool = Tool.define(
             Stream.mapEffect((file) =>
               Effect.gen(function* () {
                 const full = path.resolve(search, file)
-                const info = yield* fs.stat(full).pipe(Effect.catch(() => Effect.succeed(undefined)))
-                const mtime =
-                  info?.mtime.pipe(
-                    Option.map((date) => date.getTime()),
-                    Option.getOrElse(() => 0),
-                  ) ?? 0
-                return { path: full, mtime }
+                const info = yield* cache.getStatMtime(fs, full)
+                return { path: full, mtime: info?.mtime ?? 0 }
               }),
             ),
             Stream.take(limit + 1),
