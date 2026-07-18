@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "version": "1.18.80",
+  "version": "1.18.92",
   "name": "opencode",
   "type": "module",
   "license": "MIT",
@@ -12,6 +12,7 @@
     "test:eval": "bun test src/eval/eval.test.ts",
     "test:httpapi": "bun run script/httpapi-exercise.ts --mode coverage --fail-on-missing --fail-on-skip && bun run script/httpapi-exercise.ts --mode auth --fail-on-missing --fail-on-skip && bun run script/httpapi-exercise.ts --mode effect --fail-on-missing --fail-on-skip",
     "bench:test": "bun run script/bench-test-suite.ts",
+    "bench:hot-path": "bun run script/bench-hot-path.ts",
     "profile:test": "bun run script/profile-test-files.ts",
     "build": "bun run script/build.ts",
     "fix-node-pty": "bun run script/fix-node-pty.ts",
@@ -31,6 +32,11 @@
       "bun": "./src/storage/db.bun.ts",
       "node": "./src/storage/db.node.ts",
       "default": "./src/storage/db.bun.ts"
+    },
+    "#sqlite-raw": {
+      "bun": "./src/storage/sqlite-raw.bun.ts",
+      "node": "./src/storage/sqlite-raw.node.ts",
+      "default": "./src/storage/sqlite-raw.bun.ts"
     },
     "#pty": {
       "bun": "./src/pty/pty.bun.ts",
