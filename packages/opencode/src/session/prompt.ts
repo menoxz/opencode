@@ -753,7 +753,11 @@ export const layer = Layer.effect(
         m.info.role === "user" && !m.parts.every((p) => "synthetic" in p && p.synthetic)
       const idx = input.history.findIndex(real)
       if (idx === -1) return
-      if (input.history.filter(real).length !== 1) return
+      // Allow retries across early turns: the background title fiber can be
+      // silently interrupted (e.g. scope torn down before its slower LLM stream
+      // finishes) without surfacing an error, leaving the session stuck on the
+      // default title forever if we only ever attempt this once.
+      if (input.history.filter(real).length > 3) return
 
       const context = input.history.slice(0, idx + 1)
       const firstUser = context[idx]
@@ -1834,7 +1838,13 @@ export const layer = Layer.effect(
               modelID: lastUser.model.modelID,
               providerID: lastUser.model.providerID,
               history: msgs,
-            }).pipe(Effect.ignore, Effect.forkIn(scope))
+            }).pipe(
+              // Log instead of Effect.ignore: a silent ignore previously hid stalled
+              // title generation streams with zero trace, leaving sessions stuck on
+              // the default title forever.
+              Effect.catchCause((cause) => Effect.sync(() => slog.error("title generation failed", { error: Cause.squash(cause) }))),
+              Effect.forkIn(scope),
+            )
 
           const model = yield* getModel(lastUser.model.providerID, lastUser.model.modelID, sessionID)
           const task = tasks.pop()
