@@ -477,7 +477,7 @@ export const layer = Layer.effect(
       agent: Agent.Info
       promptRollout: ReturnType<typeof SessionContextRollout.resolve>
     }) {
-      const vision = input.imageConfig.vision_model ? Provider.parseModel(input.imageConfig.vision_model) : undefined
+      const vision = input.imageConfig.vision_model
       if (!vision) {
         return [
           `ERROR: Cannot read ${input.attachment.filename ? `"${input.attachment.filename}"` : "image"}: the active model does not support image input.`,
@@ -485,7 +485,7 @@ export const layer = Layer.effect(
         ].join(" ")
       }
 
-      const visionModel = yield* provider.getModel(vision.providerID, vision.modelID)
+      const visionModel = yield* provider.getModel(ProviderID.make(vision.providerID), ModelID.make(vision.modelID))
       if (!visionModel.capabilities.input.image) {
         return `ERROR: Configured vision model ${vision.providerID}/${vision.modelID} does not support image input. Choose a vision-capable model.`
       }
@@ -753,11 +753,7 @@ export const layer = Layer.effect(
         m.info.role === "user" && !m.parts.every((p) => "synthetic" in p && p.synthetic)
       const idx = input.history.findIndex(real)
       if (idx === -1) return
-      // Allow a few retries across early turns: the background title fiber can be
-      // silently interrupted (e.g. scope torn down before its slower LLM stream
-      // finishes) without surfacing an error, leaving the session stuck on the
-      // default title forever if we only ever attempt this once.
-      if (input.history.filter(real).length > 3) return
+      if (input.history.filter(real).length !== 1) return
 
       const context = input.history.slice(0, idx + 1)
       const firstUser = context[idx]
@@ -1838,14 +1834,7 @@ export const layer = Layer.effect(
               modelID: lastUser.model.modelID,
               providerID: lastUser.model.providerID,
               history: msgs,
-            }).pipe(
-              // Non-blocking by design, but log instead of swallowing: a silent
-              // Effect.ignore here previously hid stalled/interrupted title
-              // generation (stream started, never finished) with zero trace,
-              // leaving sessions stuck on the default title indefinitely.
-              Effect.catchAllCause((cause) => Effect.sync(() => slog.error("title generation failed", { error: Cause.squash(cause) }))),
-              Effect.forkIn(scope),
-            )
+            }).pipe(Effect.ignore, Effect.forkIn(scope))
 
           const model = yield* getModel(lastUser.model.providerID, lastUser.model.modelID, sessionID)
           const task = tasks.pop()
@@ -2005,9 +1994,6 @@ export const layer = Layer.effect(
               promptOps,
               forceWriteTools,
               securityMode,
-              query: lastUserMsg?.parts
-                .flatMap((part) => (part.type === "text" && !part.ignored ? [part.text] : []))
-                .join("\n") ?? "",
             }).pipe(
               Effect.provideService(Plugin.Service, plugin),
               Effect.provideService(Permission.Service, permission),
@@ -2101,7 +2087,7 @@ export const layer = Layer.effect(
             // Conditionally advertise write/shell tools based on security mode
             const toolListStart = Date.now()
             const cachedToolList = injectionCache.get(`toolList:${securityMode}`)
-            const toolList = cachedToolList.cached ? cachedToolList.value : injectionCache.set(`toolList:${securityMode}`, yield* sys.toolList(securityMode))
+            const toolList = cachedToolList.cached ? cachedToolList.value : injectionCache.set(`toolList:${securityMode}`, yield* sys.toolList(securityMode as any))
             if (toolList) system.push(toolList)
             contextSummary.add(
               "toolList",
@@ -2268,20 +2254,13 @@ export const layer = Layer.effect(
             // Auto memory-use reflection (non-blocking, fire-and-forget)
             // Uses the bundled free model to judge if retrieved memories helped.
             if (memory && turnMemories.length > 0) {
-              const lastUserFull = msgs.findLast((m) => m.info.role === "user" && m.info.id === lastUser.id)
-              const userText = lastUserFull ? getUserPromptText(lastUserFull) : ""
-              const assistantFull = yield* sessions.findMessage(
-                sessionID,
-                (m) => m.info.role === "assistant" && m.info.id === handle.message.id,
-              )
-              const assistantText = Option.isSome(assistantFull)
-                ? assistantFull.value.parts
-                    .filter((p: MessageV2.Part): p is MessageV2.TextPart => p.type === "text")
-                    .filter((p: MessageV2.TextPart) => !p.synthetic && !p.ignored)
-                    .map((p: MessageV2.TextPart) => p.text)
-                    .join("\n")
-                    .trim()
-                : ""
+              const userText = getUserPromptText(lastUser)
+              const assistantText = handle.message.parts
+                .filter((p): p is MessageV2.TextPart => p.type === "text")
+                .filter((p) => !p.tool && !p.ignored)
+                .map((p) => p.text)
+                .join("\n")
+                .trim()
 
               if (userText && assistantText) {
                 yield* Effect.forkIn(scope)(
