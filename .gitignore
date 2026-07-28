@@ -30,3 +30,8 @@ UPCOMING_CHANGELOG.md
 logs/
 *.bun-build
 tsconfig.tsbuildinfo
+
+# local build and diagnostic artifacts
+build.txt
+packages/opencode/tsc.txt
+
