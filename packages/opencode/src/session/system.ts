@@ -14,6 +14,7 @@ import { rankDocuments } from "@/memory/search"
 import { Config } from "@/config/config"
 import { Shell } from "@/shell/shell"
 import { SessionContextRollout } from "./context-rollout"
+import { SECURITY_GATED_TOOLS, type SecurityMode } from "@/tool/security"
 
 /**
  * Single unified system prompt for all models.
@@ -75,6 +76,8 @@ export interface Interface {
   }) => Effect.Effect<{ prompt: string | undefined; memories: Array<{ id: string; content: string }> }>
   /** Personality context section — learned user preferences for prompt adaptation. */
   readonly personality: () => Effect.Effect<string | undefined>
+  /** Advertises which write/shell tools are gated based on the active security mode. */
+  readonly toolList: (securityMode: SecurityMode) => Effect.Effect<string | undefined>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/SystemPrompt") {}
@@ -220,6 +223,28 @@ export const layer = Layer.effect(
         lines.push(`</personality_context>`)
 
         return lines.join("\n")
+      }),
+
+      toolList: Effect.fn("SystemPrompt.toolList")(function* (securityMode: SecurityMode) {
+        // Default interactive mode: write/shell always visible and pre-approved, nothing to advertise.
+        if (securityMode === "interactive-tui") return
+
+        const gated = Array.from(SECURITY_GATED_TOOLS).join(", ")
+        if (securityMode === "eval") {
+          return [
+            `<tool_availability security_mode="eval">`,
+            `The following tools are disabled for this run: ${gated}.`,
+            `They are not present in the tool list — do not attempt to call them.`,
+            `</tool_availability>`,
+          ].join("\n")
+        }
+
+        return [
+          `<tool_availability security_mode="cli-batch">`,
+          `The following tools are visible but require explicit user approval before each execution: ${gated}.`,
+          `They are not pre-approved.`,
+          `</tool_availability>`,
+        ].join("\n")
       }),
     })
   }),

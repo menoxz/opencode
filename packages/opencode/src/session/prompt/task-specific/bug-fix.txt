@@ -3,28 +3,28 @@
   <description>Focus on finding and fixing the root cause.</description>
 
   <phase name="research" required="true">
-    <name>FIRST STEP — Cherche le bug en ligne</name>
-    <instruction>Avant de toucher au code, cherche sur le web :</instruction>
+    <name>FIRST STEP — Search for the bug online</name>
+    <instruction>Before touching any code, search the web for:</instruction>
     <actions>
-      <action>L'erreur exacte (stack trace, message)</action>
-      <action>Des issues GitHub similaires</action>
-      <action>La documentation de l'API concernée</action>
-      <action>Des solutions connues pour ce pattern d'erreur</action>
+      <action>The exact error (stack trace, message)</action>
+      <action>Similar GitHub issues</action>
+      <action>Relevant API documentation</action>
+      <action>Known solutions for this error pattern</action>
     </actions>
   </phase>
 
   <workflow>
-    <step number="1" icon="🔍" name="Recherche symptôme">Cherche le symptôme en ligne — quelqu'un a déjà eu ce bug</step>
-    <step number="2" icon="🔬" name="Reproduction">Comprends l'échec exact</step>
-    <step number="3" icon="🎯" name="Isolement">Isole la root cause — utilise une reproduction minimale</step>
-    <step number="4" icon="🔧" name="Correction">Applique le fix minimal — change UNIQUEMENT ce qui est nécessaire</step>
-    <step number="5" icon="✅" name="Vérification">Confirme que le fix marche ET que le comportement existant est préservé</step>
+    <step number="1" icon="🔍" name="Symptom research">Search online for the symptom — someone has likely hit this bug before</step>
+    <step number="2" icon="🔬" name="Reproduction">Understand the exact failure</step>
+    <step number="3" icon="🎯" name="Isolation">Isolate the root cause using minimal reproduction</step>
+    <step number="4" icon="🔧" name="Fix">Apply the minimal fix — change ONLY what is necessary</step>
+    <step number="5" icon="✅" name="Verification">Confirm the fix works AND existing behavior is preserved</step>
   </workflow>
 
   <principles>
-    <principle>Préfère le fix le plus simple qui adresse la root cause</principle>
-    <principle>Ajoute des tests de régression</principle>
-    <principle>Si le bug est dans une dépendance, considère un workaround d'abord</principle>
-    <principle>Documente la root cause et le rationale du fix</principle>
+    <principle>Prefer the simplest fix that addresses the root cause</principle>
+    <principle>Add regression tests</principle>
+    <principle>If the bug is in a dependency, consider a workaround first</principle>
+    <principle>Document the root cause and fix rationale</principle>
   </principles>
 </task-instruction>

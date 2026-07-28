@@ -3,29 +3,29 @@
   <description>Design system architecture with proper trade-off analysis.</description>
 
   <phase name="research" required="true">
-    <name>FIRST STEP — Cherche l'état de l'art</name>
-    <instruction>Avant de proposer une architecture :</instruction>
+    <name>FIRST STEP — Research the state of the art</name>
+    <instruction>Before proposing an architecture:</instruction>
     <actions>
-      <action>Cherche les architectures de référence pour ce type de système</action>
-      <action>Trouve des comparaisons d'approches (microservices vs monolithe, etc.)</action>
-      <action>Vérifie les limites et capacités des technologies envisagées</action>
-      <action>Consulte les RFC et ADRs existants</action>
+      <action>Search for reference architectures for this type of system</action>
+      <action>Find approach comparisons (microservices vs monolith, etc.)</action>
+      <action>Check limitations and capabilities of considered technologies</action>
+      <action>Review existing RFCs and ADRs</action>
     </actions>
   </phase>
 
   <workflow>
-    <step number="1" icon="🔍" name="Recherche">Quelles architectures similaires existent ?</step>
-    <step number="2" icon="📋" name="Requirements">Comprends les contraintes fonctionnelles et techniques</step>
-    <step number="3" icon="🚫" name="Contraintes">Identifie les limites (budget, temps, skills, infra)</step>
-    <step number="4" icon="🏗️" name="Design">Propose 2-3 approches avec leurs trade-offs</step>
-    <step number="5" icon="📝" name="Documentation">ADR, diagrams, décisions clés</step>
-    <step number="6" icon="🛣️" name="Plan de migration">Comment passer de l'existant à la cible</step>
+    <step number="1" icon="🔍" name="Research">What similar architectures exist?</step>
+    <step number="2" icon="📋" name="Requirements">Understand functional and technical constraints</step>
+    <step number="3" icon="🚫" name="Constraints">Identify limits (budget, time, skills, infrastructure)</step>
+    <step number="4" icon="🏗️" name="Design">Propose 2-3 approaches with their trade-offs</step>
+    <step number="5" icon="📝" name="Documentation">ADR, diagrams, key decisions</step>
+    <step number="6" icon="🛣️" name="Migration plan">How to go from current state to target</step>
   </workflow>
 
   <principles>
-    <principle>Compare au moins 2 approches avant de recommander</principle>
-    <principle>Considère l'évolution future, pas seulement le besoin immédiat</principle>
-    <principle>Documente les décisions et leurs justifications (ADR)</principle>
-    <principle>Privilégie la simplicité sauf si la complexité est justifiée</principle>
+    <principle>Compare at least 2 approaches before recommending</principle>
+    <principle>Consider future evolution, not just the immediate need</principle>
+    <principle>Document decisions and their justifications (ADR)</principle>
+    <principle>Favor simplicity unless complexity is justified</principle>
   </principles>
 </task-instruction>

@@ -3,31 +3,31 @@
   <description>Investigate and gather information before making decisions.</description>
 
   <rule id="research-first" critical="true">
-    <name>RESEARCH FIRST — La recherche web est ta priorité numéro 1</name>
-    <instruction>RÈGLE ABSOLUE : Commence TOUJOURS par chercher sur le web.</instruction>
+    <name>RESEARCH FIRST — Web research is your number one priority</name>
+    <instruction>ABSOLUTE RULE: ALWAYS start by searching the web.</instruction>
   </rule>
 
   <workflow>
-    <step number="1" icon="🔍" name="Recherche web">
-      <description>google_search() pour trouver :</description>
+    <step number="1" icon="🔍" name="Web research">
+      <description>Search online to find:</description>
       <actions>
-        <action>La documentation officielle</action>
-        <action>Les meilleures pratiques actuelles</action>
-        <action>Les librairies et outils disponibles</action>
-        <action>Les solutions existantes à des problèmes similaires</action>
+        <action>Official documentation</action>
+        <action>Current best practices</action>
+        <action>Available libraries and tools</action>
+        <action>Existing solutions to similar problems</action>
       </actions>
     </step>
-    <step number="2" icon="📖" name="Consultation">Consulte les sources — docs, GitHub, articles techniques, RFC</step>
-    <step number="3" icon="🔬" name="Exploration">Explore le codebase — grep, glob, read pour comprendre le contexte</step>
-    <step number="4" icon="🧠" name="Synthèse">Combine les findings en une analyse cohérente</step>
-    <step number="5" icon="💡" name="Recommandation">Présente les options avec leurs trade-offs</step>
+    <step number="2" icon="📖" name="Consultation">Consult sources — docs, GitHub, articles, RFCs</step>
+    <step number="3" icon="🔬" name="Exploration">Explore the codebase — grep, glob, read to understand context</step>
+    <step number="4" icon="🧠" name="Synthesis">Combine findings into a coherent analysis</step>
+    <step number="5" icon="💡" name="Recommendation">Present options with their trade-offs</step>
   </workflow>
 
   <principles>
-    <principle>Cite les URLs et les chemins de fichiers exacts</principle>
-    <principle>Sépare les faits vérifiés des inférences</principle>
-    <principle>Présente plusieurs approches quand il y a des compromis</principle>
-    <principle>Sois explicite sur l'incertitude</principle>
-    <principle>Ne modifie PAS les fichiers pendant la recherche</principle>
+    <principle>Cite exact URLs and file paths</principle>
+    <principle>Separate verified facts from inferences</principle>
+    <principle>Present multiple approaches when there are trade-offs</principle>
+    <principle>Be explicit about uncertainty</principle>
+    <principle>Do NOT modify files during research</principle>
   </principles>
 </task-instruction>

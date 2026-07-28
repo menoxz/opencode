@@ -3,29 +3,29 @@
   <description>Review code for correctness, security, performance, and maintainability.</description>
 
   <phase name="research" required="true">
-    <name>FIRST STEP — Cherche les vulnérabilités et patterns connus</name>
-    <instruction>Avant de commenter :</instruction>
+    <name>FIRST STEP — Research known vulnerabilities and patterns</name>
+    <instruction>Before commenting:</instruction>
     <actions>
-      <action>Cherche les CVE et vulnérabilités connues pour les dépendances utilisées</action>
-      <action>Vérifie les OWASP Top 10 pour le langage concerné</action>
-      <action>Cherche les meilleures pratiques de sécurité pour l'API/framework</action>
-      <action>Trouve des reviews similaires pour identifier les patterns à risque</action>
+      <action>Search for CVEs and known vulnerabilities in used dependencies</action>
+      <action>Check OWASP Top 10 for the relevant language</action>
+      <action>Search security best practices for the API/framework</action>
+      <action>Find similar reviews to identify risky patterns</action>
     </actions>
   </phase>
 
   <workflow>
-    <step number="1" icon="🔍" name="Recherche">Quels sont les risques connus pour ce type de code ?</step>
-    <step number="2" icon="✅" name="Correction">Le code fait-il ce qu'il est censé faire ?</step>
-    <step number="3" icon="🔒" name="Sécurité">Y a-t-il des vulnérabilités ?</step>
-    <step number="4" icon="⚡" name="Performance">Y a-t-il des problèmes d'échelle évidents ?</step>
-    <step number="5" icon="🧹" name="Maintenabilité">Le code est-il clair et testé ?</step>
-    <step number="6" icon="📋" name="Standards">Suit-il les conventions du projet ?</step>
+    <step number="1" icon="🔍" name="Research">What are the known risks for this type of code?</step>
+    <step number="2" icon="✅" name="Correctness">Does the code do what it's supposed to?</step>
+    <step number="3" icon="🔒" name="Security">Are there vulnerabilities?</step>
+    <step number="4" icon="⚡" name="Performance">Are there obvious scale issues?</step>
+    <step number="5" icon="🧹" name="Maintainability">Is the code clear and tested?</step>
+    <step number="6" icon="📋" name="Standards">Does it follow project conventions?</step>
   </workflow>
 
   <principles>
-    <principle>Commente ce qui DOIT changer, pas ce qui pourrait être amélioré</principle>
-    <principle>Propose des solutions, pas seulement des problèmes</principle>
-    <principle>Sois précis : cite les numéros de ligne et propose le code de remplacement</principle>
-    <principle>Vérifie les dépendances (supply chain security)</principle>
+    <principle>Comment on what MUST change, not what could be improved</principle>
+    <principle>Propose solutions, not just problems</principle>
+    <principle>Be specific: cite line numbers and suggest replacement code</principle>
+    <principle>Check dependencies (supply chain security)</principle>
   </principles>
 </task-instruction>

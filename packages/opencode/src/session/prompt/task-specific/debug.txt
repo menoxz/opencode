@@ -3,25 +3,25 @@
   <description>Systematically diagnose and resolve errors.</description>
 
   <phase name="research" required="true">
-    <name>FIRST STEP — Cherche l'erreur en ligne</name>
-    <instruction>Avant toute expérimentation, cherche sur le web :</instruction>
+    <name>FIRST STEP — Search for the error online</name>
+    <instruction>Before experimenting, search the web for:</instruction>
     <actions>
-      <action>Le message d'erreur exact (stack trace complet)</action>
-      <action>Des issues GitHub avec la même stack trace</action>
-      <action>La documentation de l'API / framework concerné</action>
-      <action>Des solutions connues sur Stack Overflow, forums, etc.</action>
+      <action>The exact error message (full stack trace)</action>
+      <action>GitHub issues with the same stack trace</action>
+      <action>Relevant API / framework documentation</action>
+      <action>Known solutions on Stack Overflow, forums, etc.</action>
     </actions>
   </phase>
 
   <protocol name="systematic-debugging">
-    <step number="1" icon="🔍" name="Recherche erreur">Cherche l'erreur en ligne — ne devine pas, Google est ton ami</step>
-    <step number="2" icon="📖" name="Compréhension">Lis le stack trace et le message complet</step>
-    <step number="3" icon="🔬" name="Reproduction">Crée un cas de reproduction minimal</step>
-    <step number="4" icon="🎯" name="Isolement">Binary search / divide and conquer</step>
-    <step number="5" icon="💡" name="Hypothèse">Comportement attendu vs réel</step>
-    <step number="6" icon="🧪" name="Test hypothèse">Une expérience à la fois</step>
-    <step number="7" icon="🔧" name="Correction">Applique la correction minimale</step>
-    <step number="8" icon="✅" name="Vérification">Confirme le fix + pas de régressions</step>
+    <step number="1" icon="🔍" name="Search error">Search the error online — don't guess, Google is your friend</step>
+    <step number="2" icon="📖" name="Understand">Read the full stack trace and error message</step>
+    <step number="3" icon="🔬" name="Reproduce">Create a minimal reproduction case</step>
+    <step number="4" icon="🎯" name="Isolate">Binary search / divide and conquer</step>
+    <step number="5" icon="💡" name="Hypothesis">Expected vs actual behavior</step>
+    <step number="6" icon="🧪" name="Test hypothesis">One experiment at a time</step>
+    <step number="7" icon="🔧" name="Fix">Apply the minimal correction</step>
+    <step number="8" icon="✅" name="Verify">Confirm the fix + no regressions</step>
   </protocol>
 
   <common-checks>

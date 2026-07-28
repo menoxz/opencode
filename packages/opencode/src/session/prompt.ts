@@ -39,6 +39,7 @@ import { SessionSummary } from "./summary"
 import { SessionContextRollout } from "./context-rollout"
 import { NamedError } from "@opencode-ai/core/util/error"
 import { SessionProcessor } from "./processor"
+import { SessionTitle } from "./title"
 import { Tool } from "@/tool/tool"
 import { Permission } from "@/permission"
 import { SessionStatus } from "./status"
@@ -250,25 +251,15 @@ function xmlEscape(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
 }
 
-const METHODOLOGY_AUTO_CHECK = [
-  `<methodology_check>`,
-  `Before responding, do a proportional self-check aligned with the task complexity:`,
-  `objective_fit|context_used_when_relevant|plan_for_non_trivial_work|tool_outputs_observed|verification_or_limits|scope_drift`,
-  `If a useful check was skipped, correct course briefly instead of adding process narration.`,
-  `</methodology_check>`,
-].join("\n")
 
-type MethodologyMode = SessionContextRollout.SystemBoilerplateMode
-
-function parseUserFlags(text: string): MethodologyMode | undefined {
-  if (text.includes("/minimal") || text.includes("/quick")) return "minimal"
-  if (text.includes("/light")) return "light"
-  if (text.includes("/full")) return "full"
-  return undefined
-}
 
 function getUserPromptText(msg: MessageV2.WithParts): string {
-  if (msg.info.role !== "user") return ""
+  // Defensive: a malformed/partially-hydrated message (e.g. read mid-write,
+  // or produced by a code path that skipped `info`) must never crash the
+  // whole prompt loop here. This function runs on every step (skill
+  // relevance, goal state, auto-planning) against the full message history,
+  // so a single bad entry previously took down the entire session silently.
+  if (!msg?.info || msg.info.role !== "user") return ""
   return msg.parts
     .filter((p): p is MessageV2.TextPart => p.type === "text" && !p.synthetic && !p.ignored)
     .map((p) => p.text)
@@ -366,37 +357,7 @@ function isContinuationPrompt(text: string): boolean {
   return hasContinuationToken
 }
 
-function computeMethodologyMode(
-  step: number,
-  msgs: MessageV2.WithParts[],
-  rollout: SessionContextRollout.Info,
-): MethodologyMode {
-  const currentTaskText = getCurrentTaskText(msgs)
 
-  const flagOverride = parseUserFlags(currentTaskText)
-  if (flagOverride) return flagOverride
-
-  if (rollout.systemBoilerplate === "full") return "full"
-
-  const heuristic = PlanEngine.heuristicComplexity(currentTaskText)
-
-  if (rollout.systemBoilerplate === "minimal") {
-    if (step === 1 && heuristic !== "simple") return "light"
-    if (heuristic === "complex" && step <= 3) return "light"
-    return "minimal"
-  }
-
-  if (step > 5 && heuristic === "simple") return "minimal"
-  return "light"
-}
-
-function buildMethodologyReminder(
-  step: number,
-  mode: Exclude<MethodologyMode, "full"> | "full",
-  messages: MessageV2.WithParts[],
-): string | undefined {
-  return PromptMethodology.buildMethodologyReminder({ step, mode, messages })
-}
 
 const log = Log.create({ service: "session.prompt" })
 const elog = EffectLogger.create({ service: "session.prompt" })
@@ -447,6 +408,7 @@ export const layer = Layer.effect(
     const sys = yield* SystemPrompt.Service
     const llm = yield* LLM.Service
     const references = yield* Reference.Service
+    const sessionTitle = yield* SessionTitle.Service
     const events = yield* EventV2Bridge.Service
     const flags = yield* RuntimeFlags.Service
     const toolCache = yield* ToolCacheService
@@ -477,7 +439,7 @@ export const layer = Layer.effect(
       agent: Agent.Info
       promptRollout: ReturnType<typeof SessionContextRollout.resolve>
     }) {
-      const vision = input.imageConfig.vision_model
+      const vision = input.imageConfig.vision_model ? Provider.parseModel(input.imageConfig.vision_model) : undefined
       if (!vision) {
         return [
           `ERROR: Cannot read ${input.attachment.filename ? `"${input.attachment.filename}"` : "image"}: the active model does not support image input.`,
@@ -485,7 +447,7 @@ export const layer = Layer.effect(
         ].join(" ")
       }
 
-      const visionModel = yield* provider.getModel(ProviderID.make(vision.providerID), ModelID.make(vision.modelID))
+      const visionModel = yield* provider.getModel(vision.providerID, vision.modelID)
       if (!visionModel.capabilities.input.image) {
         return `ERROR: Configured vision model ${vision.providerID}/${vision.modelID} does not support image input. Choose a vision-capable model.`
       }
@@ -736,79 +698,6 @@ export const layer = Layer.effect(
         { concurrency: "unbounded", discard: true },
       )
       return parts
-    })
-
-    const title = Effect.fn("SessionPrompt.ensureTitle")(function* (input: {
-      session: Session.Info
-      history: MessageV2.WithParts[]
-      providerID: ProviderID
-      modelID: ModelID
-    }) {
-      if (input.session.parentID) return
-      if (!Session.isDefaultTitle(input.session.title)) return
-      const last = input.history[input.history.length - 1]
-      if (last?.info.role === "assistant") return
-
-      const real = (m: MessageV2.WithParts) =>
-        m.info.role === "user" && !m.parts.every((p) => "synthetic" in p && p.synthetic)
-      const idx = input.history.findIndex(real)
-      if (idx === -1) return
-      // Allow retries across early turns: the background title fiber can be
-      // silently interrupted (e.g. scope torn down before its slower LLM stream
-      // finishes) without surfacing an error, leaving the session stuck on the
-      // default title forever if we only ever attempt this once.
-      if (input.history.filter(real).length > 3) return
-
-      const context = input.history.slice(0, idx + 1)
-      const firstUser = context[idx]
-      if (!firstUser || firstUser.info.role !== "user") return
-      const firstInfo = firstUser.info
-
-      const subtasks = firstUser.parts.filter((p): p is MessageV2.SubtaskPart => p.type === "subtask")
-      const onlySubtasks = subtasks.length > 0 && firstUser.parts.every((p) => p.type === "subtask")
-
-      const ag = yield* agents.get("title")
-      if (!ag) return
-      const mdl = ag.model
-        ? yield* provider.getModel(ag.model.providerID, ag.model.modelID)
-        : ((yield* provider.getSmallModel(input.providerID)) ??
-          (yield* provider.getModel(input.providerID, input.modelID)))
-      const promptRollout = SessionContextRollout.resolve(yield* config.get())
-      const msgs = onlySubtasks
-        ? [{ role: "user" as const, content: subtasks.map((p) => p.prompt).join("\n") }]
-        : yield* MessageV2.toModelMessagesEffect(context, mdl, {
-            replayToolInputs: promptRollout.replayToolInputs,
-            replayToolOutputs: promptRollout.replayToolOutputs,
-            replayReasoning: promptRollout.replayReasoning,
-          })
-      const text = yield* llm
-        .stream({
-          agent: ag,
-          user: firstInfo,
-          system: [],
-          small: true,
-          tools: {},
-          model: mdl,
-          sessionID: input.session.id,
-          retries: 2,
-          messages: [{ role: "user", content: "Generate a title for this conversation:\n" }, ...msgs],
-        })
-        .pipe(
-          Stream.filter(LLMEvent.is.textDelta),
-          Stream.map((e) => e.text),
-          Stream.mkString,
-          Effect.orDie,
-        )
-      const cleaned = text
-        .replace(/<think>[\s\S]*?<\/think>\s*/g, "")
-        .split("\n")
-        .map((line) => line.trim())
-        .find((line) => line.length > 0)
-      if (!cleaned) return
-      const t = cleaned.length > 100 ? cleaned.substring(0, 97) + "..." : cleaned
-      yield* sessions
-        .setTitle({ sessionID: input.session.id, title: t })
-        .pipe(Effect.catchCause((cause) => elog.error("failed to generate title", { error: Cause.squash(cause) })))
     })
 
     const handleSubtask = Effect.fn("SessionPrompt.handleSubtask")(function* (input: {
@@ -1728,6 +1617,9 @@ export const layer = Layer.effect(
     )(function* (input: PromptInput) {
       const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
       yield* revert.cleanup(session)
+
+
+
       const createUserMessageStart = Date.now()
       const message = yield* createUserMessage(input)
       log.info("prompt context summary", {
@@ -1833,16 +1725,14 @@ export const layer = Layer.effect(
 
           step++
           if (step === 1)
-            yield* title({
+            yield* sessionTitle.generate({
               session,
-              modelID: lastUser.model.modelID,
               providerID: lastUser.model.providerID,
+              modelID: lastUser.model.modelID,
               history: msgs,
             }).pipe(
-              // Log instead of Effect.ignore: a silent ignore previously hid stalled
-              // title generation streams with zero trace, leaving sessions stuck on
-              // the default title forever.
-              Effect.catchCause((cause) => Effect.sync(() => slog.error("title generation failed", { error: Cause.squash(cause) }))),
+              // Non-blocking by design — SessionTitle handles retry/backoff
+              // and logging internally so the loop is never blocked or killed.
               Effect.forkIn(scope),
             )
 
@@ -1918,7 +1808,7 @@ export const layer = Layer.effect(
               const complexity = PlanEngine.heuristicComplexity(currentUserText)
               if (complexity === "complex" && planEngine) {
                 yield* slog.info("auto-planning triggered for complex task")
-                
+
                 // Inform user in TUI that auto-planning is in progress
                 const planPart: MessageV2.ReasoningPart = {
                   type: "reasoning",
@@ -2004,6 +1894,9 @@ export const layer = Layer.effect(
               promptOps,
               forceWriteTools,
               securityMode,
+              query: lastUserMsg?.parts
+                .flatMap((part) => (part.type === "text" && !part.ignored ? [part.text] : []))
+                .join("\n") ?? "",
             }).pipe(
               Effect.provideService(Plugin.Service, plugin),
               Effect.provideService(Permission.Service, permission),
@@ -2097,7 +1990,7 @@ export const layer = Layer.effect(
             // Conditionally advertise write/shell tools based on security mode
             const toolListStart = Date.now()
             const cachedToolList = injectionCache.get(`toolList:${securityMode}`)
-            const toolList = cachedToolList.cached ? cachedToolList.value : injectionCache.set(`toolList:${securityMode}`, yield* sys.toolList(securityMode as any))
+            const toolList = cachedToolList.cached ? cachedToolList.value : injectionCache.set(`toolList:${securityMode}`, yield* sys.toolList(securityMode))
             if (toolList) system.push(toolList)
             contextSummary.add(
               "toolList",
@@ -2186,27 +2079,7 @@ export const layer = Layer.effect(
               contextSummary.add("daemon", "inject first-step adaptive/personality/daemon/plan context", stepOneTail, Date.now() - daemonStart)
             }
 
-            // ── Methodology enforcement (matrix: step × complexity) ──
-            const methodologyStart = Date.now()
-            const baseMode = computeMethodologyMode(step, msgs, promptRollout)
-            const mode = session.parentID && baseMode === "full" ? "light" : baseMode
-            // Methodology guidance is volatile per-step (depends on step/mode/tool-activity).
-            // Keep it OUT of system[] so the cached system prefix stays stable across steps;
-            // relocate it to the conversation tail as an ephemeral guidance message instead.
-            const methodReminder = buildMethodologyReminder(step, mode, msgs)
-            const methodologyTail: string[] = []
-            const emittedMethodReminder = injectionCache.emitOnce("methodology", methodReminder)
-            if (emittedMethodReminder.value) methodologyTail.push(emittedMethodReminder.value)
-            if (mode === "full") methodologyTail.push(METHODOLOGY_AUTO_CHECK)
-            const methodologyMessage = methodologyTail.length ? methodologyTail.join("\n") : undefined
             const stepOneMessage = stepOneTail.length ? stepOneTail.join("\n\n") : undefined
-            contextSummary.add(
-              "methodology",
-              emittedMethodReminder.skipped ? "skip unchanged methodology reminder already emitted in this run" : `inject ${mode} methodology reminder`,
-              methodologyMessage,
-              Date.now() - methodologyStart,
-              { cached: emittedMethodReminder.skipped },
-            )
 
             const format = lastUser.format ?? { type: "text" as const }
             if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
@@ -2221,11 +2094,11 @@ export const layer = Layer.effect(
               messages: [
                 ...modelMsgs,
                 ...(stepOneMessage ? [{ role: "user" as const, content: PromptMethodology.wrapInjectedGuidance(stepOneMessage)! }] : []),
-                ...(methodologyMessage ? [{ role: "user" as const, content: PromptMethodology.wrapInjectedGuidance(methodologyMessage)! }] : []),
                 ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS }] : []),
               ],
               tools,
               model,
+              firstStep: step === 1,
               toolChoice: format.type === "json_schema" ? "required" : undefined,
             })
             contextSummary.add("handleProcess", "run provider/model processing", handle.message, Date.now() - handleProcessStart)
@@ -2264,13 +2137,20 @@ export const layer = Layer.effect(
             // Auto memory-use reflection (non-blocking, fire-and-forget)
             // Uses the bundled free model to judge if retrieved memories helped.
             if (memory && turnMemories.length > 0) {
-              const userText = getUserPromptText(lastUser)
-              const assistantText = handle.message.parts
-                .filter((p): p is MessageV2.TextPart => p.type === "text")
-                .filter((p) => !p.tool && !p.ignored)
-                .map((p) => p.text)
-                .join("\n")
-                .trim()
+              const lastUserFull = msgs.findLast((m) => m.info.role === "user" && m.info.id === lastUser.id)
+              const userText = lastUserFull ? getUserPromptText(lastUserFull) : ""
+              const assistantFull = yield* sessions.findMessage(
+                sessionID,
+                (m) => m.info.role === "assistant" && m.info.id === handle.message.id,
+              )
+              const assistantText = Option.isSome(assistantFull)
+                ? assistantFull.value.parts
+                    .filter((p: MessageV2.Part): p is MessageV2.TextPart => p.type === "text")
+                    .filter((p: MessageV2.TextPart) => !p.synthetic && !p.ignored)
+                    .map((p: MessageV2.TextPart) => p.text)
+                    .join("\n")
+                    .trim()
+                : ""
 
               if (userText && assistantText) {
                 yield* Effect.forkIn(scope)(
@@ -2596,6 +2476,7 @@ export const defaultLayer = Layer.suspend(() =>
         Session.defaultLayer,
         SessionRevert.defaultLayer,
         SessionSummary.defaultLayer,
+        SessionTitle.defaultLayer,
         SessionContextRollout.defaultLayer,
         Image.defaultLayer,
       ),
