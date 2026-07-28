@@ -110,4 +110,66 @@ describe("tool.webfetch", () => {
         }),
     ),
   )
+
+  it.instance("content_only strips navigation and keeps main content via article tag", () =>
+    withFetch(
+      () =>
+        new Response(
+          `<!DOCTYPE html>
+<html><body>
+  <nav><a href="/">Home</a><a href="/about">About</a></nav>
+  <header>Site Header</header>
+  <article>
+    <h1>Article Title</h1>
+    <p>This is the main article content that should be extracted.</p>
+    <p>It has multiple paragraphs with meaningful content.</p>
+    <p>More content here to ensure it exceeds the 200 char threshold.</p>
+    <p>And even more content to make sure the extraction picks it up.</p>
+  </article>
+  <footer>Copyright 2026</footer>
+  <aside>Sidebar ads and links</aside>
+</body></html>`,
+          {
+            status: 200,
+            headers: { "content-type": "text/html; charset=utf-8" },
+          },
+        ),
+      (url) =>
+        Effect.gen(function* () {
+          const result = yield* exec({ url: new URL("/article.html", url).toString(), format: "markdown" })
+          expect(result.output).toContain("Article Title")
+          expect(result.output).toContain("main article content")
+          expect(result.output).not.toContain("Home")
+          expect(result.output).not.toContain("About")
+          expect(result.output).not.toContain("Site Header")
+          expect(result.output).not.toContain("Copyright 2026")
+          expect(result.output).not.toContain("Sidebar ads")
+        }),
+    ),
+  )
+
+  it.instance("content_only=false returns full page including navigation", () =>
+    withFetch(
+      () =>
+        new Response(
+          `<!DOCTYPE html>
+<html><body>
+  <nav><a href="/">Home</a></nav>
+  <main role="main"><h1>Content</h1><p>Body text here.</p></main>
+  <footer>Footer</footer>
+</body></html>`,
+          {
+            status: 200,
+            headers: { "content-type": "text/html; charset=utf-8" },
+          },
+        ),
+      (url) =>
+        Effect.gen(function* () {
+          const result = yield* exec({ url: new URL("/full.html", url).toString(), format: "markdown", content_only: false })
+          expect(result.output).toContain("Home")
+          expect(result.output).toContain("Content")
+          expect(result.output).toContain("Footer")
+        }),
+    ),
+  )
 })

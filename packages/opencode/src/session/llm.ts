@@ -49,6 +49,8 @@ export type StreamInput = {
   tools: Record<string, Tool>
   retries?: number
   toolChoice?: "auto" | "required" | "none"
+  /** First step of a session turn — lifts the output token cap so the model can reason freely. */
+  firstStep?: boolean
 }
 
 export type StreamRequest = StreamInput & {

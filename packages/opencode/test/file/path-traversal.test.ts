@@ -14,6 +14,7 @@ const it = testEffect(File.defaultLayer)
 const OUTSIDE_PATH = path.resolve("/", "opencode-test-nonexistent")
 const read = (file: string) => File.use.read(file)
 const list = (dir?: string) => File.use.list(dir)
+const write = (file: string, content: string) => File.use.write(file, content)
 const expectAccessDenied = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   Effect.gen(function* () {
     const exit = yield* effect.pipe(Effect.exit)
@@ -105,6 +106,44 @@ unixDescribe("File.list path traversal protection", () => {
 
       const result = yield* list("subdir")
       expect(Array.isArray(result)).toBe(true)
+    }),
+  )
+})
+
+unixDescribe("File.write path traversal protection", () => {
+  it.instance("rejects ../ traversal attempting to write /etc/passwd", () =>
+    Effect.gen(function* () {
+      yield* expectAccessDenied(write("../../../etc/passwd", "malicious content"))
+    }),
+  )
+
+  it.instance("rejects deeply nested traversal", () =>
+    Effect.gen(function* () {
+      yield* expectAccessDenied(write("src/nested/../../../../../../../etc/passwd", "malicious content"))
+    }),
+  )
+
+  it.instance("does not create the file on disk when access is denied", () =>
+    Effect.gen(function* () {
+      yield* expectAccessDenied(write("../../../etc/opencode-test-should-not-exist", "malicious content"))
+      const escaped = yield* Effect.promise(() =>
+        fs
+          .access(path.resolve("/etc/opencode-test-should-not-exist"))
+          .then(() => true)
+          .catch(() => false),
+      )
+      expect(escaped).toBe(false)
+    }),
+  )
+
+  it.instance("allows valid paths within project", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const result = yield* write("valid.txt", "valid content")
+      expect(result.content).toBe("valid content")
+
+      const onDisk = yield* Effect.promise(() => fs.readFile(path.join(test.directory, "valid.txt"), "utf-8"))
+      expect(onDisk).toBe("valid content")
     }),
   )
 })

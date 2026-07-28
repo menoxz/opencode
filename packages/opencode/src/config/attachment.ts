@@ -2,6 +2,7 @@ export * as ConfigAttachment from "./attachment"
 
 import { Schema } from "effect"
 import { PositiveInt } from "@opencode-ai/core/schema"
+import { ConfigModelID } from "./model-id"
 
 export const Image = Schema.Struct({
   auto_resize: Schema.optional(Schema.Boolean).annotate({
@@ -15,6 +16,13 @@ export const Image = Schema.Struct({
   }),
   max_base64_bytes: Schema.optional(PositiveInt).annotate({
     description: "Maximum base64 payload bytes for an image attachment (default: 5242880)",
+  }),
+  vision_model: Schema.optional(ConfigModelID).annotate({
+    description:
+      "Fallback vision model (format provider/model) used to describe images when the active model does not support image input",
+  }),
+  cache: Schema.optional(Schema.Boolean).annotate({
+    description: "Cache vision fallback analysis results by image content hash (default: true)",
   }),
 }).annotate({ identifier: "ImageAttachmentConfig" })
 export type Image = Schema.Schema.Type<typeof Image>

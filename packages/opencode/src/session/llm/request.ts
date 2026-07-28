@@ -32,6 +32,8 @@ type PrepareInput = {
   readonly plugin: Plugin.Interface
   readonly flags: RuntimeFlags.Info
   readonly isWorkflow: boolean
+  /** First step of a session turn — lifts the output token cap. */
+  readonly firstStep?: boolean
 }
 
 export type Prepared = {
@@ -136,7 +138,9 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
         : undefined,
       topP: input.agent.topP ?? ProviderTransform.topP(input.model),
       topK: ProviderTransform.topK(input.model),
-      maxOutputTokens: ProviderTransform.maxOutputTokens(input.model, input.flags.outputTokenMax),
+      maxOutputTokens: input.firstStep
+        ? input.model.limit.output
+        : ProviderTransform.maxOutputTokens(input.model, input.flags.outputTokenMax),
       options,
     },
   )
@@ -204,6 +208,7 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
   }
 
   const toolNames = Object.keys(sortedTools)
+  const toolPrefixKey = toolNames.join("\u001f")
   const headerNames = Object.keys(resolvedHeaders)
   const diagnostics = {
     provider: input.provider.id,
@@ -223,6 +228,7 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
       count: toolNames.length,
       approxChars: approxSize(sortedTools),
       names: toolNames,
+      prefixKey: toolPrefixKey,
     },
     params: {
       temperature: params.temperature,

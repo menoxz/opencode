@@ -18,6 +18,7 @@ import { useLocal } from "@tui/context/local"
 import { tint, useTheme } from "@tui/context/theme"
 import { EmptyBorder, SplitBorder } from "@tui/component/border"
 import { Spinner } from "@tui/component/spinner"
+import { formatCost, formatFileTagHint, formatTaggedFileCount } from "./usage"
 import { useSDK } from "@tui/context/sdk"
 import { useRoute } from "@tui/context/route"
 import { useProject } from "@tui/context/project"
@@ -331,6 +332,19 @@ export function Prompt(props: PromptProps) {
     return messages.findLast((m): m is UserMessage => m.role === "user")
   })
 
+  function formatK(n: number) {
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+    if (n >= 1_000) return `${Math.round(n / 1_000)}k`
+    return String(n)
+  }
+
+  function formatTokensPerSecond(output: number, created?: number, completed?: number) {
+    if (!created || !completed || completed <= created || output <= 0) return undefined
+    const value = output / ((completed - created) / 1000)
+    if (!Number.isFinite(value) || value <= 0) return undefined
+    return value >= 10 ? Math.round(value).toLocaleString() : value.toFixed(1)
+  }
+
   const usage = createMemo(() => {
     if (!props.sessionID) return
     const session = sync.session.get(props.sessionID)
@@ -343,11 +357,13 @@ export function Prompt(props: PromptProps) {
     if (tokens <= 0) return
 
     const model = sync.data.provider.find((item) => item.id === last.providerID)?.models[last.modelID]
-    const pct = model?.limit.context ? `${Math.round((tokens / model.limit.context) * 100)}%` : undefined
-    const cost = session?.cost ?? 0
+    const max = model?.limit.context
+    const tokSpeed = formatTokensPerSecond(last.tokens.output, last.time?.created, last.time?.completed)
+    const pct = max ? Math.round((tokens / max) * 100) : undefined
     return {
-      context: pct ? `${Locale.number(tokens)} (${pct})` : Locale.number(tokens),
-      cost: cost > 0 ? money.format(cost) : undefined,
+      context: max ? `${formatK(tokens)}/${formatK(max)} (${pct}%)` : formatK(tokens),
+      cost: formatCost(session?.cost ?? 0),
+      tokensPerSecond: tokSpeed,
     }
   })
 
@@ -1743,7 +1759,9 @@ export function Prompt(props: PromptProps) {
                 </box>
               )}
             </Match>
-            <Match when={true}>{props.hint ?? <text />}</Match>
+            <Match when={true}>
+              <text fg={theme.textMuted}>{props.hint ?? ""}</text>
+            </Match>
           </Switch>
           <Show when={status().type !== "retry"}>
             <box gap={2} flexDirection="row">
@@ -1758,19 +1776,26 @@ export function Prompt(props: PromptProps) {
                     <Match when={usage()}>
                       {(item) => (
                         <text fg={theme.textMuted} wrapMode="none">
-                          {[item().context, item().cost].filter(Boolean).join(" · ")}
+                          {[
+                            item().context,
+                            item().cost,
+                            item().tokensPerSecond ? `${item().tokensPerSecond} tok/s` : undefined,
+                            formatFileTagHint(),
+                            paletteShortcut(),
+                          ]
+                            .filter(Boolean)
+                            .join(" . ")}
+                          <span style={{ fg: theme.textMuted }}> commands</span>
                         </text>
                       )}
                     </Match>
                     <Match when={true}>
                       <text fg={theme.text}>
                         {agentShortcut()} <span style={{ fg: theme.textMuted }}>agents</span>
+                        {`  ${paletteShortcut()} commands`}
                       </text>
                     </Match>
                   </Switch>
-                  <text fg={theme.text}>
-                    {paletteShortcut()} <span style={{ fg: theme.textMuted }}>commands</span>
-                  </text>
                 </Match>
                 <Match when={store.mode === "shell"}>
                   <text fg={theme.text}>

@@ -1,5 +1,8 @@
 import { expect, mock, beforeEach } from "bun:test"
 import { Cause, Effect, Exit } from "effect"
+import fs from "fs/promises"
+import path from "path"
+import { InstanceState } from "../../src/effect/instance-state"
 import type { MCP as MCPNS } from "../../src/mcp/index"
 import { testEffect } from "../lib/effect"
 
@@ -29,6 +32,7 @@ let connectError = "Mock transport cannot connect"
 let clientCreateCount = 0
 // Tracks how many times transport.close() is called across all mock transports
 let transportCloseCount = 0
+let lastCallToolOptions: { signal?: AbortSignal } | undefined
 
 function getOrCreateClientState(name?: string): MockClientState {
   const key = name ?? "default"
@@ -161,6 +165,11 @@ void mock.module("@modelcontextprotocol/sdk/client/index.js", () => ({
       return { resources: this._state?.resources ?? [] }
     }
 
+    async callTool(_request: unknown, _schema: unknown, options?: { signal?: AbortSignal }) {
+      lastCallToolOptions = options
+      return { content: [] }
+    }
+
     async close() {
       if (this._state) this._state.closed = true
     }
@@ -175,6 +184,7 @@ beforeEach(() => {
   connectError = "Mock transport cannot connect"
   clientCreateCount = 0
   transportCloseCount = 0
+  lastCallToolOptions = undefined
 })
 
 // Import after mocks
@@ -187,6 +197,82 @@ function statusName(status: Record<string, MCPNS.Status> | MCPNS.Status, server:
   if ("status" in status) return status.status
   return status[server]?.status
 }
+
+it.instance(
+  "tool execution forwards the AI SDK abort signal to the MCP request",
+  () =>
+    MCP.Service.use((mcp: MCPNS.Interface) =>
+      Effect.gen(function* () {
+        lastCreatedClientName = "abort-server"
+        yield* mcp.add("abort-server", { type: "local", command: ["echo", "test"] })
+
+        const tools = yield* mcp.tools()
+        const tool = tools["abort-server_test_tool"]
+        const controller = new AbortController()
+        yield* Effect.promise(() =>
+          tool.execute!({}, { toolCallId: "call-1", messages: [], abortSignal: controller.signal }),
+        )
+
+        expect(lastCallToolOptions?.signal).toBe(controller.signal)
+      }),
+    ),
+  { config: { mcp: {} } },
+)
+
+it.instance(
+  "reload keeps an unchanged connected client hot and preserves the catalog version",
+  () =>
+    MCP.Service.use((mcp: MCPNS.Interface) =>
+      Effect.gen(function* () {
+        lastCreatedClientName = "reload-server"
+        const beforeClient = (yield* mcp.clients())["reload-server"]
+        const beforeCreates = clientCreateCount
+        const beforeVersion = yield* mcp.catalogVersion!()
+
+        yield* mcp.reload()
+
+        expect((yield* mcp.clients())["reload-server"]).toBe(beforeClient)
+        expect(clientCreateCount).toBe(beforeCreates)
+        expect(yield* mcp.catalogVersion!()).toBe(beforeVersion)
+      }),
+    ),
+  {
+    config: {
+      mcp: { "reload-server": { type: "local", command: ["echo", "before"] } },
+    },
+  },
+)
+
+it.instance(
+  "reload reconnects a connected server when its effective config changes",
+  () =>
+    MCP.Service.use((mcp: MCPNS.Interface) =>
+      Effect.gen(function* () {
+        lastCreatedClientName = "reload-server"
+        const beforeClient = (yield* mcp.clients())["reload-server"]
+        const beforeCreates = clientCreateCount
+        const beforeVersion = yield* mcp.catalogVersion!()
+        const configFile = path.join(yield* InstanceState.directory, "opencode.json")
+
+        yield* Effect.promise(() =>
+          fs.writeFile(
+            configFile,
+            JSON.stringify({ mcp: { "reload-server": { type: "local", command: ["echo", "after"] } } }),
+          ),
+        )
+        yield* mcp.reload()
+
+        expect((yield* mcp.clients())["reload-server"]).not.toBe(beforeClient)
+        expect(clientCreateCount).toBe(beforeCreates + 1)
+        expect(yield* mcp.catalogVersion!()).toBeGreaterThan(beforeVersion)
+      }),
+    ),
+  {
+    config: {
+      mcp: { "reload-server": { type: "local", command: ["echo", "before"] } },
+    },
+  },
+)
 
 // ========================================================================
 // Test: tools() are cached after connect

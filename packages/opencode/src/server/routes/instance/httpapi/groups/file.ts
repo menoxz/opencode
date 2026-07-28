@@ -17,6 +17,10 @@ export const FileQuery = Schema.Struct({
   path: Schema.String,
 })
 
+export const FileWriteBody = Schema.Struct({
+  content: Schema.String,
+})
+
 export const FindTextQuery = Schema.Struct({
   ...WorkspaceRoutingQueryFields,
   pattern: Schema.String,
@@ -98,6 +102,17 @@ export const FileApi = HttpApi.make("file")
             identifier: "file.read",
             summary: "Read file",
             description: "Read the content of a specified file.",
+          }),
+        ),
+        HttpApiEndpoint.post("write", FilePaths.content, {
+          query: FileQuery,
+          payload: FileWriteBody,
+          success: described(File.Content, "File content after write"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "file.write",
+            summary: "Write file",
+            description: "Write content to a specified file, creating it and any parent directories if needed.",
           }),
         ),
         HttpApiEndpoint.get("status", FilePaths.status, {

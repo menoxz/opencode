@@ -34,6 +34,11 @@ const list = Effect.fn("FileTest.list")(function* (dir?: string) {
   return yield* file.list(dir)
 })
 
+const write = Effect.fn("FileTest.write")(function* (input: string, content: string) {
+  const file = yield* File.Service
+  return yield* file.write(input, content)
+})
+
 const search = Effect.fn("FileTest.search")(function* (input: {
   query: string
   limit?: number
@@ -361,16 +366,13 @@ describe("file/index Filesystem patterns", () => {
   })
 
   describe("Path security", () => {
-    it.instance("throws for paths outside project directory", () =>
-      Effect.gen(function* () {
-        expect(yield* failureMessage(read("../outside.txt"))).toContain("Access denied")
-      }),
-    )
-
-    it.instance("throws for paths outside project directory", () =>
-      Effect.gen(function* () {
-        expect(yield* failureMessage(read("../outside.txt"))).toContain("Access denied")
-      }),
+    it.instance(
+      "throws for paths outside project directory",
+      () =>
+        Effect.gen(function* () {
+          expect(yield* failureMessage(read("../outside.txt"))).toContain("Access denied")
+        }),
+      { git: true },
     )
   })
 
@@ -617,6 +619,62 @@ describe("file/index Filesystem patterns", () => {
           expect(node.ignored).toBe(false)
         }
       }),
+    )
+  })
+
+  describe("write()", () => {
+    it.instance("writes content to a new file", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const result = yield* write("new.txt", "hello world")
+        expect(result.type).toBe("text")
+        expect(result.content).toBe("hello world")
+
+        const onDisk = yield* Effect.promise(() => fs.readFile(path.join(test.directory, "new.txt"), "utf-8"))
+        expect(onDisk).toBe("hello world")
+      }),
+    )
+
+    it.instance("overwrites existing file content", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* Effect.promise(() => fs.writeFile(path.join(test.directory, "existing.txt"), "old", "utf-8"))
+
+        const result = yield* write("existing.txt", "new content")
+        expect(result.content).toBe("new content")
+
+        const reread = yield* read("existing.txt")
+        expect(reread.content).toBe("new content")
+      }),
+    )
+
+    it.instance("creates parent directories as needed", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* write("nested/dir/file.txt", "deep content")
+
+        const onDisk = yield* Effect.promise(() =>
+          fs.readFile(path.join(test.directory, "nested", "dir", "file.txt"), "utf-8"),
+        )
+        expect(onDisk).toBe("deep content")
+      }),
+    )
+
+    it.instance("reflects written content in a subsequent list()", () =>
+      Effect.gen(function* () {
+        yield* write("tracked.txt", "content")
+        const nodes = yield* list()
+        expect(nodes.some((node) => node.name === "tracked.txt")).toBe(true)
+      }),
+    )
+
+    it.instance(
+      "throws for paths outside project directory",
+      () =>
+        Effect.gen(function* () {
+          expect(yield* failureMessage(write("../outside.txt", "malicious"))).toContain("Access denied")
+        }),
+      { git: true },
     )
   })
 

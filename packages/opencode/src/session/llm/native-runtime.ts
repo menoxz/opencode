@@ -11,6 +11,7 @@ import { FetchHttpClient } from "effect/unstable/http"
 import { tool as nativeTool, ToolFailure, type JsonSchema, type LLMEvent } from "@opencode-ai/llm"
 import type { LLMClientShape } from "@opencode-ai/llm/route"
 import { LLMNative } from "./native-request"
+import { ToolExecutionMetadata } from "../tool-execution-metadata"
 
 const log = Log.create({ service: "session.llm.native-runtime" })
 
@@ -232,6 +233,7 @@ export function nativeTools(tools: Record<string, Tool>, input: Pick<StreamInput
       nativeTool({
         description: item.description ?? "",
         jsonSchema: nativeSchema(item.inputSchema),
+        annotations: ToolExecutionMetadata.get(item),
         execute: (args: unknown, ctx) =>
           Effect.tryPromise({
             try: () => {

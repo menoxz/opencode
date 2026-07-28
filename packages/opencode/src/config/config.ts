@@ -322,6 +322,17 @@ export const Info = Schema.Struct({
       mcp_timeout: Schema.optional(PositiveInt).annotate({
         description: "Timeout in milliseconds for model context protocol (MCP) requests",
       }),
+      hot_path: Schema.optional(
+        Schema.Struct({
+          enabled: Schema.optional(Schema.Boolean),
+          jit_tools: Schema.optional(Schema.Boolean),
+          tool_threshold: Schema.optional(PositiveInt),
+          max_tools: Schema.optional(PositiveInt),
+          always_tools: Schema.optional(Schema.mutable(Schema.Array(Schema.String))),
+        }),
+      ).annotate({
+        description: "Hot Path Fabric controls for prepared tool catalogs and just-in-time tool selection.",
+      }),
       postmortem: Schema.optional(
         Schema.Struct({
           llm_decisions: Schema.optional(Schema.Boolean).annotate({

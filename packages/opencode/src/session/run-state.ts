@@ -1,7 +1,7 @@
 import { InstanceState } from "@/effect/instance-state"
 import { Runner } from "@/effect/runner"
 import { BackgroundJob } from "@/background/job"
-import { Effect, Latch, Layer, Scope, Context } from "effect"
+import { Deferred, Effect, Latch, Layer, Scope, Context } from "effect"
 import * as Session from "./session"
 import { MessageV2 } from "./message-v2"
 import { SessionID } from "./schema"
@@ -15,6 +15,7 @@ export interface Interface {
     onInterrupt: Effect.Effect<MessageV2.WithParts>,
     work: Effect.Effect<MessageV2.WithParts>,
   ) => Effect.Effect<MessageV2.WithParts>
+  readonly waitForIdle: (sessionID: SessionID) => Effect.Effect<void>
   readonly startShell: (
     sessionID: SessionID,
     onInterrupt: Effect.Effect<MessageV2.WithParts>,
@@ -35,6 +36,7 @@ export const layer = Layer.effect(
       Effect.fn("SessionRunState.state")(function* () {
         const scope = yield* Scope.Scope
         const runners = new Map<SessionID, Runner.Runner<MessageV2.WithParts>>()
+        const idleSignals = new Map<SessionID, Deferred.Deferred<void>>()
         yield* Effect.addFinalizer(
           Effect.fnUntraced(function* () {
             yield* Effect.forEach(runners.values(), (runner) => runner.cancel, {
@@ -44,7 +46,7 @@ export const layer = Layer.effect(
             runners.clear()
           }),
         )
-        return { runners, scope }
+        return { runners, scope, idleSignals }
       }),
     )
 
@@ -59,6 +61,11 @@ export const layer = Layer.effect(
         onIdle: Effect.gen(function* () {
           data.runners.delete(sessionID)
           yield* status.set(sessionID, { type: "idle" })
+          const signal = data.idleSignals.get(sessionID)
+          if (signal) {
+            data.idleSignals.delete(sessionID)
+            yield* Deferred.succeed(signal, undefined).pipe(Effect.ignore)
+          }
         }),
         onBusy: status.set(sessionID, { type: "busy" }),
         onInterrupt,
@@ -99,6 +106,18 @@ export const layer = Layer.effect(
       return yield* (yield* runner(sessionID, onInterrupt)).ensureRunning(work)
     })
 
+    const waitForIdle = Effect.fn("SessionRunState.waitForIdle")(function* (sessionID: SessionID) {
+      const data = yield* InstanceState.get(state)
+      const existing = data.runners.get(sessionID)
+      if (!existing || !existing.busy) return
+      let signal = data.idleSignals.get(sessionID)
+      if (!signal) {
+        signal = yield* Deferred.make<void>()
+        data.idleSignals.set(sessionID, signal)
+      }
+      yield* Deferred.await(signal)
+    })
+
     const startShell = Effect.fn("SessionRunState.startShell")(function* (
       sessionID: SessionID,
       onInterrupt: Effect.Effect<MessageV2.WithParts>,
@@ -117,7 +136,7 @@ export const layer = Layer.effect(
         )
     })
 
-    return Service.of({ assertNotBusy, cancel, ensureRunning, startShell })
+    return Service.of({ assertNotBusy, cancel, ensureRunning, waitForIdle, startShell })
   }),
 )
 

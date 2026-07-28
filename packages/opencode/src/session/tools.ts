@@ -10,6 +10,7 @@ import { Truncate } from "@/tool/truncate"
 import { ModelID } from "@/provider/schema"
 import { Plugin } from "@/plugin"
 import type { TaskPromptOps } from "@/tool/task"
+import type { SecurityMode } from "@/tool/security"
 import { type Tool as AITool, tool, jsonSchema, type ToolExecutionOptions, asSchema } from "ai"
 import { Effect } from "effect"
 import { MessageV2 } from "./message-v2"
@@ -18,6 +19,9 @@ import { SessionProcessor } from "./processor"
 import { PartID } from "./schema"
 import * as Log from "@opencode-ai/core/util/log"
 import { EffectBridge } from "@/effect/bridge"
+import { Config } from "@/config/config"
+import { ToolCatalog, type PreparedTool } from "./tool-catalog"
+import { ToolExecutionMetadata } from "./tool-execution-metadata"
 
 const log = Log.create({ service: "session.tools" })
 
@@ -29,6 +33,9 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   bypassAgentCheck: boolean
   messages: MessageV2.WithParts[]
   promptOps: TaskPromptOps
+  forceWriteTools?: boolean
+  securityMode?: SecurityMode
+  query?: string
 }) {
   using _ = log.time("resolveTools")
   const tools: Record<string, AITool> = {}
@@ -38,6 +45,77 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   const registry = yield* ToolRegistry.Service
   const mcp = yield* MCP.Service
   const truncate = yield* Truncate.Service
+  const config = yield* Config.Service
+  const safeParallelLocal = new Set(["read", "glob", "grep", "repo_overview", "session_context", "session_info"])
+
+  type CatalogValue =
+    | { source: "local"; item: Tool.Def; schema: ReturnType<typeof ProviderTransform.schema> }
+    | { source: "mcp"; key: string; item: AITool; schema: ReturnType<typeof ProviderTransform.schema> }
+
+  const cfg = yield* config.get()
+  const hotPath = cfg.experimental?.hot_path
+  const hotPathEnabled = hotPath?.enabled !== false
+  const mcpVersion = mcp.catalogVersion ? yield* mcp.catalogVersion() : 0
+  const registryVersion = yield* registry.catalogVersion()
+  const catalogKey = [
+    "v1",
+    input.model.providerID,
+    input.model.api.id,
+    input.agent.name,
+    JSON.stringify(input.agent.permission),
+    input.securityMode ?? "interactive-tui",
+    input.forceWriteTools ? "write" : "read",
+    registryVersion,
+    mcpVersion,
+  ].join(":")
+  const preparedAt = Date.now()
+  const prepared = yield* ToolCatalog.getPreparedEffect(
+    registry,
+    catalogKey,
+    Effect.gen(function* () {
+      const output: PreparedTool<CatalogValue>[] = []
+      for (const item of yield* registry.tools({
+        modelID: ModelID.make(input.model.api.id),
+        providerID: input.model.providerID,
+        agent: input.agent,
+        forceWriteTools: input.forceWriteTools,
+        securityMode: input.securityMode,
+      })) {
+        output.push({
+          id: item.id,
+          description: item.description,
+          value: { source: "local", item, schema: ProviderTransform.schema(input.model, ToolJsonSchema.fromTool(item)) },
+        })
+      }
+      for (const [key, item] of Object.entries(yield* mcp.tools())) {
+        if (!item.execute) continue
+        const schema = yield* Effect.promise(() => Promise.resolve(asSchema(item.inputSchema).jsonSchema))
+        output.push({
+          id: key,
+          description: item.description ?? "",
+          value: { source: "mcp", key, item, schema: ProviderTransform.schema(input.model, schema) },
+        })
+      }
+      return output
+    }),
+  )
+  const selection = ToolCatalog.selectTools(prepared.catalog, input.query ?? "", {
+    // Prepared catalogs are safe by default. Context-reducing selection stays
+    // opt-in until shadow benchmarks prove recall for the active tool set.
+    enabled: hotPathEnabled && hotPath?.jit_tools === true,
+    threshold: hotPath?.tool_threshold,
+    maxTools: hotPath?.max_tools,
+    always: hotPath?.always_tools,
+  })
+  log.info("hot path catalog", {
+    version: prepared.catalog.version,
+    cacheHit: prepared.hit,
+    catalogTools: prepared.catalog.tools.length,
+    selectedTools: selection.tools.length,
+    selectionMode: selection.mode,
+    selectionReason: selection.reason,
+    durationMs: Date.now() - preparedAt,
+  })
 
   const context = (args: Record<string, unknown>, options: ToolExecutionOptions): Tool.Context => ({
     sessionID: input.session.id,
@@ -72,25 +150,23 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         .pipe(Effect.orDie),
   })
 
-  for (const item of yield* registry.tools({
-    modelID: ModelID.make(input.model.api.id),
-    providerID: input.model.providerID,
-    agent: input.agent,
-  })) {
-    const schema = ProviderTransform.schema(input.model, ToolJsonSchema.fromTool(item))
-    tools[item.id] = tool({
+  for (const preparedTool of selection.tools) {
+    if (preparedTool.value.source !== "local") continue
+    const { item, schema } = preparedTool.value
+    const wrapped = tool({
       description: item.description,
       inputSchema: jsonSchema(schema),
       execute(args, options) {
+        const inputArgs = args as Record<string, unknown>
         return run.promise(
           Effect.gen(function* () {
-            const ctx = context(args, options)
+            const ctx = context(inputArgs, options)
             yield* plugin.trigger(
               "tool.execute.before",
               { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID },
-              { args },
+              { args: inputArgs },
             )
-            const result = yield* item.execute(args, ctx)
+            const result = yield* item.execute(inputArgs, ctx)
             const output = {
               ...result,
               attachments: result.attachments?.map((attachment) => ({
@@ -102,7 +178,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             }
             yield* plugin.trigger(
               "tool.execute.after",
-              { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID, args },
+              { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID, args: inputArgs },
               output,
             )
             if (options.abortSignal?.aborted) {
@@ -113,16 +189,20 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         )
       },
     })
+    if (safeParallelLocal.has(item.id)) ToolExecutionMetadata.set(wrapped, { readOnlyHint: true })
+    tools[item.id] = wrapped
   }
 
-  for (const [key, item] of Object.entries(yield* mcp.tools())) {
+  for (const preparedTool of selection.tools) {
+    if (preparedTool.value.source !== "mcp") continue
+    const { key, item, schema } = preparedTool.value
     const execute = item.execute
     if (!execute) continue
 
-    const schema = yield* Effect.promise(() => Promise.resolve(asSchema(item.inputSchema).jsonSchema))
-    const transformed = ProviderTransform.schema(input.model, schema)
-    item.inputSchema = jsonSchema(transformed)
-    item.execute = (args, opts) =>
+    const wrapped: AITool = {
+      ...item,
+      inputSchema: jsonSchema(schema),
+      execute: (args, opts) =>
       run.promise(
         Effect.gen(function* () {
           const ctx = context(args, opts)
@@ -198,8 +278,12 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           }
           return output
         }),
-      )
-    tools[key] = item
+      ),
+    }
+    // MCP annotations are protocol hints from an untrusted server. Keep them
+    // serialized until a server-level trust policy is explicitly configured.
+    ToolExecutionMetadata.set(wrapped, { destructiveHint: true })
+    tools[key] = wrapped
   }
 
   return tools

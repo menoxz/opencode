@@ -26,7 +26,7 @@ import { BusEvent } from "../bus/bus-event"
 import { Bus } from "@/bus"
 import { TuiEvent } from "@/cli/cmd/tui/event"
 import open from "open"
-import { Effect, Exit, Layer, Option, Context, Schema, Stream } from "effect"
+import { Effect, Exit, Layer, Option, Context, Schema, Semaphore, Stream } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { InstanceState } from "@/effect/instance-state"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
@@ -34,6 +34,7 @@ import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { isConfigFile } from "@/hotreload"
 import * as fs from "fs"
 import path from "path"
+import { createHash } from "crypto"
 
 const log = Log.create({ service: "mcp" })
 const DEFAULT_TIMEOUT = 30_000
@@ -129,6 +130,7 @@ function isOutputSchemaValidationError(error: Error) {
 }
 
 function listTools(key: string, client: MCPClient, timeout: number) {
+  const startedAt = Date.now()
   return Effect.tryPromise({
     try: () => client.listTools(undefined, { timeout }),
     catch: (err) => (err instanceof Error ? err : new Error(String(err))),
@@ -154,6 +156,9 @@ function listTools(key: string, client: MCPClient, timeout: number) {
         ),
       )
     }),
+    Effect.tap((tools) =>
+      Effect.sync(() => log.info("listed tools", { key, toolCount: tools.length, durationMs: Date.now() - startedAt })),
+    ),
   )
 }
 
@@ -172,20 +177,44 @@ function convertMcpTool(mcpTool: MCPToolDef, client: MCPClient, timeout?: number
   return dynamicTool({
     description: mcpTool.description ?? "",
     inputSchema: jsonSchema(schema),
-    execute: async (args: unknown) => {
-      return client.callTool(
-        {
-          name: mcpTool.name,
-          arguments: (args || {}) as Record<string, unknown>,
-        },
-        CallToolResultSchema,
-        {
-          resetTimeoutOnProgress: true,
-          timeout,
-        },
-      )
+    execute: async (args: unknown, options) => {
+      const startedAt = Date.now()
+      try {
+        return await client.callTool(
+          {
+            name: mcpTool.name,
+            arguments: (args || {}) as Record<string, unknown>,
+          },
+          CallToolResultSchema,
+          {
+            resetTimeoutOnProgress: true,
+            timeout,
+            signal: options.abortSignal,
+          },
+        )
+      } finally {
+        log.info("tool call complete", {
+          tool: mcpTool.name,
+          durationMs: Date.now() - startedAt,
+          aborted: options.abortSignal?.aborted ?? false,
+        })
+      }
     },
   })
+}
+
+function canonical(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonical)
+  if (!value || typeof value !== "object") return value
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, entry]) => [key, canonical(entry)]),
+  )
+}
+
+function configFingerprint(config: ConfigMCP.Info) {
+  return createHash("sha256").update(JSON.stringify(canonical(config))).digest("hex")
 }
 
 function defs(key: string, client: MCPClient, timeout?: number) {
@@ -240,11 +269,14 @@ interface State {
   status: Record<string, Status>
   clients: Record<string, MCPClient>
   defs: Record<string, MCPToolDef[]>
+  fingerprints: Record<string, string>
+  catalogVersion: number
 }
 
 export interface Interface {
   readonly status: () => Effect.Effect<Record<string, Status>>
   readonly clients: () => Effect.Effect<Record<string, MCPClient>>
+  readonly catalogVersion?: () => Effect.Effect<number>
   readonly tools: () => Effect.Effect<Record<string, Tool>>
   readonly prompts: () => Effect.Effect<Record<string, PromptInfo & { client: string }>>
   readonly resources: () => Effect.Effect<Record<string, ResourceInfo & { client: string }>>
@@ -282,6 +314,7 @@ export const layer = Layer.effect(
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
     const auth = yield* McpAuth.Service
     const bus = yield* Bus.Service
+    const reloadLock = Semaphore.makeUnsafe(1)
 
     type Transport = StdioClientTransport | StreamableHTTPClientTransport | SSEClientTransport
 
@@ -463,7 +496,8 @@ export const layer = Layer.effect(
         return DISABLED_RESULT
       }
 
-      log.info("found", { key, type: mcp.type })
+      const startedAt = Date.now()
+      log.info("connecting", { key, type: mcp.type })
 
       const { client: mcpClient, status } =
         mcp.type === "remote"
@@ -471,6 +505,7 @@ export const layer = Layer.effect(
           : yield* connectLocal(key, mcp as ConfigMCP.Info & { type: "local" })
 
       if (!mcpClient) {
+        log.info("connection complete", { key, type: mcp.type, status: status.status, durationMs: Date.now() - startedAt })
         return { status } satisfies CreateResult
       }
 
@@ -481,6 +516,7 @@ export const layer = Layer.effect(
       }
 
       log.info("create() successfully created client", { key, toolCount: listed.length })
+      log.info("connection complete", { key, type: mcp.type, status: status.status, durationMs: Date.now() - startedAt })
       return { mcpClient, status, defs: listed } satisfies CreateResult
     })
     const cfgSvc = yield* Config.Service
@@ -519,6 +555,7 @@ export const layer = Layer.effect(
         if (s.clients[name] !== client || s.status[name]?.status !== "connected") return
 
         s.defs[name] = listed
+        s.catalogVersion++
         await bridge.promise(bus.publish(ToolsChanged, { server: name }).pipe(Effect.ignore))
       })
     }
@@ -532,6 +569,8 @@ export const layer = Layer.effect(
           status: {},
           clients: {},
           defs: {},
+          fingerprints: {},
+          catalogVersion: 1,
         }
 
         yield* Effect.forEach(
@@ -542,6 +581,8 @@ export const layer = Layer.effect(
                 log.error("Ignoring MCP config entry without type", { key })
                 return
               }
+
+              s.fingerprints[key] = configFingerprint(mcp)
 
               if (mcp.enabled === false) {
                 s.status[key] = { status: "disabled" }
@@ -590,6 +631,7 @@ export const layer = Layer.effect(
 
     function closeClient(s: State, name: string) {
       const client = s.clients[name]
+      if (s.defs[name]) s.catalogVersion++
       delete s.defs[name]
       if (!client) return Effect.void
       return Effect.tryPromise(() => client.close()).pipe(Effect.ignore)
@@ -607,6 +649,7 @@ export const layer = Layer.effect(
       s.status[name] = { status: "connected" }
       s.clients[name] = client
       s.defs[name] = listed
+      s.catalogVersion++
       watch(s, name, client, bridge, timeout)
       return s.status[name]
     })
@@ -631,9 +674,15 @@ export const layer = Layer.effect(
       return s.clients
     })
 
+    const catalogVersion = Effect.fn("MCP.catalogVersion")(function* () {
+      const s = yield* InstanceState.get(state)
+      return s.catalogVersion
+    })
+
     const createAndStore = Effect.fn("MCP.createAndStore")(function* (name: string, mcp: ConfigMCP.Info) {
       const s = yield* InstanceState.get(state)
       const result = yield* create(name, mcp)
+      s.fingerprints[name] = configFingerprint(mcp)
 
       s.status[name] = result.status
       if (!result.mcpClient) {
@@ -718,9 +767,10 @@ export const layer = Layer.effect(
     // Initial watcher setup (resilient: InstanceRef may not be available yet)
     yield* setupMcpWatchers().pipe(Effect.catchCause(() => Effect.void))
 
-    const reload = Effect.fn("MCP.reload")(function* () {
+    const reloadUnsafe = Effect.fn("MCP.reloadUnsafe")(function* () {
       log.info("reloading MCP servers from config")
       const s = yield* InstanceState.get(state)
+      yield* cfgSvc.invalidate()
       const cfg = yield* cfgSvc.get()
       const config = cfg.mcp ?? {}
 
@@ -730,6 +780,7 @@ export const layer = Layer.effect(
           yield* closeClient(s, name)
           delete s.clients[name]
           delete s.defs[name]
+          delete s.fingerprints[name]
           s.status[name] = { status: "disabled" }
         }
       }
@@ -737,6 +788,7 @@ export const layer = Layer.effect(
       // Connect new servers or reconnect changed ones
       for (const [key, mcp] of Object.entries(config)) {
         if (!isMcpConfigured(mcp)) continue
+        const fingerprint = configFingerprint(mcp)
         if (mcp.enabled === false) {
           if (s.clients[key]) {
             yield* closeClient(s, key)
@@ -744,28 +796,47 @@ export const layer = Layer.effect(
             delete s.defs[key]
           }
           s.status[key] = { status: "disabled" }
+          s.fingerprints[key] = fingerprint
           continue
         }
 
-        // Reconnect if not connected or if it was previously disabled/failed
-        if (!s.clients[key]) {
+        const changed = s.fingerprints[key] !== fingerprint
+        // Reconnect if not connected or if the effective configuration changed.
+        if (!s.clients[key] || changed) {
+          const operation = s.clients[key] ? "reconnect" : "connect"
+          const startedAt = Date.now()
+          log.info(`${operation} started`, { key })
           const result = yield* create(key, mcp).pipe(Effect.catch(() => Effect.void))
           if (result) {
             s.status[key] = result.status
+            s.fingerprints[key] = fingerprint
             if (result.mcpClient) {
               const bridge = yield* EffectBridge.make()
               yield* closeClient(s, key)
               s.clients[key] = result.mcpClient
               s.defs[key] = result.defs!
+              s.catalogVersion++
               watch(s, key, result.mcpClient, bridge, mcp.timeout)
+            } else {
+              yield* closeClient(s, key)
+              delete s.clients[key]
             }
           }
+          log.info(`${operation} complete`, {
+            key,
+            status: s.status[key]?.status ?? "failed",
+            durationMs: Date.now() - startedAt,
+          })
         }
       }
 
       // Re-establish config watchers
       yield* setupMcpWatchers().pipe(Effect.catchCause(() => Effect.void))
       log.info("MCP reload complete")
+    })
+
+    const reload = Effect.fn("MCP.reload")(function* () {
+      return yield* reloadLock.withPermits(1)(reloadUnsafe())
     })
 
     const tools = Effect.fn("MCP.tools")(function* () {
@@ -1045,6 +1116,7 @@ export const layer = Layer.effect(
     return Service.of({
       status,
       clients,
+      catalogVersion,
       tools,
       prompts,
       resources,

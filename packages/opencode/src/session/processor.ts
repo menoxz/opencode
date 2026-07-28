@@ -32,6 +32,20 @@ import { Usage, type LLMEvent } from "@opencode-ai/llm"
 const DOOM_LOOP_THRESHOLD = 3
 const log = Log.create({ service: "session.processor" })
 
+/**
+ * Terminal spinner characters that can leak into captured tool output when
+ * a progress indicator writes to the same PTY/stderr (missing \r → frames stack).
+ * U+2800–U+28FF = Braille dots, used by @clack/prompts, ora, etc.
+ */
+const BRAILLE_RANGE = /[\u2800-\u28FF]/g
+const REPEATED_SPINNER = /(?:[\u2800-\u28FF]\s*){3,}/g
+/** Compaction truncation message that may appear in auto-continuation responses. */
+const COMPACTION_TRUNCATION = /\[Tool output truncated for compaction: omitted \d+ chars\]/g
+
+function stripTerminalArtifacts(text: string): string {
+  return text.replace(REPEATED_SPINNER, "").replace(COMPACTION_TRUNCATION, "").replace(BRAILLE_RANGE, "").trim()
+}
+
 export type Result = "compact" | "stop" | "continue"
 
 export interface Handle {
@@ -487,6 +501,7 @@ export const layer = Layer.effect(
           case "tool-result": {
             const toolCall = yield* readToolCall(value.id)
             const rawOutput = toolResultOutput(value)
+            rawOutput.output = stripTerminalArtifacts(rawOutput.output)
             const normalized = yield* Effect.forEach(rawOutput.attachments ?? [], (attachment) =>
               attachment.mime.startsWith("image/")
                 ? image.normalize(attachment).pipe(

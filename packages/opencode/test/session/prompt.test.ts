@@ -33,6 +33,7 @@ import { SessionProcessor } from "../../src/session/processor"
 import { SessionPrompt } from "../../src/session/prompt"
 import { SessionRevert } from "../../src/session/revert"
 import { SessionRunState } from "../../src/session/run-state"
+import { SessionTitle } from "../../src/session/title"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { SessionStatus } from "../../src/session/status"
 import { SessionV2 } from "../../src/v2/session"
@@ -42,6 +43,8 @@ import { Shell } from "../../src/shell/shell"
 import { Snapshot } from "../../src/snapshot"
 import * as PlanEngine from "@/plan-engine"
 import { ToolRegistry } from "@/tool/registry"
+import { Service as ToolCacheService } from "@/tool/cache"
+import { Service as SearchIndexService } from "@/tool/search-index"
 import { Truncate } from "@/tool/truncate"
 import * as Log from "@opencode-ai/core/util/log"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
@@ -57,7 +60,7 @@ import { SyncEvent } from "@/sync"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
 
-void Log.init({ print: false })
+void Log.init({ print: !!process.env.TEST_LOG })
 
 const summary = Layer.succeed(
   SessionSummary.Service,
@@ -185,6 +188,7 @@ function makePrompt(input?: { processor?: "blocking"; planEngineLayer?: Layer.La
     status,
     SyncEvent.defaultLayer,
     EventV2Bridge.defaultLayer,
+    ToolCacheService.defaultLayer,
   ).pipe(Layer.provideMerge(infra))
   const question = Question.layer.pipe(Layer.provideMerge(deps))
   const todo = Todo.layer.pipe(Layer.provideMerge(deps))
@@ -196,6 +200,7 @@ function makePrompt(input?: { processor?: "blocking"; planEngineLayer?: Layer.La
     Layer.provide(Git.defaultLayer),
     Layer.provide(Reference.defaultLayer),
     Layer.provide(Ripgrep.defaultLayer),
+    Layer.provide(SearchIndexService.defaultLayer),
     Layer.provide(Format.defaultLayer),
     Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
     Layer.provideMerge(todo),
@@ -217,8 +222,10 @@ function makePrompt(input?: { processor?: "blocking"; planEngineLayer?: Layer.La
     Layer.provideMerge(proc),
     Layer.provideMerge(deps),
   )
+  const title = SessionTitle.layer.pipe(Layer.provideMerge(deps))
   let layer = SessionPrompt.layer.pipe(
     Layer.provide(SessionRevert.defaultLayer),
+    Layer.provideMerge(title),
     Layer.provide(Image.defaultLayer),
     Layer.provide(Reference.defaultLayer),
     Layer.provide(summary),
@@ -597,6 +604,43 @@ noLLMServer.instance(
       )
     }),
   { config: cfg },
+)
+
+it.instance(
+  "loop generates a session title from the first user prompt",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      // No explicit title: the session starts on the generated default title,
+      // which is exactly the case title generation must replace.
+      const session = yield* sessions.create({
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      expect(Session.isDefaultTitle(session.title)).toBe(true)
+
+      yield* prompt.prompt({
+        sessionID: session.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "text", text: "explain the retry policy" }],
+      })
+      yield* llm.text("sure")
+      yield* prompt.loop({ sessionID: session.id })
+
+      // Title generation runs on a forked fiber, so poll instead of reading once.
+      const title = yield* pollWithTimeout(
+        Effect.gen(function* () {
+          const current = yield* sessions.get(session.id)
+          return Session.isDefaultTitle(current.title) ? undefined : current.title
+        }),
+        "session title was never generated from the user prompt",
+        "10 seconds",
+      )
+      expect(title).toBe("E2E Title")
+    }),
+  20_000,
 )
 
 it.instance(

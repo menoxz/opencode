@@ -1833,10 +1833,10 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
   // Reasoning is finalized when the server sets `time.end` (see processor.ts).
   // Flips independently of the parent message completing.
   const isDone = createMemo(() => props.part.time.end !== undefined)
-  
+
   // Real-time ticking for ongoing reasoning
   const [now, setNow] = createSignal(Date.now())
-  
+
   createEffect(() => {
     if (isDone()) return
     const interval = setInterval(() => {

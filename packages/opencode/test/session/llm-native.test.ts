@@ -8,6 +8,7 @@ import { LLMNativeRuntime } from "@/session/llm/native-runtime"
 import type { Provider } from "@/provider/provider"
 import { ModelID, ProviderID } from "@/provider/schema"
 import { OAUTH_DUMMY_KEY } from "@/auth"
+import { ToolExecutionMetadata } from "@/session/tool-execution-metadata"
 import { testEffect } from "../lib/effect"
 
 const baseModel: Provider.Model = {
@@ -517,6 +518,20 @@ describe("session.llm-native.request", () => {
       expect(failure.message).toBe("boom")
     }),
   )
+
+  test("native tool wrapper preserves trusted execution metadata for safe scheduling", () => {
+    const source = {
+      description: "read only",
+      inputSchema: jsonSchema({ type: "object" }),
+      execute: async () => ({ output: "ok", title: "", metadata: {} }),
+    } satisfies Tool
+    ToolExecutionMetadata.set(source, { readOnlyHint: true })
+    const wrapped = LLMNativeRuntime.nativeTools(
+      { read_only: source },
+      { messages: [] as ModelMessage[], abort: new AbortController().signal },
+    )
+    expect(wrapped.read_only.annotations).toEqual({ readOnlyHint: true })
+  })
 
   it.effect("native tool wrapper raises ToolFailure when the source tool has no execute handler", () =>
     Effect.gen(function* () {

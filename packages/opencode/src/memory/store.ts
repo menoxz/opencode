@@ -12,9 +12,7 @@
  */
 
 import { sqliteTable, text, real, integer } from "drizzle-orm/sqlite-core"
-import { drizzle } from "drizzle-orm/bun-sqlite"
-import { Database } from "bun:sqlite"
-import { type SQLiteBunDatabase } from "drizzle-orm/bun-sqlite"
+import { open as openSqlite, type RawSqlite, type RawDrizzleDb } from "#sqlite-raw"
 import { eq, and, sql, like, or, desc, asc, gte, inArray } from "drizzle-orm"
 import { Effect, Context, Layer } from "effect"
 import { randomUUID } from "crypto"
@@ -148,7 +146,7 @@ function getDbPath(): string {
   return path.join(dbDir, "memory.sqlite")
 }
 
-function createTables(sqlite: Database): void {
+function createTables(sqlite: RawSqlite): void {
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS memory (
       id TEXT PRIMARY KEY,
@@ -211,12 +209,10 @@ export const layer = Layer.effect(
     const dbPath = getDbPath()
     log.info("opening memory database", { path: dbPath })
 
-    const sqlite = new Database(dbPath)
+    const { sqlite, db } = openSqlite(dbPath) as { sqlite: RawSqlite; db: RawDrizzleDb }
     sqlite.exec("PRAGMA journal_mode = WAL")
     sqlite.exec("PRAGMA synchronous = NORMAL")
     sqlite.exec("PRAGMA busy_timeout = 5000")
-
-    const db: SQLiteBunDatabase = drizzle({ client: sqlite })
 
     createTables(sqlite)
 

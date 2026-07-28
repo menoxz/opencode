@@ -56,17 +56,17 @@ const SUMMARY_TEMPLATE = `Output exactly the Markdown structure shown inside <te
 ### In Progress
 - [current work or "(none)"]
 
-### Blocked
-- [blockers or "(none)"]
+### Blocked & Difficultés
+- [blockers, root causes of bugs/delays, difficulties encountered, or "(none)"]
 
-## Key Decisions
-- [decision and why, or "(none)"]
+## Decisions & Lessons
+- [key decisions with rejected alternatives, lessons learned, things to avoid repeating, or "(none)"]
 
 ## Next Steps
 - [ordered next actions or "(none)"]
 
 ## Critical Context
-- [important technical facts, errors, open questions, or "(none)"]
+- [important technical facts, known issues, fragile areas, workarounds, lingering technical debt, open questions, or "(none)"]
 
 ## Relevant Files
 - [file or directory path: why it matters, or "(none)"]

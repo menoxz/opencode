@@ -1,3 +1,4 @@
+import { Bus } from "@/bus"
 import { BusEvent } from "@/bus/bus-event"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { InstanceState } from "@/effect/instance-state"
@@ -15,6 +16,7 @@ import { containsPath } from "../project/instance-context"
 import * as Log from "@opencode-ai/core/util/log"
 import { Protected } from "./protected"
 import { Ripgrep } from "./ripgrep"
+import { FileWatcher } from "./watcher"
 import { NonNegativeInt, type DeepMutable } from "@opencode-ai/core/schema"
 
 export const Info = Schema.Struct({
@@ -316,6 +318,7 @@ export interface Interface {
   readonly init: () => Effect.Effect<void>
   readonly status: () => Effect.Effect<Info[]>
   readonly read: (file: string) => Effect.Effect<Content>
+  readonly write: (file: string, content: string) => Effect.Effect<Content>
   readonly list: (dir?: string) => Effect.Effect<Node[]>
   readonly search: (input: {
     query: string
@@ -335,6 +338,7 @@ export const layer = Layer.effect(
     const appFs = yield* AppFileSystem.Service
     const rg = yield* Ripgrep.Service
     const git = yield* Git.Service
+    const bus = yield* Bus.Service
     const scope = yield* Scope.Scope
 
     const state = yield* InstanceState.make<State>(
@@ -567,6 +571,23 @@ export const layer = Layer.effect(
       return { type: "text" as const, content }
     })
 
+    const write: Interface["write"] = Effect.fn("File.write")(function* (file: string, content: string) {
+      using _ = log.time("write", { file })
+      const ctx = yield* InstanceState.context
+      const full = path.join(ctx.directory, file)
+
+      if (!containsPath(full, ctx)) {
+        throw new Error("Access denied: path escapes project directory")
+      }
+
+      const exists = yield* appFs.existsSafe(full)
+      yield* appFs.writeWithDirs(full, content).pipe(Effect.orDie)
+      yield* bus.publish(Event.Edited, { file: full })
+      yield* bus.publish(FileWatcher.Event.Updated, { file: full, event: exists ? "change" : "add" })
+
+      return yield* read(file)
+    })
+
     const list = Effect.fn("File.list")(function* (dir?: string) {
       const ctx = yield* InstanceState.context
       const exclude = [".git", ".DS_Store"]
@@ -641,7 +662,7 @@ export const layer = Layer.effect(
     })
 
     log.info("init")
-    return Service.of({ init, status, read, list, search })
+    return Service.of({ init, status, read, write, list, search })
   }),
 )
 
@@ -649,6 +670,7 @@ export const defaultLayer = layer.pipe(
   Layer.provide(Ripgrep.defaultLayer),
   Layer.provide(AppFileSystem.defaultLayer),
   Layer.provide(Git.defaultLayer),
+  Layer.provide(Bus.defaultLayer),
 )
 
 export * as File from "."

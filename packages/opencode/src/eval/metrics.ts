@@ -7,9 +7,7 @@
 import { Effect, Context, Layer, Ref } from "effect"
 import * as Log from "@opencode-ai/core/util/log"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
-import { drizzle } from "drizzle-orm/bun-sqlite"
-import { Database } from "bun:sqlite"
-import type { SQLiteBunDatabase } from "drizzle-orm/bun-sqlite"
+import { open as openSqlite, type RawSqlite, type RawDrizzleDb } from "#sqlite-raw"
 import { eq, desc } from "drizzle-orm"
 import { randomUUID } from "crypto"
 import path from "path"
@@ -143,7 +141,7 @@ function getEvalDbPath(): string {
   return path.join(dbDir, "eval.sqlite")
 }
 
-function createEvalTables(sqlite: Database): void {
+function createEvalTables(sqlite: RawSqlite): void {
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS eval_run (
       id TEXT PRIMARY KEY,
@@ -189,7 +187,7 @@ function createEvalTables(sqlite: Database): void {
 
 /** Rebuild the Ref state from persisted SQLite rows. */
 function loadFromDb(
-  db: SQLiteBunDatabase,
+  db: RawDrizzleDb,
   sync: <T>(fn: () => T) => Effect.Effect<T>,
 ): Effect.Effect<{ reports: EvalRunReport[]; scenarioHistory: Map<string, ScenarioMetrics> }> {
   return Effect.gen(function* () {
@@ -303,11 +301,10 @@ export const layer = Layer.effect(
     // Initialize SQLite database
     const dbPath = getEvalDbPath()
     log.info("opening eval database", { path: dbPath })
-    const sqlite = new Database(dbPath)
+    const { sqlite, db } = openSqlite(dbPath) as { sqlite: RawSqlite; db: RawDrizzleDb }
     sqlite.exec("PRAGMA journal_mode = WAL")
     sqlite.exec("PRAGMA synchronous = NORMAL")
     sqlite.exec("PRAGMA busy_timeout = 5000")
-    const db: SQLiteBunDatabase = drizzle({ client: sqlite })
     createEvalTables(sqlite)
 
     const sync = <T>(fn: () => T): Effect.Effect<T> => Effect.sync(() => fn())
