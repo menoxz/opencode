@@ -12,8 +12,8 @@ export type Event =
   | EventServerConnected
   | EventGlobalDisposed
   | EventServerInstanceDisposed
-  | EventFileEdited
   | EventFileWatcherUpdated
+  | EventFileEdited
   | EventLspClientDiagnostics
   | EventLspUpdated
   | EventMessagePartDelta
@@ -826,8 +826,8 @@ export type GlobalEvent = {
     | EventServerConnected
     | EventGlobalDisposed
     | EventServerInstanceDisposed
-    | EventFileEdited
     | EventFileWatcherUpdated
+    | EventFileEdited
     | EventLspClientDiagnostics
     | EventLspUpdated
     | EventMessagePartDelta
@@ -947,6 +947,25 @@ export type ServerConfig = {
   cors?: Array<string>
 }
 
+export type ConfigTask = {
+  /**
+   * The shell command line to execute for this task
+   */
+  command: string
+  description?: string
+  cwd?: string
+  shell?: string
+  env?: {
+    [key: string]: string
+  }
+  group?: string
+  dependsOn?: Array<string>
+  /**
+   * Timeout in milliseconds before the task is aborted
+   */
+  timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
 export type ReferenceConfigEntry =
   | string
   | {
@@ -1007,6 +1026,7 @@ export type AgentConfig = {
   tools?: {
     [key: string]: boolean
   }
+  skills?: Array<string>
   disable?: boolean
   description?: string
   mode?: "subagent" | "primary" | "all"
@@ -1028,6 +1048,7 @@ export type AgentConfig = {
     | {
         [key: string]: boolean
       }
+    | Array<string>
     | boolean
     | "subagent"
     | "primary"
@@ -1189,6 +1210,8 @@ export type ImageAttachmentConfig = {
   max_width?: number
   max_height?: number
   max_base64_bytes?: number
+  vision_model?: string
+  cache?: boolean
 }
 
 export type AttachmentConfig = {
@@ -1196,6 +1219,7 @@ export type AttachmentConfig = {
 }
 
 export type ConfigContextRollout = {
+  profile?: "baseline" | "measured"
   replay_tool_inputs?: "full" | "summary" | "off"
   replay_tool_outputs?: "full" | "summary" | "off"
   replay_reasoning?: "on" | "off"
@@ -1219,6 +1243,9 @@ export type Config = {
       model?: string
       subtask?: boolean
     }
+  }
+  tasks?: {
+    [key: string]: ConfigTask
   }
   skills?: {
     paths?: Array<string>
@@ -1339,11 +1366,24 @@ export type Config = {
   experimental?: {
     disable_paste_summary?: boolean
     batch_tool?: boolean
+    planning?: {
+      enabled?: boolean
+      maxNodes?: number
+      allowParallel?: boolean
+    }
     openTelemetry?: boolean
     primary_tools?: Array<string>
     continue_loop_on_deny?: boolean
     context_rollout?: ConfigContextRollout
     mcp_timeout?: number
+    postmortem?: {
+      llm_decisions?: boolean
+      llm_model?: string
+    }
+    memory?: {
+      synthesis?: boolean
+      synthesis_model?: string
+    }
   }
 }
 
@@ -2557,20 +2597,20 @@ export type EventServerInstanceDisposed = {
   }
 }
 
-export type EventFileEdited = {
-  id: string
-  type: "file.edited"
-  properties: {
-    file: string
-  }
-}
-
 export type EventFileWatcherUpdated = {
   id: string
   type: "file.watcher.updated"
   properties: {
     file: string
     event: "add" | "change" | "unlink"
+  }
+}
+
+export type EventFileEdited = {
+  id: string
+  type: "file.edited"
+  properties: {
+    file: string
   }
 }
 
@@ -4723,6 +4763,37 @@ export type FileReadResponses = {
 }
 
 export type FileReadResponse = FileReadResponses[keyof FileReadResponses]
+
+export type FileWriteData = {
+  body?: {
+    content: string
+  }
+  path?: never
+  query: {
+    directory?: string
+    workspace?: string
+    path: string
+  }
+  url: "/file/content"
+}
+
+export type FileWriteErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type FileWriteError = FileWriteErrors[keyof FileWriteErrors]
+
+export type FileWriteResponses = {
+  /**
+   * File content after write
+   */
+  200: FileContent
+}
+
+export type FileWriteResponse = FileWriteResponses[keyof FileWriteResponses]
 
 export type FileStatusData = {
   body?: never
