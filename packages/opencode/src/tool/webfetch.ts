@@ -10,6 +10,35 @@ const MAX_RESPONSE_SIZE = 5 * 1024 * 1024 // 5MB
 const DEFAULT_TIMEOUT = 30 * 1000 // 30 seconds
 const MAX_TIMEOUT = 120 * 1000 // 2 minutes
 
+/**
+ * Known-good selectors for main content extraction.
+ * Ordered by specificity — first match uses the match end as cut point,
+ * then scans forward for the first matching close tag of the same type
+ * that produces a balanced subtree (depth reaches 0).
+ */
+const CONTENT_SELECTORS: Array<{ open: RegExp; close: (tag: string) => RegExp }> = [
+  // By role attribute
+  { open: /<main[^>]*role="main"[^>]*>/i, close: (t) => new RegExp(`<\/${t}>`, "i") },
+  { open: /<div[^>]*role="main"[^>]*>/i, close: (t) => new RegExp(`<\/${t}>`, "i") },
+  // By semantic tag
+  { open: /<article[\s>]/i, close: () => /<\/article>/i },
+  { open: /<main[\s>]/i, close: () => /<\/main>/i },
+  // By common IDs
+  { open: /<(div|section|article)[^>]*id="(?:content|main-content|article-body|post-content|entry-content|mw-content-text)"[^>]*>/i, close: (t) => new RegExp(`<\/${t}>`, "i") },
+  // By common classes
+  { open: /<(div|section|article|main)[^>]*class="[^"]*\b(?:post-?content|article-?body|entry-?content|main-?content|page-?content|content-?body)\b[^"]*"[^>]*>/i, close: (t) => new RegExp(`<\/${t}>`, "i") },
+  // Wikipedia-specific
+  { open: /<div[^>]*class="mw-parser-output"[^>]*>/i, close: () => /<\/div>/i },
+  // Generic content-area fallback
+  { open: /<(div|section|article|main)[^>]*class="[^"]*\b(content|article|primary|main|post)\b[^"]*"[^>]*>/i, close: (t) => new RegExp(`<\/${t}>`, "i") },
+]
+
+/** Tags whose entire subtree should be stripped from output */
+const NOISE_TAGS = new Set([
+  "script", "style", "noscript", "iframe", "object", "embed",
+  "nav", "footer", "header", "aside",
+])
+
 export const Parameters = Schema.Struct({
   url: Schema.String.annotate({ description: "The URL to fetch content from" }),
   format: Schema.Literals(["text", "markdown", "html"])
@@ -19,6 +48,9 @@ export const Parameters = Schema.Struct({
     })
     .pipe(Schema.optional, Schema.withDecodingDefault(Effect.succeed("markdown" as const))),
   timeout: Schema.optional(Schema.Number).annotate({ description: "Optional timeout in seconds (max 120)" }),
+  content_only: Schema.optional(Schema.Boolean).annotate({
+    description: "Strip navigation, sidebars, headers, footers and extract only the main content (default: true)",
+  }).pipe(Schema.withDecodingDefault(Effect.succeed(true))),
 })
 
 export const WebFetchTool = Tool.define(
@@ -125,35 +157,107 @@ export const WebFetchTool = Tool.define(
 
           const content = new TextDecoder().decode(arrayBuffer)
 
+          // Decide whether to extract main content (strip navigation/sidebars)
+          const htmlForProcessing = params.content_only !== false
+            ? extractMainContent(content)
+            : content
+
           // Handle content based on requested format and actual content type
           switch (params.format) {
             case "markdown":
               if (contentType.includes("text/html")) {
-                const markdown = convertHTMLToMarkdown(content)
+                const markdown = convertHTMLToMarkdown(htmlForProcessing, params.content_only !== false)
+                const stripped = params.content_only !== false && htmlForProcessing !== content
+                  ? " (main content only; navigation/sidebars stripped)"
+                  : ""
                 return {
                   output: markdown,
-                  title,
+                  title: title + stripped,
                   metadata: {},
                 }
               }
-              return { output: content, title, metadata: {} }
+              return { output: htmlForProcessing, title, metadata: {} }
 
             case "text":
               if (contentType.includes("text/html")) {
-                return { output: extractTextFromHTML(content), title, metadata: {} }
+                return { output: extractTextFromHTML(htmlForProcessing), title, metadata: {} }
               }
-              return { output: content, title, metadata: {} }
+              return { output: htmlForProcessing, title, metadata: {} }
 
             case "html":
-              return { output: content, title, metadata: {} }
+              return { output: htmlForProcessing, title, metadata: {} }
 
             default:
-              return { output: content, title, metadata: {} }
+              return { output: htmlForProcessing, title, metadata: {} }
           }
         }).pipe(Effect.orDie),
     }
   }),
 )
+
+/**
+ * Extract the main content from a full HTML page using heuristic pattern matching.
+ * Returns the raw HTML of the likely content region, or the full HTML as fallback.
+ *
+ * Uses a character-level scan between the content container's open and close tag
+ * to correctly handle arbitrary nesting depth.
+ */
+function extractMainContent(html: string): string {
+  for (const selector of CONTENT_SELECTORS) {
+    const openMatch = selector.open.exec(html)
+    if (!openMatch) continue
+
+    const tagName = openMatch[0].match(/<(\w+)/i)?.[1]?.toLowerCase()
+    if (!tagName) continue
+
+    const startIdx = openMatch.index
+    let depth = 1
+    const openStr = `<${tagName}`
+    const closeStr = `</${tagName}>`
+
+    // Walk forward from the opening tag, counting depth
+    let pos = startIdx + openMatch[0].length
+    while (depth > 0 && pos < html.length) {
+      const nextOpen = html.indexOf(openStr, pos)
+      const nextClose = html.indexOf(closeStr, pos)
+
+      if (nextClose === -1) break // no matching close found
+
+      if (nextOpen !== -1 && nextOpen < nextClose) {
+        // An open tag appears before the close tag → deeper nesting
+        depth++
+        pos = nextOpen + openStr.length
+      } else {
+        // Close tag appears before any open tag → closing a level
+        depth--
+        pos = nextClose + closeStr.length
+      }
+    }
+
+    if (depth === 0 && pos > startIdx + openMatch[0].length) {
+      const extracted = html.slice(startIdx, pos)
+      if (extracted.length > 200) return extracted
+    }
+  }
+
+  // Fallback: return full HTML but strip noise tags
+  return stripNoiseTags(html)
+}
+
+/**
+ * Strip known noise elements (nav, footer, header, aside, script, style, etc.)
+ * from HTML while keeping everything else.
+ */
+function stripNoiseTags(html: string): string {
+  let result = html
+  for (const tag of NOISE_TAGS) {
+    // Remove self-closing tags
+    result = result.replace(new RegExp(`<${tag}[^>]*\/>`, "gi"), "")
+    // Remove tag with content (handle nesting with depth tracking)
+    result = result.replace(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\/${tag}>`, "gi"), "")
+  }
+  return result
+}
 
 function extractTextFromHTML(html: string) {
   let text = ""
@@ -161,7 +265,7 @@ function extractTextFromHTML(html: string) {
 
   const parser = new Parser({
     onopentag(name) {
-      if (skipDepth > 0 || ["script", "style", "noscript", "iframe", "object", "embed"].includes(name)) {
+      if (skipDepth > 0 || NOISE_TAGS.has(name)) {
         skipDepth++
       }
     },
@@ -176,10 +280,10 @@ function extractTextFromHTML(html: string) {
   parser.write(html)
   parser.end()
 
-  return text.trim()
+  return text.replace(/\n{3,}/g, "\n\n").trim()
 }
 
-function convertHTMLToMarkdown(html: string): string {
+function convertHTMLToMarkdown(html: string, contentOnly = true): string {
   const turndownService = new TurndownService({
     headingStyle: "atx",
     hr: "---",
@@ -187,6 +291,19 @@ function convertHTMLToMarkdown(html: string): string {
     codeBlockStyle: "fenced",
     emDelimiter: "*",
   })
-  turndownService.remove(["script", "style", "meta", "link"])
+  const removeTags: (keyof HTMLElementTagNameMap)[] = contentOnly
+    ? ["script", "style", "meta", "link", "nav", "footer", "header", "aside"]
+    : ["script", "style", "meta", "link"]
+  turndownService.remove(removeTags)
+  turndownService.addRule("noFigure", {
+    filter: "figure",
+    replacement: (content) => content,
+  })
+  turndownService.addRule("noFigcaption", {
+    filter: "figcaption",
+    replacement: (content) => `*${content.trim()}*`,
+  })
+  // Convert tables with header support
+  turndownService.keep(["table", "thead", "tbody", "tr", "td", "th", "pre", "code", "kbd", "samp"])
   return turndownService.turndown(html)
 }

@@ -27,6 +27,12 @@ import { WebFetchTool } from "./webfetch"
 import { WriteTool } from "./write"
 import { InvalidTool } from "./invalid"
 import { SkillTool } from "./skill"
+import {
+  McpListTool,
+  McpConnectTool,
+  McpDisconnectTool,
+  McpReloadTool,
+} from "./mcp"
 import * as Tool from "./tool"
 import { Config } from "@/config/config"
 import { type ToolContext as PluginToolContext, type ToolDefinition } from "@opencode-ai/plugin"
@@ -63,6 +69,7 @@ import { LSP } from "@/lsp/lsp"
 import { Instruction } from "../session/instruction"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { Bus } from "../bus"
+import { MCP } from "../mcp"
 import { Agent } from "../agent/agent"
 import { Git } from "@/git"
 import { Skill } from "../skill"
@@ -83,6 +90,7 @@ type TaskDef = Tool.InferDef<typeof TaskTool>
 type ReadDef = Tool.InferDef<typeof ReadTool>
 
 type State = {
+  version: number
   custom: Tool.Def[]
   builtin: Tool.Def[]
   task: TaskDef
@@ -90,6 +98,7 @@ type State = {
 }
 
 export interface Interface {
+  readonly catalogVersion: () => Effect.Effect<number>
   readonly ids: () => Effect.Effect<string[]>
   readonly all: () => Effect.Effect<Tool.Def[]>
   readonly named: () => Effect.Effect<{ task: TaskDef; read: ReadDef }>
@@ -101,6 +110,8 @@ export interface Interface {
     securityMode?: SecurityMode
   }) => Effect.Effect<Tool.Def[]>
 }
+
+let catalogSequence = 0
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/ToolRegistry") {}
 
@@ -131,6 +142,7 @@ export const layer: Layer.Layer<
   | RuntimeFlags.Service
   | ToolCacheService
   | SearchIndexService
+  | MCP.Service
 > = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -152,6 +164,10 @@ export const layer: Layer.Layer<
     const tasks = yield* TasksTool
     const webfetch = yield* WebFetchTool
     const websearch = yield* WebSearchTool
+    const mcpList = yield* McpListTool
+    const mcpConnect = yield* McpConnectTool
+    const mcpDisconnect = yield* McpDisconnectTool
+    const mcpReload = yield* McpReloadTool
     const repoClone = yield* RepoCloneTool
     const repoOverview = yield* RepoOverviewTool
     const shell = yield* ShellTool
@@ -327,9 +343,14 @@ export const layer: Layer.Layer<
           lsp: Tool.init(lsptool),
           plan: Tool.init(plan),
           planning: Tool.init(planning),
+          mcp_list: Tool.init(mcpList),
+          mcp_connect: Tool.init(mcpConnect),
+          mcp_disconnect: Tool.init(mcpDisconnect),
+          mcp_reload: Tool.init(mcpReload),
         })
 
         return {
+          version: ++catalogSequence,
           custom,
           builtin: [
             tool.invalid,
@@ -361,6 +382,10 @@ export const layer: Layer.Layer<
             ...(flags.experimentalLspTool ? [tool.lsp] : []),
             ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
             ...(planningEnabled ? [tool.planning] : []),
+            tool.mcp_list,
+            tool.mcp_connect,
+            tool.mcp_disconnect,
+            tool.mcp_reload,
           ],
           task: tool.task,
           read: tool.read,
@@ -371,6 +396,10 @@ export const layer: Layer.Layer<
     const all: Interface["all"] = Effect.fn("ToolRegistry.all")(function* () {
       const s = yield* InstanceState.get(state)
       return [...s.builtin, ...s.custom] as Tool.Def[]
+    })
+
+    const catalogVersion: Interface["catalogVersion"] = Effect.fn("ToolRegistry.catalogVersion")(function* () {
+      return (yield* InstanceState.get(state)).version
     })
 
     const ids: Interface["ids"] = Effect.fn("ToolRegistry.ids")(function* () {
@@ -461,7 +490,7 @@ export const layer: Layer.Layer<
       return { task: s.task, read: s.read }
     })
 
-    return Service.of({ ids, all, named, tools })
+    return Service.of({ catalogVersion, ids, all, named, tools })
   }),
 )
 
@@ -494,6 +523,7 @@ export const defaultLayer = Layer.suspend(() =>
           RuntimeFlags.defaultLayer,
           ToolCacheService.defaultLayer,
           SearchIndexService.defaultLayer,
+          MCP.defaultLayer,
         ),
       ),
     )

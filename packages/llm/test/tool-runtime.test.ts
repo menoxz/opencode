@@ -25,6 +25,7 @@ const baseRequest = LLM.request({
   prompt: "Use the tool.",
 })
 const weatherFailureCause = new Error("weather lookup denied")
+const sleepLive = (millis: number) => Effect.promise(() => Bun.sleep(millis))
 
 const get_weather = tool({
   description: "Get current weather for a city.",
@@ -633,15 +634,29 @@ describe("LLMClient tools", () => {
     }),
   )
 
-  it.effect("dispatches multiple tool calls in one step concurrently", () =>
+  it.effect("dispatches annotated read-only tool calls concurrently and preserves result order", () =>
     Effect.gen(function* () {
+      const execution: string[] = []
+      const read = tool({
+        description: "Read a value.",
+        annotations: { readOnlyHint: true },
+        parameters: Schema.Struct({ value: Schema.String, delay: Schema.Number }),
+        success: Schema.String,
+        execute: ({ value, delay }) =>
+          Effect.gen(function* () {
+            execution.push(`start:${value}`)
+            yield* sleepLive(delay)
+            execution.push(`end:${value}`)
+            return value
+          }),
+      })
       const layer = scriptedResponses([
         sseEvents(
           deltaChunk({
             role: "assistant",
             tool_calls: [
-              { index: 0, id: "c1", function: { name: "get_weather", arguments: '{"city":"Paris"}' } },
-              { index: 1, id: "c2", function: { name: "get_weather", arguments: '{"city":"Tokyo"}' } },
+              { index: 0, id: "c1", function: { name: "read", arguments: '{"value":"first","delay":30}' } },
+              { index: 1, id: "c2", function: { name: "read", arguments: '{"value":"second","delay":1}' } },
             ],
           }),
           finishChunk("tool_calls"),
@@ -650,7 +665,7 @@ describe("LLMClient tools", () => {
       ])
 
       const events = Array.from(
-        yield* TestToolRuntime.runTools({ request: baseRequest, tools: { get_weather } }).pipe(
+        yield* TestToolRuntime.runTools({ request: baseRequest, tools: { read } }).pipe(
           Stream.runCollect,
           Effect.provide(layer),
         ),
@@ -658,7 +673,84 @@ describe("LLMClient tools", () => {
 
       const results = events.filter(LLMEvent.is.toolResult)
       expect(results).toHaveLength(2)
-      expect(results.map((event) => event.id).toSorted()).toEqual(["c1", "c2"])
+      expect(execution.slice(0, 2)).toEqual(["start:first", "start:second"])
+      expect(results.map((event) => event.id)).toEqual(["c1", "c2"])
+    }),
+  )
+
+  it.effect("serializes unknown and destructive effects with barriers between safe groups", () =>
+    Effect.gen(function* () {
+      const execution: string[] = []
+      const makeTracked = (annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean }) =>
+        tool({
+          description: "Track execution.",
+          annotations,
+          parameters: Schema.Struct({ value: Schema.String }),
+          success: Schema.String,
+          execute: ({ value }) =>
+            Effect.gen(function* () {
+              execution.push(`start:${value}`)
+              yield* sleepLive(5)
+              execution.push(`end:${value}`)
+              return value
+            }),
+        })
+      const read = makeTracked({ readOnlyHint: true })
+      const write = makeTracked()
+      const destructive = makeTracked({ readOnlyHint: true, destructiveHint: true })
+      const events = Array.from(
+        yield* ToolRuntime.stream({
+          request: baseRequest,
+          tools: { read, write, destructive },
+          stream: () =>
+            Stream.fromIterable([
+              LLMEvent.toolCall({ id: "c1", name: "read", input: { value: "read-1" } }),
+              LLMEvent.toolCall({ id: "c2", name: "read", input: { value: "read-2" } }),
+              LLMEvent.toolCall({ id: "c3", name: "write", input: { value: "write" } }),
+              LLMEvent.toolCall({ id: "c4", name: "destructive", input: { value: "destructive" } }),
+              LLMEvent.toolCall({ id: "c5", name: "read", input: { value: "read-3" } }),
+              LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+            ]),
+        }).pipe(Stream.runCollect),
+      )
+
+      expect(execution.indexOf("end:read-1")).toBeLessThan(execution.indexOf("start:write"))
+      expect(execution.indexOf("end:read-2")).toBeLessThan(execution.indexOf("start:write"))
+      expect(execution.indexOf("end:write")).toBeLessThan(execution.indexOf("start:destructive"))
+      expect(execution.indexOf("end:destructive")).toBeLessThan(execution.indexOf("start:read-3"))
+      expect(events.filter(LLMEvent.is.toolResult).map((event) => event.id)).toEqual(["c1", "c2", "c3", "c4", "c5"])
+    }),
+  )
+
+  it.effect("keeps ordered results when one concurrent tool returns a partial failure", () =>
+    Effect.gen(function* () {
+      const read = tool({
+        description: "Read or fail.",
+        annotations: { readOnlyHint: true },
+        parameters: Schema.Struct({ value: Schema.String }),
+        success: Schema.String,
+        execute: ({ value }) =>
+          value === "fail" ? Effect.fail(new ToolFailure({ message: "partial failure" })) : Effect.succeed(value),
+      })
+      const events = Array.from(
+        yield* ToolRuntime.stream({
+          request: baseRequest,
+          tools: { read },
+          stream: () =>
+            Stream.fromIterable([
+              LLMEvent.toolCall({ id: "c1", name: "read", input: { value: "ok-1" } }),
+              LLMEvent.toolCall({ id: "c2", name: "read", input: { value: "fail" } }),
+              LLMEvent.toolCall({ id: "c3", name: "read", input: { value: "ok-3" } }),
+              LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+            ]),
+        }).pipe(Stream.runCollect),
+      )
+
+      expect(events.filter(LLMEvent.is.toolResult).map((event) => event.id)).toEqual(["c1", "c2", "c3"])
+      expect(events.find((event) => LLMEvent.is.toolResult(event) && event.id === "c2")).toMatchObject({
+        result: { type: "error", value: "partial failure" },
+      })
+      expect(events.filter(LLMEvent.is.toolError)).toHaveLength(1)
     }),
   )
 })

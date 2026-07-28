@@ -18,6 +18,12 @@ export type ToolExecute<Parameters extends ToolSchema<any>, Success extends Tool
   context?: ToolExecuteContext,
 ) => Effect.Effect<Schema.Schema.Type<Success>, ToolFailure>
 
+export interface ToolAnnotations {
+  readonly readOnlyHint?: boolean
+  readonly idempotentHint?: boolean
+  readonly destructiveHint?: boolean
+}
+
 /**
  * A type-safe LLM tool. Each tool bundles its own description, parameter
  * Schema and success Schema. The execute handler is optional: omit it when you
@@ -35,6 +41,7 @@ export interface Tool<Parameters extends ToolSchema<any>, Success extends ToolSc
   readonly parameters: Parameters
   readonly success: Success
   readonly execute?: ToolExecute<Parameters, Success>
+  readonly annotations?: ToolAnnotations
   /** @internal */
   readonly _decode: (input: unknown) => Effect.Effect<Schema.Schema.Type<Parameters>, Schema.SchemaError>
   /** @internal */
@@ -58,6 +65,7 @@ export type ExecutableTools = Record<string, AnyExecutableTool>
 
 type TypedToolConfig = {
   readonly description: string
+  readonly annotations?: ToolAnnotations
   readonly parameters: ToolSchema<any>
   readonly success: ToolSchema<any>
   readonly execute?: ToolExecute<ToolSchema<any>, ToolSchema<any>>
@@ -65,6 +73,7 @@ type TypedToolConfig = {
 
 type DynamicToolConfig = {
   readonly description: string
+  readonly annotations?: ToolAnnotations
   readonly jsonSchema: JsonSchema.JsonSchema
   readonly execute?: (params: unknown, context?: ToolExecuteContext) => Effect.Effect<unknown, ToolFailure>
 }
@@ -102,23 +111,27 @@ type DynamicToolConfig = {
  */
 export function make<Parameters extends ToolSchema<any>, Success extends ToolSchema<any>>(config: {
   readonly description: string
+  readonly annotations?: ToolAnnotations
   readonly parameters: Parameters
   readonly success: Success
   readonly execute: ToolExecute<Parameters, Success>
 }): ExecutableTool<Parameters, Success>
 export function make<Parameters extends ToolSchema<any>, Success extends ToolSchema<any>>(config: {
   readonly description: string
+  readonly annotations?: ToolAnnotations
   readonly parameters: Parameters
   readonly success: Success
   readonly execute?: undefined
 }): Tool<Parameters, Success>
 export function make(config: {
   readonly description: string
+  readonly annotations?: ToolAnnotations
   readonly jsonSchema: JsonSchema.JsonSchema
   readonly execute: (params: unknown, context?: ToolExecuteContext) => Effect.Effect<unknown, ToolFailure>
 }): AnyExecutableTool
 export function make(config: {
   readonly description: string
+  readonly annotations?: ToolAnnotations
   readonly jsonSchema: JsonSchema.JsonSchema
   readonly execute?: undefined
 }): AnyTool
@@ -129,6 +142,7 @@ export function make(config: TypedToolConfig | DynamicToolConfig): AnyTool {
       parameters: Schema.Unknown as ToolSchema<unknown>,
       success: Schema.Unknown as ToolSchema<unknown>,
       execute: config.execute,
+      annotations: config.annotations,
       _decode: Effect.succeed,
       _encode: Effect.succeed,
       _definition: new ToolDefinition({
@@ -143,6 +157,7 @@ export function make(config: TypedToolConfig | DynamicToolConfig): AnyTool {
     parameters: config.parameters,
     success: config.success,
     execute: config.execute,
+    annotations: config.annotations,
     _decode: Schema.decodeUnknownEffect(config.parameters),
     _encode: Schema.encodeEffect(config.success),
     _definition: new ToolDefinition({

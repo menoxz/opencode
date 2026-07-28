@@ -111,12 +111,7 @@ export const stream = <T extends Tools>(options: StreamOptions<T>): Stream.Strea
             if (state.finishReason !== "tool-calls" || state.toolCalls.length === 0) return finishStream
             if (options.toolExecution === "none") return finishStream
 
-            const dispatched = yield* Effect.forEach(
-              state.toolCalls,
-              (call) =>
-                dispatch(tools, call).pipe(Effect.map((result) => [call, result.result, result.error] as const)),
-              { concurrency },
-            )
+            const dispatched = yield* dispatchCalls(tools, state.toolCalls, concurrency)
             const resultStream = Stream.fromIterable(
               dispatched.flatMap(([call, result, error]) => emitEvents(call, result, error)),
             )
@@ -296,6 +291,41 @@ const dispatch = (
     Effect.map((result) => ("result" in result ? result : { result })),
   )
 }
+
+type DispatchedCall = readonly [ToolCallPart, ToolResultValueType, unknown?]
+
+const dispatchCalls = (
+  tools: Tools,
+  calls: ReadonlyArray<ToolCallPart>,
+  concurrency: Concurrency,
+): Effect.Effect<ReadonlyArray<DispatchedCall>> =>
+  Effect.forEach(
+    executionGroups(tools, calls),
+    (group) =>
+      Effect.forEach(
+        group,
+        (call) => dispatch(tools, call).pipe(Effect.map((result) => [call, result.result, result.error] as const)),
+        { concurrency: group.length === 1 ? 1 : concurrency },
+      ),
+    { concurrency: 1 },
+  ).pipe(Effect.map((groups) => groups.flat()))
+
+const executionGroups = (tools: Tools, calls: ReadonlyArray<ToolCallPart>): ReadonlyArray<ReadonlyArray<ToolCallPart>> => {
+  const groups: ToolCallPart[][] = []
+  for (const call of calls) {
+    if (!canRunConcurrently(tools[call.name])) {
+      groups.push([call])
+      continue
+    }
+    const previous = groups.at(-1)
+    if (previous && canRunConcurrently(tools[previous[0]!.name])) previous.push(call)
+    else groups.push([call])
+  }
+  return groups
+}
+
+const canRunConcurrently = (tool: AnyTool | undefined) =>
+  tool?.annotations?.destructiveHint !== true && tool?.annotations?.readOnlyHint === true
 
 const decodeAndExecute = (tool: AnyTool, call: ToolCallPart): Effect.Effect<ToolResultValueType, ToolFailure> =>
   tool._decode(call.input).pipe(
