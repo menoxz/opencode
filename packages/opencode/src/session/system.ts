@@ -28,6 +28,35 @@ export function provider(_model: Provider.Model): string[] {
 const MAX_RELEVANT_SKILLS = 30
 
 /**
+ * Number of characters of a skill body folded into its retrieval text.
+ * A description is a one-liner; the body is where the real vocabulary lives —
+ * the symptoms, error strings and synonyms a user actually types. Ranking on
+ * `name + description` alone means a skill is only findable if whoever wrote
+ * its frontmatter happened to guess the user's wording.
+ * Bounded so BM25 length normalisation keeps documents comparable.
+ */
+const SKILL_BODY_INDEX_CHARS = 2000
+
+const skillSearchTextCache = new Map<string, string>()
+
+function skillSearchText(skill: Skill.Info): string {
+  const head = `${skill.name} ${skill.description ?? ""}`
+  if (!skill.content) return head
+  const key = `${skill.location}:${skill.content.length}`
+  const cached = skillSearchTextCache.get(key)
+  if (cached !== undefined) return cached
+  const body = skill.content
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/https?:\/\/\S+/g, " ")
+    .replace(/\s+/g, " ")
+    .slice(0, SKILL_BODY_INDEX_CHARS)
+  const text = `${head} ${body}`
+  if (skillSearchTextCache.size > 1000) skillSearchTextCache.clear()
+  skillSearchTextCache.set(key, text)
+  return text
+}
+
+/**
  * Multi-shell + tasks guidance injected into every agent's system prompt.
  * Reminds the model that shells differ across platforms, and surfaces any
  * named tasks defined in config / tasks.json so it can run them via the
@@ -122,17 +151,17 @@ export const layer = Layer.effect(
         if (lastUserMessage && list.length > MAX_RELEVANT_SKILLS) {
           const docs = list.map((s) => ({
             id: s.name,
-            content: `${s.name} ${s.description ?? ""}`,
+            content: skillSearchText(s),
             importance: 1.0 as const,
             confidence: 1.0 as const,
           }))
           const ranked = rankDocuments(lastUserMessage, docs, MAX_RELEVANT_SKILLS)
-          const kept = new Set(ranked.filter((r) => r.score > 0).map((r) => r.id))
-          if (kept.size >= 3) {
-            list = list.filter((s) => kept.has(s.name))
-          } else {
-            list = list.slice(0, MAX_RELEVANT_SKILLS)
-          }
+          // Use the whole budget. Dropping every score==0 skill left slots unused
+          // for no benefit, and the old "fewer than 3 matches" branch fell back to
+          // the alphabetical head of the list, which is strictly worse than score
+          // order. Ranking already put the best candidates first.
+          const kept = new Set(ranked.map((r) => r.id))
+          list = list.filter((s) => kept.has(s.name))
         }
 
         return [

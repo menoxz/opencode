@@ -104,7 +104,12 @@ const DEFAULT_ALPHA = 0.4
 // Tokenization
 // ---------------------------------------------------------------------------
 
+// Closed-class function words only: determiners, pronouns, prepositions,
+// conjunctions, auxiliaries and degree adverbs. Open-class words are never
+// listed here, because a word like "value", "state", "return" or "person"
+// carries real meaning in a technical query.
 const STOP_WORDS = new Set([
+  // --- English ---
   "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
   "of", "with", "by", "is", "are", "was", "were", "be", "been", "being",
   "have", "has", "had", "do", "does", "did", "will", "would", "could",
@@ -116,6 +121,51 @@ const STOP_WORDS = new Set([
   "than", "too", "very", "just", "about", "above", "after", "again",
   "all", "also", "any", "because", "before", "between", "both", "each",
   "few", "more", "most", "other", "some", "such", "only", "own", "same",
+
+  // --- French ---
+  // Without these, a French query is scored almost entirely on "de", "le",
+  // "pour", "dans"... Those tokens survive tokenisation, so the few documents
+  // that happen to be written in French win every French query regardless of
+  // their actual topic. Measured on a 176-skill corpus: every content token of
+  // the query had df=0 while "de" had df=15 and decided the whole ranking.
+  // determiners and articles
+  "le", "la", "les", "un", "une", "des", "du", "au", "aux", "ce", "cet",
+  "cette", "ces", "mon", "ma", "mes", "ton", "ta", "tes", "son", "sa", "ses",
+  "notre", "nos", "votre", "vos", "leur", "leurs", "chaque", "tout", "tous",
+  "toute", "toutes", "quelque", "quelques", "plusieurs", "aucun", "aucune",
+  // pronouns
+  "je", "tu", "il", "elle", "on", "nous", "vous", "ils", "elles", "moi",
+  "toi", "lui", "eux", "se", "ceci", "cela", "celui", "celle", "ceux",
+  "celles", "qui", "que", "quoi", "dont", "lequel", "laquelle", "lesquels",
+  "lesquelles", "chacun", "chacune", "rien", "soi", "leur",
+  // prepositions
+  "de", "en", "dans", "sur", "sous", "par", "pour", "avec", "sans", "vers",
+  "chez", "entre", "parmi", "depuis", "pendant", "avant", "apres", "après",
+  "contre", "selon", "malgre", "malgré", "jusqu", "jusque", "des", "hors",
+  "outre", "envers", "durant",
+  // conjunctions
+  "et", "ou", "mais", "donc", "ni", "car", "si", "comme", "lorsque",
+  "puisque", "quand", "quoique", "sinon", "ainsi", "cependant", "neanmoins",
+  "neanmoins", "néanmoins", "toutefois", "pourtant", "afin",
+  // auxiliaries: etre
+  "suis", "es", "est", "sommes", "etes", "êtes", "sont", "etais", "étais",
+  "etait", "était", "etions", "étions", "etaient", "étaient", "serai",
+  "sera", "serons", "serez", "seront", "serais", "serait", "soit", "soient",
+  "sois", "soyez", "ete", "été", "etant", "étant", "etre", "être",
+  // auxiliaries: avoir
+  "ai", "as", "avons", "avez", "ont", "avais", "avait", "avions", "aviez",
+  "avaient", "aurai", "aura", "aurons", "aurez", "auront", "aurais",
+  "aurait", "eu", "ayant", "ayez", "avoir",
+  // modals and light verbs
+  "peut", "peux", "peuvent", "pouvait", "pourrait", "pourrais", "doit",
+  "doivent", "devra", "devrait", "faut", "va", "vais", "vas", "vont",
+  // degree and frequency adverbs
+  "tres", "très", "plus", "moins", "aussi", "encore", "deja", "déjà",
+  "toujours", "jamais", "souvent", "parfois", "beaucoup", "trop", "assez",
+  "presque", "environ", "seulement", "surtout", "vraiment", "alors",
+  "ensuite", "puis", "ici", "meme", "même", "memes", "mêmes",
+  // negation and misc
+  "ne", "pas", "non", "oui", "etc", "voici", "voila", "voilà",
 ])
 
 export function tokenize(text: string): string[] {
@@ -143,24 +193,29 @@ export function scoreBM25(
   const queryTokens = tokenize(query)
   if (queryTokens.length === 0 || docs.length === 0) return docs.map((d) => ({ id: d.id, score: 0 }))
 
-  const docTokens = docs.map((d) => ({
-    id: d.id,
-    importance: d.importance,
-    confidence: d.confidence,
-    tokens: tokenize(d.content),
-  }))
+  // Term frequencies are precomputed once per document. The previous version
+  // rescanned the whole token array with includes()/filter() for every query
+  // term, which is quadratic and made indexing anything longer than a short
+  // description prohibitively slow.
+  const docTokens = docs.map((d) => {
+    const tokens = tokenize(d.content)
+    const freq = new Map<string, number>()
+    for (const t of tokens) freq.set(t, (freq.get(t) ?? 0) + 1)
+    return { id: d.id, importance: d.importance, confidence: d.confidence, length: tokens.length, freq }
+  })
 
-  const totalLen = docTokens.reduce((sum, d) => sum + d.tokens.length, 0)
+  const totalLen = docTokens.reduce((sum, d) => sum + d.length, 0)
   const avgdl = totalLen / docTokens.length || 1
 
   const k1 = 1.5
   const b = 0.75
 
+  const uniqueQueryTokens = [...new Set(queryTokens)]
   const docFreq: Map<string, number> = new Map()
-  for (const token of queryTokens) {
+  for (const token of uniqueQueryTokens) {
     let count = 0
     for (const d of docTokens) {
-      if (d.tokens.includes(token)) count++
+      if (d.freq.has(token)) count++
     }
     docFreq.set(token, count)
   }
@@ -170,12 +225,11 @@ export function scoreBM25(
   return docTokens.map((d) => {
     let score = 0
     for (const token of queryTokens) {
-      const tf = d.tokens.filter((t) => t === token).length
+      const tf = d.freq.get(token) ?? 0
       if (tf === 0) continue
       const df = docFreq.get(token) ?? 0
       const idf = Math.log((N - df + 0.5) / (df + 0.5) + 1)
-      const docLen = d.tokens.length
-      score += idf * ((tf * (k1 + 1)) / (tf + k1 * (1 - b + b * (docLen / avgdl))))
+      score += idf * ((tf * (k1 + 1)) / (tf + k1 * (1 - b + b * (d.length / avgdl))))
     }
     score = score * (0.5 + 0.5 * d.importance) * d.confidence
     return { id: d.id, score }
