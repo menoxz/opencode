@@ -1,5 +1,4 @@
 import { type SQLiteBunDatabase } from "drizzle-orm/bun-sqlite"
-import { migrate } from "drizzle-orm/bun-sqlite/migrator"
 import { type SQLiteTransaction } from "drizzle-orm/sqlite-core"
 export * from "drizzle-orm"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -8,11 +7,12 @@ import { Global } from "@opencode-ai/core/global"
 import * as Log from "@opencode-ai/core/util/log"
 import { NamedError } from "@opencode-ai/core/util/error"
 import path from "path"
-import { readFileSync, readdirSync, existsSync } from "fs"
+import { readFileSync, readdirSync, existsSync, mkdirSync, writeFileSync, rmSync } from "fs"
+import { createHash } from "node:crypto"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { InstallationChannel } from "@opencode-ai/core/installation/version"
 import { EffectBridge } from "@/effect/bridge"
-import { init } from "#db"
+import { init, migrate } from "#db"
 import { Effect, Schema } from "effect"
 
 declare const OPENCODE_MIGRATIONS: { sql: string; timestamp: number; name: string }[] | undefined
@@ -49,11 +49,57 @@ type Client = ReturnType<typeof init>
 
 type Journal = { sql: string; timestamp: number; name: string }[]
 
-// Drizzle's migrate overloads trigger expensive variance checks here; narrow to the journal overload we actually use.
-const migrateFromJournal = migrate as unknown as (db: SQLiteBunDatabase, entries: Journal) => void
+// Drizzle's `migrate(db, config)` only supports folder-based config across
+// dialects (bun-sqlite's array/journal shortcut turned out to be an artifact
+// of a stale duplicate package version, not a stable API — it silently threw
+// `readdirSync(undefined)` under drizzle-orm/node-sqlite). To stay dialect
+// and version agnostic, materialize the bundled/dev journal entries as real
+// migration files and always call the documented `migrationsFolder` API.
+function migrationsFingerprint(entries: Journal): string {
+  const hash = createHash("sha256")
+  for (const entry of entries) {
+    hash.update(entry.name)
+    hash.update("\0")
+    hash.update(entry.sql)
+    hash.update("\0")
+  }
+  return hash.digest("hex").slice(0, 16)
+}
+
+// The runtime folder used to be a single fixed path that accumulated every
+// migration folder ever written across restarts/builds. `readMigrationFiles`
+// reads *all* subdirectories present, so a stale folder left behind by a
+// previous version/build (renamed, squashed, or edited migration with the
+// same name) got re-read alongside the current entries and could silently
+// conflict with migrations already recorded as applied (skipped if the name
+// matched, or applied with unexpected SQL if it didn't) — with no marker of
+// which build produced which files. Namespacing by a content hash of the
+// current entries guarantees this build only ever sees its own files.
+function materializeMigrationsFolder(entries: Journal): string {
+  const root = path.join(Global.Path.data, "migrations-runtime")
+  const dir = path.join(root, migrationsFingerprint(entries))
+  for (const entry of entries) {
+    const entryDir = path.join(dir, entry.name)
+    mkdirSync(entryDir, { recursive: true })
+    writeFileSync(path.join(entryDir, "migration.sql"), entry.sql)
+  }
+  // Best-effort cleanup of folders from older builds so the cache doesn't
+  // grow unbounded. Failures here must never block migrations from applying.
+  try {
+    for (const sibling of readdirSync(root, { withFileTypes: true })) {
+      if (sibling.isDirectory() && sibling.name !== path.basename(dir)) {
+        rmSync(path.join(root, sibling.name), { recursive: true, force: true })
+      }
+    }
+  } catch (err) {
+    log.warn("failed to prune stale migrations-runtime folders", { err })
+  }
+  return dir
+}
 
 function applyMigrations(db: SQLiteBunDatabase, entries: Journal) {
-  migrateFromJournal(db, entries)
+  const dir = materializeMigrationsFolder(entries)
+  migrate(db, { migrationsFolder: dir } as unknown as Parameters<typeof migrate>[1])
 }
 
 function time(tag: string) {
