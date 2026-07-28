@@ -1,4 +1,4 @@
-import { For, Match, Show, Switch, createEffect, createMemo, onCleanup, type JSX } from "solid-js"
+import { For, Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createMediaQuery } from "@solid-primitives/media"
 import { Tabs } from "@opencode-ai/ui/tabs"
@@ -15,6 +15,14 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import FileTree from "@/components/file-tree"
 import { SessionContextUsage } from "@/components/session-context-usage"
 import { SessionContextTab, SortableTab, FileVisual } from "@/components/session"
+import { GoalTab } from "@/components/session/goal-tab"
+import { TodoTab } from "@/components/session/todo-tab"
+import { MCPTab } from "@/components/session/mcp-tab"
+import { LSPTab } from "@/components/session/lsp-tab"
+import { SessionDetailWidget } from "@/components/session/session-detail-widget"
+import { SessionIconSidebar, type SessionSidePanelView } from "@/components/session/session-icon-sidebar"
+import { SearchFiles } from "@/components/search-files"
+import { GitPanel } from "@/components/git-panel"
 import { useCommand } from "@/context/command"
 import { useFile, type SelectedLineRange } from "@/context/file"
 import { useLanguage } from "@/context/language"
@@ -165,6 +173,10 @@ export function SessionSidePanel(props: {
     activeDraggable: undefined as string | undefined,
   })
 
+  // Module 4: icon sidebar switching between the session detail widget
+  // (Module 1) and the folder file tree, inside the file-tree-panel area.
+  const [sidePanelView, setSidePanelView] = createSignal<SessionSidePanelView>("detail")
+
   const handleDragStart = (event: unknown) => {
     const id = getDraggableId(event)
     if (!id) return
@@ -286,6 +298,24 @@ export function SessionSidePanel(props: {
                             </div>
                           </Tabs.Trigger>
                         </Show>
+                        <Tabs.Trigger value="goal">
+                          <div class="flex items-center gap-1.5">Goal</div>
+                        </Tabs.Trigger>
+                        <Tabs.Trigger value="todo">
+                          <div class="flex items-center gap-1.5">Todo</div>
+                        </Tabs.Trigger>
+                        <Tabs.Trigger value="mcp">
+                          <div class="flex items-center gap-1.5">MCP</div>
+                        </Tabs.Trigger>
+                        <Tabs.Trigger value="lsp">
+                          <div class="flex items-center gap-1.5">LSP</div>
+                        </Tabs.Trigger>
+                        <Tabs.Trigger value="search">
+                          <div class="flex items-center gap-1.5">Search</div>
+                        </Tabs.Trigger>
+                        <Tabs.Trigger value="git">
+                          <div class="flex items-center gap-1.5">Git</div>
+                        </Tabs.Trigger>
                         <SortableProvider ids={openedTabs()}>
                           <For each={openedTabs()}>{(tab) => <SortableTab tab={tab} onTabClose={tabs().close} />}</For>
                         </SortableProvider>
@@ -341,6 +371,64 @@ export function SessionSidePanel(props: {
                       </Tabs.Content>
                     </Show>
 
+                    <Tabs.Content value="goal" class="flex flex-col h-full overflow-hidden contain-strict">
+                      <Show when={activeTab() === "goal"}>
+                        <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
+                          <GoalTab />
+                        </div>
+                      </Show>
+                    </Tabs.Content>
+
+                    <Tabs.Content value="todo" class="flex flex-col h-full overflow-hidden contain-strict">
+                      <Show when={activeTab() === "todo"}>
+                        <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
+                          <TodoTab />
+                        </div>
+                      </Show>
+                    </Tabs.Content>
+
+                    <Tabs.Content value="mcp" class="flex flex-col h-full overflow-hidden contain-strict">
+                      <Show when={activeTab() === "mcp"}>
+                        <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
+                          <MCPTab />
+                        </div>
+                      </Show>
+                    </Tabs.Content>
+
+                    <Tabs.Content value="lsp" class="flex flex-col h-full overflow-hidden contain-strict">
+                      <Show when={activeTab() === "lsp"}>
+                        <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
+                          <LSPTab />
+                        </div>
+                      </Show>
+                    </Tabs.Content>
+
+                    <Tabs.Content value="search" class="flex flex-col h-full overflow-hidden contain-strict">
+                      <Show when={activeTab() === "search"}>
+                        <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
+                          <SearchFiles
+                            onOpenResult={(path, line) => {
+                              const file = useFile()
+                              openTab(file.tab(path))
+                            }}
+                          />
+                        </div>
+                      </Show>
+                    </Tabs.Content>
+
+                    <Tabs.Content value="git" class="flex flex-col h-full overflow-hidden contain-strict">
+                      <Show when={activeTab() === "git"}>
+                        <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
+                          <GitPanel
+                            onOpenDiff={(path) => {
+                              const file = useFile()
+                              openTab(file.tab(path))
+                            }}
+                          />
+                        </div>
+                      </Show>
+                    </Tabs.Content>
+
                     <Show when={activeFileTab()} keyed>
                       {(tab) => <FileTabContent tab={tab} />}
                     </Show>
@@ -375,67 +463,75 @@ export function SessionSidePanel(props: {
                 style={{ width: treeWidth() }}
               >
                 <div
-                  class="h-full flex flex-col overflow-hidden group/filetree"
+                  class="h-full flex overflow-hidden group/filetree"
                   classList={{ "border-l border-border-weaker-base": reviewOpen() }}
                 >
-                  <Tabs
-                    variant="pill"
-                    value={fileTreeTab()}
-                    onChange={setFileTreeTabValue}
-                    class="h-full"
-                    data-scope="filetree"
-                  >
-                    <Tabs.List>
-                      <Tabs.Trigger value="changes" class="flex-1" classes={{ button: "w-full" }}>
-                        {props.reviewCount()}{" "}
-                        {language.t(
-                          props.reviewCount() === 1 ? "session.review.change.one" : "session.review.change.other",
-                        )}
-                      </Tabs.Trigger>
-                      <Tabs.Trigger value="all" class="flex-1" classes={{ button: "w-full" }}>
-                        {language.t("session.files.all")}
-                      </Tabs.Trigger>
-                    </Tabs.List>
-                    <Tabs.Content value="changes" class="bg-background-stronger px-3 py-0">
-                      <Switch>
-                        <Match when={props.hasReview() || !props.diffsReady()}>
-                          <Show
-                            when={props.diffsReady()}
-                            fallback={
-                              <div class="px-2 py-2 text-12-regular text-text-weak">
-                                {language.t("common.loading")}
-                                {language.t("common.loading.ellipsis")}
-                              </div>
-                            }
-                          >
-                            <FileTree
-                              path=""
-                              class="pt-3"
-                              allowed={diffFiles()}
-                              kinds={kinds()}
-                              draggable={false}
-                              active={props.activeDiff}
-                              onFileClick={(node) => props.focusReviewDiff(node.path)}
-                            />
-                          </Show>
-                        </Match>
-                      </Switch>
-                    </Tabs.Content>
-                    <Tabs.Content value="all" class="bg-background-stronger px-3 py-0">
-                      <Switch>
-                        <Match when={nofiles()}>{empty(language.t("session.files.empty"))}</Match>
-                        <Match when={true}>
-                          <FileTree
-                            path=""
-                            class="pt-3"
-                            modified={diffFiles()}
-                            kinds={kinds()}
-                            onFileClick={(node) => openTab(file.tab(node.path))}
-                          />
-                        </Match>
-                      </Switch>
-                    </Tabs.Content>
-                  </Tabs>
+                  <SessionIconSidebar active={sidePanelView} onSelect={setSidePanelView} />
+                  <div class="h-full flex-1 min-w-0 flex flex-col overflow-hidden">
+                    <Show when={sidePanelView() === "detail"}>
+                      <SessionDetailWidget />
+                    </Show>
+                    <Show when={sidePanelView() === "files"}>
+                      <Tabs
+                        variant="pill"
+                        value={fileTreeTab()}
+                        onChange={setFileTreeTabValue}
+                        class="h-full"
+                        data-scope="filetree"
+                      >
+                        <Tabs.List>
+                          <Tabs.Trigger value="changes" class="flex-1" classes={{ button: "w-full" }}>
+                            {props.reviewCount()}{" "}
+                            {language.t(
+                              props.reviewCount() === 1 ? "session.review.change.one" : "session.review.change.other",
+                            )}
+                          </Tabs.Trigger>
+                          <Tabs.Trigger value="all" class="flex-1" classes={{ button: "w-full" }}>
+                            {language.t("session.files.all")}
+                          </Tabs.Trigger>
+                        </Tabs.List>
+                        <Tabs.Content value="changes" class="bg-background-stronger px-3 py-0">
+                          <Switch>
+                            <Match when={props.hasReview() || !props.diffsReady()}>
+                              <Show
+                                when={props.diffsReady()}
+                                fallback={
+                                  <div class="px-2 py-2 text-12-regular text-text-weak">
+                                    {language.t("common.loading")}
+                                    {language.t("common.loading.ellipsis")}
+                                  </div>
+                                }
+                              >
+                                <FileTree
+                                  path=""
+                                  class="pt-3"
+                                  allowed={diffFiles()}
+                                  kinds={kinds()}
+                                  draggable={false}
+                                  active={props.activeDiff}
+                                  onFileClick={(node) => props.focusReviewDiff(node.path)}
+                                />
+                              </Show>
+                            </Match>
+                          </Switch>
+                        </Tabs.Content>
+                        <Tabs.Content value="all" class="bg-background-stronger px-3 py-0">
+                          <Switch>
+                            <Match when={nofiles()}>{empty(language.t("session.files.empty"))}</Match>
+                            <Match when={true}>
+                              <FileTree
+                                path=""
+                                class="pt-3"
+                                modified={diffFiles()}
+                                kinds={kinds()}
+                                onFileClick={(node) => openTab(file.tab(node.path))}
+                              />
+                            </Match>
+                          </Switch>
+                        </Tabs.Content>
+                      </Tabs>
+                    </Show>
+                  </div>
                 </div>
                 <Show when={fileOpen()}>
                   <div onPointerDown={() => props.size.start()}>

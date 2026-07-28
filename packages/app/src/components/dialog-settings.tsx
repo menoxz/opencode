@@ -8,6 +8,11 @@ import { SettingsGeneral } from "./settings-general"
 import { SettingsKeybinds } from "./settings-keybinds"
 import { SettingsProviders } from "./settings-providers"
 import { SettingsModels } from "./settings-models"
+import { SettingsAgents } from "./settings-agents"
+import { SettingsSkills } from "./settings-skills"
+import { SettingsMcp } from "./settings-mcp"
+import { SettingsInstructions } from "./settings-instructions"
+import { SettingsPlugins } from "./settings-plugins"
 
 export const DialogSettings: Component = () => {
   const language = useLanguage()
@@ -47,6 +52,32 @@ export const DialogSettings: Component = () => {
                     </Tabs.Trigger>
                   </div>
                 </div>
+
+                <div class="flex flex-col gap-1.5">
+                  <Tabs.SectionTitle>{language.t("settings.section.extensions")}</Tabs.SectionTitle>
+                  <div class="flex flex-col gap-1.5 w-full">
+                    <Tabs.Trigger value="agents">
+                      <Icon name="brain" />
+                      {language.t("settings.agents.title")}
+                    </Tabs.Trigger>
+                    <Tabs.Trigger value="skills">
+                      <Icon name="checklist" />
+                      {language.t("settings.skills.title")}
+                    </Tabs.Trigger>
+                    <Tabs.Trigger value="mcp">
+                      <Icon name="mcp" />
+                      {language.t("settings.mcp.title")}
+                    </Tabs.Trigger>
+                    <Tabs.Trigger value="instructions">
+                      <Icon name="open-file" />
+                      {language.t("settings.instructions.title")}
+                    </Tabs.Trigger>
+                    <Tabs.Trigger value="plugins">
+                      <Icon name="dot-grid" />
+                      {language.t("settings.plugins.title")}
+                    </Tabs.Trigger>
+                  </div>
+                </div>
               </div>
             </div>
             <div class="flex flex-col gap-1 pl-1 py-1 text-12-medium text-text-weak">
@@ -66,6 +97,21 @@ export const DialogSettings: Component = () => {
         </Tabs.Content>
         <Tabs.Content value="models" class="no-scrollbar">
           <SettingsModels />
+        </Tabs.Content>
+        <Tabs.Content value="agents" class="no-scrollbar">
+          <SettingsAgents />
+        </Tabs.Content>
+        <Tabs.Content value="skills" class="no-scrollbar">
+          <SettingsSkills />
+        </Tabs.Content>
+        <Tabs.Content value="mcp" class="no-scrollbar">
+          <SettingsMcp />
+        </Tabs.Content>
+        <Tabs.Content value="instructions" class="no-scrollbar">
+          <SettingsInstructions />
+        </Tabs.Content>
+        <Tabs.Content value="plugins" class="no-scrollbar">
+          <SettingsPlugins />
         </Tabs.Content>
       </Tabs>
     </Dialog>

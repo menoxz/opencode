@@ -1,4 +1,4 @@
-import { Match, Show, Switch, createMemo } from "solid-js"
+import { Match, Show, Switch, createMemo, createSignal } from "solid-js"
 import { Tooltip, type TooltipProps } from "@opencode-ai/ui/tooltip"
 import { ProgressCircle } from "@opencode-ai/ui/progress-circle"
 import { Button } from "@opencode-ai/ui/button"
@@ -58,6 +58,38 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
     return usd().format(metrics().totalCost)
   })
 
+  function formatK(n: number | undefined): string {
+    if (n === undefined || n <= 0) return ""
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+    if (n >= 1_000) return `${Math.round(n / 1_000)}k`
+    return String(n)
+  }
+
+  const tokenSpeed = createMemo(() => {
+    const msgs = messages()
+    const last = msgs.findLast(
+      (m): m is typeof m & { role: "assistant"; tokens: { output: number }; time: { created: number; completed?: number } } =>
+        m.role === "assistant" && !!(m as any).tokens && (m as any).tokens.output > 0,
+    )
+    if (!last) return undefined
+    const created = last.time?.created
+    const completed = (last.time as { completed?: number } | undefined)?.completed
+    if (!created || !completed) return undefined
+    const elapsed = (completed - created) / 1000
+    if (elapsed <= 0) return undefined
+    const speed = last.tokens.output / elapsed
+    if (!Number.isFinite(speed) || speed <= 0) return undefined
+    return speed >= 10 ? Math.round(speed).toLocaleString() : speed.toFixed(1)
+  })
+
+  const compactLabel = createMemo(() => {
+    const ctx = context()
+    if (!ctx) return ""
+    const tokens = `${formatK(ctx.total)}/${formatK(ctx.limit)}${ctx.usage !== null && ctx.usage !== undefined ? ` (${ctx.usage}%)` : ""}`
+    const parts = [tokens, tokenSpeed() ? `${tokenSpeed()} tok/s` : undefined]
+    return parts.filter(Boolean).join(" . ")
+  })
+
   const openContext = () => {
     if (!params.id) return
 
@@ -91,6 +123,11 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
               <span class="text-text-invert-strong">{ctx().usage ?? 0}%</span>
               <span class="text-text-invert-base">{language.t("context.usage.usage")}</span>
             </div>
+            <Show when={compactLabel()}>
+              <div class="flex items-center gap-2">
+                <span class="text-text-invert-strong">{compactLabel()}</span>
+              </div>
+            </Show>
           </>
         )}
       </Show>

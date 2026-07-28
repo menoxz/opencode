@@ -53,10 +53,10 @@ describe("createOpenSessionFileTab", () => {
     expect(calls).toEqual([
       "normalize:src/a.ts",
       "open:file://src/a.ts",
+      "active:file://src/a.ts",
       "path:file://src/a.ts",
       "load:src/a.ts",
       "review",
-      "active:file://src/a.ts",
     ])
   })
 })

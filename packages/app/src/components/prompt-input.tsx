@@ -38,6 +38,7 @@ import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Select } from "@opencode-ai/ui/select"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { ModelSelectorPopover } from "@/components/dialog-select-model"
+import { ThinkingModeSelector } from "@/components/thinking-mode-selector"
 import { useProviders } from "@/hooks/use-providers"
 import { useCommand } from "@/context/command"
 import { Persist, persisted } from "@/utils/persist"
@@ -1538,6 +1539,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   </div>
                 </Show>
                 {modelControl()}
+                <ThinkingModeSelector />
               </div>
               <Tooltip placement="top" inactive={!working() && blank()} value={tip()}>
                 <IconButton

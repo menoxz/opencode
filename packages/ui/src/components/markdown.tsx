@@ -66,6 +66,8 @@ type CopyLabels = {
 }
 
 const urlPattern = /^https?:\/\/[^\s<>()`"']+$/
+const filePathPattern =
+  /(?:^|[\s(`"'])((?:\.{1,2}\/|[a-zA-Z0-9_-]+\/)+[a-zA-Z0-9_.-]+\.(?:ts|tsx|js|jsx|py|rs|go|java|json|md|yaml|yml|css|html|sql|sh|txt|toml|c|cpp|h|hpp|rb|php|kt|swift))(?::(\d+)(?::(\d+))?)?/g
 
 function codeUrl(text: string) {
   const href = text.trim().replace(/[),.;!?]+$/, "")
@@ -175,12 +177,43 @@ function markCodeLinks(root: HTMLDivElement) {
   }
 }
 
+function fileLinkMatch(text: string): { path: string; line?: string } | undefined {
+  filePathPattern.lastIndex = 0
+  const m = filePathPattern.exec(` ${text} `)
+  if (!m) return
+  // Require the match to cover (almost) the whole code span, not just a substring
+  if (m[0].trim().length < text.length - 1) return
+  return { path: m[1], line: m[2] }
+}
+
+function markFileLinks(root: HTMLDivElement) {
+  const codeNodes = Array.from(root.querySelectorAll(":not(pre) > code"))
+  for (const code of codeNodes) {
+    if (code.closest("a.external-link") || code.closest('[data-component="file-link"]')) continue
+    const text = (code.textContent ?? "").trim()
+    if (!text) continue
+    const match = fileLinkMatch(text)
+    if (!match) continue
+
+    const link = document.createElement("span")
+    link.setAttribute("data-component", "file-link")
+    link.setAttribute("data-file-path", match.path)
+    if (match.line) link.setAttribute("data-file-line", match.line)
+    link.style.cursor = "pointer"
+    link.style.textDecoration = "underline"
+    link.style.textUnderlineOffset = "2px"
+    link.appendChild(code.cloneNode(true))
+    code.parentNode?.replaceChild(link, code)
+  }
+}
+
 function decorate(root: HTMLDivElement, labels: CopyLabels) {
   const blocks = Array.from(root.querySelectorAll("pre"))
   for (const block of blocks) {
     ensureCodeWrapper(block, labels)
   }
   markCodeLinks(root)
+  markFileLinks(root)
 }
 
 function setupCodeCopy(root: HTMLDivElement, getLabels: () => CopyLabels) {
@@ -195,6 +228,21 @@ function setupCodeCopy(root: HTMLDivElement, getLabels: () => CopyLabels) {
   const handleClick = async (event: MouseEvent) => {
     const target = event.target
     if (!(target instanceof Element)) return
+
+    const fileLink = target.closest('[data-component="file-link"]')
+    if (fileLink instanceof HTMLElement) {
+      const path = fileLink.getAttribute("data-file-path")
+      if (!path) return
+      const line = fileLink.getAttribute("data-file-line")
+      fileLink.dispatchEvent(
+        new CustomEvent("opencode:file-link-click", {
+          bubbles: true,
+          composed: true,
+          detail: { path, line: line ? Number(line) : undefined },
+        }),
+      )
+      return
+    }
 
     const button = target.closest('[data-slot="markdown-copy-button"]')
     if (!(button instanceof HTMLButtonElement)) return

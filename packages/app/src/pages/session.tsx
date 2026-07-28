@@ -36,6 +36,8 @@ import { useComments } from "@/context/comments"
 import { getSessionPrefetch, SESSION_PREFETCH_TTL } from "@/context/global-sync/session-prefetch"
 import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
+import { StatusBar } from "@/components/status-bar"
+import { SessionMessageMinimap } from "@/components/session-message-minimap"
 import { useLayout } from "@/context/layout"
 import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
@@ -1637,6 +1639,11 @@ export default function Page() {
 
   onMount(() => {
     makeEventListener(document, "keydown", handleKeyDown)
+    makeEventListener(document, "opencode:file-link-click" as any, ((event: CustomEvent<{ path: string; line?: number }>) => {
+      const { path } = event.detail
+      if (!path) return
+      void openReviewFile(path)
+    }) as EventListener)
   })
 
   onCleanup(() => {
@@ -1839,9 +1846,21 @@ export default function Page() {
           reviewSnap={ui.reviewSnap}
           size={size}
         />
+        <Show when={params.id} keyed>
+          {(sessionID) => (
+            <SessionMessageMinimap
+              sessionID={sessionID}
+              onNavigate={(messageID) => {
+                const msg = messages().find((m) => m.id === messageID)
+                if (msg && msg.role === "user") scrollToMessage(msg as UserMessage)
+              }}
+            />
+          )}
+        </Show>
       </div>
 
       <TerminalPanel />
+      <StatusBar />
     </div>
   )
 }

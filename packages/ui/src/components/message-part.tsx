@@ -1580,18 +1580,43 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
 
 PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
   const data = useData()
+  const i18n = useI18n()
   const part = () => props.part as ReasoningPart
   const streaming = createMemo(
     () => props.message.role === "assistant" && typeof (props.message as AssistantMessage).time.completed !== "number",
   )
   const text = () => readPartText(data.store.part_text_accum_delta, part())
+  // Reasoning finishes independently of the parent message (server sets
+  // `time.end` on the part itself), so the header can flip to "Thought"
+  // mid-turn while later text parts are still streaming.
+  const done = createMemo(() => part().time.end !== undefined)
+  // Collapsed by default so raw reasoning never floods the timeline; the
+  // user expands it on demand, mirroring the TUI's default "hide" behavior.
+  const [open, setOpen] = createSignal(false)
 
   return (
     <Show when={text()}>
       <div data-component="reasoning-part" data-timeline-part-id={part().id}>
-        <Show when={streaming()} fallback={<Markdown text={text()} cacheKey={part().id} streaming={false} />}>
-          <PacedMarkdown text={text()} cacheKey={part().id} streaming={streaming()} />
-        </Show>
+        <Collapsible open={open()} onOpenChange={setOpen} variant="ghost" class="tool-collapsible">
+          <Collapsible.Trigger>
+            <div data-component="reasoning-part-trigger">
+              <span data-slot="reasoning-part-title">
+                <ToolStatusTitle
+                  active={!done()}
+                  activeText={i18n.t("ui.sessionTurn.status.thinking")}
+                  doneText={i18n.t("ui.sessionTurn.status.thought")}
+                  split={false}
+                />
+              </span>
+              <Collapsible.Arrow />
+            </div>
+          </Collapsible.Trigger>
+          <Collapsible.Content>
+            <Show when={streaming()} fallback={<Markdown text={text()} cacheKey={part().id} streaming={false} />}>
+              <PacedMarkdown text={text()} cacheKey={part().id} streaming={streaming()} />
+            </Show>
+          </Collapsible.Content>
+        </Collapsible>
       </div>
     </Show>
   )

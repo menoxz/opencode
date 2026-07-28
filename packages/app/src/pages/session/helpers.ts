@@ -5,6 +5,11 @@ import { same } from "@/utils/same"
 
 const emptyTabs: string[] = []
 
+// Fixed utility tabs that aren't file tabs and don't have a path — must pass
+// through `activeTab` unchanged, same as "context"/"review".
+const staticTabs = new Set(["goal", "todo", "mcp", "lsp", "search", "git"])
+
+
 type Tabs = {
   active: Accessor<string | undefined>
   all: Accessor<string[]>
@@ -45,6 +50,7 @@ export const createSessionTabs = (input: TabsInput) => {
     const active = input.tabs().active()
     if (active === "context") return active
     if (active === "review" && review()) return active
+    if (active && staticTabs.has(active)) return active
     if (active && input.pathFromTab(active)) return input.normalizeTab(active)
 
     const first = openedTabs()[0]
@@ -134,13 +140,13 @@ export const createOpenSessionFileTab = (input: {
   return (value: string) => {
     const next = input.normalizeTab(value)
     input.openTab(next)
+    input.setActive(next)
 
     const path = input.pathFromTab(next)
     if (!path) return
 
     input.loadFile(path)
     input.openReviewPanel()
-    input.setActive(next)
   }
 }
 

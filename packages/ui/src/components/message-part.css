@@ -302,6 +302,33 @@
       }
     }
   }
+
+  /* The trigger header owns the top gap now; the markdown body only needs
+     breathing room from the header row above it. */
+  [data-slot="collapsible-content"] [data-component="markdown"] {
+    margin-top: 8px;
+  }
+}
+
+[data-component="reasoning-part-trigger"] {
+  width: 100%;
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0px;
+  cursor: default;
+  color: var(--text-weak);
+
+  [data-slot="reasoning-part-title"] {
+    flex-shrink: 1;
+    min-width: 0;
+  }
+
+  [data-slot="collapsible-arrow"] {
+    color: var(--icon-weaker);
+    cursor: pointer;
+  }
 }
 
 @media (prefers-color-scheme: dark) {
