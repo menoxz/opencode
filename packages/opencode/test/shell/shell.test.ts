@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import path from "path"
+import { spawnSync } from "child_process"
 import { Shell } from "../../src/shell/shell"
 import { Filesystem } from "@/util/filesystem"
 import { which } from "../../src/util/which"
@@ -94,6 +95,23 @@ describe("shell", () => {
       await withShell(path.win32.basename(shell), async () => {
         expect(Shell.preferred()).toBe(shell)
       })
+    })
+
+    test("PowerShell output survives the pipe as UTF-8", () => {
+      const shell = which("pwsh") || which("powershell")
+      if (!shell) return
+      // Non-ASCII on three planes: latin-1 (é, è), currency (€), CJK (日本).
+      // Without the encoding preamble PowerShell writes the OEM code page and
+      // é/è arrive as U+FFFD while €/日本 are destroyed into literal "?".
+      const expected = "intégrationATD/modèle-café-€-日本"
+      const result = spawnSync(
+        shell,
+        Shell.args(shell, `Write-Output "${expected}"`, process.cwd()),
+        { encoding: "buffer", windowsHide: true },
+      )
+      const decoded = (result.stdout ?? Buffer.alloc(0)).toString("utf-8").trim()
+      expect(decoded).toBe(expected)
+      expect(decoded).not.toContain("\uFFFD")
     })
   }
 })

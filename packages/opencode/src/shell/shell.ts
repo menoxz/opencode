@@ -7,6 +7,14 @@ import { spawn, type ChildProcess } from "child_process"
 import { setTimeout as sleep } from "node:timers/promises"
 
 const SIGKILL_TIMEOUT_MS = 200
+// PowerShell defaults [Console]::OutputEncoding to the OEM code page (ibm437 on
+// a fr-FR/en-US Windows) when stdout is redirected, while we decode the pipe as
+// UTF-8. Every non-ASCII byte then reaches the model as U+FFFD, silently: a file
+// named "intégrationATD" is read back as "int?grationATD" and any command built
+// from it fails for a reason invisible in the output. Emitting BOM-less UTF-8
+// makes the observation channel lossless. -NoProfile means no user profile can
+// do this for us.
+const PS_UTF8 = `[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);$OutputEncoding=[Console]::OutputEncoding`
 const META: Record<string, { deny?: boolean; login?: boolean; posix?: boolean; ps?: boolean }> = {
   bash: { login: true, posix: true },
   dash: { login: true, posix: true },
@@ -188,7 +196,7 @@ export function args(file: string, command: string, cwd: string) {
     ]
   }
   if (n === "cmd") return ["/c", command]
-  if (ps(file)) return ["-NoProfile", "-Command", command]
+  if (ps(file)) return ["-NoProfile", "-Command", `${PS_UTF8}\n${command}`]
   return ["-c", command]
 }
 
