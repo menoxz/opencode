@@ -377,6 +377,22 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
                   }
                 }
 
+                // Snapshot trees are dangling objects: nothing references them, so the
+                // hourly `git gc --prune=7.days` above drops them. A hash that no longer
+                // resolves therefore says nothing about whether the file was in the
+                // snapshot — treating it as "absent" deletes live user work.
+                const expired = new Map<string, boolean>()
+                const gone = Effect.fnUntraced(function* (hash: string) {
+                  const hit = expired.get(hash)
+                  if (hit !== undefined) return hit
+                  const probe = yield* git([...core, ...args(["cat-file", "-e", `${hash}^{tree}`])], {
+                    cwd: state.worktree,
+                  })
+                  const missing = probe.code !== 0
+                  expired.set(hash, missing)
+                  return missing
+                })
+
                 const single = Effect.fnUntraced(function* (op: (typeof ops)[number]) {
                   log.info("reverting", { file: op.file, hash: op.hash })
                   const result = yield* git([...core, ...args(["checkout", op.hash, "--", op.file])], {
@@ -388,6 +404,13 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
                   })
                   if (tree.code === 0 && tree.text.trim()) {
                     log.info("file existed in snapshot but checkout failed, keeping", { file: op.file, hash: op.hash })
+                    return
+                  }
+                  if (yield* gone(op.hash)) {
+                    log.error("snapshot expired, keeping file instead of deleting it", {
+                      file: op.file,
+                      hash: op.hash,
+                    })
                     return
                   }
                   log.info("file did not exist in snapshot, deleting", { file: op.file, hash: op.hash })

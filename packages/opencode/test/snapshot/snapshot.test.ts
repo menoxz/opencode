@@ -212,6 +212,25 @@ it.instance(
 )
 
 it.instance(
+  "expired snapshot keeps the file instead of deleting it",
+  withTrackedSnapshot(({ tmp, snapshot }) =>
+    Effect.gen(function* () {
+      // Snapshot trees are unreachable objects, so `git gc --prune=7.days` drops
+      // them. Reverting to a pruned hash used to fail both `checkout` and
+      // `ls-tree`, which the code read as "the file was not in the snapshot" and
+      // answered by deleting live user work.
+      yield* write(`${tmp.path}/survivor.txt`, "USER WORK")
+      yield* snapshot.revert([
+        { hash: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", files: [fwd(tmp.path, "survivor.txt")] },
+      ])
+      expect(yield* exists(`${tmp.path}/survivor.txt`)).toBe(true)
+      expect(yield* Effect.promise(() => fs.readFile(`${tmp.path}/survivor.txt`, "utf8"))).toBe("USER WORK")
+    }),
+  ),
+  { git: true },
+)
+
+it.instance(
   "nested directory revert",
   withTrackedSnapshot(({ tmp, snapshot, before }) =>
     Effect.gen(function* () {
