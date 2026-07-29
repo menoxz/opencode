@@ -12,7 +12,7 @@ import { eq, desc } from "drizzle-orm"
 import { randomUUID } from "crypto"
 import path from "path"
 import fs from "fs"
-import type { ScenarioResult } from "./scenario"
+import { verdictOf, type ScenarioResult } from "./scenario"
 import { EvalRunTable, EvalScenarioResultTable } from "./eval.sql"
 
 const log = Log.create({ service: "eval.metrics" })
@@ -219,6 +219,7 @@ function loadFromDb(
           scenarioId: sr.scenario_id,
           scenarioName: sr.scenario_name,
           success: sr.passed,
+          verdict: verdictOf(sr.passed, errors),
           durationMs: sr.duration_ms,
           tokensUsed: sr.tokens_used ?? 0,
           toolCalls: sr.tool_calls ?? 0,

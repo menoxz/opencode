@@ -2,9 +2,9 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import { execSync, spawnSync } from "node:child_process"
 import { Effect } from "effect"
-import { autoEvaluate, type EvalRunOptions } from "./index"
+import { autoEvaluate, scenarioVerdict, type EvalRunOptions } from "./index"
 import { createSandbox, type SandboxOptions } from "./sandbox"
-import type { EvalScenario, ScenarioResult } from "./scenario"
+import { UNVERIFIED_PREFIX, type EvalScenario, type ScenarioResult } from "./scenario"
 
 export interface RealScenarioExecution {
   output: string
@@ -146,20 +146,25 @@ export function runScenarioReal(
           cwd: sandboxDir,
           timeoutSeconds: options.timeoutSeconds ?? scenario.timeoutSeconds,
         })
-        const { matched, total } = autoEvaluate(scenario, execution.output, execution.toolCalls, sandboxDir)
+        const grade = autoEvaluate(scenario, execution.output, execution.toolCalls, sandboxDir)
         const completedAt = Date.now()
-        const success = matched >= Math.ceil(total / 2) && (execution.errors?.length ?? 0) === 0
+        const errors = execution.errors ?? []
+        const verdict = scenarioVerdict(grade, errors)
 
         return {
           scenarioId: scenario.id,
           scenarioName: scenario.name,
-          success,
+          success: verdict === "pass",
+          verdict,
           durationMs: Math.max(completedAt - startedAt, 1),
           tokensUsed: execution.tokensUsed ?? Math.round(execution.output.length * 1.5),
           toolCalls: execution.toolCalls.length,
-          errors: execution.errors ?? [],
-          behaviorsMatched: matched,
-          behaviorsTotal: total,
+          errors:
+            verdict === "unverified"
+              ? [...errors, `${UNVERIFIED_PREFIX} ${grade.unverified} of ${grade.total} behaviors of "${scenario.id}" could not be checked`]
+              : errors,
+          behaviorsMatched: grade.matched,
+          behaviorsTotal: grade.total,
           output: `Task: ${scenario.taskPrompt}\n\n[Real] Output:\n${execution.output}`,
           startedAt,
           completedAt,

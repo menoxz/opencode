@@ -79,11 +79,33 @@ export interface EvalScenario {
   setupFiles?: { path: string; content: string }[]
 }
 
+/** Outcome of grading one expected behavior, or a whole scenario. */
+export type Verdict = "pass" | "fail" | "unverified"
+
+/**
+ * Prefix of the error entry emitted when the harness never actually checked
+ * anything. Stored inside the persisted `errors` array so a verdict survives a
+ * database round-trip without a schema migration.
+ */
+export const UNVERIFIED_PREFIX = "UNVERIFIED:"
+
+/** Rebuild a verdict from a persisted `success` flag and its error list. */
+export function verdictOf(success: boolean, errors: string[]): Verdict {
+  if (success) return "pass"
+  return errors.some((e) => e.startsWith(UNVERIFIED_PREFIX)) ? "unverified" : "fail"
+}
+
 /** Result of executing a single scenario. */
 export interface ScenarioResult {
   scenarioId: string
   scenarioName: string
   success: boolean
+  /**
+   * Why `success` holds that value. `unverified` means the harness checked
+   * nothing — a simulated run, or a behavior whose `validationCommand` could not
+   * be executed. It must never be reported or read as a pass.
+   */
+  verdict: Verdict
   durationMs: number
   tokensUsed: number
   toolCalls: number

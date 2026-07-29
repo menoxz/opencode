@@ -29,6 +29,8 @@ import {
   getSuite,
   listScenarios,
   type ExpectedBehavior,
+  type Verdict,
+  UNVERIFIED_PREFIX,
 } from "./scenario"
 import { createSandbox, type SandboxOptions } from "./sandbox"
 import { runScenarioReal, commandExecutor, headlessSessionExecutor } from "./real-runner"
@@ -150,8 +152,46 @@ export function validate(command: string, cwd?: string): ValidationResult {
 }
 
 /**
- * Evaluate a single expected behavior using functional validation (if available)
- * or keyword/action matching as fallback.
+ * Grade a single expected behavior.
+ *
+ * A behavior that declares a `validationCommand` is graded ONLY by running that
+ * command. When it cannot be run — no working directory — the behavior is
+ * `unverified`. It is never silently downgraded to keyword matching, which would
+ * grade the agent on its prose instead of on the artifact it had to produce, and
+ * let a scenario claim success while its functional contract was never executed.
+ */
+export function gradeBehavior(
+  behavior: ExpectedBehavior,
+  output: string,
+  toolCalls: string[],
+  cwd?: string,
+): Verdict {
+  if (behavior.validationCommand) {
+    if (!cwd) return "unverified"
+    return validate(behavior.validationCommand, cwd).passed ? "pass" : "fail"
+  }
+  return heuristicMatch(behavior, output, toolCalls) ? "pass" : "fail"
+}
+
+/** Keyword / action / anti-pattern matching, used only when no validation command exists. */
+function heuristicMatch(behavior: ExpectedBehavior, output: string, toolCalls: string[]): boolean {
+  const text = output.toLowerCase()
+  if (
+    behavior.requiredKeywords?.length &&
+    !behavior.requiredKeywords.some((kw) => text.includes(kw.toLowerCase()))
+  )
+    return false
+  if (
+    behavior.requiredActions?.length &&
+    !behavior.requiredActions.some((action) => toolCalls.some((t) => t.includes(action)))
+  )
+    return false
+  return !behavior.antiPatterns?.some((ap) => text.includes(ap.toLowerCase()))
+}
+
+/**
+ * Evaluate a single expected behavior. Boolean projection of `gradeBehavior`:
+ * only an actually verified pass counts as `true`.
  */
 export function evaluateBehavior(
   behavior: ExpectedBehavior,
@@ -159,100 +199,80 @@ export function evaluateBehavior(
   toolCalls: string[],
   cwd?: string,
 ): boolean {
-  // If behavior has a validation command AND we have a working directory, run it
-  if (behavior.validationCommand && cwd) {
-    const result = validate(behavior.validationCommand, cwd)
-    return result.passed
-  }
+  return gradeBehavior(behavior, output, toolCalls, cwd) === "pass"
+}
 
-  // Fallback: keyword + action + anti-pattern matching
-  let passed = true
-
-  if (behavior.requiredKeywords && behavior.requiredKeywords.length > 0) {
-    const found = behavior.requiredKeywords.some((kw) =>
-      output.toLowerCase().includes(kw.toLowerCase()),
-    )
-    if (!found) passed = false
-  }
-
-  if (behavior.requiredActions && behavior.requiredActions.length > 0) {
-    const found = behavior.requiredActions.some((action) =>
-      toolCalls.some((t) => t.includes(action)),
-    )
-    if (!found) passed = false
-  }
-
-  if (behavior.antiPatterns && behavior.antiPatterns.length > 0) {
-    const found = behavior.antiPatterns.some((ap) =>
-      output.toLowerCase().includes(ap.toLowerCase()),
-    )
-    if (found) passed = false
-  }
-
-  return passed
+/**
+ * Decide the verdict of a whole scenario.
+ *
+ * A scenario passes only when every declared behavior was actually checked and
+ * passed. The previous rule, `matched >= ceil(total / 2)`, reported green while
+ * half of the declared expectations failed.
+ */
+export function scenarioVerdict(
+  grade: { matched: number; total: number; unverified: number },
+  errors: string[],
+): Verdict {
+  if (grade.total === 0) return "unverified"
+  if (errors.length > 0) return "fail"
+  if (grade.total - grade.matched - grade.unverified > 0) return "fail"
+  return grade.unverified > 0 ? "unverified" : "pass"
 }
 
 /**
  * Auto-evaluate whether a scenario succeeded based on expected behaviors.
- * Uses functional validation (runs commands) when `validationCommand` is set
- * and `cwd` is provided. Falls back to keyword matching otherwise.
+ * Runs `validationCommand` when `cwd` is provided, otherwise reports those
+ * behaviors as unverified.
  *
  * @param scenario - The scenario to evaluate
  * @param output - The agent's output text
  * @param toolCalls - List of tool calls made by the agent
- * @param cwd - Optional working directory for running validation commands
+ * @param cwd - Working directory for running validation commands
  */
 export function autoEvaluate(
   scenario: EvalScenario,
   output: string,
   toolCalls: string[],
   cwd?: string,
-): { matched: number; total: number } {
-  let matched = 0
-  const total = scenario.expectedBehaviors.length
-
-  for (const behavior of scenario.expectedBehaviors) {
-    if (evaluateBehavior(behavior, output, toolCalls, cwd)) matched++
+): { matched: number; total: number; unverified: number } {
+  const grades = scenario.expectedBehaviors.map((b) => gradeBehavior(b, output, toolCalls, cwd))
+  return {
+    matched: grades.filter((g) => g === "pass").length,
+    total: grades.length,
+    unverified: grades.filter((g) => g === "unverified").length,
   }
-
-  return { matched, total }
 }
 
 /**
- * Simulate scenario execution (fallback for manual mode / testing).
+ * Simulate scenario execution — a dry run that executes no agent.
+ *
+ * It therefore verifies nothing and can never report success. The previous
+ * implementation seeded `toolCalls` from the scenario's own `requiredActions`
+ * and then asserted those same actions against them, so every action-based
+ * expectation passed by construction and the suite was mathematically unable to
+ * go red. Use `mode: "real"` to actually verify a scenario.
  */
 export function simulateScenario(
   scenario: EvalScenario,
-  opts: EvalRunOptions,
+  _opts: EvalRunOptions,
 ): ScenarioResult {
   const startedAt = Date.now()
-  const output = `[Simulated] Running: ${scenario.taskPrompt.substring(0, 80)}...`
-
-  const toolCalls: string[] = []
-  for (const behavior of scenario.expectedBehaviors) {
-    if (behavior.requiredActions) {
-      toolCalls.push(...behavior.requiredActions)
-    }
-  }
-
-  // Simulation: no cwd, so validation commands fall back to keyword matching
-  const { matched, total } = autoEvaluate(scenario, output, toolCalls)
   const completedAt = Date.now()
-  const durationMs = completedAt - startedAt
-
-  const success = opts.mode === "manual" ? false : matched >= Math.ceil(total / 2)
 
   return {
     scenarioId: scenario.id,
     scenarioName: scenario.name,
-    success,
-    durationMs: Math.max(durationMs, 100),
-    tokensUsed: Math.round(output.length * 1.5),
-    toolCalls: toolCalls.length,
-    errors: [],
-    behaviorsMatched: matched,
-    behaviorsTotal: total,
-    output: `Task: ${scenario.taskPrompt}\n\nOutput:\n${output}`,
+    success: false,
+    verdict: "unverified",
+    durationMs: Math.max(completedAt - startedAt, 1),
+    tokensUsed: 0,
+    toolCalls: 0,
+    errors: [
+      `${UNVERIFIED_PREFIX} simulation executed no agent, so none of the ${scenario.expectedBehaviors.length} expected behaviors of "${scenario.id}" were checked — run with mode "real" to verify`,
+    ],
+    behaviorsMatched: 0,
+    behaviorsTotal: scenario.expectedBehaviors.length,
+    output: `Task: ${scenario.taskPrompt}\n\n[Simulated] No agent was executed and nothing was verified.`,
     startedAt,
     completedAt,
   }

@@ -4,6 +4,33 @@ import { effectCmd } from "../effect-cmd"
 import { cmd } from "./cmd"
 import { Eval } from "@/eval"
 import { commandExecutor, runScenarioReal } from "@/eval/real-runner"
+import type { ScenarioResult } from "@/eval/scenario"
+
+/**
+ * Outcome label. An unverified run must never be printed as PASS (it would
+ * manufacture confidence) nor as FAIL (it would manufacture a phantom bug).
+ */
+function outcome(sc: ScenarioResult): string {
+  if (sc.verdict === "unverified") return "UNVERIFIED"
+  return sc.success ? "PASS" : "FAIL"
+}
+
+function outcomeMark(sc: ScenarioResult): string {
+  if (sc.verdict === "unverified") return "\u26A0 UNVERIFIED"
+  return sc.success ? "\u2713 PASS" : "\u2717 FAIL"
+}
+
+/** Warn once per report when nothing was actually checked. */
+function unverifiedHint(scenarios: ScenarioResult[]): string {
+  const count = scenarios.filter((s) => s.verdict === "unverified").length
+  if (count === 0) return ""
+  return (
+    "  Unverified: " + count + "/" + scenarios.length + EOL +
+    "              simulated runs execute no agent and prove nothing." + EOL +
+    "              Use --runner real (or OPENCODE_DAEMON_EVAL_REAL=1) to verify." + EOL
+  )
+}
+
 
 function parseModelArg(value: string): { providerID: string; modelID: string } {
   const [providerID, ...rest] = value.split("/")
@@ -115,7 +142,7 @@ const RunCommand = effectCmd({
         const sc = yield* runScenarioReal(scenario, commandExecutor(realCommand))
         const report = yield* svc.recordRun([sc], scenario.id, scenario.name)
         process.stdout.write("" + EOL)
-        process.stdout.write("  Result:     " + (sc.success ? "PASS" : "FAIL") + EOL)
+        process.stdout.write("  Result:     " + outcome(sc) + EOL)
         process.stdout.write("  Behaviors:  " + sc.behaviorsMatched + "/" + sc.behaviorsTotal + EOL)
         process.stdout.write("  Duration:   " + sc.durationMs + "ms" + EOL)
         process.stdout.write("  Tokens:     " + sc.tokensUsed + EOL)
@@ -128,7 +155,7 @@ const RunCommand = effectCmd({
       const report = yield* svc.recordRun(result.scenarios, scenario.id, scenario.name)
       process.stdout.write("" + EOL)
       for (const sc of result.scenarios) {
-        process.stdout.write("  Result:     " + (sc.success ? "PASS" : "FAIL") + EOL)
+        process.stdout.write("  Result:     " + outcome(sc) + EOL)
         process.stdout.write("  Behaviors:  " + sc.behaviorsMatched + "/" + sc.behaviorsTotal + EOL)
         process.stdout.write("  Duration:   " + sc.durationMs + "ms" + EOL)
         process.stdout.write("  Tokens:     " + sc.tokensUsed + EOL)
@@ -158,12 +185,13 @@ const RunCommand = effectCmd({
         process.stdout.write("" + EOL)
         for (const sc of report.scenarios) {
           process.stdout.write("  [" + sc.scenarioId + "] " + sc.scenarioName + "... " + EOL)
-          process.stdout.write("    " + (sc.success ? "✓ PASS" : "✗ FAIL") + "  " + sc.behaviorsMatched + "/" + sc.behaviorsTotal + "  " + sc.durationMs + "ms" + EOL)
+          process.stdout.write("    " + outcomeMark(sc) + "  " + sc.behaviorsMatched + "/" + sc.behaviorsTotal + "  " + sc.durationMs + "ms" + EOL)
         }
         process.stdout.write("" + EOL)
         process.stdout.write("  Suite:      " + suite.name + EOL)
         process.stdout.write("  Passed:     " + report.passed + "/" + report.totalScenarios + EOL)
         process.stdout.write("  Pass rate:  " + (report.passRate * 100).toFixed(1) + "%" + EOL)
+        process.stdout.write(unverifiedHint(report.scenarios))
         process.stdout.write("  Duration:   " + report.durationMs + "ms" + EOL)
         process.stdout.write("  Run ID:     " + report.runId + EOL)
         return
@@ -172,13 +200,14 @@ const RunCommand = effectCmd({
       process.stdout.write("" + EOL)
       for (const sc of report.scenarios) {
         process.stdout.write("  [" + sc.scenarioId + "] " + sc.scenarioName + "... " + EOL)
-        process.stdout.write("    " + (sc.success ? "\u2713 PASS" : "\u2717 FAIL") + "  " + sc.behaviorsMatched + "/" + sc.behaviorsTotal + "  " + sc.durationMs + "ms" + EOL)
+        process.stdout.write("    " + outcomeMark(sc) + "  " + sc.behaviorsMatched + "/" + sc.behaviorsTotal + "  " + sc.durationMs + "ms" + EOL)
       }
 
       process.stdout.write("" + EOL)
       process.stdout.write("  Suite:      " + suite.name + EOL)
       process.stdout.write("  Passed:     " + report.passed + "/" + report.totalScenarios + EOL)
       process.stdout.write("  Pass rate:  " + (report.passRate * 100).toFixed(1) + "%" + EOL)
+      process.stdout.write(unverifiedHint(report.scenarios))
       process.stdout.write("  Duration:   " + report.durationMs + "ms" + EOL)
       process.stdout.write("  Run ID:     " + report.runId + EOL)
       return

@@ -13,7 +13,15 @@ import {
   ALL_SUITES,
   type EvalScenario,
 } from "./scenario"
-import { autoEvaluate, validate, evaluateBehavior, executeScenarioInSandbox } from "./index"
+import {
+  autoEvaluate,
+  validate,
+  evaluateBehavior,
+  gradeBehavior,
+  scenarioVerdict,
+  simulateScenario,
+  executeScenarioInSandbox,
+} from "./index"
 import { commandExecutor, runScenarioReal, type RealScenarioExecutor } from "./real-runner"
 import { createSandbox } from "./sandbox"
 import { mkdtempSync, writeFileSync, existsSync, rmSync, readFileSync, mkdirSync } from "node:fs"
@@ -207,14 +215,16 @@ describe("evaluateBehavior", () => {
     expect(evaluateBehavior(behavior, "Nothing relevant", [], undefined)).toBe(false)
   })
 
-  it("should fall back to keyword matching when validationCommand exists but no cwd", () => {
+  it("reports unverified — never a pass — when validationCommand exists but cannot run", () => {
     const behavior = {
       description: "File exists",
       requiredKeywords: ["test.txt"],
       validationCommand: `node -e "require('fs').existsSync('test.txt') && process.exit(0) || process.exit(1)"`,
     }
-    // No cwd — falls back to keyword matching
-    expect(evaluateBehavior(behavior, "hello test.txt world", [], undefined)).toBe(true)
+    // No cwd: the functional contract was never executed. Grading on the prose
+    // instead would let an agent pass by merely naming the file it never wrote.
+    expect(gradeBehavior(behavior, "hello test.txt world", [], undefined)).toBe("unverified")
+    expect(evaluateBehavior(behavior, "hello test.txt world", [], undefined)).toBe(false)
   })
 
   it("should use anti-patterns in fallback mode", () => {
@@ -262,15 +272,16 @@ describe("autoEvaluate with functional validation", () => {
     }
   })
 
-  it("should fall back to keyword matching when no cwd provided", () => {
+  it("counts behaviors as unverified — not matched — when no cwd is provided", () => {
     const scenario = getScenario("hello-world")!
     const result = autoEvaluate(
       scenario,
       "Created hello_eval.py with Hello, Eval Framework!",
       ["write"],
-      // no cwd → keyword matching
+      // no cwd → both behaviors declare a validationCommand that cannot run
     )
-    expect(result.matched).toBeGreaterThan(0)
+    expect(result.unverified).toBe(result.total)
+    expect(result.matched).toBe(0)
   })
 
   it("should fail validation when required file is missing", () => {
@@ -349,6 +360,7 @@ describe("Sandbox isolation", () => {
       scenarioId: "sandbox-test",
       scenarioName: "Sandbox Test",
       success: true,
+      verdict: "pass",
       durationMs: 0,
       tokensUsed: 0,
       toolCalls: 0,
@@ -437,7 +449,9 @@ describe("Sandbox isolation", () => {
       executeScenarioInSandbox(getScenario("hello-world")!, { mode: "auto" }),
     )
     expect(result.scenarioId).toBe("hello-world")
-    expect(result.success).toBe(true)
+    // No agent runs inside a simulated sandbox, so nothing is verified.
+    expect(result.success).toBe(false)
+    expect(result.verdict).toBe("unverified")
     expect(result.scenarioName).toBe("Hello World")
   })
 })
@@ -494,6 +508,105 @@ describe("real runner", () => {
     expect(result.success).toBe(true)
     expect(result.toolCalls).toBe(1)
     expect(result.output).toContain("command")
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Harness self-check — can this harness actually go red?
+//
+// A test suite that cannot fail is worse than no suite: it manufactures
+// confidence. These tests are mutation tests aimed at the harness itself. They
+// assert that an agent which does nothing, or a run which verifies nothing, is
+// never reported as a success.
+// ---------------------------------------------------------------------------
+
+describe("harness self-check", () => {
+  const simOpts = { mode: "auto", failFast: false, record: false } as const
+
+  test("simulation never reports success for any built-in scenario", () => {
+    for (const scenario of Object.values(ALL_SCENARIOS)) {
+      const result = simulateScenario(scenario, simOpts)
+      expect(result.success).toBe(false)
+      expect(result.verdict).toBe("unverified")
+      expect(result.errors.join(" ")).toContain("UNVERIFIED:")
+    }
+  })
+
+  test("simulation does not fabricate tool calls from the scenario's own expectations", () => {
+    // The regression this guards: seeding toolCalls with every requiredAction
+    // made each action assertion true by construction.
+    const withActions = Object.values(ALL_SCENARIOS).filter((s) =>
+      s.expectedBehaviors.some((b) => (b.requiredActions?.length ?? 0) > 0),
+    )
+    expect(withActions.length).toBeGreaterThan(0)
+    for (const scenario of withActions) {
+      const result = simulateScenario(scenario, simOpts)
+      expect(result.toolCalls).toBe(0)
+      expect(result.behaviorsMatched).toBe(0)
+    }
+  })
+
+  test("the default sanity suite cannot be green without running an agent", () => {
+    const suite = getSuite("sanity")!
+    const results = suite.scenarios.map((s) => simulateScenario(s, simOpts))
+    expect(results.length).toBeGreaterThan(0)
+    expect(results.filter((r) => r.success)).toHaveLength(0)
+  })
+
+  test("an agent that only claims success cannot pass a functionally validated scenario", async () => {
+    // Says the right words, reports the right tool call, produces no artifact.
+    const liar: RealScenarioExecutor = () =>
+      Effect.succeed({
+        output: "Created hello_eval.py containing Hello, Eval Framework!",
+        toolCalls: ["write"],
+        errors: [],
+      })
+
+    const result = await Effect.runPromise(runScenarioReal(getScenario("hello-world")!, liar))
+
+    expect(result.success).toBe(false)
+    expect(result.verdict).toBe("fail")
+  })
+
+  test("no built-in scenario can be passed by an agent that does nothing at all", async () => {
+    const noop: RealScenarioExecutor = () =>
+      Effect.succeed({ output: "", toolCalls: [], errors: [] })
+
+    for (const scenario of Object.values(ALL_SCENARIOS)) {
+      const result = await Effect.runPromise(runScenarioReal(scenario, noop))
+      expect(result.success).toBe(false)
+    }
+  }, 60_000)
+
+  test("half the expectations passing is a failure, not a success", () => {
+    // Guards the removed `matched >= ceil(total / 2)` threshold.
+    expect(scenarioVerdict({ matched: 2, total: 4, unverified: 0 }, [])).toBe("fail")
+    expect(scenarioVerdict({ matched: 3, total: 4, unverified: 0 }, [])).toBe("fail")
+    expect(scenarioVerdict({ matched: 4, total: 4, unverified: 0 }, [])).toBe("pass")
+  })
+
+  test("an unchecked expectation blocks a pass", () => {
+    expect(scenarioVerdict({ matched: 3, total: 4, unverified: 1 }, [])).toBe("unverified")
+    expect(scenarioVerdict({ matched: 4, total: 4, unverified: 0 }, ["boom"])).toBe("fail")
+  })
+
+  test("an empty contract cannot be passed", () => {
+    expect(scenarioVerdict({ matched: 0, total: 0, unverified: 0 }, [])).toBe("unverified")
+  })
+
+  test("a validation command that actually runs still decides pass and fail", () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "eval-selfcheck-"))
+    try {
+      const behavior = {
+        description: "File exists",
+        validationCommand: `node -e "require('fs').existsSync('a.txt') && process.exit(0) || process.exit(1)"`,
+      }
+      expect(gradeBehavior(behavior, "", [], tmpDir)).toBe("fail")
+      writeFileSync(join(tmpDir, "a.txt"), "x")
+      expect(gradeBehavior(behavior, "", [], tmpDir)).toBe("pass")
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true })
+    }
   })
 })
 

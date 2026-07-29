@@ -218,6 +218,17 @@ export const runSanityEval = Effect.fnUntraced(function* () {
     if (real) log.info("sanity eval: REAL runner enabled (OPENCODE_DAEMON_EVAL_REAL=1)")
     const report = yield* evalSvc.runSuite("sanity", real ? { mode: "real" } : undefined)
 
+    // A simulated run executes no agent and therefore verifies nothing. Comparing
+    // its pass rate to a baseline would report a permanent phantom regression and
+    // enqueue an investigation task every hour. Say the truth once instead.
+    if (report.scenarios.every((sc) => sc.verdict === "unverified")) {
+      log.warn("sanity eval verified nothing: simulated mode runs no agent", {
+        scenarios: report.totalScenarios,
+        hint: "set OPENCODE_DAEMON_EVAL_REAL=1 to actually exercise the agent",
+      })
+      return
+    }
+
     const baselineOpt = yield* Effect.option(evalSvc.getBaseline("sanity"))
     if (baselineOpt._tag === "Some") {
       const bl = baselineOpt.value
