@@ -1,0 +1,895 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:modeler="http://camunda.org/schema/modeler/1.0" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_dgdsp_parrainage" targetNamespace="http://bpmn.io/schema/bpmn" exporter="Camunda Web Modeler" exporterVersion="f51c130" modeler:executionPlatform="Camunda Cloud" modeler:executionPlatformVersion="8.8.0">
+  <bpmn:collaboration id="Collaboration_dgdsp_parrainage">
+    <bpmn:participant id="Participant_SG" name="Secrétariat Général" processRef="Process_SG" />
+    <bpmn:participant id="Participant_DGDSP" name="DGDSP" processRef="Process_DGDSP" />
+    <bpmn:participant id="Participant_AgentDelegue" name="Agent délégué (direction concernée)" processRef="Process_AgentDelegue" />
+    <bpmn:participant id="Participant_Destinataire" name="Destinataire" processRef="Process_Destinataire" />
+
+    <bpmn:messageFlow id="MF1" name="Courrier + fiche de transmission" sourceRef="Task_EnvoyerCourrierSG" targetRef="Event_ReceptionCourrierSecretariat" />
+    <bpmn:messageFlow id="MF2" name="Courrier (navette physique)" sourceRef="Task_TransmettreNavetteAgentDelegue" targetRef="Event_ReceptionCourrierAgent" />
+    <bpmn:messageFlow id="MF3" name="Réponse rédigée (navette)" sourceRef="Task_RedigerReponse" targetRef="Event_ReceptionReponseAgent" />
+    <bpmn:messageFlow id="MF4" name="Demande de correction" sourceRef="Task_TransmettreCorrectionAgent" targetRef="Event_ReceptionDemandeCorrection" />
+    <bpmn:messageFlow id="MF5" name="Réponse corrigée" sourceRef="Task_CorrigerReponse" targetRef="Event_ReceptionReponseCorrigee" />
+    <bpmn:messageFlow id="MF6" name="Réponse paraphée (navette)" sourceRef="Task_TransmettreNavetteSG" targetRef="Event_ReceptionReponseParaphee_SG" />
+    <bpmn:messageFlow id="MF7" name="Notification : dossier prêt" sourceRef="Task_ValiderDossierFinalSG" targetRef="Event_ReceptionNotificationDossierPret" />
+    <bpmn:messageFlow id="MF8" name="Courrier de réponse" sourceRef="Task_TransmettreCourrierDestinataire" targetRef="Event_ReceptionCourrierDestinataire" />
+    <bpmn:messageFlow id="MF9" name="Décharge signée (papier)" sourceRef="Task_SignerDecharge" targetRef="Event_ReceptionDecharge" />
+  </bpmn:collaboration>
+
+  <bpmn:process id="Process_SG" isExecutable="true">
+    <bpmn:startEvent id="StartEvent_SG" name="Besoin d'orienter le courrier vers la DGDSP">
+      <bpmn:outgoing>SF1</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <bpmn:userTask id="Task_EnvoyerCourrierSG" name="Envoyer le courrier et la fiche de transmission">
+      <bpmn:extensionElements><zeebe:userTask /></bpmn:extensionElements>
+      <bpmn:documentation>Le Secrétariat Général envoie le courrier de l'usager (TPE/PME) et la fiche de transmission au format physique au secrétariat de la DGDSP.</bpmn:documentation>
+      <bpmn:incoming>SF1</bpmn:incoming>
+      <bpmn:outgoing>SF2</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:intermediateCatchEvent id="Event_ReceptionReponseParaphee_SG" name="Réception de la réponse paraphée">
+      <bpmn:outgoing>SF3</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MessageEventDefinition_reponseParaphee" />
+    </bpmn:intermediateCatchEvent>
+
+    <bpmn:userTask id="Task_ValiderDossierFinalSG" name="Valider le dossier final et notifier la DGDSP">
+      <bpmn:extensionElements><zeebe:userTask /></bpmn:extensionElements>
+      <bpmn:documentation>Le Secrétariat Général valide le dossier reçu (paraphe uniquement, dernier niveau non atteint côté DGDSP) puis notifie la DGDSP que le dossier final est prêt.</bpmn:documentation>
+      <bpmn:incoming>SF3</bpmn:incoming>
+      <bpmn:outgoing>SF4</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:endEvent id="EndEvent_SG_Envoi">
+      <bpmn:incoming>SF2</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:endEvent id="EndEvent_SG">
+      <bpmn:incoming>SF4</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:sequenceFlow id="SF1" sourceRef="StartEvent_SG" targetRef="Task_EnvoyerCourrierSG" />
+    <bpmn:sequenceFlow id="SF2" sourceRef="Task_EnvoyerCourrierSG" targetRef="EndEvent_SG_Envoi" />
+    <bpmn:sequenceFlow id="SF3" sourceRef="Event_ReceptionReponseParaphee_SG" targetRef="Task_ValiderDossierFinalSG" />
+    <bpmn:sequenceFlow id="SF4" sourceRef="Task_ValiderDossierFinalSG" targetRef="EndEvent_SG" />
+  </bpmn:process>
+
+  <bpmn:process id="Process_DGDSP" isExecutable="true">
+    <bpmn:laneSet id="LaneSet_DGDSP">
+      <bpmn:lane id="Lane_Secretariat" name="Secrétariat DGDSP">
+        <bpmn:flowNodeRef>Event_ReceptionCourrierSecretariat</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_EnregistrerCourrierArrive</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_TransmettreCourrierDG</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_AttendreSignatureDG</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_ReceptionnerCourrierSigne</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_EnregistrerRegistreTransmission</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_TransmettreNavetteAgentDelegue</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_AttendreReponseAgentDelegue</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Event_ReceptionReponseAgent</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_TransmettreReponseDG</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_TransmettreCorrectionAgent</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Event_ReceptionReponseCorrigee</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_AttendreParapheSignatureDG</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_ReceptionnerReponseParaphee</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_TransmettreNavetteSG</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_AttendreReponseSG</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Event_ReceptionNotificationDossierPret</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_RecupererCopieDossier</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_ClasserDossier</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_Branche14_1</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_RecupererReponseSigneeParaphee</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_EnregistrerDepartTransmettreCoursier</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_ClasserDecharge</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_Branche14_2</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Directeur" name="Directeur Général DGDSP">
+        <bpmn:flowNodeRef>Task_RemplirFicheEtSigner</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_ValiderOuCorriger</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_ValidationDG</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_ForkParapheSignature</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_ParapherSignerDG</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_TypeValidation</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Coursier" name="Coursier">
+        <bpmn:flowNodeRef>Task_TransmettreCourrierDestinataire</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_AttendreDechargeCoursier</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Event_ReceptionDecharge</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+
+    <bpmn:intermediateCatchEvent id="Event_ReceptionCourrierSecretariat" name="Réception du courrier du Secrétariat Général">
+      <bpmn:outgoing>SF5</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MessageEventDefinition_courrierSG" />
+    </bpmn:intermediateCatchEvent>
+
+    <bpmn:userTask id="Task_EnregistrerCourrierArrive" name="Enregistrer le courrier dans le registre de courrier arrivé">
+      <bpmn:extensionElements><zeebe:userTask /></bpmn:extensionElements>
+      <bpmn:documentation>Registre physique de courrier arrivé, tenu manuellement.</bpmn:documentation>
+      <bpmn:incoming>SF5</bpmn:incoming>
+      <bpmn:outgoing>SF6</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_TransmettreCourrierDG" name="Transmettre le courrier au DG">
+      <bpmn:extensionElements><zeebe:userTask /></bpmn:extensionElements>
+      <bpmn:incoming>SF6</bpmn:incoming>
+      <bpmn:outgoing>SF7</bpmn:outgoing>
+      <bpmn:outgoing>SF8</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_RemplirFicheEtSigner" name="Remplir la fiche de correspondance (avec l'agent délégué) et signer">
+      <bpmn:extensionElements><zeebe:userTask /></bpmn:extensionElements>
+      <bpmn:documentation>Le DG désigne l'agent délégué dans la direction concernée sur la fiche de correspondance papier et signe.</bpmn:documentation>
+      <bpmn:incoming>SF7</bpmn:incoming>
+      <bpmn:outgoing>SF9</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_AttendreSignatureDG" name="Attendre la signature du DG">
+      <bpmn:extensionElements><zeebe:userTask /></bpmn:extensionElements>
+      <bpmn:documentation>Le secrétariat de la DGDSP patiente pendant que le DG remplit la fiche de correspondance et signe.</bpmn:documentation>
+      <bpmn:incoming>SF8</bpmn:incoming>
+      <bpmn:outgoing>SF10</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_ReceptionnerCourrierSigne" name="Réceptionner le courrier et la fiche signés">
+      <bpmn:extensionElements><zeebe:userTask /></bpmn:extensionElements>
+      <bpmn:incoming>SF9</bpmn:incoming>
+      <bpmn:incoming>SF10</bpmn:incoming>
+      <bpmn:outgoing>SF11</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_EnregistrerRegistreTransmission" name="Enregistrer le courrier dans le registre de transmission">
+      <bpmn:extensionElements><zeebe:userTask /></bpmn:extensionElements>
+      <bpmn:incoming>SF11</bpmn:incoming>
+      <bpmn:outgoing>SF12</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_TransmettreNavetteAgentDelegue" name="Transmettre le courrier par navette physique à l'agent délégué">
+      <bpmn:extensionElements><zeebe:userTask /></bpmn:extensionElements>
+      <bpmn:incoming>SF12</bpmn:incoming>
+      <bpmn:outgoing>SF13</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_AttendreReponseAgentDelegue" name="Attendre la réponse de l'agent délégué">
+      <bpmn:extensionElements><zeebe:userTask /></bpmn:extensionElements>
+      <bpmn:documentation>Après avoir remis le courrier et signé le registre de transmission avec l'agent délégué, le secrétariat de la DGDSP attend la réponse rédigée.</bpmn:documentation>
+      <bpmn:incoming>SF13</bpmn:incoming>
+      <bpmn:outgoing>SF14</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:intermediateCatchEvent id="Event_ReceptionReponseAgent" name="Réception de la réponse de l'agent délégué">
+      <bpmn:outgoing>SF15</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MessageEventDefinition_reponseAgent" />
+    </bpmn:intermediateCatchEvent>
+
+    <bpmn:userTask id="Task_TransmettreReponseDG" name="Transmettre la réponse au DG">
+      <bpmn:extensionElements><zeebe:userTask /></bpmn:extensionElements>
+      <bpmn:incoming>SF14</bpmn:incoming>
+      <bpmn:incoming>SF15</bpmn:incoming>
+      <bpmn:incoming>SF23</bpmn:incoming>
+      <bpmn:outgoing>SF16</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_ValiderOuCorriger" name="Valider la réponse ou suggérer des corrections">
+      <bpmn:extensionElements><zeebe:userTask /></bpmn:extensionElements>
+      <bpmn:incoming>SF16</bpmn:incoming>
+      <bpmn:outgoing>SF17</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:exclusiveGateway id="Gateway_ValidationDG" name="Correction nécessaire ?">
+      <bpmn:incoming>SF17</bpmn:incoming>
+      <bpmn:outgoing>SF18</bpmn:outgoing>
+      <bpmn:outgoing>SF19</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:userTask id="Task_TransmettreCorrectionAgent" name="Transmettre la suggestion de correction à l'agent délégué">
+      <bpmn:extensionElements><zeebe:userTask /></bpmn:extensionElements>
+      <bpmn:incoming>SF18</bpmn:incoming>
+      <bpmn:outgoing>SF20</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:intermediateCatchEvent id="Event_ReceptionReponseCorrigee" name="Réception de la réponse corrigée">
+      <bpmn:outgoing>SF23</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MessageEventDefinition_reponseCorrigee" />
+    </bpmn:intermediateCatchEvent>
+
+    <bpmn:parallelGateway id="Gateway_ForkParapheSignature" name="Paraphe / signature en cours">
+      <bpmn:incoming>SF19</bpmn:incoming>
+      <bpmn:outgoing>SF21</bpmn:outgoing>
+      <bpmn:outgoing>SF22</bpmn:outgoing>
+    </bpmn:parallelGateway>
+
+    <bpmn:userTask id="Task_ParapherSignerDG" name="Parapher et/ou signer la réponse">
+      <bpmn:extensionElements><zeebe:userTask /></bpmn:extensionElements>
+      <bpmn:documentation>Le DG signe si c'est le dernier niveau de validation, sinon paraphe uniquement (le Secrétariat Général devra valider).</bpmn:documentation>
+      <bpmn:incoming>SF21</bpmn:incoming>
+      <bpmn:outgoing>SF24</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_AttendreParapheSignatureDG" name="Attendre le paraphe / la signature du DG">
+      <bpmn:extensionElements><zeebe:userTask /></bpmn:extensionElements>
+      <bpmn:incoming>SF22</bpmn:incoming>
+      <bpmn:outgoing>SF25</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_ReceptionnerReponseParaphee" name="Réceptionner la réponse paraphée et/ou signée">
+      <bpmn:extensionElements><zeebe:userTask /></bpmn:extensionElements>
+      <bpmn:incoming>SF24</bpmn:incoming>
+      <bpmn:incoming>SF25</bpmn:incoming>
+      <bpmn:outgoing>SF26</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:exclusiveGateway id="Gateway_TypeValidation" name="Paraphe uniquement (SG valide) ou signature finale ?">
+      <bpmn:incoming>SF26</bpmn:incoming>
+      <bpmn:outgoing>SF27</bpmn:outgoing>
+      <bpmn:outgoing>SF28</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:userTask id="Task_TransmettreNavetteSG" name="Transmettre la réponse par navette au Secrétariat Général">
+      <bpmn:extensionElements><zeebe:userTask /></bpmn:extensionElements>
+      <bpmn:incoming>SF27</bpmn:incoming>
+      <bpmn:outgoing>SF29</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_AttendreReponseSG" name="Attendre la réponse du Secrétariat Général">
+      <bpmn:extensionElements><zeebe:userTask /></bpmn:extensionElements>
+      <bpmn:incoming>SF29</bpmn:incoming>
+      <bpmn:outgoing>SF30</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:intermediateCatchEvent id="Event_ReceptionNotificationDossierPret" name="Réception de la notification : dossier prêt">
+      <bpmn:outgoing>SF31</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MessageEventDefinition_dossierPret" />
+    </bpmn:intermediateCatchEvent>
+
+    <bpmn:userTask id="Task_RecupererCopieDossier" name="Se déplacer pour récupérer la copie du dossier final">
+      <bpmn:extensionElements><zeebe:userTask /></bpmn:extensionElements>
+      <bpmn:incoming>SF30</bpmn:incoming>
+      <bpmn:incoming>SF31</bpmn:incoming>
+      <bpmn:outgoing>SF32</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_ClasserDossier" name="Classer le dossier">
+      <bpmn:extensionElements><zeebe:userTask /></bpmn:extensionElements>
+      <bpmn:incoming>SF32</bpmn:incoming>
+      <bpmn:outgoing>SF33</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:endEvent id="EndEvent_Branche14_1">
+      <bpmn:incoming>SF33</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:userTask id="Task_RecupererReponseSigneeParaphee" name="Récupérer la réponse signée et paraphée">
+      <bpmn:extensionElements><zeebe:userTask /></bpmn:extensionElements>
+      <bpmn:incoming>SF28</bpmn:incoming>
+      <bpmn:outgoing>SF34</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_EnregistrerDepartTransmettreCoursier" name="Enregistrer au registre de courrier départ et transmettre au coursier">
+      <bpmn:extensionElements><zeebe:userTask /></bpmn:extensionElements>
+      <bpmn:incoming>SF34</bpmn:incoming>
+      <bpmn:outgoing>SF35</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_TransmettreCourrierDestinataire" name="Transmettre le courrier de réponse au destinataire">
+      <bpmn:extensionElements><zeebe:userTask /></bpmn:extensionElements>
+      <bpmn:incoming>SF35</bpmn:incoming>
+      <bpmn:outgoing>SF36</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_AttendreDechargeCoursier" name="Attendre la décharge">
+      <bpmn:extensionElements><zeebe:userTask /></bpmn:extensionElements>
+      <bpmn:incoming>SF36</bpmn:incoming>
+      <bpmn:outgoing>SF37</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:intermediateCatchEvent id="Event_ReceptionDecharge" name="Réception de la décharge">
+      <bpmn:outgoing>SF38</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MessageEventDefinition_decharge" />
+    </bpmn:intermediateCatchEvent>
+
+    <bpmn:userTask id="Task_ClasserDecharge" name="Classer la décharge">
+      <bpmn:extensionElements><zeebe:userTask /></bpmn:extensionElements>
+      <bpmn:incoming>SF37</bpmn:incoming>
+      <bpmn:incoming>SF38</bpmn:incoming>
+      <bpmn:outgoing>SF39</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:endEvent id="EndEvent_Branche14_2">
+      <bpmn:incoming>SF39</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:textAnnotation id="Annotation_CircuitPapier">
+      <bpmn:text>Point de friction structurel : circuit entièrement papier, aucune base de données centralisée, disponibilité du DG conditionne tout le délai de traitement.</bpmn:text>
+    </bpmn:textAnnotation>
+    <bpmn:association id="Association_CircuitPapier" sourceRef="Task_TransmettreNavetteAgentDelegue" targetRef="Annotation_CircuitPapier" />
+
+    <bpmn:sequenceFlow id="SF5" sourceRef="Event_ReceptionCourrierSecretariat" targetRef="Task_EnregistrerCourrierArrive" />
+    <bpmn:sequenceFlow id="SF6" sourceRef="Task_EnregistrerCourrierArrive" targetRef="Task_TransmettreCourrierDG" />
+    <bpmn:sequenceFlow id="SF7" sourceRef="Task_TransmettreCourrierDG" targetRef="Task_RemplirFicheEtSigner" />
+    <bpmn:sequenceFlow id="SF8" sourceRef="Task_TransmettreCourrierDG" targetRef="Task_AttendreSignatureDG" />
+    <bpmn:sequenceFlow id="SF9" sourceRef="Task_RemplirFicheEtSigner" targetRef="Task_ReceptionnerCourrierSigne" />
+    <bpmn:sequenceFlow id="SF10" sourceRef="Task_AttendreSignatureDG" targetRef="Task_ReceptionnerCourrierSigne" />
+    <bpmn:sequenceFlow id="SF11" sourceRef="Task_ReceptionnerCourrierSigne" targetRef="Task_EnregistrerRegistreTransmission" />
+    <bpmn:sequenceFlow id="SF12" sourceRef="Task_EnregistrerRegistreTransmission" targetRef="Task_TransmettreNavetteAgentDelegue" />
+    <bpmn:sequenceFlow id="SF13" sourceRef="Task_TransmettreNavetteAgentDelegue" targetRef="Task_AttendreReponseAgentDelegue" />
+    <bpmn:sequenceFlow id="SF14" sourceRef="Task_AttendreReponseAgentDelegue" targetRef="Task_TransmettreReponseDG" />
+    <bpmn:sequenceFlow id="SF15" sourceRef="Event_ReceptionReponseAgent" targetRef="Task_TransmettreReponseDG" />
+    <bpmn:sequenceFlow id="SF16" sourceRef="Task_TransmettreReponseDG" targetRef="Task_ValiderOuCorriger" />
+    <bpmn:sequenceFlow id="SF17" sourceRef="Task_ValiderOuCorriger" targetRef="Gateway_ValidationDG" />
+    <bpmn:sequenceFlow id="SF18" name="Suggestions" sourceRef="Gateway_ValidationDG" targetRef="Task_TransmettreCorrectionAgent" />
+    <bpmn:sequenceFlow id="SF19" name="Validé" sourceRef="Gateway_ValidationDG" targetRef="Gateway_ForkParapheSignature" />
+    <bpmn:sequenceFlow id="SF20" sourceRef="Task_TransmettreCorrectionAgent" targetRef="EndEvent_TransmissionCorrection" />
+    <bpmn:sequenceFlow id="SF21" sourceRef="Gateway_ForkParapheSignature" targetRef="Task_ParapherSignerDG" />
+    <bpmn:sequenceFlow id="SF22" sourceRef="Gateway_ForkParapheSignature" targetRef="Task_AttendreParapheSignatureDG" />
+    <bpmn:sequenceFlow id="SF23" sourceRef="Event_ReceptionReponseCorrigee" targetRef="Task_TransmettreReponseDG" />
+    <bpmn:sequenceFlow id="SF24" sourceRef="Task_ParapherSignerDG" targetRef="Task_ReceptionnerReponseParaphee" />
+    <bpmn:sequenceFlow id="SF25" sourceRef="Task_AttendreParapheSignatureDG" targetRef="Task_ReceptionnerReponseParaphee" />
+    <bpmn:sequenceFlow id="SF26" sourceRef="Task_ReceptionnerReponseParaphee" targetRef="Gateway_TypeValidation" />
+    <bpmn:sequenceFlow id="SF27" name="Paraphe seul + validation SG" sourceRef="Gateway_TypeValidation" targetRef="Task_TransmettreNavetteSG" />
+    <bpmn:sequenceFlow id="SF28" name="Signature (dernier niveau)" sourceRef="Gateway_TypeValidation" targetRef="Task_RecupererReponseSigneeParaphee" />
+    <bpmn:sequenceFlow id="SF29" sourceRef="Task_TransmettreNavetteSG" targetRef="Task_AttendreReponseSG" />
+    <bpmn:sequenceFlow id="SF30" sourceRef="Task_AttendreReponseSG" targetRef="Task_RecupererCopieDossier" />
+    <bpmn:sequenceFlow id="SF31" sourceRef="Event_ReceptionNotificationDossierPret" targetRef="Task_RecupererCopieDossier" />
+    <bpmn:sequenceFlow id="SF32" sourceRef="Task_RecupererCopieDossier" targetRef="Task_ClasserDossier" />
+    <bpmn:sequenceFlow id="SF33" sourceRef="Task_ClasserDossier" targetRef="EndEvent_Branche14_1" />
+    <bpmn:sequenceFlow id="SF34" sourceRef="Task_RecupererReponseSigneeParaphee" targetRef="Task_EnregistrerDepartTransmettreCoursier" />
+    <bpmn:sequenceFlow id="SF35" sourceRef="Task_EnregistrerDepartTransmettreCoursier" targetRef="Task_TransmettreCourrierDestinataire" />
+    <bpmn:sequenceFlow id="SF36" sourceRef="Task_TransmettreCourrierDestinataire" targetRef="Task_AttendreDechargeCoursier" />
+    <bpmn:sequenceFlow id="SF37" sourceRef="Task_AttendreDechargeCoursier" targetRef="Task_ClasserDecharge" />
+    <bpmn:sequenceFlow id="SF38" sourceRef="Event_ReceptionDecharge" targetRef="Task_ClasserDecharge" />
+    <bpmn:sequenceFlow id="SF39" sourceRef="Task_ClasserDecharge" targetRef="EndEvent_Branche14_2" />
+
+    <bpmn:endEvent id="EndEvent_TransmissionCorrection">
+      <bpmn:incoming>SF20</bpmn:incoming>
+    </bpmn:endEvent>
+  </bpmn:process>
+
+  <bpmn:process id="Process_AgentDelegue" isExecutable="true">
+    <bpmn:intermediateCatchEvent id="Event_ReceptionCourrierAgent" name="Réception du courrier">
+      <bpmn:outgoing>SFA1</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MessageEventDefinition_courrierAgent" />
+    </bpmn:intermediateCatchEvent>
+
+    <bpmn:userTask id="Task_RecupererCourrierEtSignerRegistre" name="Récupérer le courrier et signer le registre de transmission">
+      <bpmn:extensionElements><zeebe:userTask /></bpmn:extensionElements>
+      <bpmn:incoming>SFA1</bpmn:incoming>
+      <bpmn:outgoing>SFA2</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:userTask id="Task_RedigerReponse" name="Rédiger la réponse (rapport ou courrier)">
+      <bpmn:extensionElements><zeebe:userTask /></bpmn:extensionElements>
+      <bpmn:incoming>SFA2</bpmn:incoming>
+      <bpmn:outgoing>SFA3</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:endEvent id="EndEvent_Agent_Initial">
+      <bpmn:incoming>SFA3</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:intermediateCatchEvent id="Event_ReceptionDemandeCorrection" name="Réception de la demande de correction">
+      <bpmn:outgoing>SFA4</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MessageEventDefinition_demandeCorrection" />
+    </bpmn:intermediateCatchEvent>
+
+    <bpmn:userTask id="Task_CorrigerReponse" name="Corriger la réponse">
+      <bpmn:extensionElements><zeebe:userTask /></bpmn:extensionElements>
+      <bpmn:incoming>SFA4</bpmn:incoming>
+      <bpmn:outgoing>SFA5</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:endEvent id="EndEvent_Agent_Correction">
+      <bpmn:incoming>SFA5</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:sequenceFlow id="SFA1" sourceRef="Event_ReceptionCourrierAgent" targetRef="Task_RecupererCourrierEtSignerRegistre" />
+    <bpmn:sequenceFlow id="SFA2" sourceRef="Task_RecupererCourrierEtSignerRegistre" targetRef="Task_RedigerReponse" />
+    <bpmn:sequenceFlow id="SFA3" sourceRef="Task_RedigerReponse" targetRef="EndEvent_Agent_Initial" />
+    <bpmn:sequenceFlow id="SFA4" sourceRef="Event_ReceptionDemandeCorrection" targetRef="Task_CorrigerReponse" />
+    <bpmn:sequenceFlow id="SFA5" sourceRef="Task_CorrigerReponse" targetRef="EndEvent_Agent_Correction" />
+  </bpmn:process>
+
+  <bpmn:process id="Process_Destinataire" isExecutable="true">
+    <bpmn:intermediateCatchEvent id="Event_ReceptionCourrierDestinataire" name="Réception du courrier de réponse">
+      <bpmn:outgoing>SFD1</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MessageEventDefinition_courrierDestinataire" />
+    </bpmn:intermediateCatchEvent>
+
+    <bpmn:userTask id="Task_SignerDecharge" name="Réceptionner le courrier et signer la décharge">
+      <bpmn:extensionElements><zeebe:userTask /></bpmn:extensionElements>
+      <bpmn:incoming>SFD1</bpmn:incoming>
+      <bpmn:outgoing>SFD2</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:endEvent id="EndEvent_Destinataire">
+      <bpmn:incoming>SFD2</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:sequenceFlow id="SFD1" sourceRef="Event_ReceptionCourrierDestinataire" targetRef="Task_SignerDecharge" />
+    <bpmn:sequenceFlow id="SFD2" sourceRef="Task_SignerDecharge" targetRef="EndEvent_Destinataire" />
+  </bpmn:process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Collaboration_dgdsp_parrainage">
+      <bpmndi:BPMNShape id="Participant_SG_di" bpmnElement="Participant_SG" isHorizontal="true">
+        <dc:Bounds x="160" y="80" width="3760" height="220" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Participant_DGDSP_di" bpmnElement="Participant_DGDSP" isHorizontal="true">
+        <dc:Bounds x="160" y="340" width="3760" height="660" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Secretariat_di" bpmnElement="Lane_Secretariat" isHorizontal="true">
+        <dc:Bounds x="190" y="340" width="3730" height="300" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Directeur_di" bpmnElement="Lane_Directeur" isHorizontal="true">
+        <dc:Bounds x="190" y="640" width="3730" height="200" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Coursier_di" bpmnElement="Lane_Coursier" isHorizontal="true">
+        <dc:Bounds x="190" y="840" width="3730" height="160" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Participant_AgentDelegue_di" bpmnElement="Participant_AgentDelegue" isHorizontal="true">
+        <dc:Bounds x="160" y="1040" width="3760" height="220" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Participant_Destinataire_di" bpmnElement="Participant_Destinataire" isHorizontal="true">
+        <dc:Bounds x="160" y="1300" width="3760" height="200" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="StartEvent_SG_di" bpmnElement="StartEvent_SG">
+        <dc:Bounds x="182" y="172" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="158" y="215" width="84" height="53" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_EnvoyerCourrierSG_di" bpmnElement="Task_EnvoyerCourrierSG">
+        <dc:Bounds x="350" y="150" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_SG_Envoi_di" bpmnElement="EndEvent_SG_Envoi">
+        <dc:Bounds x="500" y="172" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_ReceptionReponseParaphee_SG_di" bpmnElement="Event_ReceptionReponseParaphee_SG">
+        <dc:Bounds x="2932" y="172" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2908" y="215" width="84" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_ValiderDossierFinalSG_di" bpmnElement="Task_ValiderDossierFinalSG">
+        <dc:Bounds x="3050" y="150" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_SG_di" bpmnElement="EndEvent_SG">
+        <dc:Bounds x="3232" y="172" width="36" height="36" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Event_ReceptionCourrierSecretariat_di" bpmnElement="Event_ReceptionCourrierSecretariat">
+        <dc:Bounds x="482" y="442" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="458" y="485" width="84" height="53" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_EnregistrerCourrierArrive_di" bpmnElement="Task_EnregistrerCourrierArrive">
+        <dc:Bounds x="650" y="420" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_TransmettreCourrierDG_di" bpmnElement="Task_TransmettreCourrierDG">
+        <dc:Bounds x="800" y="420" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_RemplirFicheEtSigner_di" bpmnElement="Task_RemplirFicheEtSigner">
+        <dc:Bounds x="950" y="700" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_AttendreSignatureDG_di" bpmnElement="Task_AttendreSignatureDG">
+        <dc:Bounds x="950" y="420" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_ReceptionnerCourrierSigne_di" bpmnElement="Task_ReceptionnerCourrierSigne">
+        <dc:Bounds x="1100" y="420" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_EnregistrerRegistreTransmission_di" bpmnElement="Task_EnregistrerRegistreTransmission">
+        <dc:Bounds x="1250" y="420" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_TransmettreNavetteAgentDelegue_di" bpmnElement="Task_TransmettreNavetteAgentDelegue">
+        <dc:Bounds x="1400" y="420" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_AttendreReponseAgentDelegue_di" bpmnElement="Task_AttendreReponseAgentDelegue">
+        <dc:Bounds x="1550" y="420" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_ReceptionReponseAgent_di" bpmnElement="Event_ReceptionReponseAgent">
+        <dc:Bounds x="1732" y="442" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1708" y="485" width="84" height="53" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_TransmettreReponseDG_di" bpmnElement="Task_TransmettreReponseDG">
+        <dc:Bounds x="1850" y="420" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_ValiderOuCorriger_di" bpmnElement="Task_ValiderOuCorriger">
+        <dc:Bounds x="2000" y="700" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_ValidationDG_di" bpmnElement="Gateway_ValidationDG" isMarkerVisible="true">
+        <dc:Bounds x="2175" y="715" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2157" y="685" width="86" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_TransmettreCorrectionAgent_di" bpmnElement="Task_TransmettreCorrectionAgent">
+        <dc:Bounds x="2300" y="420" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_ForkParapheSignature_di" bpmnElement="Gateway_ForkParapheSignature">
+        <dc:Bounds x="2325" y="715" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2300" y="768" width="100" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_ReceptionDemandeCorrection_di" bpmnElement="Event_ReceptionDemandeCorrection">
+        <dc:Bounds x="2432" y="1132" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2408" y="1175" width="84" height="53" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_ParapherSignerDG_di" bpmnElement="Task_ParapherSignerDG">
+        <dc:Bounds x="2450" y="700" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_AttendreParapheSignatureDG_di" bpmnElement="Task_AttendreParapheSignatureDG">
+        <dc:Bounds x="2450" y="420" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_CorrigerReponse_di" bpmnElement="Task_CorrigerReponse">
+        <dc:Bounds x="2600" y="1110" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_ReceptionnerReponseParaphee_di" bpmnElement="Task_ReceptionnerReponseParaphee">
+        <dc:Bounds x="2600" y="420" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Agent_Correction_di" bpmnElement="EndEvent_Agent_Correction">
+        <dc:Bounds x="2782" y="1132" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_TypeValidation_di" bpmnElement="Gateway_TypeValidation" isMarkerVisible="true">
+        <dc:Bounds x="2775" y="715" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2750" y="600" width="100" height="107" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_ReceptionReponseCorrigee_di" bpmnElement="Event_ReceptionReponseCorrigee">
+        <dc:Bounds x="2782" y="442" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2758" y="485" width="84" height="53" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_TransmettreNavetteSG_di" bpmnElement="Task_TransmettreNavetteSG">
+        <dc:Bounds x="2900" y="420" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_AttendreReponseSG_di" bpmnElement="Task_AttendreReponseSG">
+        <dc:Bounds x="3050" y="420" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_ReceptionNotificationDossierPret_di" bpmnElement="Event_ReceptionNotificationDossierPret">
+        <dc:Bounds x="3232" y="442" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3208" y="485" width="84" height="53" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_RecupererCopieDossier_di" bpmnElement="Task_RecupererCopieDossier">
+        <dc:Bounds x="3350" y="420" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_ClasserDossier_di" bpmnElement="Task_ClasserDossier">
+        <dc:Bounds x="3500" y="420" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Branche14_1_di" bpmnElement="EndEvent_Branche14_1">
+        <dc:Bounds x="3682" y="442" width="36" height="36" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Task_RecupererReponseSigneeParaphee_di" bpmnElement="Task_RecupererReponseSigneeParaphee">
+        <dc:Bounds x="2900" y="540" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_EnregistrerDepartTransmettreCoursier_di" bpmnElement="Task_EnregistrerDepartTransmettreCoursier">
+        <dc:Bounds x="3050" y="540" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_TransmettreCourrierDestinataire_di" bpmnElement="Task_TransmettreCourrierDestinataire">
+        <dc:Bounds x="3200" y="880" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_AttendreDechargeCoursier_di" bpmnElement="Task_AttendreDechargeCoursier">
+        <dc:Bounds x="3350" y="880" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_ReceptionDecharge_di" bpmnElement="Event_ReceptionDecharge">
+        <dc:Bounds x="3532" y="902" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3508" y="945" width="84" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_ClasserDecharge_di" bpmnElement="Task_ClasserDecharge">
+        <dc:Bounds x="3650" y="540" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Branche14_2_di" bpmnElement="EndEvent_Branche14_2">
+        <dc:Bounds x="3800" y="562" width="36" height="36" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="EndEvent_TransmissionCorrection_di" bpmnElement="EndEvent_TransmissionCorrection">
+        <dc:Bounds x="2332" y="562" width="36" height="36" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Annotation_CircuitPapier_di" bpmnElement="Annotation_CircuitPapier">
+        <dc:Bounds x="1400" y="240" width="260" height="100" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Event_ReceptionCourrierAgent_di" bpmnElement="Event_ReceptionCourrierAgent">
+        <dc:Bounds x="1382" y="1132" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1358" y="1175" width="84" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_RecupererCourrierEtSignerRegistre_di" bpmnElement="Task_RecupererCourrierEtSignerRegistre">
+        <dc:Bounds x="1550" y="1110" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_RedigerReponse_di" bpmnElement="Task_RedigerReponse">
+        <dc:Bounds x="1700" y="1110" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Agent_Initial_di" bpmnElement="EndEvent_Agent_Initial">
+        <dc:Bounds x="1882" y="1132" width="36" height="36" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Event_ReceptionCourrierDestinataire_di" bpmnElement="Event_ReceptionCourrierDestinataire">
+        <dc:Bounds x="3232" y="1382" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3208" y="1425" width="84" height="53" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_SignerDecharge_di" bpmnElement="Task_SignerDecharge">
+        <dc:Bounds x="3350" y="1360" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Destinataire_di" bpmnElement="EndEvent_Destinataire">
+        <dc:Bounds x="3532" y="1382" width="36" height="36" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNEdge id="SF1_di" bpmnElement="SF1">
+        <di:waypoint x="218" y="190" />
+        <di:waypoint x="350" y="190" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF2_di" bpmnElement="SF2">
+        <di:waypoint x="450" y="190" />
+        <di:waypoint x="500" y="190" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF3_di" bpmnElement="SF3">
+        <di:waypoint x="2968" y="190" />
+        <di:waypoint x="3050" y="190" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF4_di" bpmnElement="SF4">
+        <di:waypoint x="3150" y="190" />
+        <di:waypoint x="3232" y="190" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="SF5_di" bpmnElement="SF5">
+        <di:waypoint x="518" y="460" />
+        <di:waypoint x="650" y="460" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF6_di" bpmnElement="SF6">
+        <di:waypoint x="750" y="460" />
+        <di:waypoint x="800" y="460" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF7_di" bpmnElement="SF7">
+        <di:waypoint x="850" y="500" />
+        <di:waypoint x="850" y="740" />
+        <di:waypoint x="950" y="740" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF8_di" bpmnElement="SF8">
+        <di:waypoint x="900" y="460" />
+        <di:waypoint x="950" y="460" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF9_di" bpmnElement="SF9">
+        <di:waypoint x="1050" y="740" />
+        <di:waypoint x="1150" y="740" />
+        <di:waypoint x="1150" y="500" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF10_di" bpmnElement="SF10">
+        <di:waypoint x="1050" y="460" />
+        <di:waypoint x="1100" y="460" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF11_di" bpmnElement="SF11">
+        <di:waypoint x="1200" y="460" />
+        <di:waypoint x="1250" y="460" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF12_di" bpmnElement="SF12">
+        <di:waypoint x="1350" y="460" />
+        <di:waypoint x="1400" y="460" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF13_di" bpmnElement="SF13">
+        <di:waypoint x="1500" y="460" />
+        <di:waypoint x="1550" y="460" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF14_di" bpmnElement="SF14">
+        <di:waypoint x="1650" y="460" />
+        <di:waypoint x="1850" y="460" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF15_di" bpmnElement="SF15">
+        <di:waypoint x="1768" y="460" />
+        <di:waypoint x="1850" y="460" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF16_di" bpmnElement="SF16">
+        <di:waypoint x="1950" y="500" />
+        <di:waypoint x="1950" y="740" />
+        <di:waypoint x="2000" y="740" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF17_di" bpmnElement="SF17">
+        <di:waypoint x="2100" y="740" />
+        <di:waypoint x="2175" y="740" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF18_di" bpmnElement="SF18">
+        <di:waypoint x="2200" y="715" />
+        <di:waypoint x="2200" y="460" />
+        <di:waypoint x="2300" y="460" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF19_di" bpmnElement="SF19">
+        <di:waypoint x="2225" y="740" />
+        <di:waypoint x="2325" y="740" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF20_di" bpmnElement="SF20">
+        <di:waypoint x="2350" y="500" />
+        <di:waypoint x="2350" y="562" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF21_di" bpmnElement="SF21">
+        <di:waypoint x="2350" y="765" />
+        <di:waypoint x="2350" y="740" />
+        <di:waypoint x="2450" y="740" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF22_di" bpmnElement="SF22">
+        <di:waypoint x="2350" y="715" />
+        <di:waypoint x="2350" y="460" />
+        <di:waypoint x="2450" y="460" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF23_di" bpmnElement="SF23">
+        <di:waypoint x="2782" y="460" />
+        <di:waypoint x="1950" y="460" />
+        <di:waypoint x="1950" y="500" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF24_di" bpmnElement="SF24">
+        <di:waypoint x="2550" y="740" />
+        <di:waypoint x="2650" y="740" />
+        <di:waypoint x="2650" y="500" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF25_di" bpmnElement="SF25">
+        <di:waypoint x="2550" y="460" />
+        <di:waypoint x="2600" y="460" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF26_di" bpmnElement="SF26">
+        <di:waypoint x="2700" y="460" />
+        <di:waypoint x="2800" y="460" />
+        <di:waypoint x="2800" y="715" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF27_di" bpmnElement="SF27">
+        <di:waypoint x="2825" y="740" />
+        <di:waypoint x="2950" y="740" />
+        <di:waypoint x="2950" y="500" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF28_di" bpmnElement="SF28">
+        <di:waypoint x="2800" y="765" />
+        <di:waypoint x="2800" y="850" />
+        <di:waypoint x="2950" y="850" />
+        <di:waypoint x="2950" y="620" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF29_di" bpmnElement="SF29">
+        <di:waypoint x="3000" y="460" />
+        <di:waypoint x="3050" y="460" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF30_di" bpmnElement="SF30">
+        <di:waypoint x="3150" y="460" />
+        <di:waypoint x="3350" y="460" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF31_di" bpmnElement="SF31">
+        <di:waypoint x="3268" y="460" />
+        <di:waypoint x="3350" y="460" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF32_di" bpmnElement="SF32">
+        <di:waypoint x="3450" y="460" />
+        <di:waypoint x="3500" y="460" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF33_di" bpmnElement="SF33">
+        <di:waypoint x="3600" y="460" />
+        <di:waypoint x="3682" y="460" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF34_di" bpmnElement="SF34">
+        <di:waypoint x="3000" y="580" />
+        <di:waypoint x="3050" y="580" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF35_di" bpmnElement="SF35">
+        <di:waypoint x="3100" y="620" />
+        <di:waypoint x="3100" y="920" />
+        <di:waypoint x="3200" y="920" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF36_di" bpmnElement="SF36">
+        <di:waypoint x="3300" y="920" />
+        <di:waypoint x="3350" y="920" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF37_di" bpmnElement="SF37">
+        <di:waypoint x="3400" y="880" />
+        <di:waypoint x="3400" y="580" />
+        <di:waypoint x="3650" y="580" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF38_di" bpmnElement="SF38">
+        <di:waypoint x="3550" y="902" />
+        <di:waypoint x="3550" y="620" />
+        <di:waypoint x="3650" y="620" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SF39_di" bpmnElement="SF39">
+        <di:waypoint x="3750" y="580" />
+        <di:waypoint x="3800" y="580" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="SFA1_di" bpmnElement="SFA1">
+        <di:waypoint x="1418" y="1150" />
+        <di:waypoint x="1550" y="1150" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SFA2_di" bpmnElement="SFA2">
+        <di:waypoint x="1650" y="1150" />
+        <di:waypoint x="1700" y="1150" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SFA3_di" bpmnElement="SFA3">
+        <di:waypoint x="1800" y="1150" />
+        <di:waypoint x="1882" y="1150" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SFA4_di" bpmnElement="SFA4">
+        <di:waypoint x="2468" y="1150" />
+        <di:waypoint x="2600" y="1150" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SFA5_di" bpmnElement="SFA5">
+        <di:waypoint x="2700" y="1150" />
+        <di:waypoint x="2782" y="1150" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="SFD1_di" bpmnElement="SFD1">
+        <di:waypoint x="3268" y="1400" />
+        <di:waypoint x="3350" y="1400" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="SFD2_di" bpmnElement="SFD2">
+        <di:waypoint x="3450" y="1400" />
+        <di:waypoint x="3532" y="1400" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="MF1_di" bpmnElement="MF1">
+        <di:waypoint x="400" y="230" />
+        <di:waypoint x="400" y="380" />
+        <di:waypoint x="500" y="442" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF2_di" bpmnElement="MF2">
+        <di:waypoint x="1450" y="500" />
+        <di:waypoint x="1450" y="900" />
+        <di:waypoint x="1400" y="1132" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF3_di" bpmnElement="MF3">
+        <di:waypoint x="1750" y="1110" />
+        <di:waypoint x="1750" y="478" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF4_di" bpmnElement="MF4">
+        <di:waypoint x="2350" y="500" />
+        <di:waypoint x="2400" y="900" />
+        <di:waypoint x="2450" y="1132" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF5_di" bpmnElement="MF5">
+        <di:waypoint x="2650" y="1110" />
+        <di:waypoint x="2800" y="478" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF6_di" bpmnElement="MF6">
+        <di:waypoint x="2950" y="420" />
+        <di:waypoint x="2950" y="208" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF7_di" bpmnElement="MF7">
+        <di:waypoint x="3100" y="230" />
+        <di:waypoint x="3250" y="442" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF8_di" bpmnElement="MF8">
+        <di:waypoint x="3250" y="960" />
+        <di:waypoint x="3250" y="1382" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="MF9_di" bpmnElement="MF9">
+        <di:waypoint x="3400" y="1360" />
+        <di:waypoint x="3550" y="938" />
+      </bpmndi:BPMNEdge>
+
+      <bpmndi:BPMNEdge id="Association_CircuitPapier_di" bpmnElement="Association_CircuitPapier">
+        <di:waypoint x="1450" y="420" />
+        <di:waypoint x="1450" y="340" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

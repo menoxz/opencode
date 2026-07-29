@@ -1,0 +1,1060 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" id="Definitions_1" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:collaboration id="Collab_Renonciation_Reintegration" name="Renonciation &#38; Réintégration à la Nationalité Togolaise — Processus v1">
+    <bpmn:participant id="part_portal" name="Portal" processRef="proc_portal" />
+    <bpmn:participant id="part_xflow" name="xflow" processRef="proc_xflow" />
+    <bpmn:messageFlow id="mf_submission" name="MSG_SUBMISSION_RENONCIATION_REINTEGRATION" sourceRef="p_Activity_soumission" targetRef="x_xflow_start" />
+    <bpmn:messageFlow id="mf_decision_correction" name="MSG_DECISION_XFLOW" sourceRef="x_Activity_b05_notification_correction" targetRef="p_Activity_attente_instruction" />
+    <bpmn:messageFlow id="mf_decision_rejet" name="MSG_DECISION_XFLOW" sourceRef="x_Activity_b08_notification_rejet" targetRef="p_Activity_attente_instruction" />
+    <bpmn:messageFlow id="mf_decision_depot" name="MSG_DECISION_XFLOW" sourceRef="x_Activity_b09_notification_attente_depot" targetRef="p_Activity_attente_instruction" />
+    <bpmn:messageFlow id="mf_decision_disponibilite" name="MSG_DECISION_XFLOW" sourceRef="x_Activity_b16_notification_disponibilite" targetRef="p_Activity_attente_instruction" />
+    <bpmn:messageFlow id="mf_resubmission" name="MSG_RESUBMISSION_RENONCIATION_REINTEGRATION" sourceRef="p_Activity_send_correction" targetRef="x_Activity_b06_attente_ressoumission" />
+    <bpmn:messageFlow id="mf_retrait" name="MSG_RETRAIT_EFFECTUE" sourceRef="p_Activity_send_retrait" targetRef="x_Activity_b16b_receive_retrait" />
+  </bpmn:collaboration>
+  <bpmn:message id="Message_submission" name="MSG_SUBMISSION_RENONCIATION_REINTEGRATION" />
+  <bpmn:message id="Message_decision" name="MSG_DECISION_XFLOW" />
+  <bpmn:message id="Message_resubmission" name="MSG_RESUBMISSION_RENONCIATION_REINTEGRATION" />
+  <bpmn:message id="Message_retrait" name="MSG_RETRAIT_EFFECTUE" />
+  <bpmn:process id="proc_portal" name="Portail Citoyen — Renonciation &#38; Réintégration à la Nationalité Togolaise" isExecutable="false">
+    <bpmn:startEvent id="p_portal_start" name="Début de la procédure en ligne" camunda:modelerTemplate="tg.gouv.gnspd.startEvent" camunda:formKey="01KTM5AP5N2D83CM070CPKDPHV" camunda:type="external" camunda:topic="flow-start">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="gnspdStepName">Saisie de la demande de renonciation ou réintégration</camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:outgoing>Flow_p_portal_start_p_Activity_soumission</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:sendTask id="p_Activity_soumission" name="Soumettre le formulaire de renonciation/réintégration et les pièces justificatives via le portail" camunda:modelerTemplate="tg.gouv.gnspd.sendMessage" camunda:type="external" camunda:topic="flow-send-message">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="gnspdTaskKind">citizen</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdHandlerType">default</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdTaskIsVisible">true</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdMessageRef">MSG_SUBMISSION_RENONCIATION_REINTEGRATION</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdMessage">${submissionData}</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdKafkaTopic">topic-mjl-nationalite-submission</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdTargetElementType">bpmn:StartEvent</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdMessageDestination">peer-xflow-service-public-integration</camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_p_portal_start_p_Activity_soumission</bpmn:incoming>
+      <bpmn:outgoing>Flow_p_Activity_soumission_p_Activity_attente_instruction</bpmn:outgoing>
+    </bpmn:sendTask>
+    <bpmn:receiveTask id="p_Activity_attente_instruction" name="Attendre la décision du Ministère de la Justice et de la Législation" camunda:modelerTemplate="tg.gouv.gnspd.receiveTask" messageRef="Message_decision" camunda:type="external" camunda:topic="flow-receive-task">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="gnspdTaskKind">citizen</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdTaskIsVisible">true</camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_p_Activity_soumission_p_Activity_attente_instruction</bpmn:incoming>
+      <bpmn:incoming>Flow_p_Activity_send_correction_p_Activity_attente_instruction</bpmn:incoming>
+      <bpmn:incoming>Flow_p_Activity_depot_physique_p_Activity_attente_instruction</bpmn:incoming>
+      <bpmn:incoming>Flow_p_gw_decision_portal_p_Activity_attente_instruction</bpmn:incoming>
+      <bpmn:outgoing>Flow_p_Activity_attente_instruction_p_gw_decision_portal</bpmn:outgoing>
+    </bpmn:receiveTask>
+    <bpmn:exclusiveGateway id="p_gw_decision_portal" name="Quelle est la décision du Ministère ?" gatewayDirection="Diverging">
+      <bpmn:incoming>Flow_p_Activity_attente_instruction_p_gw_decision_portal</bpmn:incoming>
+      <bpmn:outgoing>Flow_p_gw_decision_portal_p_Activity_correction_portal</bpmn:outgoing>
+      <bpmn:outgoing>Flow_p_gw_decision_portal_p_Activity_depot_physique</bpmn:outgoing>
+      <bpmn:outgoing>Flow_p_gw_decision_portal_p_Activity_retrait_livrable</bpmn:outgoing>
+      <bpmn:outgoing>Flow_p_gw_decision_portal_p_portal_end_rejet</bpmn:outgoing>
+      <bpmn:outgoing>Flow_p_gw_decision_portal_p_Activity_attente_instruction</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:userTask id="p_Activity_correction_portal" name="Corriger les éléments du dossier signalés et préparer la resoumission" camunda:modelerTemplate="tg.gouv.gnspd.userTask" camunda:formKey="01KTTQVN71J6DKYTP20NN2N8FA" camunda:type="external" camunda:topic="flow-user-task">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="gnspdTaskKind">citizen</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdTaskIsVisible">true</camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_p_gw_decision_portal_p_Activity_correction_portal</bpmn:incoming>
+      <bpmn:outgoing>Flow_p_Activity_correction_portal_p_Activity_send_correction</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:sendTask id="p_Activity_send_correction" name="Transmettre le dossier corrigé au Ministère de la Justice via le portail" camunda:modelerTemplate="tg.gouv.gnspd.sendMessage" camunda:type="external" camunda:topic="flow-send-message">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="gnspdTaskKind">citizen</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdHandlerType">default</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdTaskIsVisible">true</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdMessageRef">MSG_RESUBMISSION_RENONCIATION_REINTEGRATION</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdMessage">${correctionData}</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdKafkaTopic">topic-mjl-nationalite-correction</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdTargetElementType">bpmn:ReceiveTask</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdMessageDestination">peer-xflow-service-public-integration</camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_p_Activity_correction_portal_p_Activity_send_correction</bpmn:incoming>
+      <bpmn:outgoing>Flow_p_Activity_send_correction_p_Activity_attente_instruction</bpmn:outgoing>
+    </bpmn:sendTask>
+    <bpmn:userTask id="p_Activity_depot_physique" name="Effectuer le dépôt physique des originaux au Ministère de la Justice" camunda:modelerTemplate="tg.gouv.gnspd.userTask" camunda:formKey="01KTTQSR1KV4EQ9F5QGVQ57243" camunda:type="external" camunda:topic="flow-user-task">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="gnspdTaskKind">citizen</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdTaskIsVisible">true</camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_p_gw_decision_portal_p_Activity_depot_physique</bpmn:incoming>
+      <bpmn:outgoing>Flow_p_Activity_depot_physique_p_Activity_attente_instruction</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:userTask id="p_Activity_retrait_livrable" name="Retirer le décret au Ministère de la Justice" camunda:modelerTemplate="tg.gouv.gnspd.userTask" camunda:formKey="01KTTQTBYWVCHDHS88GM5D8GM0" camunda:type="external" camunda:topic="flow-user-task">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="gnspdTaskKind">citizen</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdTaskIsVisible">true</camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_p_gw_decision_portal_p_Activity_retrait_livrable</bpmn:incoming>
+      <bpmn:outgoing>Flow_p_Activity_retrait_livrable_p_Activity_send_retrait</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:sendTask id="p_Activity_send_retrait" name="Confirmer le retrait du livrable au Ministère de la Justice" camunda:modelerTemplate="tg.gouv.gnspd.sendMessage" camunda:type="external" camunda:topic="flow-send-message">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="gnspdTaskKind">citizen</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdHandlerType">default</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdTaskIsVisible">true</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdMessageRef">MSG_RETRAIT_EFFECTUE</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdMessage">${retraitData}</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdKafkaTopic">topic-mjl-nationalite-retrait</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdTargetElementType">bpmn:ReceiveTask</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdMessageDestination">peer-xflow-service-public-integration</camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_p_Activity_retrait_livrable_p_Activity_send_retrait</bpmn:incoming>
+      <bpmn:outgoing>Flow_p_Activity_send_retrait_p_portal_end_success</bpmn:outgoing>
+    </bpmn:sendTask>
+    <bpmn:endEvent id="p_portal_end_success" name="Procédure terminée avec succès" camunda:modelerTemplate="tg.gouv.gnspd.endEvent" camunda:type="external" camunda:topic="flow-end-event">
+      <bpmn:extensionElements />
+      <bpmn:incoming>Flow_p_Activity_send_retrait_p_portal_end_success</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:endEvent id="p_portal_end_rejet" name="Procédure terminée – Demande rejetée" camunda:modelerTemplate="tg.gouv.gnspd.endEvent" camunda:type="external" camunda:topic="flow-end-event">
+      <bpmn:extensionElements />
+      <bpmn:incoming>Flow_p_gw_decision_portal_p_portal_end_rejet</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_p_portal_start_p_Activity_soumission" sourceRef="p_portal_start" targetRef="p_Activity_soumission" />
+    <bpmn:sequenceFlow id="Flow_p_Activity_soumission_p_Activity_attente_instruction" sourceRef="p_Activity_soumission" targetRef="p_Activity_attente_instruction" />
+    <bpmn:sequenceFlow id="Flow_p_Activity_send_correction_p_Activity_attente_instruction" sourceRef="p_Activity_send_correction" targetRef="p_Activity_attente_instruction" />
+    <bpmn:sequenceFlow id="Flow_p_Activity_depot_physique_p_Activity_attente_instruction" sourceRef="p_Activity_depot_physique" targetRef="p_Activity_attente_instruction" />
+    <bpmn:sequenceFlow id="Flow_p_Activity_attente_instruction_p_gw_decision_portal" sourceRef="p_Activity_attente_instruction" targetRef="p_gw_decision_portal" />
+    <bpmn:sequenceFlow id="Flow_p_gw_decision_portal_p_Activity_correction_portal" name="Corrections requises" sourceRef="p_gw_decision_portal" targetRef="p_Activity_correction_portal">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">Corrections requises</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_p_Activity_correction_portal_p_Activity_send_correction" sourceRef="p_Activity_correction_portal" targetRef="p_Activity_send_correction" />
+    <bpmn:sequenceFlow id="Flow_p_gw_decision_portal_p_Activity_depot_physique" name="Dépôt physique obligatoire" sourceRef="p_gw_decision_portal" targetRef="p_Activity_depot_physique">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">Dépôt physique obligatoire</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_p_gw_decision_portal_p_Activity_retrait_livrable" name="Livrable disponible" sourceRef="p_gw_decision_portal" targetRef="p_Activity_retrait_livrable">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">Livrable disponible</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_p_Activity_retrait_livrable_p_Activity_send_retrait" sourceRef="p_Activity_retrait_livrable" targetRef="p_Activity_send_retrait" />
+    <bpmn:sequenceFlow id="Flow_p_Activity_send_retrait_p_portal_end_success" sourceRef="p_Activity_send_retrait" targetRef="p_portal_end_success" />
+    <bpmn:sequenceFlow id="Flow_p_gw_decision_portal_p_portal_end_rejet" name="Demande rejetée" sourceRef="p_gw_decision_portal" targetRef="p_portal_end_rejet">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">Demande rejetée</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_p_gw_decision_portal_p_Activity_attente_instruction" name="Traitement en cours" sourceRef="p_gw_decision_portal" targetRef="p_Activity_attente_instruction">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">Traitement en cours</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+  </bpmn:process>
+  <bpmn:process id="proc_xflow" name="XFlow Backoffice — Renonciation &#38; Réintégration à la Nationalité Togolaise" isExecutable="true">
+    <bpmn:startEvent id="x_xflow_start" name="Réception de la demande de renonciation ou réintégration" camunda:modelerTemplate="tg.gouv.gnspd.startEvent" camunda:formKey="" camunda:type="external" camunda:topic="flow-start">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="development">{"AUTH":"https://dev-auth.xflow.gouv.tg","MAARCH_COURRIER":"https://dev-maarch.xflow.gouv.tg","E_SUP":"https://dev-esup.xflow.gouv.tg","NEXTCLOUD":"https://dev-nextcloud.xflow.gouv.tg","REFERENTIEL":"https://dev-referentiel.xflow.gouv.tg","PAIEMENT":"https://dev-paiement.xflow.gouv.tg","ATD_BACKEND":"http://dev-justice.xflow.gouv.tg:8383"}</camunda:inputParameter>
+          <camunda:inputParameter name="sandbox">{"AUTH":"https://sandbox-auth.xflow.gouv.tg","MAARCH_COURRIER":"https://sandbox-maarch.xflow.gouv.tg","E_SUP":"https://sandbox-esup.xflow.gouv.tg","NEXTCLOUD":"https://sandbox-nextcloud.xflow.gouv.tg","REFERENTIEL":"https://sandbox-referentiel.xflow.gouv.tg","PAIEMENT":"https://sandbox-paiement.xflow.gouv.tg","ATD_BACKEND":"http://sandbox-justice.xflow.gouv.tg:8383"}</camunda:inputParameter>
+          <camunda:inputParameter name="preproduction">{"AUTH":"https://preprod-auth.xflow.gouv.tg","MAARCH_COURRIER":"https://preprod-maarch.xflow.gouv.tg","E_SUP":"https://preprod-esup.xflow.gouv.tg","NEXTCLOUD":"https://preprod-nextcloud.xflow.gouv.tg","REFERENTIEL":"https://preprod-referentiel.xflow.gouv.tg","PAIEMENT":"https://preprod-paiement.xflow.gouv.tg","ATD_BACKEND":"http://preprod-justice.xflow.gouv.tg:8383"}</camunda:inputParameter>
+          <camunda:inputParameter name="production">{"AUTH":"https://auth.xflow.gouv.tg","MAARCH_COURRIER":"https://maarch.xflow.gouv.tg","E_SUP":"https://esup.xflow.gouv.tg","NEXTCLOUD":"https://nextcloud.xflow.gouv.tg","REFERENTIEL":"https://referentiel.xflow.gouv.tg","PAIEMENT":"https://paiement.xflow.gouv.tg","ATD_BACKEND":"http://justice.xflow.gouv.tg:8383"}</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdStepName">Réception de la demande de renonciation ou réintégration</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdTaskKind">system</camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:outgoing>Flow_x_xflow_start_x_b01</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:serviceTask id="x_Activity_b01_archivage_initial" name="Archiver le dossier initial dans Nextcloud" camunda:modelerTemplate="tg.gouv.gnspd.sendNotification" camunda:type="external" camunda:topic="flow-notify">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="gnspdNotifySendEmail">false</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdNotifySendSMS">false</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdNotifyInApp">true</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdNotifyTemplateInApp">NOTIF-001</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdTaskKind">system</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdHandlerType">notification</camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_x_xflow_start_x_b01</bpmn:incoming>
+      <bpmn:outgoing>Flow_x_b01_x_b02</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="x_Activity_b02_accuse_reception" name="Générer et envoyer l&#39;accusé de réception (NOTIF-001)" camunda:modelerTemplate="tg.gouv.gnspd.restBuilder" camunda:type="external" camunda:topic="flow-rest-builder">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="gnspdRestMethod">POST</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdRestDataUrl">/api/ar/generate</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdTimeOutValue">30000</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdAcceptedHttpStatus">[200,201,204]</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdDataFormat">JSON</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdHandlerType">rest</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdTaskKind">system</camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_x_b01_x_b02</bpmn:incoming>
+      <bpmn:outgoing>Flow_x_b02_x_b03</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="x_Activity_b03_transmission_atd" name="Transmettre les données au back-office ATD (POST)" camunda:modelerTemplate="tg.gouv.gnspd.restBuilder" camunda:type="external" camunda:topic="flow-rest-builder">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="gnspdRestMethod">POST</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdRestDataUrl">/certificat-demandes/ri</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdTimeOutValue">30000</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdAcceptedHttpStatus">[200,201]</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdDataFormat">JSON</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdHandlerType">rest</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdTaskKind">system</camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_x_b02_x_b03</bpmn:incoming>
+      <bpmn:incoming>Flow_x_b04_timer_x_b03</bpmn:incoming>
+      <bpmn:outgoing>Flow_x_b03_x_b04</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:receiveTask id="x_Activity_b04_attente_asynchrone" name="Attendre le feedback du back-office ATD" camunda:modelerTemplate="tg.gouv.gnspd.receiveTask" messageRef="Message_decision" camunda:type="external" camunda:topic="flow-receive-task">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="gnspdTaskKind">system</camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_x_b03_x_b04</bpmn:incoming>
+      <bpmn:incoming>Flow_x_b07_x_b04</bpmn:incoming>
+      <bpmn:incoming>Flow_x_gw_b01_x_b04</bpmn:incoming>
+      <bpmn:outgoing>Flow_x_b04_x_gw_b01</bpmn:outgoing>
+    </bpmn:receiveTask>
+    <bpmn:boundaryEvent id="x_Activity_b04_timer" name="Délai de 60 min expiré" attachedToRef="x_Activity_b04_attente_asynchrone">
+      <bpmn:outgoing>Flow_x_b04_timer_x_b03</bpmn:outgoing>
+      <bpmn:timerEventDefinition>
+        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">PT1H</bpmn:timeDuration>
+      </bpmn:timerEventDefinition>
+    </bpmn:boundaryEvent>
+    <bpmn:exclusiveGateway id="x_gw_b01_feedback_atd" name="Quel est le feedback du back-office ATD ?" gatewayDirection="Diverging">
+      <bpmn:incoming>Flow_x_b04_x_gw_b01</bpmn:incoming>
+      <bpmn:outgoing>Flow_x_gw_b01_x_b05</bpmn:outgoing>
+      <bpmn:outgoing>Flow_x_gw_b01_x_b08</bpmn:outgoing>
+      <bpmn:outgoing>Flow_x_gw_b01_x_b09</bpmn:outgoing>
+      <bpmn:outgoing>Flow_x_gw_b01_x_b04</bpmn:outgoing>
+      <bpmn:outgoing>Flow_x_gw_b01_x_b13</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:receiveTask id="x_Activity_b06_attente_ressoumission" name="Attendre la ressoumission corrigée du demandeur" camunda:modelerTemplate="tg.gouv.gnspd.receiveTask" messageRef="Message_resubmission" camunda:type="external" camunda:topic="flow-receive-task">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="gnspdTaskKind">citizen</camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_x_b05_x_b06</bpmn:incoming>
+      <bpmn:outgoing>Flow_x_b06_x_b07</bpmn:outgoing>
+    </bpmn:receiveTask>
+    <bpmn:boundaryEvent id="x_Activity_b06_timer" name="Délai de 15 jours expiré" attachedToRef="x_Activity_b06_attente_ressoumission">
+      <bpmn:outgoing>Flow_x_b06_timer_x_b07</bpmn:outgoing>
+      <bpmn:timerEventDefinition>
+        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">P15D</bpmn:timeDuration>
+      </bpmn:timerEventDefinition>
+    </bpmn:boundaryEvent>
+    <bpmn:sendTask id="x_Activity_b08_notification_rejet" name="Notifier le rejet motivé (NOTIF-004)" camunda:modelerTemplate="tg.gouv.gnspd.sendMessage" camunda:type="external" camunda:topic="flow-send-message">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="gnspdMessageRef">MSG_DECISION_XFLOW</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdHandlerType">default</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdMessage">${decisionData}</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdKafkaTopic">topic-mjl-nationalite-decision</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdTaskKind">system</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdTargetElementType">bpmn:ReceiveTask</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdMessageDestination">ch-portail-service-public-integration</camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_x_gw_b01_x_b08</bpmn:incoming>
+      <bpmn:outgoing>Flow_x_b08_x_archivage_rejet</bpmn:outgoing>
+    </bpmn:sendTask>
+    <bpmn:exclusiveGateway id="x_gw_b02_depot_physique" name="Le dépôt physique est-il validé ?" gatewayDirection="Diverging">
+      <bpmn:incoming>Flow_x_b10_x_gw_b02</bpmn:incoming>
+      <bpmn:outgoing>Flow_x_gw_b02_x_b11</bpmn:outgoing>
+      <bpmn:outgoing>Flow_x_gw_b02_x_b12</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:serviceTask id="x_Activity_b11_notification_depot_valide" name="Notifier la validation du dépôt (NOTIF-006)" camunda:modelerTemplate="tg.gouv.gnspd.sendNotification" camunda:type="external" camunda:topic="flow-notify">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="gnspdNotifySendEmail">false</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdNotifySendSMS">false</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdNotifyInApp">true</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdNotifyTemplateInApp">NOTIF-006</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdTaskKind">system</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdHandlerType">notification</camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_x_gw_b02_x_b11</bpmn:incoming>
+      <bpmn:outgoing>Flow_x_b11_x_b13</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="x_Activity_b12_notification_rejet_physique" name="Notifier le rejet après dépôt (NOTIF-008)" camunda:modelerTemplate="tg.gouv.gnspd.sendNotification" camunda:type="external" camunda:topic="flow-notify">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="gnspdNotifySendEmail">false</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdNotifySendSMS">false</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdNotifyInApp">true</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdNotifyTemplateInApp">NOTIF-008</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdTaskKind">system</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdHandlerType">notification</camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_x_gw_b02_x_b12</bpmn:incoming>
+      <bpmn:outgoing>Flow_x_b12_x_archivage_rejet</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:userTask id="x_Activity_b13_instruction_dossier" name="Instruire le dossier et préparer le projet de décret" camunda:modelerTemplate="tg.gouv.gnspd.userTask" camunda:formKey="01KTTQV6G59VCEN7RV5WE4SM4Z" camunda:candidateGroups="MJL_AGENTS,REINTEGRATION_AGENTS" camunda:type="external" camunda:topic="flow-user-task">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="gnspdTaskKind">backoffice</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdTaskIsVisible">true</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdCandidateCompanies">MJL_AGENTS,REINTEGRATION_AGENTS</camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_x_gw_b01_x_b13</bpmn:incoming>
+      <bpmn:incoming>Flow_030pj5b</bpmn:incoming>
+      <bpmn:outgoing>Flow_x_b13_x_b14</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:receiveTask id="x_Activity_b16b_receive_retrait" name="Attendre la confirmation de retrait du demandeur" camunda:modelerTemplate="tg.gouv.gnspd.receiveTask" messageRef="Message_retrait" camunda:type="external" camunda:topic="flow-receive-task">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="gnspdTaskKind">system</camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_x_b16_x_b16b</bpmn:incoming>
+      <bpmn:outgoing>Flow_x_b16b_x_b17</bpmn:outgoing>
+    </bpmn:receiveTask>
+    <bpmn:serviceTask id="x_Activity_b17_enregistrement_retrait" name="Enregistrer le retrait du décret" camunda:modelerTemplate="tg.gouv.gnspd.sendNotification" camunda:type="external" camunda:topic="flow-notify">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="gnspdNotifySendEmail">false</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdNotifySendSMS">false</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdNotifyInApp">true</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdNotifyTemplateInApp">NOTIF-010</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdTaskKind">system</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdHandlerType">notification</camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_x_b16b_x_b17</bpmn:incoming>
+      <bpmn:outgoing>Flow_x_b17_x_b18</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="x_Activity_b18_notification_retrait" name="Notifier la confirmation de retrait (NOTIF-009)" camunda:modelerTemplate="tg.gouv.gnspd.sendNotification" camunda:type="external" camunda:topic="flow-notify">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="gnspdNotifySendEmail">false</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdNotifySendSMS">false</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdNotifyInApp">true</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdNotifyTemplateInApp">NOTIF-009</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdTaskKind">system</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdHandlerType">notification</camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_x_b17_x_b18</bpmn:incoming>
+      <bpmn:outgoing>Flow_x_b18_x_b19</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="x_Activity_archivage_rejet" name="Archiver le dossier rejeté dans Nextcloud" camunda:modelerTemplate="tg.gouv.gnspd.restBuilder" camunda:type="external" camunda:topic="flow-rest-builder">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="gnspdRestMethod">POST</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdRestDataUrl">/api/nextcloud/archive</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdTimeOutValue">60000</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdAcceptedHttpStatus">[200,201,204]</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdDataFormat">JSON</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdHandlerType">rest</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdTaskKind">system</camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_x_b08_x_archivage_rejet</bpmn:incoming>
+      <bpmn:incoming>Flow_x_b12_x_archivage_rejet</bpmn:incoming>
+      <bpmn:outgoing>Flow_x_archivage_rejet_x_end_rejet</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:endEvent id="x_xflow_end_success" name="Procédure clôturée avec succès" camunda:modelerTemplate="tg.gouv.gnspd.endEvent" camunda:type="external" camunda:topic="flow-end-event">
+      <bpmn:extensionElements />
+      <bpmn:incoming>Flow_x_b19_x_end_success</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:endEvent id="x_xflow_end_rejet" name="Procédure clôturée – Rejet" camunda:modelerTemplate="tg.gouv.gnspd.endEvent" camunda:type="external" camunda:topic="flow-end-event">
+      <bpmn:extensionElements />
+      <bpmn:incoming>Flow_x_archivage_rejet_x_end_rejet</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_x_xflow_start_x_b01" sourceRef="x_xflow_start" targetRef="x_Activity_b01_archivage_initial" />
+    <bpmn:sequenceFlow id="Flow_x_b01_x_b02" sourceRef="x_Activity_b01_archivage_initial" targetRef="x_Activity_b02_accuse_reception" />
+    <bpmn:sequenceFlow id="Flow_x_b02_x_b03" sourceRef="x_Activity_b02_accuse_reception" targetRef="x_Activity_b03_transmission_atd" />
+    <bpmn:sequenceFlow id="Flow_x_b03_x_b04" sourceRef="x_Activity_b03_transmission_atd" targetRef="x_Activity_b04_attente_asynchrone" />
+    <bpmn:sequenceFlow id="Flow_x_b04_timer_x_b03" sourceRef="x_Activity_b04_timer" targetRef="x_Activity_b03_transmission_atd" />
+    <bpmn:sequenceFlow id="Flow_x_b04_x_gw_b01" sourceRef="x_Activity_b04_attente_asynchrone" targetRef="x_gw_b01_feedback_atd" />
+    <bpmn:sequenceFlow id="Flow_x_gw_b01_x_b05" name="Corrections requises" sourceRef="x_gw_b01_feedback_atd" targetRef="x_Activity_b05_notification_correction">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">Corrections requises</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_x_b05_x_b06" sourceRef="x_Activity_b05_notification_correction" targetRef="x_Activity_b06_attente_ressoumission" />
+    <bpmn:sequenceFlow id="Flow_x_b06_x_b07" sourceRef="x_Activity_b06_attente_ressoumission" targetRef="x_Activity_b07_transmission_correction_atd" />
+    <bpmn:sequenceFlow id="Flow_x_b06_timer_x_b07" sourceRef="x_Activity_b06_timer" targetRef="x_Activity_b15_archivage_decret" />
+    <bpmn:sequenceFlow id="Flow_x_b07_x_b04" sourceRef="x_Activity_b07_transmission_correction_atd" targetRef="x_Activity_b04_attente_asynchrone" />
+    <bpmn:sequenceFlow id="Flow_x_gw_b01_x_b08" name="Demande rejetée" sourceRef="x_gw_b01_feedback_atd" targetRef="x_Activity_b08_notification_rejet">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">Demande rejetée</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_x_b08_x_archivage_rejet" sourceRef="x_Activity_b08_notification_rejet" targetRef="x_Activity_archivage_rejet" />
+    <bpmn:sequenceFlow id="Flow_x_archivage_rejet_x_end_rejet" sourceRef="x_Activity_archivage_rejet" targetRef="x_xflow_end_rejet" />
+    <bpmn:sequenceFlow id="Flow_x_gw_b01_x_b09" name="Dépôt physique obligatoire" sourceRef="x_gw_b01_feedback_atd" targetRef="x_Activity_b09_notification_attente_depot">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">Dépôt physique obligatoire</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_x_b09_x_b10" sourceRef="x_Activity_b09_notification_attente_depot" targetRef="x_Activity_b10_validation_depot_physique" />
+    <bpmn:sequenceFlow id="Flow_x_b10_x_gw_b02" sourceRef="x_Activity_b10_validation_depot_physique" targetRef="x_gw_b02_depot_physique" />
+    <bpmn:sequenceFlow id="Flow_x_gw_b02_x_b11" name="Dépôt physique validé" sourceRef="x_gw_b02_depot_physique" targetRef="x_Activity_b11_notification_depot_valide">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">Dépôt physique validé</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_x_b11_x_b13" sourceRef="x_Activity_b11_notification_depot_valide" targetRef="x_Activity_b07_transmission_correction_atd" />
+    <bpmn:sequenceFlow id="Flow_x_gw_b02_x_b12" name="Dépôt physique rejeté" sourceRef="x_gw_b02_depot_physique" targetRef="x_Activity_b12_notification_rejet_physique">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">Dépôt physique rejeté</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_x_b12_x_archivage_rejet" sourceRef="x_Activity_b12_notification_rejet_physique" targetRef="x_Activity_archivage_rejet" />
+    <bpmn:sequenceFlow id="Flow_x_gw_b01_x_b13" name="Demande approuvée" sourceRef="x_gw_b01_feedback_atd" targetRef="x_Activity_b13_instruction_dossier">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">Demande approuvée</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_x_b13_x_b14" sourceRef="x_Activity_b13_instruction_dossier" targetRef="x_Activity_b14_signature_decret" />
+    <bpmn:sequenceFlow id="Flow_x_b14_x_b15" sourceRef="x_Activity_b14_signature_decret" targetRef="x_Activity_b15_archivage_decret" />
+    <bpmn:sequenceFlow id="Flow_x_b15_x_b16" sourceRef="x_Activity_b15_archivage_decret" targetRef="x_Activity_b16_notification_disponibilite" />
+    <bpmn:sequenceFlow id="Flow_x_b16_x_b16b" sourceRef="x_Activity_b16_notification_disponibilite" targetRef="x_Activity_b16b_receive_retrait" />
+    <bpmn:sequenceFlow id="Flow_x_b16b_x_b17" sourceRef="x_Activity_b16b_receive_retrait" targetRef="x_Activity_b17_enregistrement_retrait" />
+    <bpmn:sequenceFlow id="Flow_x_b17_x_b18" sourceRef="x_Activity_b17_enregistrement_retrait" targetRef="x_Activity_b18_notification_retrait" />
+    <bpmn:sequenceFlow id="Flow_x_b18_x_b19" sourceRef="x_Activity_b18_notification_retrait" targetRef="x_Activity_b19_archivage_final" />
+    <bpmn:sequenceFlow id="Flow_x_b19_x_end_success" sourceRef="x_Activity_b19_archivage_final" targetRef="x_xflow_end_success" />
+    <bpmn:sequenceFlow id="Flow_x_gw_b01_x_b04" name="Traitement en cours" sourceRef="x_gw_b01_feedback_atd" targetRef="x_Activity_b04_attente_asynchrone">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">Traitement en cours</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:userTask id="x_Activity_b10_validation_depot_physique" name="Valider la réception des documents originaux" camunda:modelerTemplate="tg.gouv.gnspd.userTask" camunda:formKey="01KTTQV6G59VCEN7RV5WE4SM4Z" camunda:candidateGroups="MJL_AGENTS,REINTEGRATION_AGENTS" camunda:type="external" camunda:topic="flow-user-task">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="gnspdTaskKind">backoffice</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdTaskIsVisible">true</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdCandidateCompanies">MJL_AGENTS,REINTEGRATION_AGENTS</camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_x_b09_x_b10</bpmn:incoming>
+      <bpmn:outgoing>Flow_x_b10_x_gw_b02</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:serviceTask id="x_Activity_b07_transmission_correction_atd" name="Transmettre les données corrigées (PUT)" camunda:modelerTemplate="tg.gouv.gnspd.restBuilder" camunda:type="external" camunda:topic="flow-rest-builder">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="gnspdRestMethod">PUT</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdRestDataUrl">/certificat-demandes/ri</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdTimeOutValue">30000</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdAcceptedHttpStatus">[200,201]</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdDataFormat">JSON</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdHandlerType">rest</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdTaskKind">system</camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_x_b06_x_b07</bpmn:incoming>
+      <bpmn:incoming>Flow_x_b11_x_b13</bpmn:incoming>
+      <bpmn:incoming>Flow_0ep5s3m</bpmn:incoming>
+      <bpmn:outgoing>Flow_x_b07_x_b04</bpmn:outgoing>
+      <bpmn:outgoing>Flow_030pj5b</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="Flow_030pj5b" sourceRef="x_Activity_b07_transmission_correction_atd" targetRef="x_Activity_b13_instruction_dossier" />
+    <bpmn:serviceTask id="x_Activity_b15_archivage_decret" name="Archiver le décret signé dans Nextcloud" camunda:modelerTemplate="tg.gouv.gnspd.restBuilder" camunda:type="external" camunda:topic="flow-rest-builder">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="gnspdRestMethod">POST</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdDataFormat">JSON</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdRestDataUrl">/api/nextcloud/archive</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdTimeOutValue">60000</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdAcceptedHttpStatus">[200,201,204]</camunda:inputParameter>
+          <camunda:inputParameter name="nextcloud">{"xref":"${processInstanceId}","statut":"DECRET_SIGNE","dateArchivage":"${now()}","files":["formulaire","pieces_justificatives","decret_signe"]}</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdHandlerType">rest</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdTaskKind">system</camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_x_b14_x_b15</bpmn:incoming>
+      <bpmn:incoming>Flow_x_b06_timer_x_b07</bpmn:incoming>
+      <bpmn:outgoing>Flow_x_b15_x_b16</bpmn:outgoing>
+      <bpmn:outgoing>Flow_0ep5s3m</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="Flow_0ep5s3m" sourceRef="x_Activity_b15_archivage_decret" targetRef="x_Activity_b07_transmission_correction_atd" />
+    <bpmn:sendTask id="x_Activity_b09_notification_attente_depot" name="Notifier l&#39;invitation au dépôt physique (NOTIF-005)" camunda:modelerTemplate="tg.gouv.gnspd.sendMessage" camunda:type="external" camunda:topic="flow-send-message">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="gnspdMessageRef">MSG_DECISION_XFLOW</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdHandlerType">default</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdMessage">${decisionData}</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdKafkaTopic">topic-mjl-nationalite-decision</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdTaskKind">system</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdTargetElementType">bpmn:ReceiveTask</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdMessageDestination">ch-portail-service-public-integration</camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_x_gw_b01_x_b09</bpmn:incoming>
+      <bpmn:outgoing>Flow_x_b09_x_b10</bpmn:outgoing>
+    </bpmn:sendTask>
+    <bpmn:sendTask id="x_Activity_b16_notification_disponibilite" name="Notifier la disponibilité du livrable (NOTIF-007)" camunda:modelerTemplate="tg.gouv.gnspd.sendMessage" camunda:type="external" camunda:topic="flow-send-message">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="gnspdMessageRef">MSG_DECISION_XFLOW</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdHandlerType">default</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdMessage">${decisionData}</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdKafkaTopic">topic-mjl-nationalite-decision</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdTaskKind">system</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdTargetElementType">bpmn:ReceiveTask</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdMessageDestination">ch-portail-service-public-integration</camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_x_b15_x_b16</bpmn:incoming>
+      <bpmn:outgoing>Flow_x_b16_x_b16b</bpmn:outgoing>
+    </bpmn:sendTask>
+    <bpmn:sendTask id="x_Activity_b05_notification_correction" name="Notifier les corrections requises (NOTIF-003)" camunda:modelerTemplate="tg.gouv.gnspd.sendMessage" camunda:type="external" camunda:topic="flow-send-message">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="gnspdMessageRef">MSG_DECISION_XFLOW</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdHandlerType">default</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdMessage">${decisionData}</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdKafkaTopic">topic-mjl-nationalite-decision</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdTaskKind">system</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdTargetElementType">bpmn:ReceiveTask</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdMessageDestination">ch-portail-service-public-integration</camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_x_gw_b01_x_b05</bpmn:incoming>
+      <bpmn:outgoing>Flow_x_b05_x_b06</bpmn:outgoing>
+    </bpmn:sendTask>
+    <bpmn:serviceTask id="x_Activity_b19_archivage_final" name="Archiver définitivement le dossier dans Nextcloud" camunda:modelerTemplate="tg.gouv.gnspd.restBuilder" camunda:type="external" camunda:topic="flow-rest-builder">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="gnspdRestMethod">POST</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdRestDataUrl">/api/nextcloud/archive</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdTimeOutValue">60000</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdAcceptedHttpStatus">[200,201,204]</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdDataFormat">JSON</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdHandlerType">rest</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdTaskKind">system</camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_x_b18_x_b19</bpmn:incoming>
+      <bpmn:outgoing>Flow_x_b19_x_end_success</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:userTask id="x_Activity_b14_signature_decret" name="Valider et signer électroniquement le décret" camunda:modelerTemplate="tg.gouv.gnspd.userTask" camunda:formKey="01KTTQTTZ7N0HY5ERF7D2MY4Q7" camunda:candidateGroups="MJL_DIRECTEUR" camunda:type="external" camunda:topic="flow-user-task">
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="gnspdTaskKind">backoffice</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdTaskIsVisible">true</camunda:inputParameter>
+          <camunda:inputParameter name="gnspdCandidateCompanies">MJL_DIRECTEUR</camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_x_b13_x_b14</bpmn:incoming>
+      <bpmn:outgoing>Flow_x_b14_x_b15</bpmn:outgoing>
+    </bpmn:userTask>
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Collab_Renonciation_Reintegration">
+      <bpmndi:BPMNShape id="part_portal_di" bpmnElement="part_portal" isHorizontal="true" isExpanded="true">
+        <dc:Bounds x="160" y="60" width="1700" height="380" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="p_portal_start_di" bpmnElement="p_portal_start">
+        <dc:Bounds x="342" y="232" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="328" y="268" width="65" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="p_Activity_soumission_di" bpmnElement="p_Activity_soumission">
+        <dc:Bounds x="520" y="220" width="160" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="p_Activity_attente_instruction_di" bpmnElement="p_Activity_attente_instruction">
+        <dc:Bounds x="760" y="220" width="160" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="p_gw_decision_portal_di" bpmnElement="p_gw_decision_portal" isMarkerVisible="true">
+        <dc:Bounds x="1055" y="225" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1045" y="275" width="70" height="80" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="p_Activity_correction_portal_di" bpmnElement="p_Activity_correction_portal">
+        <dc:Bounds x="1240" y="100" width="160" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="p_Activity_send_correction_di" bpmnElement="p_Activity_send_correction">
+        <dc:Bounds x="1480" y="160" width="160" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="p_Activity_depot_physique_di" bpmnElement="p_Activity_depot_physique">
+        <dc:Bounds x="1240" y="145" width="160" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="p_Activity_retrait_livrable_di" bpmnElement="p_Activity_retrait_livrable">
+        <dc:Bounds x="1240" y="220" width="160" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="p_Activity_send_retrait_di" bpmnElement="p_Activity_send_retrait">
+        <dc:Bounds x="1480" y="220" width="160" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="p_portal_end_success_di" bpmnElement="p_portal_end_success">
+        <dc:Bounds x="1742" y="292" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1726" y="328" width="69" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="p_portal_end_rejet_di" bpmnElement="p_portal_end_rejet">
+        <dc:Bounds x="1302" y="352" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1286" y="388" width="85" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_p_portal_start_p_Activity_soumission_di" bpmnElement="Flow_p_portal_start_p_Activity_soumission">
+        <di:waypoint x="378" y="250" />
+        <di:waypoint x="520" y="250" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_p_Activity_soumission_p_Activity_attente_instruction_di" bpmnElement="Flow_p_Activity_soumission_p_Activity_attente_instruction">
+        <di:waypoint x="680" y="250" />
+        <di:waypoint x="760" y="250" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_p_Activity_send_correction_p_Activity_attente_instruction_di" bpmnElement="Flow_p_Activity_send_correction_p_Activity_attente_instruction">
+        <di:waypoint x="1640" y="190" />
+        <di:waypoint x="1660" y="190" />
+        <di:waypoint x="1660" y="340" />
+        <di:waypoint x="740" y="340" />
+        <di:waypoint x="740" y="250" />
+        <di:waypoint x="760" y="250" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_p_Activity_depot_physique_p_Activity_attente_instruction_di" bpmnElement="Flow_p_Activity_depot_physique_p_Activity_attente_instruction">
+        <di:waypoint x="1400" y="175" />
+        <di:waypoint x="1440" y="175" />
+        <di:waypoint x="1440" y="370" />
+        <di:waypoint x="700" y="370" />
+        <di:waypoint x="700" y="250" />
+        <di:waypoint x="760" y="250" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_p_Activity_attente_instruction_p_gw_decision_portal_di" bpmnElement="Flow_p_Activity_attente_instruction_p_gw_decision_portal">
+        <di:waypoint x="920" y="250" />
+        <di:waypoint x="1055" y="250" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_p_gw_decision_portal_p_Activity_correction_portal_di" bpmnElement="Flow_p_gw_decision_portal_p_Activity_correction_portal">
+        <di:waypoint x="1080" y="225" />
+        <di:waypoint x="1080" y="130" />
+        <di:waypoint x="1240" y="130" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1135" y="111" width="57" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_p_Activity_correction_portal_p_Activity_send_correction_di" bpmnElement="Flow_p_Activity_correction_portal_p_Activity_send_correction">
+        <di:waypoint x="1400" y="130" />
+        <di:waypoint x="1440" y="130" />
+        <di:waypoint x="1440" y="190" />
+        <di:waypoint x="1480" y="190" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_p_gw_decision_portal_p_Activity_depot_physique_di" bpmnElement="Flow_p_gw_decision_portal_p_Activity_depot_physique">
+        <di:waypoint x="1080" y="225" />
+        <di:waypoint x="1080" y="175" />
+        <di:waypoint x="1240" y="175" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1135" y="156" width="77" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_p_gw_decision_portal_p_Activity_retrait_livrable_di" bpmnElement="Flow_p_gw_decision_portal_p_Activity_retrait_livrable">
+        <di:waypoint x="1105" y="250" />
+        <di:waypoint x="1240" y="250" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1156" y="231" width="52" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_p_Activity_retrait_livrable_p_Activity_send_retrait_di" bpmnElement="Flow_p_Activity_retrait_livrable_p_Activity_send_retrait">
+        <di:waypoint x="1400" y="250" />
+        <di:waypoint x="1480" y="250" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_p_Activity_send_retrait_p_portal_end_success_di" bpmnElement="Flow_p_Activity_send_retrait_p_portal_end_success">
+        <di:waypoint x="1640" y="250" />
+        <di:waypoint x="1691" y="250" />
+        <di:waypoint x="1691" y="310" />
+        <di:waypoint x="1742" y="310" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_p_gw_decision_portal_p_portal_end_rejet_di" bpmnElement="Flow_p_gw_decision_portal_p_portal_end_rejet">
+        <di:waypoint x="1080" y="275" />
+        <di:waypoint x="1080" y="370" />
+        <di:waypoint x="1302" y="370" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1164" y="351" width="85" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_p_gw_decision_portal_p_Activity_attente_instruction_di" bpmnElement="Flow_p_gw_decision_portal_p_Activity_attente_instruction">
+        <di:waypoint x="1055" y="250" />
+        <di:waypoint x="920" y="250" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="960" y="231" width="54" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="part_xflow_di" bpmnElement="part_xflow" isHorizontal="true" isExpanded="true">
+        <dc:Bounds x="160" y="530" width="3600" height="950" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="x_xflow_start_di" bpmnElement="x_xflow_start">
+        <dc:Bounds x="342" y="780" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="322" y="816" width="77" height="53" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="x_Activity_b01_archivage_initial_di" bpmnElement="x_Activity_b01_archivage_initial">
+        <dc:Bounds x="520" y="750" width="160" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="x_Activity_b02_accuse_reception_di" bpmnElement="x_Activity_b02_accuse_reception">
+        <dc:Bounds x="760" y="750" width="160" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="x_Activity_b03_transmission_atd_di" bpmnElement="x_Activity_b03_transmission_atd">
+        <dc:Bounds x="1000" y="750" width="160" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="x_Activity_b04_attente_asynchrone_di" bpmnElement="x_Activity_b04_attente_asynchrone">
+        <dc:Bounds x="1240" y="750" width="160" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="x_gw_b01_feedback_atd_di" bpmnElement="x_gw_b01_feedback_atd" isMarkerVisible="true">
+        <dc:Bounds x="1960" y="1060" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1950" y="1110" width="73" height="66" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="x_Activity_b06_attente_ressoumission_di" bpmnElement="x_Activity_b06_attente_ressoumission">
+        <dc:Bounds x="2200" y="570" width="160" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="x_Activity_b08_notification_rejet_di" bpmnElement="x_Activity_b08_notification_rejet">
+        <dc:Bounds x="1720" y="810" width="160" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="x_gw_b02_depot_physique_di" bpmnElement="x_gw_b02_depot_physique" isMarkerVisible="true">
+        <dc:Bounds x="2480" y="1225" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2380" y="1236" width="90" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="x_Activity_b11_notification_depot_valide_di" bpmnElement="x_Activity_b11_notification_depot_valide">
+        <dc:Bounds x="2920" y="750" width="160" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="x_Activity_b12_notification_rejet_physique_di" bpmnElement="x_Activity_b12_notification_rejet_physique">
+        <dc:Bounds x="2920" y="930" width="160" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="x_Activity_b13_instruction_dossier_di" bpmnElement="x_Activity_b13_instruction_dossier">
+        <dc:Bounds x="1480" y="750" width="160" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="x_Activity_b16b_receive_retrait_di" bpmnElement="x_Activity_b16b_receive_retrait">
+        <dc:Bounds x="2920" y="690" width="160" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="x_Activity_b17_enregistrement_retrait_di" bpmnElement="x_Activity_b17_enregistrement_retrait">
+        <dc:Bounds x="3160" y="750" width="160" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="x_Activity_b18_notification_retrait_di" bpmnElement="x_Activity_b18_notification_retrait">
+        <dc:Bounds x="2920" y="870" width="160" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="x_Activity_archivage_rejet_di" bpmnElement="x_Activity_archivage_rejet">
+        <dc:Bounds x="3160" y="810" width="160" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="x_xflow_end_success_di" bpmnElement="x_xflow_end_success">
+        <dc:Bounds x="3582" y="762" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3566" y="798" width="67" height="53" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="x_xflow_end_rejet_di" bpmnElement="x_xflow_end_rejet">
+        <dc:Bounds x="3462" y="702" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3446" y="738" width="78" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="x_Activity_b10_validation_depot_physique_di" bpmnElement="x_Activity_b10_validation_depot_physique">
+        <dc:Bounds x="2190" y="1280" width="160" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="x_Activity_b07_transmission_correction_atd_di" bpmnElement="x_Activity_b07_transmission_correction_atd">
+        <dc:Bounds x="1480" y="850" width="160" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="x_Activity_b15_archivage_decret_di" bpmnElement="x_Activity_b15_archivage_decret">
+        <dc:Bounds x="2440" y="800" width="160" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="x_Activity_b09_notification_attente_depot_di" bpmnElement="x_Activity_b09_notification_attente_depot">
+        <dc:Bounds x="2425" y="714" width="160" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="x_Activity_b16_notification_disponibilite_di" bpmnElement="x_Activity_b16_notification_disponibilite">
+        <dc:Bounds x="2660" y="830" width="160" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="x_Activity_b05_notification_correction_di" bpmnElement="x_Activity_b05_notification_correction">
+        <dc:Bounds x="2200" y="660" width="160" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="x_Activity_b19_archivage_final_di" bpmnElement="x_Activity_b19_archivage_final">
+        <dc:Bounds x="3240" y="920" width="160" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="x_Activity_b14_signature_decret_di" bpmnElement="x_Activity_b14_signature_decret">
+        <dc:Bounds x="1700" y="1055" width="160" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="x_Activity_b06_timer_di" bpmnElement="x_Activity_b06_timer">
+        <dc:Bounds x="2262" y="545" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2238" y="507" width="84" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="x_Activity_b04_timer_di" bpmnElement="x_Activity_b04_timer">
+        <dc:Bounds x="1276" y="726" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1252" y="691" width="85" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_x_xflow_start_x_b01_di" bpmnElement="Flow_x_xflow_start_x_b01">
+        <di:waypoint x="378" y="780" />
+        <di:waypoint x="520" y="780" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_x_b01_x_b02_di" bpmnElement="Flow_x_b01_x_b02">
+        <di:waypoint x="680" y="780" />
+        <di:waypoint x="760" y="780" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_x_b02_x_b03_di" bpmnElement="Flow_x_b02_x_b03">
+        <di:waypoint x="920" y="780" />
+        <di:waypoint x="1000" y="780" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_x_b03_x_b04_di" bpmnElement="Flow_x_b03_x_b04">
+        <di:waypoint x="1160" y="780" />
+        <di:waypoint x="1240" y="780" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_x_b04_timer_x_b03_di" bpmnElement="Flow_x_b04_timer_x_b03">
+        <di:waypoint x="1312" y="744" />
+        <di:waypoint x="1360" y="744" />
+        <di:waypoint x="1360" y="700" />
+        <di:waypoint x="1080" y="700" />
+        <di:waypoint x="1080" y="750" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_x_b04_x_gw_b01_di" bpmnElement="Flow_x_b04_x_gw_b01">
+        <di:waypoint x="1400" y="780" />
+        <di:waypoint x="1440" y="780" />
+        <di:waypoint x="1440" y="1150" />
+        <di:waypoint x="1985" y="1150" />
+        <di:waypoint x="1985" y="1110" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_x_gw_b01_x_b05_di" bpmnElement="Flow_x_gw_b01_x_b05">
+        <di:waypoint x="1985" y="1060" />
+        <di:waypoint x="1985" y="690" />
+        <di:waypoint x="2200" y="690" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2085" y="671" width="57" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_x_b05_x_b06_di" bpmnElement="Flow_x_b05_x_b06">
+        <di:waypoint x="2360" y="690" />
+        <di:waypoint x="2380" y="690" />
+        <di:waypoint x="2380" y="600" />
+        <di:waypoint x="2360" y="600" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_x_b06_x_b07_di" bpmnElement="Flow_x_b06_x_b07">
+        <di:waypoint x="2360" y="600" />
+        <di:waypoint x="2420" y="600" />
+        <di:waypoint x="2420" y="1195" />
+        <di:waypoint x="1490" y="1195" />
+        <di:waypoint x="1490" y="910" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_x_b06_timer_x_b07_di" bpmnElement="Flow_x_b06_timer_x_b07">
+        <di:waypoint x="2298" y="563" />
+        <di:waypoint x="2520" y="563" />
+        <di:waypoint x="2520" y="800" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_x_b07_x_b04_di" bpmnElement="Flow_x_b07_x_b04">
+        <di:waypoint x="1480" y="880" />
+        <di:waypoint x="1360" y="880" />
+        <di:waypoint x="1360" y="810" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_x_gw_b01_x_b08_di" bpmnElement="Flow_x_gw_b01_x_b08">
+        <di:waypoint x="1985" y="1060" />
+        <di:waypoint x="1985" y="1050" />
+        <di:waypoint x="1900" y="1050" />
+        <di:waypoint x="1900" y="840" />
+        <di:waypoint x="1880" y="840" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1850" y="821" width="85" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_x_b08_x_archivage_rejet_di" bpmnElement="Flow_x_b08_x_archivage_rejet">
+        <di:waypoint x="1880" y="820" />
+        <di:waypoint x="2040" y="820" />
+        <di:waypoint x="2040" y="1130" />
+        <di:waypoint x="3190" y="1130" />
+        <di:waypoint x="3190" y="870" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_x_archivage_rejet_x_end_rejet_di" bpmnElement="Flow_x_archivage_rejet_x_end_rejet">
+        <di:waypoint x="3320" y="840" />
+        <di:waypoint x="3391" y="840" />
+        <di:waypoint x="3391" y="720" />
+        <di:waypoint x="3462" y="720" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_x_gw_b01_x_b09_di" bpmnElement="Flow_x_gw_b01_x_b09">
+        <di:waypoint x="2010" y="1085" />
+        <di:waypoint x="2120" y="1085" />
+        <di:waypoint x="2120" y="744" />
+        <di:waypoint x="2425" y="744" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2210" y="725" width="77" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_x_b09_x_b10_di" bpmnElement="Flow_x_b09_x_b10">
+        <di:waypoint x="2585" y="744" />
+        <di:waypoint x="2620" y="744" />
+        <di:waypoint x="2620" y="1330" />
+        <di:waypoint x="2350" y="1330" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_x_b10_x_gw_b02_di" bpmnElement="Flow_x_b10_x_gw_b02">
+        <di:waypoint x="2350" y="1310" />
+        <di:waypoint x="2505" y="1310" />
+        <di:waypoint x="2505" y="1275" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_x_gw_b02_x_b11_di" bpmnElement="Flow_x_gw_b02_x_b11">
+        <di:waypoint x="2505" y="1225" />
+        <di:waypoint x="2505" y="780" />
+        <di:waypoint x="2920" y="780" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2685" y="761" width="77" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_x_b11_x_b13_di" bpmnElement="Flow_x_b11_x_b13">
+        <di:waypoint x="3080" y="780" />
+        <di:waypoint x="3100" y="780" />
+        <di:waypoint x="3100" y="1220" />
+        <di:waypoint x="1560" y="1220" />
+        <di:waypoint x="1560" y="910" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_x_gw_b02_x_b12_di" bpmnElement="Flow_x_gw_b02_x_b12">
+        <di:waypoint x="2530" y="1250" />
+        <di:waypoint x="2660" y="1250" />
+        <di:waypoint x="2660" y="960" />
+        <di:waypoint x="2920" y="960" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2758" y="941" width="77" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_x_b12_x_archivage_rejet_di" bpmnElement="Flow_x_b12_x_archivage_rejet">
+        <di:waypoint x="3080" y="960" />
+        <di:waypoint x="3120" y="960" />
+        <di:waypoint x="3120" y="840" />
+        <di:waypoint x="3160" y="840" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_x_gw_b01_x_b13_di" bpmnElement="Flow_x_gw_b01_x_b13">
+        <di:waypoint x="1960" y="1085" />
+        <di:waypoint x="1880" y="1085" />
+        <di:waypoint x="1880" y="770" />
+        <di:waypoint x="1640" y="770" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1795" y="751" width="52" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_x_b13_x_b14_di" bpmnElement="Flow_x_b13_x_b14">
+        <di:waypoint x="1640" y="780" />
+        <di:waypoint x="1680" y="780" />
+        <di:waypoint x="1680" y="1085" />
+        <di:waypoint x="1700" y="1085" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_x_b14_x_b15_di" bpmnElement="Flow_x_b14_x_b15">
+        <di:waypoint x="1860" y="1095" />
+        <di:waypoint x="1920" y="1095" />
+        <di:waypoint x="1920" y="830" />
+        <di:waypoint x="2440" y="830" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_x_b15_x_b16_di" bpmnElement="Flow_x_b15_x_b16">
+        <di:waypoint x="2600" y="830" />
+        <di:waypoint x="2640" y="830" />
+        <di:waypoint x="2640" y="880" />
+        <di:waypoint x="2660" y="880" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_x_b16_x_b16b_di" bpmnElement="Flow_x_b16_x_b16b">
+        <di:waypoint x="2820" y="860" />
+        <di:waypoint x="2880" y="860" />
+        <di:waypoint x="2880" y="720" />
+        <di:waypoint x="2920" y="720" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_x_b16b_x_b17_di" bpmnElement="Flow_x_b16b_x_b17">
+        <di:waypoint x="3080" y="720" />
+        <di:waypoint x="3120" y="720" />
+        <di:waypoint x="3120" y="780" />
+        <di:waypoint x="3160" y="780" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_x_b17_x_b18_di" bpmnElement="Flow_x_b17_x_b18">
+        <di:waypoint x="3320" y="780" />
+        <di:waypoint x="3360" y="780" />
+        <di:waypoint x="3360" y="900" />
+        <di:waypoint x="3080" y="900" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_x_b18_x_b19_di" bpmnElement="Flow_x_b18_x_b19">
+        <di:waypoint x="3080" y="920" />
+        <di:waypoint x="3140" y="920" />
+        <di:waypoint x="3140" y="950" />
+        <di:waypoint x="3240" y="950" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_x_b19_x_end_success_di" bpmnElement="Flow_x_b19_x_end_success">
+        <di:waypoint x="3400" y="950" />
+        <di:waypoint x="3470" y="950" />
+        <di:waypoint x="3470" y="780" />
+        <di:waypoint x="3582" y="780" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_x_gw_b01_x_b04_di" bpmnElement="Flow_x_gw_b01_x_b04">
+        <di:waypoint x="1985" y="1110" />
+        <di:waypoint x="1985" y="1250" />
+        <di:waypoint x="1300" y="1250" />
+        <di:waypoint x="1300" y="810" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1594" y="1231" width="67" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_030pj5b_di" bpmnElement="Flow_030pj5b">
+        <di:waypoint x="1560" y="850" />
+        <di:waypoint x="1560" y="810" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0ep5s3m_di" bpmnElement="Flow_0ep5s3m">
+        <di:waypoint x="2520" y="860" />
+        <di:waypoint x="2520" y="1200" />
+        <di:waypoint x="1540" y="1200" />
+        <di:waypoint x="1540" y="910" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="mf_submission_di" bpmnElement="mf_submission">
+        <di:waypoint x="600" y="280" />
+        <di:waypoint x="600" y="506" />
+        <di:waypoint x="360" y="506" />
+        <di:waypoint x="360" y="780" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="437" y="481" width="87" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="mf_decision_correction_di" bpmnElement="mf_decision_correction">
+        <di:waypoint x="2280" y="660" />
+        <di:waypoint x="2280" y="500" />
+        <di:waypoint x="820" y="500" />
+        <di:waypoint x="820" y="280" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1512" y="475" width="77" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="mf_decision_rejet_di" bpmnElement="mf_decision_rejet">
+        <di:waypoint x="1800" y="810" />
+        <di:waypoint x="1800" y="590" />
+        <di:waypoint x="790" y="590" />
+        <di:waypoint x="790" y="280" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1262" y="565" width="77" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="mf_decision_depot_di" bpmnElement="mf_decision_depot">
+        <di:waypoint x="2550" y="714" />
+        <di:waypoint x="2550" y="470" />
+        <di:waypoint x="840" y="470" />
+        <di:waypoint x="840" y="280" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1660" y="445" width="77" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="mf_decision_disponibilite_di" bpmnElement="mf_decision_disponibilite">
+        <di:waypoint x="2740" y="830" />
+        <di:waypoint x="2740" y="430" />
+        <di:waypoint x="880" y="430" />
+        <di:waypoint x="880" y="280" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1776" y="405" width="77" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="mf_resubmission_di" bpmnElement="mf_resubmission">
+        <di:waypoint x="1560" y="220" />
+        <di:waypoint x="1560" y="400" />
+        <di:waypoint x="2330" y="400" />
+        <di:waypoint x="2330" y="570" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1900" y="375" width="90" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="mf_retrait_di" bpmnElement="mf_retrait">
+        <di:waypoint x="1560" y="280" />
+        <di:waypoint x="1560" y="460" />
+        <di:waypoint x="3000" y="460" />
+        <di:waypoint x="3000" y="690" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2246" y="435" width="77" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

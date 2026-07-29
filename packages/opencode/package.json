@@ -10,6 +10,8 @@
     "test": "bun test --timeout 30000",
     "test:ci": "mkdir -p .artifacts/unit && bun test --timeout 30000 --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
     "test:eval": "bun test src/eval/eval.test.ts",
+    "test:golden": "bun test src/eval/golden/golden.test.ts",
+    "golden:bless": "bun run script/golden-bless.ts",
     "test:httpapi": "bun run script/httpapi-exercise.ts --mode coverage --fail-on-missing --fail-on-skip && bun run script/httpapi-exercise.ts --mode auth --fail-on-missing --fail-on-skip && bun run script/httpapi-exercise.ts --mode effect --fail-on-missing --fail-on-skip",
     "bench:test": "bun run script/bench-test-suite.ts",
     "profile:test": "bun run script/profile-test-files.ts",
