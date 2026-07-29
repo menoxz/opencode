@@ -14,7 +14,9 @@ const SIGKILL_TIMEOUT_MS = 200
 // from it fails for a reason invisible in the output. Emitting BOM-less UTF-8
 // makes the observation channel lossless. -NoProfile means no user profile can
 // do this for us.
-const PS_UTF8 = `[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);$OutputEncoding=[Console]::OutputEncoding`
+// Exported because the agent's shell tool builds its own pwsh invocation
+// (src/tool/shell.ts) instead of going through args(), and needs the same prologue.
+export const PS_UTF8 = `[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);$OutputEncoding=[Console]::OutputEncoding`
 const META: Record<string, { deny?: boolean; login?: boolean; posix?: boolean; ps?: boolean }> = {
   bash: { login: true, posix: true },
   dash: { login: true, posix: true },

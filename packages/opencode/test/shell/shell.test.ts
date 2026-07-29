@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import path from "path"
 import { spawnSync } from "child_process"
 import { Shell } from "../../src/shell/shell"
+import { cmd } from "../../src/tool/shell"
 import { Filesystem } from "@/util/filesystem"
 import { which } from "../../src/util/which"
 
@@ -109,6 +110,21 @@ describe("shell", () => {
         Shell.args(shell, `Write-Output "${expected}"`, process.cwd()),
         { encoding: "buffer", windowsHide: true },
       )
+      const decoded = (result.stdout ?? Buffer.alloc(0)).toString("utf-8").trim()
+      expect(decoded).toBe(expected)
+      expect(decoded).not.toContain("\uFFFD")
+    })
+
+    test("the agent shell tool builds its own pwsh argv and must carry the same preamble", () => {
+      const shell = which("pwsh") || which("powershell")
+      if (!shell) return
+      // Regression guard: src/tool/shell.ts does NOT go through Shell.args(). It
+      // assembles -NoLogo/-NoProfile/-NonInteractive itself, so fixing args()
+      // alone left every agent tool call still emitting the OEM code page.
+      const expected = "intégrationATD/modèle-café-€-日本"
+      const spec = cmd(shell, `Write-Output "${expected}"`, process.cwd(), process.env)
+      expect(spec.args.at(-1)).toContain(Shell.PS_UTF8)
+      const result = spawnSync(shell, [...spec.args], { encoding: "buffer", windowsHide: true })
       const decoded = (result.stdout ?? Buffer.alloc(0)).toString("utf-8").trim()
       expect(decoded).toBe(expected)
       expect(decoded).not.toContain("\uFFFD")
