@@ -2,4 +2,4 @@ Load a specialized skill when the task at hand matches one of the skills listed 
 
 Use this tool to inject the skill's instructions and resources into current conversation. The output may contain detailed workflow guidance as well as references to scripts, files, etc in the same directory as the skill.
 
-The skill name must match one of the skills listed in your system prompt.
+The name must be an installed skill, but it does NOT have to appear in your system prompt. That list is only the subset judged relevant to the last user message; many more skills are installed and loadable. When nothing listed fits, call `skill_search` first to find what else exists, then load it by name.

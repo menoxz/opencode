@@ -403,7 +403,61 @@ const CompleteParameters = Schema.Struct({
   summary: Schema.optional(Schema.String).annotate({
     description: "Short summary of what was accomplished for the current objective (shown to the user for confirmation).",
   }),
+  evidence: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        dod: Schema.String.annotate({ description: "The DoD item this proves. Quote it or paraphrase it closely." }),
+        proof: Schema.String.annotate({
+          description:
+            "A reproducible artifact: the command that was run and its exit code, a test result, a measured number, a file path and what it contains, an observed output. Not an opinion.",
+        }),
+      }),
+    ),
+  ).annotate({
+    description: "One entry per DoD item, each carrying a verifiable artifact. Required — completion is refused without it.",
+  }),
+  unverified: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        dod: Schema.String,
+        reason: Schema.String.annotate({ description: "Why this item could not be proven, stated plainly." }),
+      }),
+    ),
+  ).annotate({
+    description:
+      "DoD items you are explicitly NOT claiming to have verified. Completion is still allowed, but the gap is recorded and shown to the user.",
+  }),
 })
+
+/** A proof has to point at something someone else could re-observe. Approval
+ *  words are not proof, and this is exactly the failure mode the gate exists to
+ *  catch: the model asserting success in the language of success. */
+const VAGUE_PROOF =
+  /^(ok|okay|done|fait|termin[ée]s?|c'?est bon|[çc]a marche|works?|working|fine|good|yes|oui|valid[ée]?|success|r[ée]ussi|conforme|v[ée]rifi[ée]s?|test[ée]s?|no issues?|aucun probl[èe]me)[\s.!]*$/i
+
+function proofIsSubstantive(proof: string): boolean {
+  const value = proof.trim()
+  if (value.length < 12) return false
+  if (VAGUE_PROOF.test(value)) return false
+  // Something re-observable: a command, a path, a number, a status, a URL, a hash.
+  return /[\d]|[\\/]|https?:|exit|passed|failed|\bcode\b|\bscore\b|\btest/i.test(value)
+}
+
+function matchesDodItem(claim: string, item: string): boolean {
+  const normalize = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}\s]/gu, " ")
+      .split(/\s+/)
+      .filter((word) => word.length > 3)
+  const claimWords = new Set(normalize(claim))
+  if (claimWords.size === 0) return false
+  const itemWords = normalize(item)
+  if (itemWords.length === 0) return false
+  const overlap = itemWords.filter((word) => claimWords.has(word)).length
+  return overlap / itemWords.length >= 0.34
+}
+
 
 function lastUserMessageID(messages: Tool.Context["messages"]): string | undefined {
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -428,7 +482,7 @@ function completeToolDefinition() {
 
     return {
       description:
-        "Mark the current task objective as achieved. Completes immediately without asking the user for confirmation — the agent self-validates against the DoD. The objective then stops being injected as 'to do', and the next substantial user prompt derives a fresh objective.",
+        "Mark the current task objective as achieved. Requires evidence: one verifiable artifact per DoD item (command + exit code, test output, measured value, file path, observed behaviour). Completion is refused when a DoD item has no proof or the proof is a mere assertion of success. Items you cannot prove must be declared in `unverified` with a reason; they are then reported to the user.",
       parameters: CompleteParameters,
       execute: (params: Schema.Schema.Type<typeof CompleteParameters>, ctx: Tool.Context<Metadata>) =>
         Effect.gen(function* () {
@@ -461,6 +515,35 @@ function completeToolDefinition() {
             })
           }
 
+          // The DoD is the contract. Without a gate here, "completed" only means
+          // the model decided to say so — which is precisely what it is worst at.
+          const dodItems = (previous.dod ?? []).map((item) => item.trim()).filter((item) => item && item !== MINIMAL_DOD_ITEM)
+          const evidence = (params.evidence ?? []).filter((item) => item.dod?.trim() && item.proof?.trim())
+          const unverified = (params.unverified ?? []).filter((item) => item.dod?.trim() && item.reason?.trim())
+
+          if (dodItems.length > 0) {
+            const weak = evidence.filter((item) => !proofIsSubstantive(item.proof))
+            const unproven = dodItems.filter(
+              (item) =>
+                !evidence.some((entry) => proofIsSubstantive(entry.proof) && matchesDodItem(entry.dod, item)) &&
+                !unverified.some((entry) => matchesDodItem(entry.dod, item)),
+            )
+            if (unproven.length > 0 || weak.length > 0) {
+              return responseResult({
+                status: "error",
+                action: "complete",
+                updatedFields: [],
+                warnings: [
+                  "Completion refused: the DoD is not backed by verifiable evidence.",
+                  ...unproven.map((item) => `No proof for DoD item: ${item}`),
+                  ...weak.map((item) => `Proof is an assertion, not an artifact, for: ${item.dod} → "${item.proof}"`),
+                  "Provide `evidence: [{ dod, proof }]` where each proof is re-observable (command + exit code, test output, measured value, file path and content). Declare what you truly cannot prove in `unverified: [{ dod, reason }]`.",
+                ],
+                goalState: previous,
+              })
+            }
+          }
+
           const next = {
             ...previous,
             status: "completed" as const,
@@ -471,15 +554,23 @@ function completeToolDefinition() {
           yield* sessions.setGoalState({ sessionID: ctx.sessionID, goalState: next })
 
           const summaryLine = params.summary?.trim() ? `\nWhat was done: ${params.summary.trim()}` : ""
+          const evidenceLines = evidence.map((item) => `  - ${item.dod} → ${item.proof}`)
+          const gapLines = unverified.map((item) => `  - NOT VERIFIED: ${item.dod} → ${item.reason}`)
           return responseWithOutput(
             {
               status: "ok",
               action: "complete",
               updatedFields: ["status"],
-              warnings: [],
+              warnings: unverified.map((item) => `Unverified DoD item: ${item.dod} (${item.reason})`),
               goalState: next,
             },
-            `Objective marked as completed (self-validated, no confirmation asked).\nObjective: ${previous.goal}${summaryLine}\nAwait the user's next objective.`,
+            [
+              "Objective marked as completed (evidence-gated).",
+              `Objective: ${previous.goal}${summaryLine}`,
+              ...(evidenceLines.length > 0 ? ["Evidence:", ...evidenceLines] : []),
+              ...(gapLines.length > 0 ? ["Gaps:", ...gapLines] : []),
+              "Await the user's next objective.",
+            ].join("\n"),
           )
         }),
     } satisfies Tool.DefWithoutID<typeof CompleteParameters, Metadata>

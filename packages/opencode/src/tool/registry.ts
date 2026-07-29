@@ -27,6 +27,7 @@ import { WebFetchTool } from "./webfetch"
 import { WriteTool } from "./write"
 import { InvalidTool } from "./invalid"
 import { SkillTool } from "./skill"
+import { SkillSearchTool } from "./skill_search"
 import {
   McpListTool,
   McpConnectTool,
@@ -177,6 +178,7 @@ export const layer: Layer.Layer<
     const greptool = yield* GrepTool
     const patchtool = yield* ApplyPatchTool
     const skilltool = yield* SkillTool
+    const skillsearch = yield* SkillSearchTool
     const subagentlist = yield* SubagentListTool
     const sessionContext = yield* SessionContextTool
     const sessionInfo = yield* SessionInfoTool
@@ -327,6 +329,7 @@ export const layer: Layer.Layer<
           repo_clone: Tool.init(repoClone),
           repo_overview: Tool.init(repoOverview),
           skill: Tool.init(skilltool),
+          skill_search: Tool.init(skillsearch),
           subagent: Tool.init(subagentlist),
           session_context: Tool.init(sessionContext),
           session_info: Tool.init(sessionInfo),
@@ -367,6 +370,7 @@ export const layer: Layer.Layer<
             tool.search,
             ...(flags.experimentalScout ? [tool.repo_clone, tool.repo_overview] : []),
             tool.skill,
+            tool.skill_search,
             tool.subagent,
             tool.session_context,
             tool.session_info,
