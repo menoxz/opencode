@@ -1,9 +1,12 @@
 import { createMemo, createSignal } from "solid-js"
-import { useLocal } from "@tui/context/local"
+import { useLocal, parseModel } from "@tui/context/local"
 import { useSync } from "@tui/context/sync"
 import { map, pipe, flatMap, entries, filter, sortBy, take } from "remeda"
 import { DialogSelect } from "@tui/ui/dialog-select"
 import { useDialog } from "@tui/ui/dialog"
+import { useSDK } from "../context/sdk"
+import { useToast } from "../ui/toast"
+import { globalConfigFile } from "@/config/config"
 import { createDialogProviderOptions, DialogProvider } from "./dialog-provider"
 import { DialogVariant } from "./dialog-variant"
 import * as fuzzysort from "fuzzysort"
@@ -13,10 +16,51 @@ export function DialogModel(props: { providerID?: string }) {
   const local = useLocal()
   const sync = useSync()
   const dialog = useDialog()
+  const sdk = useSDK()
+  const toast = useToast()
   const [query, setQuery] = createSignal("")
 
   const connected = useConnected()
   const providers = createDialogProviderOptions()
+
+  // config.model is the only durable, agent-independent default. Without this
+  // the effective default after a restart is recent[0], which silently drifts
+  // to whatever model was tried last.
+  const configured = createMemo(() => {
+    const value = sync.data.config.model
+    if (!value) return undefined
+    const parsed = parseModel(value)
+    if (!parsed.modelID) return undefined
+    return parsed
+  })
+
+  const isDefault = (providerID: string, modelID: string) => {
+    const current = configured()
+    return current?.providerID === providerID && current.modelID === modelID
+  }
+
+  async function setDefault(model: { providerID: string; modelID: string }) {
+    const file = globalConfigFile()
+    // sdk.client.config targets the *project* config (/config). The global
+    // default lives behind sdk.client.global.config (/global/config).
+    const result = await sdk.client.global.config.update({
+      config: { model: `${model.providerID}/${model.modelID}` },
+    })
+    if (result.error) {
+      toast.show({ variant: "error", message: `Could not write ${file}`, duration: 5000 })
+      return
+    }
+    const agent = local.agent.current()
+    if (agent?.model) {
+      toast.show({
+        variant: "warning",
+        message: `Saved to ${file}, but agent "${agent.name}" pins ${agent.model.providerID}/${agent.model.modelID} and ignores the global default`,
+        duration: 8000,
+      })
+      return
+    }
+    toast.show({ variant: "success", message: `Default model saved to ${file}`, duration: 4000 })
+  }
 
   const showExtra = createMemo(() => connected() && !props.providerID)
 
@@ -38,7 +82,7 @@ export function DialogModel(props: { providerID?: string }) {
             key: item,
             value: { providerID: provider.id, modelID: model.id },
             title: model.name ?? item.modelID,
-            description: provider.name,
+            description: isDefault(provider.id, model.id) ? `${provider.name} (Default)` : provider.name,
             category,
             disabled: provider.id === "opencode" && model.id.includes("-nano"),
             footer: model.cost?.input === 0 && provider.id === "opencode" ? "Free" : undefined,
@@ -73,9 +117,11 @@ export function DialogModel(props: { providerID?: string }) {
           map(([model, info]) => ({
             value: { providerID: provider.id, modelID: model },
             title: info.name ?? model,
-            description: favorites.some((item) => item.providerID === provider.id && item.modelID === model)
-              ? "(Favorite)"
-              : undefined,
+            description: isDefault(provider.id, model)
+              ? "(Default)"
+              : favorites.some((item) => item.providerID === provider.id && item.modelID === model)
+                ? "(Favorite)"
+                : undefined,
             category: connected() ? provider.name : undefined,
             disabled: provider.id === "opencode" && model.includes("-nano"),
             footer: info.cost?.input === 0 && provider.id === "opencode" ? "Free" : undefined,
@@ -162,6 +208,13 @@ export function DialogModel(props: { providerID?: string }) {
           disabled: !connected(),
           onTrigger: (option) => {
             local.model.toggleFavorite(option.value as { providerID: string; modelID: string })
+          },
+        },
+        {
+          command: "model.dialog.default",
+          title: "Set as default",
+          onTrigger: (option) => {
+            void setDefault(option.value as { providerID: string; modelID: string })
           },
         },
       ]}
