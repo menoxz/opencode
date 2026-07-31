@@ -917,7 +917,15 @@ export const layer = Layer.effect(
         if (changed) yield* fs.writeFileString(file, updated).pipe(Effect.orDie)
       }
 
-      if (changed) yield* invalidate()
+      if (changed) {
+        yield* invalidateGlobal
+        // InstanceState.invalidate requires InstanceRef, which the global
+        // /global/config route does not provide (no workspace routing). The
+        // global handler disposes all instances after a change anyway, so a
+        // missing instance ref here is fine — the per-instance caches are
+        // rebuilt on next access.
+        yield* InstanceState.invalidate(state).pipe(Effect.catchCause(() => Effect.void))
+      }
       return { info: next, changed }
     })
 
