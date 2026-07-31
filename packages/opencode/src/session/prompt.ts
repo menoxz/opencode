@@ -447,9 +447,11 @@ export const layer = Layer.effect(
         ].join(" ")
       }
 
-      const visionModel = yield* provider.getModel(vision.providerID, vision.modelID)
-      if (!visionModel.capabilities.input.image) {
-        return `ERROR: Configured vision model ${vision.providerID}/${vision.modelID} does not support image input. Choose a vision-capable model.`
+      const visionModel = yield* provider
+        .getModel(vision.providerID, vision.modelID)
+        .pipe(Effect.catchCause(() => Effect.succeed(undefined)))
+      if (!visionModel || !visionModel.capabilities.input.image) {
+        return `ERROR: Configured vision model ${vision.providerID}/${vision.modelID} is not available or does not support image input. Choose a vision-capable model that is connected.`
       }
 
       const hash = imagePayloadHash(input.attachment.url)
@@ -479,10 +481,7 @@ export const layer = Layer.effect(
         url: input.attachment.url,
       }
       const normalized = yield* image.normalize(filePart).pipe(
-        Effect.catchIf(
-          (error) => error instanceof Image.ResizerUnavailableError,
-          () => Effect.succeed(filePart),
-        ),
+        Effect.catchCause(() => Effect.succeed(filePart)),
       )
       const message: MessageV2.WithParts = {
         info: {
@@ -533,7 +532,10 @@ export const layer = Layer.effect(
           Stream.filter(LLMEvent.is.textDelta),
           Stream.map((e) => e.text),
           Stream.mkString,
-          Effect.orDie,
+          Effect.catchCause((cause) => {
+            const defect = Cause.squash(cause)
+            return Effect.succeed(`ERROR: vision model call failed: ${defect instanceof Error ? defect.message : String(defect)}`)
+          }),
         )
       const trimmed = text.trim() || "No image details returned by the configured vision model."
       const result = [
@@ -574,7 +576,14 @@ export const layer = Layer.effect(
               sessionID: input.sessionID,
               agent: input.agent,
               promptRollout: input.promptRollout,
-            })
+            }).pipe(
+              Effect.catchCause((cause) => {
+                const defect = Cause.squash(cause)
+                return Effect.succeed(
+                  `ERROR: Image analysis failed (${defect instanceof Error ? defect.message : String(defect)}). The image could not be read by the configured vision model.`,
+                )
+              }),
+            )
             parts.push({
               id: PartID.ascending(),
               sessionID: part.sessionID,

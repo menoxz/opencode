@@ -4,17 +4,16 @@ import { useToast } from "@tui/ui/toast"
 import { map, pipe, flatMap, entries, filter, sortBy, take } from "remeda"
 import { DialogSelect } from "@tui/ui/dialog-select"
 import { useDialog } from "@tui/ui/dialog"
+import { useSDK } from "../context/sdk"
 import { createDialogProviderOptions, DialogProvider } from "./dialog-provider"
 import * as fuzzysort from "fuzzysort"
 import { useConnected } from "./use-connected"
-import { Global } from "@opencode-ai/core/global"
-import { Filesystem } from "@/util/filesystem"
-import path from "path"
 
 export function DialogVisionModel() {
   const sync = useSync()
   const dialog = useDialog()
   const toast = useToast()
+  const sdk = useSDK()
   const [query, setQuery] = createSignal("")
 
   const connected = useConnected()
@@ -77,13 +76,23 @@ export function DialogVisionModel() {
   })
 
   async function onSelect(providerID: string, modelID: string) {
-    const configPath = path.join(Global.Path.config, "opencode.json")
     try {
-      const config = await Filesystem.readJson<Record<string, unknown>>(configPath)
-      config.attachment = config.attachment ?? {}
-      ;(config.attachment as Record<string, unknown>).image = (config.attachment as Record<string, unknown>).image ?? {}
-      ;((config.attachment as Record<string, unknown>).image as Record<string, unknown>).vision_model = `${providerID}/${modelID}`
-      await Filesystem.writeJson(configPath, config)
+      // Go through the global config API so the running instance invalidates
+      // its cached config and the new vision model takes effect mid-session
+      // (mirrors how DialogModel persists the global default).
+      const result = await sdk.client.global.config.update({
+        config: {
+          attachment: {
+            image: {
+              vision_model: `${providerID}/${modelID}`,
+            },
+          },
+        },
+      })
+      if (result.error) {
+        toast.show({ message: `Failed to save vision model: ${JSON.stringify(result.error)}`, variant: "error" })
+        return
+      }
       toast.show({ message: `Vision model set to ${providerID}/${modelID}`, variant: "success" })
     } catch (error) {
       toast.show({ message: `Failed to save vision model: ${error}`, variant: "error" })

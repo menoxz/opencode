@@ -34,6 +34,7 @@ import { SyncProvider, useSync } from "@tui/context/sync"
 import { SyncProviderV2 } from "@tui/context/sync-v2"
 import { LocalProvider, useLocal } from "@tui/context/local"
 import { DialogModel } from "@tui/component/dialog-model"
+import { DialogVisionModel } from "@tui/component/dialog-vision-model"
 import { useConnected } from "@tui/component/use-connected"
 import { DialogMcp } from "@tui/component/dialog-mcp"
 import { DialogStatus } from "@tui/component/dialog-status"
@@ -97,6 +98,7 @@ const appBindingCommands = [
   "model.cycle_recent_reverse",
   "model.cycle_favorite",
   "model.cycle_favorite_reverse",
+  "model.vision",
   "agent.list",
   "mcp.list",
   "agent.cycle",
@@ -522,6 +524,16 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         slashName: "models",
         run: () => {
           dialog.replace(() => <DialogModel />)
+        },
+      },
+      {
+        name: "model.vision",
+        title: "Set image fallback (vision) model",
+        suggested: false,
+        category: "Agent",
+        slashName: "vision-model",
+        run: () => {
+          dialog.replace(() => <DialogVisionModel />)
         },
       },
       {
