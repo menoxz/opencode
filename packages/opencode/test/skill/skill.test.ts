@@ -610,4 +610,33 @@ description: A skill in the .opencode/skills directory.
       ].join("\n"))
     }),
   )
+
+  it.effect("clips long descriptions in the injected skills list", () =>
+    Effect.sync(() => {
+      const long = "word ".repeat(100).trim() // 500 chars
+      const list: Skill.Info[] = [
+        {
+          name: "long-skill",
+          description: long,
+          location: "/tmp/long-skill/SKILL.md",
+          content: "# long-skill",
+        },
+        {
+          name: "short-skill",
+          description: "Short.",
+          location: "/tmp/short-skill/SKILL.md",
+          content: "# short-skill",
+        },
+      ]
+
+      for (const mode of ["verbose", "summary", "caveman"] as const) {
+        const out = Skill.fmt(list, { mode })
+        expect(out).toContain("short-skill")
+        expect(out).not.toContain(long)
+        expect(out).toContain("…")
+      }
+      // The full description is still used for ranking (never clipped there).
+      expect(Skill.fmt(list, { mode: "summary" }).length).toBeLessThan(long.length * 2)
+    }),
+  )
 })

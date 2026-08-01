@@ -409,6 +409,22 @@ function formatMode(opts: { verbose: boolean } | { mode: FormatMode }): FormatMo
   return "mode" in opts ? opts.mode : opts.verbose ? "verbose" : "summary"
 }
 
+/**
+ * Display cap for descriptions in the injected skills list.
+ *
+ * The list exists so the model can decide which skills to load on demand —
+ * a name plus a one-line hint is enough for that decision. Descriptions are
+ * frequently long keyword blocks (the full text is still used for BM25
+ * ranking and for the `skill` tool payload), so showing them verbatim in the
+ * system prompt burns tokens on every turn for no discovery gain.
+ */
+const DESCRIPTION_DISPLAY_CHARS = 200
+
+function clipDescription(description: string): string {
+  if (description.length <= DESCRIPTION_DISPLAY_CHARS) return description
+  return `${description.slice(0, DESCRIPTION_DISPLAY_CHARS - 1)}…`
+}
+
 export function fmt(list: Info[], opts: { verbose: boolean } | { mode: FormatMode }) {
   const described = list.filter((skill) => skill.description !== undefined)
   if (described.length === 0) return "No skills are currently available."
@@ -421,7 +437,7 @@ export function fmt(list: Info[], opts: { verbose: boolean } | { mode: FormatMod
         .flatMap((skill) => [
           "  <skill>",
           `    <name>${skill.name}</name>`,
-          `    <description>${skill.description}</description>`,
+          `    <description>${clipDescription(skill.description!)}</description>`,
           "  </skill>",
         ]),
       "</available_skills>",
@@ -432,7 +448,7 @@ export function fmt(list: Info[], opts: { verbose: boolean } | { mode: FormatMod
       "SKILLS:",
       ...described
         .toSorted((a, b) => a.name.localeCompare(b.name))
-        .map((skill) => `- ${skill.name} :: ${skill.description}`),
+        .map((skill) => `- ${skill.name} :: ${clipDescription(skill.description!)}`),
     ].join("\n")
   }
 
@@ -440,7 +456,7 @@ export function fmt(list: Info[], opts: { verbose: boolean } | { mode: FormatMod
     "## Available Skills",
     ...described
       .toSorted((a, b) => a.name.localeCompare(b.name))
-      .map((skill) => `- **${skill.name}**: ${skill.description}`),
+      .map((skill) => `- **${skill.name}**: ${clipDescription(skill.description!)}`),
   ].join("\n")
 }
 
