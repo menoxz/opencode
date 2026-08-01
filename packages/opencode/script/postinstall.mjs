@@ -24,7 +24,9 @@ const archMap = {
 
 const platform = platformMap[os.platform()] ?? os.platform()
 const arch = archMap[os.arch()] ?? os.arch()
-const base = `opencode-${platform}-${arch}`
+// Fork package prefix — binary packages are published under the @lux-tech scope
+// (the upstream opencode-* names are taken by the official opencode-ai).
+const base = `@lux-tech/opencode-ai-${platform}-${arch}`
 const sourceBinary = platform === "windows" ? "opencode.exe" : "opencode"
 const targetBinary = path.join(__dirname, "bin", "opencode.exe")
 
