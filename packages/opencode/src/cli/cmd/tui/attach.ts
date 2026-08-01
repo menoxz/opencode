@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process"
 import { cmd } from "../cmd"
 import { UI } from "@/cli/ui"
 import { win32DisableProcessedInput, win32InstallCtrlCGuard } from "./win32"
@@ -5,6 +6,54 @@ import { TuiConfig } from "@/cli/cmd/tui/config/tui"
 import { errorMessage } from "@/util/error"
 import { validateSession } from "./validate-session"
 import { ServerAuth } from "@/server/auth"
+
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"])
+
+function serverBinary(): string {
+  const exe = process.execPath
+  return exe.endsWith("opencode.exe") || exe.endsWith("opencode") ? exe : "opencode"
+}
+
+function serverReachable(url: string, headers?: RequestInit["headers"]): Promise<boolean> {
+  // Any HTTP response means a server is up (401 = up but auth required) — only
+  // a network-level failure means nothing is listening.
+  return fetch(`${url}/config`, { headers, signal: AbortSignal.timeout(1500) }).then(
+    () => true,
+    () => false,
+  )
+}
+
+async function ensureServer(url: string, headers?: RequestInit["headers"]): Promise<void> {
+  const parsed = new URL(url)
+  if (!LOCAL_HOSTS.has(parsed.hostname)) return
+  if (await serverReachable(url, headers)) return
+
+  const port = Number(parsed.port)
+  if (!port) {
+    throw new Error(
+      `Server not reachable at ${url} and port is unknown — specify one, e.g. http://localhost:4096`,
+    )
+  }
+
+  UI.println(`No server at ${parsed.origin} — starting opencode serve on port ${port}…`)
+  spawn(serverBinary(), ["serve", "--port", String(port)], {
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true,
+  }).unref()
+
+  const deadline = Date.now() + 15_000
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    if (await serverReachable(url, headers)) {
+      UI.println(`Server ready at ${parsed.origin}`)
+      return
+    }
+  }
+  throw new Error(
+    `Timed out waiting for the server at ${parsed.origin} — check that port ${port} is free`,
+  )
+}
 
 export const AttachCommand = cmd({
   command: "attach <url>",
@@ -68,6 +117,8 @@ export const AttachCommand = cmd({
       const headers = ServerAuth.headers({ password: args.password, username: args.username })
       const config = await TuiConfig.get()
       const { tui } = await import("./app")
+
+      await ensureServer(args.url, headers)
 
       try {
         await validateSession({
