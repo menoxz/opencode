@@ -1,0 +1,47 @@
+name: release-fork
+run-name: "release-fork ${{ github.ref_name }}"
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-bun
+
+      # Bun cross-compiles every target from the ubuntu runner (same as the
+      # upstream build-cli job). The build script forces OPENCODE_VERSION from
+      # packages/opencode/package.json, so bump the version before dispatching.
+      - name: Build all platform binaries
+        run: bun run --cwd packages/opencode build --minify=false --splitting=false
+
+      - name: Package release archives
+        working-directory: packages/opencode/dist
+        run: |
+          set -e
+          for d in opencode-linux-*; do (cd "$d/bin" && tar -czf "../../$d.tar.gz" *); done
+          for d in opencode-darwin-* opencode-windows-*; do (cd "$d/bin" && zip -qr "../../$d.zip" *); done
+          ls -la *.tar.gz *.zip
+
+      - name: Publish npm packages
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
+          bun ./packages/opencode/script/publish-fork.ts
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(node -p "require('./packages/opencode/package.json').version")
+          gh release create "v${VERSION}" packages/opencode/dist/*.tar.gz packages/opencode/dist/*.zip \
+            --title "v${VERSION}" \
+            --notes "opencode fork ${VERSION} — install: npm install -g @lux-tech/opencode-ai" \
+            --repo menoxz/opencode
