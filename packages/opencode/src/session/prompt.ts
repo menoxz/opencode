@@ -23,6 +23,7 @@ import { SelfImprove } from "@/self-improve"
 import { Instruction } from "./instruction"
 import { Plugin } from "../plugin"
 import MAX_STEPS from "../session/prompt/max-steps.txt"
+import PROMPT_CORE from "./prompt/core.txt"
 import { ToolRegistry } from "@/tool/registry"
 import { MCP } from "../mcp"
 import { LSP } from "@/lsp/lsp"
@@ -1971,6 +1972,11 @@ export const layer = Layer.effect(
               sys.environment(model),
               instruction.system().pipe(Effect.orDie),
             ])
+            // Track the fixed system fragments so the context summary covers the
+            // FULL system prompt, not only the variable sections.
+            contextSummary.add("core", "base agent prompt (PROMPT_CORE or agent.prompt)", agent.prompt ?? PROMPT_CORE, 0)
+            contextSummary.add("env", "inject environment info", env, 0)
+            contextSummary.add("instructions", "inject AGENTS.md instruction files", instructions, 0)
             const modelMessageConversionStart = Date.now()
             const modelMsgs = yield* MessageV2.toModelMessagesEffect(preparedMsgs, model, {
               replayToolInputs: promptRollout.replayToolInputs,

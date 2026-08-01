@@ -12,6 +12,10 @@ export type PromptContextSection =
   | "daemon"
   | "modelMessageConversion"
   | "handleProcess"
+  | "core"
+  | "env"
+  | "instructions"
+  | "userSystem"
 
 export interface PromptContextEntry {
   section: PromptContextSection
