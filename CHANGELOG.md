@@ -14,6 +14,7 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 ### Fixed
 
 ### Removed
+- **Tool `swarm` supprimé** (`src/tool/swarm.ts`, enregistrement dans `tool/registry.ts`) : suringénierie et boîte noire côté TUI. Le mode agent `swarm` (`--agent swarm`, flag `OPENCODE_EXPERIMENTAL_SWARM`) reste et orchestre désormais via l'outil `task` existant — il décompose le but, émet des appels `task` parallèles (même message pour la vague 1, messages suivants pour les dépendances), puis synthétise les résultats `<task>`. Chaque sous-agent s'affiche nativement dans le TUI (footer tabs avec statut en direct, "view subagents", navigation Parent/Prev/Next) car ce sont de vrais appels `task`. Tests swarm du tool retirés ; le mode swarm est conservé dans `test/agent/agent.test.ts` (2 tests) ; `experimentalSwarm` reste dans runtime-flags.
 
 ## [v1.18.59] - 2026-08-01
 

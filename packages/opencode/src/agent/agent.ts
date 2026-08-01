@@ -241,7 +241,7 @@ export const layer = Layer.effect(
             ? {
                 swarm: {
                   name: "swarm",
-                  description: `Agent Swarm mode. Decomposes a goal into independent sub-agent tasks, runs them in parallel waves with the swarm tool, and aggregates the results into one coherent answer. Use this mode for goals with several independent work items (research several topics, audit several modules, draft independent sections).`,
+                  description: `Agent Swarm mode. Decomposes a goal into independent sub-agent tasks, delegates each one with the task tool (parallel task calls in the same message), and aggregates the results into one coherent answer. Use this mode for goals with several independent work items (research several topics, audit several modules, draft independent sections).`,
                   permission: Permission.merge(
                     defaults,
                     Permission.fromConfig({

@@ -6,6 +6,8 @@ import { Effect, Layer, Result, Schema } from "effect"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { ToolRegistry } from "@/tool/registry"
 import { Tool } from "@/tool/tool"
+import { Service as ToolCacheService } from "@/tool/cache"
+import { Service as SearchIndexService } from "@/tool/search-index"
 import { TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { TestConfig } from "../fixture/config"
@@ -69,9 +71,14 @@ const registryLayer = (opts: RegistryLayerOptions = {}) =>
       Layer.provide(Format.defaultLayer),
       Layer.provide(node),
       Layer.provide(Ripgrep.defaultLayer),
-      Layer.provide(Layer.mergeAll(Truncate.defaultLayer, Layer.succeed(Orchestrator.Service, {
-        plan: () => Effect.succeed({ success: true, results: [], totalDurationMs: 0, failedSteps: [], totalSteps: 0, parallelRounds: 0 }),
-      }))),
+      Layer.provide(Layer.mergeAll(
+        Truncate.defaultLayer,
+        Layer.succeed(Orchestrator.Service, {
+          plan: () => Effect.succeed({ success: true, results: [], totalDurationMs: 0, failedSteps: [], totalSteps: 0, parallelRounds: 0 }),
+        }),
+        ToolCacheService.defaultLayer,
+        SearchIndexService.defaultLayer,
+      )),
     )
     .pipe(Layer.provide(MCP.defaultLayer))
     .pipe(Layer.provide(RuntimeFlags.layer(opts.flags ?? {})))

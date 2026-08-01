@@ -169,7 +169,11 @@ const blockingProcessor = Layer.succeed(
   }),
 )
 
-function makePrompt(input?: { processor?: "blocking"; planEngineLayer?: Layer.Layer<PlanEngine.Service, never, never> }) {
+function makePrompt(input?: {
+  processor?: "blocking"
+  planEngineLayer?: Layer.Layer<PlanEngine.Service, never, never>
+}) {
+  const runtimeFlags = { experimentalEventSystem: true }
   const deps = Layer.mergeAll(
     Session.defaultLayer,
     Snapshot.defaultLayer,
@@ -202,7 +206,7 @@ function makePrompt(input?: { processor?: "blocking"; planEngineLayer?: Layer.La
     Layer.provide(Ripgrep.defaultLayer),
     Layer.provide(SearchIndexService.defaultLayer),
     Layer.provide(Format.defaultLayer),
-    Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
+    Layer.provide(RuntimeFlags.layer(runtimeFlags)),
     Layer.provideMerge(todo),
     Layer.provideMerge(question),
     Layer.provideMerge(deps),
@@ -214,11 +218,11 @@ function makePrompt(input?: { processor?: "blocking"; planEngineLayer?: Layer.La
       : SessionProcessor.layer.pipe(
           Layer.provide(summary),
           Layer.provide(Image.defaultLayer),
-          Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
+          Layer.provide(RuntimeFlags.layer(runtimeFlags)),
           Layer.provideMerge(deps),
         )
   const compact = SessionCompaction.layer.pipe(
-    Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
+    Layer.provide(RuntimeFlags.layer(runtimeFlags)),
     Layer.provideMerge(proc),
     Layer.provideMerge(deps),
   )
@@ -236,7 +240,7 @@ function makePrompt(input?: { processor?: "blocking"; planEngineLayer?: Layer.La
     Layer.provideMerge(trunc),
     Layer.provide(Instruction.defaultLayer),
     Layer.provide(SystemPrompt.defaultLayer),
-    Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
+    Layer.provide(RuntimeFlags.layer(runtimeFlags)),
     Layer.provideMerge(deps),
     Layer.provide(summary),
   )

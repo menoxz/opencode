@@ -140,7 +140,6 @@ swarm.instance("swarm agent is registered as a primary agent when the flag is en
     expect(swarmAgent?.native).toBe(true)
     expect(swarmAgent?.hidden).toBeUndefined()
     expect(swarmAgent?.prompt).toContain("Agent Swarm mode")
-    expect(evalPerm(swarmAgent, "swarm")).toBe("allow")
     expect(evalPerm(swarmAgent, "question")).toBe("allow")
     expect(evalPerm(swarmAgent, "edit")).toBe("allow")
     expect(evalPerm(swarmAgent, "task")).toBe("allow")
