@@ -10,6 +10,7 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 ### Added
 
 ### Changed
+- README réécrit pour le fork : installation/mise à jour/désinstallation via `@lux-tech/opencode-ai`, tableau des 12 binaires par plateforme, et section cohabitation avec l'opencode original (conflit de binaire `opencode`, options npx / renommage, vérification du binaire actif)
 
 ### Fixed
 
