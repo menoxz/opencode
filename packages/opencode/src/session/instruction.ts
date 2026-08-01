@@ -103,13 +103,21 @@ export const layer: Layer.Layer<
 
     const relative = Effect.fnUntraced(function* (instruction: string) {
       const ctx = yield* InstanceState.context
-      if (!Flag.OPENCODE_DISABLE_PROJECT_CONFIG) {
+      if (Flag.OPENCODE_DISABLE_PROJECT_CONFIG) {
         return yield* fs
-          .globUp(instruction, ctx.directory, ctx.worktree)
+          .globUp(instruction, global.config, global.config)
           .pipe(Effect.catch(() => Effect.succeed([] as string[])))
       }
+      const project = yield* fs
+        .globUp(instruction, ctx.directory, ctx.worktree)
+        .pipe(Effect.catch(() => Effect.succeed([] as string[])))
+      if (project.length > 0) return project
+      // Relative patterns in the global config ("instructions": ["./rules.md"])
+      // mean "next to the config file". They are routinely missed by the
+      // project-tree walk, so fall back to the config directory instead of
+      // silently dropping the configured instruction files.
       return yield* fs
-        .globUp(instruction, global.config, global.config)
+        .glob(instruction, { cwd: global.config, absolute: true, include: "file" })
         .pipe(Effect.catch(() => Effect.succeed([] as string[])))
     })
 

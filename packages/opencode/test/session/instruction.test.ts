@@ -271,6 +271,39 @@ describe("Instruction.system", () => {
       )
     }),
   )
+
+  it.live("resolves relative config instructions against the config directory", () =>
+    Effect.gen(function* () {
+      // The instruction file lives next to the config file (globalTmp), NOT in
+      // the project tree. "./rules.md" patterns must resolve against the
+      // config directory instead of being silently dropped.
+      const globalTmp = yield* tmpWithFiles({ "rules.md": "# Config Rules" })
+      const projectTmp = yield* tmpWithFiles({ "AGENTS.md": "# Project" })
+
+      const configLayer = TestConfig.layer({
+        get: () =>
+          Effect.succeed({
+            instructions: ["./rules.md"],
+          }),
+      })
+
+      const instructionLayer = Instruction.layer.pipe(
+        Layer.provide(configLayer),
+        Layer.provide(AppFileSystem.defaultLayer),
+        Layer.provide(FetchHttpClient.layer),
+        Layer.provide(Global.layerWith({ home: globalTmp, config: globalTmp })),
+        Layer.provide(RuntimeFlags.layer({})),
+      )
+
+      yield* Effect.gen(function* () {
+        const svc = yield* Instruction.Service
+        const rules = yield* svc.system()
+        const rule = rules.find((item) => item.includes("Config Rules"))
+        expect(rule).toBeDefined()
+        expect(rule).toContain(path.join(globalTmp, "rules.md"))
+      }).pipe(provideInstance(projectTmp), Effect.provide(instructionLayer))
+    }),
+  )
 })
 
 describe("Instruction.systemPaths global config", () => {
