@@ -12,6 +12,7 @@ import PROMPT_COMPACTION from "./prompt/compaction.txt"
 import PROMPT_EXPLORE from "./prompt/explore.txt"
 import PROMPT_SCOUT from "./prompt/scout.txt"
 import PROMPT_SUMMARY from "./prompt/summary.txt"
+import PROMPT_SWARM from "./prompt/swarm.txt"
 import PROMPT_TITLE from "./prompt/title.txt"
 import { Permission } from "@/permission"
 import { mergeDeep, pipe, sortBy, values } from "remeda"
@@ -232,6 +233,26 @@ export const layer = Layer.effect(
                   prompt: PROMPT_SCOUT,
                   options: {},
                   mode: "subagent" as const,
+                  native: true,
+                },
+              }
+            : {}),
+          ...(flags.experimentalSwarm
+            ? {
+                swarm: {
+                  name: "swarm",
+                  description: `Agent Swarm mode. Decomposes a goal into independent sub-agent tasks, runs them in parallel waves with the swarm tool, and aggregates the results into one coherent answer. Use this mode for goals with several independent work items (research several topics, audit several modules, draft independent sections).`,
+                  permission: Permission.merge(
+                    defaults,
+                    Permission.fromConfig({
+                      question: "allow",
+                      plan_enter: "allow",
+                    }),
+                    user,
+                  ),
+                  prompt: PROMPT_SWARM,
+                  options: {},
+                  mode: "primary" as const,
                   native: true,
                 },
               }

@@ -265,6 +265,42 @@ describe("RuntimeFlags", () => {
     }),
   )
 
+  it.effect("experimentalSwarm defaults to false", () =>
+    Effect.gen(function* () {
+      const flags = yield* readFlags.pipe(Effect.provide(fromConfig({})))
+
+      expect(flags.experimentalSwarm).toBe(false)
+    }),
+  )
+
+  it.effect("experimentalSwarm is enabled by OPENCODE_EXPERIMENTAL_SWARM", () =>
+    Effect.gen(function* () {
+      const flags = yield* readFlags.pipe(
+        Effect.provide(
+          fromConfig({
+            OPENCODE_EXPERIMENTAL_SWARM: "true",
+          }),
+        ),
+      )
+
+      expect(flags.experimentalSwarm).toBe(true)
+    }),
+  )
+
+  it.effect("experimentalSwarm inherits OPENCODE_EXPERIMENTAL", () =>
+    Effect.gen(function* () {
+      const flags = yield* readFlags.pipe(
+        Effect.provide(
+          fromConfig({
+            OPENCODE_EXPERIMENTAL: "true",
+          }),
+        ),
+      )
+
+      expect(flags.experimentalSwarm).toBe(true)
+    }),
+  )
+
   for (const input of [
     { name: "absent", config: {}, expected: undefined },
     {

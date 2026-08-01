@@ -26,6 +26,7 @@ const agentLayer = (flags: Partial<RuntimeFlags.Info> = {}) =>
 
 const it = testEffect(agentLayer())
 const scout = testEffect(agentLayer({ experimentalScout: true }))
+const swarm = testEffect(agentLayer({ experimentalSwarm: true }))
 // Pure-mode runner: file watchers are not armed, so reload() can be tested
 // deterministically without leaking fs.watch handles into teardown.
 const pureIt = testEffect(agentLayer({ pure: true }))
@@ -59,6 +60,7 @@ it.instance("returns default native agents when no config", () =>
     expect(names).toContain("general")
     expect(names).toContain("explore")
     expect(names).not.toContain("scout")
+    expect(names).not.toContain("swarm")
     expect(names).toContain("compaction")
     expect(names).toContain("title")
     expect(names).toContain("summary")
@@ -127,6 +129,28 @@ scout.instance("scout agent allows repo cloning and repo cache reads", () =>
         scout!.permission,
       ).action,
     ).toBe("allow")
+  }),
+)
+
+swarm.instance("swarm agent is registered as a primary agent when the flag is enabled", () =>
+  Effect.gen(function* () {
+    const swarmAgent = yield* load((svc) => svc.get("swarm"))
+    expect(swarmAgent).toBeDefined()
+    expect(swarmAgent?.mode).toBe("primary")
+    expect(swarmAgent?.native).toBe(true)
+    expect(swarmAgent?.hidden).toBeUndefined()
+    expect(swarmAgent?.prompt).toContain("Agent Swarm mode")
+    expect(evalPerm(swarmAgent, "swarm")).toBe("allow")
+    expect(evalPerm(swarmAgent, "question")).toBe("allow")
+    expect(evalPerm(swarmAgent, "edit")).toBe("allow")
+    expect(evalPerm(swarmAgent, "task")).toBe("allow")
+  }),
+)
+
+swarm.instance("swarm agent is listed when the flag is enabled", () =>
+  Effect.gen(function* () {
+    const names = (yield* load((svc) => svc.list())).map((agent) => agent.name)
+    expect(names).toContain("swarm")
   }),
 )
 

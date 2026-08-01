@@ -22,6 +22,7 @@ import { GlobTool } from "./glob"
 import { GrepTool } from "./grep"
 import { ReadTool } from "./read"
 import { TaskTool } from "./task"
+import { SwarmTool } from "./swarm"
 import { TodoWriteTool } from "./todo"
 import { WebFetchTool } from "./webfetch"
 import { WriteTool } from "./write"
@@ -156,6 +157,7 @@ export const layer: Layer.Layer<
 
     const invalid = yield* InvalidTool
     const task = yield* TaskTool
+    const swarmtool = yield* SwarmTool
     const read = yield* ReadTool
     const question = yield* QuestionTool
     const todo = yield* TodoWriteTool
@@ -323,6 +325,7 @@ export const layer: Layer.Layer<
           write: Tool.init(writetool),
           task: Tool.init(task),
           tasks: Tool.init(tasks),
+          swarm: Tool.init(swarmtool),
           fetch: Tool.init(webfetch),
           todo: Tool.init(todo),
           search: Tool.init(websearch),
@@ -369,6 +372,7 @@ export const layer: Layer.Layer<
             tool.todo,
             tool.search,
             ...(flags.experimentalScout ? [tool.repo_clone, tool.repo_overview] : []),
+            ...(flags.experimentalSwarm ? [tool.swarm] : []),
             tool.skill,
             tool.skill_search,
             tool.subagent,
