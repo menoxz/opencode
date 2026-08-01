@@ -51,7 +51,7 @@
 
 ## การติดตั้ง (fork)
 
-ฟอร์กนี้เผยแพร่บน npm ภายใต้สโคป `@lux-tech` และติดตั้งไบนารีชื่อ `opencode` เช่นเดียวกับแพ็กเกจอย่างเป็นทางการ หมายความว่าเมื่อติดตั้งทั้งสองแบบ global ฟอร์กจะ**แทนที่** opencode อย่างเป็นทางการ — โปรดอ่าน**การอยู่ร่วมกับ opencode อย่างเป็นทางการ**ก่อนติดตั้ง
+ฟอร์กนี้เผยแพร่บน npm ภายใต้สโคป `@lux-tech` และติดตั้งคำสั่งของมันเป็น **`opencodev2`** — ไบนารีแยกที่**อยู่ร่วม**กับ opencode อย่างเป็นทางการ (ติดตั้งจาก `opencode-ai`) นอกจากนี้ยังใช้ไดเรกทอรีข้อมูล/การกำหนดค่าของตัวเอง (`~/.local/share/opencodev2`, `~/.config/opencodev2`) ดังนั้นทั้งสองผลิตภัณฑ์จึงรันคู่กันได้โดยไม่แตะข้อมูลของกันและกัน ในการเริ่มครั้งแรกแบบโต้ตอบ ฟอร์กจะเสนอให้นำเข้าการกำหนดค่า opencode, คีย์ API และประวัติเซสชันที่มีอยู่ของคุณ — การติดตั้งเดิมยังคงเหมือนเดิม โปรดอ่าน**การอยู่ร่วมกับ opencode อย่างเป็นทางการ**
 
 ### แนะนำ: npm
 
@@ -62,45 +62,45 @@ npm install -g @lux-tech/opencode-ai
 ตรวจสอบ:
 
 ```bash
-opencode --version
-# opencode v1.18.55 (or the latest published version)
+opencodev2 --version
+# 1.18.59 (or the latest published version)
 ```
 
-เมตาแพ็กเกจ `@lux-tech/opencode-ai` จะดาวน์โหลดไบนารีที่ถูกต้องสำหรับแพลตฟอร์มของคุณโดยอัตโนมัติจากหนึ่งใน 12 ดีเพนเดนซีแบบทางเลือก (ดู**ตารางไบนารีตามแพลตฟอร์ม**) และเปิดเผยเป็นไบนารี `opencode`
+เมตาแพ็กเกจ `@lux-tech/opencode-ai` จะดาวน์โหลดไบนารีที่ถูกต้องสำหรับแพลตฟอร์มของคุณโดยอัตโนมัติจากหนึ่งใน 12 ดีเพนเดนซีแบบทางเลือก (ดู**ตารางไบนารีตามแพลตฟอร์ม**) และเปิดเผยเป็นคำสั่ง `opencodev2`
 
 ### ทางเลือก: GitHub Releases (ด้วยตนเอง)
 
-อาร์ไคฟ์ของรุ่นเผยแพร่ถูกโพสต์ที่[หน้าปล่อยรุ่น](https://github.com/menoxz/opencode/releases) ในรูปแบบ `.tar.gz` (Linux) และ `.zip` (macOS / Windows) แต่ละอาร์ไคฟ์มีไบนารี `opencode` (หรือ `opencode.exe`) อยู่ที่รากของมัน
+อาร์ไคฟ์ของรุ่นเผยแพร่ถูกโพสต์ที่[หน้าปล่อยรุ่น](https://github.com/menoxz/opencode/releases) ในรูปแบบ `.tar.gz` (Linux) และ `.zip` (macOS / Windows) แต่ละอาร์ไคฟ์มีไบนารี CLI ที่คอมไพล์แล้วอยู่ที่รากของมัน — เมื่อติดตั้งด้วยตนเอง ให้เปลี่ยนชื่อเป็น `opencodev2` เพื่อไม่ให้ชนกับไบนารี `opencode` อย่างเป็นทางการ
 
 ```bash
 # Example: Linux x64
-VERSION=v1.18.55
+VERSION=v1.18.59
 curl -fsSL -o opencode.tar.gz "https://github.com/menoxz/opencode/releases/download/$VERSION/opencode-linux-x64.tar.gz"
 tar -xzf opencode.tar.gz
-sudo mv opencode /usr/local/bin/opencode-fork   # rename to avoid clobbering the official binary
+sudo mv opencode /usr/local/bin/opencodev2   # ชื่อแยก ไม่ชนกับไบนารีอย่างเป็นทางการ
 ```
 
 ```powershell
 # Example: Windows x64 (PowerShell)
-$VERSION = "v1.18.55"
+$VERSION = "v1.18.59"
 Invoke-WebRequest -Uri "https://github.com/menoxz/opencode/releases/download/$VERSION/opencode-windows-x64.zip" -OutFile opencode.zip
 Expand-Archive -Path opencode.zip -DestinationPath . -Force
-Move-Item .\opencode.exe "$env:LOCALAPPDATA\Microsoft\WindowsApps\opencode-fork.exe" -Force
+Move-Item .\opencode.exe "$env:LOCALAPPDATA\Microsoft\WindowsApps\opencodev2.exe" -Force
 ```
 
 ### ตำแหน่งของไบนารี
 
 | วิธีติดตั้ง | เส้นทางไบนารี |
 |---|---|
-| npm (Windows) | `%APPDATA%\npm\opencode.exe` |
-| npm (Linux / macOS) | `$(npm prefix -g)/bin/opencode` |
+| npm (Windows) | `%APPDATA%\npm\opencodev2.exe` |
+| npm (Linux / macOS) | `$(npm prefix -g)/bin/opencodev2` |
 | GitHub release (ด้วยตนเอง) | ที่ใดก็ตามที่คุณวางไว้ |
 
 ### อัปเดต
 
 ```bash
 # Built-in updater (fetches the latest @lux-tech/opencode-ai release)
-opencode upgrade
+opencodev2 upgrade
 
 # Or via npm
 npm update -g @lux-tech/opencode-ai
@@ -115,77 +115,45 @@ npm uninstall -g @lux-tech/opencode-ai
 บน Windows ให้ลบ shim ที่ล้าสมัยที่ npm ทิ้งไว้ด้วย:
 
 ```powershell
-Remove-Item "$env:APPDATA\npm\opencode*" -Force -ErrorAction SilentlyContinue
+Remove-Item "$env:APPDATA\npm\opencodev2*" -Force -ErrorAction SilentlyContinue
 ```
 
 ---
 
 ## การอยู่ร่วมกับ opencode อย่างเป็นทางการ
 
-**ทั้งฟอร์ก (`@lux-tech/opencode-ai`) และ opencode อย่างเป็นทางการ (`opencode-ai`) ต่างติดตั้งไบนารีชื่อ `opencode`** การติดตั้งตัวใดตัวหนึ่งแบบ global ทับอีกตัวจะแทนที่ไบนารีก่อนหน้าอย่างเงียบ ๆ คุณไม่สามารถเก็บทั้งคู่เป็น `opencode` ระดับ global พร้อมกันได้
+ฟอร์ก (`@lux-tech/opencode-ai`) ติดตั้งคำสั่งของมันเป็น **`opencodev2`** ในขณะที่ opencode อย่างเป็นทางการ (`opencode-ai`) ติดตั้ง `opencode` สองชื่อนี้ไม่ชนกัน และฟอร์กใช้ไดเรกทอรีข้อมูลของตัวเอง (`~/.local/share/opencodev2`, `~/.config/opencodev2`, `~/.local/state/opencodev2`, `~/.cache/opencodev2`) ดังนั้น**ทั้งคู่สามารถติดตั้งและใช้พร้อมกันได้**
+
+### วิซาร์ดการย้ายข้อมูลเมื่อเริ่มครั้งแรก
+
+ในการเริ่มครั้งแรกแบบโต้ตอบ `opencodev2` จะตรวจจับว่ามีการติดตั้ง opencode ก่อนหน้า (การกำหนดค่า, คีย์ API, เซสชัน) หรือไม่ แล้วถามคุณว่าต้องการทำอะไร:
+
+- **นำเข้า (แนะนำ)** — คัดลอกการกำหนดค่า, ข้อมูลรับรอง (`auth.json`) และประวัติเซสชัน (`opencode.db`) จากไดเรกทอรี opencode เดิมไปยังไดเรกทอรี opencodev2 ข้อมูลเดิมยังคงเหมือนเดิม
+- **ทีหลัง** — เริ่มด้วยข้อมูลใหม่และถามอีกครั้งในการเริ่มครั้งถัดไป
+- **ไม่เคย** — เริ่มด้วยข้อมูล opencodev2 ว่างเปล่า (ไฟล์มาร์กเกอร์จะป้องกันการถามซ้ำ)
+
+สภาพแวดล้อมแบบ headless (CI, สคริปต์) บังคับพฤติกรรมได้:
+
+```bash
+OPENCODEV2_MIGRATE=copy opencodev2 ...   # นำเข้าแบบไม่โต้ตอบ
+OPENCODEV2_MIGRATE=skip opencodev2 ...   # ข้ามและทำเครื่องหมายว่าตัดสินใจแล้ว
+```
+
+วิซาร์ดจะรันเพียงครั้งเดียวต่อไดเรกทอรีข้อมูล (ไฟล์มาร์กเกอร์ `.migrate-state` บันทึกการตัดสินใจ) หลังการนำเข้า ฐานข้อมูลที่คัดลอกเป็นของ opencodev2 — การย้ายฐานข้อมูล opencodev2 ในภายหลังจะไม่แตะการติดตั้ง opencode เดิมเลย
 
 ### ควรใช้ตัวไหน?
 
 | ความต้องการ | ใช้ |
 |---|---|
-| MCP servers ที่ auto-reconnect, hot reload, eval pipeline, memory consolidation, unified prompt | **ฟอร์กนี้** (`@lux-tech/opencode-ai`) |
-| รุ่นอย่างเป็นทางการที่ผ่านการตรวจสอบอย่างกว้างขวาง | [opencode อย่างเป็นทางการ](https://github.com/anomalyco/opencode) (`opencode-ai`) |
+| MCP servers ที่ auto-reconnect, hot reload, eval pipeline, memory consolidation, unified prompt | **ฟอร์กนี้** (`opencodev2`) |
+| รุ่นอย่างเป็นทางการที่ผ่านการตรวจสอบอย่างกว้างขวาง | [opencode อย่างเป็นทางการ](https://github.com/anomalyco/opencode) (`opencode`) |
 
-### ตัวเลือก A — ติดตั้งแบบ global หนึ่งตัว + ใช้ `npx` สำหรับอีกตัว (แนะนำ)
-
-ติดตั้งฟอร์กแบบ global และรัน opencode อย่างเป็นทางการตามความต้องการโดยไม่ต้องติดตั้งแบบ global:
+ทั้งคู่ยังคงอัปเดตอย่างเป็นอิสระ:
 
 ```bash
-npm install -g @lux-tech/opencode-ai   # fork becomes the global `opencode`
-
-# Use the official opencode without touching the global install:
-npx -y opencode-ai@latest
+opencodev2 upgrade        # อัปเดตฟอร์ก (@lux-tech/opencode-ai)
+opencode upgrade          # อัปเดต opencode อย่างเป็นทางการ (opencode-ai)
 ```
-
-หรือกลับกัน — คง opencode อย่างเป็นทางการเป็น global และรันฟอร์กตามความต้องการ:
-
-```bash
-npm install -g opencode-ai             # official becomes the global `opencode`
-npx -y @lux-tech/opencode-ai@latest    # run the fork on demand
-```
-
-### ตัวเลือก B — ติดตั้งทั้งคู่ แล้วเปลี่ยนชื่อหนึ่งตัว
-
-ติดตั้งทั้งคู่ แล้วเปลี่ยนชื่อไบนารีรองเพื่อให้สองคำสั่งไม่ชนกัน:
-
-```bash
-npm install -g @lux-tech/opencode-ai
-npm install -g opencode-ai             # overwrites `opencode` — do this one second
-```
-
-จากนั้นบน Windows เปลี่ยนชื่อไบนารีของฟอร์กเป็น `opencode-fork.exe`:
-
-```powershell
-Copy-Item "$env:APPDATA\npm\opencode.exe" "$env:APPDATA\npm\opencode-fork.exe"
-opencode-fork --version   # fork
-opencode --version        # official
-```
-
-บน Linux / macOS:
-
-```bash
-cp "$(npm prefix -g)/bin/opencode" "$(npm prefix -g)/bin/opencode-fork"
-opencode-fork --version   # fork
-opencode --version        # official
-```
-
-### ตรวจสอบว่าไบนารีใดทำงานอยู่
-
-```bash
-which opencode                # path of the active binary
-opencode --version            # version of the active binary
-opencode upgrade --help       # built-in updater targets @lux-tech/opencode-ai
-```
-
-> [!TIP]
-> ตัวอัปเดตในตัว (`opencode upgrade`) จะดึง `@lux-tech/opencode-ai` เสมอ
-> หากต้องการให้ opencode **อย่างเป็นทางการ** อัปเดตอัตโนมัติ ให้รันผ่าน `npx opencode-ai@latest` หรือตัวติดตั้งอย่างเป็นทางการ
-> (ดู [opencode.ai](https://opencode.ai))
 
 ---
 
@@ -246,6 +214,7 @@ OpenCode มีเอเจนต์ในตัวสองตัวที่�
 | **Unified Prompt** | `core.txt` ไฟล์เดียวแทนพรอมป์ตเฉพาะโมเดล 10 ตัว — สะอาดกว่า เล็กกว่า ดูแลง่ายกว่า |
 | **Continuous Improvement** | เมธอดคือเอกสารที่มีชีวิต — อัปเดตสกิลที่มีอยู่ด้วย changelog แทนการสร้างซ้ำซ้อน |
 | **Planner Integration** | เอเจนต์ `planner` ในตัวแยกย่อยงานก่อนดำเนินการโดยอัตโนมัติ |
+| **อัตลักษณ์ opencodev2 + การย้ายข้อมูล** | ติดตั้งเป็น `opencodev2` พร้อมไดเรกทอรีข้อมูลของตัวเอง อยู่ร่วมกับ opencode อย่างเป็นทางการ; วิซาร์ดการเริ่มครั้งแรกนำเข้าการกำหนดค่า คีย์ API และประวัติเซสชันตามคำขอ |
 
 ฟีเจอร์ใหม่ถูกบันทึกเวอร์ชันใน [`CHANGELOG.md`](./CHANGELOG.md)
 

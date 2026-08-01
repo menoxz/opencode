@@ -52,10 +52,14 @@
 
 ## Cài đặt (fork)
 
-Fork được phát hành trên npm dưới scope `@lux-tech` và cài đặt một tệp nhị phân
-có tên `opencode`, giống hệt gói chính thức. Điều này có nghĩa là fork **thay thế**
-opencode chính thức khi cả hai được cài đặt toàn cục — hãy đọc **sự cùng tồn tại
-với opencode chính thức** trước khi cài đặt.
+Fork được phát hành trên npm dưới scope `@lux-tech` và cài đặt lệnh của nó dưới dạng
+**`opencodev2`** — một tệp nhị phân riêng biệt **cùng tồn tại** với opencode chính thức
+(được cài từ `opencode-ai`). Nó cũng dùng các thư mục dữ liệu/cấu hình riêng
+(`~/.local/share/opencodev2`, `~/.config/opencodev2`), vì vậy cả hai sản phẩm có thể
+chạy song song mà không đụng đến dữ liệu của nhau. Ở lần khởi động tương tác đầu tiên,
+fork đề xuất nhập cấu hình, khóa API và lịch sử phiên opencode hiện có của bạn — bản
+cài đặt gốc vẫn nguyên vẹn. Hãy đọc **sự cùng tồn tại với opencode chính thức** trước
+khi cài đặt.
 
 ### Khuyến nghị: npm
 
@@ -66,50 +70,51 @@ npm install -g @lux-tech/opencode-ai
 Xác minh:
 
 ```bash
-opencode --version
-# opencode v1.18.55 (hoặc phiên bản mới nhất đã phát hành)
+opencodev2 --version
+# 1.18.59 (hoặc phiên bản mới nhất đã phát hành)
 ```
 
 Gói meta `@lux-tech/opencode-ai` tự động tải xuống tệp nhị phân đúng cho nền tảng
 của bạn từ một trong 12 phụ thuộc tùy chọn (xem **bảng tệp nhị phân theo nền tảng**)
-và cung cấp nó dưới dạng tệp nhị phân `opencode`.
+và cung cấp nó dưới dạng lệnh `opencodev2`.
 
 ### Thay thế: GitHub Releases (thủ công)
 
 Các kho lưu trữ phát hành được đăng trên
 [trang releases](https://github.com/menoxz/opencode/releases) dưới dạng `.tar.gz`
-(Linux) và `.zip` (macOS / Windows). Mỗi kho lưu trữ chứa tệp nhị phân `opencode`
-(hoặc `opencode.exe`) ở thư mục gốc.
+(Linux) và `.zip` (macOS / Windows). Mỗi kho lưu trữ chứa tệp nhị phân CLI đã biên
+dịch ở thư mục gốc — khi cài thủ công, hãy đổi tên nó thành `opencodev2` để không
+bao giờ xung đột với tệp nhị phân `opencode` chính thức.
 
 ```bash
 # Ví dụ: Linux x64
-VERSION=v1.18.55
+VERSION=v1.18.59
 curl -fsSL -o opencode.tar.gz "https://github.com/menoxz/opencode/releases/download/$VERSION/opencode-linux-x64.tar.gz"
 tar -xzf opencode.tar.gz
-sudo mv opencode /usr/local/bin/opencode-fork   # đổi tên để tránh ghi đè tệp nhị phân chính thức
+sudo mv opencode /usr/local/bin/opencodev2   # tên riêng, không xung đột với tệp nhị phân chính thức
 ```
 
 ```powershell
 # Ví dụ: Windows x64 (PowerShell)
-$VERSION = "v1.18.55"
+$VERSION = "v1.18.59"
 Invoke-WebRequest -Uri "https://github.com/menoxz/opencode/releases/download/$VERSION/opencode-windows-x64.zip" -OutFile opencode.zip
 Expand-Archive -Path opencode.zip -DestinationPath . -Force
-Move-Item .\opencode.exe "$env:LOCALAPPDATA\Microsoft\WindowsApps\opencode-fork.exe" -Force
+Move-Item .\opencode.exe "$env:LOCALAPPDATA\Microsoft\WindowsApps\opencodev2.exe" -Force
 ```
 
 ### Vị trí tệp nhị phân
 
 | Phương pháp cài đặt | Đường dẫn tệp nhị phân |
 |---|---|
-| npm (Windows) | `%APPDATA%\npm\opencode.exe` |
-| npm (Linux / macOS) | `$(npm prefix -g)/bin/opencode` |
+| npm (Windows) | `%APPDATA%\npm\opencodev2.exe` |
+| npm (Linux / macOS) | `$(npm prefix -g)/bin/opencodev2` |
 | GitHub release (thủ công) | bất cứ nơi nào bạn đặt nó |
 
 ### Cập nhật
 
 ```bash
 # Bộ cập nhật tích hợp (tải phiên bản mới nhất của @lux-tech/opencode-ai)
-opencode upgrade
+opencodev2 upgrade
 
 # Hoặc qua npm
 npm update -g @lux-tech/opencode-ai
@@ -124,82 +129,56 @@ npm uninstall -g @lux-tech/opencode-ai
 Trên Windows, hãy xóa cả shim cũ nếu npm để lại:
 
 ```powershell
-Remove-Item "$env:APPDATA\npm\opencode*" -Force -ErrorAction SilentlyContinue
+Remove-Item "$env:APPDATA\npm\opencodev2*" -Force -ErrorAction SilentlyContinue
 ```
 
 ---
 
 ## Cùng tồn tại với opencode chính thức
 
-**Cả fork (`@lux-tech/opencode-ai`) và opencode chính thức (`opencode-ai`) đều
-cài đặt một tệp nhị phân tên `opencode`.** Cài đặt cái này toàn cục sau cái kia
-sẽ âm thầm thay thế tệp nhị phân trước đó. Bạn không thể giữ cả hai làm
-`opencode` toàn cục cùng một lúc.
+Fork (`@lux-tech/opencode-ai`) cài đặt lệnh của nó dưới dạng **`opencodev2`**, còn
+opencode chính thức (`opencode-ai`) cài `opencode`. Hai tên không bao giờ xung đột
+và fork dùng các thư mục dữ liệu riêng (`~/.local/share/opencodev2`,
+`~/.config/opencodev2`, `~/.local/state/opencodev2`, `~/.cache/opencodev2`), vì vậy
+**cả hai có thể được cài đặt và sử dụng cùng lúc**.
+
+### Trình hướng dẫn di trú khi khởi động lần đầu
+
+Ở lần khởi động tương tác đầu tiên, `opencodev2` phát hiện xem có bản cài đặt
+opencode trước đó (cấu hình, khóa API, phiên) hay không và hỏi bạn làm gì:
+
+- **Nhập (khuyến nghị)** — sao chép cấu hình, thông tin xác thực (`auth.json`) và
+  lịch sử phiên (`opencode.db`) từ các thư mục opencode gốc vào các thư mục
+  opencodev2. Dữ liệu gốc vẫn nguyên vẹn.
+- **Sau** — bắt đầu với dữ liệu mới và hỏi lại ở lần khởi động sau.
+- **Không bao giờ** — bắt đầu với dữ liệu opencodev2 trống (một tệp đánh dấu ngăn
+  các lần hỏi sau).
+
+Môi trường không đầu cuối (CI, script) có thể ép hành vi:
+
+```bash
+OPENCODEV2_MIGRATE=copy opencodev2 ...   # nhập không tương tác
+OPENCODEV2_MIGRATE=skip opencodev2 ...   # bỏ qua và đánh dấu đã quyết định
+```
+
+Trình hướng dẫn chỉ chạy một lần cho mỗi thư mục dữ liệu (tệp đánh dấu
+`.migrate-state` ghi lại quyết định). Sau khi nhập, cơ sở dữ liệu được sao chép thuộc
+về opencodev2 — các lần di trú cơ sở dữ liệu opencodev2 sau đó không bao giờ chạm vào
+bản cài đặt opencode gốc.
 
 ### Nên dùng cái nào?
 
 | Nhu cầu | Sử dụng |
 |---|---|
-| Các MCP server tự động kết nối lại, hot reload, eval pipeline, memory consolidation, unified prompt | **Fork này** (`@lux-tech/opencode-ai`) |
-| Bản phát hành chính thức, được kiểm chứng rộng rãi | [opencode chính thức](https://github.com/anomalyco/opencode) (`opencode-ai`) |
+| Các MCP server tự động kết nối lại, hot reload, eval pipeline, memory consolidation, unified prompt | **Fork này** (`opencodev2`) |
+| Bản phát hành chính thức, được kiểm chứng rộng rãi | [opencode chính thức](https://github.com/anomalyco/opencode) (`opencode`) |
 
-### Tùy chọn A — một cài đặt toàn cục + `npx` cho cái còn lại (khuyến nghị)
-
-Cài đặt fork toàn cục và chạy opencode chính thức khi cần mà không cần cài
-đặt toàn cục:
+Cả hai vẫn được cập nhật độc lập:
 
 ```bash
-npm install -g @lux-tech/opencode-ai   # fork trở thành `opencode` toàn cục
-
-# Sử dụng opencode chính thức mà không đụng đến cài đặt toàn cục:
-npx -y opencode-ai@latest
+opencodev2 upgrade        # cập nhật fork (@lux-tech/opencode-ai)
+opencode upgrade          # cập nhật opencode chính thức (opencode-ai)
 ```
-
-Hoặc ngược lại — giữ opencode chính thức toàn cục và chạy fork khi cần:
-
-```bash
-npm install -g opencode-ai             # bản chính thức trở thành `opencode` toàn cục
-npx -y @lux-tech/opencode-ai@latest    # chạy fork khi cần
-```
-
-### Tùy chọn B — cài cả hai, đổi tên một cái
-
-Cài đặt cả hai, sau đó đổi tên tệp nhị phân phụ để hai lệnh không xung đột:
-
-```bash
-npm install -g @lux-tech/opencode-ai
-npm install -g opencode-ai             # ghi đè `opencode` — làm bước này thứ hai
-```
-
-Sau đó trên Windows, đổi tên tệp nhị phân fork thành `opencode-fork.exe`:
-
-```powershell
-Copy-Item "$env:APPDATA\npm\opencode.exe" "$env:APPDATA\npm\opencode-fork.exe"
-opencode-fork --version   # fork
-opencode --version        # chính thức
-```
-
-Trên Linux / macOS:
-
-```bash
-cp "$(npm prefix -g)/bin/opencode" "$(npm prefix -g)/bin/opencode-fork"
-opencode-fork --version   # fork
-opencode --version        # chính thức
-```
-
-### Kiểm tra tệp nhị phân nào đang hoạt động
-
-```bash
-which opencode                # đường dẫn của tệp nhị phân đang hoạt động
-opencode --version            # phiên bản của tệp nhị phân đang hoạt động
-opencode upgrade --help       # bộ cập nhật tích hợp nhắm tới @lux-tech/opencode-ai
-```
-
-> [!TIP]
-> Bộ cập nhật tích hợp (`opencode upgrade`) luôn tải `@lux-tech/opencode-ai`.
-> Nếu bạn muốn opencode **chính thức** tự động cập nhật, hãy chạy nó qua
-> `npx opencode-ai@latest` hoặc trình cài đặt chính thức (xem
-> [opencode.ai](https://opencode.ai)).
 
 ---
 
@@ -267,6 +246,7 @@ Fork này (`menoxz/opencode`) thêm các tính năng sau so với upstream:
 | **Unified Prompt** | Một `core.txt` duy nhất thay thế 10 prompt riêng cho từng mô hình — sạch hơn, nhỏ hơn, dễ bảo trì hơn |
 | **Continuous Improvement** | Phương pháp là tài liệu sống — cập nhật skills hiện có với changelog thay vì tạo bản sao trùng lặp |
 | **Planner Integration** | Agent `planner` tích hợp sẵn tự động phân rã tác vụ trước khi thực thi |
+| **Danh tính opencodev2 + di trú** | Cài đặt dưới dạng `opencodev2` với các thư mục dữ liệu riêng, cùng tồn tại với opencode chính thức; trình hướng dẫn khởi động đầu tiên nhập cấu hình, khóa API và lịch sử phiên theo yêu cầu |
 
 Các tính năng mới được quản lý phiên bản trong [`CHANGELOG.md`](./CHANGELOG.md).
 

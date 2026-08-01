@@ -51,7 +51,7 @@
 
 ## ইনস্টলেশন (ফর্ক)
 
-ফর্কটি npm-এ `@lux-tech` স্কোপের অধীনে প্রকাশিত হয় এবং অফিসিয়াল প্যাকেজের মতোই `opencode` নামে একটি বাইনারি ইনস্টল করে। এর মানে হলো, দুটোই গ্লোবালি ইনস্টল করলে ফর্কটি অফিসিয়াল opencode-কে **প্রতিস্থাপন** করে — ইনস্টল করার আগে **অফিসিয়াল opencode-এর সাথে সহাবস্থান** পড়ুন।
+ফর্কটি npm-এ `@lux-tech` স্কোপের অধীনে প্রকাশিত হয় এবং এর কমান্ডটি **`opencodev2`** হিসেবে ইনস্টল করে — অফিসিয়াল `opencode`-এর (যা `opencode-ai` থেকে ইনস্টল হয়) সাথে **সহাবস্থান** করে এমন একটি আলাদা বাইনারি। এটি নিজস্ব ডেটা/কনফিগ ডিরেক্টরিও ব্যবহার করে (`~/.local/share/opencodev2`, `~/.config/opencodev2`), তাই দুটি প্রোডাক্ট একে অপরের ডেটা স্পর্শ না করেই পাশাপাশি চলতে পারে। প্রথম ইন্টারঅ্যাক্টিভ লঞ্চে ফর্কটি আপনার বিদ্যমান opencode কনফিগ, API কী এবং সেশন ইতিহাস আমদানির প্রস্তাব দেয় — মূল ইনস্টলেশন অক্ষত থাকে। **অফিসিয়াল opencode-এর সাথে সহাবস্থান** পড়ুন।
 
 ### প্রস্তাবিত: npm
 
@@ -62,45 +62,45 @@ npm install -g @lux-tech/opencode-ai
 যাচাই করুন:
 
 ```bash
-opencode --version
-# opencode v1.18.55 (or the latest published version)
+opencodev2 --version
+# 1.18.59 (or the latest published version)
 ```
 
-মেটা-প্যাকেজ `@lux-tech/opencode-ai` তার ১২টি অপশনাল ডিপেনডেন্সির একটি থেকে সঠিক প্ল্যাটফর্মের বাইনারি স্বয়ংক্রিয়ভাবে ডাউনলোড করে (দেখুন **প্ল্যাটফর্ম বাইনারির তালিকা**) এবং সেটিকে `opencode` বাইনারি হিসেবে প্রকাশ করে।
+মেটা-প্যাকেজ `@lux-tech/opencode-ai` তার ১২টি অপশনাল ডিপেনডেন্সির একটি থেকে সঠিক প্ল্যাটফর্মের বাইনারি স্বয়ংক্রিয়ভাবে ডাউনলোড করে (দেখুন **প্ল্যাটফর্ম বাইনারির তালিকা**) এবং সেটিকে `opencodev2` কমান্ড হিসেবে প্রকাশ করে।
 
 ### বিকল্প: GitHub Releases (ম্যানুয়াল)
 
-রিলিজ আর্কাইভগুলো [রিলিজ পেজে](https://github.com/menoxz/opencode/releases) `.tar.gz` (Linux) এবং `.zip` (macOS / Windows) ফরম্যাটে প্রকাশিত হয়। প্রতিটি আর্কাইভের রুটে `opencode` (বা `opencode.exe`) বাইনারি থাকে।
+রিলিজ আর্কাইভগুলো [রিলিজ পেজে](https://github.com/menoxz/opencode/releases) `.tar.gz` (Linux) এবং `.zip` (macOS / Windows) ফরম্যাটে প্রকাশিত হয়। প্রতিটি আর্কাইভের রুটে কম্পাইল করা CLI বাইনারি থাকে — ম্যানুয়াল ইনস্টলে এটির নাম `opencodev2` করুন যেন অফিসিয়াল `opencode` বাইনারির সাথে কখনো সংঘর্ষ না হয়।
 
 ```bash
 # Example: Linux x64
-VERSION=v1.18.55
+VERSION=v1.18.59
 curl -fsSL -o opencode.tar.gz "https://github.com/menoxz/opencode/releases/download/$VERSION/opencode-linux-x64.tar.gz"
 tar -xzf opencode.tar.gz
-sudo mv opencode /usr/local/bin/opencode-fork   # rename to avoid clobbering the official binary
+sudo mv opencode /usr/local/bin/opencodev2   # আলাদা নাম, অফিসিয়াল বাইনারির সাথে সংঘর্ষ নেই
 ```
 
 ```powershell
 # Example: Windows x64 (PowerShell)
-$VERSION = "v1.18.55"
+$VERSION = "v1.18.59"
 Invoke-WebRequest -Uri "https://github.com/menoxz/opencode/releases/download/$VERSION/opencode-windows-x64.zip" -OutFile opencode.zip
 Expand-Archive -Path opencode.zip -DestinationPath . -Force
-Move-Item .\opencode.exe "$env:LOCALAPPDATA\Microsoft\WindowsApps\opencode-fork.exe" -Force
+Move-Item .\opencode.exe "$env:LOCALAPPDATA\Microsoft\WindowsApps\opencodev2.exe" -Force
 ```
 
 ### বাইনারির অবস্থান
 
 | ইনস্টল পদ্ধতি | বাইনারির পাথ |
 |---|---|
-| npm (Windows) | `%APPDATA%\npm\opencode.exe` |
-| npm (Linux / macOS) | `$(npm prefix -g)/bin/opencode` |
+| npm (Windows) | `%APPDATA%\npm\opencodev2.exe` |
+| npm (Linux / macOS) | `$(npm prefix -g)/bin/opencodev2` |
 | GitHub রিলিজ (ম্যানুয়াল) | যেখানে খুশি রাখুন |
 
 ### আপডেট
 
 ```bash
 # Built-in updater (fetches the latest @lux-tech/opencode-ai release)
-opencode upgrade
+opencodev2 upgrade
 
 # Or via npm
 npm update -g @lux-tech/opencode-ai
@@ -115,77 +115,45 @@ npm uninstall -g @lux-tech/opencode-ai
 Windows-এ, npm রেখে যাওয়া পুরনো shim-ও মুছে ফেলুন:
 
 ```powershell
-Remove-Item "$env:APPDATA\npm\opencode*" -Force -ErrorAction SilentlyContinue
+Remove-Item "$env:APPDATA\npm\opencodev2*" -Force -ErrorAction SilentlyContinue
 ```
 
 ---
 
 ## অফিসিয়াল opencode-এর সাথে সহাবস্থান
 
-**ফর্ক (`@lux-tech/opencode-ai`) এবং অফিসিয়াল opencode (`opencode-ai`) দুটোই `opencode` নামে একটি বাইনারি ইনস্টল করে।** একটির পরে অন্যটি গ্লোবালি ইনস্টল করলে আগের বাইনারিটি নীরবে প্রতিস্থাপিত হয়। দুটোকে একই সময়ে গ্লোবাল `opencode` হিসেবে রাখা সম্ভব নয়।
+ফর্ক (`@lux-tech/opencode-ai`) তার কমান্ডটি **`opencodev2`** হিসেবে ইনস্টল করে, আর অফিসিয়াল opencode (`opencode-ai`) `opencode` ইনস্টল করে। দুটি নাম কখনো সংঘর্ষ করে না এবং ফর্ক তার নিজস্ব ডেটা ডিরেক্টরি ব্যবহার করে (`~/.local/share/opencodev2`, `~/.config/opencodev2`, `~/.local/state/opencodev2`, `~/.cache/opencodev2`), তাই **দুটোই একই সাথে ইনস্টল ও ব্যবহার করা যায়**।
+
+### প্রথম রানের মাইগ্রেশন উইজার্ড
+
+প্রথম ইন্টারঅ্যাক্টিভ লঞ্চে `opencodev2` শনাক্ত করে আগের opencode ইনস্টলেশন (কনফিগ, API কী, সেশন) আছে কিনা এবং কী করতে চান তা জিজ্ঞেস করে:
+
+- **আমদানি (প্রস্তাবিত)** — আপনার কনফিগ, ক্রেডেনশিয়াল (`auth.json`) এবং সেশন ইতিহাস (`opencode.db`) মূল opencode ডিরেক্টরি থেকে opencodev2 ডিরেক্টরিতে কপি করে। মূল ডেটা অক্ষত থাকে।
+- **পরে** — ফাঁকা ডেটা দিয়ে শুরু করে পরের লঞ্চে আবার জিজ্ঞেস করে।
+- **কখনো নয়** — ফাঁকা opencodev2 ডেটা দিয়ে শুরু করে (একটি মার্কার ফাইল পরবর্তী প্রশ্ন ঠেকায়)।
+
+হেডলেস পরিবেশ (CI, স্ক্রিপ্ট) আচরণ বাধ্য করতে পারে:
+
+```bash
+OPENCODEV2_MIGRATE=copy opencodev2 ...   # ইন্টারঅ্যাক্টিভ ছাড়াই আমদানি
+OPENCODEV2_MIGRATE=skip opencodev2 ...   # স্কিপ করে সিদ্ধান্ত নেওয়া হয়েছে বলে চিহ্নিত
+```
+
+উইজার্ডটি প্রতি ডেটা ডিরেক্টরিতে একবারই চলে (`.migrate-state` মার্কার ফাইল সিদ্ধান্ত রেকর্ড করে)। আমদানির পরে কপি করা ডেটাবেস opencodev2-এর হয় — পরবর্তী opencodev2 ডেটাবেস মাইগ্রেশন কখনো মূল opencode ইনস্টলেশন স্পর্শ করে না।
 
 ### কোনটি ব্যবহার করবেন?
 
 | প্রয়োজনে | ব্যবহার |
 |---|---|
-| MCP সার্ভার যা auto-reconnect, hot reload, eval pipeline, memory consolidation, unified prompt | **এই ফর্ক** (`@lux-tech/opencode-ai`) |
-| অফিসিয়াল, ব্যাপকভাবে যাচাইকৃত রিলিজ | [অফিসিয়াল opencode](https://github.com/anomalyco/opencode) (`opencode-ai`) |
+| MCP সার্ভার যা auto-reconnect, hot reload, eval pipeline, memory consolidation, unified prompt | **এই ফর্ক** (`opencodev2`) |
+| অফিসিয়াল, ব্যাপকভাবে যাচাইকৃত রিলিজ | [অফিসিয়াল opencode](https://github.com/anomalyco/opencode) (`opencode`) |
 
-### বিকল্প A — একটি গ্লোবাল ইনস্টল + অন্যটির জন্য `npx` (প্রস্তাবিত)
-
-ফর্কটি গ্লোবালি ইনস্টল করুন এবং অফিসিয়াল opencode গ্লোবালি ইনস্টল না করেই প্রয়োজন অনুযায়ী চালান:
+দুটোই স্বাধীনভাবে আপডেটেড থাকে:
 
 ```bash
-npm install -g @lux-tech/opencode-ai   # fork becomes the global `opencode`
-
-# Use the official opencode without touching the global install:
-npx -y opencode-ai@latest
+opencodev2 upgrade        # ফর্ক আপডেট (@lux-tech/opencode-ai)
+opencode upgrade          # অফিসিয়াল opencode আপডেট (opencode-ai)
 ```
-
-অথবা উল্টোটা করুন — অফিসিয়াল opencode-কে গ্লোবাল রাখুন এবং ফর্কটি প্রয়োজন অনুযায়ী চালান:
-
-```bash
-npm install -g opencode-ai             # official becomes the global `opencode`
-npx -y @lux-tech/opencode-ai@latest    # run the fork on demand
-```
-
-### বিকল্প B — দুটোই ইনস্টল করে একটি নাম পরিবর্তন
-
-দুটোই ইনস্টল করুন, তারপর সেকেন্ডারি বাইনারির নাম পরিবর্তন করুন যাতে দুটি কমান্ড সংঘর্ষ না করে:
-
-```bash
-npm install -g @lux-tech/opencode-ai
-npm install -g opencode-ai             # overwrites `opencode` — do this one second
-```
-
-তারপর Windows-এ ফর্ক বাইনারির নাম পরিবর্তন করে `opencode-fork.exe` করুন:
-
-```powershell
-Copy-Item "$env:APPDATA\npm\opencode.exe" "$env:APPDATA\npm\opencode-fork.exe"
-opencode-fork --version   # fork
-opencode --version        # official
-```
-
-Linux / macOS-এ:
-
-```bash
-cp "$(npm prefix -g)/bin/opencode" "$(npm prefix -g)/bin/opencode-fork"
-opencode-fork --version   # fork
-opencode --version        # official
-```
-
-### কোন বাইনারিটি বর্তমানে সক্রিয় তা পরীক্ষা করুন
-
-```bash
-which opencode                # path of the active binary
-opencode --version            # version of the active binary
-opencode upgrade --help       # built-in updater targets @lux-tech/opencode-ai
-```
-
-> [!TIP]
-> বিল্ট-ইন আপডেটার (`opencode upgrade`) সর্বদা `@lux-tech/opencode-ai` আনয়ন করে।
-> আপনি যদি **অফিসিয়াল** opencode-কে স্বয়ংক্রিয়ভাবে আপডেট করতে চান, তাহলে `npx opencode-ai@latest` অথবা অফিসিয়াল ইনস্টলারের
-> মাধ্যমে চালান (দেখুন [opencode.ai](https://opencode.ai))।
 
 ---
 
@@ -246,6 +214,7 @@ OpenCode-এ দুটি বিল্ট-ইন এজেন্ট রয়ে
 | **Unified Prompt** | একটি একক `core.txt` ১০টি মডেল-নির্দিষ্ট প্রম্পট প্রতিস্থাপন করে — পরিষ্কার, ছোট, রক্ষণাবেক্ষণ সহজ |
 | **Continuous Improvement** | মেথডগুলো হলো জীবন্ত ডকুমেন্ট — ডুপ্লিকেট তৈরি না করে changelog-সহ বিদ্যমান স্কিল আপডেট করুন |
 | **Planner Integration** | বিল্ট-ইন `planner` এজেন্ট এক্সিকিউশনের আগে কাজ স্বয়ংক্রিয়ভাবে ভাগ করে |
+| **opencodev2 পরিচয় + মাইগ্রেশন** | `opencodev2` হিসেবে ইনস্টল হয় এবং নিজস্ব ডেটা ডিরেক্টরি নিয়ে অফিসিয়াল opencode-এর সাথে সহাবস্থান করে; প্রথম রানের উইজার্ড আপনার কনফিগ, API কী এবং সেশন ইতিহাস চাইলে আমদানি করে |
 
 নতুন ফিচারগুলো [`CHANGELOG.md`](./CHANGELOG.md)-তে ভার্সন করা হয়।
 

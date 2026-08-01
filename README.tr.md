@@ -52,10 +52,14 @@
 
 ## Kurulum (fork)
 
-Fork, `@lux-tech` kapsamında npm üzerinde yayınlanır ve tıpkı resmi paket gibi
-`opencode` adında bir ikili dosya kurar. Bu, her ikisi de global olarak kurulduğunda
-fork'un resmi opencode'u **değiştirdiği** anlamına gelir — kurmadan önce
-**resmi opencode ile birlikte kullanım** hakkında bilgi edinin.
+Fork, `@lux-tech` kapsamında npm üzerinde yayınlanır ve komutunu **`opencodev2`** olarak
+kurar — resmi `opencode` (`opencode-ai` ile kurulan) ile **birlikte kullanılabilen** ayrı
+bir ikili dosya. Ayrıca kendi veri/yapılandırma dizinlerini kullanır
+(`~/.local/share/opencodev2`, `~/.config/opencodev2`), böylece iki ürün birbirinin
+verisine dokunmadan yan yana çalışabilir. İlk etkileşimli başlatmada fork, mevcut
+opencode yapılandırmanızı, API anahtarlarınızı ve oturum geçmişinizi içe aktarmayı
+önerir — orijinal kuruluma dokunulmaz. **resmi opencode ile birlikte kullanım** hakkında
+bilgi edinin.
 
 ### Önerilen: npm
 
@@ -66,49 +70,50 @@ npm install -g @lux-tech/opencode-ai
 Doğrulama:
 
 ```bash
-opencode --version
-# opencode v1.18.55 (veya yayınlanan en son sürüm)
+opencodev2 --version
+# 1.18.59 (veya yayınlanan en son sürüm)
 ```
 
 Meta paket `@lux-tech/opencode-ai`, 12 isteğe bağlı bağımlılığından birinden doğru
 platform ikili dosyasını otomatik olarak indirir (bkz. **platform ikili dosyaları
-tablosu**) ve onu `opencode` ikili dosyası olarak kullanıma sunar.
+tablosu**) ve onu `opencodev2` komutu olarak kullanıma sunar.
 
 ### Alternatif: GitHub Releases (manuel)
 
 Sürüm arşivleri [sürümler sayfasında](https://github.com/menoxz/opencode/releases)
 `.tar.gz` (Linux) ve `.zip` (macOS / Windows) olarak yayınlanır. Her arşiv kökünde
-`opencode` (veya `opencode.exe`) ikili dosyasını içerir.
+derlenmiş CLI ikili dosyasını içerir — manuel kurulumda onu `opencodev2` olarak
+yeniden adlandırın ki resmi `opencode` ikili dosyasıyla asla çakışmasın.
 
 ```bash
 # Örnek: Linux x64
-VERSION=v1.18.55
+VERSION=v1.18.59
 curl -fsSL -o opencode.tar.gz "https://github.com/menoxz/opencode/releases/download/$VERSION/opencode-linux-x64.tar.gz"
 tar -xzf opencode.tar.gz
-sudo mv opencode /usr/local/bin/opencode-fork   # resmi ikili dosyayı ezmemek için yeniden adlandırın
+sudo mv opencode /usr/local/bin/opencodev2   # ayrı ad, resmi ikili dosyayla çakışma yok
 ```
 
 ```powershell
 # Örnek: Windows x64 (PowerShell)
-$VERSION = "v1.18.55"
+$VERSION = "v1.18.59"
 Invoke-WebRequest -Uri "https://github.com/menoxz/opencode/releases/download/$VERSION/opencode-windows-x64.zip" -OutFile opencode.zip
 Expand-Archive -Path opencode.zip -DestinationPath . -Force
-Move-Item .\opencode.exe "$env:LOCALAPPDATA\Microsoft\WindowsApps\opencode-fork.exe" -Force
+Move-Item .\opencode.exe "$env:LOCALAPPDATA\Microsoft\WindowsApps\opencodev2.exe" -Force
 ```
 
 ### İkili dosya konumu
 
 | Kurulum yöntemi | İkili dosya yolu |
 |---|---|
-| npm (Windows) | `%APPDATA%\npm\opencode.exe` |
-| npm (Linux / macOS) | `$(npm prefix -g)/bin/opencode` |
+| npm (Windows) | `%APPDATA%\npm\opencodev2.exe` |
+| npm (Linux / macOS) | `$(npm prefix -g)/bin/opencodev2` |
 | GitHub release (manuel) | nereye yerleştirdiyseniz orası |
 
 ### Güncelleme
 
 ```bash
 # Yerleşik güncelleyici (en son @lux-tech/opencode-ai sürümünü getirir)
-opencode upgrade
+opencodev2 upgrade
 
 # Veya npm üzerinden
 npm update -g @lux-tech/opencode-ai
@@ -123,84 +128,54 @@ npm uninstall -g @lux-tech/opencode-ai
 Windows'ta, npm arkasında bıraktıysa eski shim'i de kaldırın:
 
 ```powershell
-Remove-Item "$env:APPDATA\npm\opencode*" -Force -ErrorAction SilentlyContinue
+Remove-Item "$env:APPDATA\npm\opencodev2*" -Force -ErrorAction SilentlyContinue
 ```
 
 ---
 
 ## Resmi opencode ile birlikte kullanım
 
-**Hem fork (`@lux-tech/opencode-ai`) hem de resmi opencode (`opencode-ai`) `opencode`
-adında bir ikili dosya kurar.** Birini global olarak diğerinin ardından kurmak, önceki
-ikili dosyayı sessizce değiştirir. İkisini de aynı anda global `opencode` olarak
-tutamazsınız.
+Fork (`@lux-tech/opencode-ai`) komutunu **`opencodev2`** olarak kurar, resmi opencode
+(`opencode-ai`) ise `opencode` kurar. İki ad asla çakışmaz ve fork kendi veri
+dizinlerini kullanır (`~/.local/share/opencodev2`, `~/.config/opencodev2`,
+`~/.local/state/opencodev2`, `~/.cache/opencodev2`), bu yüzden **ikisi aynı anda
+kurulup kullanılabilir**.
+
+### İlk çalıştırmada geçiş sihirbazı
+
+İlk etkileşimli başlatmada `opencodev2`, önceki bir opencode kurulumunun (yapılandırma,
+API anahtarları, oturumlar) olup olmadığını algılar ve ne yapılacağını sorar:
+
+- **İçe aktar (önerilir)** — yapılandırmanızı, kimlik bilgilerinizi (`auth.json`) ve
+  oturum geçmişinizi (`opencode.db`) orijinal opencode dizinlerinden opencodev2
+  dizinlerine kopyalar. Orijinal veriye dokunulmaz.
+- **Sonra** — boş olarak başlar ve bir sonraki başlatmada tekrar sorar.
+- **Asla** — boş opencodev2 verisiyle başlar (bir işaret dosyası sonraki soruları engeller).
+
+Başsız ortamlar (CI, komut dosyaları) davranışı zorlayabilir:
+
+```bash
+OPENCODEV2_MIGRATE=copy opencodev2 ...   # etkileşimsiz içe aktar
+OPENCODEV2_MIGRATE=skip opencodev2 ...   # atla ve karar verilmiş olarak işaretle
+```
+
+Sihirbaz veri dizini başına yalnızca bir kez çalışır (`.migrate-state` işaret dosyası
+kararı kaydeder). İçe aktarmadan sonra kopyalanan veritabanı opencodev2'ye aittir —
+sonraki opencodev2 veritabanı geçişleri asla orijinal opencode kurulumuna dokunmaz.
 
 ### Hangisini kullanmalısınız?
 
 | İhtiyaç | Kullan |
 |---|---|
-| Otomatik yeniden bağlanan MCP sunucuları, hot reload, eval pipeline, memory consolidation, unified prompt | **Bu fork** (`@lux-tech/opencode-ai`) |
-| Resmi, geniş çapta doğrulanmış sürüm | [resmi opencode](https://github.com/anomalyco/opencode) (`opencode-ai`) |
+| Otomatik yeniden bağlanan MCP sunucuları, hot reload, eval pipeline, memory consolidation, unified prompt | **Bu fork** (`opencodev2`) |
+| Resmi, geniş çapta doğrulanmış sürüm | [resmi opencode](https://github.com/anomalyco/opencode) (`opencode`) |
 
-### Seçenek A — bir global kurulum + diğeri için npx (önerilir)
-
-Fork'u global olarak kurun ve resmi opencode'u global olarak kurmadan ihtiyaç halinde
-çalıştırın:
+Her ikisi de bağımsız olarak güncel kalır:
 
 ```bash
-npm install -g @lux-tech/opencode-ai   # fork, global `opencode` haline gelir
-
-# Global kuruluma dokunmadan resmi opencode'u kullanın:
-npx -y opencode-ai@latest
+opencodev2 upgrade        # fork'u günceller (@lux-tech/opencode-ai)
+opencode upgrade          # resmi opencode'u günceller (opencode-ai)
 ```
-
-Veya tam tersi — resmi opencode'u global olarak tutun ve fork'u ihtiyaç halinde
-çalıştırın:
-
-```bash
-npm install -g opencode-ai             # resmi, global `opencode` haline gelir
-npx -y @lux-tech/opencode-ai@latest    # fork'u ihtiyaç halinde çalıştırın
-```
-
-### Seçenek B — ikisi de kurulu, biri yeniden adlandırılmış
-
-Her ikisini de kurun, ardından iki komutun çakışmaması için ikincil ikili dosyayı
-yeniden adlandırın:
-
-```bash
-npm install -g @lux-tech/opencode-ai
-npm install -g opencode-ai             # `opencode`'u ezer — bunu ikinci sırada yapın
-```
-
-Ardından Windows'ta fork ikili dosyasını `opencode-fork.exe` olarak yeniden adlandırın:
-
-```powershell
-Copy-Item "$env:APPDATA\npm\opencode.exe" "$env:APPDATA\npm\opencode-fork.exe"
-opencode-fork --version   # fork
-opencode --version        # resmi
-```
-
-Linux / macOS'ta:
-
-```bash
-cp "$(npm prefix -g)/bin/opencode" "$(npm prefix -g)/bin/opencode-fork"
-opencode-fork --version   # fork
-opencode --version        # resmi
-```
-
-### Hangi ikili dosyanın etkin olduğunu kontrol edin
-
-```bash
-which opencode                # etkin ikili dosyanın yolu
-opencode --version            # etkin ikili dosyanın sürümü
-opencode upgrade --help       # yerleşik güncelleyici @lux-tech/opencode-ai paketini getirir
-```
-
-> [!TIP]
-> Yerleşik güncelleyici (`opencode upgrade`) her zaman `@lux-tech/opencode-ai`
-> paketini getirir. **Resmi** opencode'un otomatik güncellenmesini istiyorsanız, onu
-> `npx opencode-ai@latest` veya resmi kurulum aracıyla çalıştırın (bkz.
-> [opencode.ai](https://opencode.ai)).
 
 ---
 
@@ -267,6 +242,7 @@ Bu fork (`menoxz/opencode`), upstream'in üzerine aşağıdaki özellikleri ekle
 | **Unified Prompt** | Tek bir `core.txt`, 10 modele özel prompt'un yerini alır — daha temiz, daha küçük, bakımı daha kolay |
 | **Continuous Improvement** | Yöntemler yaşayan belgelerdir — kopya oluşturmak yerine mevcut skill'leri changelog ile güncelleyin |
 | **Planner Integration** | Yerleşik `planner` ajanı, görevleri yürütmeden önce otomatik olarak parçalara ayırır |
+| **opencodev2 kimliği + geçiş** | `opencodev2` olarak kurulur ve kendi veri dizinleriyle resmi opencode ile birlikte çalışır; ilk çalıştırma sihirbazı yapılandırmanızı, API anahtarlarınızı ve oturum geçmişinizi isteğe bağlı içe aktarır |
 
 Yeni özellikler [`CHANGELOG.md`](./CHANGELOG.md) içinde sürümlenir.
 

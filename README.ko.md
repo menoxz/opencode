@@ -51,7 +51,7 @@
 
 ## 설치 (포크)
 
-이 포크는 npm의 `@lux-tech` 스코프로 게시되며, 공식 패키지와 똑같이 `opencode`라는 이름의 바이너리를 설치합니다. 즉, 둘 다 전역에 설치하면 포크가 공식 opencode를 **대체**합니다. 설치하기 전에 **공식 opencode와의 공존**을 읽어 주세요.
+이 포크는 npm의 `@lux-tech` 스코프로 게시되며, 명령을 **`opencodev2`**로 설치합니다 —— 공식 `opencode`(`opencode-ai`에서 설치)와 **공존**하는 별도의 바이너리입니다. 또한 전용 데이터/설정 디렉터리(`~/.local/share/opencodev2`、`~/.config/opencodev2`)를 사용하므로 두 제품이 서로의 데이터에 손대지 않고 나란히 실행될 수 있습니다. 첫 대화형 실행 시 기존 opencode 설정·API 키·세션 기록 가져오기를 제안합니다 —— 원래 설치본은 그대로 남습니다. **공식 opencode와의 공존**을 참조하세요.
 
 ### 권장: npm
 
@@ -62,45 +62,45 @@ npm install -g @lux-tech/opencode-ai
 확인:
 
 ```bash
-opencode --version
-# opencode v1.18.55 (or the latest published version)
+opencodev2 --version
+# 1.18.59 (or the latest published version)
 ```
 
-메타 패키지 `@lux-tech/opencode-ai`는 12개의 선택적 종속성 중 하나에서 올바른 플랫폼의 바이너리를 자동으로 다운로드하고(**플랫폼별 바이너리 표** 참조), 이를 `opencode` 바이너리로 노출합니다.
+메타 패키지 `@lux-tech/opencode-ai`는 12개의 선택적 종속성 중 하나에서 올바른 플랫폼의 바이너리를 자동으로 다운로드하고(**플랫폼별 바이너리 표** 참조), 이를 `opencodev2` 명령으로 노출합니다.
 
 ### 대안: GitHub Releases (수동)
 
-릴리스 아카이브는 [릴리스 페이지](https://github.com/menoxz/opencode/releases)에 `.tar.gz`(Linux)와 `.zip`(macOS / Windows)으로 게시됩니다. 각 아카이브의 루트에는 `opencode`(또는 `opencode.exe`) 바이너리가 포함되어 있습니다.
+릴리스 아카이브는 [릴리스 페이지](https://github.com/menoxz/opencode/releases)에 `.tar.gz`(Linux)와 `.zip`(macOS / Windows)으로 게시됩니다. 각 아카이브의 루트에는 컴파일된 CLI 바이너리가 포함되어 있습니다 —— 수동 설치 시 `opencodev2`로 이름을 바꿔 공식 `opencode` 바이너리와 충돌하지 않게 하세요.
 
 ```bash
 # Example: Linux x64
-VERSION=v1.18.55
+VERSION=v1.18.59
 curl -fsSL -o opencode.tar.gz "https://github.com/menoxz/opencode/releases/download/$VERSION/opencode-linux-x64.tar.gz"
 tar -xzf opencode.tar.gz
-sudo mv opencode /usr/local/bin/opencode-fork   # rename to avoid clobbering the official binary
+sudo mv opencode /usr/local/bin/opencodev2   # 독립된 이름, 공식 바이너리와 충돌 없음
 ```
 
 ```powershell
 # Example: Windows x64 (PowerShell)
-$VERSION = "v1.18.55"
+$VERSION = "v1.18.59"
 Invoke-WebRequest -Uri "https://github.com/menoxz/opencode/releases/download/$VERSION/opencode-windows-x64.zip" -OutFile opencode.zip
 Expand-Archive -Path opencode.zip -DestinationPath . -Force
-Move-Item .\opencode.exe "$env:LOCALAPPDATA\Microsoft\WindowsApps\opencode-fork.exe" -Force
+Move-Item .\opencode.exe "$env:LOCALAPPDATA\Microsoft\WindowsApps\opencodev2.exe" -Force
 ```
 
 ### 바이너리 위치
 
 | 설치 방법 | 바이너리 경로 |
 |---|---|
-| npm (Windows) | `%APPDATA%\npm\opencode.exe` |
-| npm (Linux / macOS) | `$(npm prefix -g)/bin/opencode` |
+| npm (Windows) | `%APPDATA%\npm\opencodev2.exe` |
+| npm (Linux / macOS) | `$(npm prefix -g)/bin/opencodev2` |
 | GitHub 릴리스 (수동) | 직접 배치한 위치 |
 
 ### 업데이트
 
 ```bash
 # Built-in updater (fetches the latest @lux-tech/opencode-ai release)
-opencode upgrade
+opencodev2 upgrade
 
 # Or via npm
 npm update -g @lux-tech/opencode-ai
@@ -115,77 +115,45 @@ npm uninstall -g @lux-tech/opencode-ai
 Windows에서는 npm이 남긴 오래된 shim도 함께 제거하세요:
 
 ```powershell
-Remove-Item "$env:APPDATA\npm\opencode*" -Force -ErrorAction SilentlyContinue
+Remove-Item "$env:APPDATA\npm\opencodev2*" -Force -ErrorAction SilentlyContinue
 ```
 
 ---
 
 ## 공식 opencode와의 공존
 
-**포크(`@lux-tech/opencode-ai`)와 공식 opencode(`opencode-ai`)는 둘 다 `opencode`라는 이름의 바이너리를 설치합니다.** 하나를 전역에 설치하면 이전 바이너리를 조용히 대체합니다. 둘 다 동시에 전역 `opencode`로 유지할 수는 없습니다.
+포크(`@lux-tech/opencode-ai`)는 명령을 **`opencodev2`**로 설치하고, 공식 opencode(`opencode-ai`)는 `opencode`를 설치합니다. 두 이름이 충돌하지 않으며, 포크는 전용 데이터 디렉터리(`~/.local/share/opencodev2`、`~/.config/opencodev2`、`~/.local/state/opencodev2`、`~/.cache/opencodev2`)를 사용하므로 **둘을 동시에 설치하고 사용할 수 있습니다**.
+
+### 최초 실행 마이그레이션 마법사
+
+첫 대화형 실행 시 `opencodev2`는 기존 opencode 설치(설정, API 키, 세션)가 있는지 감지하고 어떻게 할지 묻습니다:
+
+- **가져오기(권장)** —— 설정·자격 증명(`auth.json`)·세션 기록(`opencode.db`)을 원래 opencode 디렉터리에서 opencodev2 디렉터리로 복사합니다. 원래 데이터는 그대로 남습니다.
+- **나중에** —— 새 데이터로 시작하고 다음 실행 때 다시 묻습니다.
+- **안 함** —— 빈 opencodev2 데이터로 시작합니다(마커 파일이 이후 프롬프트를 막습니다).
+
+헤드리스 환경(CI, 스크립트)에서는 동작을 강제할 수 있습니다:
+
+```bash
+OPENCODEV2_MIGRATE=copy opencodev2 ...   # 비대화형 가져오기
+OPENCODEV2_MIGRATE=skip opencodev2 ...   # 건너뛰고 결정됨으로 표시
+```
+
+이 마법사는 데이터 디렉터리마다 한 번만 실행됩니다(`.migrate-state` 마커 파일이 결정을 기록). 가져온 후 복사된 데이터베이스는 opencodev2의 것이 됩니다 —— 이후 opencodev2의 데이터베이스 마이그레이션은 원래 opencode 설치에 절대 손대지 않습니다.
 
 ### 어떤 것을 사용해야 하나요?
 
 | 필요 | 사용 |
 |---|---|
-| 자동 재연결 MCP 서버, hot reload, eval pipeline, memory consolidation, unified prompt | **이 포크** (`@lux-tech/opencode-ai`) |
-| 공식적이고 널리 검증된 릴리스 | [공식 opencode](https://github.com/anomalyco/opencode) (`opencode-ai`) |
+| 자동 재연결 MCP 서버, hot reload, eval pipeline, memory consolidation, unified prompt | **이 포크** (`opencodev2`) |
+| 공식적이고 널리 검증된 릴리스 | [공식 opencode](https://github.com/anomalyco/opencode) (`opencode`) |
 
-### 옵션 A — 하나는 전역 설치 + 다른 하나는 `npx` (권장)
-
-포크를 전역에 설치하고, 공식 opencode는 전역에 설치하지 않고 필요할 때 실행합니다:
+둘 다 독립적으로 최신 상태를 유지합니다:
 
 ```bash
-npm install -g @lux-tech/opencode-ai   # fork becomes the global `opencode`
-
-# Use the official opencode without touching the global install:
-npx -y opencode-ai@latest
+opencodev2 upgrade        # 포크 업데이트 (@lux-tech/opencode-ai)
+opencode upgrade          # 공식 opencode 업데이트 (opencode-ai)
 ```
-
-또는 반대로, 공식 opencode를 전역에 유지하고 포크를 필요할 때 실행합니다:
-
-```bash
-npm install -g opencode-ai             # official becomes the global `opencode`
-npx -y @lux-tech/opencode-ai@latest    # run the fork on demand
-```
-
-### 옵션 B — 둘 다 설치하고 하나는 이름 변경
-
-둘 다 설치한 다음, 보조 바이너리의 이름을 변경해 두 명령이 충돌하지 않게 합니다:
-
-```bash
-npm install -g @lux-tech/opencode-ai
-npm install -g opencode-ai             # overwrites `opencode` — do this one second
-```
-
-Windows에서는 포크 바이너리를 `opencode-fork.exe`로 이름을 변경합니다:
-
-```powershell
-Copy-Item "$env:APPDATA\npm\opencode.exe" "$env:APPDATA\npm\opencode-fork.exe"
-opencode-fork --version   # fork
-opencode --version        # official
-```
-
-Linux / macOS의 경우:
-
-```bash
-cp "$(npm prefix -g)/bin/opencode" "$(npm prefix -g)/bin/opencode-fork"
-opencode-fork --version   # fork
-opencode --version        # official
-```
-
-### 현재 활성화된 바이너리 확인
-
-```bash
-which opencode                # path of the active binary
-opencode --version            # version of the active binary
-opencode upgrade --help       # built-in updater targets @lux-tech/opencode-ai
-```
-
-> [!TIP]
-> 내장 업데이터(`opencode upgrade`)는 항상 `@lux-tech/opencode-ai`를 가져옵니다.
-> **공식** opencode를 자동 업데이트하려면 `npx opencode-ai@latest` 또는 공식 설치 프로그램
-> ([opencode.ai](https://opencode.ai) 참조)으로 실행하세요.
 
 ---
 
@@ -246,6 +214,7 @@ OpenCode에는 내장 에이전트 2개가 있으며 `Tab` 키로 전환할 수 
 | **Unified Prompt** | 단일 `core.txt`가 10개의 모델별 프롬프트를 대체 — 더 깔끔하고, 더 작고, 유지보수하기 쉬움 |
 | **Continuous Improvement** | 메서드는 살아있는 문서 — 중복을 만들지 말고 변경 로그와 함께 기존 스킬을 업데이트 |
 | **Planner Integration** | 내장 `planner` 에이전트가 실행 전에 작업을 자동 분해 |
+| **opencodev2 정체성 + 마이그레이션** | `opencodev2`로 설치되어 전용 데이터 디렉터리로 공식 opencode와 공존합니다. 최초 실행 마법사가 설정·API 키·세션 기록을 요청에 따라 가져옵니다 |
 
 새 기능은 [`CHANGELOG.md`](./CHANGELOG.md)에서 버전 관리됩니다.
 

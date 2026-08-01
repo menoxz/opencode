@@ -52,9 +52,12 @@
 
 ## التثبيت (الفرع)
 
-يُنشر الفرع على npm تحت النطاق `@lux-tech` ويُثبّت ملفًا ثنائيًا باسم `opencode`،
-تمامًا مثل الحزمة الرسمية. وهذا يعني أن الفرع **يستبدل** opencode الرسمي عندما
-يكون كلاهما مثبتًا عالميًا — اقرأ **التعايش مع opencode الرسمي** قبل التثبيت.
+يُنشر الفرع على npm تحت النطاق `@lux-tech` ويُثبّت أمره باسم **`opencodev2`** — ملف
+ثنائي منفصل **يتعايش** مع opencode الرسمي (المثبَّت من `opencode-ai`). كما يستخدم
+أدلة بيانات/إعدادات خاصة به (`~/.local/share/opencodev2`، `~/.config/opencodev2`)،
+لذلك يمكن تشغيل المنتجين جنبًا إلى جنب دون المساس ببيانات بعضهما. عند أول تشغيل
+تفاعلي، يعرض الفرع استيراد إعدادات opencode ومفاتيح API وسجلّ الجلسات الحالية —
+يبقى التثبيت الأصلي كما هو. اقرأ **التعايش مع opencode الرسمي**.
 
 ### الموصى به: npm
 
@@ -65,50 +68,51 @@ npm install -g @lux-tech/opencode-ai
 التحقق:
 
 ```bash
-opencode --version
-# opencode v1.18.55 (أو أحدث إصدار منشور)
+opencodev2 --version
+# 1.18.59 (أو أحدث إصدار منشور)
 ```
 
 الحزمة الوصفية `@lux-tech/opencode-ai` تقوم تلقائيًا بتنزيل الملف الثنائي الصحيح
 لمنصتك من أحد الاعتماديات الاختيارية الاثني عشر (انظر **جدول الملفات الثنائية
-للمنصات**) وتعرضه كملف `opencode` الثنائي.
+للمنصات**) وتعرضه كأمر `opencodev2`.
 
 ### بديل: إصدارات GitHub (يدويًا)
 
 تُنشر أرشيفات الإصدارات على
 [صفحة الإصدارات](https://github.com/menoxz/opencode/releases) بصيغة `.tar.gz`
-(لينكس) و`.zip` (ماك / ويندوز). يحتوي كل أرشيف على الملف الثنائي `opencode`
-(أو `opencode.exe`) في جذره.
+(لينكس) و`.zip` (ماك / ويندوز). يحتوي كل أرشيف على الملف الثنائي CLI المُجمَّع في
+جذره — عند التثبيت يدويًا أعد تسميته إلى `opencodev2` حتى لا يتعارض أبدًا مع الملف
+الثنائي `opencode` الرسمي.
 
 ```bash
 # مثال: لينكس x64
-VERSION=v1.18.55
+VERSION=v1.18.59
 curl -fsSL -o opencode.tar.gz "https://github.com/menoxz/opencode/releases/download/$VERSION/opencode-linux-x64.tar.gz"
 tar -xzf opencode.tar.gz
-sudo mv opencode /usr/local/bin/opencode-fork   # أعد التسمية لتجنب استبدال الملف الثنائي الرسمي
+sudo mv opencode /usr/local/bin/opencodev2   # اسم منفصل، لا تعارض مع الملف الثنائي الرسمي
 ```
 
 ```powershell
 # مثال: ويندوز x64 (PowerShell)
-$VERSION = "v1.18.55"
+$VERSION = "v1.18.59"
 Invoke-WebRequest -Uri "https://github.com/menoxz/opencode/releases/download/$VERSION/opencode-windows-x64.zip" -OutFile opencode.zip
 Expand-Archive -Path opencode.zip -DestinationPath . -Force
-Move-Item .\opencode.exe "$env:LOCALAPPDATA\Microsoft\WindowsApps\opencode-fork.exe" -Force
+Move-Item .\opencode.exe "$env:LOCALAPPDATA\Microsoft\WindowsApps\opencodev2.exe" -Force
 ```
 
 ### موقع الملف الثنائي
 
 | طريقة التثبيت | مسار الملف الثنائي |
 |---|---|
-| npm (ويندوز) | `%APPDATA%\npm\opencode.exe` |
-| npm (لينكس / ماك) | `$(npm prefix -g)/bin/opencode` |
+| npm (ويندوز) | `%APPDATA%\npm\opencodev2.exe` |
+| npm (لينكس / ماك) | `$(npm prefix -g)/bin/opencodev2` |
 | إصدار GitHub (يدويًا) | أينما وضعته |
 
 ### التحديث
 
 ```bash
 # المحدّث المدمج (يجلب أحدث إصدار من @lux-tech/opencode-ai)
-opencode upgrade
+opencodev2 upgrade
 
 # أو عبر npm
 npm update -g @lux-tech/opencode-ai
@@ -123,81 +127,54 @@ npm uninstall -g @lux-tech/opencode-ai
 على ويندوز، احذف أيضًا الملف الوسيط القديم (shim) إذا تركه npm:
 
 ```powershell
-Remove-Item "$env:APPDATA\npm\opencode*" -Force -ErrorAction SilentlyContinue
+Remove-Item "$env:APPDATA\npm\opencodev2*" -Force -ErrorAction SilentlyContinue
 ```
 
 ---
 
 ## التعايش مع opencode الرسمي
 
-**كلا من الفرع (`@lux-tech/opencode-ai`) وopencode الرسمي (`opencode-ai`)
-يثبّتان ملفًا ثنائيًا باسم `opencode`.** تثبيت أحدهما عالميًا بعد الآخر يستبدل
-الملف الثنائي السابق بصمت. لا يمكنك الاحتفاظ بكليهما كملف `opencode` العالمي
-في نفس الوقت.
+يثبّت الفرع (`@lux-tech/opencode-ai`) أمره باسم **`opencodev2`** بينما يثبّت opencode
+الرسمي (`opencode-ai`) اسم `opencode`. الاسمَان لا يتعارضان أبدًا، ويستخدم الفرع
+أدلة البيانات الخاصة به (`~/.local/share/opencodev2`، `~/.config/opencodev2`،
+`~/.local/state/opencodev2`، `~/.cache/opencodev2`)، لذلك **يمكن تثبيت الاثنين
+واستخدامهما في نفس الوقت**.
+
+### معالج الترحيل عند التشغيل الأول
+
+عند أول تشغيل تفاعلي، يكتشف `opencodev2` ما إذا كان هناك تثبيت opencode سابق
+(إعدادات، مفاتيح API، جلسات) ويسألك عما تريد فعله:
+
+- **استيراد (موصى به)** — ينسخ إعداداتك وبيانات اعتمادك (`auth.json`) وسجلّ الجلسات
+  (`opencode.db`) من أدلة opencode الأصلية إلى أدلة opencodev2. تبقى البيانات
+  الأصلية كما هي.
+- **لاحقًا** — يبدأ ببيانات فارغة ويسأل مجددًا عند التشغيل التالي.
+- **أبدًا** — يبدأ ببيانات opencodev2 فارغة (ملف علامة يمنع الأسئلة اللاحقة).
+
+يمكن للبيئات غير التفاعلية (CI، السكربتات) فرض السلوك:
+
+```bash
+OPENCODEV2_MIGRATE=copy opencodev2 ...   # استيراد غير تفاعلي
+OPENCODEV2_MIGRATE=skip opencodev2 ...   # تخطٍّ ووضع علامة كأنه قُرِّر
+```
+
+يعمل المعالج مرة واحدة فقط لكل دليل بيانات (يسجّل ملف العلامة `.migrate-state`
+القرار). بعد الاستيراد، تعود قاعدة البيانات المنسوخة إلى opencodev2 — ولا تلمس
+ترحيلات قاعدة بيانات opencodev2 اللاحقة تثبيت opencode الأصلي أبدًا.
 
 ### أيّهما يجب أن تستخدم؟
 
 | الحاجة | الاستخدام |
 |---|---|
-| خوادم MCP التي تعيد الاتصال تلقائيًا، hot reload، eval pipeline، memory consolidation، unified prompt | **هذا الفرع** (`@lux-tech/opencode-ai`) |
-| الإصدار الرسمي الموثّق على نطاق واسع | [opencode الرسمي](https://github.com/anomalyco/opencode) (`opencode-ai`) |
+| خوادم MCP التي تعيد الاتصال تلقائيًا، hot reload، eval pipeline، memory consolidation، unified prompt | **هذا الفرع** (`opencodev2`) |
+| الإصدار الرسمي الموثّق على نطاق واسع | [opencode الرسمي](https://github.com/anomalyco/opencode) (`opencode`) |
 
-### الخيار أ — تثبيت عالمي واحد + `npx` للآخر (موصى به)
-
-ثبّت الفرع عالميًا وشغّل opencode الرسمي عند الحاجة دون تثبيته عالميًا:
+يبقى كلاهما محدَّثًا بشكل مستقل:
 
 ```bash
-npm install -g @lux-tech/opencode-ai   # الفرع يصبح `opencode` العالمي
-
-# استخدم opencode الرسمي دون المساس بالتثبيت العالمي:
-npx -y opencode-ai@latest
+opencodev2 upgrade        # تحديث الفرع (@lux-tech/opencode-ai)
+opencode upgrade          # تحديث opencode الرسمي (opencode-ai)
 ```
-
-أو العكس — أبقِ opencode الرسمي مثبتًا عالميًا وشغّل الفرع عند الحاجة:
-
-```bash
-npm install -g opencode-ai             # الرسمي يصبح `opencode` العالمي
-npx -y @lux-tech/opencode-ai@latest    # تشغيل الفرع عند الحاجة
-```
-
-### الخيار ب — تثبيت كلاهما، مع إعادة تسمية أحدهما
-
-ثبّت كلاهما، ثم أعد تسمية الملف الثنائي الثانوي حتى لا تتعارض الأمران:
-
-```bash
-npm install -g @lux-tech/opencode-ai
-npm install -g opencode-ai             # يستبدل `opencode` — نفّذ هذا ثانيًا
-```
-
-ثم على ويندوز أعد تسمية الملف الثنائي للفرع إلى `opencode-fork.exe`:
-
-```powershell
-Copy-Item "$env:APPDATA\npm\opencode.exe" "$env:APPDATA\npm\opencode-fork.exe"
-opencode-fork --version   # الفرع
-opencode --version        # الرسمي
-```
-
-على لينكس / ماك:
-
-```bash
-cp "$(npm prefix -g)/bin/opencode" "$(npm prefix -g)/bin/opencode-fork"
-opencode-fork --version   # الفرع
-opencode --version        # الرسمي
-```
-
-### التحقق من الملف الثنائي النشط حاليًا
-
-```bash
-which opencode                # مسار الملف الثنائي النشط
-opencode --version            # إصدار الملف الثنائي النشط
-opencode upgrade --help       # المحدّث المدمج يستهدف @lux-tech/opencode-ai
-```
-
-> [!TIP]
-> المحدّث المدمج (`opencode upgrade`) يجلب دائمًا `@lux-tech/opencode-ai`.
-> إذا أردت أن يتحدّث opencode **الرسمي** تلقائيًا، شغّله عبر
-> `npx opencode-ai@latest` أو المثبّت الرسمي (انظر
-> [opencode.ai](https://opencode.ai)).
 
 ---
 
@@ -265,6 +242,7 @@ opencode upgrade --help       # المحدّث المدمج يستهدف @lux-te
 | **Unified Prompt** | ملف `core.txt` واحد يحل محل 10 مطالبات خاصة بالنماذج — أنظف وأصغر وأسهل في الصيانة |
 | **Continuous Improvement** | الأساليب وثائق حية — حدّث المهارات (skills) الحالية مع سجل التغييرات بدلًا من إنشاء نسخ مكررة |
 | **Planner Integration** | وكيل `planner` المدمج يفكّك المهام تلقائيًا قبل التنفيذ |
+| **هوية opencodev2 + الترحيل** | يُثبَّت باسم `opencodev2` مع أدلة بيانات خاصة به، فيتعايش مع opencode الرسمي; معالج التشغيل الأول يستورد إعداداتك ومفاتيح API وسجلّ الجلسات عند الطلب |
 
 تُرقَّم الميزات الجديدة في [`CHANGELOG.md`](./CHANGELOG.md).
 

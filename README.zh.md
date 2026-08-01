@@ -51,7 +51,7 @@
 
 ## 安装（分叉版）
 
-该分叉版以 `@lux-tech` 作用域发布在 npm 上，安装的二进制文件名为 `opencode`，与官方包完全一致。这意味着两者同时全局安装时，分叉版会**取代**官方 opencode —— 安装前请阅读**与官方 opencode 共存**。
+该分叉版以 `@lux-tech` 作用域发布在 npm 上，将命令安装为 **`opencodev2`** —— 一个独立的二进制文件，与官方 `opencode`（由 `opencode-ai` 安装）**共存**。它还使用自己独立的数据/配置目录（`~/.local/share/opencodev2`、`~/.config/opencodev2`），因此两个产品可以并排运行而互不干扰。首次交互式启动时，分叉版会提议导入你现有的 opencode 配置、API 密钥和会话历史 —— 原始安装保持原样。参见**与官方 opencode 共存**。
 
 ### 推荐：npm
 
@@ -62,45 +62,45 @@ npm install -g @lux-tech/opencode-ai
 验证：
 
 ```bash
-opencode --version
-# opencode v1.18.55 (or the latest published version)
+opencodev2 --version
+# 1.18.59 (or the latest published version)
 ```
 
-元包 `@lux-tech/opencode-ai` 会自动从其 12 个可选依赖项之一下载对应平台的二进制文件（参见**各平台二进制文件表**），并将其作为 `opencode` 二进制文件提供。
+元包 `@lux-tech/opencode-ai` 会自动从其 12 个可选依赖项之一下载对应平台的二进制文件（参见**各平台二进制文件表**），并将其作为 `opencodev2` 命令提供。
 
 ### 备选方案：GitHub Releases（手动）
 
-发布压缩包发布在[发布页面](https://github.com/menoxz/opencode/releases)上，格式为 `.tar.gz`（Linux）和 `.zip`（macOS / Windows）。每个压缩包的根目录都包含 `opencode`（或 `opencode.exe`）二进制文件。
+发布压缩包发布在[发布页面](https://github.com/menoxz/opencode/releases)上，格式为 `.tar.gz`（Linux）和 `.zip`（macOS / Windows）。每个压缩包的根目录都包含编译后的 CLI 二进制文件 —— 手动安装时请将其重命名为 `opencodev2`，以免与官方 `opencode` 二进制文件冲突。
 
 ```bash
 # Example: Linux x64
-VERSION=v1.18.55
+VERSION=v1.18.59
 curl -fsSL -o opencode.tar.gz "https://github.com/menoxz/opencode/releases/download/$VERSION/opencode-linux-x64.tar.gz"
 tar -xzf opencode.tar.gz
-sudo mv opencode /usr/local/bin/opencode-fork   # rename to avoid clobbering the official binary
+sudo mv opencode /usr/local/bin/opencodev2   # 独立名称，不与官方二进制文件冲突
 ```
 
 ```powershell
 # Example: Windows x64 (PowerShell)
-$VERSION = "v1.18.55"
+$VERSION = "v1.18.59"
 Invoke-WebRequest -Uri "https://github.com/menoxz/opencode/releases/download/$VERSION/opencode-windows-x64.zip" -OutFile opencode.zip
 Expand-Archive -Path opencode.zip -DestinationPath . -Force
-Move-Item .\opencode.exe "$env:LOCALAPPDATA\Microsoft\WindowsApps\opencode-fork.exe" -Force
+Move-Item .\opencode.exe "$env:LOCALAPPDATA\Microsoft\WindowsApps\opencodev2.exe" -Force
 ```
 
 ### 二进制文件位置
 
 | 安装方式 | 二进制文件路径 |
 |---|---|
-| npm（Windows） | `%APPDATA%\npm\opencode.exe` |
-| npm（Linux / macOS） | `$(npm prefix -g)/bin/opencode` |
+| npm（Windows） | `%APPDATA%\npm\opencodev2.exe` |
+| npm（Linux / macOS） | `$(npm prefix -g)/bin/opencodev2` |
 | GitHub 发布（手动） | 你放置它的任意位置 |
 
 ### 更新
 
 ```bash
 # Built-in updater (fetches the latest @lux-tech/opencode-ai release)
-opencode upgrade
+opencodev2 upgrade
 
 # Or via npm
 npm update -g @lux-tech/opencode-ai
@@ -115,77 +115,45 @@ npm uninstall -g @lux-tech/opencode-ai
 在 Windows 上，还需删除 npm 遗留的过期 shim：
 
 ```powershell
-Remove-Item "$env:APPDATA\npm\opencode*" -Force -ErrorAction SilentlyContinue
+Remove-Item "$env:APPDATA\npm\opencodev2*" -Force -ErrorAction SilentlyContinue
 ```
 
 ---
 
 ## 与官方 opencode 共存
 
-**分叉版（`@lux-tech/opencode-ai`）和官方 opencode（`opencode-ai`）安装的二进制文件都叫 `opencode`。** 在全局安装其中一个会静默替换之前的二进制文件。你无法同时让两者都作为全局 `opencode` 存在。
+分叉版（`@lux-tech/opencode-ai`）将命令安装为 **`opencodev2`**，而官方 opencode（`opencode-ai`）安装的是 `opencode`。两者名称永远不会冲突，并且分叉版使用自己独立的数据目录（`~/.local/share/opencodev2`、`~/.config/opencodev2`、`~/.local/state/opencodev2`、`~/.cache/opencodev2`），因此**可以同时安装和使用**。
+
+### 首次运行的迁移向导
+
+首次交互式启动时，`opencodev2` 会检测是否存在之前的 opencode 安装（配置、API 密钥、会话），并询问你要做什么：
+
+- **导入（推荐）** —— 将配置、凭据（`auth.json`）和会话历史（`opencode.db`）从原始 opencode 目录复制到 opencodev2 目录。原始数据保持原样。
+- **稍后** —— 以全新数据启动，并在下次启动时再次询问。
+- **从不** —— 以空的 opencodev2 数据启动（标记文件会阻止后续提示）。
+
+无头环境（CI、脚本）可以强制指定行为：
+
+```bash
+OPENCODEV2_MIGRATE=copy opencodev2 ...   # 非交互式导入
+OPENCODEV2_MIGRATE=skip opencodev2 ...   # 跳过并标记为已决定
+```
+
+该向导每个数据目录只运行一次（`.migrate-state` 标记文件会记录决定）。导入后，复制的数据库归 opencodev2 所有 —— 之后 opencodev2 的数据库迁移永远不会触碰原始 opencode 安装。
 
 ### 应该用哪个？
 
 | 需求 | 使用 |
 |---|---|
-| 支持自动重连的 MCP 服务器、hot reload、eval pipeline、memory consolidation、unified prompt | **本分叉版**（`@lux-tech/opencode-ai`） |
-| 官方、经过广泛验证的版本 | [官方 opencode](https://github.com/anomalyco/opencode)（`opencode-ai`） |
+| MCP 自动重连、hot reload、eval pipeline、memory consolidation、unified prompt | **本分叉版**（`opencodev2`） |
+| 官方、经过广泛验证的版本 | [官方 opencode](https://github.com/anomalyco/opencode)（`opencode`） |
 
-### 方案 A —— 一个全局安装 + 另一个用 `npx`（推荐）
-
-将分叉版全局安装，并按需运行官方 opencode（无需全局安装）：
+两者各自独立保持最新：
 
 ```bash
-npm install -g @lux-tech/opencode-ai   # fork becomes the global `opencode`
-
-# Use the official opencode without touching the global install:
-npx -y opencode-ai@latest
+opencodev2 upgrade        # 更新分叉版（@lux-tech/opencode-ai）
+opencode upgrade          # 更新官方 opencode（opencode-ai）
 ```
-
-或者反过来 —— 保持官方 opencode 为全局，并按需运行分叉版：
-
-```bash
-npm install -g opencode-ai             # official becomes the global `opencode`
-npx -y @lux-tech/opencode-ai@latest    # run the fork on demand
-```
-
-### 方案 B —— 两者都安装，其中一个重命名
-
-两者都安装，然后重命名次要二进制文件，使两个命令不冲突：
-
-```bash
-npm install -g @lux-tech/opencode-ai
-npm install -g opencode-ai             # overwrites `opencode` — do this one second
-```
-
-然后在 Windows 上将分叉版二进制文件重命名为 `opencode-fork.exe`：
-
-```powershell
-Copy-Item "$env:APPDATA\npm\opencode.exe" "$env:APPDATA\npm\opencode-fork.exe"
-opencode-fork --version   # fork
-opencode --version        # official
-```
-
-Linux / macOS 上：
-
-```bash
-cp "$(npm prefix -g)/bin/opencode" "$(npm prefix -g)/bin/opencode-fork"
-opencode-fork --version   # fork
-opencode --version        # official
-```
-
-### 检查当前生效的二进制文件
-
-```bash
-which opencode                # path of the active binary
-opencode --version            # version of the active binary
-opencode upgrade --help       # built-in updater targets @lux-tech/opencode-ai
-```
-
-> [!TIP]
-> 内置更新器（`opencode upgrade`）始终获取 `@lux-tech/opencode-ai`。
-> 如果你希望**官方** opencode 自动更新，请通过 `npx opencode-ai@latest` 或官方安装程序
-> 运行它（参见 [opencode.ai](https://opencode.ai)）。
 
 ---
 
@@ -246,6 +214,7 @@ OpenCode 内置两个智能体，可通过 `Tab` 键切换。
 | **Unified Prompt** | 单个 `core.txt` 取代 10 个模型专属提示词 —— 更简洁、更小、更易维护 |
 | **Continuous Improvement** | 方法即活文档 —— 通过变更日志更新现有技能，而不是创建重复项 |
 | **Planner Integration** | 内置 `planner` 智能体在执行前自动分解任务 |
+| **opencodev2 身份 + 迁移** | 以 `opencodev2` 身份安装并使用自己独立的数据目录，从而与官方 opencode 共存；首次运行向导按需导入你的配置、API 密钥和会话历史 |
 
 新功能会在 [`CHANGELOG.md`](./CHANGELOG.md) 中进行版本记录。
 
