@@ -26,7 +26,7 @@ import { BusEvent } from "../bus/bus-event"
 import { Bus } from "@/bus"
 import { TuiEvent } from "@/cli/cmd/tui/event"
 import open from "open"
-import { Effect, Exit, Layer, Option, Context, Schema, Semaphore, Stream } from "effect"
+import { Effect, Exit, Layer, Option, Context, Schema, Semaphore, Stream, Schedule, Duration } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { InstanceState } from "@/effect/instance-state"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
@@ -38,6 +38,11 @@ import { createHash } from "crypto"
 
 const log = Log.create({ service: "mcp" })
 const DEFAULT_TIMEOUT = 30_000
+
+const DEFAULT_HEALTH_INTERVAL_MS = 5_000
+const HEALTH_PING_TIMEOUT_MS = 3_000
+const RECONNECT_BACKOFF_BASE_MS = 1_000
+const RECONNECT_BACKOFF_MAX_MS = 30_000
 
 const TolerantListToolsResultSchema = ListToolsResultSchema.extend({
   tools: ToolSchema.omit({ outputSchema: true }).array(),
@@ -117,6 +122,26 @@ function isMcpConfigured(entry: McpEntry): entry is ConfigMCP.Info {
 }
 
 const sanitize = (s: string) => s.replace(/[^a-zA-Z0-9_-]/g, "_")
+
+// Clients we are closing on purpose (disconnect/reload/replace) — their
+// transport close event must NOT trigger an automatic reconnect.
+const intentionalClose = new WeakSet<MCPClient>()
+
+function pingWithTimeout(client: MCPClient, timeout: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(false), timeout)
+    client.ping().then(
+      () => {
+        clearTimeout(timer)
+        resolve(true)
+      },
+      () => {
+        clearTimeout(timer)
+        resolve(false)
+      },
+    )
+  })
+}
 
 function remoteURL(key: string, value: string) {
   if (URL.canParse(value)) return new URL(value)
@@ -558,6 +583,21 @@ export const layer = Layer.effect(
         s.catalogVersion++
         await bridge.promise(bus.publish(ToolsChanged, { server: name }).pipe(Effect.ignore))
       })
+
+      // Watch the transport so a dead process/pipe marks the server failed
+      // immediately instead of staying "connected" while every call errors.
+      const transport = client.transport
+      if (!transport) return
+      const prevClose = transport.onclose
+      const prevError = transport.onerror
+      transport.onclose = () => {
+        prevClose?.()
+        bridge.promise(markDisconnected(s, name, client, "transport closed").pipe(Effect.ignore))
+      }
+      transport.onerror = (error: Error) => {
+        prevError?.(error)
+        bridge.promise(markDisconnected(s, name, client, `transport error: ${error.message}`).pipe(Effect.ignore))
+      }
     }
 
     const state = yield* InstanceState.make<State>(
@@ -625,6 +665,62 @@ export const layer = Layer.effect(
           }),
         )
 
+        // Health-check loop: ping connected servers and auto-reconnect failed
+        // ones with exponential backoff, so a dead MCP process is detected and
+        // repaired without manual mcp_connect.
+        const reconnectAttempts = new Map<string, number>()
+        const nextAttemptAt = new Map<string, number>()
+
+        const healthTick = (): Effect.Effect<void> =>
+          Effect.gen(function* () {
+            const cfgNow = yield* cfgSvc.get()
+          const autoreconnect = cfgNow.experimental?.mcp_autoreconnect !== false
+          const pingTimeout = Math.min(cfgNow.experimental?.mcp_timeout ?? DEFAULT_TIMEOUT, HEALTH_PING_TIMEOUT_MS)
+          const now = Date.now()
+
+          for (const [name, client] of Object.entries(s.clients)) {
+            if (s.status[name]?.status !== "connected") continue
+            const ok = yield* Effect.tryPromise(() => pingWithTimeout(client, pingTimeout)).pipe(
+              Effect.catch(() => Effect.succeed(false)),
+            )
+            if (!ok) yield* markDisconnected(s, name, client, "health check ping failed")
+          }
+
+          if (!autoreconnect) return
+          for (const [name, st] of Object.entries(s.status)) {
+            if (st.status !== "failed" || s.clients[name]) continue
+            if ((nextAttemptAt.get(name) ?? 0) > now) continue
+            const attempt = reconnectAttempts.get(name) ?? 0
+            const ok = yield* reconnectServer(s, name)
+            if (ok) {
+              reconnectAttempts.delete(name)
+              nextAttemptAt.delete(name)
+            } else {
+              reconnectAttempts.set(name, attempt + 1)
+              nextAttemptAt.set(
+                name,
+                now + Math.min(RECONNECT_BACKOFF_BASE_MS * 2 ** attempt, RECONNECT_BACKOFF_MAX_MS),
+              )
+            }
+          }
+        })
+
+        const healthInterval = cfg.experimental?.mcp_health_interval_ms ?? DEFAULT_HEALTH_INTERVAL_MS
+        if (healthInterval > 0) {
+          // Delay the first tick so freshly connected clients are stable before
+          // the first ping (avoids a false "failed" right after startup).
+          yield* Effect.forkScoped(
+            Effect.repeat(
+              healthTick().pipe(
+                Effect.delay(Duration.millis(healthInterval)),
+                Effect.catch(() => Effect.void),
+                Effect.catchCause(() => Effect.void),
+              ),
+              Schedule.fixed(Duration.millis(healthInterval)),
+            ),
+          )
+        }
+
         return s
       }),
     )
@@ -634,7 +730,23 @@ export const layer = Layer.effect(
       if (s.defs[name]) s.catalogVersion++
       delete s.defs[name]
       if (!client) return Effect.void
+      intentionalClose.add(client)
       return Effect.tryPromise(() => client.close()).pipe(Effect.ignore)
+    }
+
+    function markDisconnected(s: State, name: string, client: MCPClient, reason: string): Effect.Effect<void> {
+      if (s.clients[name] !== client || s.status[name]?.status !== "connected") return Effect.void
+      if (intentionalClose.has(client)) return Effect.void
+      log.warn("mcp connection lost, marking failed", { name, reason })
+      return closeClient(s, name).pipe(
+        Effect.flatMap(() =>
+          Effect.sync(() => {
+            delete s.clients[name]
+            s.status[name] = { status: "failed", error: reason }
+          }),
+        ),
+        Effect.flatMap(() => bus.publish(ToolsChanged, { server: name }).pipe(Effect.ignore)),
+      )
     }
 
     const storeClient = Effect.fnUntraced(function* (
@@ -693,6 +805,24 @@ export const layer = Layer.effect(
 
       return yield* storeClient(s, name, result.mcpClient, result.defs!, mcp.timeout)
     })
+
+    const reconnectServer = (s: State, name: string): Effect.Effect<boolean> =>
+      Effect.gen(function* () {
+        if (s.clients[name] || s.status[name]?.status !== "failed") return false
+        const mcp = yield* getMcpConfig(name)
+        if (!mcp || mcp.enabled === false) return false
+        if (s.fingerprints[name] !== configFingerprint(mcp)) return false
+
+        const result = yield* create(name, mcp)
+        if (!result.mcpClient) {
+          log.warn("mcp auto-reconnect attempt failed", { name })
+          return false
+        }
+        yield* storeClient(s, name, result.mcpClient, result.defs!, mcp.timeout)
+        yield* bus.publish(ToolsChanged, { server: name }).pipe(Effect.ignore)
+        log.info("mcp auto-reconnected", { name })
+        return true
+      })
 
     const add = Effect.fn("MCP.add")(function* (name: string, mcp: ConfigMCP.Info) {
       yield* createAndStore(name, mcp)

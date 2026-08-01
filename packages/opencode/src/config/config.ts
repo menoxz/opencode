@@ -322,6 +322,14 @@ export const Info = Schema.Struct({
       mcp_timeout: Schema.optional(PositiveInt).annotate({
         description: "Timeout in milliseconds for model context protocol (MCP) requests",
       }),
+      mcp_health_interval_ms: Schema.optional(NonNegativeInt).annotate({
+        description:
+          "Interval in milliseconds between MCP health checks (JSON-RPC ping). Set to 0 to disable active health checks (transport close events still mark servers failed). Default: 5000",
+      }),
+      mcp_autoreconnect: Schema.optional(Schema.Boolean).annotate({
+        description:
+          "Automatically reconnect MCP servers whose connection is lost, with exponential backoff. Default: true",
+      }),
       hot_path: Schema.optional(
         Schema.Struct({
           enabled: Schema.optional(Schema.Boolean),

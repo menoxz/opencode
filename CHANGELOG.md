@@ -15,6 +15,17 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ### Removed
 
+## [v1.18.56] - 2026-08-01
+
+### Added
+- Auto-reconnexion MCP : un serveur MCP dont le processus meurt ou dont le transport se ferme est détecté (événements `onclose`/`onerror` + health-check périodique par ping JSON-RPC) puis reconnecté automatiquement avec backoff exponentiel (1s → 30s), au lieu de rester affiché « connected » avec des appels en échec
+- Options `experimental.mcp_health_interval_ms` (intervalle du health-check, défaut 5000, 0 = désactivé) et `experimental.mcp_autoreconnect` (défaut true)
+- Test d'intégration `src/mcp/reconnect.test.ts` + fixture `test/fixtures/dummy-mcp-server.mjs` : tue le processus serveur et vérifie la reconnexion automatique (nouveau pid + outils de nouveau disponibles)
+
+### Fixed
+- Le statut MCP restait figé à « connected » après la mort du processus serveur : `mcp_list` affiche désormais `failed` avec la raison dès la détection
+- Événements `ToolsChanged` publiés lors d'une déconnexion/reconnexion pour que les clients attach voient les outils revenir
+
 ## [v1.18.55] - 2026-08-01
 
 ### Added
@@ -49,7 +60,8 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 ### Added
 - Fallback vision pour les pièces jointes d'images
 
-[Unreleased]: https://github.com/menoxz/opencode/compare/v1.18.55...dev
+[Unreleased]: https://github.com/menoxz/opencode/compare/v1.18.56...dev
+[v1.18.56]: https://github.com/menoxz/opencode/compare/v1.18.55...v1.18.56
 [v1.18.55]: https://github.com/menoxz/opencode/compare/v1.18.54...v1.18.55
 [v1.18.54]: https://github.com/menoxz/opencode/compare/v1.18.52...v1.18.54
 [v1.18.52]: https://github.com/menoxz/opencode/compare/v1.18.51...v1.18.52
