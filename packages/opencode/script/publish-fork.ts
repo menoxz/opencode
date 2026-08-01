@@ -69,7 +69,9 @@ await Bun.file(`./dist/opencode/package.json`).write(
     {
       name: scope,
       version,
-      bin: { opencode: "./bin/opencode.exe" },
+      // The fork installs its command as `opencodev2` so it can coexist with
+      // the upstream `opencode` binary from the `opencode-ai` package.
+      bin: { opencodev2: "./bin/opencode.exe" },
       scripts: { postinstall: "node ./postinstall.mjs" },
       license: "MIT",
       os: ["darwin", "linux", "win32"],

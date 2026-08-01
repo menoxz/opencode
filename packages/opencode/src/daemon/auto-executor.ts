@@ -337,7 +337,14 @@ function isExecutable(candidate: string): boolean {
  */
 function findBinary(): string | null {
   const argv0 = process.argv[0]
-  if (argv0 && isExecutable(argv0) && (argv0.endsWith("opencode.exe") || argv0.endsWith("opencode"))) {
+  if (
+    argv0 &&
+    isExecutable(argv0) &&
+    (argv0.endsWith("opencodev2.exe") ||
+      argv0.endsWith("opencodev2") ||
+      argv0.endsWith("opencode.exe") ||
+      argv0.endsWith("opencode"))
+  ) {
     return path.resolve(argv0)
   }
 
@@ -351,7 +358,7 @@ function findBinary(): string | null {
   const envPath = process.env.PATH || ""
   for (const dir of envPath.split(path.delimiter)) {
     if (!dir) continue
-    for (const name of ["opencode.exe", "opencode.cmd", "opencode.bat"]) {
+    for (const name of ["opencodev2.exe", "opencodev2.cmd", "opencodev2.bat", "opencode.exe", "opencode.cmd", "opencode.bat"]) {
       const candidate = path.join(dir, name)
       if (isExecutable(candidate)) return candidate
     }

@@ -42,6 +42,7 @@ import path from "path"
 import { Global } from "@opencode-ai/core/global"
 import { JsonMigration } from "@/storage/json-migration"
 import { Database } from "@/storage/db"
+import { Migration } from "./cli/migrate"
 import { errorMessage } from "./util/error"
 import { PluginCommand } from "./cli/cmd/plug"
 import { Heap } from "./cli/heap"
@@ -67,7 +68,7 @@ const args = hideBin(process.argv)
 
 function show(out: string) {
   const text = out.trimStart()
-  if (!text.startsWith("opencode ")) {
+  if (!text.startsWith("opencodev2 ") && !text.startsWith("opencode ")) {
     process.stderr.write(UI.logo() + EOL + EOL)
     process.stderr.write(text)
     return
@@ -77,7 +78,7 @@ function show(out: string) {
 
 const cli = yargs(args)
   .parserConfiguration({ "populate--": true })
-  .scriptName("opencode")
+  .scriptName("opencodev2")
   .wrap(100)
   .help("help", "show help")
   .alias("help", "h")
@@ -123,6 +124,10 @@ const cli = yargs(args)
       process_role: processMetadata.processRole,
       run_id: processMetadata.runID,
     })
+
+    // First-run migration wizard (opencodev2): import upstream opencode data on
+    // first launch so the original installation can coexist untouched.
+    await Migration.maybeRunMigrationWizard(process.argv.slice(2))
 
     const marker = path.join(Global.Path.data, "opencode.db")
     if (!(await Filesystem.exists(marker))) {

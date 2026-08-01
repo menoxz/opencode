@@ -18,7 +18,7 @@ const log = Log.create({ service: "daemon.cli" })
  */
 export function daemonDir(): string {
   const base = process.env.LOCALAPPDATA || path.join(process.env.HOME || "C:\\", ".opencode")
-  return path.join(base, "opencode")
+  return path.join(base, "opencodev2")
 }
 
 /**
@@ -26,7 +26,7 @@ export function daemonDir(): string {
  */
 export function serviceDir(): string {
   const base = process.env.ProgramData || "C:\\ProgramData"
-  return path.join(base, "opencode", "daemon")
+  return path.join(base, "opencodev2", "daemon")
 }
 
 /**
@@ -151,7 +151,7 @@ export const WatchCommand = effectCmd({
       })
       .option("pid-file", {
         type: "string",
-        describe: "Custom PID file path (default: $LOCALAPPDATA/opencode/daemon.pid)",
+        describe: "Custom PID file path (default: $LOCALAPPDATA/opencodev2/daemon.pid)",
       }),
   instance: false,
   handler: Effect.fn("Cli.watch")(function* (args) {

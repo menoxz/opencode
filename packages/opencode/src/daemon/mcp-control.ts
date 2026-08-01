@@ -10,7 +10,7 @@ const log = Log.create({ service: "daemon.mcp-control" })
 
 export function commandsDir(): string {
   const base = process.env.LOCALAPPDATA || path.join(process.env.HOME || process.env.USERPROFILE || "C:\\", ".opencode")
-  return path.join(base, "opencode")
+  return path.join(base, "opencodev2")
 }
 
 export function commandsFile(): string {

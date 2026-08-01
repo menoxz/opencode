@@ -6,7 +6,10 @@ import { Context, Effect, Layer } from "effect"
 import { Flock } from "./util/flock"
 import { Flag } from "./flag/flag"
 
-const app = "opencode"
+// Fork identity: the fork lives in its own directories (`opencodev2`) so it can
+// coexist with the upstream `opencode` install. The first-run migration wizard
+// (src/cli/migrate.ts) copies data from the upstream `opencode` directories.
+const app = "opencodev2"
 const data = path.join(xdgData!, app)
 const cache = path.join(xdgCache!, app)
 const config = path.join(xdgConfig!, app)

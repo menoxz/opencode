@@ -37,7 +37,7 @@ interface IdleReport {
 
 function reportsDir(): string {
   const base = process.env.LOCALAPPDATA || path.join(process.env.HOME || "C:\\", ".opencode")
-  return path.join(base, "opencode", "reports")
+  return path.join(base, "opencodev2", "reports")
 }
 
 function latestReportPath(): string {
@@ -120,7 +120,7 @@ function getGitPulse(): GitPulse | null {
 
 function typecheckHistoryDir(): string {
   const base = process.env.LOCALAPPDATA || path.join(process.env.HOME || "C:\\", ".opencode")
-  return path.join(base, "opencode", "typecheck-history")
+  return path.join(base, "opencodev2", "typecheck-history")
 }
 
 function typecheckHistoryFile(): string {

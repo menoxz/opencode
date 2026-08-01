@@ -136,7 +136,7 @@ function getEvalDbPath(): string {
   const configDir =
     process.env.XDG_CONFIG_HOME ||
     path.join(process.env.HOME || process.env.USERPROFILE || ".", ".config")
-  const dbDir = path.join(configDir, "opencode")
+  const dbDir = path.join(configDir, "opencodev2")
   fs.mkdirSync(dbDir, { recursive: true })
   return path.join(dbDir, "eval.sqlite")
 }

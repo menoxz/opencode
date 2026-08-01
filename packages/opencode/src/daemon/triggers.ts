@@ -21,7 +21,7 @@ function triggerDir(): string {
   // 2. Known installation paths (first that exists)
   const knownPaths = [
     "C:\\jeanluc\\mcp-servers\\opencode-trigger",
-    path.join(process.env.HOME || process.env.USERPROFILE || "C:\\", ".config", "opencode", "opencode-trigger"),
+    path.join(process.env.HOME || process.env.USERPROFILE || "C:\\", ".config", "opencodev2", "opencode-trigger"),
   ]
   for (const p of knownPaths) {
     if (fs.existsSync(path.join(p, "triggers.json"))) return p

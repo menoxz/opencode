@@ -12,13 +12,13 @@ import { readLatestReport } from "../../daemon/idle"
 
 /**
  * Resolve the daemon data directory.
- * - Normal mode: %LOCALAPPDATA%\opencode (per-user)
- * - Service mode: %ProgramData%\opencode\daemon (system-wide)
+ * - Normal mode: %LOCALAPPDATA%\opencodev2 (per-user)
+ * - Service mode: %ProgramData%\opencodev2\daemon (system-wide)
  */
 function resolveDir(serviceMode: boolean): string {
   if (serviceMode) {
     const base = process.env.ProgramData || "C:\\ProgramData"
-    return path.join(base, "opencode", "daemon")
+    return path.join(base, "opencodev2", "daemon")
   }
   return daemonDir()
 }
@@ -68,21 +68,33 @@ function isElevated(): boolean {
  *   4. Known dev fork path
  */
 function findOpencodeBinary(): string | null {
-  // 1. Current argv[0] — if we're running as the opencode binary
+  // 1. Current argv[0] — if we're running as the opencode(v2) binary
   const argv0 = process.argv[0]
-  if (argv0 && (argv0.endsWith("opencode.exe") || argv0.endsWith("opencode"))) {
+  if (
+    argv0 &&
+    (argv0.endsWith("opencodev2.exe") ||
+      argv0.endsWith("opencodev2") ||
+      argv0.endsWith("opencode.exe") ||
+      argv0.endsWith("opencode"))
+  ) {
     const resolved = path.resolve(argv0)
     if (fs.existsSync(resolved)) return resolved
   }
 
-  // 2. `where opencode` (Windows PATH)
+  // 2. `where opencodev2` (Windows PATH), fall back to `where opencode`
+  let result = ""
   try {
-    const result = execSync("where opencode", { encoding: "utf-8", timeout: 5000 }).trim()
-    if (result) {
-      const first = result.split("\n")[0].trim()
-      if (first && fs.existsSync(first)) return first
-    }
-  } catch { /* not on PATH */ }
+    result = execSync("where opencodev2", { encoding: "utf-8", timeout: 5000 }).trim()
+  } catch { /* not on PATH as opencodev2 */ }
+  if (!result) {
+    try {
+      result = execSync("where opencode", { encoding: "utf-8", timeout: 5000 }).trim()
+    } catch { /* not on PATH as opencode */ }
+  }
+  if (result) {
+    const first = result.split("\n")[0].trim()
+    if (first && fs.existsSync(first)) return first
+  }
 
   // 3. npm global prefix
   try {
@@ -90,6 +102,7 @@ function findOpencodeBinary(): string | null {
     const candidates = [
       path.join(prefix, "node_modules", "@opencode-ai", "opencode", "dist", "bin", "opencode.exe"),
       path.join(prefix, "node_modules", "@opencode-ai", "opencode", "cli.js"),
+      path.join(prefix, "opencodev2.exe"),
       path.join(prefix, "opencode.exe"),
     ]
     for (const c of candidates) {

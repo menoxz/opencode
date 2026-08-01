@@ -8,8 +8,14 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 ## [Unreleased]
 
 ### Added
+- **Wizard de migration première-exécution** (`src/cli/migrate.ts`) : au premier lancement interactif, `opencodev2` détecte les données d'une installation opencode existante (config, `auth.json`, sessions) et propose de les importer — copie de `~/.config/opencode` et `~/.local/share/opencode` (DB + WAL/SHM + storage) vers les répertoires `opencodev2`, sans jamais modifier l'original. Options : Importer (recommandé) / Plus tard / Jamais ; marqueur `.migrate-state` (une seule demande) ; override headless `OPENCODEV2_MIGRATE=copy|skip` ; gardes TTY + commandes headless. Tests : `test/cli/migrate.test.ts` (5 tests).
 
 ### Changed
+- **Identité du fork → `opencodev2`** : le binaire/commande npm est renommé `opencodev2` (clé `bin` de `publish-fork.ts`) et le fork utilise ses propres répertoires de données (`~/.local/share/opencodev2`, `~/.config/opencodev2`, `~/.local/state/opencodev2`, `~/.cache/opencodev2`, `%LOCALAPPDATA%\opencodev2`, `%ProgramData%\opencodev2`) — coexistence complète avec l'opencode officiel, sans conflit de binaire ni de base SQLite.
+  - `packages/core/src/global.ts` : `app = "opencodev2"` (chemins Global.Path).
+  - Chemins codés en dur renommés : memory/eval/self-improve (`opencodev2/memory.sqlite`, `eval.sqlite`), daemon (pid/log/service/tasks/learnings/notifications/reports/triggers), config managée (`/etc/opencodev2`, `ProgramData\opencodev2`).
+  - Auto-invocation (attach, daemon, auto-executor, pr import) et uninstall (`@lux-tech/opencode-ai`) adaptés ; `scriptName("opencodev2")`.
+- README racine : sections Installation + Coexistence réécrites pour la coexistence native et le wizard de migration.
 
 ### Fixed
 

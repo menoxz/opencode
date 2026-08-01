@@ -14,7 +14,7 @@ const log = Log.create({ service: "daemon.trigger-handler" })
  */
 export function taskQueueDir(): string {
   const base = process.env.LOCALAPPDATA || path.join(process.env.HOME || "C:\\", ".opencode")
-  return path.join(base, "opencode", "tasks")
+  return path.join(base, "opencodev2", "tasks")
 }
 
 function queueDir(): string {

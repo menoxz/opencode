@@ -11,7 +11,12 @@ const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"])
 
 function serverBinary(): string {
   const exe = process.execPath
-  return exe.endsWith("opencode.exe") || exe.endsWith("opencode") ? exe : "opencode"
+  return exe.endsWith("opencodev2.exe") ||
+    exe.endsWith("opencodev2") ||
+    exe.endsWith("opencode.exe") ||
+    exe.endsWith("opencode")
+    ? exe
+    : "opencodev2"
 }
 
 function serverReachable(url: string, headers?: RequestInit["headers"]): Promise<boolean> {

@@ -93,7 +93,7 @@ interface TaskCounts {
 
 function countTasks(): TaskCounts {
   const base = process.env.LOCALAPPDATA || path.join(process.env.HOME || "C:\\", ".opencode")
-  const dir = path.join(base, "opencode", "tasks")
+  const dir = path.join(base, "opencodev2", "tasks")
   if (!fs.existsSync(dir)) return { pending: 0, processing: 0, done: 0 }
 
   const counts: TaskCounts = { pending: 0, processing: 0, done: 0 }

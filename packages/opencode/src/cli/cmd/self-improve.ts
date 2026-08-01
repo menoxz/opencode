@@ -41,7 +41,7 @@ function getMemoryDbPath(): string {
   const configDir =
     process.env.XDG_CONFIG_HOME ||
     path.join(process.env.HOME || process.env.USERPROFILE || ".", ".config")
-  return path.join(configDir, "opencode", "memory.sqlite")
+  return path.join(configDir, "opencodev2", "memory.sqlite")
 }
 
 function loadProfiles(): ParameterProfile[] {

@@ -24,7 +24,7 @@ export interface LearningEntry {
 
 function learningsDir(): string {
   const base = process.env.LOCALAPPDATA || path.join(process.env.HOME || "C:\\", ".opencode")
-  return path.join(base, "opencode", "learnings")
+  return path.join(base, "opencodev2", "learnings")
 }
 
 function latestLearningPath(): string {

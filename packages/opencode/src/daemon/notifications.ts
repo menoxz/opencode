@@ -26,7 +26,7 @@ export interface DaemonNotification {
 
 function notificationsDir(): string {
   const base = process.env.LOCALAPPDATA || path.join(process.env.HOME || "C:\\", ".opencode")
-  return path.join(base, "opencode", "notifications")
+  return path.join(base, "opencodev2", "notifications")
 }
 
 function latestNotificationPath(): string {
