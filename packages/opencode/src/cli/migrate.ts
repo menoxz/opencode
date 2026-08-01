@@ -191,12 +191,44 @@ export async function maybeRunMigrationWizard(args: string[]): Promise<void> {
 }
 
 async function runMigration(own: MigrationDirs): Promise<void> {
-  const copied = await migrateOriginalData(own)
+  const orig = originalDirs(own)
+  const interactive = isInteractive()
+  const spinner = interactive ? prompts.spinner() : null
+
+  const phase = (label: string) => {
+    if (!spinner) return void process.stderr.write(`${label}…\n`)
+    spinner.start(label)
+  }
+  const done = (label: string) => {
+    if (!spinner) return void process.stderr.write(`${label}\n`)
+    spinner.stop(label)
+  }
+  const report = (message: string) => {
+    if (!interactive) return void process.stderr.write(`${message}\n`)
+    prompts.log.success(message)
+  }
+
+  const copied: string[] = []
+
+  if (await exists(orig.config)) {
+    phase("Importing configuration")
+    await copyDir(orig.config, own.config)
+    copied.push(orig.config)
+    done("Configuration imported")
+  }
+
+  phase("Importing credentials and session history")
+  for (const suffix of ["opencode.db", "opencode.db-wal", "opencode.db-shm"]) {
+    await copyFileIfExists(path.join(orig.data, suffix), path.join(own.data, suffix))
+  }
+  await copyFileIfExists(path.join(orig.data, "auth.json"), path.join(own.data, "auth.json"))
+  await copyDirIfExists(path.join(orig.data, "storage"), path.join(own.data, "storage"), copied)
+  done("Credentials and session history imported")
+
   await writeMarker(own.data, "copy")
-  prompts.log.success(
-    `Import complete — ${copied.length} item(s) copied from the original opencode installation.`,
-  )
-  prompts.log.info(`Original data left in place: ${path.dirname(own.data)}${path.sep}opencode`)
+
+  report(`Import complete — ${copied.length} item(s) copied from the original opencode installation.`)
+  report(`Original data left in place: ${path.dirname(own.data)}${path.sep}opencode`)
 }
 
 export * as Migration from "./migrate"
