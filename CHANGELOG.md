@@ -8,6 +8,16 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+### Removed
+
+## [v1.18.59] - 2026-08-01
+
+### Added
 - **Wizard de migration première-exécution** (`src/cli/migrate.ts`) : au premier lancement interactif, `opencodev2` détecte les données d'une installation opencode existante (config, `auth.json`, sessions) et propose de les importer — copie de `~/.config/opencode` et `~/.local/share/opencode` (DB + WAL/SHM + storage) vers les répertoires `opencodev2`, sans jamais modifier l'original. Options : Importer (recommandé) / Plus tard / Jamais ; marqueur `.migrate-state` (une seule demande) ; override headless `OPENCODEV2_MIGRATE=copy|skip` ; gardes TTY + commandes headless. Tests : `test/cli/migrate.test.ts` (5 tests).
 
 ### Changed
