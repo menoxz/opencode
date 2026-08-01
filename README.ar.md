@@ -1,17 +1,24 @@
 <p align="center">
-  <a href="https://opencode.ai">
+  <a href="https://github.com/menoxz/opencode">
     <picture>
       <source srcset="packages/console/app/src/asset/logo-ornate-dark.svg" media="(prefers-color-scheme: dark)">
       <source srcset="packages/console/app/src/asset/logo-ornate-light.svg" media="(prefers-color-scheme: light)">
-      <img src="packages/console/app/src/asset/logo-ornate-light.svg" alt="شعار OpenCode">
+      <img src="packages/console/app/src/asset/logo-ornate-light.svg" alt="شعار فرع OpenCode">
     </picture>
   </a>
 </p>
-<p align="center">وكيل برمجة بالذكاء الاصطناعي مفتوح المصدر.</p>
+<p align="center">وكيل البرمجة بالذكاء الاصطناعي مفتوح المصدر — فرع من مجتمع المطورين.
+
+> **إشعار الفرع (Fork)** — هذا المستودع (`menoxz/opencode`) هو فرع من
+> [opencode الرسمي](https://github.com/anomalyco/opencode) من مجتمع المطورين
+> مع ميزات إضافية (MCP auto-reconnect، hot reload، eval pipeline،
+> memory consolidation، unified prompt). وهو **غير تابع** لفريق opencode الرسمي.
+> **انظر اختلافات الفرع ←**</p>
 <p align="center">
-  <a href="https://opencode.ai/discord"><img alt="Discord" src="https://img.shields.io/discord/1391832426048651334?style=flat-square&label=discord" /></a>
-  <a href="https://www.npmjs.com/package/opencode-ai"><img alt="npm" src="https://img.shields.io/npm/v/opencode-ai?style=flat-square" /></a>
-  <a href="https://github.com/anomalyco/opencode/actions/workflows/publish.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/anomalyco/opencode/publish.yml?style=flat-square&branch=dev" /></a>
+  <a href="https://www.npmjs.com/package/@lux-tech/opencode-ai"><img alt="npm" src="https://img.shields.io/npm/v/%40lux-tech%2Fopencode-ai?style=flat-square" /></a>
+  <a href="https://github.com/menoxz/opencode/actions/workflows/typecheck.yml"><img alt="Typecheck" src="https://img.shields.io/github/actions/workflow/status/menoxz/opencode/typecheck.yml?branch=dev&style=flat-square" /></a>
+  <a href="https://github.com/menoxz/opencode/actions/workflows/eval.yml"><img alt="Eval" src="https://img.shields.io/github/actions/workflow/status/menoxz/opencode/eval.yml?branch=dev&style=flat-square" /></a>
+  <a href="https://github.com/menoxz/opencode/blob/dev/LICENSE"><img alt="الرخصة" src="https://img.shields.io/github/license/menoxz/opencode?style=flat-square" /></a>
 </p>
 
 <p align="center">
@@ -39,91 +46,246 @@
   <a href="README.vi.md">Tiếng Việt</a>
 </p>
 
-[![OpenCode Terminal UI](packages/web/src/assets/lander/screenshot.png)](https://opencode.ai)
+[![واجهة OpenCode الطرفية](packages/web/src/assets/lander/screenshot.png)](https://github.com/menoxz/opencode)
 
 ---
 
-### التثبيت
+## التثبيت (الفرع)
+
+يُنشر الفرع على npm تحت النطاق `@lux-tech` ويُثبّت ملفًا ثنائيًا باسم `opencode`،
+تمامًا مثل الحزمة الرسمية. وهذا يعني أن الفرع **يستبدل** opencode الرسمي عندما
+يكون كلاهما مثبتًا عالميًا — اقرأ **التعايش مع opencode الرسمي** قبل التثبيت.
+
+### الموصى به: npm
 
 ```bash
-# YOLO
-curl -fsSL https://opencode.ai/install | bash
+npm install -g @lux-tech/opencode-ai
+```
 
-# مديري الحزم
-npm i -g opencode-ai@latest        # او bun/pnpm/yarn
-scoop install opencode             # Windows
-choco install opencode             # Windows
-brew install anomalyco/tap/opencode # macOS و Linux (موصى به، دائما محدث)
-brew install opencode              # macOS و Linux (صيغة brew الرسمية، تحديث اقل)
-sudo pacman -S opencode            # Arch Linux (Stable)
-paru -S opencode-bin               # Arch Linux (Latest from AUR)
-mise use -g opencode               # اي نظام
-nix run nixpkgs#opencode           # او github:anomalyco/opencode لاحدث فرع dev
+التحقق:
+
+```bash
+opencode --version
+# opencode v1.18.55 (أو أحدث إصدار منشور)
+```
+
+الحزمة الوصفية `@lux-tech/opencode-ai` تقوم تلقائيًا بتنزيل الملف الثنائي الصحيح
+لمنصتك من أحد الاعتماديات الاختيارية الاثني عشر (انظر **جدول الملفات الثنائية
+للمنصات**) وتعرضه كملف `opencode` الثنائي.
+
+### بديل: إصدارات GitHub (يدويًا)
+
+تُنشر أرشيفات الإصدارات على
+[صفحة الإصدارات](https://github.com/menoxz/opencode/releases) بصيغة `.tar.gz`
+(لينكس) و`.zip` (ماك / ويندوز). يحتوي كل أرشيف على الملف الثنائي `opencode`
+(أو `opencode.exe`) في جذره.
+
+```bash
+# مثال: لينكس x64
+VERSION=v1.18.55
+curl -fsSL -o opencode.tar.gz "https://github.com/menoxz/opencode/releases/download/$VERSION/opencode-linux-x64.tar.gz"
+tar -xzf opencode.tar.gz
+sudo mv opencode /usr/local/bin/opencode-fork   # أعد التسمية لتجنب استبدال الملف الثنائي الرسمي
+```
+
+```powershell
+# مثال: ويندوز x64 (PowerShell)
+$VERSION = "v1.18.55"
+Invoke-WebRequest -Uri "https://github.com/menoxz/opencode/releases/download/$VERSION/opencode-windows-x64.zip" -OutFile opencode.zip
+Expand-Archive -Path opencode.zip -DestinationPath . -Force
+Move-Item .\opencode.exe "$env:LOCALAPPDATA\Microsoft\WindowsApps\opencode-fork.exe" -Force
+```
+
+### موقع الملف الثنائي
+
+| طريقة التثبيت | مسار الملف الثنائي |
+|---|---|
+| npm (ويندوز) | `%APPDATA%\npm\opencode.exe` |
+| npm (لينكس / ماك) | `$(npm prefix -g)/bin/opencode` |
+| إصدار GitHub (يدويًا) | أينما وضعته |
+
+### التحديث
+
+```bash
+# المحدّث المدمج (يجلب أحدث إصدار من @lux-tech/opencode-ai)
+opencode upgrade
+
+# أو عبر npm
+npm update -g @lux-tech/opencode-ai
+```
+
+### الإزالة
+
+```bash
+npm uninstall -g @lux-tech/opencode-ai
+```
+
+على ويندوز، احذف أيضًا الملف الوسيط القديم (shim) إذا تركه npm:
+
+```powershell
+Remove-Item "$env:APPDATA\npm\opencode*" -Force -ErrorAction SilentlyContinue
+```
+
+---
+
+## التعايش مع opencode الرسمي
+
+**كلا من الفرع (`@lux-tech/opencode-ai`) وopencode الرسمي (`opencode-ai`)
+يثبّتان ملفًا ثنائيًا باسم `opencode`.** تثبيت أحدهما عالميًا بعد الآخر يستبدل
+الملف الثنائي السابق بصمت. لا يمكنك الاحتفاظ بكليهما كملف `opencode` العالمي
+في نفس الوقت.
+
+### أيّهما يجب أن تستخدم؟
+
+| الحاجة | الاستخدام |
+|---|---|
+| خوادم MCP التي تعيد الاتصال تلقائيًا، hot reload، eval pipeline، memory consolidation، unified prompt | **هذا الفرع** (`@lux-tech/opencode-ai`) |
+| الإصدار الرسمي الموثّق على نطاق واسع | [opencode الرسمي](https://github.com/anomalyco/opencode) (`opencode-ai`) |
+
+### الخيار أ — تثبيت عالمي واحد + `npx` للآخر (موصى به)
+
+ثبّت الفرع عالميًا وشغّل opencode الرسمي عند الحاجة دون تثبيته عالميًا:
+
+```bash
+npm install -g @lux-tech/opencode-ai   # الفرع يصبح `opencode` العالمي
+
+# استخدم opencode الرسمي دون المساس بالتثبيت العالمي:
+npx -y opencode-ai@latest
+```
+
+أو العكس — أبقِ opencode الرسمي مثبتًا عالميًا وشغّل الفرع عند الحاجة:
+
+```bash
+npm install -g opencode-ai             # الرسمي يصبح `opencode` العالمي
+npx -y @lux-tech/opencode-ai@latest    # تشغيل الفرع عند الحاجة
+```
+
+### الخيار ب — تثبيت كلاهما، مع إعادة تسمية أحدهما
+
+ثبّت كلاهما، ثم أعد تسمية الملف الثنائي الثانوي حتى لا تتعارض الأمران:
+
+```bash
+npm install -g @lux-tech/opencode-ai
+npm install -g opencode-ai             # يستبدل `opencode` — نفّذ هذا ثانيًا
+```
+
+ثم على ويندوز أعد تسمية الملف الثنائي للفرع إلى `opencode-fork.exe`:
+
+```powershell
+Copy-Item "$env:APPDATA\npm\opencode.exe" "$env:APPDATA\npm\opencode-fork.exe"
+opencode-fork --version   # الفرع
+opencode --version        # الرسمي
+```
+
+على لينكس / ماك:
+
+```bash
+cp "$(npm prefix -g)/bin/opencode" "$(npm prefix -g)/bin/opencode-fork"
+opencode-fork --version   # الفرع
+opencode --version        # الرسمي
+```
+
+### التحقق من الملف الثنائي النشط حاليًا
+
+```bash
+which opencode                # مسار الملف الثنائي النشط
+opencode --version            # إصدار الملف الثنائي النشط
+opencode upgrade --help       # المحدّث المدمج يستهدف @lux-tech/opencode-ai
 ```
 
 > [!TIP]
-> احذف الاصدارات الاقدم من 0.1.x قبل التثبيت.
-
-### تطبيق سطح المكتب (BETA)
-
-يتوفر OpenCode ايضا كتطبيق سطح مكتب. قم بالتنزيل مباشرة من [صفحة الاصدارات](https://github.com/anomalyco/opencode/releases) او من [opencode.ai/download](https://opencode.ai/download).
-
-| المنصة                | التنزيل                            |
-| --------------------- | ---------------------------------- |
-| macOS (Apple Silicon) | `opencode-desktop-mac-arm64.dmg`   |
-| macOS (Intel)         | `opencode-desktop-mac-x64.dmg`     |
-| Windows               | `opencode-desktop-windows-x64.exe` |
-| Linux                 | `.deb` او `.rpm` او AppImage       |
-
-```bash
-# macOS (Homebrew)
-brew install --cask opencode-desktop
-# Windows (Scoop)
-scoop bucket add extras; scoop install extras/opencode-desktop
-```
-
-#### مجلد التثبيت
-
-يحترم سكربت التثبيت ترتيب الاولوية التالي لمسار التثبيت:
-
-1. `$OPENCODE_INSTALL_DIR` - مجلد تثبيت مخصص
-2. `$XDG_BIN_DIR` - مسار متوافق مع مواصفات XDG Base Directory
-3. `$HOME/bin` - مجلد الثنائيات القياسي للمستخدم (ان وجد او امكن انشاؤه)
-4. `$HOME/.opencode/bin` - المسار الافتراضي الاحتياطي
-
-```bash
-# امثلة
-OPENCODE_INSTALL_DIR=/usr/local/bin curl -fsSL https://opencode.ai/install | bash
-XDG_BIN_DIR=$HOME/.local/bin curl -fsSL https://opencode.ai/install | bash
-```
-
-### Agents
-
-يتضمن OpenCode وكيليْن (Agents) مدمجين يمكنك التبديل بينهما باستخدام زر `Tab`.
-
-- **build** - الافتراضي، وكيل بصلاحيات كاملة لاعمال التطوير
-- **plan** - وكيل للقراءة فقط للتحليل واستكشاف الكود
-  - يرفض تعديل الملفات افتراضيا
-  - يطلب الاذن قبل تشغيل اوامر bash
-  - مثالي لاستكشاف قواعد كود غير مألوفة او لتخطيط التغييرات
-
-بالاضافة الى ذلك يوجد وكيل فرعي **general** للبحث المعقد والمهام متعددة الخطوات.
-يستخدم داخليا ويمكن استدعاؤه بكتابة `@general` في الرسائل.
-
-تعرف على المزيد حول [agents](https://opencode.ai/docs/agents).
-
-### التوثيق
-
-لمزيد من المعلومات حول كيفية ضبط OpenCode، [**راجع التوثيق**](https://opencode.ai/docs).
-
-### المساهمة
-
-اذا كنت مهتما بالمساهمة في OpenCode، يرجى قراءة [contributing docs](./CONTRIBUTING.md) قبل ارسال pull request.
-
-### البناء فوق OpenCode
-
-اذا كنت تعمل على مشروع مرتبط بـ OpenCode ويستخدم "opencode" كجزء من اسمه (مثل "opencode-dashboard" او "opencode-mobile")، يرجى اضافة ملاحظة في README توضح انه ليس مبنيا بواسطة فريق OpenCode ولا يرتبط بنا بأي شكل.
+> المحدّث المدمج (`opencode upgrade`) يجلب دائمًا `@lux-tech/opencode-ai`.
+> إذا أردت أن يتحدّث opencode **الرسمي** تلقائيًا، شغّله عبر
+> `npx opencode-ai@latest` أو المثبّت الرسمي (انظر
+> [opencode.ai](https://opencode.ai)).
 
 ---
 
-**انضم الى مجتمعنا** [Discord](https://discord.gg/opencode) | [X.com](https://x.com/opencode)
+## الملفات الثنائية للمنصات
+
+يُوزَّع `@lux-tech/opencode-ai` كحزمة وصفية تحتوي على 12 ملفًا ثنائيًا
+اختياريًا للمنصات (جميعها منشورة بنفس الإصدار):
+
+| الحزمة | المنصة / المعالج | ملاحظات |
+|---|---|---|
+| `@lux-tech/opencode-ai-darwin-arm64` | macOS arm64 | Apple Silicon |
+| `@lux-tech/opencode-ai-darwin-x64` | macOS x64 | Intel |
+| `@lux-tech/opencode-ai-darwin-x64-baseline` | macOS x64 | معالجات بدون AVX2 |
+| `@lux-tech/opencode-ai-linux-arm64` | Linux arm64 | |
+| `@lux-tech/opencode-ai-linux-arm64-musl` | Linux arm64 | Alpine / musl |
+| `@lux-tech/opencode-ai-linux-x64` | Linux x64 | |
+| `@lux-tech/opencode-ai-linux-x64-baseline` | Linux x64 | معالجات بدون AVX2 |
+| `@lux-tech/opencode-ai-linux-x64-baseline-musl` | Linux x64 | musl، بدون AVX2 |
+| `@lux-tech/opencode-ai-linux-x64-musl` | Linux x64 | Alpine / musl |
+| `@lux-tech/opencode-ai-windows-arm64` | Windows arm64 | |
+| `@lux-tech/opencode-ai-windows-x64` | Windows x64 | |
+| `@lux-tech/opencode-ai-windows-x64-baseline` | Windows x64 | معالجات بدون AVX2 |
+
+---
+
+## الوكلاء (Agents)
+
+يتضمن OpenCode وكيلين مدمجين يمكنك التبديل بينهما بمفتاح `Tab`.
+
+- **build** — الافتراضي، وكيل بصلاحيات كاملة لأعمال التطوير
+- **plan** — وكيل للقراءة فقط لتحليل واستكشاف الكود
+  - يرفض تعديل الملفات افتراضيًا
+  - يطلب الإذن قبل تشغيل أوامر bash
+  - مثالي لاستكشاف قواعد أكواد غير مألوفة أو التخطيط للتغييرات
+
+يتضمن أيضًا وكيلًا فرعيًا **general** للبحث المعقد والمهام متعددة الخطوات.
+يُستخدم داخليًا ويمكن استدعاؤه باستخدام `@general` في الرسائل.
+
+يوفر الفرع أيضًا وكيل **planner** الذي يفكّك المهام تلقائيًا قبل التنفيذ.
+تعرّف على المزيد حول
+[الوكلاء في التوثيق الرسمي](https://opencode.ai/docs/agents) — السلوك متوافق
+مع المشروع الأصلي (upstream).
+
+---
+
+## التوثيق
+
+- **توثيق خاص بالفرع** موجود في هذا المستودع: [`docs/`](./docs)
+  (البنية المعمارية، ADR، hot reload وتصميم MCP) و[`CHANGELOG.md`](./CHANGELOG.md).
+- **توثيق الإعداد العام** متوافق مع التوثيق الرسمي:
+  [opencode.ai/docs](https://opencode.ai/docs).
+
+---
+
+## اختلافات الفرع
+
+يضيف هذا الفرع (`menoxz/opencode`) الميزات التالية فوق المشروع الأصلي:
+
+| الميزة | الوصف |
+|---------|-------------|
+| **MCP Auto-reconnect** | يتم اكتشاف خوادم MCP التي انقطعت اتصالاتها (أحداث النقل + فحص الصحة) وإعادة توصيلها تلقائيًا مع تأخير أسي — لا مزيد من حالة "connected" القديمة أو الجلسات الميتة |
+| **Hot Reload** | يتم إعادة تحميل الوكلاء والإضافات وخوادم MCP تلقائيًا عند تغيير الملفات — لا حاجة لإعادة التشغيل |
+| **Eval Pipeline** | تقييم قائم على SQLite مع اكتشاف الانحدارات وتحليل الاتجاهات وأوامر CLI للمقارنة |
+| **Memory Consolidation** | ذاكرة عبر الجلسات مع تلاشٍ تلقائي واكتشاف الأنماط وتحليل ما بعد الحادث |
+| **Unified Prompt** | ملف `core.txt` واحد يحل محل 10 مطالبات خاصة بالنماذج — أنظف وأصغر وأسهل في الصيانة |
+| **Continuous Improvement** | الأساليب وثائق حية — حدّث المهارات (skills) الحالية مع سجل التغييرات بدلًا من إنشاء نسخ مكررة |
+| **Planner Integration** | وكيل `planner` المدمج يفكّك المهام تلقائيًا قبل التنفيذ |
+
+تُرقَّم الميزات الجديدة في [`CHANGELOG.md`](./CHANGELOG.md).
+
+---
+
+## المساهمة
+
+إذا كنت مهتمًا بالمساهمة في هذا الفرع، يرجى قراءة
+[توثيق المساهمة](./CONTRIBUTING.md) قبل إرسال pull request. تستهدف طلبات
+السحب (pull requests) فرع `dev`.
+
+---
+
+## البناء فوق OpenCode
+
+إذا كنت تعمل على مشروع متعلق بـ OpenCode ويستخدم "opencode" كجزء من اسمه،
+على سبيل المثال "opencode-dashboard" أو "opencode-mobile"، يرجى إضافة ملاحظة
+في README الخاص بك لتوضيح أنه لم يُبنَ بواسطة فريق OpenCode وليس مرتبطًا بنا
+بأي شكل.
+
+---
+
+**أبلغ عن المشكلات** على [GitHub Issues](https://github.com/menoxz/opencode/issues) ·
+**المصدر** [github.com/menoxz/opencode](https://github.com/menoxz/opencode)

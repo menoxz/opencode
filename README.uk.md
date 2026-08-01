@@ -1,17 +1,24 @@
 <p align="center">
-  <a href="https://opencode.ai">
+  <a href="https://github.com/menoxz/opencode">
     <picture>
       <source srcset="packages/console/app/src/asset/logo-ornate-dark.svg" media="(prefers-color-scheme: dark)">
       <source srcset="packages/console/app/src/asset/logo-ornate-light.svg" media="(prefers-color-scheme: light)">
-      <img src="packages/console/app/src/asset/logo-ornate-light.svg" alt="OpenCode logo">
+      <img src="packages/console/app/src/asset/logo-ornate-light.svg" alt="Логотип OpenCode fork">
     </picture>
   </a>
 </p>
-<p align="center">AI-агент для програмування з відкритим кодом.</p>
+<p align="center">AI-агент для програмування з відкритим кодом — спільнотовий форк.
+
+> **Повідомлення про форк** — цей репозиторій (`menoxz/opencode`) — спільнотовий
+> форк [офіційного opencode](https://github.com/anomalyco/opencode) з додатковими
+> функціями (MCP auto-reconnect, hot reload, eval pipeline, memory consolidation,
+> unified prompt). Він **не пов'язаний** з офіційною командою opencode.
+> **Перегляньте відмінності форку →**</p>
 <p align="center">
-  <a href="https://opencode.ai/discord"><img alt="Discord" src="https://img.shields.io/discord/1391832426048651334?style=flat-square&label=discord" /></a>
-  <a href="https://www.npmjs.com/package/opencode-ai"><img alt="npm" src="https://img.shields.io/npm/v/opencode-ai?style=flat-square" /></a>
-  <a href="https://github.com/anomalyco/opencode/actions/workflows/publish.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/anomalyco/opencode/publish.yml?style=flat-square&branch=dev" /></a>
+  <a href="https://www.npmjs.com/package/@lux-tech/opencode-ai"><img alt="npm" src="https://img.shields.io/npm/v/%40lux-tech%2Fopencode-ai?style=flat-square" /></a>
+  <a href="https://github.com/menoxz/opencode/actions/workflows/typecheck.yml"><img alt="Typecheck" src="https://img.shields.io/github/actions/workflow/status/menoxz/opencode/typecheck.yml?branch=dev&style=flat-square" /></a>
+  <a href="https://github.com/menoxz/opencode/actions/workflows/eval.yml"><img alt="Eval" src="https://img.shields.io/github/actions/workflow/status/menoxz/opencode/eval.yml?branch=dev&style=flat-square" /></a>
+  <a href="https://github.com/menoxz/opencode/blob/dev/LICENSE"><img alt="License" src="https://img.shields.io/github/license/menoxz/opencode?style=flat-square" /></a>
 </p>
 
 <p align="center">
@@ -39,65 +46,186 @@
   <a href="README.vi.md">Tiếng Việt</a>
 </p>
 
-[![OpenCode Terminal UI](packages/web/src/assets/lander/screenshot.png)](https://opencode.ai)
+[![Термінальний інтерфейс OpenCode](packages/web/src/assets/lander/screenshot.png)](https://github.com/menoxz/opencode)
 
 ---
 
-### Встановлення
+## Встановлення (fork)
+
+Форк публікується на npm у скоупі `@lux-tech` і встановлює бінарний файл з назвою
+`opencode`, точно так само, як офіційний пакет. Це означає, що форк **замінює**
+офіційний opencode, коли обидва встановлені глобально — прочитайте
+**про співіснування з офіційним opencode**, перш ніж встановлювати.
+
+### Рекомендовано: npm
 
 ```bash
-# YOLO
-curl -fsSL https://opencode.ai/install | bash
+npm install -g @lux-tech/opencode-ai
+```
 
-# Менеджери пакетів
-npm i -g opencode-ai@latest        # або bun/pnpm/yarn
-scoop install opencode             # Windows
-choco install opencode             # Windows
-brew install anomalyco/tap/opencode # macOS і Linux (рекомендовано, завжди актуально)
-brew install opencode              # macOS і Linux (офіційна формула Homebrew, оновлюється рідше)
-sudo pacman -S opencode            # Arch Linux (Stable)
-paru -S opencode-bin               # Arch Linux (Latest from AUR)
-mise use -g opencode               # Будь-яка ОС
-nix run nixpkgs#opencode           # або github:anomalyco/opencode для найновішої dev-гілки
+Перевірка:
+
+```bash
+opencode --version
+# opencode v1.18.55 (або остання опублікована версія)
+```
+
+Метапакет `@lux-tech/opencode-ai` автоматично завантажує правильний бінарний файл
+платформи з однієї зі своїх 12 опціональних залежностей (див. **таблицю бінарних
+файлів платформ**) і надає його як бінарний файл `opencode`.
+
+### Альтернатива: GitHub Releases (вручну)
+
+Архіви релізів публікуються на [сторінці релізів](https://github.com/menoxz/opencode/releases)
+у вигляді `.tar.gz` (Linux) і `.zip` (macOS / Windows). Кожен архів містить бінарний
+файл `opencode` (або `opencode.exe`) у своєму корені.
+
+```bash
+# Приклад: Linux x64
+VERSION=v1.18.55
+curl -fsSL -o opencode.tar.gz "https://github.com/menoxz/opencode/releases/download/$VERSION/opencode-linux-x64.tar.gz"
+tar -xzf opencode.tar.gz
+sudo mv opencode /usr/local/bin/opencode-fork   # перейменуйте, щоб не затирати офіційний бінарний файл
+```
+
+```powershell
+# Приклад: Windows x64 (PowerShell)
+$VERSION = "v1.18.55"
+Invoke-WebRequest -Uri "https://github.com/menoxz/opencode/releases/download/$VERSION/opencode-windows-x64.zip" -OutFile opencode.zip
+Expand-Archive -Path opencode.zip -DestinationPath . -Force
+Move-Item .\opencode.exe "$env:LOCALAPPDATA\Microsoft\WindowsApps\opencode-fork.exe" -Force
+```
+
+### Розташування бінарного файлу
+
+| Метод встановлення | Шлях до бінарного файлу |
+|---|---|
+| npm (Windows) | `%APPDATA%\npm\opencode.exe` |
+| npm (Linux / macOS) | `$(npm prefix -g)/bin/opencode` |
+| GitHub release (вручну) | де ви його розмістили |
+
+### Оновлення
+
+```bash
+# Вбудований оновлювач (завантажує останній реліз @lux-tech/opencode-ai)
+opencode upgrade
+
+# Або через npm
+npm update -g @lux-tech/opencode-ai
+```
+
+### Видалення
+
+```bash
+npm uninstall -g @lux-tech/opencode-ai
+```
+
+У Windows також видаліть застарілий shim, якщо npm його залишив:
+
+```powershell
+Remove-Item "$env:APPDATA\npm\opencode*" -Force -ErrorAction SilentlyContinue
+```
+
+---
+
+## Співіснування з офіційним opencode
+
+**І форк (`@lux-tech/opencode-ai`), і офіційний opencode (`opencode-ai`)
+встановлюють бінарний файл з назвою `opencode`.** Глобальне встановлення одного
+після іншого тихо замінює попередній бінарний файл. Ви не можете тримати обидва
+як глобальний `opencode` одночасно.
+
+### Який варіант обрати?
+
+| Потреба | Використовуйте |
+|---|---|
+| MCP-сервери з автоматичним перепідключенням, hot reload, eval pipeline, memory consolidation, unified prompt | **Цей форк** (`@lux-tech/opencode-ai`) |
+| Офіційний, широко перевірений реліз | [офіційний opencode](https://github.com/anomalyco/opencode) (`opencode-ai`) |
+
+### Варіант A — одна глобальна установка + npx для іншої (рекомендовано)
+
+Встановіть форк глобально й запускайте офіційний opencode за потреби, не встановлюючи
+його глобально:
+
+```bash
+npm install -g @lux-tech/opencode-ai   # форк стає глобальним `opencode`
+
+# Використовуйте офіційний opencode, не чіпаючи глобальну установку:
+npx -y opencode-ai@latest
+```
+
+Або навпаки — залиште офіційний opencode глобальним і запускайте форк за потреби:
+
+```bash
+npm install -g opencode-ai             # офіційний стає глобальним `opencode`
+npx -y @lux-tech/opencode-ai@latest    # запустіть форк за потреби
+```
+
+### Варіант B — обидві встановлені, одну перейменовано
+
+Встановіть обидва, а потім перейменуйте вторинний бінарний файл, щоб дві команди
+не конфліктували:
+
+```bash
+npm install -g @lux-tech/opencode-ai
+npm install -g opencode-ai             # перезаписує `opencode` — зробіть це другим
+```
+
+Потім у Windows перейменуйте бінарний файл форку на `opencode-fork.exe`:
+
+```powershell
+Copy-Item "$env:APPDATA\npm\opencode.exe" "$env:APPDATA\npm\opencode-fork.exe"
+opencode-fork --version   # форк
+opencode --version        # офіційний
+```
+
+У Linux / macOS:
+
+```bash
+cp "$(npm prefix -g)/bin/opencode" "$(npm prefix -g)/bin/opencode-fork"
+opencode-fork --version   # форк
+opencode --version        # офіційний
+```
+
+### Перевірте, який бінарний файл зараз активний
+
+```bash
+which opencode                # шлях до активного бінарного файлу
+opencode --version            # версія активного бінарного файлу
+opencode upgrade --help       # вбудований оновлювач завантажує @lux-tech/opencode-ai
 ```
 
 > [!TIP]
-> Перед встановленням видаліть версії старші за 0.1.x.
+> Вбудований оновлювач (`opencode upgrade`) завжди завантажує
+> `@lux-tech/opencode-ai`. Якщо ви хочете, щоб **офіційний** opencode оновлювався
+> автоматично, запускайте його через `npx opencode-ai@latest` або офіційний
+> інсталятор (див. [opencode.ai](https://opencode.ai)).
 
-### Десктопний застосунок (BETA)
+---
 
-OpenCode також доступний як десктопний застосунок. Завантажуйте напряму зі [сторінки релізів](https://github.com/anomalyco/opencode/releases) або [opencode.ai/download](https://opencode.ai/download).
+## Бінарні файли платформ
 
-| Платформа             | Завантаження                       |
-| --------------------- | ---------------------------------- |
-| macOS (Apple Silicon) | `opencode-desktop-mac-arm64.dmg`   |
-| macOS (Intel)         | `opencode-desktop-mac-x64.dmg`     |
-| Windows               | `opencode-desktop-windows-x64.exe` |
-| Linux                 | `.deb`, `.rpm` або AppImage        |
+`@lux-tech/opencode-ai` постачається як метапакет із 12 опціональними бінарними
+файлами платформ (усі опубліковані в одній версії):
 
-```bash
-# macOS (Homebrew)
-brew install --cask opencode-desktop
-# Windows (Scoop)
-scoop bucket add extras; scoop install extras/opencode-desktop
-```
+| Пакет | Платформа / CPU | Примітки |
+|---|---|---|
+| `@lux-tech/opencode-ai-darwin-arm64` | macOS arm64 | Apple Silicon |
+| `@lux-tech/opencode-ai-darwin-x64` | macOS x64 | Intel |
+| `@lux-tech/opencode-ai-darwin-x64-baseline` | macOS x64 | Процесори без AVX2 |
+| `@lux-tech/opencode-ai-linux-arm64` | Linux arm64 | |
+| `@lux-tech/opencode-ai-linux-arm64-musl` | Linux arm64 | Alpine / musl |
+| `@lux-tech/opencode-ai-linux-x64` | Linux x64 | |
+| `@lux-tech/opencode-ai-linux-x64-baseline` | Linux x64 | Процесори без AVX2 |
+| `@lux-tech/opencode-ai-linux-x64-baseline-musl` | Linux x64 | musl, без AVX2 |
+| `@lux-tech/opencode-ai-linux-x64-musl` | Linux x64 | Alpine / musl |
+| `@lux-tech/opencode-ai-windows-arm64` | Windows arm64 | |
+| `@lux-tech/opencode-ai-windows-x64` | Windows x64 | |
+| `@lux-tech/opencode-ai-windows-x64-baseline` | Windows x64 | Процесори без AVX2 |
 
-#### Каталог встановлення
+---
 
-Скрипт встановлення дотримується такого порядку пріоритету для шляху встановлення:
-
-1. `$OPENCODE_INSTALL_DIR` - Користувацький каталог встановлення
-2. `$XDG_BIN_DIR` - Шлях, сумісний зі специфікацією XDG Base Directory
-3. `$HOME/bin` - Стандартний каталог користувацьких бінарників (якщо існує або його можна створити)
-4. `$HOME/.opencode/bin` - Резервний варіант за замовчуванням
-
-```bash
-# Приклади
-OPENCODE_INSTALL_DIR=/usr/local/bin curl -fsSL https://opencode.ai/install | bash
-XDG_BIN_DIR=$HOME/.local/bin curl -fsSL https://opencode.ai/install | bash
-```
-
-### Агенти
+## Агенти
 
 OpenCode містить два вбудовані агенти, між якими можна перемикатися клавішею `Tab`.
 
@@ -107,24 +235,60 @@ OpenCode містить два вбудовані агенти, між яким�
   - Запитує дозвіл перед запуском bash-команд
   - Ідеально підходить для дослідження незнайомих кодових баз або планування змін
 
-Також доступний допоміжний агент **general** для складного пошуку та багатокрокових завдань.
-Він використовується всередині системи й може бути викликаний у повідомленнях через `@general`.
+Також доступний допоміжний агент **general** для складного пошуку та багатокрокових
+завдань. Він використовується всередині системи й може бути викликаний у
+повідомленнях через `@general`.
 
-Дізнайтеся більше про [agents](https://opencode.ai/docs/agents).
-
-### Документація
-
-Щоб дізнатися більше про налаштування OpenCode, [**перейдіть до нашої документації**](https://opencode.ai/docs).
-
-### Внесок
-
-Якщо ви хочете зробити внесок в OpenCode, будь ласка, прочитайте нашу [документацію для контриб'юторів](./CONTRIBUTING.md) перед надсиланням pull request.
-
-### Проєкти на базі OpenCode
-
-Якщо ви працюєте над проєктом, пов'язаним з OpenCode, і використовуєте "opencode" у назві, наприклад "opencode-dashboard" або "opencode-mobile", додайте примітку до свого README.
-Уточніть, що цей проєкт не створений командою OpenCode і жодним чином не афілійований із нами.
+Форк додатково надає агента **planner**, який автоматично розкладає завдання на
+кроки перед виконанням. Дізнайтеся більше про [агентів в офіційній
+документації](https://opencode.ai/docs/agents) — поведінка сумісна з upstream.
 
 ---
 
-**Приєднуйтеся до нашої спільноти** [Discord](https://discord.gg/opencode) | [X.com](https://x.com/opencode)
+## Документація
+
+- **Документація, специфічна для форку**, знаходиться в цьому репозиторії:
+  [`docs/`](./docs) (архітектура, ADR, дизайн hot reload і MCP) та
+  [`CHANGELOG.md`](./CHANGELOG.md).
+- **Загальна документація з налаштування** сумісна з офіційною документацією:
+  [opencode.ai/docs](https://opencode.ai/docs).
+
+---
+
+## Відмінності форку
+
+Цей форк (`menoxz/opencode`) додає такі функції поверх upstream:
+
+| Функція | Опис |
+|---------|-------------|
+| **MCP Auto-reconnect** | MCP-сервери, чиє з'єднання обривається, виявляються (події транспорту + health ping) і автоматично перепідключаються з експоненційним backoff — більше жодних застарілих статусів "connected" чи мертвих сесій |
+| **Hot Reload** | Агенти, плагіни та MCP-сервери автоматично перезавантажуються при зміні файлів — перезапуск не потрібен |
+| **Eval Pipeline** | Оцінювання на основі SQLite з виявленням регресій, аналізом трендів і CLI-командами compare |
+| **Memory Consolidation** | Пам'ять між сесіями з автоматичним згасанням, виявленням патернів і пост-мортем аналізом |
+| **Unified Prompt** | Один `core.txt` замінює 10 промптів, специфічних для моделей — чистіше, менше, легше підтримувати |
+| **Continuous Improvement** | Методи — це живі документи: оновлюйте наявні skills із changelog замість створення дублікатів |
+| **Planner Integration** | Вбудований агент `planner` автоматично розкладає завдання перед виконанням |
+
+Нові функції версіонуються у [`CHANGELOG.md`](./CHANGELOG.md).
+
+---
+
+## Внесок
+
+Якщо ви зацікавлені у внеску до цього форку, будь ласка, прочитайте нашу
+[документацію для контриб'юторів](./CONTRIBUTING.md) перед надсиланням pull request.
+Pull request'и надсилаються у гілку `dev`.
+
+---
+
+## Проєкти на базі OpenCode
+
+Якщо ви працюєте над проєктом, пов'язаним з OpenCode, і використовуєте "opencode" як
+частину назви, наприклад "opencode-dashboard" або "opencode-mobile", додайте примітку
+до свого README, щоб пояснити, що цей проєкт не створений командою OpenCode і
+жодним чином не афілійований із нами.
+
+---
+
+**Повідомляйте про проблеми** на [GitHub Issues](https://github.com/menoxz/opencode/issues) ·
+**Джерело** [github.com/menoxz/opencode](https://github.com/menoxz/opencode)

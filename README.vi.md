@@ -1,17 +1,24 @@
 <p align="center">
-  <a href="https://opencode.ai">
+  <a href="https://github.com/menoxz/opencode">
     <picture>
       <source srcset="packages/console/app/src/asset/logo-ornate-dark.svg" media="(prefers-color-scheme: dark)">
       <source srcset="packages/console/app/src/asset/logo-ornate-light.svg" media="(prefers-color-scheme: light)">
-      <img src="packages/console/app/src/asset/logo-ornate-light.svg" alt="OpenCode logo">
+      <img src="packages/console/app/src/asset/logo-ornate-light.svg" alt="Logo fork OpenCode">
     </picture>
   </a>
 </p>
-<p align="center">Trợ lý lập trình AI mã nguồn mở.</p>
+<p align="center">Trợ lý lập trình AI mã nguồn mở — fork từ cộng đồng.
+
+> **Thông báo về fork** — kho lưu trữ này (`menoxz/opencode`) là một fork của
+> [opencode chính thức](https://github.com/anomalyco/opencode) do cộng đồng
+> thực hiện với các tính năng bổ sung (MCP auto-reconnect, hot reload, eval pipeline,
+> memory consolidation, unified prompt). Nó **không liên kết** với đội ngũ
+> opencode chính thức. **Xem sự khác biệt của fork →**</p>
 <p align="center">
-  <a href="https://opencode.ai/discord"><img alt="Discord" src="https://img.shields.io/discord/1391832426048651334?style=flat-square&label=discord" /></a>
-  <a href="https://www.npmjs.com/package/opencode-ai"><img alt="npm" src="https://img.shields.io/npm/v/opencode-ai?style=flat-square" /></a>
-  <a href="https://github.com/anomalyco/opencode/actions/workflows/publish.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/anomalyco/opencode/publish.yml?style=flat-square&branch=dev" /></a>
+  <a href="https://www.npmjs.com/package/@lux-tech/opencode-ai"><img alt="npm" src="https://img.shields.io/npm/v/%40lux-tech%2Fopencode-ai?style=flat-square" /></a>
+  <a href="https://github.com/menoxz/opencode/actions/workflows/typecheck.yml"><img alt="Typecheck" src="https://img.shields.io/github/actions/workflow/status/menoxz/opencode/typecheck.yml?branch=dev&style=flat-square" /></a>
+  <a href="https://github.com/menoxz/opencode/actions/workflows/eval.yml"><img alt="Eval" src="https://img.shields.io/github/actions/workflow/status/menoxz/opencode/eval.yml?branch=dev&style=flat-square" /></a>
+  <a href="https://github.com/menoxz/opencode/blob/dev/LICENSE"><img alt="Giấy phép" src="https://img.shields.io/github/license/menoxz/opencode?style=flat-square" /></a>
 </p>
 
 <p align="center">
@@ -39,91 +46,248 @@
   <a href="README.vi.md">Tiếng Việt</a>
 </p>
 
-[![OpenCode Terminal UI](packages/web/src/assets/lander/screenshot.png)](https://opencode.ai)
+[![Giao diện terminal OpenCode](packages/web/src/assets/lander/screenshot.png)](https://github.com/menoxz/opencode)
 
 ---
 
-### Cài đặt
+## Cài đặt (fork)
+
+Fork được phát hành trên npm dưới scope `@lux-tech` và cài đặt một tệp nhị phân
+có tên `opencode`, giống hệt gói chính thức. Điều này có nghĩa là fork **thay thế**
+opencode chính thức khi cả hai được cài đặt toàn cục — hãy đọc **sự cùng tồn tại
+với opencode chính thức** trước khi cài đặt.
+
+### Khuyến nghị: npm
 
 ```bash
-# YOLO
-curl -fsSL https://opencode.ai/install | bash
+npm install -g @lux-tech/opencode-ai
+```
 
-# Các trình quản lý gói (Package managers)
-npm i -g opencode-ai@latest        # hoặc bun/pnpm/yarn
-scoop install opencode             # Windows
-choco install opencode             # Windows
-brew install anomalyco/tap/opencode # macOS và Linux (khuyên dùng, luôn cập nhật)
-brew install opencode              # macOS và Linux (công thức brew chính thức, ít cập nhật hơn)
-sudo pacman -S opencode            # Arch Linux (Bản ổn định)
-paru -S opencode-bin               # Arch Linux (Bản mới nhất từ AUR)
-mise use -g opencode               # Mọi hệ điều hành
-nix run nixpkgs#opencode           # hoặc github:anomalyco/opencode cho nhánh dev mới nhất
+Xác minh:
+
+```bash
+opencode --version
+# opencode v1.18.55 (hoặc phiên bản mới nhất đã phát hành)
+```
+
+Gói meta `@lux-tech/opencode-ai` tự động tải xuống tệp nhị phân đúng cho nền tảng
+của bạn từ một trong 12 phụ thuộc tùy chọn (xem **bảng tệp nhị phân theo nền tảng**)
+và cung cấp nó dưới dạng tệp nhị phân `opencode`.
+
+### Thay thế: GitHub Releases (thủ công)
+
+Các kho lưu trữ phát hành được đăng trên
+[trang releases](https://github.com/menoxz/opencode/releases) dưới dạng `.tar.gz`
+(Linux) và `.zip` (macOS / Windows). Mỗi kho lưu trữ chứa tệp nhị phân `opencode`
+(hoặc `opencode.exe`) ở thư mục gốc.
+
+```bash
+# Ví dụ: Linux x64
+VERSION=v1.18.55
+curl -fsSL -o opencode.tar.gz "https://github.com/menoxz/opencode/releases/download/$VERSION/opencode-linux-x64.tar.gz"
+tar -xzf opencode.tar.gz
+sudo mv opencode /usr/local/bin/opencode-fork   # đổi tên để tránh ghi đè tệp nhị phân chính thức
+```
+
+```powershell
+# Ví dụ: Windows x64 (PowerShell)
+$VERSION = "v1.18.55"
+Invoke-WebRequest -Uri "https://github.com/menoxz/opencode/releases/download/$VERSION/opencode-windows-x64.zip" -OutFile opencode.zip
+Expand-Archive -Path opencode.zip -DestinationPath . -Force
+Move-Item .\opencode.exe "$env:LOCALAPPDATA\Microsoft\WindowsApps\opencode-fork.exe" -Force
+```
+
+### Vị trí tệp nhị phân
+
+| Phương pháp cài đặt | Đường dẫn tệp nhị phân |
+|---|---|
+| npm (Windows) | `%APPDATA%\npm\opencode.exe` |
+| npm (Linux / macOS) | `$(npm prefix -g)/bin/opencode` |
+| GitHub release (thủ công) | bất cứ nơi nào bạn đặt nó |
+
+### Cập nhật
+
+```bash
+# Bộ cập nhật tích hợp (tải phiên bản mới nhất của @lux-tech/opencode-ai)
+opencode upgrade
+
+# Hoặc qua npm
+npm update -g @lux-tech/opencode-ai
+```
+
+### Gỡ cài đặt
+
+```bash
+npm uninstall -g @lux-tech/opencode-ai
+```
+
+Trên Windows, hãy xóa cả shim cũ nếu npm để lại:
+
+```powershell
+Remove-Item "$env:APPDATA\npm\opencode*" -Force -ErrorAction SilentlyContinue
+```
+
+---
+
+## Cùng tồn tại với opencode chính thức
+
+**Cả fork (`@lux-tech/opencode-ai`) và opencode chính thức (`opencode-ai`) đều
+cài đặt một tệp nhị phân tên `opencode`.** Cài đặt cái này toàn cục sau cái kia
+sẽ âm thầm thay thế tệp nhị phân trước đó. Bạn không thể giữ cả hai làm
+`opencode` toàn cục cùng một lúc.
+
+### Nên dùng cái nào?
+
+| Nhu cầu | Sử dụng |
+|---|---|
+| Các MCP server tự động kết nối lại, hot reload, eval pipeline, memory consolidation, unified prompt | **Fork này** (`@lux-tech/opencode-ai`) |
+| Bản phát hành chính thức, được kiểm chứng rộng rãi | [opencode chính thức](https://github.com/anomalyco/opencode) (`opencode-ai`) |
+
+### Tùy chọn A — một cài đặt toàn cục + `npx` cho cái còn lại (khuyến nghị)
+
+Cài đặt fork toàn cục và chạy opencode chính thức khi cần mà không cần cài
+đặt toàn cục:
+
+```bash
+npm install -g @lux-tech/opencode-ai   # fork trở thành `opencode` toàn cục
+
+# Sử dụng opencode chính thức mà không đụng đến cài đặt toàn cục:
+npx -y opencode-ai@latest
+```
+
+Hoặc ngược lại — giữ opencode chính thức toàn cục và chạy fork khi cần:
+
+```bash
+npm install -g opencode-ai             # bản chính thức trở thành `opencode` toàn cục
+npx -y @lux-tech/opencode-ai@latest    # chạy fork khi cần
+```
+
+### Tùy chọn B — cài cả hai, đổi tên một cái
+
+Cài đặt cả hai, sau đó đổi tên tệp nhị phân phụ để hai lệnh không xung đột:
+
+```bash
+npm install -g @lux-tech/opencode-ai
+npm install -g opencode-ai             # ghi đè `opencode` — làm bước này thứ hai
+```
+
+Sau đó trên Windows, đổi tên tệp nhị phân fork thành `opencode-fork.exe`:
+
+```powershell
+Copy-Item "$env:APPDATA\npm\opencode.exe" "$env:APPDATA\npm\opencode-fork.exe"
+opencode-fork --version   # fork
+opencode --version        # chính thức
+```
+
+Trên Linux / macOS:
+
+```bash
+cp "$(npm prefix -g)/bin/opencode" "$(npm prefix -g)/bin/opencode-fork"
+opencode-fork --version   # fork
+opencode --version        # chính thức
+```
+
+### Kiểm tra tệp nhị phân nào đang hoạt động
+
+```bash
+which opencode                # đường dẫn của tệp nhị phân đang hoạt động
+opencode --version            # phiên bản của tệp nhị phân đang hoạt động
+opencode upgrade --help       # bộ cập nhật tích hợp nhắm tới @lux-tech/opencode-ai
 ```
 
 > [!TIP]
-> Hãy xóa các phiên bản cũ hơn 0.1.x trước khi cài đặt.
-
-### Ứng dụng Desktop (BETA)
-
-OpenCode cũng có sẵn dưới dạng ứng dụng desktop. Tải trực tiếp từ [trang releases](https://github.com/anomalyco/opencode/releases) hoặc [opencode.ai/download](https://opencode.ai/download).
-
-| Nền tảng              | Tải xuống                          |
-| --------------------- | ---------------------------------- |
-| macOS (Apple Silicon) | `opencode-desktop-mac-arm64.dmg`   |
-| macOS (Intel)         | `opencode-desktop-mac-x64.dmg`     |
-| Windows               | `opencode-desktop-windows-x64.exe` |
-| Linux                 | `.deb`, `.rpm`, hoặc AppImage      |
-
-```bash
-# macOS (Homebrew)
-brew install --cask opencode-desktop
-# Windows (Scoop)
-scoop bucket add extras; scoop install extras/opencode-desktop
-```
-
-#### Thư mục cài đặt
-
-Tập lệnh cài đặt tuân theo thứ tự ưu tiên sau cho đường dẫn cài đặt:
-
-1. `$OPENCODE_INSTALL_DIR` - Thư mục cài đặt tùy chỉnh
-2. `$XDG_BIN_DIR` - Đường dẫn tuân thủ XDG Base Directory Specification
-3. `$HOME/bin` - Thư mục nhị phân tiêu chuẩn của người dùng (nếu tồn tại hoặc có thể tạo)
-4. `$HOME/.opencode/bin` - Mặc định dự phòng
-
-```bash
-# Ví dụ
-OPENCODE_INSTALL_DIR=/usr/local/bin curl -fsSL https://opencode.ai/install | bash
-XDG_BIN_DIR=$HOME/.local/bin curl -fsSL https://opencode.ai/install | bash
-```
-
-### Agents (Đại diện)
-
-OpenCode bao gồm hai agent được tích hợp sẵn mà bạn có thể chuyển đổi bằng phím `Tab`.
-
-- **build** - Agent mặc định, có toàn quyền truy cập cho công việc lập trình
-- **plan** - Agent chỉ đọc dùng để phân tích và khám phá mã nguồn
-  - Mặc định từ chối việc chỉnh sửa tệp
-  - Hỏi quyền trước khi chạy các lệnh bash
-  - Lý tưởng để khám phá các codebase lạ hoặc lên kế hoạch thay đổi
-
-Ngoài ra còn có một subagent **general** dùng cho các tìm kiếm phức tạp và tác vụ nhiều bước.
-Agent này được sử dụng nội bộ và có thể gọi bằng cách dùng `@general` trong tin nhắn.
-
-Tìm hiểu thêm về [agents](https://opencode.ai/docs/agents).
-
-### Tài liệu
-
-Để biết thêm thông tin về cách cấu hình OpenCode, [**hãy truy cập tài liệu của chúng tôi**](https://opencode.ai/docs).
-
-### Đóng góp
-
-Nếu bạn muốn đóng góp cho OpenCode, vui lòng đọc [tài liệu hướng dẫn đóng góp](./CONTRIBUTING.md) trước khi gửi pull request.
-
-### Xây dựng trên nền tảng OpenCode
-
-Nếu bạn đang làm việc trên một dự án liên quan đến OpenCode và sử dụng "opencode" như một phần của tên dự án, ví dụ "opencode-dashboard" hoặc "opencode-mobile", vui lòng thêm một ghi chú vào README của bạn để làm rõ rằng dự án đó không được xây dựng bởi đội ngũ OpenCode và không liên kết với chúng tôi dưới bất kỳ hình thức nào.
+> Bộ cập nhật tích hợp (`opencode upgrade`) luôn tải `@lux-tech/opencode-ai`.
+> Nếu bạn muốn opencode **chính thức** tự động cập nhật, hãy chạy nó qua
+> `npx opencode-ai@latest` hoặc trình cài đặt chính thức (xem
+> [opencode.ai](https://opencode.ai)).
 
 ---
 
-**Tham gia cộng đồng của chúng tôi** [Discord](https://discord.gg/opencode) | [X.com](https://x.com/opencode)
+## Tệp nhị phân theo nền tảng
+
+`@lux-tech/opencode-ai` được phân phối dưới dạng gói meta với 12 tệp nhị phân
+tùy chọn theo nền tảng (tất cả được phát hành cùng một phiên bản):
+
+| Gói | Nền tảng / CPU | Ghi chú |
+|---|---|---|
+| `@lux-tech/opencode-ai-darwin-arm64` | macOS arm64 | Apple Silicon |
+| `@lux-tech/opencode-ai-darwin-x64` | macOS x64 | Intel |
+| `@lux-tech/opencode-ai-darwin-x64-baseline` | macOS x64 | CPU không có AVX2 |
+| `@lux-tech/opencode-ai-linux-arm64` | Linux arm64 | |
+| `@lux-tech/opencode-ai-linux-arm64-musl` | Linux arm64 | Alpine / musl |
+| `@lux-tech/opencode-ai-linux-x64` | Linux x64 | |
+| `@lux-tech/opencode-ai-linux-x64-baseline` | Linux x64 | CPU không có AVX2 |
+| `@lux-tech/opencode-ai-linux-x64-baseline-musl` | Linux x64 | musl, không có AVX2 |
+| `@lux-tech/opencode-ai-linux-x64-musl` | Linux x64 | Alpine / musl |
+| `@lux-tech/opencode-ai-windows-arm64` | Windows arm64 | |
+| `@lux-tech/opencode-ai-windows-x64` | Windows x64 | |
+| `@lux-tech/opencode-ai-windows-x64-baseline` | Windows x64 | CPU không có AVX2 |
+
+---
+
+## Agents (Tác nhân)
+
+OpenCode bao gồm hai agent tích hợp sẵn mà bạn có thể chuyển đổi bằng phím `Tab`.
+
+- **build** — mặc định, agent có toàn quyền truy cập cho công việc phát triển
+- **plan** — agent chỉ đọc để phân tích và khám phá mã
+  - Từ chối chỉnh sửa tệp theo mặc định
+  - Hỏi quyền trước khi chạy lệnh bash
+  - Lý tưởng để khám phá các codebase lạ hoặc lên kế hoạch thay đổi
+
+Ngoài ra còn có subagent **general** cho các tìm kiếm phức tạp và tác vụ nhiều
+bước. Nó được sử dụng nội bộ và có thể được gọi bằng `@general` trong tin nhắn.
+
+Fork còn cung cấp thêm agent **planner** tự động phân rã tác vụ trước khi thực thi.
+Tìm hiểu thêm về
+[agents trong tài liệu chính thức](https://opencode.ai/docs/agents) — hành vi
+tương thích với upstream.
+
+---
+
+## Tài liệu
+
+- **Tài liệu riêng của fork** nằm trong kho lưu trữ này: [`docs/`](./docs)
+  (kiến trúc, ADR, hot reload & thiết kế MCP) và [`CHANGELOG.md`](./CHANGELOG.md).
+- **Tài liệu cấu hình chung** tương thích với tài liệu chính thức:
+  [opencode.ai/docs](https://opencode.ai/docs).
+
+---
+
+## Khác biệt của fork
+
+Fork này (`menoxz/opencode`) thêm các tính năng sau so với upstream:
+
+| Tính năng | Mô tả |
+|---------|-------------|
+| **MCP Auto-reconnect** | Các MCP server bị mất kết nối được phát hiện (sự kiện transport + health ping) và tự động kết nối lại với backoff theo cấp số nhân — không còn trạng thái "connected" cũ hoặc phiên chết |
+| **Hot Reload** | Agents, plugins và MCP server tự động tải lại khi tệp thay đổi — không cần khởi động lại |
+| **Eval Pipeline** | Đánh giá dựa trên SQLite với phát hiện hồi quy, phân tích xu hướng và lệnh CLI so sánh |
+| **Memory Consolidation** | Bộ nhớ xuyên phiên với tự động suy giảm, phát hiện mẫu và phân tích sau sự cố |
+| **Unified Prompt** | Một `core.txt` duy nhất thay thế 10 prompt riêng cho từng mô hình — sạch hơn, nhỏ hơn, dễ bảo trì hơn |
+| **Continuous Improvement** | Phương pháp là tài liệu sống — cập nhật skills hiện có với changelog thay vì tạo bản sao trùng lặp |
+| **Planner Integration** | Agent `planner` tích hợp sẵn tự động phân rã tác vụ trước khi thực thi |
+
+Các tính năng mới được quản lý phiên bản trong [`CHANGELOG.md`](./CHANGELOG.md).
+
+---
+
+## Đóng góp
+
+Nếu bạn muốn đóng góp cho fork này, vui lòng đọc
+[tài liệu đóng góp](./CONTRIBUTING.md) trước khi gửi pull request. Các pull
+request nhắm tới nhánh `dev`.
+
+---
+
+## Xây dựng trên nền tảng OpenCode
+
+Nếu bạn đang làm việc trên một dự án liên quan đến OpenCode và sử dụng "opencode"
+như một phần tên của nó, ví dụ "opencode-dashboard" hoặc "opencode-mobile",
+vui lòng thêm ghi chú vào README của bạn để làm rõ rằng dự án không được xây
+dựng bởi đội ngũ OpenCode và không liên kết với chúng tôi dưới bất kỳ hình thức nào.
+
+---
+
+**Báo cáo sự cố** trên [GitHub Issues](https://github.com/menoxz/opencode/issues) ·
+**Mã nguồn** [github.com/menoxz/opencode](https://github.com/menoxz/opencode)

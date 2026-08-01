@@ -1,17 +1,24 @@
 <p align="center">
-  <a href="https://opencode.ai">
+  <a href="https://github.com/menoxz/opencode">
     <picture>
       <source srcset="packages/console/app/src/asset/logo-ornate-dark.svg" media="(prefers-color-scheme: dark)">
       <source srcset="packages/console/app/src/asset/logo-ornate-light.svg" media="(prefers-color-scheme: light)">
-      <img src="packages/console/app/src/asset/logo-ornate-light.svg" alt="OpenCode logo">
+      <img src="packages/console/app/src/asset/logo-ornate-light.svg" alt="Λογότυπο του fork OpenCode">
     </picture>
   </a>
 </p>
-<p align="center">Ο πράκτορας τεχνητής νοημοσύνης ανοικτού κώδικα για προγραμματισμό.</p>
+<p align="center">Ο πράκτορας τεχνητής νοημοσύνης ανοικτού κώδικα για προγραμματισμό — fork της κοινότητας.
+
+> **Σημείωση για το fork** — αυτό το αποθετήριο (`menoxz/opencode`) είναι ένα
+> fork του [επίσημου opencode](https://github.com/anomalyco/opencode) από την
+> κοινότητα με πρόσθετες δυνατότητες (MCP auto-reconnect, hot reload, eval pipeline,
+> memory consolidation, unified prompt). **Δεν σχετίζεται** με την επίσημη ομάδα
+> του opencode. **Δείτε τις διαφορές του fork →**</p>
 <p align="center">
-  <a href="https://opencode.ai/discord"><img alt="Discord" src="https://img.shields.io/discord/1391832426048651334?style=flat-square&label=discord" /></a>
-  <a href="https://www.npmjs.com/package/opencode-ai"><img alt="npm" src="https://img.shields.io/npm/v/opencode-ai?style=flat-square" /></a>
-  <a href="https://github.com/anomalyco/opencode/actions/workflows/publish.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/anomalyco/opencode/publish.yml?style=flat-square&branch=dev" /></a>
+  <a href="https://www.npmjs.com/package/@lux-tech/opencode-ai"><img alt="npm" src="https://img.shields.io/npm/v/%40lux-tech%2Fopencode-ai?style=flat-square" /></a>
+  <a href="https://github.com/menoxz/opencode/actions/workflows/typecheck.yml"><img alt="Typecheck" src="https://img.shields.io/github/actions/workflow/status/menoxz/opencode/typecheck.yml?branch=dev&style=flat-square" /></a>
+  <a href="https://github.com/menoxz/opencode/actions/workflows/eval.yml"><img alt="Eval" src="https://img.shields.io/github/actions/workflow/status/menoxz/opencode/eval.yml?branch=dev&style=flat-square" /></a>
+  <a href="https://github.com/menoxz/opencode/blob/dev/LICENSE"><img alt="Άδεια" src="https://img.shields.io/github/license/menoxz/opencode?style=flat-square" /></a>
 </p>
 
 <p align="center">
@@ -39,91 +46,257 @@
   <a href="README.vi.md">Tiếng Việt</a>
 </p>
 
-[![OpenCode Terminal UI](packages/web/src/assets/lander/screenshot.png)](https://opencode.ai)
+[![Διεπαφή τερματικού OpenCode](packages/web/src/assets/lander/screenshot.png)](https://github.com/menoxz/opencode)
 
 ---
 
-### Εγκατάσταση
+## Εγκατάσταση (fork)
+
+Το fork δημοσιεύεται στο npm υπό το scope `@lux-tech` και εγκαθιστά ένα εκτελέσιμο
+αρχείο με όνομα `opencode`, ακριβώς όπως το επίσημο πακέτο. Αυτό σημαίνει ότι το
+fork **αντικαθιστά** το επίσημο opencode όταν και τα δύο είναι εγκατεστημένα
+καθολικά — διαβάστε τη **συνύπαρξη με το επίσημο opencode** πριν από την εγκατάσταση.
+
+### Συνιστώμενο: npm
 
 ```bash
-# YOLO
-curl -fsSL https://opencode.ai/install | bash
+npm install -g @lux-tech/opencode-ai
+```
 
-# Διαχειριστές πακέτων
-npm i -g opencode-ai@latest        # ή bun/pnpm/yarn
-scoop install opencode             # Windows
-choco install opencode             # Windows
-brew install anomalyco/tap/opencode # macOS και Linux (προτείνεται, πάντα ενημερωμένο)
-brew install opencode              # macOS και Linux (επίσημος τύπος brew, λιγότερο συχνές ενημερώσεις)
-sudo pacman -S opencode            # Arch Linux (Σταθερό)
-paru -S opencode-bin               # Arch Linux (Τελευταία έκδοση από AUR)
-mise use -g opencode               # Οποιοδήποτε λειτουργικό σύστημα
-nix run nixpkgs#opencode           # ή github:anomalyco/opencode με βάση την πιο πρόσφατη αλλαγή από το dev branch
+Επαλήθευση:
+
+```bash
+opencode --version
+# opencode v1.18.55 (ή η τελευταία δημοσιευμένη έκδοση)
+```
+
+Το meta-πακέτο `@lux-tech/opencode-ai` κατεβάζει αυτόματα το σωστό εκτελέσιμο
+αρχείο για την πλατφόρμα σας από μία από τις 12 προαιρετικές εξαρτήσεις (δείτε
+τον **πίνακα εκτελέσιμων για πλατφόρμες**) και το εκθέτει ως το εκτελέσιμο
+αρχείο `opencode`.
+
+### Εναλλακτική: GitHub Releases (χειροκίνητα)
+
+Τα αρχεία των releases δημοσιεύονται στη
+[σελίδα releases](https://github.com/menoxz/opencode/releases) ως `.tar.gz`
+(Linux) και `.zip` (macOS / Windows). Κάθε αρχείο περιέχει το εκτελέσιμο
+`opencode` (ή `opencode.exe`) στη ρίζα του.
+
+```bash
+# Παράδειγμα: Linux x64
+VERSION=v1.18.55
+curl -fsSL -o opencode.tar.gz "https://github.com/menoxz/opencode/releases/download/$VERSION/opencode-linux-x64.tar.gz"
+tar -xzf opencode.tar.gz
+sudo mv opencode /usr/local/bin/opencode-fork   # μετονομασία για να μην αντικατασταθεί το επίσημο εκτελέσιμο
+```
+
+```powershell
+# Παράδειγμα: Windows x64 (PowerShell)
+$VERSION = "v1.18.55"
+Invoke-WebRequest -Uri "https://github.com/menoxz/opencode/releases/download/$VERSION/opencode-windows-x64.zip" -OutFile opencode.zip
+Expand-Archive -Path opencode.zip -DestinationPath . -Force
+Move-Item .\opencode.exe "$env:LOCALAPPDATA\Microsoft\WindowsApps\opencode-fork.exe" -Force
+```
+
+### Θέση του εκτελέσιμου
+
+| Μέθοδος εγκατάστασης | Διαδρομή εκτελέσιμου |
+|---|---|
+| npm (Windows) | `%APPDATA%\npm\opencode.exe` |
+| npm (Linux / macOS) | `$(npm prefix -g)/bin/opencode` |
+| GitHub release (χειροκίνητα) | όπου το τοποθετήσατε |
+
+### Ενημέρωση
+
+```bash
+# Ενσωματωμένο εργαλείο ενημέρωσης (ανακτά το τελευταίο release του @lux-tech/opencode-ai)
+opencode upgrade
+
+# Ή μέσω npm
+npm update -g @lux-tech/opencode-ai
+```
+
+### Απεγκατάσταση
+
+```bash
+npm uninstall -g @lux-tech/opencode-ai
+```
+
+Στα Windows, αφαιρέστε επίσης το ξεπερασμένο shim αν το npm άφησε ένα:
+
+```powershell
+Remove-Item "$env:APPDATA\npm\opencode*" -Force -ErrorAction SilentlyContinue
+```
+
+---
+
+## Συνύπαρξη με το επίσημο opencode
+
+**Τόσο το fork (`@lux-tech/opencode-ai`) όσο και το επίσημο opencode
+(`opencode-ai`) εγκαθιστούν ένα εκτελέσιμο αρχείο με όνομα `opencode`.**
+Η καθολική εγκατάσταση του ενός μετά το άλλο αντικαθιστά σιωπηλά το προηγούμενο
+εκτελέσιμο. Δεν μπορείτε να έχετε και τα δύο ως το καθολικό `opencode`
+ταυτόχρονα.
+
+### Ποιο να χρησιμοποιήσετε;
+
+| Ανάγκη | Χρήση |
+|---|---|
+| MCP servers με αυτόματη επανασύνδεση, hot reload, eval pipeline, memory consolidation, unified prompt | **Αυτό το fork** (`@lux-tech/opencode-ai`) |
+| Η επίσημη, ευρέως δοκιμασμένη έκδοση | [επίσημο opencode](https://github.com/anomalyco/opencode) (`opencode-ai`) |
+
+### Επιλογή A — μία καθολική εγκατάσταση + `npx` για το άλλο (συνιστάται)
+
+Εγκαταστήστε το fork καθολικά και εκτελέστε το επίσημο opencode κατ' απαίτηση
+χωρίς να το εγκαταστήσετε καθολικά:
+
+```bash
+npm install -g @lux-tech/opencode-ai   # το fork γίνεται το καθολικό `opencode`
+
+# Χρησιμοποιήστε το επίσημο opencode χωρίς να πειράξετε την καθολική εγκατάσταση:
+npx -y opencode-ai@latest
+```
+
+Ή το αντίστροφο — κρατήστε το επίσημο opencode καθολικό και εκτελέστε το fork
+κατ' απαίτηση:
+
+```bash
+npm install -g opencode-ai             # το επίσημο γίνεται το καθολικό `opencode`
+npx -y @lux-tech/opencode-ai@latest    # εκτέλεση του fork κατ' απαίτηση
+```
+
+### Επιλογή B — και τα δύο εγκατεστημένα, το ένα μετονομασμένο
+
+Εγκαταστήστε και τα δύο και μετονομάστε το δευτερεύον εκτελέσιμο ώστε οι δύο
+εντολές να μην συγκρούονται:
+
+```bash
+npm install -g @lux-tech/opencode-ai
+npm install -g opencode-ai             # αντικαθιστά το `opencode` — κάντε το δεύτερο
+```
+
+Στη συνέχεια, στα Windows μετονομάστε το εκτελέσιμο του fork σε `opencode-fork.exe`:
+
+```powershell
+Copy-Item "$env:APPDATA\npm\opencode.exe" "$env:APPDATA\npm\opencode-fork.exe"
+opencode-fork --version   # fork
+opencode --version        # επίσημο
+```
+
+Σε Linux / macOS:
+
+```bash
+cp "$(npm prefix -g)/bin/opencode" "$(npm prefix -g)/bin/opencode-fork"
+opencode-fork --version   # fork
+opencode --version        # επίσημο
+```
+
+### Έλεγχος ποιο εκτελέσιμο είναι ενεργό
+
+```bash
+which opencode                # διαδρομή του ενεργού εκτελέσιμου
+opencode --version            # έκδοση του ενεργού εκτελέσιμου
+opencode upgrade --help       # το ενσωματωμένο εργαλείο ενημέρωσης στοχεύει το @lux-tech/opencode-ai
 ```
 
 > [!TIP]
-> Αφαίρεσε παλαιότερες εκδόσεις από τη 0.1.x πριν από την εγκατάσταση.
-
-### Εφαρμογή Desktop (BETA)
-
-Το OpenCode είναι επίσης διαθέσιμο ως εφαρμογή. Κατέβασε το απευθείας από τη [σελίδα εκδόσεων](https://github.com/anomalyco/opencode/releases) ή το [opencode.ai/download](https://opencode.ai/download).
-
-| Πλατφόρμα             | Λήψη                               |
-| --------------------- | ---------------------------------- |
-| macOS (Apple Silicon) | `opencode-desktop-mac-arm64.dmg`   |
-| macOS (Intel)         | `opencode-desktop-mac-x64.dmg`     |
-| Windows               | `opencode-desktop-windows-x64.exe` |
-| Linux                 | `.deb`, `.rpm`, ή AppImage         |
-
-```bash
-# macOS (Homebrew)
-brew install --cask opencode-desktop
-# Windows (Scoop)
-scoop bucket add extras; scoop install extras/opencode-desktop
-```
-
-#### Κατάλογος Εγκατάστασης
-
-Το script εγκατάστασης τηρεί την ακόλουθη σειρά προτεραιότητας για τη διαδρομή εγκατάστασης:
-
-1. `$OPENCODE_INSTALL_DIR` - Προσαρμοσμένος κατάλογος εγκατάστασης
-2. `$XDG_BIN_DIR` - Διαδρομή συμβατή με τις προδιαγραφές XDG Base Directory
-3. `$HOME/bin` - Τυπικός κατάλογος εκτελέσιμων αρχείων χρήστη (εάν υπάρχει ή μπορεί να δημιουργηθεί)
-4. `$HOME/.opencode/bin` - Προεπιλεγμένη εφεδρική διαδρομή
-
-```bash
-# Παραδείγματα
-OPENCODE_INSTALL_DIR=/usr/local/bin curl -fsSL https://opencode.ai/install | bash
-XDG_BIN_DIR=$HOME/.local/bin curl -fsSL https://opencode.ai/install | bash
-```
-
-### Πράκτορες
-
-Το OpenCode περιλαμβάνει δύο ενσωματωμένους πράκτορες μεταξύ των οποίων μπορείτε να εναλλάσσεστε με το πλήκτρο `Tab`.
-
-- **build** - Προεπιλεγμένος πράκτορας με πλήρη πρόσβαση για εργασία πάνω σε κώδικα
-- **plan** - Πράκτορας μόνο ανάγνωσης για ανάλυση και εξερεύνηση κώδικα
-  - Αρνείται την επεξεργασία αρχείων από προεπιλογή
-  - Ζητά άδεια πριν εκτελέσει εντολές bash
-  - Ιδανικός για εξερεύνηση άγνωστων αρχείων πηγαίου κώδικα ή σχεδιασμό αλλαγών
-
-Περιλαμβάνεται επίσης ένας **general** υποπράκτορας για σύνθετες αναζητήσεις και πολυβηματικές διεργασίες.
-Χρησιμοποιείται εσωτερικά και μπορεί να κληθεί χρησιμοποιώντας `@general` στα μηνύματα.
-
-Μάθετε περισσότερα για τους [πράκτορες](https://opencode.ai/docs/agents).
-
-### Οδηγός Χρήσης
-
-Για περισσότερες πληροφορίες σχετικά με τη ρύθμιση του OpenCode, [**πλοηγήσου στον οδηγό χρήσης μας**](https://opencode.ai/docs).
-
-### Συνεισφορά
-
-Εάν ενδιαφέρεσαι να συνεισφέρεις στο OpenCode, διαβάστε τα [οδηγό χρήσης συνεισφοράς](./CONTRIBUTING.md) πριν υποβάλεις ένα pull request.
-
-### Δημιουργία πάνω στο OpenCode
-
-Εάν εργάζεσαι σε ένα έργο σχετικό με το OpenCode και χρησιμοποιείτε το "opencode" ως μέρος του ονόματός του, για παράδειγμα "opencode-dashboard" ή "opencode-mobile", πρόσθεσε μια σημείωση στο README σας για να διευκρινίσεις ότι δεν είναι κατασκευασμένο από την ομάδα του OpenCode και δεν έχει καμία σχέση με εμάς.
+> Το ενσωματωμένο εργαλείο ενημέρωσης (`opencode upgrade`) ανακτά πάντα το
+> `@lux-tech/opencode-ai`. Αν θέλετε το **επίσημο** opencode να ενημερώνεται
+> αυτόματα, εκτελέστε το μέσω `npx opencode-ai@latest` ή του επίσημου
+> εγκαταστάτη (δείτε το [opencode.ai](https://opencode.ai)).
 
 ---
 
-**Γίνε μέλος της κοινότητάς μας** [Discord](https://discord.gg/opencode) | [X.com](https://x.com/opencode)
+## Εκτελέσιμα για πλατφόρμες
+
+Το `@lux-tech/opencode-ai` διατίθεται ως meta-πακέτο με 12 προαιρετικά εκτελέσιμα
+για πλατφόρμες (όλα δημοσιευμένα στην ίδια έκδοση):
+
+| Πακέτο | Πλατφόρμα / CPU | Σημειώσεις |
+|---|---|---|
+| `@lux-tech/opencode-ai-darwin-arm64` | macOS arm64 | Apple Silicon |
+| `@lux-tech/opencode-ai-darwin-x64` | macOS x64 | Intel |
+| `@lux-tech/opencode-ai-darwin-x64-baseline` | macOS x64 | Επεξεργαστές χωρίς AVX2 |
+| `@lux-tech/opencode-ai-linux-arm64` | Linux arm64 | |
+| `@lux-tech/opencode-ai-linux-arm64-musl` | Linux arm64 | Alpine / musl |
+| `@lux-tech/opencode-ai-linux-x64` | Linux x64 | |
+| `@lux-tech/opencode-ai-linux-x64-baseline` | Linux x64 | Επεξεργαστές χωρίς AVX2 |
+| `@lux-tech/opencode-ai-linux-x64-baseline-musl` | Linux x64 | musl, χωρίς AVX2 |
+| `@lux-tech/opencode-ai-linux-x64-musl` | Linux x64 | Alpine / musl |
+| `@lux-tech/opencode-ai-windows-arm64` | Windows arm64 | |
+| `@lux-tech/opencode-ai-windows-x64` | Windows x64 | |
+| `@lux-tech/opencode-ai-windows-x64-baseline` | Windows x64 | Επεξεργαστές χωρίς AVX2 |
+
+---
+
+## Πράκτορες
+
+Το OpenCode περιλαμβάνει δύο ενσωματωμένους πράκτορες μεταξύ των οποίων μπορείτε
+να εναλλάσσεστε με το πλήκτρο `Tab`.
+
+- **build** — προεπιλεγμένος, πράκτορας με πλήρη πρόσβαση για εργασίες ανάπτυξης
+- **plan** — πράκτορας μόνο ανάγνωσης για ανάλυση και εξερεύνηση κώδικα
+  - Αρνείται την επεξεργασία αρχείων από προεπιλογή
+  - Ζητά άδεια πριν εκτελέσει εντολές bash
+  - Ιδανικός για εξερεύνηση άγνωστων codebase ή προγραμματισμό αλλαγών
+
+Περιλαμβάνεται επίσης ένας **general** υποπράκτορας για σύνθετες αναζητήσεις και
+πολυβηματικές εργασίες. Χρησιμοποιείται εσωτερικά και μπορεί να κληθεί με
+`@general` στα μηνύματα.
+
+Το fork διαθέτει επιπλέον έναν πράκτορα **planner** που αναλύει αυτόματα τις
+εργασίες πριν από την εκτέλεση. Μάθετε περισσότερα για τους
+[πράκτορες στην επίσημη τεκμηρίωση](https://opencode.ai/docs/agents) — η
+συμπεριφορά είναι συμβατή με το upstream.
+
+---
+
+## Τεκμηρίωση
+
+- **Τεκμηρίωση ειδική για το fork** βρίσκεται σε αυτό το αποθετήριο:
+  [`docs/`](./docs) (αρχιτεκτονική, ADR, hot reload & σχεδιασμός MCP)
+  και [`CHANGELOG.md`](./CHANGELOG.md).
+- **Γενική τεκμηρίωση διαμόρφωσης** είναι συμβατή με την επίσημη τεκμηρίωση:
+  [opencode.ai/docs](https://opencode.ai/docs).
+
+---
+
+## Διαφορές του fork
+
+Αυτό το fork (`menoxz/opencode`) προσθέτει τις ακόλουθες δυνατότητες πάνω
+από το upstream:
+
+| Δυνατότητα | Περιγραφή |
+|---------|-------------|
+| **MCP Auto-reconnect** | Οι MCP servers των οποίων η σύνδεση διακόπτεται εντοπίζονται (γεγονότα μεταφοράς + ping υγείας) και επανασυνδέονται αυτόματα με εκθετική καθυστέρηση — τέλος στο ξεπερασμένο status "connected" και στις νεκρές συνεδρίες |
+| **Hot Reload** | Οι πράκτορες, τα plugins και οι MCP servers επαναφορτώνονται αυτόματα όταν αλλάζουν αρχεία — δεν χρειάζεται επανεκκίνηση |
+| **Eval Pipeline** | Αξιολόγηση με υποστήριξη SQLite με ανίχνευση παλινδρομήσεων, ανάλυση τάσεων και εντολές CLI σύγκρισης |
+| **Memory Consolidation** | Διασυνεδριακή μνήμη με αυτόματη αποσύνθεση, ανίχνευση μοτίβων και ανάλυση μετά το συμβάν |
+| **Unified Prompt** | Ένα μόνο `core.txt` αντικαθιστά 10 μοντέλο-ειδικά prompts — καθαρότερο, μικρότερο, ευκολότερο στη συντήρηση |
+| **Continuous Improvement** | Οι μέθοδοι είναι ζωντανά έγγραφα — ενημερώστε τα υπάρχοντα skills με changelog αντί να δημιουργείτε διπλότυπα |
+| **Planner Integration** | Ο ενσωματωμένος πράκτορας `planner` αναλύει αυτόματα τις εργασίες πριν από την εκτέλεση |
+
+Οι νέες δυνατότητες εκδίδονται με αριθμούς έκδοσης στο [`CHANGELOG.md`](./CHANGELOG.md).
+
+---
+
+## Συνεισφορά
+
+Αν ενδιαφέρεστε να συνεισφέρετε σε αυτό το fork, διαβάστε την
+[τεκμηρίωση συνεισφοράς](./CONTRIBUTING.md) πριν υποβάλετε ένα pull request.
+Τα pull requests στοχεύουν τον κλάδο `dev`.
+
+---
+
+## Δημιουργία πάνω στο OpenCode
+
+Αν εργάζεστε σε ένα έργο που σχετίζεται με το OpenCode και χρησιμοποιεί
+"opencode" ως μέρος του ονόματός του, για παράδειγμα "opencode-dashboard" ή
+"opencode-mobile", προσθέστε μια σημείωση στο README σας για να διευκρινίσετε
+ότι δεν δημιουργήθηκε από την ομάδα του OpenCode και δεν σχετίζεται με εμάς
+με κανέναν τρόπο.
+
+---
+
+**Αναφέρετε προβλήματα** στο [GitHub Issues](https://github.com/menoxz/opencode/issues) ·
+**Πηγαίος κώδικας** [github.com/menoxz/opencode](https://github.com/menoxz/opencode)

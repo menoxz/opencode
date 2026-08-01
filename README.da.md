@@ -1,17 +1,24 @@
 <p align="center">
-  <a href="https://opencode.ai">
+  <a href="https://github.com/menoxz/opencode">
     <picture>
       <source srcset="packages/console/app/src/asset/logo-ornate-dark.svg" media="(prefers-color-scheme: dark)">
       <source srcset="packages/console/app/src/asset/logo-ornate-light.svg" media="(prefers-color-scheme: light)">
-      <img src="packages/console/app/src/asset/logo-ornate-light.svg" alt="OpenCode logo">
+      <img src="packages/console/app/src/asset/logo-ornate-light.svg" alt="OpenCode fork-logo">
     </picture>
   </a>
 </p>
-<p align="center">Den open source AI-kodeagent.</p>
+<p align="center">AI-kodeagenten med åben kildekode — community-fork.
+
+> **Fork-bemærkning** — dette repository (`menoxz/opencode`) er en community-fork af
+> [den officielle opencode](https://github.com/anomalyco/opencode) med ekstra funktioner
+> (MCP auto-reconnect, hot reload, eval pipeline, memory consolidation, unified prompt).
+> Det er **ikke tilknyttet** det officielle opencode-team.
+> **Se fork-forskellene →**</p>
 <p align="center">
-  <a href="https://opencode.ai/discord"><img alt="Discord" src="https://img.shields.io/discord/1391832426048651334?style=flat-square&label=discord" /></a>
-  <a href="https://www.npmjs.com/package/opencode-ai"><img alt="npm" src="https://img.shields.io/npm/v/opencode-ai?style=flat-square" /></a>
-  <a href="https://github.com/anomalyco/opencode/actions/workflows/publish.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/anomalyco/opencode/publish.yml?style=flat-square&branch=dev" /></a>
+  <a href="https://www.npmjs.com/package/@lux-tech/opencode-ai"><img alt="npm" src="https://img.shields.io/npm/v/%40lux-tech%2Fopencode-ai?style=flat-square" /></a>
+  <a href="https://github.com/menoxz/opencode/actions/workflows/typecheck.yml"><img alt="Typecheck" src="https://img.shields.io/github/actions/workflow/status/menoxz/opencode/typecheck.yml?branch=dev&style=flat-square" /></a>
+  <a href="https://github.com/menoxz/opencode/actions/workflows/eval.yml"><img alt="Eval" src="https://img.shields.io/github/actions/workflow/status/menoxz/opencode/eval.yml?branch=dev&style=flat-square" /></a>
+  <a href="https://github.com/menoxz/opencode/blob/dev/LICENSE"><img alt="License" src="https://img.shields.io/github/license/menoxz/opencode?style=flat-square" /></a>
 </p>
 
 <p align="center">
@@ -39,91 +46,248 @@
   <a href="README.vi.md">Tiếng Việt</a>
 </p>
 
-[![OpenCode Terminal UI](packages/web/src/assets/lander/screenshot.png)](https://opencode.ai)
+[![OpenCode-terminalgrænseflade](packages/web/src/assets/lander/screenshot.png)](https://github.com/menoxz/opencode)
 
 ---
 
-### Installation
+## Installation (fork)
+
+Fork'en er udgivet på npm under scopet `@lux-tech` og installerer en binær ved navn
+`opencode`, præcis som den officielle pakke. Det betyder, at fork'en **erstatter** den
+officielle opencode, når begge installeres globalt — læs
+**om sameksistens med den officielle opencode**, før du installerer.
+
+### Anbefalet: npm
 
 ```bash
-# YOLO
-curl -fsSL https://opencode.ai/install | bash
+npm install -g @lux-tech/opencode-ai
+```
 
-# Pakkehåndteringer
-npm i -g opencode-ai@latest        # eller bun/pnpm/yarn
-scoop install opencode             # Windows
-choco install opencode             # Windows
-brew install anomalyco/tap/opencode # macOS og Linux (anbefalet, altid up to date)
-brew install opencode              # macOS og Linux (officiel brew formula, opdateres sjældnere)
-sudo pacman -S opencode            # Arch Linux (Stable)
-paru -S opencode-bin               # Arch Linux (Latest from AUR)
-mise use -g opencode               # alle OS
-nix run nixpkgs#opencode           # eller github:anomalyco/opencode for nyeste dev-branch
+Verificér:
+
+```bash
+opencode --version
+# opencode v1.18.55 (eller den senest udgivne version)
+```
+
+Meta-pakken `@lux-tech/opencode-ai` downloader automatisk den korrekte platform-binær
+fra en af sine 12 valgfrie afhængigheder (se **tabellen over platform-binærer**) og
+stiller den til rådighed som `opencode`-binæren.
+
+### Alternativ: GitHub Releases (manuelt)
+
+Release-arkiver udgives på
+[releases-siden](https://github.com/menoxz/opencode/releases) som `.tar.gz` (Linux)
+og `.zip` (macOS / Windows). Hvert arkiv indeholder `opencode`-binæren (eller
+`opencode.exe`) ved roden.
+
+```bash
+# Eksempel: Linux x64
+VERSION=v1.18.55
+curl -fsSL -o opencode.tar.gz "https://github.com/menoxz/opencode/releases/download/$VERSION/opencode-linux-x64.tar.gz"
+tar -xzf opencode.tar.gz
+sudo mv opencode /usr/local/bin/opencode-fork   # omdøb for at undgå at overskrive den officielle binær
+```
+
+```powershell
+# Eksempel: Windows x64 (PowerShell)
+$VERSION = "v1.18.55"
+Invoke-WebRequest -Uri "https://github.com/menoxz/opencode/releases/download/$VERSION/opencode-windows-x64.zip" -OutFile opencode.zip
+Expand-Archive -Path opencode.zip -DestinationPath . -Force
+Move-Item .\opencode.exe "$env:LOCALAPPDATA\Microsoft\WindowsApps\opencode-fork.exe" -Force
+```
+
+### Binær placering
+
+| Installationsmetode | Binær sti |
+|---|---|
+| npm (Windows) | `%APPDATA%\npm\opencode.exe` |
+| npm (Linux / macOS) | `$(npm prefix -g)/bin/opencode` |
+| GitHub release (manuelt) | hvor end du har placeret den |
+
+### Opdatering
+
+```bash
+# Indbygget opdatering (henter den nyeste @lux-tech/opencode-ai-udgivelse)
+opencode upgrade
+
+# Eller via npm
+npm update -g @lux-tech/opencode-ai
+```
+
+### Afinstallation
+
+```bash
+npm uninstall -g @lux-tech/opencode-ai
+```
+
+På Windows skal du også fjerne den gamle shim, hvis npm har efterladt én:
+
+```powershell
+Remove-Item "$env:APPDATA\npm\opencode*" -Force -ErrorAction SilentlyContinue
+```
+
+---
+
+## Sameksistens med den officielle opencode
+
+**Både fork'en (`@lux-tech/opencode-ai`) og den officielle opencode (`opencode-ai`)
+installerer en binær ved navn `opencode`.** Hvis du installerer den ene globalt efter
+den anden, erstatter den stille og roligt den forrige binær. Du kan ikke beholde begge
+som den globale `opencode` på samme tid.
+
+### Hvilken skal du bruge?
+
+| Behov | Brug |
+|---|---|
+| MCP-servere med automatisk genforbindelse, hot reload, eval pipeline, memory consolidation, unified prompt | **Denne fork** (`@lux-tech/opencode-ai`) |
+| Den officielle, bredt validerede udgivelse | [officiel opencode](https://github.com/anomalyco/opencode) (`opencode-ai`) |
+
+### Mulighed A — én global installation + npx til den anden (anbefalet)
+
+Installer fork'en globalt, og kør den officielle opencode efter behov uden at installere
+den globalt:
+
+```bash
+npm install -g @lux-tech/opencode-ai   # fork'en bliver den globale `opencode`
+
+# Brug den officielle opencode uden at røre den globale installation:
+npx -y opencode-ai@latest
+```
+
+Eller omvendt — behold den officielle opencode globalt, og kør fork'en efter behov:
+
+```bash
+npm install -g opencode-ai             # den officielle bliver den globale `opencode`
+npx -y @lux-tech/opencode-ai@latest    # kør fork'en efter behov
+```
+
+### Mulighed B — begge installeret, én omdøbt
+
+Installer begge, og omdøb derefter den sekundære binær, så de to kommandoer ikke
+kolliderer:
+
+```bash
+npm install -g @lux-tech/opencode-ai
+npm install -g opencode-ai             # overskriver `opencode` — gør dette som nummer to
+```
+
+På Windows omdøbes fork-binæren derefter til `opencode-fork.exe`:
+
+```powershell
+Copy-Item "$env:APPDATA\npm\opencode.exe" "$env:APPDATA\npm\opencode-fork.exe"
+opencode-fork --version   # fork
+opencode --version        # officiel
+```
+
+På Linux / macOS:
+
+```bash
+cp "$(npm prefix -g)/bin/opencode" "$(npm prefix -g)/bin/opencode-fork"
+opencode-fork --version   # fork
+opencode --version        # officiel
+```
+
+### Tjek, hvilken binær der er aktiv lige nu
+
+```bash
+which opencode                # sti til den aktive binær
+opencode --version            # version af den aktive binær
+opencode upgrade --help       # indbygget opdatering henter @lux-tech/opencode-ai
 ```
 
 > [!TIP]
-> Fjern versioner ældre end 0.1.x før installation.
+> Det indbyggede opdateringsværktøj (`opencode upgrade`) henter altid
+> `@lux-tech/opencode-ai`. Hvis du vil have den **officielle** opencode til at opdatere
+> automatisk, skal du køre den via `npx opencode-ai@latest` eller den officielle
+> installer (se [opencode.ai](https://opencode.ai)).
 
-### Desktop-app (BETA)
+---
 
-OpenCode findes også som desktop-app. Download direkte fra [releases-siden](https://github.com/anomalyco/opencode/releases) eller [opencode.ai/download](https://opencode.ai/download).
+## Platform-binærer
 
-| Platform              | Download                           |
-| --------------------- | ---------------------------------- |
-| macOS (Apple Silicon) | `opencode-desktop-mac-arm64.dmg`   |
-| macOS (Intel)         | `opencode-desktop-mac-x64.dmg`     |
-| Windows               | `opencode-desktop-windows-x64.exe` |
-| Linux                 | `.deb`, `.rpm`, eller AppImage     |
+`@lux-tech/opencode-ai` leveres som en meta-pakke med 12 valgfrie platform-binærer
+(alle udgivet i samme version):
 
-```bash
-# macOS (Homebrew)
-brew install --cask opencode-desktop
-# Windows (Scoop)
-scoop bucket add extras; scoop install extras/opencode-desktop
-```
+| Pakke | Platform / CPU | Bemærkninger |
+|---|---|---|
+| `@lux-tech/opencode-ai-darwin-arm64` | macOS arm64 | Apple Silicon |
+| `@lux-tech/opencode-ai-darwin-x64` | macOS x64 | Intel |
+| `@lux-tech/opencode-ai-darwin-x64-baseline` | macOS x64 | CPU'er uden AVX2 |
+| `@lux-tech/opencode-ai-linux-arm64` | Linux arm64 | |
+| `@lux-tech/opencode-ai-linux-arm64-musl` | Linux arm64 | Alpine / musl |
+| `@lux-tech/opencode-ai-linux-x64` | Linux x64 | |
+| `@lux-tech/opencode-ai-linux-x64-baseline` | Linux x64 | CPU'er uden AVX2 |
+| `@lux-tech/opencode-ai-linux-x64-baseline-musl` | Linux x64 | musl, uden AVX2 |
+| `@lux-tech/opencode-ai-linux-x64-musl` | Linux x64 | Alpine / musl |
+| `@lux-tech/opencode-ai-windows-arm64` | Windows arm64 | |
+| `@lux-tech/opencode-ai-windows-x64` | Windows x64 | |
+| `@lux-tech/opencode-ai-windows-x64-baseline` | Windows x64 | CPU'er uden AVX2 |
 
-#### Installationsmappe
+---
 
-Installationsscriptet bruger følgende prioriteringsrækkefølge for installationsstien:
+## Agents
 
-1. `$OPENCODE_INSTALL_DIR` - Tilpasset installationsmappe
-2. `$XDG_BIN_DIR` - Sti der følger XDG Base Directory Specification
-3. `$HOME/bin` - Standard bruger-bin-mappe (hvis den findes eller kan oprettes)
-4. `$HOME/.opencode/bin` - Standard fallback
-
-```bash
-# Eksempler
-OPENCODE_INSTALL_DIR=/usr/local/bin curl -fsSL https://opencode.ai/install | bash
-XDG_BIN_DIR=$HOME/.local/bin curl -fsSL https://opencode.ai/install | bash
-```
-
-### Agents
-
-OpenCode har to indbyggede agents, som du kan skifte mellem med `Tab`-tasten.
+OpenCode indeholder to indbyggede agents, som du kan skifte mellem med `Tab`-tasten.
 
 - **build** - Standard, agent med fuld adgang til udviklingsarbejde
 - **plan** - Skrivebeskyttet agent til analyse og kodeudforskning
   - Afviser filredigering som standard
-  - Spørger om tilladelse før bash-kommandoer
+  - Spørger om tilladelse, før bash-kommandoer køres
   - Ideel til at udforske ukendte kodebaser eller planlægge ændringer
 
-Derudover findes der en **general**-subagent til komplekse søgninger og flertrinsopgaver.
+Derudover findes en **general**-subagent til komplekse søgninger og flertrinsopgaver.
 Den bruges internt og kan kaldes via `@general` i beskeder.
 
-Læs mere om [agents](https://opencode.ai/docs/agents).
-
-### Dokumentation
-
-For mere info om konfiguration af OpenCode, [**se vores docs**](https://opencode.ai/docs).
-
-### Bidrag
-
-Hvis du vil bidrage til OpenCode, så læs vores [contributing docs](./CONTRIBUTING.md) før du sender en pull request.
-
-### Bygget på OpenCode
-
-Hvis du arbejder på et projekt der er relateret til OpenCode og bruger "opencode" som en del af navnet; f.eks. "opencode-dashboard" eller "opencode-mobile", så tilføj en note i din README, der tydeliggør at projektet ikke er bygget af OpenCode-teamet og ikke er tilknyttet os på nogen måde.
+Fork'en leverer desuden en **planner**-agent, der automatisk nedbryder opgaver, før de
+udføres. Læs mere om [agents i den officielle dokumentation](https://opencode.ai/docs/agents) —
+adfærden er kompatibel med upstream.
 
 ---
 
-**Bliv en del af vores community** [Discord](https://discord.gg/opencode) | [X.com](https://x.com/opencode)
+## Dokumentation
+
+- **Fork-specifik dokumentation** ligger i dette repository: [`docs/`](./docs) (arkitektur,
+  ADR'er, hot reload & MCP-design) og [`CHANGELOG.md`](./CHANGELOG.md).
+- **Generel konfigurationsdokumentation** er kompatibel med den officielle dokumentation:
+  [opencode.ai/docs](https://opencode.ai/docs).
+
+---
+
+## Fork-forskelle
+
+Denne fork (`menoxz/opencode`) tilføjer følgende funktioner oven på upstream:
+
+| Funktion | Beskrivelse |
+|---------|-------------|
+| **MCP Auto-reconnect** | MCP-servere, hvis forbindelse dør, registreres (transportbegivenheder + sundhedsping) og genforbindes automatisk med eksponentiel backoff — ikke flere forældede "connected"-statusser eller døde sessioner |
+| **Hot Reload** | Agents, plugins og MCP-servere genindlæses automatisk ved filændringer — ingen genstart nødvendig |
+| **Eval Pipeline** | SQLite-baseret evaluering med regressionsdetektion, trendanalyse og compare-CLI-kommandoer |
+| **Memory Consolidation** | Tværsessionshukommelse med automatisk henfald, mønsterdetektion og post-mortem-analyse |
+| **Unified Prompt** | Én enkelt `core.txt` erstatter 10 modelspecifikke prompts — renere, mindre, nemmere at vedligeholde |
+| **Continuous Improvement** | Metoder er levende dokumenter — opdater eksisterende skills med changelog i stedet for at oprette dubletter |
+| **Planner Integration** | Indbygget `planner`-agent nedbryder automatisk opgaver, før de udføres |
+
+Nye funktioner versionsstyres i [`CHANGELOG.md`](./CHANGELOG.md).
+
+---
+
+## Bidrag
+
+Hvis du er interesseret i at bidrage til denne fork, så læs venligst vores
+[bidragsdokumentation](./CONTRIBUTING.md), før du sender en pull request.
+Pull requests skal rettes mod `dev`-grenen.
+
+---
+
+## Bygget på OpenCode
+
+Hvis du arbejder på et projekt, der er relateret til OpenCode og bruger "opencode" som
+en del af navnet, f.eks. "opencode-dashboard" eller "opencode-mobile", så tilføj en note
+til din README, der gør klart, at projektet ikke er bygget af OpenCode-teamet og ikke er
+tilknyttet os på nogen måde.
+
+---
+
+**Rapportér problemer** på [GitHub Issues](https://github.com/menoxz/opencode/issues) ·
+**Kilde** [github.com/menoxz/opencode](https://github.com/menoxz/opencode)
