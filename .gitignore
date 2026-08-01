@@ -35,3 +35,6 @@ tsconfig.tsbuildinfo
 build.txt
 packages/opencode/tsc.txt
 
+
+# Agent Swarm scratch space (manifests, worker results, reports)
+.swarm/
