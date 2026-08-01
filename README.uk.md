@@ -52,10 +52,15 @@
 
 ## Встановлення (fork)
 
-Форк публікується на npm у скоупі `@lux-tech` і встановлює бінарний файл з назвою
-`opencode`, точно так само, як офіційний пакет. Це означає, що форк **замінює**
-офіційний opencode, коли обидва встановлені глобально — прочитайте
-**про співіснування з офіційним opencode**, перш ніж встановлювати.
+Форк публікується на npm у скоупі `@lux-tech` і встановлює свою команду як
+**`opencodev2`** — окремий бінарний файл, який **співіснує** з офіційним
+`opencode` (встановлюється з `opencode-ai`). Він також використовує власні
+каталоги даних і конфігурації (`~/.local/share/opencodev2`,
+`~/.config/opencodev2`), тому обидва продукти можуть працювати поруч, не
+зачіпаючи дані один одного. Під час першого інтерактивного запуску форк пропонує
+імпортувати вашу наявну конфігурацію opencode, ключі API та історію сесій —
+оригінальна інсталяція залишається недоторканою. Див.
+[співіснування з офіційним opencode](#співіснування-з-офіційним-opencode).
 
 ### Рекомендовано: npm
 
@@ -66,49 +71,51 @@ npm install -g @lux-tech/opencode-ai
 Перевірка:
 
 ```bash
-opencode --version
-# opencode v1.18.55 (або остання опублікована версія)
+opencodev2 --version
+# 1.18.59 (або остання опублікована версія)
 ```
 
 Метапакет `@lux-tech/opencode-ai` автоматично завантажує правильний бінарний файл
 платформи з однієї зі своїх 12 опціональних залежностей (див. **таблицю бінарних
-файлів платформ**) і надає його як бінарний файл `opencode`.
+файлів платформ**) і надає його як команду `opencodev2`.
 
 ### Альтернатива: GitHub Releases (вручну)
 
 Архіви релізів публікуються на [сторінці релізів](https://github.com/menoxz/opencode/releases)
-у вигляді `.tar.gz` (Linux) і `.zip` (macOS / Windows). Кожен архів містить бінарний
-файл `opencode` (або `opencode.exe`) у своєму корені.
+у вигляді `.tar.gz` (Linux) і `.zip` (macOS / Windows). Кожен архів містить
+скомпільований CLI-бінарний файл у своєму корені — перейменуйте його на
+`opencodev2` під час ручної інсталяції, щоб він ніколи не конфліктував з
+офіційним бінарним файлом `opencode`.
 
 ```bash
 # Приклад: Linux x64
-VERSION=v1.18.55
+VERSION=v1.18.59
 curl -fsSL -o opencode.tar.gz "https://github.com/menoxz/opencode/releases/download/$VERSION/opencode-linux-x64.tar.gz"
 tar -xzf opencode.tar.gz
-sudo mv opencode /usr/local/bin/opencode-fork   # перейменуйте, щоб не затирати офіційний бінарний файл
+sudo mv opencode /usr/local/bin/opencodev2   # окрема назва, без конфлікту з офіційним бінарним файлом
 ```
 
 ```powershell
 # Приклад: Windows x64 (PowerShell)
-$VERSION = "v1.18.55"
+$VERSION = "v1.18.59"
 Invoke-WebRequest -Uri "https://github.com/menoxz/opencode/releases/download/$VERSION/opencode-windows-x64.zip" -OutFile opencode.zip
 Expand-Archive -Path opencode.zip -DestinationPath . -Force
-Move-Item .\opencode.exe "$env:LOCALAPPDATA\Microsoft\WindowsApps\opencode-fork.exe" -Force
+Move-Item .\opencode.exe "$env:LOCALAPPDATA\Microsoft\WindowsApps\opencodev2.exe" -Force
 ```
 
 ### Розташування бінарного файлу
 
 | Метод встановлення | Шлях до бінарного файлу |
 |---|---|
-| npm (Windows) | `%APPDATA%\npm\opencode.exe` |
-| npm (Linux / macOS) | `$(npm prefix -g)/bin/opencode` |
+| npm (Windows) | `%APPDATA%\npm\opencodev2.exe` |
+| npm (Linux / macOS) | `$(npm prefix -g)/bin/opencodev2` |
 | GitHub release (вручну) | де ви його розмістили |
 
 ### Оновлення
 
 ```bash
 # Вбудований оновлювач (завантажує останній реліз @lux-tech/opencode-ai)
-opencode upgrade
+opencodev2 upgrade
 
 # Або через npm
 npm update -g @lux-tech/opencode-ai
@@ -123,83 +130,57 @@ npm uninstall -g @lux-tech/opencode-ai
 У Windows також видаліть застарілий shim, якщо npm його залишив:
 
 ```powershell
-Remove-Item "$env:APPDATA\npm\opencode*" -Force -ErrorAction SilentlyContinue
+Remove-Item "$env:APPDATA\npm\opencodev2*" -Force -ErrorAction SilentlyContinue
 ```
 
 ---
 
 ## Співіснування з офіційним opencode
 
-**І форк (`@lux-tech/opencode-ai`), і офіційний opencode (`opencode-ai`)
-встановлюють бінарний файл з назвою `opencode`.** Глобальне встановлення одного
-після іншого тихо замінює попередній бінарний файл. Ви не можете тримати обидва
-як глобальний `opencode` одночасно.
+Форк (`@lux-tech/opencode-ai`) встановлює свою команду як **`opencodev2`**, а
+офіційний opencode (`opencode-ai`) встановлює `opencode`. Ці дві назви ніколи не
+конфліктують, і форк використовує власні каталоги даних
+(`~/.local/share/opencodev2`, `~/.config/opencodev2`, `~/.local/state/opencodev2`,
+`~/.cache/opencodev2`), тому **обидва можуть бути встановлені й використовуватися
+одночасно**.
+
+### Майстер міграції під час першого запуску
+
+Під час першого інтерактивного запуску `opencodev2` визначає, чи існує попередня
+інсталяція opencode (конфігурація, ключі API, сесії), і запитує, що робити:
+
+- **Import (рекомендовано)** — копіює вашу конфігурацію, облікові дані
+  (`auth.json`) та історію сесій (`opencode.db`) з оригінальних каталогів opencode
+  у каталоги opencodev2. Оригінальні дані залишаються недоторканими.
+- **Later** — починає з чистого аркуша й запитає знову під час наступного запуску.
+- **Never** — починає з порожніми даними opencodev2 (маркерний файл запобігає
+  подальшим запитанням).
+
+Безголові середовища (CI, скрипти) можуть примусово задати поведінку:
+
+```bash
+OPENCODEV2_MIGRATE=copy opencodev2 ...   # імпорт без взаємодії
+OPENCODEV2_MIGRATE=skip opencodev2 ...   # пропустити і позначити як вирішене
+```
+
+Майстер запускається лише один раз на каталог даних (маркер `.migrate-state`
+фіксує рішення). Після імпорту скопійована база даних належить opencodev2 —
+подальші міграції бази даних opencodev2 ніколи не зачіпають оригінальну
+інсталяцію opencode.
 
 ### Який варіант обрати?
 
 | Потреба | Використовуйте |
 |---|---|
-| MCP-сервери з автоматичним перепідключенням, hot reload, eval pipeline, memory consolidation, unified prompt | **Цей форк** (`@lux-tech/opencode-ai`) |
-| Офіційний, широко перевірений реліз | [офіційний opencode](https://github.com/anomalyco/opencode) (`opencode-ai`) |
+| MCP auto-reconnect, hot reload, eval pipeline, memory consolidation, unified prompt | **Цей форк** (`opencodev2`) |
+| Офіційний, широко перевірений реліз | [офіційний opencode](https://github.com/anomalyco/opencode) (`opencode`) |
 
-### Варіант A — одна глобальна установка + npx для іншої (рекомендовано)
-
-Встановіть форк глобально й запускайте офіційний opencode за потреби, не встановлюючи
-його глобально:
+Обидва оновлюються незалежно:
 
 ```bash
-npm install -g @lux-tech/opencode-ai   # форк стає глобальним `opencode`
-
-# Використовуйте офіційний opencode, не чіпаючи глобальну установку:
-npx -y opencode-ai@latest
+opencodev2 upgrade        # оновлює форк (@lux-tech/opencode-ai)
+opencode upgrade          # оновлює офіційний opencode (opencode-ai)
 ```
-
-Або навпаки — залиште офіційний opencode глобальним і запускайте форк за потреби:
-
-```bash
-npm install -g opencode-ai             # офіційний стає глобальним `opencode`
-npx -y @lux-tech/opencode-ai@latest    # запустіть форк за потреби
-```
-
-### Варіант B — обидві встановлені, одну перейменовано
-
-Встановіть обидва, а потім перейменуйте вторинний бінарний файл, щоб дві команди
-не конфліктували:
-
-```bash
-npm install -g @lux-tech/opencode-ai
-npm install -g opencode-ai             # перезаписує `opencode` — зробіть це другим
-```
-
-Потім у Windows перейменуйте бінарний файл форку на `opencode-fork.exe`:
-
-```powershell
-Copy-Item "$env:APPDATA\npm\opencode.exe" "$env:APPDATA\npm\opencode-fork.exe"
-opencode-fork --version   # форк
-opencode --version        # офіційний
-```
-
-У Linux / macOS:
-
-```bash
-cp "$(npm prefix -g)/bin/opencode" "$(npm prefix -g)/bin/opencode-fork"
-opencode-fork --version   # форк
-opencode --version        # офіційний
-```
-
-### Перевірте, який бінарний файл зараз активний
-
-```bash
-which opencode                # шлях до активного бінарного файлу
-opencode --version            # версія активного бінарного файлу
-opencode upgrade --help       # вбудований оновлювач завантажує @lux-tech/opencode-ai
-```
-
-> [!TIP]
-> Вбудований оновлювач (`opencode upgrade`) завжди завантажує
-> `@lux-tech/opencode-ai`. Якщо ви хочете, щоб **офіційний** opencode оновлювався
-> автоматично, запускайте його через `npx opencode-ai@latest` або офіційний
-> інсталятор (див. [opencode.ai](https://opencode.ai)).
 
 ---
 
@@ -268,6 +249,7 @@ OpenCode містить два вбудовані агенти, між яким�
 | **Unified Prompt** | Один `core.txt` замінює 10 промптів, специфічних для моделей — чистіше, менше, легше підтримувати |
 | **Continuous Improvement** | Методи — це живі документи: оновлюйте наявні skills із changelog замість створення дублікатів |
 | **Planner Integration** | Вбудований агент `planner` автоматично розкладає завдання перед виконанням |
+| **opencodev2 identity + migration** | Встановлюється як `opencodev2` із власними каталогами даних, тому співіснує з офіційним opencode; майстер першого запуску імпортує вашу конфігурацію, ключі API та історію сесій на запит |
 
 Нові функції версіонуються у [`CHANGELOG.md`](./CHANGELOG.md).
 

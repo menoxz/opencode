@@ -52,10 +52,14 @@
 
 ## Installazione (fork)
 
-Il fork è pubblicato su npm sotto lo scope `@lux-tech` e installa un binario chiamato
-`opencode`, esattamente come il pacchetto ufficiale. Questo significa che il fork
-**sostituisce** l'opencode ufficiale quando entrambi sono installati globalmente — leggi
-**coesistenza con l'opencode ufficiale** prima di installare.
+Il fork è pubblicato su npm sotto lo scope `@lux-tech` e installa il suo comando come
+**`opencodev2`** — un binario distinto che **coesiste** con l'`opencode` ufficiale
+(installato da `opencode-ai`). Mantiene inoltre le proprie directory di dati/configurazione
+(`~/.local/share/opencodev2`, `~/.config/opencodev2`), così entrambi i prodotti possono
+essere eseguiti fianco a fianco senza toccare i dati dell'altro. Al primo avvio interattivo,
+il fork offre di importare la configurazione opencode esistente, le chiavi API e la cronologia
+delle sessioni — l'installazione originale rimane intatta. Consulta
+**coesistenza con l'opencode ufficiale**.
 
 ### Consigliato: npm
 
@@ -66,50 +70,51 @@ npm install -g @lux-tech/opencode-ai
 Verifica:
 
 ```bash
-opencode --version
-# opencode v1.18.55 (oppure l'ultima versione pubblicata)
+opencodev2 --version
+# 1.18.59 (oppure l'ultima versione pubblicata)
 ```
 
 Il meta-pacchetto `@lux-tech/opencode-ai` scarica automaticamente il binario corretto
 per la tua piattaforma da una delle sue 12 dipendenze opzionali (vedi la
-**tabella dei binari per piattaforma**) e lo espone come binario `opencode`.
+**tabella dei binari per piattaforma**) e lo espone come comando `opencodev2`.
 
 ### Alternativa: Release GitHub (manuale)
 
 Gli archivi delle release sono pubblicati su
 [la pagina delle release](https://github.com/menoxz/opencode/releases) come `.tar.gz` (Linux)
-e `.zip` (macOS / Windows). Ogni archivio contiene il binario `opencode` (o `opencode.exe`)
-alla sua radice.
+e `.zip` (macOS / Windows). Ogni archivio contiene il binario CLI compilato alla sua radice —
+rinominalo in `opencodev2` durante l'installazione manuale così non entrerà mai in conflitto
+con il binario `opencode` ufficiale.
 
 ```bash
 # Esempio: Linux x64
-VERSION=v1.18.55
+VERSION=v1.18.59
 curl -fsSL -o opencode.tar.gz "https://github.com/menoxz/opencode/releases/download/$VERSION/opencode-linux-x64.tar.gz"
 tar -xzf opencode.tar.gz
-sudo mv opencode /usr/local/bin/opencode-fork   # rinominare per non sovrascrivere il binario ufficiale
+sudo mv opencode /usr/local/bin/opencodev2   # nome distinto, nessun conflitto con il binario ufficiale
 ```
 
 ```powershell
 # Esempio: Windows x64 (PowerShell)
-$VERSION = "v1.18.55"
+$VERSION = "v1.18.59"
 Invoke-WebRequest -Uri "https://github.com/menoxz/opencode/releases/download/$VERSION/opencode-windows-x64.zip" -OutFile opencode.zip
 Expand-Archive -Path opencode.zip -DestinationPath . -Force
-Move-Item .\opencode.exe "$env:LOCALAPPDATA\Microsoft\WindowsApps\opencode-fork.exe" -Force
+Move-Item .\opencode.exe "$env:LOCALAPPDATA\Microsoft\WindowsApps\opencodev2.exe" -Force
 ```
 
 ### Posizione del binario
 
 | Metodo di installazione | Percorso del binario |
 |---|---|
-| npm (Windows) | `%APPDATA%\npm\opencode.exe` |
-| npm (Linux / macOS) | `$(npm prefix -g)/bin/opencode` |
+| npm (Windows) | `%APPDATA%\npm\opencodev2.exe` |
+| npm (Linux / macOS) | `$(npm prefix -g)/bin/opencodev2` |
 | Release GitHub (manuale) | dove l'hai posizionato |
 
 ### Aggiornamento
 
 ```bash
 # Aggiornatore integrato (recupera l'ultima release di @lux-tech/opencode-ai)
-opencode upgrade
+opencodev2 upgrade
 
 # Oppure tramite npm
 npm update -g @lux-tech/opencode-ai
@@ -124,83 +129,55 @@ npm uninstall -g @lux-tech/opencode-ai
 Su Windows, rimuovi anche lo shim obsoleto se npm ne ha lasciato uno:
 
 ```powershell
-Remove-Item "$env:APPDATA\npm\opencode*" -Force -ErrorAction SilentlyContinue
+Remove-Item "$env:APPDATA\npm\opencodev2*" -Force -ErrorAction SilentlyContinue
 ```
 
 ---
 
 ## Coesistenza con l'opencode ufficiale
 
-**Sia il fork (`@lux-tech/opencode-ai`) che l'opencode ufficiale (`opencode-ai`)
-installano un binario chiamato `opencode`.** Installare uno globalmente dopo l'altro
-sostituisce silenziosamente il binario precedente. Non puoi mantenere entrambi come
-`opencode` globale allo stesso tempo.
+Il fork (`@lux-tech/opencode-ai`) installa il suo comando come **`opencodev2`**, mentre
+l'opencode ufficiale (`opencode-ai`) installa `opencode`. I due nomi non entrano mai in
+conflitto e il fork usa le proprie directory di dati
+(`~/.local/share/opencodev2`, `~/.config/opencodev2`, `~/.local/state/opencodev2`,
+`~/.cache/opencodev2`), quindi **entrambi possono essere installati e usati contemporaneamente**.
+
+### Procedura guidata di migrazione al primo avvio
+
+Al primo avvio interattivo, `opencodev2` rileva se esiste una precedente installazione di
+opencode (configurazione, chiavi API, sessioni) e chiede cosa fare:
+
+- **Importa (consigliato)** — copia la configurazione, le credenziali (`auth.json`) e la
+  cronologia delle sessioni (`opencode.db`) dalle directory opencode originali alle
+  directory opencodev2. I dati originali rimangono intatti.
+- **Più tardi** — parte da zero e richiede di nuovo al prossimo avvio.
+- **Mai** — parte con dati opencodev2 vuoti (un file marcatore impedisce ulteriori richieste).
+
+Gli ambienti senza interfaccia (CI, script) possono forzare il comportamento:
+
+```bash
+OPENCODEV2_MIGRATE=copy opencodev2 ...   # importa senza interazione
+OPENCODEV2_MIGRATE=skip opencodev2 ...   # salta e segna come deciso
+```
+
+La procedura guidata viene eseguita una sola volta per directory di dati (un marcatore
+`.migrate-state` registra la decisione). Dopo un'importazione, il database copiato appartiene
+a opencodev2 — le successive migrazioni del database opencodev2 non toccano mai
+l'installazione opencode originale.
 
 ### Quale dovresti usare?
 
 | Esigenza | Usa |
 |---|---|
-| Server MCP con riconnessione automatica, hot reload, eval pipeline, memory consolidation, unified prompt | **Questo fork** (`@lux-tech/opencode-ai`) |
-| La release ufficiale, ampiamente validata | [opencode ufficiale](https://github.com/anomalyco/opencode) (`opencode-ai`) |
+| MCP auto-reconnect, hot reload, eval pipeline, memory consolidation, unified prompt | **Questo fork** (`opencodev2`) |
+| La release ufficiale, ampiamente validata | [opencode ufficiale](https://github.com/anomalyco/opencode) (`opencode`) |
 
-### Opzione A — un'installazione globale + `npx` per l'altra (consigliata)
-
-Installa il fork globalmente ed esegui l'opencode ufficiale on demand senza installarlo
-globalmente:
+Entrambi restano aggiornati indipendentemente:
 
 ```bash
-npm install -g @lux-tech/opencode-ai   # il fork diventa l'`opencode` globale
-
-# Usa l'opencode ufficiale senza toccare l'installazione globale:
-npx -y opencode-ai@latest
+opencodev2 upgrade        # aggiorna il fork (@lux-tech/opencode-ai)
+opencode upgrade          # aggiorna l'opencode ufficiale (opencode-ai)
 ```
-
-O al contrario — tieni l'opencode ufficiale globale ed esegui il fork on demand:
-
-```bash
-npm install -g opencode-ai             # l'ufficiale diventa l'`opencode` globale
-npx -y @lux-tech/opencode-ai@latest    # esegui il fork on demand
-```
-
-### Opzione B — entrambi installati, uno rinominato
-
-Installa entrambi, poi rinomina il binario secondario in modo che i due comandi non
-entrino in conflitto:
-
-```bash
-npm install -g @lux-tech/opencode-ai
-npm install -g opencode-ai             # sovrascrive `opencode` — fallo per secondo
-```
-
-Poi su Windows rinomina il binario del fork in `opencode-fork.exe`:
-
-```powershell
-Copy-Item "$env:APPDATA\npm\opencode.exe" "$env:APPDATA\npm\opencode-fork.exe"
-opencode-fork --version   # fork
-opencode --version        # ufficiale
-```
-
-Su Linux / macOS:
-
-```bash
-cp "$(npm prefix -g)/bin/opencode" "$(npm prefix -g)/bin/opencode-fork"
-opencode-fork --version   # fork
-opencode --version        # ufficiale
-```
-
-### Verifica quale binario è attualmente attivo
-
-```bash
-which opencode                # percorso del binario attivo
-opencode --version            # versione del binario attivo
-opencode upgrade --help       # l'aggiornatore integrato punta a @lux-tech/opencode-ai
-```
-
-> [!TIP]
-> L'aggiornatore integrato (`opencode upgrade`) recupera sempre `@lux-tech/opencode-ai`.
-> Se vuoi che l'opencode **ufficiale** si aggiorni automaticamente, eseguilo tramite
-> `npx opencode-ai@latest` o l'installer ufficiale (vedi
-> [opencode.ai](https://opencode.ai)).
 
 ---
 
@@ -268,6 +245,7 @@ Questo fork (`menoxz/opencode`) aggiunge le seguenti funzionalità rispetto a up
 | **Unified Prompt** | Un unico `core.txt` sostituisce 10 prompt specifici per modello — più pulito, più leggero, più facile da mantenere |
 | **Continuous Improvement** | I metodi sono documenti viventi — aggiorna gli skill esistenti con un changelog invece di creare duplicati |
 | **Planner Integration** | L'agente `planner` integrato scompone automaticamente le attività prima dell'esecuzione |
+| **Identità opencodev2 + migrazione** | Si installa come `opencodev2` con le proprie directory di dati, quindi coesiste con l'opencode ufficiale; una procedura guidata al primo avvio importa configurazione, chiavi API e cronologia delle sessioni su richiesta |
 
 Le nuove funzionalità sono versionate in [`CHANGELOG.md`](./CHANGELOG.md).
 

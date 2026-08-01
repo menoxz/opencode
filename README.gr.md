@@ -52,10 +52,16 @@
 
 ## Εγκατάσταση (fork)
 
-Το fork δημοσιεύεται στο npm υπό το scope `@lux-tech` και εγκαθιστά ένα εκτελέσιμο
-αρχείο με όνομα `opencode`, ακριβώς όπως το επίσημο πακέτο. Αυτό σημαίνει ότι το
-fork **αντικαθιστά** το επίσημο opencode όταν και τα δύο είναι εγκατεστημένα
-καθολικά — διαβάστε τη **συνύπαρξη με το επίσημο opencode** πριν από την εγκατάσταση.
+Το fork δημοσιεύεται στο npm υπό το scope `@lux-tech` και εγκαθιστά την εντολή του
+ως **`opencodev2`** — ένα ξεχωριστό εκτελέσιμο που **συνυπάρχει** με το επίσημο
+`opencode` (εγκαθίσταται από το `opencode-ai`). Διατηρεί επίσης δικούς του
+καταλόγους δεδομένων και διαμόρφωσης (`~/.local/share/opencodev2`,
+`~/.config/opencodev2`), ώστε και τα δύο προϊόντα να μπορούν να εκτελούνται το ένα
+δίπλα στο άλλο χωρίς να αγγίζουν τα δεδομένα του άλλου. Κατά την πρώτη διαδραστική
+εκκίνηση, το fork προσφέρει να εισαγάγει την υπάρχουσα διαμόρφωση opencode, τα
+κλειδιά API και το ιστορικό συνεδριών — η αρχική εγκατάσταση παραμένει ανέπαφη.
+Δείτε τη
+[συνύπαρξη με το επίσημο opencode](#συνύπαρξη-με-το-επίσημο-opencode).
 
 ### Συνιστώμενο: npm
 
@@ -66,51 +72,52 @@ npm install -g @lux-tech/opencode-ai
 Επαλήθευση:
 
 ```bash
-opencode --version
-# opencode v1.18.55 (ή η τελευταία δημοσιευμένη έκδοση)
+opencodev2 --version
+# 1.18.59 (ή η τελευταία δημοσιευμένη έκδοση)
 ```
 
 Το meta-πακέτο `@lux-tech/opencode-ai` κατεβάζει αυτόματα το σωστό εκτελέσιμο
 αρχείο για την πλατφόρμα σας από μία από τις 12 προαιρετικές εξαρτήσεις (δείτε
-τον **πίνακα εκτελέσιμων για πλατφόρμες**) και το εκθέτει ως το εκτελέσιμο
-αρχείο `opencode`.
+τον **πίνακα εκτελέσιμων για πλατφόρμες**) και το εκθέτει ως την εντολή
+`opencodev2`.
 
 ### Εναλλακτική: GitHub Releases (χειροκίνητα)
 
 Τα αρχεία των releases δημοσιεύονται στη
 [σελίδα releases](https://github.com/menoxz/opencode/releases) ως `.tar.gz`
-(Linux) και `.zip` (macOS / Windows). Κάθε αρχείο περιέχει το εκτελέσιμο
-`opencode` (ή `opencode.exe`) στη ρίζα του.
+(Linux) και `.zip` (macOS / Windows). Κάθε αρχείο περιέχει το μεταγλωττισμένο
+εκτελέσιμο CLI στη ρίζα του — μετονομάστε το σε `opencodev2` κατά τη χειροκίνητη
+εγκατάσταση, ώστε να μην συγκρούεται ποτέ με το επίσημο εκτελέσιμο `opencode`.
 
 ```bash
 # Παράδειγμα: Linux x64
-VERSION=v1.18.55
+VERSION=v1.18.59
 curl -fsSL -o opencode.tar.gz "https://github.com/menoxz/opencode/releases/download/$VERSION/opencode-linux-x64.tar.gz"
 tar -xzf opencode.tar.gz
-sudo mv opencode /usr/local/bin/opencode-fork   # μετονομασία για να μην αντικατασταθεί το επίσημο εκτελέσιμο
+sudo mv opencode /usr/local/bin/opencodev2   # ξεχωριστό όνομα, χωρίς σύγκρουση με το επίσημο εκτελέσιμο
 ```
 
 ```powershell
 # Παράδειγμα: Windows x64 (PowerShell)
-$VERSION = "v1.18.55"
+$VERSION = "v1.18.59"
 Invoke-WebRequest -Uri "https://github.com/menoxz/opencode/releases/download/$VERSION/opencode-windows-x64.zip" -OutFile opencode.zip
 Expand-Archive -Path opencode.zip -DestinationPath . -Force
-Move-Item .\opencode.exe "$env:LOCALAPPDATA\Microsoft\WindowsApps\opencode-fork.exe" -Force
+Move-Item .\opencode.exe "$env:LOCALAPPDATA\Microsoft\WindowsApps\opencodev2.exe" -Force
 ```
 
 ### Θέση του εκτελέσιμου
 
 | Μέθοδος εγκατάστασης | Διαδρομή εκτελέσιμου |
 |---|---|
-| npm (Windows) | `%APPDATA%\npm\opencode.exe` |
-| npm (Linux / macOS) | `$(npm prefix -g)/bin/opencode` |
+| npm (Windows) | `%APPDATA%\npm\opencodev2.exe` |
+| npm (Linux / macOS) | `$(npm prefix -g)/bin/opencodev2` |
 | GitHub release (χειροκίνητα) | όπου το τοποθετήσατε |
 
 ### Ενημέρωση
 
 ```bash
 # Ενσωματωμένο εργαλείο ενημέρωσης (ανακτά το τελευταίο release του @lux-tech/opencode-ai)
-opencode upgrade
+opencodev2 upgrade
 
 # Ή μέσω npm
 npm update -g @lux-tech/opencode-ai
@@ -125,85 +132,59 @@ npm uninstall -g @lux-tech/opencode-ai
 Στα Windows, αφαιρέστε επίσης το ξεπερασμένο shim αν το npm άφησε ένα:
 
 ```powershell
-Remove-Item "$env:APPDATA\npm\opencode*" -Force -ErrorAction SilentlyContinue
+Remove-Item "$env:APPDATA\npm\opencodev2*" -Force -ErrorAction SilentlyContinue
 ```
 
 ---
 
 ## Συνύπαρξη με το επίσημο opencode
 
-**Τόσο το fork (`@lux-tech/opencode-ai`) όσο και το επίσημο opencode
-(`opencode-ai`) εγκαθιστούν ένα εκτελέσιμο αρχείο με όνομα `opencode`.**
-Η καθολική εγκατάσταση του ενός μετά το άλλο αντικαθιστά σιωπηλά το προηγούμενο
-εκτελέσιμο. Δεν μπορείτε να έχετε και τα δύο ως το καθολικό `opencode`
-ταυτόχρονα.
+Το fork (`@lux-tech/opencode-ai`) εγκαθιστά την εντολή του ως **`opencodev2`**, ενώ
+το επίσημο opencode (`opencode-ai`) εγκαθιστά το `opencode`. Τα δύο ονόματα δεν
+συγκρούονται ποτέ και το fork χρησιμοποιεί δικούς του καταλόγους δεδομένων
+(`~/.local/share/opencodev2`, `~/.config/opencodev2`, `~/.local/state/opencodev2`,
+`~/.cache/opencodev2`), οπότε **και τα δύο μπορούν να εγκατασταθούν και να
+χρησιμοποιηθούν ταυτόχρονα**.
+
+### Οδηγός μετεγκατάστασης κατά την πρώτη εκτέλεση
+
+Κατά την πρώτη διαδραστική εκκίνηση, το `opencodev2` εντοπίζει αν υπάρχει
+προηγούμενη εγκατάσταση opencode (διαμόρφωση, κλειδιά API, συνεδρίες) και ρωτά
+τι να κάνει:
+
+- **Import (συνιστάται)** — αντιγράφει τη διαμόρφωση, τα διαπιστευτήριά σας
+  (`auth.json`) και το ιστορικό συνεδριών (`opencode.db`) από τους αρχικούς
+  καταλόγους opencode στους καταλόγους opencodev2. Τα αρχικά δεδομένα παραμένουν
+  ανέπαφα.
+- **Later** — ξεκινά από το μηδέν και ρωτά ξανά στην επόμενη εκκίνηση.
+- **Never** — ξεκινά με κενά δεδομένα opencodev2 (ένα αρχείο δείκτη αποτρέπει
+  περαιτέρω ερωτήσεις).
+
+Τα headless περιβάλλοντα (CI, σενάρια) μπορούν να επιβάλουν τη συμπεριφορά:
+
+```bash
+OPENCODEV2_MIGRATE=copy opencodev2 ...   # εισαγωγή χωρίς αλληλεπίδραση
+OPENCODEV2_MIGRATE=skip opencodev2 ...   # παράλειψη και σήμανση ως αποφασισμένο
+```
+
+Ο οδηγός εκτελείται μόνο μία φορά ανά κατάλογο δεδομένων (ο δείκτης `.migrate-state`
+καταγράφει την απόφαση). Μετά την εισαγωγή, η αντιγραμμένη βάση δεδομένων ανήκει
+στο opencodev2 — οι επόμενες μεταναστεύσεις βάσης δεδομένων του opencodev2 δεν
+αγγίζουν ποτέ την αρχική εγκατάσταση opencode.
 
 ### Ποιο να χρησιμοποιήσετε;
 
 | Ανάγκη | Χρήση |
 |---|---|
-| MCP servers με αυτόματη επανασύνδεση, hot reload, eval pipeline, memory consolidation, unified prompt | **Αυτό το fork** (`@lux-tech/opencode-ai`) |
-| Η επίσημη, ευρέως δοκιμασμένη έκδοση | [επίσημο opencode](https://github.com/anomalyco/opencode) (`opencode-ai`) |
+| MCP auto-reconnect, hot reload, eval pipeline, memory consolidation, unified prompt | **Αυτό το fork** (`opencodev2`) |
+| Η επίσημη, ευρέως δοκιμασμένη έκδοση | [επίσημο opencode](https://github.com/anomalyco/opencode) (`opencode`) |
 
-### Επιλογή A — μία καθολική εγκατάσταση + `npx` για το άλλο (συνιστάται)
-
-Εγκαταστήστε το fork καθολικά και εκτελέστε το επίσημο opencode κατ' απαίτηση
-χωρίς να το εγκαταστήσετε καθολικά:
+Και τα δύο ενημερώνονται ανεξάρτητα:
 
 ```bash
-npm install -g @lux-tech/opencode-ai   # το fork γίνεται το καθολικό `opencode`
-
-# Χρησιμοποιήστε το επίσημο opencode χωρίς να πειράξετε την καθολική εγκατάσταση:
-npx -y opencode-ai@latest
+opencodev2 upgrade        # ενημερώνει το fork (@lux-tech/opencode-ai)
+opencode upgrade          # ενημερώνει το επίσημο opencode (opencode-ai)
 ```
-
-Ή το αντίστροφο — κρατήστε το επίσημο opencode καθολικό και εκτελέστε το fork
-κατ' απαίτηση:
-
-```bash
-npm install -g opencode-ai             # το επίσημο γίνεται το καθολικό `opencode`
-npx -y @lux-tech/opencode-ai@latest    # εκτέλεση του fork κατ' απαίτηση
-```
-
-### Επιλογή B — και τα δύο εγκατεστημένα, το ένα μετονομασμένο
-
-Εγκαταστήστε και τα δύο και μετονομάστε το δευτερεύον εκτελέσιμο ώστε οι δύο
-εντολές να μην συγκρούονται:
-
-```bash
-npm install -g @lux-tech/opencode-ai
-npm install -g opencode-ai             # αντικαθιστά το `opencode` — κάντε το δεύτερο
-```
-
-Στη συνέχεια, στα Windows μετονομάστε το εκτελέσιμο του fork σε `opencode-fork.exe`:
-
-```powershell
-Copy-Item "$env:APPDATA\npm\opencode.exe" "$env:APPDATA\npm\opencode-fork.exe"
-opencode-fork --version   # fork
-opencode --version        # επίσημο
-```
-
-Σε Linux / macOS:
-
-```bash
-cp "$(npm prefix -g)/bin/opencode" "$(npm prefix -g)/bin/opencode-fork"
-opencode-fork --version   # fork
-opencode --version        # επίσημο
-```
-
-### Έλεγχος ποιο εκτελέσιμο είναι ενεργό
-
-```bash
-which opencode                # διαδρομή του ενεργού εκτελέσιμου
-opencode --version            # έκδοση του ενεργού εκτελέσιμου
-opencode upgrade --help       # το ενσωματωμένο εργαλείο ενημέρωσης στοχεύει το @lux-tech/opencode-ai
-```
-
-> [!TIP]
-> Το ενσωματωμένο εργαλείο ενημέρωσης (`opencode upgrade`) ανακτά πάντα το
-> `@lux-tech/opencode-ai`. Αν θέλετε το **επίσημο** opencode να ενημερώνεται
-> αυτόματα, εκτελέστε το μέσω `npx opencode-ai@latest` ή του επίσημου
-> εγκαταστάτη (δείτε το [opencode.ai](https://opencode.ai)).
 
 ---
 
@@ -275,6 +256,7 @@ opencode upgrade --help       # το ενσωματωμένο εργαλείο �
 | **Unified Prompt** | Ένα μόνο `core.txt` αντικαθιστά 10 μοντέλο-ειδικά prompts — καθαρότερο, μικρότερο, ευκολότερο στη συντήρηση |
 | **Continuous Improvement** | Οι μέθοδοι είναι ζωντανά έγγραφα — ενημερώστε τα υπάρχοντα skills με changelog αντί να δημιουργείτε διπλότυπα |
 | **Planner Integration** | Ο ενσωματωμένος πράκτορας `planner` αναλύει αυτόματα τις εργασίες πριν από την εκτέλεση |
+| **opencodev2 identity + migration** | Εγκαθίσταται ως `opencodev2` με δικούς του καταλόγους δεδομένων, ώστε να συνυπάρχει με το επίσημο opencode· ένας οδηγός πρώτης εκτέλεσης εισάγει τη διαμόρφωση, τα κλειδιά API και το ιστορικό συνεδριών κατόπιν αιτήματος |
 
 Οι νέες δυνατότητες εκδίδονται με αριθμούς έκδοσης στο [`CHANGELOG.md`](./CHANGELOG.md).
 

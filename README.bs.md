@@ -52,10 +52,15 @@
 
 ## Instalacija (fork)
 
-Fork je objavljen na npm pod scope-om `@lux-tech` i instalira binarni fajl
-pod nazivom `opencode`, potpuno kao i zvanični paket. To znači da fork
-**zamjenjuje** zvanični opencode kada su oba instalirana globalno — pročitaj
-**koegzistenciju sa zvaničnim opencode** prije instalacije.
+Fork je objavljen na npm pod scope-om `@lux-tech` i instalira svoju komandu kao
+**`opencodev2`** — zaseban binarni fajl koji **koegzistira** sa zvaničnim
+`opencode` (instaliranim iz `opencode-ai`). Također koristi sopstvene direktorijume
+za podatke i konfiguraciju (`~/.local/share/opencodev2`, `~/.config/opencodev2`),
+tako da oba proizvoda mogu raditi jedan pored drugog bez diranja podataka onog
+drugog. Pri prvom interaktivnom pokretanju, fork nudi da uveze vašu postojeću
+opencode konfiguraciju, API ključeve i historiju sesija — originalna instalacija
+ostaje netaknuta. Pogledaj
+[koegzistenciju sa zvaničnim opencode](#koegzistencija-sa-zvaničnim-opencode).
 
 ### Preporučeno: npm
 
@@ -66,50 +71,51 @@ npm install -g @lux-tech/opencode-ai
 Provjera:
 
 ```bash
-opencode --version
-# opencode v1.18.55 (ili najnovija objavljena verzija)
+opencodev2 --version
+# 1.18.59 (ili najnovija objavljena verzija)
 ```
 
 Meta-paket `@lux-tech/opencode-ai` automatski preuzima ispravan binarni fajl za
 vašu platformu iz jedne od 12 opcionalnih zavisnosti (pogledaj **tabelu binarnih
-fajlova za platforme**) i izlaže ga kao `opencode` binarni fajl.
+fajlova za platforme**) i izlaže ga kao `opencodev2` komandu.
 
 ### Alternativa: GitHub Releases (ručno)
 
 Arhive izdanja se objavljuju na
 [stranici izdanja](https://github.com/menoxz/opencode/releases) kao `.tar.gz`
-(Linux) i `.zip` (macOS / Windows). Svaka arhiva sadrži `opencode` (ili
-`opencode.exe`) binarni fajl u svom korijenu.
+(Linux) i `.zip` (macOS / Windows). Svaka arhiva sadrži kompajlirani CLI binarni
+fajl u svom korijenu — preimenujte ga u `opencodev2` prilikom ručne instalacije
+kako se nikada ne bi sukobio sa zvaničnim `opencode` binarnim fajlom.
 
 ```bash
 # Primjer: Linux x64
-VERSION=v1.18.55
+VERSION=v1.18.59
 curl -fsSL -o opencode.tar.gz "https://github.com/menoxz/opencode/releases/download/$VERSION/opencode-linux-x64.tar.gz"
 tar -xzf opencode.tar.gz
-sudo mv opencode /usr/local/bin/opencode-fork   # preimenovanje da se ne prepiše zvanični binarni fajl
+sudo mv opencode /usr/local/bin/opencodev2   # zasebno ime, bez sukoba sa zvaničnim binarnim fajlom
 ```
 
 ```powershell
 # Primjer: Windows x64 (PowerShell)
-$VERSION = "v1.18.55"
+$VERSION = "v1.18.59"
 Invoke-WebRequest -Uri "https://github.com/menoxz/opencode/releases/download/$VERSION/opencode-windows-x64.zip" -OutFile opencode.zip
 Expand-Archive -Path opencode.zip -DestinationPath . -Force
-Move-Item .\opencode.exe "$env:LOCALAPPDATA\Microsoft\WindowsApps\opencode-fork.exe" -Force
+Move-Item .\opencode.exe "$env:LOCALAPPDATA\Microsoft\WindowsApps\opencodev2.exe" -Force
 ```
 
 ### Lokacija binarnog fajla
 
 | Metoda instalacije | Putanja binarnog fajla |
 |---|---|
-| npm (Windows) | `%APPDATA%\npm\opencode.exe` |
-| npm (Linux / macOS) | `$(npm prefix -g)/bin/opencode` |
+| npm (Windows) | `%APPDATA%\npm\opencodev2.exe` |
+| npm (Linux / macOS) | `$(npm prefix -g)/bin/opencodev2` |
 | GitHub release (ručno) | gdje god ste ga stavili |
 
 ### Ažuriranje
 
 ```bash
 # Ugrađeni alat za ažuriranje (preuzima najnovije @lux-tech/opencode-ai izdanje)
-opencode upgrade
+opencodev2 upgrade
 
 # Ili putem npm-a
 npm update -g @lux-tech/opencode-ai
@@ -124,83 +130,55 @@ npm uninstall -g @lux-tech/opencode-ai
 Na Windows-u, uklonite i zastarjeli shim ako ga je npm ostavio:
 
 ```powershell
-Remove-Item "$env:APPDATA\npm\opencode*" -Force -ErrorAction SilentlyContinue
+Remove-Item "$env:APPDATA\npm\opencodev2*" -Force -ErrorAction SilentlyContinue
 ```
 
 ---
 
 ## Koegzistencija sa zvaničnim opencode
 
-**I fork (`@lux-tech/opencode-ai`) i zvanični opencode (`opencode-ai`) instaliraju
-binarni fajl pod nazivom `opencode`.** Globalna instalacija jednog nakon drugog
-tiho zamjenjuje prethodni binarni fajl. Ne možete imati oba kao globalni
-`opencode` istovremeno.
+Fork (`@lux-tech/opencode-ai`) instalira svoju komandu kao **`opencodev2`**, dok
+zvanični opencode (`opencode-ai`) instalira `opencode`. Ova dva imena se nikada ne
+sukobljavaju, a fork koristi sopstvene direktorijume za podatke
+(`~/.local/share/opencodev2`, `~/.config/opencodev2`, `~/.local/state/opencodev2`,
+`~/.cache/opencodev2`), tako da **oba mogu biti instalirana i korištena istovremeno**.
+
+### Čarobnjak za migraciju pri prvom pokretanju
+
+Pri prvom interaktivnom pokretanju, `opencodev2` detektuje da li postoji prethodna
+opencode instalacija (konfiguracija, API ključevi, sesije) i pita šta učiniti:
+
+- **Import (preporučeno)** — kopira vašu konfiguraciju, vjerodajnice (`auth.json`)
+  i historiju sesija (`opencode.db`) iz originalnih opencode direktorijuma u
+  opencodev2 direktorijume. Originalni podaci ostaju netaknuti.
+- **Later** — počinje od nule i ponovo pita pri sljedećem pokretanju.
+- **Never** — počinje sa praznim opencodev2 podacima (marker fajl sprječava
+  daljnja pitanja).
+
+Bezglava okruženja (CI, skripte) mogu nametnuti ponašanje:
+
+```bash
+OPENCODEV2_MIGRATE=copy opencodev2 ...   # uvoz bez interakcije
+OPENCODEV2_MIGRATE=skip opencodev2 ...   # preskoči i označi kao riješeno
+```
+
+Čarobnjak se pokreće samo jednom po direktorijumu podataka (marker `.migrate-state`
+bilježi odluku). Nakon uvoza, kopirana baza podataka pripada opencodev2 — kasnije
+migracije baze podataka opencodev2 nikada ne diraju originalnu opencode instalaciju.
 
 ### Koji koristiti?
 
 | Potreba | Koristi |
 |---|---|
-| MCP serveri sa automatskim ponovnim povezivanjem, hot reload, eval pipeline, memory consolidation, unified prompt | **Ovaj fork** (`@lux-tech/opencode-ai`) |
-| Zvanično, široko validirano izdanje | [zvanični opencode](https://github.com/anomalyco/opencode) (`opencode-ai`) |
+| MCP auto-reconnect, hot reload, eval pipeline, memory consolidation, unified prompt | **Ovaj fork** (`opencodev2`) |
+| Zvanično, široko validirano izdanje | [zvanični opencode](https://github.com/anomalyco/opencode) (`opencode`) |
 
-### Opcija A — jedna globalna instalacija + `npx` za drugu (preporučeno)
-
-Instalirajte fork globalno i pokrećite zvanični opencode po potrebi bez
-globalne instalacije:
+Oba se ažuriraju nezavisno:
 
 ```bash
-npm install -g @lux-tech/opencode-ai   # fork postaje globalni `opencode`
-
-# Koristi zvanični opencode bez diranja globalne instalacije:
-npx -y opencode-ai@latest
+opencodev2 upgrade        # ažurira fork (@lux-tech/opencode-ai)
+opencode upgrade          # ažurira zvanični opencode (opencode-ai)
 ```
-
-Ili obrnuto — zadržite zvanični opencode globalnim i pokrećite fork po potrebi:
-
-```bash
-npm install -g opencode-ai             # zvanični postaje globalni `opencode`
-npx -y @lux-tech/opencode-ai@latest    # pokretanje forka po potrebi
-```
-
-### Opcija B — oba instalirana, jedno preimenovano
-
-Instalirajte oba, zatim preimenujte sekundarni binarni fajl da se dvije komande
-ne sukobe:
-
-```bash
-npm install -g @lux-tech/opencode-ai
-npm install -g opencode-ai             # prepisuje `opencode` — uradite ovo drugo
-```
-
-Zatim na Windows-u preimenujte fork binarni fajl u `opencode-fork.exe`:
-
-```powershell
-Copy-Item "$env:APPDATA\npm\opencode.exe" "$env:APPDATA\npm\opencode-fork.exe"
-opencode-fork --version   # fork
-opencode --version        # zvanični
-```
-
-Na Linux / macOS:
-
-```bash
-cp "$(npm prefix -g)/bin/opencode" "$(npm prefix -g)/bin/opencode-fork"
-opencode-fork --version   # fork
-opencode --version        # zvanični
-```
-
-### Provjeri koji je binarni fajl trenutno aktivan
-
-```bash
-which opencode                # putanja aktivnog binarnog fajla
-opencode --version            # verzija aktivnog binarnog fajla
-opencode upgrade --help       # ugrađeni alat za ažuriranje cilja @lux-tech/opencode-ai
-```
-
-> [!TIP]
-> Ugrađeni alat za ažuriranje (`opencode upgrade`) uvijek preuzima
-> `@lux-tech/opencode-ai`. Ako želite da se **zvanični** opencode automatski
-> ažurira, pokrećite ga preko `npx opencode-ai@latest` ili zvaničnog
-> instalatera (vidi [opencode.ai](https://opencode.ai)).
 
 ---
 
@@ -270,6 +248,7 @@ Ovaj fork (`menoxz/opencode`) dodaje sljedeće funkcije na vrh upstream-a:
 | **Unified Prompt** | Jedan `core.txt` zamjenjuje 10 model-specifičnih promptova — čišće, manje, lakše za održavanje |
 | **Continuous Improvement** | Metode su živi dokumenti — ažurirajte postojeće skill-ove sa changelog-om umjesto kreiranja duplikata |
 | **Planner Integration** | Ugrađeni `planner` agent automatski razlaže zadatke prije izvršenja |
+| **opencodev2 identity + migration** | Instalira se kao `opencodev2` sa sopstvenim direktorijumima podataka, tako da koegzistira sa zvaničnim opencode; čarobnjak prvog pokretanja uvozi vašu konfiguraciju, API ključeve i historiju sesija na zahtjev |
 
 Nove funkcije su verzionirane u [`CHANGELOG.md`](./CHANGELOG.md).
 
