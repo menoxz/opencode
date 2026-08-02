@@ -1,5 +1,6 @@
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { Effect } from "effect"
+import { mkdirSync } from "node:fs"
 import path from "path"
 
 const preserveExerciseGlobalRoot = !!process.env.OPENCODE_HTTPAPI_EXERCISE_GLOBAL
@@ -13,6 +14,13 @@ process.env.XDG_CACHE_HOME = path.join(exerciseGlobalRoot, "cache")
 process.env.OPENCODE_DISABLE_SHARE = "true"
 export const exerciseConfigDirectory = path.join(exerciseGlobalRoot, "config", "opencode")
 export const exerciseDataDirectory = path.join(exerciseGlobalRoot, "data", "opencode")
+
+// Ensure the global data/config directories exist up front. The auth scenarios
+// read/write auth.json under data/opencode, and the effect mode does not start
+// the server first (unlike coverage/auth modes), so without this the seed or
+// the post-call check hits ENOENT.
+mkdirSync(exerciseDataDirectory, { recursive: true })
+mkdirSync(exerciseConfigDirectory, { recursive: true })
 
 const preserveExerciseDatabase = !!process.env.OPENCODE_HTTPAPI_EXERCISE_DB
 export const exerciseDatabasePath =
