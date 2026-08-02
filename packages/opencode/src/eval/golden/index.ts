@@ -57,14 +57,18 @@ export interface Measurement {
   sha256: string
 }
 
-/** Measure one artifact. Pure with respect to its bytes: same input, same output. */
+/** Measure one artifact. Pure with respect to its normalized bytes: same
+ * input, same output. Line endings are normalized to LF before hashing so a
+ * CRLF git checkout (Windows) cannot drift the sha256 from the LF baseline
+ * blessed on a POSIX runner. The validators also read the LF-normalized text. */
 export function measure(artifact: Artifact): Measurement {
   const bytes = readFileSync(artifact.absolutePath)
-  const findings = VALIDATORS[artifact.kind](bytes.toString("utf-8"))
+  const normalized = bytes.toString("utf-8").replace(/\r\n/g, "\n")
+  const findings = VALIDATORS[artifact.kind](normalized)
   return {
     findings,
     fingerprint: toFingerprint(findings),
-    sha256: createHash("sha256").update(bytes).digest("hex"),
+    sha256: createHash("sha256").update(normalized, "utf-8").digest("hex"),
   }
 }
 
