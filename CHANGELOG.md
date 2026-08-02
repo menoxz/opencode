@@ -14,6 +14,24 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 ### Fixed
 
 ### Removed
+
+## [v1.18.66] - 2026-08-02
+
+### Added
+- **File d'attente de prompts correcte** : un prompt soumis pendant qu'un agent travaille est désormais exécuté par un **run frais** après que le run courant s'est entièrement terminé (idle) — il n'est plus absorbé dans le tour suivant du même run. Chaque run s'ancre au plus ancien prompt non traité (FIFO) et ignore les prompts plus récents via une vue bornée (`src/session/prompt-queue.ts` : `pendingUserID`/`boundToRun`/`turnClosed`) ; la compaction auto et les subtasks restent fonctionnels. Tests unitaires + test d'intégration « the run settles idle before the queued prompt runs ».
+- **Snapshot de contexte fidèle** (`OPENCODE_CONTEXT_FILE`) : le fichier reçoit le payload réellement envoyé au LLM — `system` et `messages` verbatim (parts texte tels quels, autres parts en JSON sans perte) **plus les définitions d'outils** (`prepared.tools`, `execute` exclu) — sans troncature (plafond de 2000 caractères supprimé) et avec un en-tête réduit à une ligne machine-parseable. Objectif : évaluer la qualité du context builder d'opencodev2.
+- **Hot-reload des plugins serveur** : les plugins chargés depuis la config globale ou une origine `file://` sont re-initialisés automatiquement quand leur fichier change (watcher @parcel/watcher, debounce 300 ms, erreurs par étape install/compatibilité/entrée publiées via `publishPluginError`).
+- **Logo OPENCODEV2** : le logo ASCII (`cli/logo.ts`) et le wordmark non-TTY (`cli/ui.ts`) passent de 8 à 10 glyphes et lisent désormais OPENCODEV2 (V et 2 dessinés dans le même style) ; les zones TUI affichant la version du binaire (home footer, sidebar footer, sidebar session, toast de mise à jour) affichent « OPENCODEV2 + version ».
+
+### Changed
+- **Références utilisateur → `opencodev2`** : le message Continue de sortie de session (`opencodev2 -s <id>`), les tips du TUI, l'aide yargs, les messages d'erreur et les prompts utilisateur référencent la commande `opencodev2` ; fixes fonctionnels des chemins d'auto-invocation (`cli/cmd/pr.ts`, `eval/real-runner.ts`, `temporary.ts`).
+- **Mode swarm orchestré par l'outil `task`** : le mode agent `swarm` décompose désormais le but en appels `task` parallèles (vagues topologiques) au lieu de l'outil `swarm` dédié — chaque sous-agent s'affiche nativement dans le TUI.
+- README traduits resynchronisés sur l'identité opencodev2 ; progression affichée pendant l'import du wizard de migration première-exécution.
+
+### Fixed
+- **Blocage indéfini de l'outil shell** : une commande lançant un processus d'arrière-plan long (ex. `opencodev2 serve`) ne terminait jamais — le spawner résolvait sur l'événement `close` (jamais émis quand un petit-fils hérite des handles via `Start-Process -RedirectStandardOutput`) ; il résout désormais sur `exit` (avec drain borné de 200 ms), aligné sur le comportement platform-node.
+
+### Removed
 - **Tool `swarm` supprimé** (`src/tool/swarm.ts`, enregistrement dans `tool/registry.ts`) : suringénierie et boîte noire côté TUI. Le mode agent `swarm` (`--agent swarm`, flag `OPENCODE_EXPERIMENTAL_SWARM`) reste et orchestre désormais via l'outil `task` existant — il décompose le but, émet des appels `task` parallèles (même message pour la vague 1, messages suivants pour les dépendances), puis synthétise les résultats `<task>`. Chaque sous-agent s'affiche nativement dans le TUI (footer tabs avec statut en direct, "view subagents", navigation Parent/Prev/Next) car ce sont de vrais appels `task`. Tests swarm du tool retirés ; le mode swarm est conservé dans `test/agent/agent.test.ts` (2 tests) ; `experimentalSwarm` reste dans runtime-flags.
 
 ## [v1.18.59] - 2026-08-01
