@@ -22,6 +22,7 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Git } from "@/git"
 import { Filesystem } from "@/util/filesystem"
 import { Service as ToolCacheService } from "../../src/tool/cache"
+import { Service as SearchIndexService } from "../../src/tool/search-index"
 
 const referenceLayer = (flags: Partial<RuntimeFlags.Info> = {}) =>
   Reference.layer.pipe(
@@ -39,6 +40,7 @@ const toolLayer = (flags: Partial<RuntimeFlags.Info> = {}) =>
     Agent.defaultLayer,
     Git.defaultLayer,
     ToolCacheService.defaultLayer,
+    SearchIndexService.defaultLayer,
     referenceLayer(flags),
   )
 

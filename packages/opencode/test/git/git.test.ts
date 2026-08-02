@@ -18,8 +18,8 @@ const scopedTmpdir = (options?: Parameters<typeof tmpdir>[0]) =>
 
 const scopedNonGitTmpdir = () =>
   Effect.acquireRelease(
-    Effect.promise(() => fs.mkdtemp(path.join("C:\\jeanluc\\", "opencode-git-test-"))).pipe(Effect.map((path) => ({ path }))),
-    (tmp) => Effect.promise(() => fs.rm(tmp.path, { recursive: true, force: true })),
+    Effect.promise(() => tmpdir()),
+    (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
   )
 
 describe("Git", () => {

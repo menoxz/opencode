@@ -1,4 +1,4 @@
-<task_instruction type="test">
+<task-instruction type="test">
 GOAL: Cover important behavior with reliable, useful, maintainable tests, AND prove the solution answers the user need via a live walkthrough.
 USE_WHEN: add/fix tests|regression|feature validation|critical coverage improvement.
 METHOD: risk→cases→data→implementation→run→live walkthrough.

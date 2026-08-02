@@ -1,4 +1,4 @@
-<task_instruction type="feature">
+<task-instruction type="feature">
 GOAL: Deliver useful end-to-end functionality that satisfies the business/user outcome, not just the literal task or existing code pattern.
 USE_WHEN: new capability|screen|API|business flow|integration.
 METHOD: business objective→user journey→context→design→implementation→tests→review.

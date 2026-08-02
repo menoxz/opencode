@@ -395,6 +395,17 @@ exports[`tool parameters JSON Schema (wire shape) webfetch 1`] = `
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "properties": {
+    "content_only": {
+      "anyOf": [
+        {
+          "type": "boolean",
+        },
+        {
+          "type": "null",
+        },
+      ],
+      "description": "Strip navigation, sidebars, headers, footers and extract only the main content (default: true)",
+    },
     "format": {
       "anyOf": [
         {

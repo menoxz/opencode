@@ -32,6 +32,7 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Orchestrator } from "@/orchestrator"
 import { MCP } from "@/mcp"
 import { Service as ToolCacheService } from "@/tool/cache"
+import { Service as SearchIndexService } from "@/tool/search-index"
 
 const node = CrossSpawnSpawner.defaultLayer
 
@@ -63,7 +64,7 @@ const registryLayer = (planning?: Planning) =>
       Layer.provide(FetchHttpClient.layer),
       Layer.provide(Format.defaultLayer),
       Layer.provide(node),
-      Layer.provide(Ripgrep.defaultLayer),
+      Layer.provide(Layer.mergeAll(Ripgrep.defaultLayer, SearchIndexService.defaultLayer)),
       Layer.provide(
         Layer.mergeAll(
           Truncate.defaultLayer,
