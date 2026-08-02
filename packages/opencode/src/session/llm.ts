@@ -26,6 +26,7 @@ import * as OtelTracer from "@effect/opentelemetry/Tracer"
 import { LLMAISDK } from "./llm/ai-sdk"
 import { LLMNativeRuntime } from "./llm/native-runtime"
 import { LLMRequestPrep } from "./llm/request"
+import { ContextFile } from "@/session/context-file"
 
 const log = Log.create({ service: "llm" })
 export const OUTPUT_TOKEN_MAX = ProviderTransform.OUTPUT_TOKEN_MAX
@@ -134,6 +135,16 @@ const live: Layer.Layer<
         activeTools: Object.keys(prepared.tools).filter((x) => x !== "invalid").length,
         maxRetries: input.retries ?? 0,
         maxOutputTokens: prepared.params.maxOutputTokens,
+      })
+
+      // Point de réunion du contexte : le prompt assemblé (system + messages)
+      // est écrit tel quel dans OPENCODE_CONTEXT_FILE à chaque tour (si défini).
+      ContextFile.writeContextSnapshot({
+        sessionID: input.sessionID,
+        agent: input.agent.name,
+        model: `${input.model.providerID}/${input.model.id}`,
+        system: prepared.system,
+        messages: prepared.messages,
       })
 
       // Wire up toolExecutor for DWS workflow models so that tool calls
