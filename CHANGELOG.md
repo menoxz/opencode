@@ -15,6 +15,11 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ### Removed
 
+## [v1.18.67] - 2026-08-02
+
+### Fixed
+- **Logo terminal OPENCODEV2 lisible** : les glyphes officiels `OPEN|CODE` sont conservés strictement ; le suffixe validé utilise un V agrandi sur cinq colonnes et toute la hauteur, sans tronc central pouvant évoquer un Y, ainsi qu'un 2 segmenté. Les rendus TTY et non-TTY sont désormais dérivés d'une source unique et protégés par des tests ciblés.
+
 ## [v1.18.66] - 2026-08-02
 
 ### Added
