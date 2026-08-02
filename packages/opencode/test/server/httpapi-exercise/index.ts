@@ -18,6 +18,7 @@
  * - `.mutating()` tells the runner to reset isolated state after destructive routes.
  */
 import { Effect } from "effect"
+import { mkdir } from "node:fs/promises"
 import { OpenApi } from "effect/unstable/httpapi"
 import { TestLLMServer } from "../../lib/llm-server"
 import path from "path"
@@ -569,12 +570,13 @@ const scenarios: Scenario[] = [
     .delete("/auth/{providerID}", "auth.remove")
     .global()
     .seeded(() =>
-      Effect.promise(() =>
-        Bun.write(
+      Effect.promise(async () => {
+        await mkdir(path.join(exerciseDataDirectory), { recursive: true })
+        await Bun.write(
           path.join(exerciseDataDirectory, "auth.json"),
           JSON.stringify({ test: { type: "api", key: "remove-me" } }),
-        ),
-      ),
+        )
+      }),
     )
     .at(() => ({ path: route("/auth/{providerID}", { providerID: "test" }) }))
     .jsonEffect(200, (body) =>
