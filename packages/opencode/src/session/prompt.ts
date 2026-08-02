@@ -3,6 +3,7 @@ import os from "os"
 import { createHash } from "node:crypto"
 import { SessionID, MessageID, PartID } from "./schema"
 import { MessageV2 } from "./message-v2"
+import { PromptQueue } from "./prompt-queue"
 import * as Log from "@opencode-ai/core/util/log"
 import { SessionRevert } from "./revert"
 import { TriggerHandler } from "../daemon/trigger-handler"
@@ -1676,6 +1677,15 @@ export const layer = Layer.effect(
         const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
         const injectionCache = createPromptInjectionCache()
 
+        // Anchor this run to the oldest user prompt whose turn is not closed.
+        // Prompts queued while this run is active are never absorbed: they are
+        // excluded from the run's message view below and picked up by a fresh
+        // run after this one settles (see loop()'s re-arm).
+        const anchorMsgs = yield* MessageV2.filterCompactedEffect(sessionID)
+        const anchorUserID =
+          PromptQueue.pendingUserID(anchorMsgs) ?? anchorMsgs.findLast((m) => m.info.role === "user")?.info.id
+        if (!anchorUserID) throw new Error("No user message found in stream. This should never happen.")
+
         while (true) {
           const contextSummary = createPromptContextSummary(step + 1)
           yield* status.set(sessionID, { type: "busy" })
@@ -1683,6 +1693,9 @@ export const layer = Layer.effect(
 
           const messageFilteringStart = Date.now()
           let msgs = yield* MessageV2.filterCompactedEffect(sessionID)
+          // Keep only the anchored turn (plus run-internal compaction users). A
+          // user prompt queued mid-run stays invisible until a fresh run starts.
+          msgs = PromptQueue.boundToRun(msgs, anchorUserID)
           contextSummary.add(
             "messageFiltering",
             "filter compacted messages before latest-state selection",
@@ -2308,21 +2321,21 @@ export const layer = Layer.effect(
       // that run's `done` latch, so they return its (now stale) assistant and
       // would leave the queued prompt unprocessed forever.
       //
-      // After a run settles, re-check: if a user message is newer than the
-      // latest assistant, arm again. `state.ensureRunning` re-fetches the
-      // runner per call (the idle runner is removed from the session map), so
-      // this starts a real fresh run once the previous one is idle rather than
-      // re-joining a finished one. The predicate is the exact inverse of
-      // runLoop's break invariant (assistant newer than user), so a normally
-      // completed turn never re-arms and there is no livelock.
-      const hasQueuedUser = Effect.gen(function* () {
+      // After a run settles, re-check: if any user prompt is still pending,
+      // arm again. `state.ensureRunning` re-fetches the runner per call (the
+      // idle runner is removed from the session map), so this starts a real
+      // fresh run once the previous one is idle rather than re-joining a
+      // finished one. Each fresh run anchors to the oldest pending prompt, so
+      // multiple queued prompts drain in FIFO order, and a normally completed
+      // turn (its user closed by a finished assistant) never re-arms — no
+      // livelock.
+      const pendingUserExists = Effect.gen(function* () {
         const msgs = yield* MessageV2.filterCompactedEffect(input.sessionID)
-        const { user, assistant } = MessageV2.latest(msgs)
-        return !!(user && assistant && user.id > assistant.id)
+        return PromptQueue.pendingUserID(msgs) !== undefined
       })
 
       let result = yield* arm()
-      while (yield* hasQueuedUser) {
+      while (yield* pendingUserExists) {
         result = yield* arm()
       }
       return result

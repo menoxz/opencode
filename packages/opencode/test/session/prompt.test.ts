@@ -1537,7 +1537,83 @@ it.instance(
 
       const inputs = yield* llm.inputs
       expect(inputs).toHaveLength(2)
+      // The queued prompt must not have been absorbed into the first request:
+      // it is only visible to the fresh run that serves it.
+      expect(JSON.stringify(inputs.at(0)?.messages)).not.toContain("second")
       expect(JSON.stringify(inputs.at(-1)?.messages)).toContain("second")
+    }),
+  10_000,
+)
+
+it.instance(
+  "queued prompt is not absorbed: the run settles idle before the queued prompt runs",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const gate = yield* Deferred.make<void>()
+      const secondGate = yield* Deferred.make<void>()
+      const prompt = yield* SessionPrompt.Service
+      const run = yield* SessionRunState.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({ title: "Pinned" })
+
+      yield* llm.hold("first", deferredAsPromise(gate))
+      yield* llm.hold("second", deferredAsPromise(secondGate))
+
+      const a = yield* prompt
+        .prompt({
+          sessionID: chat.id,
+          agent: "build",
+          model: ref,
+          parts: [{ type: "text", text: "first" }],
+        })
+        .pipe(Effect.forkChild)
+
+      yield* llm.wait(1)
+
+      const secondID = MessageID.ascending()
+      const b = yield* prompt
+        .prompt({
+          sessionID: chat.id,
+          messageID: secondID,
+          agent: "build",
+          model: ref,
+          parts: [{ type: "text", text: "second" }],
+        })
+        .pipe(Effect.forkChild)
+
+      yield* pollWithTimeout(
+        sessions
+          .messages({ sessionID: chat.id })
+          .pipe(
+            Effect.map((msgs) =>
+              msgs.some((msg) => msg.info.role === "user" && msg.info.id === secondID) ? true : undefined,
+            ),
+          ),
+        "timed out waiting for queued prompt to save",
+      )
+
+      yield* Deferred.succeed(gate, void 0)
+
+      // The run currently serving "first" must settle to idle (the whole agent
+      // work finished) BEFORE the queued prompt is served by a fresh run. When
+      // the queued prompt was absorbed into the same run, this wait timed out
+      // because the run never went idle.
+      yield* run.waitForIdle(chat.id).pipe(Effect.timeout("3 seconds"))
+
+      yield* Deferred.succeed(secondGate, void 0)
+
+      const [ea, eb] = yield* Effect.all([Fiber.await(a), Fiber.await(b)])
+      expect(Exit.isSuccess(ea)).toBe(true)
+      expect(Exit.isSuccess(eb)).toBe(true)
+      expect(yield* llm.calls).toBe(2)
+
+      const msgs = yield* sessions.messages({ sessionID: chat.id })
+      const assistants = msgs.filter((msg) => msg.info.role === "assistant")
+      expect(assistants).toHaveLength(2)
+      const fresh = assistants.find((msg) => msg.info.parentID === secondID)
+      if (!fresh) throw new Error("expected a fresh assistant for the queued prompt")
+      expect(fresh.parts.some((part) => part.type === "text" && part.text === "second")).toBe(true)
     }),
   10_000,
 )
