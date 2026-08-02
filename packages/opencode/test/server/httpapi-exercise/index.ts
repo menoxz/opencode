@@ -278,6 +278,19 @@ const scenarios: Scenario[] = [
       object(body)
       check(body.type === "text" && body.content === "", "missing file content should return an empty text result")
     }),
+  http.protected
+    .post("/file/content", "file.write")
+    .mutating()
+    .seeded((ctx) => ctx.file("write-target.txt", "old\n"))
+    .at((ctx) => ({
+      path: `/file/content?${new URLSearchParams({ path: "write-target.txt" })}`,
+      headers: ctx.headers(),
+      body: { content: "new\n" },
+    }))
+    .json(200, (body) => {
+      object(body)
+      check(body.content === "new", `file write should return the written content: ${JSON.stringify(body)}`)
+    }),
   http.protected.get("/file/status", "file.status").json(200, array),
   http.protected
     .get("/find", "find.text")
