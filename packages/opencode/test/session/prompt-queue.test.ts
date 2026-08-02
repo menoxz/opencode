@@ -36,7 +36,7 @@ function assistant(id: string, parent: string, opts?: { finish?: string; error?:
       time: { created: 2 },
       ...(opts?.finish !== undefined ? { finish: opts.finish } : {}),
       ...(opts?.error !== undefined ? { error: opts.error } : {}),
-    },
+    } as MessageV2.Assistant,
     parts: [],
   }
 }
@@ -119,7 +119,7 @@ describe("boundToRun", () => {
       user("msg0003"),
     ]
     const view = PromptQueue.boundToRun(msgs, MessageID.ascending("msg0002"))
-    const ids = view.map((m) => m.info.id)
+    const ids = view.map((m) => m.info.id as string)
     expect(ids).not.toContain("msg0003")
     expect(ids).toContain("msg0001")
     expect(ids).toContain("msg0101")
@@ -136,7 +136,7 @@ describe("boundToRun", () => {
       assistant("msg0103", "msg0003", { finish: "stop" }),
     ]
     const view = PromptQueue.boundToRun(msgs, MessageID.ascending("msg0002"))
-    const ids = view.map((m) => m.info.id)
+    const ids = view.map((m) => m.info.id as string)
     expect(ids).toContain("msg0003")
     expect(ids).toContain("msg0103")
   })
@@ -148,7 +148,7 @@ describe("boundToRun", () => {
       assistant("msg0102", "msg0002", { finish: "stop" }),
     ]
     const view = PromptQueue.boundToRun(msgs, MessageID.ascending("msg0001"))
-    const ids = view.map((m) => m.info.id)
+    const ids = view.map((m) => m.info.id as string)
     expect(ids).toContain("msg0002")
     expect(ids).toContain("msg0102")
   })
@@ -161,7 +161,7 @@ describe("boundToRun", () => {
       assistant("msg0102", "msg0002", { finish: "stop" }),
     ]
     const view = PromptQueue.boundToRun(msgs, MessageID.ascending("msg0001"))
-    const ids = view.map((m) => m.info.id)
+    const ids = view.map((m) => m.info.id as string)
     expect(ids).toEqual(["msg0001", "msg0101"])
   })
 })

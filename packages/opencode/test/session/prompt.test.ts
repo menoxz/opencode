@@ -1611,7 +1611,7 @@ it.instance(
       const msgs = yield* sessions.messages({ sessionID: chat.id })
       const assistants = msgs.filter((msg) => msg.info.role === "assistant")
       expect(assistants).toHaveLength(2)
-      const fresh = assistants.find((msg) => msg.info.parentID === secondID)
+      const fresh = assistants.find((msg) => msg.info.role === "assistant" && msg.info.parentID === secondID)
       if (!fresh) throw new Error("expected a fresh assistant for the queued prompt")
       expect(fresh.parts.some((part) => part.type === "text" && part.text === "second")).toBe(true)
     }),
