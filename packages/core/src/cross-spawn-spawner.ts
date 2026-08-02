@@ -267,17 +267,23 @@ export const make = Effect.gen(function* () {
       const signal = Deferred.makeUnsafe<readonly [code: number | null, signal: NodeJS.Signals | null]>()
       const proc = launch(command.command, command.args, opts)
       let end = false
-      let exit: readonly [code: number | null, signal: NodeJS.Signals | null] | undefined
       proc.on("error", (err) => {
         resume(Effect.fail(toPlatformError("spawn", err, command)))
       })
+      // Resolve on "exit", not "close": "close" only fires after the stdio
+      // pipes are fully closed, which can be deferred indefinitely when a
+      // background child inherited the pipe handles (e.g. a PowerShell
+      // Start-Process with -RedirectStandardOutput). "exit" carries the same
+      // code+signal and does not wait on the pipes.
       proc.on("exit", (...args) => {
-        exit = args
+        if (end) return
+        end = true
+        Deferred.doneUnsafe(signal, Exit.succeed(args))
       })
       proc.on("close", (...args) => {
         if (end) return
         end = true
-        Deferred.doneUnsafe(signal, Exit.succeed(exit ?? args))
+        Deferred.doneUnsafe(signal, Exit.succeed(args))
       })
       proc.on("spawn", () => {
         resume(Effect.succeed([proc, signal]))

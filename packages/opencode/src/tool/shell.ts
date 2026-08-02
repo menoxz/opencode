@@ -1,4 +1,4 @@
-import { Effect, Stream } from "effect"
+import { Effect, Fiber, Stream } from "effect"
 import os from "os"
 import { createWriteStream } from "node:fs"
 import * as Tool from "./tool"
@@ -485,7 +485,7 @@ export const ShellTool = Tool.define(
           yield* Effect.addFinalizer(closeSink)
           const handle = yield* spawner.spawn(cmd(input.shell, input.command, input.cwd, input.env))
 
-          yield* Effect.forkScoped(
+          const streamFiber = yield* Effect.forkScoped(
             Stream.runForEach(Stream.decodeText(handle.all), (chunk) => {
               const size = Buffer.byteLength(chunk, "utf-8")
               list.push({ text: chunk, size })
@@ -557,6 +557,16 @@ export const ShellTool = Tool.define(
             expired = true
             yield* handle.kill({ forceKillAfter: "3 seconds" }).pipe(Effect.orDie)
           }
+
+          // Let the output consumer drain the last buffered chunks after the
+          // process ended, so output written right before "exit" is not lost.
+          // Bounded by a short grace period: a pipe kept open by a background
+          // child (e.g. a PowerShell Start-Process) must not stall the tool —
+          // the consumer fiber is interrupted when the scope closes.
+          yield* Effect.raceAll([
+            Fiber.join(streamFiber).pipe(Effect.asVoid, Effect.ignore),
+            Effect.sleep("200 millis"),
+          ]).pipe(Effect.ignore)
 
           return exit.kind === "exit" ? exit.code : null
         }),
