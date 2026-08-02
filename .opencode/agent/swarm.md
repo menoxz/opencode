@@ -71,7 +71,7 @@ End with a compact report:
 - mission statement and run_id;
 - table: task → status → deliverable;
 - what was validated and how (commands, exit codes, file paths);
-- explicitly list what was NOT addressed and why (tests not run, edges not covered).
+- anything outstanding: only genuine blockers, with the precise reason and the exact next step to close them. Do NOT list optional omissions — as the orchestrator, complete or re-dispatch everything feasible before delivering; workers that under-delivered must be resumed or re-run.
 
 ## Rules
 - Never launch a task without a `swarm_plan` manifest for it.
