@@ -280,7 +280,6 @@ const scenarios: Scenario[] = [
     }),
   http.protected
     .post("/file/content", "file.write")
-    .mutating()
     .seeded((ctx) => ctx.file("write-target.txt", "old\n"))
     .at((ctx) => ({
       path: `/file/content?${new URLSearchParams({ path: "write-target.txt" })}`,
