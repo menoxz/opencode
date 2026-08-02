@@ -29,6 +29,13 @@ import { parsePluginSpecifier, readPluginId, readV1Plugin, resolvePluginId } fro
 import { registerAdapter } from "@/control-plane/adapters"
 import type { WorkspaceAdapter } from "@/control-plane/types"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import * as fs from "fs"
+import * as path from "path"
+import { fileURLToPath } from "url"
+import { Global } from "@opencode-ai/core/global"
+// @ts-ignore
+import { createWrapper } from "@parcel/watcher/wrapper"
+import type ParcelWatcher from "@parcel/watcher"
 
 const log = Log.create({ service: "plugin" })
 
@@ -261,6 +268,85 @@ export const layer = Layer.effect(
       }),
     )
 
+    let watcherCleanup: (() => void) | null = null
+    let bridge: EffectBridge.Shape | null = null
+    let watchingStarted = false
+
+    // Lazily arm file watchers on plugin directories (global config/plugin plus
+    // the directories of every file:// plugin origin). A debounced change to a
+    // plugin file (.mjs/.js/.cjs/.ts) re-runs the full plugin init, so edits
+    // take effect without restarting the server — same contract as the agent
+    // and skill hot-reload.
+    const ensureWatching = Effect.fnUntraced(function* () {
+      if (watchingStarted) return
+      watchingStarted = true
+      if (flags.pure) return
+      if (!bridge) bridge = yield* EffectBridge.make().pipe(Effect.catchCause(() => Effect.succeed(null as any)))
+      if (!bridge) return
+      if (watcherCleanup) {
+        watcherCleanup()
+        watcherCleanup = null
+      }
+      const cfg = yield* config.get()
+      const dirs = new Set<string>([path.join(Global.Path.config, "plugin")])
+      for (const origin of cfg.plugin_origins ?? []) {
+        const spec = Array.isArray(origin.spec) ? origin.spec[0] : origin.spec
+        if (typeof spec !== "string" || !spec.startsWith("file://")) continue
+        try {
+          dirs.add(path.dirname(fileURLToPath(spec)))
+        } catch {
+          // malformed file URL — nothing to watch
+        }
+      }
+      log.info("plugin hot-reload watchers active", { dirs: [...dirs] })
+      const backend = process.platform === "win32" ? "windows" : process.platform === "darwin" ? "fs-events" : "inotify"
+      let parcelWatcher: typeof import("@parcel/watcher") | undefined
+      try {
+        const binding = require(`@parcel/watcher-${process.platform}-${process.arch}`)
+        parcelWatcher = createWrapper(binding) as typeof import("@parcel/watcher")
+      } catch (error) {
+        log.error("failed to load watcher binding", { error })
+      }
+      const subs: ParcelWatcher.AsyncSubscription[] = []
+      const timers = new Map<string, ReturnType<typeof setTimeout>>()
+      const DEBOUNCE_MS = 300
+      if (parcelWatcher) {
+        for (const dir of dirs) {
+          if (!fs.existsSync(dir)) continue
+          const pending = parcelWatcher.subscribe(
+            dir,
+            (err, evts) => {
+              if (err) {
+                log.error("plugin watch error", { dir, err })
+                return
+              }
+              for (const evt of evts) {
+                if (!/\.(mjs|js|cjs|ts)$/i.test(evt.path)) continue
+                clearTimeout(timers.get(evt.path))
+                timers.set(
+                  evt.path,
+                  setTimeout(() => {
+                    timers.delete(evt.path)
+                    log.info("plugin file changed, reloading", { file: evt.path })
+                    bridge!.promise(reload()).catch((err) => log.error("plugin reload error", { err }))
+                  }, DEBOUNCE_MS),
+                )
+              }
+            },
+            { backend },
+          )
+          pending.then((s) => subs.push(s)).catch((err) => log.error("plugin watch subscribe failed", { dir, err }))
+        }
+      }
+      log.info("plugin hot-reload watchers armed", { armed: subs.length, dirs: [...dirs] })
+      watcherCleanup = () => {
+        for (const t of timers.values()) clearTimeout(t)
+        timers.clear()
+        for (const s of subs) void s.unsubscribe()
+        subs.length = 0
+      }
+    })
+
     const trigger = Effect.fn("Plugin.trigger")(function* <
       Name extends TriggerName,
       Input = Parameters<Required<Hooks>[Name]>[0],
@@ -283,6 +369,7 @@ export const layer = Layer.effect(
 
     const init = Effect.fn("Plugin.init")(function* () {
       yield* InstanceState.get(state)
+      yield* ensureWatching()
     })
 
     const reload = Effect.fn("Plugin.reload")(function* () {
@@ -291,8 +378,18 @@ export const layer = Layer.effect(
       yield* InstanceState.invalidate(state)
       // Force re-initialization with fresh config
       yield* InstanceState.get(state)
+      yield* ensureWatching()
       log.info("Plugins reloaded successfully")
     })
+
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        if (watcherCleanup) {
+          watcherCleanup()
+          watcherCleanup = null
+        }
+      }),
+    )
 
     return Service.of({ trigger, list, init, reload })
   }),
