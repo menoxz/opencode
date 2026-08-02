@@ -3,75 +3,68 @@
   "note": "Counts are measured by src/eval/golden validators on the real artifacts in fixtures/. Never edit them by hand: run `bun run script/golden-bless.ts`.",
   "cases": [
     {
-      "id": "bpmn/ccfcc-enregistrement-exportateur-as-is.bpmn",
-      "artifact": "bpmn/ccfcc-enregistrement-exportateur-as-is.bpmn",
+      "id": "bpmn/sample-employee-onboarding.bpmn",
+      "artifact": "bpmn/sample-employee-onboarding.bpmn",
       "kind": "bpmn",
-      "sha256": "4952633c6689bc2ba33919c9cfaba43a5d7451973de4b2e8661caf07991a913a",
+      "sha256": "0091c6b7b103275707741d0426454ad4eb18d909b5840730eee19b4404850b9e",
+      "fingerprint": {
+        "BPMN_LAYOUT_SHAPE_OVERLAP": 1
+      }
+    },
+    {
+      "id": "bpmn/sample-incident-report.bpmn",
+      "artifact": "bpmn/sample-incident-report.bpmn",
+      "kind": "bpmn",
+      "sha256": "d8dffa5de30d998a07a34a397bd3d80c67a54e684c8e48a045e338b9b72f46c1",
+      "fingerprint": {}
+    },
+    {
+      "id": "bpmn/sample-leave-request-as-is.bpmn",
+      "artifact": "bpmn/sample-leave-request-as-is.bpmn",
+      "kind": "bpmn",
+      "sha256": "39a69f1f40290b7b034a5077155ed016a581a6d66b47e3fcb5949f94dcca6fee",
       "fingerprint": {
         "BPMN_GATEWAY_MISSING_CONDITION": 2,
-        "BPMN_LAYOUT_OUTSIDE_POOL": 1,
-        "BPMN_NODE_NO_INCOMING": 11,
-        "BPMN_NODE_NO_OUTGOING": 10,
-        "BPMN_PROCESS_NO_END_EVENT": 3,
-        "BPMN_PROCESS_NO_START_EVENT": 4
+        "BPMN_NODE_NO_INCOMING": 1,
+        "BPMN_NODE_NO_OUTGOING": 2,
+        "BPMN_PROCESS_NO_END_EVENT": 2,
+        "BPMN_PROCESS_NO_START_EVENT": 1
       }
     },
     {
-      "id": "bpmn/cfe-creation-personne-morale-as-is.bpmn",
-      "artifact": "bpmn/cfe-creation-personne-morale-as-is.bpmn",
+      "id": "bpmn/sample-purchase-approval.bpmn",
+      "artifact": "bpmn/sample-purchase-approval.bpmn",
       "kind": "bpmn",
-      "sha256": "be09767f7f2629c7c81a1e3bac729949acabb5978110a04b3f05499e6cdeb4f7",
-      "fingerprint": {
-        "BPMN_LAYOUT_OUTSIDE_POOL": 1,
-        "BPMN_LAYOUT_SHAPE_OVERLAP": 1
-      }
-    },
-    {
-      "id": "bpmn/dgdsp-demande-parrainage-as-is.bpmn",
-      "artifact": "bpmn/dgdsp-demande-parrainage-as-is.bpmn",
-      "kind": "bpmn",
-      "sha256": "9096d4d2c83b988c94467e02d5f3a45c4df12b87365f07dec1a9c840f4f1f1a2",
-      "fingerprint": {
-        "BPMN_GATEWAY_MISSING_CONDITION": 4,
-        "BPMN_LAYOUT_OUTSIDE_POOL": 1,
-        "BPMN_NODE_NO_INCOMING": 9,
-        "BPMN_NODE_UNNAMED": 8,
-        "BPMN_PROCESS_NO_START_EVENT": 3
-      }
-    },
-    {
-      "id": "bpmn/mc-agr-001.bpmn",
-      "artifact": "bpmn/mc-agr-001.bpmn",
-      "kind": "bpmn",
-      "sha256": "ff0195f69b470c0ce7381cc114dc307fb989810a64010710687ce46f39282458",
+      "sha256": "e4d75dfe188323e87c4d3be410fb28874c2754bb7071f57254f311818e0bbdfe",
       "fingerprint": {}
     },
     {
-      "id": "bpmn/proc-mjl-rnt-001-v8.bpmn",
-      "artifact": "bpmn/proc-mjl-rnt-001-v8.bpmn",
+      "id": "bpmn/sample-supplier-payment.bpmn",
+      "artifact": "bpmn/sample-supplier-payment.bpmn",
       "kind": "bpmn",
-      "sha256": "0561c566b30b454a47dcbe50c850bf9b8b3434c6d786d187d837fd53b75cfda3",
+      "sha256": "707daba49b17bc534ba789c3c825bde4872517220bd4323dc2499d4f0babc1ad",
       "fingerprint": {
-        "BPMN_LAYOUT_LABEL_OVERLAP": 1,
-        "BPMN_LAYOUT_SHAPE_OVERLAP": 1
+        "BPMN_GATEWAY_MISSING_CONDITION": 2
       }
     },
     {
-      "id": "formio/mc-agr-soumission-v1.json",
-      "artifact": "formio/mc-agr-soumission-v1.json",
+      "id": "formio/sample-candidature-v1.json",
+      "artifact": "formio/sample-candidature-v1.json",
       "kind": "formio",
-      "sha256": "be9f5cc0268a18ef531be14a598d911ccedd413999da92fd4084f183e6f65ef4",
+      "sha256": "67a733f18734b4544dfe9adc8a0e1bff01b2a27577c5e9936085f62b92e702df",
+      "fingerprint": {
+        "FORMIO_DISABLED_REQUIRED": 1,
+        "FORMIO_DUPLICATE_KEY": 1,
+        "FORMIO_FILE_KEY_NOT_FILES": 1,
+        "FORMIO_FILE_STORAGE_NOT_URL": 1
+      }
+    },
+    {
+      "id": "formio/sample-satisfaction-v1.json",
+      "artifact": "formio/sample-satisfaction-v1.json",
+      "kind": "formio",
+      "sha256": "abaab10c2f1fdef2914ddcb531d4704c689d7549ca999cbf87f19f729f2e6b43",
       "fingerprint": {}
-    },
-    {
-      "id": "formio/reintegration-ressoumission.json",
-      "artifact": "formio/reintegration-ressoumission.json",
-      "kind": "formio",
-      "sha256": "3bbc16dfcb0a602ba7c089a4cc9114bab247f4eefabffbd159e7289d1bcb6654",
-      "fingerprint": {
-        "FORMIO_ROOT_TYPE_NOT_FORM": 1,
-        "FORMIO_XSS_HTML_SINK": 1
-      }
     }
   ]
 }

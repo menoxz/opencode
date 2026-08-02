@@ -1,0 +1,81 @@
+{
+  "title": "Formulaire de candidature — poste fictif",
+  "display": "wizard",
+  "name": "SAMPLE-CANDIDATURE-v1",
+  "path": "sample-candidature-v1",
+  "type": "form",
+  "components": [
+    {
+      "type": "panel",
+      "key": "stepIdentity",
+      "label": "Identité",
+      "title": "Identité",
+      "components": [
+        {
+          "type": "textfield",
+          "key": "fullName",
+          "label": "Nom complet",
+          "validate": { "required": true }
+        },
+        {
+          "type": "email",
+          "key": "email",
+          "label": "Adresse e-mail",
+          "validate": { "required": true }
+        },
+        {
+          "type": "phoneNumber",
+          "key": "phone",
+          "label": "Téléphone"
+        }
+      ]
+    },
+    {
+      "type": "panel",
+      "key": "stepProfile",
+      "label": "Profil",
+      "title": "Profil",
+      "components": [
+        {
+          "type": "select",
+          "key": "jobTitle",
+          "label": "Poste visé",
+          "data": { "values": [{ "label": "Développeur", "value": "dev" }, { "label": "Designer", "value": "design" }] }
+        },
+        {
+          "type": "textarea",
+          "key": "motivation",
+          "label": "Lettre de motivation"
+        },
+        {
+          "type": "textarea",
+          "key": "motivation",
+          "label": "Motivation (doublon volontaire)"
+        }
+      ]
+    },
+    {
+      "type": "panel",
+      "key": "stepDocs",
+      "label": "Documents",
+      "title": "Documents",
+      "components": [
+        {
+          "type": "file",
+          "key": "cv",
+          "label": "Curriculum vitae",
+          "storage": "base64",
+          "fileKey": "resume",
+          "validate": { "required": true },
+          "disabled": true
+        },
+        {
+          "type": "checkbox",
+          "key": "consent",
+          "label": "J'accepte le traitement de mes données",
+          "validate": { "required": true }
+        }
+      ]
+    }
+  ]
+}

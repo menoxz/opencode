@@ -1,0 +1,36 @@
+{
+  "title": "Formulaire de satisfaction — démo",
+  "display": "form",
+  "name": "SAMPLE-SATISFACTION-v1",
+  "path": "sample-satisfaction-v1",
+  "type": "form",
+  "components": [
+    {
+      "type": "textfield",
+      "key": "visitorName",
+      "label": "Nom du visiteur"
+    },
+    {
+      "type": "select",
+      "key": "rating",
+      "label": "Note de satisfaction",
+      "data": { "values": [{ "label": "Satisfait", "value": "satisfied" }, { "label": "Insatisfait", "value": "unsatisfied" }] }
+    },
+    {
+      "type": "textarea",
+      "key": "comment",
+      "label": "Commentaire libre"
+    },
+    {
+      "type": "checkbox",
+      "key": "followup",
+      "label": "Souhaite être recontacté"
+    },
+    {
+      "type": "button",
+      "key": "sendButton",
+      "label": "Envoyer",
+      "action": "submit"
+    }
+  ]
+}

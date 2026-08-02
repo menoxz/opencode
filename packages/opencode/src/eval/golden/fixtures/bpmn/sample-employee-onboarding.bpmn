@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  id="Definitions_EMB_001"
+                  targetNamespace="http://bpmn.io/schema/bpmn">
+
+  <bpmn:process id="proc_emb" name="Onboarding employé" isExecutable="true">
+    <bpmn:startEvent id="s_start" name="Arrivée" />
+    <bpmn:userTask id="t_docs" name="Collecter les documents" />
+    <bpmn:task id="t_account" name="Créer les comptes" />
+    <bpmn:userTask id="t_badge" name="Délivrer le badge" />
+    <bpmn:endEvent id="e_done" name="Terminé" />
+    <bpmn:sequenceFlow id="f1" sourceRef="s_start" targetRef="t_docs" />
+    <bpmn:sequenceFlow id="f2" sourceRef="t_docs" targetRef="t_account" />
+    <bpmn:sequenceFlow id="f3" sourceRef="t_account" targetRef="t_badge" />
+    <bpmn:sequenceFlow id="f4" sourceRef="t_badge" targetRef="e_done" />
+  </bpmn:process>
+
+  <bpmndi:BPMNDiagram id="Diagram_EMB_001">
+    <bpmndi:BPMNPlane id="Plane_EMB_001" bpmnElement="proc_emb">
+      <bpmndi:BPMNShape id="s_start_di" bpmnElement="s_start">
+        <dc:Bounds x="120" y="120" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="t_docs_di" bpmnElement="t_docs">
+        <dc:Bounds x="200" y="100" width="120" height="76" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="t_account_di" bpmnElement="t_account">
+        <dc:Bounds x="360" y="100" width="120" height="76" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="t_badge_di" bpmnElement="t_badge">
+        <dc:Bounds x="520" y="100" width="120" height="76" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e_done_di" bpmnElement="e_done">
+        <dc:Bounds x="610" y="105" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="156" y="138" />
+        <di:waypoint x="200" y="138" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

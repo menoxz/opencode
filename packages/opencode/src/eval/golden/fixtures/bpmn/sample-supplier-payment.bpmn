@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  id="Definitions_PAY_001"
+                  targetNamespace="http://bpmn.io/schema/bpmn">
+
+  <bpmn:process id="proc_pay" name="Paiement fournisseur" isExecutable="true">
+    <bpmn:startEvent id="s_start" name="Facture reçue" />
+    <bpmn:userTask id="t_check" name="Contrôler la facture" />
+    <bpmn:exclusiveGateway id="g_valid" name="Facture valide ?" />
+    <bpmn:task id="t_pay" name="Payer" />
+    <bpmn:userTask id="t_correct" name="Demander la correction" />
+    <bpmn:endEvent id="e_done" name="Paiement effectué" />
+    <bpmn:sequenceFlow id="f1" sourceRef="s_start" targetRef="t_check" />
+    <bpmn:sequenceFlow id="f2" sourceRef="t_check" targetRef="g_valid" />
+    <bpmn:sequenceFlow id="f3" sourceRef="g_valid" targetRef="t_pay" />
+    <bpmn:sequenceFlow id="f4" sourceRef="g_valid" targetRef="t_correct" />
+    <bpmn:sequenceFlow id="f5" sourceRef="t_pay" targetRef="e_done" />
+    <bpmn:sequenceFlow id="f6" sourceRef="t_correct" targetRef="t_check" />
+  </bpmn:process>
+
+  <bpmndi:BPMNDiagram id="Diagram_PAY_001">
+    <bpmndi:BPMNPlane id="Plane_PAY_001" bpmnElement="proc_pay">
+      <bpmndi:BPMNShape id="s_start_di" bpmnElement="s_start">
+        <dc:Bounds x="120" y="160" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="t_check_di" bpmnElement="t_check">
+        <dc:Bounds x="200" y="140" width="120" height="76" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="g_valid_di" bpmnElement="g_valid">
+        <dc:Bounds x="370" y="155" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="t_pay_di" bpmnElement="t_pay">
+        <dc:Bounds x="470" y="100" width="120" height="76" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="t_correct_di" bpmnElement="t_correct">
+        <dc:Bounds x="470" y="240" width="120" height="76" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e_done_di" bpmnElement="e_done">
+        <dc:Bounds x="640" y="120" width="36" height="36" />
+      </bpmndi:BPMNShape>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

@@ -29,7 +29,7 @@ export const VALIDATORS: Record<string, Validator> = {
 }
 
 export interface Artifact {
-  /** Stable case id, e.g. `bpmn/proc-mjl-rnt-001-v8.bpmn`. */
+  /** Stable case id, e.g. `bpmn/sample-leave-request-as-is.bpmn`. */
   id: string
   kind: string
   absolutePath: string

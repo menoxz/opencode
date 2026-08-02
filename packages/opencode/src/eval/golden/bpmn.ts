@@ -2,7 +2,7 @@
  * BPMN 2.0 fingerprint — structural rules and layout rules.
  *
  * These answer two disjoint questions and both are required. Measured on real
- * ATD/Togo production artifacts on 2026-07-28: a file can carry 29 structural
+ * synthetic sample artifacts: a file can carry 29 structural
  * errors and still be imported by bpmn-js 17.11.1 without a single warning while
  * being drawn with overlapping labels; and conversely a structurally perfect file
  * can be drawn with a task 35% hidden behind a flow label. "It validates" and

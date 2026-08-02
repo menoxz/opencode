@@ -901,7 +901,11 @@ export const layer = Layer.effect(
       yield* invalidateGlobal
       // Also drop the assembled-config cache (includes agents/skills loaded
       // from .md files) so a reload re-reads definitions from disk.
-      yield* InstanceState.invalidate(state)
+      // InstanceState.invalidate requires InstanceRef; callers without an
+      // active instance (global config route, test cleanup) rely on
+      // disposeAllInstances to rebuild per-instance caches, so a missing
+      // instance ref here is fine.
+      yield* InstanceState.invalidate(state).pipe(Effect.catchCause(() => Effect.void))
     })
 
     const updateGlobal = Effect.fn("Config.updateGlobal")(function* (config: Info) {

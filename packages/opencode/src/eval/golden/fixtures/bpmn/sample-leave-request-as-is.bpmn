@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  id="Definitions_LEAVE_001"
+                  targetNamespace="http://bpmn.io/schema/bpmn">
+
+  <bpmn:collaboration id="Collab_LEAVE_001" name="Demande de congé — processus TO-BE">
+    <bpmn:participant id="Participant_employee" name="Employé" processRef="proc_employee" />
+    <bpmn:participant id="Participant_hr" name="RH" processRef="proc_hr" />
+    <bpmn:messageFlow id="mf_request" name="MSG_LEAVE_REQUEST" sourceRef="p_fill_form" targetRef="x_review" />
+    <bpmn:messageFlow id="mf_decision" name="MSG_LEAVE_DECISION" sourceRef="x_notify" targetRef="p_acknowledge" />
+  </bpmn:collaboration>
+
+  <bpmn:process id="proc_employee" name="Demande employé" isExecutable="true">
+    <bpmn:startEvent id="p_start" name="Démarrer" />
+    <bpmn:userTask id="p_fill_form" name="Remplir le formulaire" />
+    <bpmn:task id="p_submit" name="Soumettre la demande" />
+    <bpmn:userTask id="p_acknowledge" name="Accuser réception" />
+    <bpmn:sequenceFlow id="p_f1" sourceRef="p_start" targetRef="p_fill_form" />
+    <bpmn:sequenceFlow id="p_f2" sourceRef="p_fill_form" targetRef="p_submit" />
+    <bpmn:sequenceFlow id="p_f3" sourceRef="p_submit" targetRef="p_acknowledge" />
+  </bpmn:process>
+
+  <bpmn:process id="proc_hr" name="Traitement RH" isExecutable="true">
+    <bpmn:userTask id="x_review" name="Examiner la demande" />
+    <bpmn:exclusiveGateway id="x_gate" name="Décision" />
+    <bpmn:task id="x_approve" name="Approuver" />
+    <bpmn:task id="x_reject" name="Rejeter" />
+    <bpmn:task id="x_notify" name="Notifier l'employé" />
+    <bpmn:sequenceFlow id="x_f1" sourceRef="x_review" targetRef="x_gate" />
+    <bpmn:sequenceFlow id="x_f2" sourceRef="x_gate" targetRef="x_approve" />
+    <bpmn:sequenceFlow id="x_f3" sourceRef="x_gate" targetRef="x_reject" />
+    <bpmn:sequenceFlow id="x_f4" sourceRef="x_approve" targetRef="x_notify" />
+    <bpmn:sequenceFlow id="x_f5" sourceRef="x_reject" targetRef="x_notify" />
+  </bpmn:process>
+
+  <bpmndi:BPMNDiagram id="Diagram_LEAVE_001">
+    <bpmndi:BPMNPlane id="Plane_LEAVE_001" bpmnElement="Collab_LEAVE_001">
+      <bpmndi:BPMNShape id="p_start_di" bpmnElement="p_start">
+        <dc:Bounds x="120" y="120" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="p_fill_form_di" bpmnElement="p_fill_form">
+        <dc:Bounds x="200" y="100" width="120" height="76" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="p_submit_di" bpmnElement="p_submit">
+        <dc:Bounds x="360" y="100" width="120" height="76" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="p_acknowledge_di" bpmnElement="p_acknowledge">
+        <dc:Bounds x="520" y="100" width="120" height="76" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="x_review_di" bpmnElement="x_review">
+        <dc:Bounds x="200" y="300" width="120" height="76" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="x_gate_di" bpmnElement="x_gate">
+        <dc:Bounds x="380" y="300" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="x_approve_di" bpmnElement="x_approve">
+        <dc:Bounds x="480" y="280" width="120" height="76" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="x_reject_di" bpmnElement="x_reject">
+        <dc:Bounds x="480" y="380" width="120" height="76" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="x_notify_di" bpmnElement="x_notify">
+        <dc:Bounds x="640" y="300" width="120" height="76" />
+      </bpmndi:BPMNShape>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
