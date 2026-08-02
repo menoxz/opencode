@@ -937,7 +937,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     await DialogAlert.show(
       dialog,
       "Update Complete",
-      `Successfully updated to OpenCode v${result.data.version}. Please restart the application.`,
+      `Successfully updated to OPENCODEV2 v${result.data.version}. Please restart the application.`,
     )
 
     void exit()
