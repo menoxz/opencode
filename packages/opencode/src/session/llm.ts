@@ -137,14 +137,16 @@ const live: Layer.Layer<
         maxOutputTokens: prepared.params.maxOutputTokens,
       })
 
-      // Point de réunion du contexte : le prompt assemblé (system + messages)
-      // est écrit tel quel dans OPENCODE_CONTEXT_FILE à chaque tour (si défini).
+      // Point de réunion du contexte : le payload assemblé (system + messages
+      // + tools) est écrit tel quel dans OPENCODE_CONTEXT_FILE à chaque tour
+      // (si défini), sans troncature.
       ContextFile.writeContextSnapshot({
         sessionID: input.sessionID,
         agent: input.agent.name,
         model: `${input.model.providerID}/${input.model.id}`,
         system: prepared.system,
         messages: prepared.messages,
+        tools: prepared.tools,
       })
 
       // Wire up toolExecutor for DWS workflow models so that tool calls

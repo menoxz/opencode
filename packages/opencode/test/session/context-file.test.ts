@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import type { ModelMessage } from "ai"
+import { jsonSchema, type ModelMessage } from "ai"
 import { ContextFile } from "@/session/context-file"
 
 describe("ContextFile.formatContextMarkdown", () => {
-  test("assemble le system prompt et les messages", () => {
+  test("assemble system, messages et tools tels que préparés", () => {
     const messages: ModelMessage[] = [
       { role: "user", content: "Bonjour" },
       { role: "assistant", content: "Salut" },
@@ -18,21 +18,32 @@ describe("ContextFile.formatContextMarkdown", () => {
       model: "opencode-go/deepseek-v4-flash",
       system: ["SYSTEM A", "SYSTEM B"],
       messages,
+      tools: {
+        bash: {
+          description: "Run a command",
+          inputSchema: jsonSchema({ type: "object", properties: {} }),
+          execute: async () => ({ output: "" }),
+        },
+      },
     })
-    expect(md).toContain("# CONTEXTE RÉEL — ses_test")
-    expect(md).toContain("Agent : build")
-    expect(md).toContain("Modèle : opencode-go/deepseek-v4-flash")
-    expect(md).toContain("## SYSTEM PROMPT")
-    expect(md).toContain("SYSTEM A")
-    expect(md).toContain("SYSTEM B")
-    expect(md).toContain("### 0 user")
-    expect(md).toContain("[user]\nBonjour")
-    expect(md).toContain("[assistant]\nSalut")
-    expect(md).toContain("[tool:call-123]")
+    expect(md).toContain("# session=ses_test agent=build model=opencode-go/deepseek-v4-flash")
+    expect(md).toContain("## SYSTEM")
+    expect(md).toContain("SYSTEM A\n\nSYSTEM B")
+    expect(md).toContain("## MESSAGES")
+    expect(md).toContain("### 0 user\n\nBonjour")
+    expect(md).toContain("### 1 assistant\n\nSalut")
+    expect(md).toContain("### 2 tool")
+    expect(md).toContain('"tool-result"')
+    expect(md).toContain('"call-123"')
+    // Les définitions d'outils sont incluses, sans la fonction execute (non sérialisable).
+    expect(md).toContain("## TOOLS")
+    expect(md).toContain("### bash")
+    expect(md).toContain('"description": "Run a command"')
+    expect(md).not.toContain('"execute"')
   })
 
-  test("tronque les contenus au-dessus de MAX_CONTENT_CHARS", () => {
-    const long = "a".repeat(ContextFile.MAX_CONTENT_CHARS + 100)
+  test("ne tronque pas les contenus", () => {
+    const long = "a".repeat(50_000)
     const md = ContextFile.formatContextMarkdown({
       sessionID: "ses_test",
       agent: "build",
@@ -40,11 +51,11 @@ describe("ContextFile.formatContextMarkdown", () => {
       system: [long],
       messages: [],
     })
-    expect(md).toContain("tronqué")
-    expect(md).not.toContain("a".repeat(ContextFile.MAX_CONTENT_CHARS + 50))
+    expect(md).toContain(long)
+    expect(md).not.toContain("tronqué")
   })
 
-  test("formate les contenus multi-parts (tool-call + reasoning)", () => {
+  test("serialise les contenus multi-parts sans perte (tool-call + reasoning)", () => {
     const messages: ModelMessage[] = [
       {
         role: "assistant",
@@ -61,7 +72,20 @@ describe("ContextFile.formatContextMarkdown", () => {
       system: [],
       messages,
     })
-    expect(md).toContain("[reasoning] je réfléchis")
-    expect(md).toContain('[tool-call] read(c2): {"filePath":"x.ts"}')
+    expect(md).toContain("je réfléchis")
+    expect(md).toContain('"toolName": "read"')
+    expect(md).toContain('"toolCallId": "c2"')
+    expect(md).toContain('"filePath": "x.ts"')
+  })
+
+  test("omet la section TOOLS quand aucune définition n'est fournie", () => {
+    const md = ContextFile.formatContextMarkdown({
+      sessionID: "ses_test",
+      agent: "build",
+      model: "m",
+      system: [],
+      messages: [{ role: "user", content: "hi" }],
+    })
+    expect(md).not.toContain("## TOOLS")
   })
 })
