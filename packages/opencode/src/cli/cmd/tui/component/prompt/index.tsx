@@ -1602,6 +1602,16 @@ export function Prompt(props: PromptProps) {
                               </span>
                             </text>
                           </Show>
+                          <Show when={usage()}>
+                            {(item) => (
+                              <>
+                                <text fg={fadeColor(theme.textMuted, modelMetaAlpha())}>·</text>
+                                <text flexShrink={0} fg={fadeColor(theme.textMuted, modelMetaAlpha())}>
+                                  {item().context}
+                                </text>
+                              </>
+                            )}
+                          </Show>
                         </box>
                       </Show>
                     </>
@@ -1777,14 +1787,13 @@ export function Prompt(props: PromptProps) {
                       {(item) => (
                         <text fg={theme.textMuted} wrapMode="none">
                           {[
-                            item().context,
                             item().cost,
                             item().tokensPerSecond ? `${item().tokensPerSecond} tok/s` : undefined,
                             formatFileTagHint(),
                             paletteShortcut(),
                           ]
                             .filter(Boolean)
-                            .join(" . ")}
+                            .join("  ")}
                           <span style={{ fg: theme.textMuted }}> commands</span>
                         </text>
                       )}

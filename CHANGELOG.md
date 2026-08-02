@@ -10,8 +10,10 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 ### Added
 
 ### Changed
+- `tui` : le contexte courant (ex. `128k/1.0M (13%)`) s'affiche désormais sur la ligne agent · modèle · fournisseur · variante ; la ligne de statut du prompt n'utilise plus de séparateurs ` . ` (remplacés par des espaces).
 
 ### Fixed
+- `agent` : le rapport final du mode swarm ne liste plus les points non traités — seuls les vrais bloqueurs sont documentés, avec la raison et la prochaine étape exacte.
 
 ### Removed
 
