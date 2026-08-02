@@ -40,7 +40,7 @@ async function ensureServer(url: string, headers?: RequestInit["headers"]): Prom
     )
   }
 
-  UI.println(`No server at ${parsed.origin} — starting opencode serve on port ${port}…`)
+  UI.println(`No server at ${parsed.origin} — starting opencodev2 serve on port ${port}…`)
   spawn(serverBinary(), ["serve", "--port", String(port)], {
     detached: true,
     stdio: "ignore",
@@ -62,7 +62,7 @@ async function ensureServer(url: string, headers?: RequestInit["headers"]): Prom
 
 export const AttachCommand = cmd({
   command: "attach <url>",
-  describe: "attach to a running opencode server",
+  describe: "attach to a running opencodev2 server",
   builder: (yargs) =>
     yargs
       .positional("url", {

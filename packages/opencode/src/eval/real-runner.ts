@@ -57,12 +57,15 @@ interface HeadlessResult {
   model: string | null
 }
 
-/** Locate the opencode binary spawn can execute. argv0 → PATH. */
+/** Locate the opencode binary spawn can execute. argv0 → PATH (opencodev2 first, opencode as compat fallback). */
 function findOpencodeBinary(): string {
   const argv0 = process.argv[0] ?? ""
+  if (/opencodev2(\.exe)?$/i.test(argv0) && fs.existsSync(argv0)) return argv0
   if (/opencode(\.exe)?$/i.test(argv0) && fs.existsSync(argv0)) return argv0
   const names =
-    process.platform === "win32" ? ["opencode.exe", "opencode.cmd", "opencode.bat"] : ["opencode"]
+    process.platform === "win32"
+      ? ["opencodev2.exe", "opencodev2.cmd", "opencodev2.bat", "opencode.exe", "opencode.cmd", "opencode.bat"]
+      : ["opencodev2", "opencode"]
   for (const dir of (process.env.PATH ?? "").split(path.delimiter)) {
     if (!dir) continue
     for (const name of names) {

@@ -38,9 +38,9 @@ export const MemoryCommand = effectCmd({
         describe: "filter to a single project id",
         type: "string",
       })
-      .example("opencode memory", "Show the 24h memory mirror")
-      .example("opencode memory --since 7d", "Show the last 7 days")
-      .example("opencode memory --tags", "Print only the tag cloud"),
+      .example("opencodev2 memory", "Show the 24h memory mirror")
+      .example("opencodev2 memory --since 7d", "Show the last 7 days")
+      .example("opencodev2 memory --tags", "Print only the tag cloud"),
   handler: Effect.fn("Cli.memory")(function* (args) {
     yield* InstanceRef
     const windowMs = parseWindow(args.since)

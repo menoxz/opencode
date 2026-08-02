@@ -233,7 +233,7 @@ function buildAutoPrompt(task: TaskItem): Effect.Effect<string> {
     const repoDir = (payload?.local_dir as string) || process.cwd()
 
     const parts: string[] = [
-      "You are processing an autonomous task for the opencode daemon.",
+      "You are processing an autonomous task for the opencodev2 daemon.",
       `Task source: ${task.source}`,
       `Task ID: ${task.triggerId}`,
       "",

@@ -63,17 +63,17 @@ export function make(input: {
 
   const initialize = Effect.fn("ACPNext.initialize")(function* (params: InitializeRequest) {
     const authMethod: AuthMethod = {
-      description: "Run `opencode auth login` in the terminal",
-      name: "Login with opencode",
+      description: "Run `opencodev2 auth login` in the terminal",
+      name: "Login with opencodev2",
       id: AuthMethodID,
     }
 
     if (params.clientCapabilities?._meta?.["terminal-auth"] === true) {
       authMethod._meta = {
         "terminal-auth": {
-          command: "opencode",
+          command: "opencodev2",
           args: ["auth", "login"],
-          label: "OpenCode Login",
+          label: "OpenCodev2 Login",
         },
       }
     }

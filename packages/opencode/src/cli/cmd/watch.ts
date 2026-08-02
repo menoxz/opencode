@@ -75,7 +75,7 @@ export const daemonHandler = Effect.fn("Daemon.handler")(function* (
     writePidFile(dd)
     log.info("daemon start", { pid: process.pid, pidDir: dd })
   } else {
-    Console.log(`🧠 opencode-daemon starting (PID: ${process.pid})`)
+    Console.log(`🧠 opencodev2-daemon starting (PID: ${process.pid})`)
   }
 
   const daemon = yield* createDaemon
@@ -141,7 +141,7 @@ export const daemonHandler = Effect.fn("Daemon.handler")(function* (
 
 export const WatchCommand = effectCmd({
   command: "watch",
-  describe: "Run opencode in daemon mode — background agent with periodic tasks",
+  describe: "Run opencodev2 in daemon mode — background agent with periodic tasks",
   builder: (yargs) =>
     yargs
       .option("daemon", {

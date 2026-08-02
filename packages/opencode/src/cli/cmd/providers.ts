@@ -650,7 +650,7 @@ export const ProvidersImportCopilotCommand = effectCmd({
 
     yield* Prompt.log.success("GitHub Copilot credential saved!")
     yield* Prompt.outro(
-      "Done — you can now use GitHub Copilot with opencode. Run `opencode auth list` to verify.",
+      "Done — you can now use GitHub Copilot with opencodev2. Run `opencodev2 auth list` to verify.",
     )
   }),
 })

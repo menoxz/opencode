@@ -120,7 +120,7 @@ function formatPendingTasksSection(tasks: TriggerHandler.TaskItem[]): string {
     tasks.length === 1
       ? `When you have processed the task, mark it as done by running:`
       : `When you have processed all the tasks, mark each as done by running for each task:`,
-    `  opencode tasks process <triggerId>`,
+    `  opencodev2 tasks process <triggerId>`,
     "",
     ...lines,
     `</pending_tasks>`,

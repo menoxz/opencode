@@ -162,7 +162,7 @@ export const DashboardCommand = cmd({
         label("Status", colored(false, "● RUNNING", "● STOPPED"))
         if (pid) label("Stale PID", `${pid} (process dead)`)
         else label("Info", "Daemon not started")
-        label("Start it", "opencode daemon start")
+        label("Start it", "opencodev2 daemon start")
       }
 
       // ── 2. Auto-Executor ──
@@ -171,7 +171,7 @@ export const DashboardCommand = cmd({
       label("Status", busy
         ? `${YELLOW}● BUSY${RESET}`
         : `${GREEN}● IDLE${RESET}`)
-      label("Run now", "opencode tasks execute [id]")
+      label("Run now", "opencodev2 tasks execute [id]")
 
       // ── 3. Task Queue ──
       section("Task Queue")
@@ -180,8 +180,8 @@ export const DashboardCommand = cmd({
       label("Processing", counts.processing > 0 ? `${YELLOW}${counts.processing}${RESET}` : "0")
       label("Done (total)", `${counts.done}`)
       label("Total", `${counts.pending + counts.processing + counts.done}`)
-      label("View tasks", "opencode tasks list")
-      label("View all", "opencode tasks list --all")
+      label("View tasks", "opencodev2 tasks list")
+      label("View all", "opencodev2 tasks list --all")
 
       // ── 4. Notifications ──
       section("Notifications")
@@ -232,14 +232,14 @@ export const DashboardCommand = cmd({
         }
       } else {
         label("Info", "No idle report yet")
-        label("Daemon status", "Run 'opencode daemon start' first")
+        label("Daemon status", "Run 'opencodev2 daemon start' first")
       }
 
       // ── 6. Quick Actions ──
       section("Quick Actions")
-      label("Daemon", "opencode daemon start|stop|status|logs")
-      label("Tasks", "opencode tasks list|execute [id]|report")
-      label("Dashboard", "opencode dashboard --watch")
+      label("Daemon", "opencodev2 daemon start|stop|status|logs")
+      label("Tasks", "opencodev2 tasks list|execute [id]|report")
+      label("Dashboard", "opencodev2 dashboard --watch")
 
       process.stdout.write(EOL)
     }

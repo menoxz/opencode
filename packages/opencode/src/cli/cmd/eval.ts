@@ -114,7 +114,7 @@ const RunCommand = effectCmd({
       }),
   handler: Effect.fn("Cli.eval.run")(function* (args) {
     if (!args.target) {
-      process.stdout.write("Usage: opencode eval run <scenario-id|suite-id>" + EOL)
+      process.stdout.write("Usage: opencodev2 eval run <scenario-id|suite-id>" + EOL)
       return
     }
 
@@ -214,7 +214,7 @@ const RunCommand = effectCmd({
     }
 
     process.stdout.write(
-      'Not found: "' + args.target + '". Use "opencode eval list" to see available scenarios and suites.' + EOL,
+      'Not found: "' + args.target + '". Use "opencodev2 eval list" to see available scenarios and suites.' + EOL,
     )
   }),
 })
@@ -227,7 +227,7 @@ const ReportCommand = effectCmd({
     const reports = yield* svc.listReports(10)
 
     if (reports.length === 0) {
-      process.stdout.write("No eval reports yet. Run 'opencode eval run' first." + EOL)
+      process.stdout.write("No eval reports yet. Run 'opencodev2 eval run' first." + EOL)
       return
     }
 

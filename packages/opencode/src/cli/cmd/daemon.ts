@@ -123,7 +123,7 @@ function findOpencodeBinary(): string | null {
 
 export const DaemonCommand = cmd({
   command: "daemon",
-  describe: "Manage the opencode background daemon (autonomous agent loop)",
+  describe: "Manage the opencodev2 background daemon (autonomous agent loop)",
   builder: (yargs) =>
     yargs
       .command(StartCommand)
@@ -156,14 +156,14 @@ const StartCommand = cmd({
   async handler(args) {
     const isService = args.service ?? false
 
-    process.stdout.write(`🧠 Starting opencode-daemon...${isService ? " (service mode)" : ""}${EOL}`)
+    process.stdout.write(`🧠 Starting opencodev2-daemon...${isService ? " (service mode)" : ""}${EOL}`)
 
     // PID file: only check in non-service mode (SCM manages service PID)
     if (!isService) {
       const existingPid = readPid()
       if (existingPid && isProcessRunning(existingPid)) {
         process.stdout.write(`⚠️  Daemon already running (PID ${existingPid})${EOL}`)
-        process.stdout.write(`   Use "opencode daemon stop" first${EOL}`)
+        process.stdout.write(`   Use "opencodev2 daemon stop" first${EOL}`)
         return
       }
     }
@@ -267,7 +267,7 @@ const StatusCommand = cmd({
         execSync("sc.exe query OpenCodeDaemon", { stdio: "inherit" })
       } catch {
         process.stdout.write(`📡 Service "OpenCodeDaemon" is not installed${EOL}`)
-        process.stdout.write(`   Install it with: opencode daemon install${EOL}`)
+        process.stdout.write(`   Install it with: opencodev2 daemon install${EOL}`)
       }
       return
     }
@@ -277,7 +277,7 @@ const StatusCommand = cmd({
     if (!pid) {
       process.stdout.write(`📡 Daemon status: STOPPED${EOL}`)
       process.stdout.write(`   No PID file found at ${pidFile()}${EOL}`)
-      process.stdout.write(`   Start it with: opencode daemon start${EOL}`)
+      process.stdout.write(`   Start it with: opencodev2 daemon start${EOL}`)
       return
     }
 
@@ -298,7 +298,7 @@ const StatusCommand = cmd({
     if (report) {
       process.stdout.write(`${EOL}📊  Idle Analysis Report${EOL}`)
       process.stdout.write(`   ${report.summary}${EOL}`)
-      process.stdout.write(`   Run: opencode tasks report for full details${EOL}`)
+      process.stdout.write(`   Run: opencodev2 tasks report for full details${EOL}`)
     }
   },
 })
@@ -330,7 +330,7 @@ const LogsCommand = cmd({
     const file = logFile(isService)
     if (!fs.existsSync(file)) {
       process.stdout.write(`ℹ️  No daemon log file found at ${file}${EOL}`)
-      process.stdout.write(`   Start the daemon first with: opencode daemon start${isService ? " --service" : ""}${EOL}`)
+      process.stdout.write(`   Start the daemon first with: opencodev2 daemon start${isService ? " --service" : ""}${EOL}`)
       return
     }
 
@@ -370,7 +370,7 @@ const InstallCommand = cmd({
   builder: (yargs) =>
     yargs.option("binary", {
       type: "string",
-      describe: "Path to the opencode binary (auto-detected by default)",
+      describe: "Path to the opencodev2 binary (auto-detected by default)",
     }),
   async handler(args) {
     if (process.platform !== "win32") {
@@ -382,18 +382,18 @@ const InstallCommand = cmd({
     if (!isElevated()) {
       process.stdout.write(`❌ Administrator privileges required.${EOL}`)
       process.stdout.write(`   Run as Administrator, then:${EOL}`)
-      process.stdout.write(`     opencode daemon install${EOL}`)
+      process.stdout.write(`     opencodev2 daemon install${EOL}`)
       process.stdout.write(`   Or use the PowerShell one-liner:${EOL}`)
-      process.stdout.write(`     Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile','-Command','opencode daemon install'${EOL}`)
+      process.stdout.write(`     Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile','-Command','opencodev2 daemon install'${EOL}`)
       return
     }
 
     // Find the opencode binary path
     const binary = (args.binary as string | undefined) || findOpencodeBinary()
     if (!binary) {
-      process.stdout.write(`❌ Could not locate the opencode binary.${EOL}`)
-      process.stdout.write(`   Specify it with: opencode daemon install --binary "C:\\path\\to\\opencode.exe"${EOL}`)
-      process.stdout.write(`   Or make sure opencode is on your PATH.${EOL}`)
+      process.stdout.write(`❌ Could not locate the opencodev2 binary.${EOL}`)
+      process.stdout.write(`   Specify it with: opencodev2 daemon install --binary "C:\\path\\to\\opencodev2.exe"${EOL}`)
+      process.stdout.write(`   Or make sure opencodev2 is on your PATH.${EOL}`)
       return
     }
 
@@ -432,7 +432,7 @@ const InstallCommand = cmd({
       process.stdout.write(`✅ Service "${serviceName}" installed and set to auto-start${EOL}`)
       process.stdout.write(`   Start now:   sc.exe start "${serviceName}"${EOL}`)
       process.stdout.write(`   Stop:        sc.exe stop "${serviceName}"${EOL}`)
-      process.stdout.write(`   View logs:   opencode daemon logs${EOL}`)
+      process.stdout.write(`   View logs:   opencodev2 daemon logs${EOL}`)
     } catch (err) {
       process.stdout.write(`❌ Failed to install service: ${err}${EOL}`)
       process.stdout.write(`   You may also try manually:${EOL}`)
