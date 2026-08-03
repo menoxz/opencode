@@ -564,35 +564,55 @@ export const layer = Layer.effect(
     }) {
       if (input.model.capabilities.input.image) return input.messages
       const imageConfig = input.imageConfig ?? {}
+      const analyze = (attachment: MessageV2.FilePart) =>
+        visionAnalysis({
+          attachment,
+          imageConfig,
+          user: input.user,
+          sessionID: input.sessionID,
+          agent: input.agent,
+          promptRollout: input.promptRollout,
+        }).pipe(
+          Effect.catchCause((cause) => {
+            const defect = Cause.squash(cause)
+            return Effect.succeed(
+              `ERROR: Image analysis failed (${defect instanceof Error ? defect.message : String(defect)}). The image could not be read by the configured vision model.`,
+            )
+          }),
+        )
+      const isImage = (attachment: { mime: string }) => attachment.mime.startsWith("image/")
       const next: MessageV2.WithParts[] = []
       for (const msg of input.messages) {
         let changed = false
         const parts: MessageV2.Part[] = []
         for (const part of msg.parts) {
-          if (part.type === "file" && part.mime.startsWith("image/")) {
-            changed = true
-            const analysis = yield* visionAnalysis({
-              attachment: part,
-              imageConfig,
-              user: input.user,
-              sessionID: input.sessionID,
-              agent: input.agent,
-              promptRollout: input.promptRollout,
-            }).pipe(
-              Effect.catchCause((cause) => {
-                const defect = Cause.squash(cause)
-                return Effect.succeed(
-                  `ERROR: Image analysis failed (${defect instanceof Error ? defect.message : String(defect)}). The image could not be read by the configured vision model.`,
-                )
-              }),
-            )
+          const images = unreadableImages(part)
+          if (!images.length) {
+            parts.push(part)
+            continue
+          }
+          changed = true
+          const analyses = yield* Effect.forEach(images, analyze)
+          if (part.type === "file") {
             parts.push({
               id: PartID.ascending(),
               sessionID: part.sessionID,
               messageID: part.messageID,
               type: "text",
               synthetic: true,
-              text: analysis,
+              text: analyses.join("\n\n"),
+            })
+            continue
+          }
+          if (part.type === "tool" && part.state.status === "completed") {
+            const rest = (part.state.attachments ?? []).filter((attachment) => !isImage(attachment))
+            parts.push({
+              ...part,
+              state: {
+                ...part.state,
+                output: [part.state.output, ...analyses].filter((line) => Boolean(line)).join("\n\n"),
+                attachments: rest.length ? rest : undefined,
+              },
             })
             continue
           }
@@ -2674,6 +2694,22 @@ function generateGoalDraft(userText: string): { goal: string; dod: string[]; out
   }
 
   return { goal, dod, outOfScope: oos }
+}
+
+/**
+ * Images a model without image input cannot consume, for one message part.
+ *
+ * Both delivery paths must be covered: the user attaches an image to the prompt
+ * (file part), and a tool returns one (read, webfetch…) as a tool-result
+ * attachment. Only the first path used to be handled, so reading an image with
+ * a non-vision model silently produced an unusable result.
+ */
+export function unreadableImages(part: MessageV2.Part): MessageV2.FilePart[] {
+  const isImage = (attachment: { mime: string }) => attachment.mime.startsWith("image/")
+  if (part.type === "file") return isImage(part) ? [part] : []
+  if (part.type === "tool" && part.state.status === "completed")
+    return (part.state.attachments ?? []).filter(isImage)
+  return []
 }
 
 export * as SessionPrompt from "./prompt"
