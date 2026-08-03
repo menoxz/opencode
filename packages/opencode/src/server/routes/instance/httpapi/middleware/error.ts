@@ -2,6 +2,7 @@ import { NamedError } from "@opencode-ai/core/util/error"
 import * as Log from "@opencode-ai/core/util/log"
 import { Cause, Effect } from "effect"
 import { HttpRouter, HttpServerError, HttpServerRespondable, HttpServerResponse } from "effect/unstable/http"
+import { ConfigError } from "@/config/error"
 
 const log = Log.create({ service: "server" })
 
@@ -18,6 +19,16 @@ export const errorLayer = HttpRouter.middleware<{ handles: unknown }>()((effect)
       if (!defect) return Effect.failCause(cause)
 
       const error = defect.defect
+
+      // An invalid opencode.json is the user's own doing and every client already
+      // knows how to render these two errors. Hiding them behind a generic 500
+      // turned a one-line fix into "Unexpected server error. Check server logs",
+      // and at startup it hit four requests at once with no actionable detail.
+      if (ConfigError.InvalidError.isInstance(error) || ConfigError.JsonError.isInstance(error)) {
+        log.error("invalid config", { error })
+        return Effect.succeed(HttpServerResponse.jsonUnsafe(error.toObject(), { status: 400 }))
+      }
+
       const ref = `err_${crypto.randomUUID().slice(0, 8)}`
 
       log.error("failed", { ref, error, cause: Cause.pretty(cause) })
