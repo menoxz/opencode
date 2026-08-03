@@ -15,6 +15,13 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ### Removed
 
+## [v1.18.71] - 2026-08-03
+
+### Fixed
+- **Un `auth.json` illisible rendait le démarrage impossible** (cause la plus fréquente des `4 of 5 requests failed`) : `FileSystem.readJson` appelait `JSON.parse` en synchrone, donc un contenu corrompu devenait un *defect* Effect — et un defect traverse les gardes `Effect.orElseSucceed` / `Effect.option` des appelants. Un `auth.json` tronqué ou rempli d'espaces (écriture interrompue par Ctrl+C, fermeture du terminal, extinction) faisait donc échouer tout le bootstrap, sans issue possible puisque `auth login` exige que l'application démarre. `readJson` échoue désormais avec une erreur typée : un fichier illisible dégrade vers « aucune credential » au lieu de bloquer. Reproduit sous Linux (Docker) avant/après. Tests : `packages/core/test/filesystem` et `test/auth/auth.test.ts` (4 formes de corruption + récupération).
+- **Écriture non atomique de `auth.json`** : `writeJson` écrivait directement dans le fichier cible, laissant un contenu partiel si le processus était tué pendant l'écriture — c'est l'origine même de la corruption ci-dessus. L'écriture passe maintenant par un fichier temporaire suivi d'un `rename` (atomique sous POSIX comme sous Windows) : une interruption laisse l'ancien fichier intact.
+- **« Unexpected server error. Check server logs for details. » sans autre indication** : le message ne nommait ni l'erreur, ni le fichier, ni l'emplacement du log. Il porte désormais la cause réelle (`nom: message`) et le chemin du fichier de log.
+
 ## [v1.18.70] - 2026-08-03
 
 ### Fixed
