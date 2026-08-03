@@ -106,12 +106,40 @@ export function applyMigrations(db: SQLiteBunDatabase, entries: Journal) {
 
 const MIGRATIONS_TABLE = "__drizzle_migrations"
 
-// Tables, indexes and views a migration creates. Drizzle decides what to run
-// from the recorded migration *names*, so this is only used to tell whether a
-// migration would be a no-op against the schema already in the database.
-function createdObjects(statements: string): string[] {
-  const pattern = /CREATE\s+(?:UNIQUE\s+)?(?:TABLE|INDEX|VIEW)\s+(?:IF\s+NOT\s+EXISTS\s+)?[`"']?([A-Za-z0-9_]+)[`"']?/gi
-  return [...statements.matchAll(pattern)].map((match) => match[1])
+const CREATE_OBJECT = /^CREATE\s+(?:UNIQUE\s+)?(?:TABLE|INDEX|VIEW)\s+(?:IF\s+NOT\s+EXISTS\s+)?[`"']?([A-Za-z0-9_]+)[`"']?/i
+const DROP_OBJECT = /^DROP\s+(?:TABLE|INDEX|VIEW)\s+(?:IF\s+EXISTS\s+)?[`"']?([A-Za-z0-9_]+)[`"']?/i
+const ADD_COLUMN = /^ALTER\s+TABLE\s+[`"']?([A-Za-z0-9_]+)[`"']?\s+ADD\s+(?:COLUMN\s+)?[`"']?([A-Za-z0-9_]+)[`"']?/i
+const DROP_COLUMN = /^ALTER\s+TABLE\s+[`"']?([A-Za-z0-9_]+)[`"']?\s+DROP\s+(?:COLUMN\s+)?[`"']?([A-Za-z0-9_]+)[`"']?/i
+
+function statements(migration: string): string[] {
+  return migration
+    .split("--> statement-breakpoint")
+    .flatMap((chunk) => chunk.split(";"))
+    .map((statement) =>
+      statement
+        .split("\n")
+        .filter((line) => !line.trim().startsWith("--"))
+        .join("\n")
+        .trim(),
+    )
+    .filter((statement) => statement.length > 0)
+}
+
+/** Whether the database already reflects this statement — `undefined` when undecidable. */
+function alreadyApplied(statement: string, objects: Set<string>, columns: (table: string) => Set<string>) {
+  const created = CREATE_OBJECT.exec(statement)
+  if (created) return objects.has(created[1]!)
+
+  const dropped = DROP_OBJECT.exec(statement)
+  if (dropped) return !objects.has(dropped[1]!)
+
+  const added = ADD_COLUMN.exec(statement)
+  if (added) return columns(added[1]!).has(added[2]!)
+
+  const removed = DROP_COLUMN.exec(statement)
+  if (removed) return !columns(removed[1]!).has(removed[2]!)
+
+  return undefined
 }
 
 // A database can hold the whole schema while its migration bookkeeping is gone:
@@ -119,18 +147,44 @@ function createdObjects(statements: string): string[] {
 // database imported from another install. Drizzle then replays migration 1,
 // `CREATE TABLE project` fails because the table is already there, the failure
 // surfaces as "Unexpected server error" on every startup request — and it never
-// heals, because each launch replays the same migration.
+// heals, because the next launch replays the very same migration.
 //
-// Record the migrations that only create objects which all already exist: they
-// are provable no-ops against this database. Anything that also alters or drops
-// is left alone, so a genuinely pending change still runs.
+// Establish how far the schema actually got, the way a baseline works: scan
+// backwards for the newest migration the database fully reflects. Migrations
+// are applied in order, so everything up to it has run — even the parts a later
+// migration has since undone, which is why each one cannot be judged on its own
+// against the final schema. Anything after it is left for drizzle to apply.
 function baselineExistingSchema(db: SQLiteBunDatabase, entries: Journal) {
-  const existing = new Set(
+  const objects = new Set(
     db
       .all<{ name: string }>(sql`SELECT name FROM sqlite_master WHERE type IN ('table', 'index', 'view')`)
       .map((row) => row.name),
   )
-  if (existing.size === 0) return
+  if (objects.size === 0) return
+
+  const columnCache = new Map<string, Set<string>>()
+  const columns = (table: string) => {
+    const cached = columnCache.get(table)
+    if (cached) return cached
+    const found = new Set(
+      db.all<{ name: string }>(sql`SELECT name FROM pragma_table_info(${table})`).map((row) => row.name),
+    )
+    columnCache.set(table, found)
+    return found
+  }
+
+  const reflected = (entry: Journal[number]) => {
+    const parts = statements(entry.sql)
+    if (parts.length === 0) return false
+    const verdicts = parts.map((statement) => alreadyApplied(statement, objects, columns))
+    if (!verdicts.every((verdict) => verdict === true)) return false
+    // A migration that only drops things looks "reflected" on a database where
+    // those things never existed, so it must not set the level on its own.
+    return parts.some((statement) => CREATE_OBJECT.test(statement) || ADD_COLUMN.test(statement))
+  }
+
+  const level = entries.findLastIndex(reflected)
+  if (level < 0) return
 
   const table = sql.identifier(MIGRATIONS_TABLE)
   db.run(
@@ -143,16 +197,10 @@ function baselineExistingSchema(db: SQLiteBunDatabase, entries: Journal) {
       .filter((name): name is string => Boolean(name)),
   )
 
-  for (const entry of entries) {
+  for (const entry of entries.slice(0, level + 1)) {
     if (recorded.has(entry.name)) continue
-    if (/\b(?:ALTER|DROP)\s+(?:TABLE|INDEX|VIEW)\b/i.test(entry.sql)) continue
-    const created = createdObjects(entry.sql)
-    if (created.length === 0) continue
-    if (!created.every((name) => existing.has(name))) continue
-
-    const hash = createHash("sha256").update(entry.sql).digest("hex")
     db.run(
-      sql`INSERT INTO ${table} ("hash", "created_at", "name", "applied_at") VALUES (${hash}, ${entry.timestamp}, ${entry.name}, ${new Date().toISOString()})`,
+      sql`INSERT INTO ${table} ("hash", "created_at", "name", "applied_at") VALUES (${createHash("sha256").update(entry.sql).digest("hex")}, ${entry.timestamp}, ${entry.name}, ${new Date().toISOString()})`,
     )
     log.warn("schema already present, recording migration as applied", { name: entry.name })
   }

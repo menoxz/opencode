@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test"
 import { Database as BunSqlite } from "bun:sqlite"
 import { drizzle } from "drizzle-orm/bun-sqlite"
 import { sql } from "drizzle-orm"
+import { readdirSync, readFileSync } from "node:fs"
+import path from "node:path"
 import { Database } from "@/storage/db"
 
 const journal = [
@@ -84,5 +86,52 @@ describe("Database.applyMigrations", () => {
     Database.applyMigrations(db, withAlter)
     const columns = db.all<{ name: string }>(sql`PRAGMA table_info(\`project\`)`).map((row) => row.name)
     expect(columns).toContain("vcs")
+  })
+
+  test("recognises an already applied ADD COLUMN", () => {
+    const db = open()
+    const withAlter = [
+      journal[0]!,
+      {
+        name: "20260103000000_add_column",
+        timestamp: Date.UTC(2026, 0, 3),
+        sql: "ALTER TABLE `project` ADD `vcs` text;\n",
+      },
+    ]
+    Database.applyMigrations(db, withAlter)
+    db.run(sql`DROP TABLE __drizzle_migrations`)
+
+    expect(() => Database.applyMigrations(db, withAlter)).not.toThrow()
+    expect(recorded(db)).toEqual(withAlter.map((entry) => entry.name))
+  })
+
+  // The real schema: 23 migrations mixing CREATE, ALTER and DROP. This is the
+  // shape that actually shipped broken — a fully migrated database whose
+  // bookkeeping vanished could never boot again.
+  test("recovers the real migration set after losing its bookkeeping", () => {
+    const dir = path.join(import.meta.dirname, "../../migration")
+    const entries = readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort()
+      .map((name) => ({
+        name,
+        timestamp: Date.parse(
+          `${name.slice(0, 4)}-${name.slice(4, 6)}-${name.slice(6, 8)}T${name.slice(8, 10)}:${name.slice(10, 12)}:${name.slice(12, 14)}Z`,
+        ),
+        sql: readFileSync(path.join(dir, name, "migration.sql"), "utf-8"),
+      }))
+      .filter((entry) => entry.sql.length > 0)
+
+    expect(entries.length).toBeGreaterThan(20)
+
+    const db = open()
+    Database.applyMigrations(db, entries)
+    const before = recorded(db)
+    expect(before).toEqual(entries.map((entry) => entry.name))
+
+    db.run(sql`DROP TABLE __drizzle_migrations`)
+    expect(() => Database.applyMigrations(db, entries)).not.toThrow()
+    expect(recorded(db)).toEqual(before)
   })
 })
