@@ -63,17 +63,28 @@ const meta = "./dist/opencode"
 await $`mkdir -p ${meta}/bin`.cwd(".")
 await $`cp ./script/postinstall.mjs ./dist/opencode/postinstall.mjs`
 await $`cp ../../LICENSE ./dist/opencode/LICENSE`
+// The root README is the fork README; shipping it is what makes the npm package
+// page render (npm derives readmeFilename from the README inside the tarball).
+await $`cp ../../README.md ./dist/opencode/README.md`
 await Bun.file(`./dist/opencode/bin/opencode.exe`).write(fakeExe)
 await Bun.file(`./dist/opencode/package.json`).write(
   JSON.stringify(
     {
       name: scope,
       version,
+      description:
+        "opencodev2 — AI-powered development tool. Community fork of opencode (MCP auto-reconnect, hot reload, eval pipeline, memory consolidation, unified prompt); installs the opencodev2 CLI alongside the official opencode.",
       // The fork installs its command as `opencodev2` so it can coexist with
       // the upstream `opencode` binary from the `opencode-ai` package.
       bin: { opencodev2: "./bin/opencode.exe" },
       scripts: { postinstall: "node ./postinstall.mjs" },
+      keywords: ["opencode", "opencodev2", "ai", "coding-agent", "cli", "agent", "llm", "fork"],
       license: "MIT",
+      homepage: "https://github.com/menoxz/opencode",
+      repository: { type: "git", url: "https://github.com/menoxz/opencode.git" },
+      bugs: { url: "https://github.com/menoxz/opencode/issues" },
+      files: ["bin", "postinstall.mjs", "LICENSE", "README.md"],
+      engines: { node: ">=18" },
       os: ["darwin", "linux", "win32"],
       cpu: ["arm64", "x64"],
       optionalDependencies,
