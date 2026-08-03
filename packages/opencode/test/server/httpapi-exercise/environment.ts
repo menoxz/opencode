@@ -12,13 +12,19 @@ process.env.XDG_CONFIG_HOME = path.join(exerciseGlobalRoot, "config")
 process.env.XDG_STATE_HOME = path.join(exerciseGlobalRoot, "state")
 process.env.XDG_CACHE_HOME = path.join(exerciseGlobalRoot, "cache")
 process.env.OPENCODE_DISABLE_SHARE = "true"
-export const exerciseConfigDirectory = path.join(exerciseGlobalRoot, "config", "opencode")
-export const exerciseDataDirectory = path.join(exerciseGlobalRoot, "data", "opencode")
+
+// The fork stores global data/config under its own app directory (`opencodev2`,
+// packages/core/src/global.ts) rather than upstream's `opencode`. Resolve the
+// real directories from Global so the auth/config scenarios read and write the
+// exact same files the services use.
+const { Global } = await import("@opencode-ai/core/global")
+export const exerciseConfigDirectory = Global.Path.config
+export const exerciseDataDirectory = Global.Path.data
 
 // Ensure the global data/config directories exist up front. The auth scenarios
-// read/write auth.json under data/opencode, and the effect mode does not start
-// the server first (unlike coverage/auth modes), so without this the seed or
-// the post-call check hits ENOENT.
+// read/write auth.json under the data directory, and the effect mode does not
+// start the server first (unlike coverage/auth modes), so without this the seed
+// or the post-call check hits ENOENT.
 mkdirSync(exerciseDataDirectory, { recursive: true })
 mkdirSync(exerciseConfigDirectory, { recursive: true })
 
