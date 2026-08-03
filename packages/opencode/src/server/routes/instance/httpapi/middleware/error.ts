@@ -33,10 +33,21 @@ export const errorLayer = HttpRouter.middleware<{ handles: unknown }>()((effect)
 
       log.error("failed", { ref, error, cause: Cause.pretty(cause) })
 
+      // "Check server logs for details" without naming the log, the file or the
+      // actual error left users guessing — it is the single most reported
+      // complaint about this message. Carry the cause and the log path.
+      const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+      const logfile = Log.file()
+
       return Effect.succeed(
         HttpServerResponse.jsonUnsafe(
           new NamedError.Unknown({
-            message: "Unexpected server error. Check server logs for details.",
+            message: [
+              `Unexpected server error: ${detail}`,
+              logfile ? `Log: ${logfile}` : undefined,
+            ]
+              .filter((line) => Boolean(line))
+              .join(" — "),
             ref,
           }).toObject(),
           { status: 500 },
