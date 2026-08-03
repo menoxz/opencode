@@ -15,6 +15,12 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ### Removed
 
+## [v1.18.70] - 2026-08-03
+
+### Fixed
+- **Démarrage impossible à cause d'une clé de commentaire `"//"`** : JSON n'ayant pas de commentaires, `"//": "…"` est la convention usuelle (popularisée par package.json) et se retrouve naturellement dans `opencode.json`. Le schéma la traitait comme une clé inconnue et invalidait toute la configuration : le TUI ne démarrait plus (`4 of 5 requests failed`). Les clés préfixées `//` sont désormais ignorées à la validation (les vrais commentaires JSONC restaient déjà acceptés) ; toute autre clé inconnue est toujours signalée. Tests : `test/config/parse.test.ts`.
+- **Erreur de configuration masquée par un 500 générique** : une configuration invalide remontait comme *defect* et le middleware HTTP la remplaçait par « Unexpected server error. Check server logs for details. », affiché par le TUI sur les 4 requêtes de démarrage — sans jamais nommer le fichier ni la clé fautive. `ConfigInvalidError` et `ConfigJsonError` sont maintenant renvoyées telles quelles en HTTP 400 ; les clients savent déjà les formater (`FormatError`), donc le TUI affiche désormais le chemin du fichier et la clé en cause.
+
 ## [v1.18.69] - 2026-08-03
 
 ### Added
