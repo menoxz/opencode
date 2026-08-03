@@ -37,7 +37,8 @@ export function schema<S extends EffectSchema.Decoder<unknown, never>>(
   data: unknown,
   source: string,
 ): DeepMutable<S["Type"]> {
-  const extra = topLevelExtraKeys(schema, data)
+  const input = withoutCommentKeys(data)
+  const extra = topLevelExtraKeys(schema, input)
   if (extra.length) {
     throw new InvalidError({
       path: source,
@@ -52,7 +53,7 @@ export function schema<S extends EffectSchema.Decoder<unknown, never>>(
     })
   }
 
-  const decoded = EffectSchema.decodeUnknownExit(schema)(data, { errors: "all", propertyOrder: "original" })
+  const decoded = EffectSchema.decodeUnknownExit(schema)(input, { errors: "all", propertyOrder: "original" })
   if (Exit.isSuccess(decoded)) return decoded.value as DeepMutable<S["Type"]>
   const error = Cause.squash(decoded.cause)
 
@@ -76,4 +77,18 @@ function topLevelExtraKeys(schema: EffectSchema.Top, data: unknown) {
   if (schema.ast._tag !== "Objects" || schema.ast.indexSignatures.length > 0) return []
   const known = new Set(schema.ast.propertySignatures.map((item) => String(item.name)))
   return Object.keys(data).filter((key) => !known.has(key))
+}
+
+/**
+ * Drop `"//"` comment keys before validation.
+ *
+ * JSON has no comments, so `"//": "…"` is the conventional workaround (npm
+ * popularised it in package.json) and people reach for it in opencode.json.
+ * The config format already accepts real JSONC comments, so treating the key
+ * as an unknown field only produced a confusing startup failure.
+ */
+function withoutCommentKeys(data: unknown): unknown {
+  if (typeof data !== "object" || data === null || Array.isArray(data)) return data
+  const entries = Object.entries(data as Record<string, unknown>).filter(([key]) => !key.startsWith("//"))
+  return Object.fromEntries(entries)
 }
