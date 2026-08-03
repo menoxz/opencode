@@ -1,5 +1,6 @@
 import { type SQLiteBunDatabase } from "drizzle-orm/bun-sqlite"
 import { type SQLiteTransaction } from "drizzle-orm/sqlite-core"
+import { sql } from "drizzle-orm"
 export * from "drizzle-orm"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { LocalContext } from "@/util/local-context"
@@ -97,9 +98,64 @@ function materializeMigrationsFolder(entries: Journal): string {
   return dir
 }
 
-function applyMigrations(db: SQLiteBunDatabase, entries: Journal) {
+export function applyMigrations(db: SQLiteBunDatabase, entries: Journal) {
   const dir = materializeMigrationsFolder(entries)
+  baselineExistingSchema(db, entries)
   migrate(db, { migrationsFolder: dir } as unknown as Parameters<typeof migrate>[1])
+}
+
+const MIGRATIONS_TABLE = "__drizzle_migrations"
+
+// Tables, indexes and views a migration creates. Drizzle decides what to run
+// from the recorded migration *names*, so this is only used to tell whether a
+// migration would be a no-op against the schema already in the database.
+function createdObjects(statements: string): string[] {
+  const pattern = /CREATE\s+(?:UNIQUE\s+)?(?:TABLE|INDEX|VIEW)\s+(?:IF\s+NOT\s+EXISTS\s+)?[`"']?([A-Za-z0-9_]+)[`"']?/gi
+  return [...statements.matchAll(pattern)].map((match) => match[1])
+}
+
+// A database can hold the whole schema while its migration bookkeeping is gone:
+// a first run interrupted mid-migration, a copy taken without its WAL, or a
+// database imported from another install. Drizzle then replays migration 1,
+// `CREATE TABLE project` fails because the table is already there, the failure
+// surfaces as "Unexpected server error" on every startup request — and it never
+// heals, because each launch replays the same migration.
+//
+// Record the migrations that only create objects which all already exist: they
+// are provable no-ops against this database. Anything that also alters or drops
+// is left alone, so a genuinely pending change still runs.
+function baselineExistingSchema(db: SQLiteBunDatabase, entries: Journal) {
+  const existing = new Set(
+    db
+      .all<{ name: string }>(sql`SELECT name FROM sqlite_master WHERE type IN ('table', 'index', 'view')`)
+      .map((row) => row.name),
+  )
+  if (existing.size === 0) return
+
+  const table = sql.identifier(MIGRATIONS_TABLE)
+  db.run(
+    sql`CREATE TABLE IF NOT EXISTS ${table} (id INTEGER PRIMARY KEY, hash text NOT NULL, created_at numeric, name text, applied_at TEXT)`,
+  )
+  const recorded = new Set(
+    db
+      .all<{ name: string | null }>(sql`SELECT name FROM ${table}`)
+      .map((row) => row.name)
+      .filter((name): name is string => Boolean(name)),
+  )
+
+  for (const entry of entries) {
+    if (recorded.has(entry.name)) continue
+    if (/\b(?:ALTER|DROP)\s+(?:TABLE|INDEX|VIEW)\b/i.test(entry.sql)) continue
+    const created = createdObjects(entry.sql)
+    if (created.length === 0) continue
+    if (!created.every((name) => existing.has(name))) continue
+
+    const hash = createHash("sha256").update(entry.sql).digest("hex")
+    db.run(
+      sql`INSERT INTO ${table} ("hash", "created_at", "name", "applied_at") VALUES (${hash}, ${entry.timestamp}, ${entry.name}, ${new Date().toISOString()})`,
+    )
+    log.warn("schema already present, recording migration as applied", { name: entry.name })
+  }
 }
 
 function time(tag: string) {
