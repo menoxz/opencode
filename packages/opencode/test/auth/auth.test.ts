@@ -1,6 +1,9 @@
 import { describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
+import fs from "node:fs/promises"
+import path from "node:path"
 import { Auth } from "../../src/auth"
+import { Global } from "@opencode-ai/core/global"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { provideTmpdirInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
@@ -80,6 +83,30 @@ describe("Auth", () => {
         yield* auth.remove("anthropic")
         const after = yield* auth.all()
         expect(after["anthropic"]).toBeUndefined()
+      }),
+    ),
+  )
+
+  // Regression: an interrupted write leaves auth.json non-empty but unparseable.
+  // JSON.parse then died as a defect, straight through Auth.all's fallback, and
+  // every config-dependent startup request answered "Unexpected server error" —
+  // leaving no way back in, since auth login needs the app to boot.
+  it.live("unparseable auth.json degrades to empty credentials", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const auth = yield* Auth.Service
+        const file = path.join(Global.Path.data, "auth.json")
+        yield* Effect.promise(() => fs.mkdir(path.dirname(file), { recursive: true }))
+        yield* Effect.addFinalizer(() => Effect.promise(() => fs.rm(file, { force: true })))
+
+        for (const corrupted of ["   ", "", "{not json", "\u0000\u0001"]) {
+          yield* Effect.promise(() => fs.writeFile(file, corrupted))
+          expect(yield* auth.all()).toEqual({})
+        }
+
+        // and recovery works without deleting anything by hand
+        yield* auth.set("anthropic", { type: "api", key: "sk-test" })
+        expect((yield* auth.all())["anthropic"]).toBeDefined()
       }),
     ),
   )

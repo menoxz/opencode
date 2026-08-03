@@ -84,13 +84,25 @@ export namespace AppFileSystem {
 
       const readJson = Effect.fn("FileSystem.readJson")(function* (path: string) {
         const text = yield* fs.readFileString(path)
-        return JSON.parse(text)
+        // JSON.parse throws synchronously, which Effect turns into a defect —
+        // and a defect bypasses every Effect.orElseSucceed/Effect.option guard
+        // the call sites rely on. That is how a single corrupted auth.json took
+        // down the whole bootstrap instead of degrading to "no credentials".
+        return yield* Effect.try({
+          try: () => JSON.parse(text),
+          catch: (cause) => new FileSystemError({ method: "readJson", cause }),
+        })
       })
 
       const writeJson = Effect.fn("FileSystem.writeJson")(function* (path: string, data: unknown, mode?: number) {
         const content = JSON.stringify(data, null, 2)
-        yield* fs.writeFileString(path, content)
-        if (mode) yield* fs.chmod(path, mode)
+        // Write then rename: rename is atomic on POSIX and Windows, so an
+        // interrupted process leaves the previous file intact instead of a
+        // half-written one. Non-atomic writes are what corrupted auth.json.
+        const temp = `${path}.${process.pid}.tmp`
+        yield* fs.writeFileString(temp, content)
+        if (mode) yield* fs.chmod(temp, mode)
+        yield* fs.rename(temp, path).pipe(Effect.onError(() => fs.remove(temp).pipe(Effect.ignore)))
       })
 
       const ensureDir = Effect.fn("FileSystem.ensureDir")(function* (path: string) {

@@ -363,4 +363,54 @@ describe("AppFileSystem", () => {
       expect(AppFileSystem.overlaps("/a", "/b")).toBe(false)
     })
   })
+
+  describe("readJson", () => {
+    // Regression: JSON.parse threw synchronously, so malformed content became an
+    // Effect defect. Defects bypass Effect.orElseSucceed/Effect.option, which is
+    // how one corrupted auth.json brought down the entire server bootstrap.
+    it(
+      "fails recoverably on malformed json instead of dying",
+      Effect.gen(function* () {
+        const fs = yield* AppFileSystem.Service
+        const filesys = yield* FileSystem.FileSystem
+        const tmp = yield* filesys.makeTempDirectoryScoped()
+        const file = path.join(tmp, "auth.json")
+        yield* filesys.writeFileString(file, "   ")
+
+        const recovered = yield* fs.readJson(file).pipe(Effect.orElseSucceed(() => ({ fallback: true })))
+        expect(recovered).toEqual({ fallback: true })
+      }),
+    )
+
+    it(
+      "still reads valid json",
+      Effect.gen(function* () {
+        const fs = yield* AppFileSystem.Service
+        const filesys = yield* FileSystem.FileSystem
+        const tmp = yield* filesys.makeTempDirectoryScoped()
+        const file = path.join(tmp, "data.json")
+        yield* filesys.writeFileString(file, '{"token":"abc"}')
+        expect(yield* fs.readJson(file)).toEqual({ token: "abc" })
+      }),
+    )
+  })
+
+  describe("writeJson", () => {
+    it(
+      "round-trips and leaves no temp file behind",
+      Effect.gen(function* () {
+        const fs = yield* AppFileSystem.Service
+        const filesys = yield* FileSystem.FileSystem
+        const tmp = yield* filesys.makeTempDirectoryScoped()
+        const file = path.join(tmp, "auth.json")
+
+        yield* fs.writeJson(file, { token: "one" })
+        yield* fs.writeJson(file, { token: "two" })
+
+        expect(yield* fs.readJson(file)).toEqual({ token: "two" })
+        const entries = yield* filesys.readDirectory(tmp)
+        expect(entries.filter((entry) => entry.endsWith(".tmp"))).toEqual([])
+      }),
+    )
+  })
 })
