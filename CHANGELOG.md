@@ -15,6 +15,11 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ### Removed
 
+## [v1.18.73] - 2026-08-03
+
+### Fixed
+- **Reprise d'une base au schéma complet mais sans comptabilité de migrations (complète la v1.18.72)** : la v1.18.72 jugeait chaque migration isolément face au schéma final, or une migration ancienne peut avoir été défaite par une plus récente — seules 6 des 23 étaient reconnues et le démarrage échouait toujours. Le palier réellement atteint est désormais déterminé comme le fait un *baseline* : on cherche en partant de la fin la migration la plus récente que la base reflète entièrement (analyse instruction par instruction : `CREATE`, `DROP`, `ALTER ADD/DROP COLUMN`), et tout ce qui la précède est enregistré comme appliqué — les migrations étant appliquées dans l'ordre. Une migration purement destructive ne peut pas fixer ce palier à elle seule. Ce qui suit reste appliqué normalement par drizzle. Test sur le vrai jeu de 23 migrations : `test/storage/db-migrations.test.ts`.
+
 ## [v1.18.72] - 2026-08-03
 
 ### Fixed
