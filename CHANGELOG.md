@@ -10,12 +10,27 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 ### Added
 
 ### Changed
+
+### Fixed
+
+### Removed
+
+## [v1.18.69] - 2026-08-03
+
+### Added
+- **Logo `opencodev2` dans les README** : nouveaux assets `logo-ornate-v2-light.svg` / `logo-ornate-v2-dark.svg` (mot-symbole `OPENCODEV2`, bichromie `OPEN` atténué + `CODEV2` accentué, V pleine hauteur et 2 segmenté conformes au logo TTY validé). Les 22 README (anglais + 21 traductions) pointent désormais dessus ; les assets `logo-ornate-*` d'origine restent inchangés pour l'UI console/stats.
+
+### Fixed
+- **Fallback vision ignoré pour les résultats d'outils** : une image retournée par un outil (`read`, `webfetch`) arrive comme pièce jointe de résultat d'outil, jamais comme part `file` de message — or seul ce second chemin était traité. Avec un modèle sans entrée image, `read` sur une image produisait donc « Image read successfully » et aucun contenu exploitable. L'analyse du modèle de vision configuré (`attachment.image.vision_model`) est maintenant repliée dans le texte de sortie de l'outil et le média inutilisable est retiré. Test de non-régression : `test/session/vision-fallback.test.ts`.
+- **Paquet npm `@lux-tech/opencode-ai` incomplet** : le tarball publié ne contenait que 4 fichiers, sans README — la page npm s'affichait donc vide (`readmeFilename: ""`). `publish-fork.ts` copie désormais le README du dépôt dans le méta-paquet et génère un `package.json` complet (`description`, `keywords`, `homepage`, `repository`, `bugs`, `files`, `engines`).
+
+## [v1.18.68] - 2026-08-02
+
+### Changed
 - `tui` : le contexte courant (ex. `128k/1.0M (13%)`) s'affiche désormais sur la ligne agent · modèle · fournisseur · variante ; la ligne de statut du prompt n'utilise plus de séparateurs ` . ` (remplacés par des espaces).
 
 ### Fixed
 - `agent` : le rapport final du mode swarm ne liste plus les points non traités — seuls les vrais bloqueurs sont documentés, avec la raison et la prochaine étape exacte.
-
-### Removed
 
 ## [v1.18.67] - 2026-08-02
 
