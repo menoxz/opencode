@@ -15,6 +15,11 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ### Removed
 
+## [v1.18.72] - 2026-08-03
+
+### Fixed
+- **Base de données au schéma complet mais sans comptabilité de migrations : démarrage impossible et définitif** — une première exécution interrompue en pleine migration, une copie prise sans son WAL ou une base importée depuis une autre installation laissent les tables en place alors que `__drizzle_migrations` a disparu. Drizzle rejouait alors la migration n°1, `CREATE TABLE \`project\`` échouait puisque la table existait déjà, et les quatre requêtes de démarrage répondaient « Unexpected server error » — à chaque lancement, sans jamais se rétablir. Les migrations dont tous les objets créés existent déjà sont désormais enregistrées comme appliquées (ce sont des non-opérations démontrables sur cette base) ; celles qui modifient ou suppriment restent confiées à drizzle, donc un changement réellement en attente s'applique toujours. Reproduit sous Linux avant/après. Tests : `test/storage/db-migrations.test.ts`.
+
 ## [v1.18.71] - 2026-08-03
 
 ### Fixed
