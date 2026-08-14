@@ -2,7 +2,7 @@ import { Effect, Console } from "effect"
 import { AppRuntime } from "@/effect/app-runtime"
 import { effectCmd } from "../effect-cmd"
 import { create as createDaemon } from "../../daemon/index"
-import { checkTriggers, memoryConsolidate, tunnelHealthCheck, processQueue, detectPatterns, runSanityEval } from "../../daemon/triggers"
+import { checkTriggers, memoryConsolidate, tunnelHealthCheck, processQueue, detectPatterns, runSanityEval, autoGenerateSkills } from "../../daemon/triggers"
 import { processMCPCommands } from "../../daemon/mcp-control"
 import { every_30s, every_5m, every_1m, every_6h, every_24h, every_1h } from "../../daemon/scheduler"
 import { subscribeFileChanges, startFileWatcher } from "../../daemon/file-watcher"
@@ -80,6 +80,9 @@ export const daemonHandler = Effect.fn("Daemon.handler")(function* (
 
   const daemon = yield* createDaemon
 
+  // FIX: Force real eval mode for continuous improvement loop
+  process.env.OPENCODE_DAEMON_EVAL_REAL = "1"
+
   // Register periodic tasks
   yield* daemon.register("trigger-check", checkTriggers, every_30s)
   yield* daemon.register("mcp-control", processMCPCommands as unknown as () => Effect.Effect<void>, every_30s)
@@ -90,7 +93,8 @@ export const daemonHandler = Effect.fn("Daemon.handler")(function* (
   // Periodic eval: run sanity suite and check for regression
   yield* daemon.register("sanity-eval", runSanityEval as unknown as () => Effect.Effect<void>, every_1h)
 
-  // Auto-executor: process queued tasks autonomously
+  // Auto-generate skills from memory patterns (learning loop)
+  yield* daemon.register("skill-autogen", autoGenerateSkills as unknown as () => Effect.Effect<void>, every_24h)
   yield* daemon.register("process-queue", processQueue, every_5m)
 
   // File watcher cleanup (periodic — removes stale cooldown entries)

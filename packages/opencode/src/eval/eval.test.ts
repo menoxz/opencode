@@ -237,13 +237,14 @@ describe("evaluateBehavior", () => {
     expect(evaluateBehavior(behavior, "Here is the error result", [], undefined)).toBe(false)
   })
 
-  it("should use requiredActions in fallback mode", () => {
+  it("matches requiredActions write from a modify diff", () => {
+    const calls = ["modify:fixed.js", "write:fixed.js"]
     const behavior = {
       description: "Must write file",
       requiredActions: ["write"],
     }
-    expect(evaluateBehavior(behavior, "some output", ["write", "read"], undefined)).toBe(true)
-    expect(evaluateBehavior(behavior, "some output", ["read"], undefined)).toBe(false)
+    expect(evaluateBehavior(behavior, "out", calls, undefined)).toBe(true)
+    expect(evaluateBehavior(behavior, "out", ["delete:x.js"], undefined)).toBe(false)
   })
 })
 

@@ -92,7 +92,17 @@ function parseHeadlessResult(output: string): HeadlessResult | null {
  * scenario sandbox, then asserts scenario expectations against the model response
  * and the files it produced. Mirrors daemon/auto-executor spawnHeadless.
  */
-export function headlessSessionExecutor(binaryPath?: string): RealScenarioExecutor {
+const WRITE_TYPES = ["add", "added", "modify", "modified", "create", "created"]
+
+function diffToolCalls(d: { file: string; type: string }): string[] {
+  const base = `${d.type}:${d.file}`
+  const w = WRITE_TYPES.includes(d.type)
+  return w ? [base, `write:${d.file}`] : [base]
+}
+
+export function headlessSessionExecutor(
+  binaryPath?: string,
+): RealScenarioExecutor {
   return ({ scenario, cwd, timeoutSeconds }) =>
     Effect.sync(() => {
       const binary = binaryPath ?? findOpencodeBinary()
@@ -106,7 +116,8 @@ export function headlessSessionExecutor(binaryPath?: string): RealScenarioExecut
       })
       const rawOutput = `${result.stdout ?? ""}${result.stderr ?? ""}`.trim()
       const headless = parseHeadlessResult(rawOutput)
-      const toolCalls = (headless?.diffs ?? []).map((d) => `${d.type}:${d.file}`)
+      const diffs = headless?.diffs ?? []
+      const toolCalls = diffs.flatMap(diffToolCalls)
       const errors: string[] = []
       if (result.error) errors.push(result.error.message)
       if (headless && !headless.success) errors.push(headless.error ?? "headless session failed")

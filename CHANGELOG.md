@@ -15,6 +15,16 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ### Removed
 
+## [v1.18.76] - 2026-08-14
+
+### Added
+- Daemon: generation auto de skills (24h).
+
+### Fixed
+- Daemon: evals reels actives (OPENCODE_DAEMON_EVAL_REAL).
+- Eval: timeouts sanity 60s -> 180s (ETIMEDOUT).
+- Eval: toolCalls exposent l'action write des diffs.
+
 ## [v1.18.73] - 2026-08-03
 
 ### Fixed
