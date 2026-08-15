@@ -213,12 +213,14 @@ export const EditTool = Tool.define(
           yield* lsp.touchFile(filePath, "document")
           const diagnostics = yield* lsp.diagnostics()
           const normalizedFilePath = AppFileSystem.normalizePath(filePath)
+          const bounded = LSP.Diagnostic.boundProjectDiagnostics(diagnostics, [normalizedFilePath])
           const block = LSP.Diagnostic.report(filePath, diagnostics[normalizedFilePath] ?? [])
           if (block) output += `\n\nLSP errors detected in this file, please fix:\n${block}`
 
           return {
             metadata: {
-              diagnostics,
+              diagnostics: bounded.diagnostics,
+              diagnosticsTruncated: bounded.truncated,
               diff,
               filediff,
             },

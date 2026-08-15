@@ -292,6 +292,10 @@ export const ApplyPatchTool = Tool.define(
         yield* lsp.touchFile(target, "document")
       }
       const diagnostics = yield* lsp.diagnostics()
+      const bounded = LSP.Diagnostic.boundProjectDiagnostics(
+        diagnostics,
+        fileChanges.map((change) => AppFileSystem.normalizePath(change.movePath ?? change.filePath)),
+      )
 
       // Generate output summary
       const summaryLines = fileChanges.map((change) => {
@@ -320,7 +324,8 @@ export const ApplyPatchTool = Tool.define(
         metadata: {
           diff: totalDiff,
           files,
-          diagnostics,
+          diagnostics: bounded.diagnostics,
+          diagnosticsTruncated: bounded.truncated,
         },
         output,
       }

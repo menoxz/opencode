@@ -1,6 +1,24 @@
 import * as LSPClient from "./client"
 
 const MAX_PER_FILE = 20
+const MAX_PROJECT_FILES = 5
+
+export function boundProjectDiagnostics(
+  diagnostics: Record<string, LSPClient.Diagnostic[]>,
+  priority: string[] = [],
+): { diagnostics: Record<string, LSPClient.Diagnostic[]>; truncated: boolean } {
+  const rank = (file: string) => (priority.includes(file) ? 0 : 1)
+  const entries = Object.entries(diagnostics).sort(
+    (a, b) => rank(a[0]) - rank(b[0]) || b[1].length - a[1].length,
+  )
+  const kept = entries.slice(0, MAX_PROJECT_FILES)
+  const truncated =
+    entries.length > MAX_PROJECT_FILES || kept.some(([, issues]) => issues.length > MAX_PER_FILE)
+  return {
+    diagnostics: Object.fromEntries(kept.map(([file, issues]) => [file, issues.slice(0, MAX_PER_FILE)])),
+    truncated,
+  }
+}
 
 export function pretty(diagnostic: LSPClient.Diagnostic) {
   const severityMap = {

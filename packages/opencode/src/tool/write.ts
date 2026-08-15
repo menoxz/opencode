@@ -82,8 +82,9 @@ export const WriteTool = Tool.define(
 
           let output = "Wrote file successfully."
           yield* lsp.touchFile(filepath, "document")
-          const diagnostics = yield* lsp.diagnostics()
           const normalizedFilepath = AppFileSystem.normalizePath(filepath)
+          const diagnostics = yield* lsp.diagnostics()
+          const bounded = LSP.Diagnostic.boundProjectDiagnostics(diagnostics, [normalizedFilepath])
           let projectDiagnosticsCount = 0
           for (const [file, issues] of Object.entries(diagnostics)) {
             const current = file === normalizedFilepath
@@ -101,7 +102,8 @@ export const WriteTool = Tool.define(
           return {
             title: path.relative(instance.worktree, filepath),
             metadata: {
-              diagnostics,
+              diagnostics: bounded.diagnostics,
+              diagnosticsTruncated: bounded.truncated,
               filepath,
               exists: exists,
             },
