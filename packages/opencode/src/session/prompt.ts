@@ -83,6 +83,11 @@ import type { GoalState } from "./goal-state"
 import { hasObjective } from "./goal-state"
 import { compressGoalState, formatGoalContext } from "./compaction"
 
+// Hard ceiling on loop iterations when an agent is not configured with an
+// explicit `steps` budget. Without it a model that keeps emitting tool calls
+// loops forever and starves any queued prompt, since a queued prompt is only
+// served once the current run settles.
+const DEFAULT_MAX_STEPS = 50
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -1887,7 +1892,7 @@ export const layer = Layer.effect(
           })
           contextSummary.add("goal", "ensure task contract state", goalState, Date.now() - goalStateStart)
 
-          const maxSteps = agent.steps ?? Infinity
+          const maxSteps = agent.steps ?? DEFAULT_MAX_STEPS
           const isLastStep = step >= maxSteps
           const remindersStart = Date.now()
           msgs = yield* SessionReminders.apply({ messages: msgs, agent, session }).pipe(
@@ -2220,6 +2225,9 @@ export const layer = Layer.effect(
             Effect.onInterrupt(() => finalizeInterruptedAssistant),
           )
           if (outcome === "break") break
+          // Hard stop: never exceed the step budget even when the model keeps
+          // returning tool calls (the MAX_STEPS nudge is a soft stop only).
+          if (step >= maxSteps) break
           continue
         }
 

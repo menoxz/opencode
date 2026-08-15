@@ -1692,6 +1692,37 @@ it.instance(
 )
 
 it.instance(
+  "run hard-stops at the step budget when the model keeps calling tools",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig((url) => ({
+        ...providerCfg(url),
+        agent: { build: { steps: 2 } },
+      }))
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({
+        title: "Pinned",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+
+      // The model never settles on its own: every call returns a tool call, so
+      // without a hard stop the run would keep looping until the queue is empty.
+      for (let i = 0; i < 5; i++) yield* llm.tool("first", { value: `v${i}` })
+
+      yield* prompt.prompt({
+        sessionID: session.id,
+        agent: "build",
+        model: ref,
+        parts: [{ type: "text", text: "work" }],
+      })
+
+      expect(yield* llm.calls).toBe(2)
+    }),
+  10_000,
+)
+
+it.instance(
   "assertNotBusy fails with BusyError when loop running",
   () =>
     Effect.gen(function* () {
