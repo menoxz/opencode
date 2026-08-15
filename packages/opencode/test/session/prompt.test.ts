@@ -1723,6 +1723,64 @@ it.instance(
 )
 
 it.instance(
+  "serves a queued prompt a previous run left unanswered instead of re-arming forever",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({ title: "Pinned" })
+
+      // Shape a prompt queued mid-run leaves behind: the queued user message
+      // never got an assistant of its own, and the run kept answering the
+      // earlier prompt after it. Its turn can never close on its own, so it
+      // stays pending and every later prompt anchors behind it.
+      const first = yield* user(chat.id, "first")
+      const queued = yield* user(chat.id, "hi")
+      const answer: MessageV2.Assistant = {
+        id: MessageID.ascending(),
+        role: "assistant",
+        parentID: first.id,
+        sessionID: chat.id,
+        mode: "build",
+        agent: "build",
+        cost: 0,
+        path: { cwd: "/tmp", root: "/tmp" },
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        modelID: ref.modelID,
+        providerID: ref.providerID,
+        time: { created: Date.now() },
+        finish: "stop",
+      }
+      yield* sessions.updateMessage(answer)
+      yield* sessions.updatePart({
+        id: PartID.ascending(),
+        messageID: answer.id,
+        sessionID: chat.id,
+        type: "text",
+        text: "done",
+      })
+
+      yield* llm.text("late reply")
+
+      // Re-arming forever burns CPU, flips session status busy/idle on every
+      // pass and never releases the client's turn.
+      yield* awaitWithTimeout(
+        prompt.loop({ sessionID: chat.id }),
+        "loop re-armed forever on a prompt no fresh run can serve",
+        "5 seconds",
+      )
+
+      const msgs = yield* sessions.messages({ sessionID: chat.id })
+      const served = msgs.find((msg) => msg.info.role === "assistant" && msg.info.parentID === queued.id)
+      if (!served) throw new Error("expected the queued prompt to be served by a fresh run")
+      expect(served.parts.some((part) => part.type === "text" && part.text === "late reply")).toBe(true)
+      expect(yield* llm.calls).toBe(1)
+    }),
+  15_000,
+)
+
+it.instance(
   "loop continues when the model was cut off by the output-token limit",
   () =>
     Effect.gen(function* () {

@@ -1767,7 +1767,19 @@ export const layer = Layer.effect(
               UNFINISHED_FINISH.includes(lastAssistant.finish) &&
               lastAssistant.error === undefined)
 
-          if (lastAssistant?.finish && !keepGoing && !hasToolCalls && lastUser.id < lastAssistant.id) {
+          // `lastUser.id < lastAssistant.id` alone is not proof the anchored
+          // turn was answered: a prompt queued mid-run is older than every
+          // assistant the previous turn kept writing after it, yet none of them
+          // is its answer. Exiting there leaves that prompt pending forever —
+          // the run writes nothing, so the caller re-arms on it endlessly and
+          // every later prompt anchors behind it. Require its own assistant.
+          if (
+            lastAssistant?.finish &&
+            !keepGoing &&
+            !hasToolCalls &&
+            lastUser.id < lastAssistant.id &&
+            PromptQueue.turnClosed(msgs, lastUser.id)
+          ) {
             const orphan = lastAssistantMsg?.parts.find(
               (part): part is MessageV2.ToolPart => part.type === "tool" && isOrphanedInterruptedTool(part),
             )
@@ -2366,16 +2378,26 @@ export const layer = Layer.effect(
       // fresh run once the previous one is idle rather than re-joining a
       // finished one. Each fresh run anchors to the oldest pending prompt, so
       // multiple queued prompts drain in FIFO order, and a normally completed
-      // turn (its user closed by a finished assistant) never re-arms — no
-      // livelock.
-      const pendingUserExists = Effect.gen(function* () {
+      // turn (its user closed by a finished assistant) never re-arms.
+      //
+      // Re-arm only while the oldest pending prompt keeps changing. A prompt
+      // queued mid-run whose run never answered it (its assistants stay
+      // parented to the earlier prompt) can never close its turn: a fresh run
+      // anchored to it exits on the break invariant without writing anything,
+      // so re-arming on it spins forever — burning CPU, flipping session
+      // status busy/idle on every pass and never releasing the client's turn.
+      const pendingUser = Effect.gen(function* () {
         const msgs = yield* MessageV2.filterCompactedEffect(input.sessionID)
-        return PromptQueue.pendingUserID(msgs) !== undefined
+        return PromptQueue.pendingUserID(msgs)
       })
 
       let result = yield* arm()
-      while (yield* pendingUserExists) {
+      let pending = yield* pendingUser
+      while (pending !== undefined) {
         result = yield* arm()
+        const next = yield* pendingUser
+        if (next === pending) break
+        pending = next
       }
       return result
     })
