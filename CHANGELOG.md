@@ -15,6 +15,12 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ### Removed
 
+## [v1.18.79] - 2026-08-15
+
+### Fixed
+- IDs: l'espace d'identifiants ascendants (timestamp * 0x1000 tronque a 48 bits) reboucle tous les 795 jours et a reboucle le 2026-08-14T11:19:55Z. Un id frappe apres ce rebouclage trie avant tous ceux ecrits avant : le message disparaissait de toute recherche du "plus recent" (filterCompacted, latest, prompts en file), et le run sortait sur le tour precedent deja clos sans jamais appeler le modele. Les messages sont desormais frappes au-dessus du plus grand id de leur session (`MessageV2.nextID`), ce qui repare les sessions anterieures au rebouclage et neutralise le prochain (2028-10-17).
+- Signale en amont : https://github.com/anomalyco/opencode/issues/42798
+
 ## [v1.18.78] - 2026-08-15
 
 ### Fixed
