@@ -757,7 +757,7 @@ export const layer = Layer.effect(
       const { task: taskTool } = yield* registry.named()
       const taskModel = task.model ? yield* getModel(task.model.providerID, task.model.modelID, sessionID) : model
       const assistantMessage: MessageV2.Assistant = yield* sessions.updateMessage({
-        id: MessageID.ascending(),
+        id: MessageV2.nextID(sessionID),
         role: "assistant",
         parentID: lastUser.id,
         sessionID,
@@ -918,7 +918,7 @@ export const layer = Layer.effect(
       if (!task.command) return
 
       const summaryUserMsg: MessageV2.User = {
-        id: MessageID.ascending(),
+        id: MessageV2.nextID(sessionID),
         sessionID,
         role: "user",
         time: { created: Date.now() },
@@ -956,7 +956,7 @@ export const layer = Layer.effect(
             }
             const model = input.model ?? agent.model ?? (yield* currentModel(input.sessionID))
             const userMsg: MessageV2.User = {
-              id: input.messageID ?? MessageID.ascending(),
+              id: MessageV2.nextID(input.sessionID, input.messageID),
               sessionID: input.sessionID,
               time: { created: Date.now() },
               role: "user",
@@ -975,7 +975,7 @@ export const layer = Layer.effect(
             yield* sessions.updatePart(userPart)
 
             const msg: MessageV2.Assistant = {
-              id: MessageID.ascending(),
+              id: MessageV2.nextID(input.sessionID),
               sessionID: input.sessionID,
               parentID: userMsg.id,
               mode: input.agent,
@@ -1162,7 +1162,7 @@ export const layer = Layer.effect(
       const variant = input.variant ?? (ag.variant && full?.variants?.[ag.variant] ? ag.variant : undefined)
 
       const info: MessageV2.User = {
-        id: input.messageID ?? MessageID.ascending(),
+        id: MessageV2.nextID(input.sessionID, input.messageID),
         role: "user",
         sessionID: input.sessionID,
         time: { created: Date.now() },
@@ -1846,7 +1846,7 @@ export const layer = Layer.effect(
           }
 
           const msg: MessageV2.Assistant = {
-            id: MessageID.ascending(),
+            id: MessageV2.nextID(sessionID),
             parentID: lastUser.id,
             role: "assistant",
             mode: agent.name,

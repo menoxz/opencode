@@ -1,5 +1,6 @@
 import { BusEvent } from "@/bus/bus-event"
 import { SessionID, MessageID, PartID } from "./schema"
+import { Identifier } from "@/id/id"
 import { NamedError } from "@opencode-ai/core/util/error"
 import { APICallError, convertToModelMessages, LoadAPIKeyError, type ModelMessage, type UIMessage } from "ai"
 import { LSP } from "@/lsp/lsp"
@@ -1121,6 +1122,26 @@ export function* stream(sessionID: SessionID) {
     if (!next.more || !next.cursor) break
     before = next.cursor
   }
+}
+
+// The ascending id space is (timestamp * 0x1000 + counter) truncated to 48 bits,
+// so it wraps about every 795 days — it last wrapped on 2026-08-14T11:19:55Z. An
+// id minted after a wrap sorts before every id written before it, so the message
+// disappears from every "newest by id" lookup (filterCompacted, latest, queued
+// prompts): the run then exits on the previous, already closed turn and does
+// nothing at all. Mint past the session's high water mark so a message written
+// now always sorts last within its own session.
+export function nextID(sessionID: SessionID, given?: MessageID) {
+  const highest = Database.use((db) =>
+    db
+      .select({ id: MessageTable.id })
+      .from(MessageTable)
+      .where(eq(MessageTable.session_id, sessionID))
+      .orderBy(desc(MessageTable.id))
+      .limit(1)
+      .get(),
+  )
+  return MessageID.ascending(Identifier.monotonic(given ?? MessageID.ascending(), highest?.id))
 }
 
 export function parts(message_id: MessageID) {

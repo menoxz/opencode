@@ -1823,6 +1823,100 @@ it.instance(
 )
 
 it.instance(
+  "serves a prompt in a session whose ids predate the id-space wrap",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({ title: "Pinned" })
+
+      // The ascending id space wrapped on 2026-08-14T11:19:55Z, so ids minted
+      // before it sort above every id minted since. These are real ids from a
+      // session the wrap silently froze: without a session-scoped high water
+      // mark the new prompt sorts first, the run reads the legacy turn as the
+      // latest one, exits on its break invariant and never calls the model.
+      const legacyUser = MessageID.ascending("msg_ffff07b29001lvZ1aOBcxm1fBY")
+      yield* sessions.updateMessage({
+        id: legacyUser,
+        role: "user",
+        sessionID: chat.id,
+        agent: "build",
+        model: ref,
+        time: { created: Date.now() },
+      })
+      yield* sessions.updatePart({
+        id: PartID.ascending(),
+        messageID: legacyUser,
+        sessionID: chat.id,
+        type: "text",
+        text: "legacy prompt",
+      })
+      const legacyAssistant: MessageV2.Assistant = {
+        id: MessageID.ascending("msg_ffff07b2a001aaaaaaaaaaaaaa"),
+        role: "assistant",
+        parentID: legacyUser,
+        sessionID: chat.id,
+        mode: "build",
+        agent: "build",
+        cost: 0,
+        path: { cwd: "/tmp", root: "/tmp" },
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        modelID: ref.modelID,
+        providerID: ref.providerID,
+        time: { created: Date.now() },
+        finish: "stop",
+      }
+      yield* sessions.updateMessage(legacyAssistant)
+      yield* sessions.updatePart({
+        id: PartID.ascending(),
+        messageID: legacyAssistant.id,
+        sessionID: chat.id,
+        type: "text",
+        text: "legacy answer",
+      })
+
+      // A completed compaction whose retained tail stops the message walk: this
+      // is what makes the post-wrap prompt disappear from the view entirely
+      // rather than merely sorting first.
+      const legacyCompaction = MessageID.ascending("msg_ffff07b2b001bbbbbbbbbbbbbb")
+      yield* sessions.updateMessage({
+        id: legacyCompaction,
+        role: "user",
+        sessionID: chat.id,
+        agent: "build",
+        model: ref,
+        time: { created: Date.now() },
+      })
+      yield* sessions.updatePart({
+        id: PartID.ascending(),
+        messageID: legacyCompaction,
+        sessionID: chat.id,
+        type: "compaction",
+        auto: false,
+        tail_start_id: legacyUser,
+      })
+      yield* sessions.updateMessage({
+        ...legacyAssistant,
+        id: MessageID.ascending("msg_ffff07b2c001cccccccccccccc"),
+        parentID: legacyCompaction,
+        summary: true,
+      })
+      yield* llm.text("fresh answer")
+
+      const result = yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        model: ref,
+        parts: [{ type: "text", text: "new prompt" }],
+      })
+
+      expect(yield* llm.calls).toBe(1)
+      expect(result.parts.some((part) => part.type === "text" && part.text === "fresh answer")).toBe(true)
+    }),
+  15_000,
+)
+it.instance(
   "assertNotBusy fails with BusyError when loop running",
   () =>
     Effect.gen(function* () {

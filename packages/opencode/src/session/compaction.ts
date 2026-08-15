@@ -504,7 +504,7 @@ export const layer = Layer.effect(
       })
       const ctx = yield* InstanceState.context
       const msg: MessageV2.Assistant = {
-        id: MessageID.ascending(),
+        id: MessageV2.nextID(input.sessionID),
         role: "assistant",
         parentID: input.parentID,
         sessionID: input.sessionID,
@@ -573,7 +573,7 @@ export const layer = Layer.effect(
         if (replay) {
           const original = replay.info
           const replayMsg = yield* session.updateMessage({
-            id: MessageID.ascending(),
+            id: MessageV2.nextID(input.sessionID),
             role: "user",
             sessionID: input.sessionID,
             time: { created: Date.now() },
@@ -621,7 +621,7 @@ export const layer = Layer.effect(
             )).enabled
           ) {
             const continueMsg = yield* session.updateMessage({
-              id: MessageID.ascending(),
+              id: MessageV2.nextID(input.sessionID),
               role: "user",
               sessionID: input.sessionID,
               time: { created: Date.now() },
@@ -684,7 +684,7 @@ export const layer = Layer.effect(
       overflow?: boolean
     }) {
       const msg = yield* session.updateMessage({
-        id: MessageID.ascending(),
+        id: MessageV2.nextID(input.sessionID),
         role: "user",
         model: input.model,
         sessionID: input.sessionID,
