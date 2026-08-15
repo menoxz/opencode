@@ -55,7 +55,7 @@ import { Reference } from "../../src/reference/reference"
 import { RepositoryCache } from "../../src/reference/repository-cache"
 import { TestInstance } from "../fixture/fixture"
 import { awaitWithTimeout, pollWithTimeout, testEffect } from "../lib/effect"
-import { reply, TestLLMServer } from "../lib/llm-server"
+import { reply, raw, TestLLMServer } from "../lib/llm-server"
 import { SyncEvent } from "@/sync"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -1718,6 +1718,48 @@ it.instance(
       })
 
       expect(yield* llm.calls).toBe(2)
+    }),
+  10_000,
+)
+
+it.instance(
+  "loop continues when the model was cut off by the output-token limit",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({
+        title: "Pinned",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+
+      // First reply is truncated by the provider's output-token budget
+      // (finish_reason "length"): the answer is unfinished, so the loop must
+      // keep going instead of handing control back and forcing a manual
+      // "continue" prompt.
+      const chunk = (delta: Record<string, unknown>, finish?: string) => ({
+        id: "chatcmpl-test",
+        object: "chat.completion.chunk",
+        choices: [{ delta, ...(finish ? { finish_reason: finish } : {}) }],
+      })
+      yield* llm.push(
+        raw({
+          head: [chunk({ role: "assistant" })],
+          tail: [chunk({ content: "partial" }), chunk({}, "length")],
+        }),
+      )
+      yield* llm.text("finished")
+
+      const result = yield* prompt.prompt({
+        sessionID: session.id,
+        agent: "build",
+        model: ref,
+        parts: [{ type: "text", text: "long answer" }],
+      })
+
+      expect(yield* llm.calls).toBe(2)
+      expect(result.parts.some((part) => part.type === "text" && part.text === "finished")).toBe(true)
     }),
   10_000,
 )

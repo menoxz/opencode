@@ -89,6 +89,13 @@ import { compressGoalState, formatGoalContext } from "./compaction"
 // served once the current run settles.
 const DEFAULT_MAX_STEPS = 50
 
+// Finish reasons that leave the turn unfinished when the assistant carries no
+// error: a reply truncated by the output-token budget, and a provider reason
+// the adapter could not map (already treated as unfinished by the processor).
+// Continuing these is what removes the manual "continue" prompt; the step
+// budget above bounds any repetition, and an errored turn always stops.
+const UNFINISHED_FINISH = ["length", "unknown"]
+
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
 
@@ -1751,12 +1758,16 @@ export const layer = Layer.effect(
               (part) => part.type === "tool" && !part.metadata?.providerExecuted && !isOrphanedInterruptedTool(part),
             ) ?? false
 
-          if (
-            lastAssistant?.finish &&
-            !["tool-calls"].includes(lastAssistant.finish) &&
-            !hasToolCalls &&
-            lastUser.id < lastAssistant.id
-          ) {
+          // A turn stays open while tool calls are pending, and — when it
+          // carries no error — while the provider cut it short (`length`) or
+          // returned a reason the adapter could not map (`unknown`).
+          const keepGoing =
+            lastAssistant?.finish === "tool-calls" ||
+            (lastAssistant?.finish !== undefined &&
+              UNFINISHED_FINISH.includes(lastAssistant.finish) &&
+              lastAssistant.error === undefined)
+
+          if (lastAssistant?.finish && !keepGoing && !hasToolCalls && lastUser.id < lastAssistant.id) {
             const orphan = lastAssistantMsg?.parts.find(
               (part): part is MessageV2.ToolPart => part.type === "tool" && isOrphanedInterruptedTool(part),
             )
