@@ -15,6 +15,11 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ### Removed
 
+## [v1.18.78] - 2026-08-15
+
+### Fixed
+- Session: un prompt mis en file qu'un run precedent n'a jamais servi est desormais traite par un run frais. Avant, la sortie de boucle le croyait deja repondu (il est plus ancien que les assistants ecrits ensuite par le tour precedent), le run frais sortait sans rien ecrire et l'appelant re-armait indefiniment : boucle serree relisant la session a chaque passe, statut busy/idle qui bascule en continu (TUI bloque sur "esc interrupt" avec spinner qui scintille, 13% de CPU pendant des heures) et tout prompt ulterieur affame derriere lui.
+
 ## [v1.18.77] - 2026-08-15
 
 ### Fixed
