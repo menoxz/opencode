@@ -26,6 +26,17 @@ import { BashArity } from "@/permission/arity"
 export { Parameters } from "./shell/prompt"
 
 const MAX_METADATA_LENGTH = 30_000
+
+// Ceiling on how long a single command may hold the session. The model may ask
+// for a longer timeout, but a command that never returns — a server, a watcher,
+// a detached child keeping the pipe open — would otherwise block the session for
+// that whole duration, forcing the user to interrupt and restart the turn.
+export const MAX_TIMEOUT_MS = 15 * 60 * 1000
+
+export function resolveTimeout(requested: number | undefined, fallback: number) {
+  return Math.min(requested ?? fallback, MAX_TIMEOUT_MS)
+}
+
 const CWD = new Set(["cd", "chdir", "popd", "pushd", "push-location", "set-location"])
 const FILES = new Set([
   ...CWD,
@@ -630,7 +641,7 @@ export const ShellTool = Tool.define(
               if (params.timeout !== undefined && params.timeout < 0) {
                 throw new Error(`Invalid timeout value: ${params.timeout}. Timeout must be a positive number.`)
               }
-              const timeout = params.timeout ?? defaultTimeoutMs
+              const timeout = resolveTimeout(params.timeout, defaultTimeoutMs)
               const ps = Shell.ps(shell)
               yield* Effect.scoped(
                 Effect.gen(function* () {

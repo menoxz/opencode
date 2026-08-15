@@ -1,11 +1,11 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { Cause, Effect, Exit, Layer } from "effect"
 import type * as Scope from "effect/Scope"
 import os from "os"
 import path from "path"
 import { Config } from "@/config/config"
 import { Shell } from "../../src/shell/shell"
-import { ShellTool } from "../../src/tool/shell"
+import { ShellTool, MAX_TIMEOUT_MS, resolveTimeout } from "../../src/tool/shell"
 import { Filesystem } from "@/util/filesystem"
 import { provideInstance, tmpdirScoped } from "../fixture/fixture"
 import type { Permission } from "../../src/permission"
@@ -1227,4 +1227,23 @@ describe("tool.shell truncation", () => {
       }),
     ),
   )
+})
+
+
+describe("resolveTimeout", () => {
+  test("caps a timeout the model asked for beyond the ceiling", () => {
+    expect(resolveTimeout(30 * 60_000, 120_000)).toBe(MAX_TIMEOUT_MS)
+  })
+
+  test("keeps a requested timeout under the ceiling", () => {
+    expect(resolveTimeout(60_000, 120_000)).toBe(60_000)
+  })
+
+  test("falls back to the tool default when the model asked for nothing", () => {
+    expect(resolveTimeout(undefined, 120_000)).toBe(120_000)
+  })
+
+  test("caps the fallback too", () => {
+    expect(resolveTimeout(undefined, 60 * 60_000)).toBe(MAX_TIMEOUT_MS)
+  })
 })
