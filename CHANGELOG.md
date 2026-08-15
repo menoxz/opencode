@@ -15,6 +15,14 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ### Removed
 
+## [v1.18.77] - 2026-08-15
+
+### Fixed
+- Session: le run s'arrete a son budget de steps (defaut 50) au lieu de boucler sans fin ; un prompt mis en file n'est plus affame indefiniment.
+- Session: un tour tronque par la limite de tokens (finish=length) ou avec une raison non mappee (finish=unknown) continue au lieu d'exiger un "continue" manuel ; un tour en erreur s'arrete toujours.
+- Shell: le timeout demande par le modele est plafonne a 15 min (240 appels demandaient 10-30 min ; une commande a bloque une session 5h30).
+- Tools: write/edit/apply_patch ne persistent plus toute la carte de diagnostics LSP du projet dans le metadata (parts jusqu'a 11 Mo observees).
+
 ## [v1.18.76] - 2026-08-14
 
 ### Added
