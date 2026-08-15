@@ -1625,6 +1625,73 @@ it.instance(
 )
 
 it.instance(
+  "queued prompt is not absorbed across a multi-step tool turn",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const gate = yield* Deferred.make<void>()
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({
+        title: "Pinned",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+
+      // Run 1 spans two steps: a tool call, then a text response held open by a
+      // gate so the run stays active across multiple loop iterations while the
+      // queued prompt lands mid-turn.
+      yield* llm.tool("first", { value: "first" })
+      yield* llm.hold("finished", deferredAsPromise(gate))
+
+      const a = yield* prompt
+        .prompt({
+          sessionID: chat.id,
+          agent: "build",
+          model: ref,
+          parts: [{ type: "text", text: "first" }],
+        })
+        .pipe(Effect.forkChild)
+
+      yield* llm.wait(2)
+
+      const secondID = MessageID.ascending()
+      const b = yield* prompt
+        .prompt({
+          sessionID: chat.id,
+          messageID: secondID,
+          agent: "build",
+          model: ref,
+          parts: [{ type: "text", text: "second" }],
+        })
+        .pipe(Effect.forkChild)
+
+      yield* pollWithTimeout(
+        sessions.messages({ sessionID: chat.id }).pipe(
+          Effect.map((msgs) =>
+            msgs.some((msg) => msg.info.role === "user" && msg.info.id === secondID) ? true : undefined,
+          ),
+        ),
+        "timed out waiting for queued prompt to save",
+      )
+
+      yield* Deferred.succeed(gate, void 0)
+
+      const [ea, eb] = yield* Effect.all([Fiber.await(a), Fiber.await(b)])
+      expect(Exit.isSuccess(ea)).toBe(true)
+      expect(Exit.isSuccess(eb)).toBe(true)
+
+      // The queued prompt must only appear in the fresh run's request, never in
+      // the two requests issued by the still-running tool turn.
+      const inputs = yield* llm.inputs
+      expect(inputs).toHaveLength(3)
+      expect(JSON.stringify(inputs.at(0)?.messages)).not.toContain("second")
+      expect(JSON.stringify(inputs.at(1)?.messages)).not.toContain("second")
+      expect(JSON.stringify(inputs.at(2)?.messages)).toContain("second")
+    }),
+  10_000,
+)
+
+it.instance(
   "assertNotBusy fails with BusyError when loop running",
   () =>
     Effect.gen(function* () {
