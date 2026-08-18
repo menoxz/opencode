@@ -64,6 +64,7 @@ import { DialogForkFromTimeline } from "./dialog-fork-from-timeline"
 import { DialogGoalEdit } from "./dialog-goal-edit"
 import { DialogSessionRename } from "../../component/dialog-session-rename"
 import { Sidebar } from "./sidebar"
+import { SubagentBar } from "./subagent-bar.tsx"
 import { SubagentFooter } from "./subagent-footer.tsx"
 import { LANGUAGE_EXTENSIONS } from "@/lsp/language"
 import parsers from "../../../../../../parsers-config.ts"
@@ -1550,7 +1551,7 @@ export function Session() {
                 <Show when={permissions().length === 0 && questions().length > 0}>
                   <QuestionPrompt request={questions()[0]} />
                 </Show>
-                <Show when={session()?.parentID}>
+                <Show when={session()?.parentID} fallback={<SubagentBar />}>
                   <SubagentFooter />
                 </Show>
                 <Show when={visible()}>
