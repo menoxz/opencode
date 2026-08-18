@@ -289,10 +289,10 @@ type ReplayToolInputsMode = "full" | "summary" | "off"
 type ReplayToolOutputsMode = "full" | "summary" | "off"
 type ReplayReasoningMode = "on" | "off"
 const RECENT_TOOL_TURNS_IN_FULL = 2
-const TOOL_INPUT_SUMMARY_MAX_DEPTH = 3
-const TOOL_INPUT_SUMMARY_MAX_KEYS = 8
-const TOOL_INPUT_SUMMARY_MAX_ITEMS = 5
-const TOOL_INPUT_SUMMARY_MAX_STRING = 80
+// Only read-only tools have their old inputs dropped from the replayed context.
+// Every other tool carries a literal payload (shell command, patch body, file
+// content, todo list) that the model reproduces verbatim from its own history.
+const SUMMARIZABLE_TOOL_INPUTS = new Set(["read", "glob", "grep", "repo_overview", "session_context", "session_info"])
 
 function toolResultReference(part: ToolPart) {
   const candidates = ["filePath", "path", "url", "uri"]
@@ -324,86 +324,81 @@ function summarizeToolOutput(part: ToolPart, outputText: string, attachments: Fi
   ].join("\n")
 }
 
-function recentToolOutputMessageIDs(input: WithParts[], replayToolOutputs: ReplayToolOutputsMode) {
-  if (replayToolOutputs !== "summary") return new Set<string>()
-  return new Set(
-    input
-      .filter(
-        (msg) =>
-          msg.info.role === "assistant" &&
-          msg.parts.some((part) => part.type === "tool" && part.state.status === "completed"),
-      )
-      .slice(-RECENT_TOOL_TURNS_IN_FULL)
-      .map((msg) => msg.info.id),
-  )
-}
+// Newest full output kept per distinct reference (file, url) beyond the recent
+// window. Summarising every older output evicts a file the model is still
+// working on, so it fetches it again — which evicts the previous one. Measured
+// livelock: 167 tool calls in 15 minutes for 57 distinct outputs, cycling over
+// three files. Duplicates are where the saving actually is; the newest copy of
+// each reference is what the model needs to stop asking.
+const PINNED_TOOL_REFERENCES = 8
 
-function recentToolInputMessageIDs(input: WithParts[], replayToolInputs: ReplayToolInputsMode) {
-  if (replayToolInputs !== "summary") return new Set<string>()
-  return new Set(
-    input
-      .filter((msg) => msg.info.role === "assistant" && msg.parts.some((part) => part.type === "tool"))
-      .slice(-RECENT_TOOL_TURNS_IN_FULL)
-      .map((msg) => msg.info.id),
-  )
-}
-
-function summarizeToolInputValue(value: unknown, depth: number, seen: Set<object>): unknown {
-  if (value === null) return null
-  if (typeof value === "string")
-    return value.length <= TOOL_INPUT_SUMMARY_MAX_STRING
-      ? value
-      : `${value.slice(0, TOOL_INPUT_SUMMARY_MAX_STRING)}… [${value.length} chars]`
-  if (typeof value === "number" || typeof value === "boolean") return value
-  if (typeof value === "bigint") return `[bigint:${value.toString()}]`
-  if (typeof value === "undefined") return "[undefined]"
-  if (typeof value === "function") return "[function]"
-  if (typeof value === "symbol") return `[symbol:${String(value.description ?? "").trim()}]`
-  if (Array.isArray(value)) {
-    if (seen.has(value)) return ["[Circular]"]
-    seen.add(value)
-    if (depth >= TOOL_INPUT_SUMMARY_MAX_DEPTH) {
-      seen.delete(value)
-      return [`[Array(${value.length})]`]
-    }
-    const summarized = value
-      .slice(0, TOOL_INPUT_SUMMARY_MAX_ITEMS)
-      .map((item) => summarizeToolInputValue(item, depth + 1, seen))
-    seen.delete(value)
-    return value.length > TOOL_INPUT_SUMMARY_MAX_ITEMS
-      ? [...summarized, `[+${value.length - TOOL_INPUT_SUMMARY_MAX_ITEMS} more items]`]
-      : summarized
-  }
-  if (typeof value !== "object") return `[${typeof value}]`
-  if (seen.has(value)) return "[Circular]"
-  seen.add(value)
-  const entries = Object.entries(value).sort(([left], [right]) => left.localeCompare(right))
-  if (depth >= TOOL_INPUT_SUMMARY_MAX_DEPTH) {
-    seen.delete(value)
-    return {
-      __type: "object",
-      keys: entries.slice(0, TOOL_INPUT_SUMMARY_MAX_KEYS).map(([key]) => key),
-      ...(entries.length > TOOL_INPUT_SUMMARY_MAX_KEYS
-        ? { truncated_keys: entries.length - TOOL_INPUT_SUMMARY_MAX_KEYS }
-        : {}),
+function pinnedToolCallIDs(input: WithParts[], summarized: Set<string>, enabled: boolean) {
+  const pinned = new Set<string>()
+  if (!enabled || summarized.size === 0) return pinned
+  const seen = new Set<string>()
+  // Newest first, across the whole conversation: a reference whose newest copy
+  // already replays in full needs no pin, and only the newest copy of the rest
+  // is worth keeping — the superseded ones are the waste this mode targets.
+  for (const msg of [...input].reverse()) {
+    if (msg.info.role !== "assistant") continue
+    for (const part of [...msg.parts].reverse()) {
+      if (part.type !== "tool" || part.state.status !== "completed") continue
+      // A read-ledger stub carries no bytes: pinning it would pin the very
+      // message that tells the model to scroll back to bytes we dropped.
+      if (part.state.metadata?.unchanged === true) continue
+      const reference = toolResultReference(part)
+      if (seen.has(reference)) continue
+      seen.add(reference)
+      if (!summarized.has(msg.info.id)) continue
+      pinned.add(part.callID)
+      if (pinned.size >= PINNED_TOOL_REFERENCES) return pinned
     }
   }
-  const summarized = Object.fromEntries(
-    entries
-      .slice(0, TOOL_INPUT_SUMMARY_MAX_KEYS)
-      .map(([key, item]) => [key, summarizeToolInputValue(item, depth + 1, seen)]),
-  )
-  seen.delete(value)
-  return entries.length > TOOL_INPUT_SUMMARY_MAX_KEYS
-    ? { ...summarized, __truncated_keys: entries.length - TOOL_INPUT_SUMMARY_MAX_KEYS }
-    : summarized
+  return pinned
 }
 
-function summarizeToolInput(input: Record<string, any>, mode: ReplayToolInputsMode) {
-  if (mode === "full") return input
-  if (mode === "off") return { omitted: true, tool_input: "historical" }
-  const summary = summarizeToolInputValue(input, 0, new Set<object>())
-  return typeof summary === "object" && summary !== null ? summary : { value: summary }
+// How a message renders must not depend on how far it now sits from the end of
+// the conversation. Providers cache a prompt prefix byte for byte, and the cache
+// breakpoints sit on the last messages — precisely where a sliding summary
+// boundary rewrites history. Every turn then invalidated the block the previous
+// turn had just cached: measured at 202k tokens re-sent at full price per turn
+// ($1.05) where a cache hit costs $0.15, 134 such turns in one session.
+//
+// The boundary therefore advances in blocks. Between two jumps every message
+// renders identically, so the cached prefix keeps growing; one turn out of
+// SUMMARY_BOUNDARY_STEP pays a rewrite, and a session shorter than that never
+// summarizes at all.
+const SUMMARY_BOUNDARY_STEP = 20
+
+function summarizedMessageIDs(input: WithParts[], summarizes: boolean, carries: (msg: WithParts) => boolean) {
+  if (!summarizes) return new Set<string>()
+  const turns = input.filter((msg) => msg.info.role === "assistant" && carries(msg)).map((msg) => msg.info.id)
+  const eligible = Math.max(0, turns.length - RECENT_TOOL_TURNS_IN_FULL)
+  const frozen = Math.floor(eligible / SUMMARY_BOUNDARY_STEP) * SUMMARY_BOUNDARY_STEP
+  return new Set(turns.slice(0, frozen))
+}
+
+function summarizedToolOutputMessageIDs(input: WithParts[], replayToolOutputs: ReplayToolOutputsMode) {
+  return summarizedMessageIDs(input, replayToolOutputs !== "full", (msg) =>
+    msg.parts.some((part) => part.type === "tool" && part.state.status === "completed"),
+  )
+}
+
+function summarizedToolInputMessageIDs(input: WithParts[], replayToolInputs: ReplayToolInputsMode) {
+  return summarizedMessageIDs(input, replayToolInputs !== "full", (msg) =>
+    msg.parts.some((part) => part.type === "tool"),
+  )
+}
+
+function summarizeToolInput(input: Record<string, any>, mode: ReplayToolInputsMode, tool: string) {
+  if (mode === "full" || !SUMMARIZABLE_TOOL_INPUTS.has(tool)) return input
+  // Any in-context rendering of an old read-only tool input that still carries
+  // real content is reproduced verbatim by the model. Measured twice: first it
+  // copied a truncated string, then it copied the structural elision marker
+  // itself — emitting `{__elided: "string", head: "…"}` as a real grep pattern,
+  // which errored the tool and crashed the TUI. Drop the input entirely; the
+  // output summary already names the file it refers to.
+  return { omitted: true, tool_input: "historical" }
 }
 
 export const ToolStateError = Schema.Struct({
@@ -764,8 +759,9 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
   const toolNames = new Set<string>()
   const replayToolInputs = options?.replayToolInputs ?? "full"
   const replayToolOutputs = options?.replayToolOutputs ?? "full"
-  const recentToolTurns = recentToolOutputMessageIDs(input, replayToolOutputs)
-  const recentToolInputTurns = recentToolInputMessageIDs(input, replayToolInputs)
+  const summarizedToolTurns = summarizedToolOutputMessageIDs(input, replayToolOutputs)
+  const pinnedToolCalls = pinnedToolCallIDs(input, summarizedToolTurns, replayToolOutputs === "summary")
+  const summarizedToolInputTurns = summarizedToolInputMessageIDs(input, replayToolInputs)
   // Track media from tool results that need to be injected as user messages
   // for providers that don't support that media type in tool results.
   //
@@ -919,9 +915,10 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
           })
         if (part.type === "tool") {
           toolNames.add(part.tool)
-          const toolInputReplayMode = recentToolInputTurns.has(msg.info.id) ? "full" : replayToolInputs
+          const toolInputReplayMode = summarizedToolInputTurns.has(msg.info.id) ? replayToolInputs : "full"
           if (part.state.status === "completed") {
-            const toolReplayMode = recentToolTurns.has(msg.info.id) ? "full" : replayToolOutputs
+            const toolReplayMode =
+              summarizedToolTurns.has(msg.info.id) && !pinnedToolCalls.has(part.callID) ? replayToolOutputs : "full"
             const outputText = part.state.time.compacted
               ? "[Old tool result content cleared]"
               : truncateToolOutput(part.state.output, options?.toolOutputMaxChars)
@@ -950,7 +947,7 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
               type: ("tool-" + part.tool) as `tool-${string}`,
               state: "output-available",
               toolCallId: part.callID,
-              input: summarizeToolInput(part.state.input, toolInputReplayMode),
+              input: summarizeToolInput(part.state.input, toolInputReplayMode, part.tool),
               output,
               ...(part.metadata?.providerExecuted ? { providerExecuted: true } : {}),
               ...(differentModel ? {} : { callProviderMetadata: providerMeta(part.metadata) }),
@@ -963,7 +960,7 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
                 type: ("tool-" + part.tool) as `tool-${string}`,
                 state: "output-available",
                 toolCallId: part.callID,
-                input: summarizeToolInput(part.state.input, toolInputReplayMode),
+                input: summarizeToolInput(part.state.input, toolInputReplayMode, part.tool),
                 output,
                 ...(part.metadata?.providerExecuted ? { providerExecuted: true } : {}),
                 ...(differentModel ? {} : { callProviderMetadata: providerMeta(part.metadata) }),
@@ -973,7 +970,7 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
                 type: ("tool-" + part.tool) as `tool-${string}`,
                 state: "output-error",
                 toolCallId: part.callID,
-                input: summarizeToolInput(part.state.input, toolInputReplayMode),
+                input: summarizeToolInput(part.state.input, toolInputReplayMode, part.tool),
                 errorText: part.state.error,
                 ...(part.metadata?.providerExecuted ? { providerExecuted: true } : {}),
                 ...(differentModel ? {} : { callProviderMetadata: providerMeta(part.metadata) }),
@@ -987,7 +984,7 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
               type: ("tool-" + part.tool) as `tool-${string}`,
               state: "output-error",
               toolCallId: part.callID,
-              input: summarizeToolInput(part.state.input, toolInputReplayMode),
+              input: summarizeToolInput(part.state.input, toolInputReplayMode, part.tool),
               errorText: "[Tool execution was interrupted]",
               ...(part.metadata?.providerExecuted ? { providerExecuted: true } : {}),
               ...(differentModel ? {} : { callProviderMetadata: providerMeta(part.metadata) }),

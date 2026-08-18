@@ -2309,11 +2309,18 @@ function Write(props: ToolProps<typeof WriteTool>) {
   )
 }
 
+// A tool argument is only a string until the model emits something else: it has
+// copied an elision marker back as a real argument, and rendering that object
+// into a <text> node crashed the whole TUI. Display, never assume.
+function toolText(value: unknown): string {
+  return typeof value === "string" ? value : JSON.stringify(value)
+}
+
 function Glob(props: ToolProps<typeof GlobTool>) {
   const pathFormatter = usePathFormatter()
   return (
     <InlineTool icon="✱" pending="Finding files..." complete={props.input.pattern} part={props.part}>
-      Glob "{props.input.pattern}" <Show when={props.input.path}>in {pathFormatter.format(props.input.path)} </Show>
+      Glob "{toolText(props.input.pattern)}" <Show when={props.input.path}>in {pathFormatter.format(props.input.path)} </Show>
       <Show when={props.metadata.count}>
         ({props.metadata.count} {props.metadata.count === 1 ? "match" : "matches"})
       </Show>
@@ -2360,7 +2367,7 @@ function Grep(props: ToolProps<typeof GrepTool>) {
   const pathFormatter = usePathFormatter()
   return (
     <InlineTool icon="✱" pending="Searching content..." complete={props.input.pattern} part={props.part}>
-      Grep "{props.input.pattern}" <Show when={props.input.path}>in {pathFormatter.format(props.input.path)} </Show>
+      Grep "{toolText(props.input.pattern)}" <Show when={props.input.path}>in {pathFormatter.format(props.input.path)} </Show>
       <Show when={props.metadata.matches}>
         ({props.metadata.matches} {props.metadata.matches === 1 ? "match" : "matches"})
       </Show>

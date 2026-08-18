@@ -1357,262 +1357,197 @@ describe("session.message-v2.toModelMessage", () => {
     expect(texts.map((t) => t.text)).toStrictEqual(["", "hello"])
   })
 
-  test("summarizes only older tool outputs while keeping the two most recent tool turns full in summary mode", async () => {
-    const userID1 = "m-user-read-summary-1"
-    const assistantID1 = "m-assistant-read-summary-1"
-    const userID2 = "m-user-read-summary-2"
-    const assistantID2 = "m-assistant-read-summary-2"
-    const userID3 = "m-user-read-summary-3"
-    const assistantID3 = "m-assistant-read-summary-3"
-    const input: MessageV2.WithParts[] = [
-      {
-        info: userInfo(userID1),
-        parts: [
-          {
-            ...basePart(userID1, "u1-read-summary-1"),
-            type: "text",
-            text: "inspect older file",
-          },
-        ] as MessageV2.Part[],
-      },
-      {
-        info: assistantInfo(assistantID1, userID1),
-        parts: [
-          {
-            ...basePart(assistantID1, "a1-read-summary-1"),
-            type: "tool",
-            callID: "call-read-summary-1",
-            tool: "read",
-            state: {
-              status: "completed",
-              input: { filePath: "/tmp/example-1.txt", offset: 10, limit: 2 },
-              output: "alpha\nbeta\ngamma",
-              title: "Read",
-              metadata: {},
-              time: { start: 0, end: 1 },
-            },
-          },
-        ] as MessageV2.Part[],
-      },
-      {
-        info: userInfo(userID2),
-        parts: [
-          {
-            ...basePart(userID2, "u1-read-summary-2"),
-            type: "text",
-            text: "inspect recent file",
-          },
-        ] as MessageV2.Part[],
-      },
-      {
-        info: assistantInfo(assistantID2, userID2),
-        parts: [
-          {
-            ...basePart(assistantID2, "a1-read-summary-2"),
-            type: "tool",
-            callID: "call-read-summary-2",
-            tool: "read",
-            state: {
-              status: "completed",
-              input: { filePath: "/tmp/example-2.txt", offset: 0, limit: 1 },
-              output: "recent file content",
-              title: "Read",
-              metadata: {},
-              time: { start: 0, end: 1 },
-            },
-          },
-        ] as MessageV2.Part[],
-      },
-      {
-        info: userInfo(userID3),
-        parts: [
-          {
-            ...basePart(userID3, "u1-read-summary-3"),
-            type: "text",
-            text: "inspect latest file",
-          },
-        ] as MessageV2.Part[],
-      },
-      {
-        info: assistantInfo(assistantID3, userID3),
-        parts: [
-          {
-            ...basePart(assistantID3, "a1-read-summary-3"),
-            type: "tool",
-            callID: "call-read-summary-3",
-            tool: "read",
-            state: {
-              status: "completed",
-              input: { filePath: "/tmp/example-3.txt", offset: 3, limit: 4 },
-              output: "latest file content",
-              title: "Read",
-              metadata: {},
-              time: { start: 0, end: 1 },
-            },
-          },
-        ] as MessageV2.Part[],
-      },
-    ]
+  // The summary boundary only advances in blocks of SUMMARY_BOUNDARY_STEP tool
+  // turns, so a conversation has to carry enough turns before anything is
+  // summarized at all. These builders keep that arithmetic in one place.
+  const SUMMARIZED_TURNS = 20
+  const TAIL_TURNS = 2
 
-    expect(await MessageV2.toModelMessages(input, model, { replayToolOutputs: "summary" })).toStrictEqual([
-      {
-        role: "user",
-        content: [{ type: "text", text: "inspect older file" }],
-      },
-      {
-        role: "assistant",
-        content: [
-          {
-            type: "tool-call",
-            toolCallId: "call-read-summary-1",
-            toolName: "read",
-            input: { filePath: "/tmp/example-1.txt", offset: 10, limit: 2 },
-            providerExecuted: undefined,
-          },
-        ],
-      },
-      {
-        role: "tool",
-        content: [
-          {
-            type: "tool-result",
-            toolCallId: "call-read-summary-1",
-            toolName: "read",
-            output: {
-              type: "text",
-              value:
-                "[Historical tool result summary]\ntool: read\nreference: /tmp/example-1.txt\nwindow: offset=10 limit=2\nmetrics: chars=16 lines=3 bytes=16 attachments=0",
-            },
-          },
-        ],
-      },
-      {
-        role: "user",
-        content: [{ type: "text", text: "inspect recent file" }],
-      },
-      {
-        role: "assistant",
-        content: [
-          {
-            type: "tool-call",
-            toolCallId: "call-read-summary-2",
-            toolName: "read",
-            input: { filePath: "/tmp/example-2.txt", offset: 0, limit: 1 },
-            providerExecuted: undefined,
-          },
-        ],
-      },
-      {
-        role: "tool",
-        content: [
-          {
-            type: "tool-result",
-            toolCallId: "call-read-summary-2",
-            toolName: "read",
-            output: { type: "text", value: "recent file content" },
-          },
-        ],
-      },
-      {
-        role: "user",
-        content: [{ type: "text", text: "inspect latest file" }],
-      },
-      {
-        role: "assistant",
-        content: [
-          {
-            type: "tool-call",
-            toolCallId: "call-read-summary-3",
-            toolName: "read",
-            input: { filePath: "/tmp/example-3.txt", offset: 3, limit: 4 },
-            providerExecuted: undefined,
-          },
-        ],
-      },
-      {
-        role: "tool",
-        content: [
-          {
-            type: "tool-result",
-            toolCallId: "call-read-summary-3",
-            toolName: "read",
-            output: { type: "text", value: "latest file content" },
-          },
-        ],
-      },
-    ])
-  })
-
-  test("omits raw historical tool outputs while preserving tool-result pairing in off mode", async () => {
-    const userID = "m-user-tool-off"
-    const assistantID = "m-assistant-tool-off"
-    const input: MessageV2.WithParts[] = [
+  const toolTurn = (
+    key: string,
+    tool: string,
+    input: Record<string, any>,
+    output: string,
+    metadata: Record<string, any> = {},
+  ): MessageV2.WithParts[] => {
+    const userID = `m-user-${key}`
+    const assistantID = `m-assistant-${key}`
+    return [
       {
         info: userInfo(userID),
-        parts: [
-          {
-            ...basePart(userID, "u1-tool-off"),
-            type: "text",
-            text: "run tool",
-          },
-        ] as MessageV2.Part[],
+        parts: [{ ...basePart(userID, `u-${key}`), type: "text", text: `turn ${key}` }] as MessageV2.Part[],
       },
       {
         info: assistantInfo(assistantID, userID),
         parts: [
           {
-            ...basePart(assistantID, "a1-tool-off"),
+            ...basePart(assistantID, `a-${key}`),
             type: "tool",
-            callID: "call-tool-off",
-            tool: "bash",
+            callID: `call-${key}`,
+            tool,
             state: {
               status: "completed",
-              input: { cmd: "ls" },
-              output: "file-a\nfile-b",
-              title: "Shell",
-              metadata: {},
+              input,
+              output,
+              title: tool,
+              metadata,
               time: { start: 0, end: 1 },
             },
           },
         ] as MessageV2.Part[],
       },
     ]
+  }
 
-    expect(await MessageV2.toModelMessages(input, model, { replayToolOutputs: "off" })).toStrictEqual([
-      {
-        role: "user",
-        content: [{ type: "text", text: "run tool" }],
-      },
-      {
-        role: "assistant",
-        content: [
-          {
-            type: "tool-call",
-            toolCallId: "call-tool-off",
-            toolName: "bash",
-            input: { cmd: "ls" },
-            providerExecuted: undefined,
-          },
-        ],
-      },
-      {
-        role: "tool",
-        content: [
-          {
-            type: "tool-result",
-            toolCallId: "call-tool-off",
-            toolName: "bash",
-            output: {
-              type: "text",
-              value: "[Historical tool result omitted]\ntool: bash\nreference: call-tool-off",
-            },
-          },
-        ],
-      },
-    ])
+  const padTurns = (prefix: string, count: number) =>
+    Array.from({ length: count }, (_, index) =>
+      toolTurn(`${prefix}-pad-${index}`, "read", { filePath: `/tmp/${prefix}-pad-${index}.txt` }, `pad ${index}`),
+    ).flat()
+
+  const outputsByCall = (messages: Awaited<ReturnType<typeof MessageV2.toModelMessages>>) =>
+    new Map(
+      messages
+        .filter((msg) => msg.role === "tool")
+        .flatMap((msg) => (Array.isArray(msg.content) ? msg.content : []))
+        .map((part: any) => [part.toolCallId as string, part.output.value as string]),
+    )
+
+  const inputsByCall = (messages: Awaited<ReturnType<typeof MessageV2.toModelMessages>>) =>
+    new Map(
+      messages
+        .filter((msg) => msg.role === "assistant")
+        .flatMap((msg) => (Array.isArray(msg.content) ? msg.content : []))
+        .filter((part: any) => part.type === "tool-call")
+        .map((part: any) => [part.toolCallId as string, part.input]),
+    )
+
+  test("summarizes a superseded tool output while keeping the most recent turns full in summary mode", async () => {
+    const input: MessageV2.WithParts[] = [
+      // Superseded below: the same file is read again in the full tail.
+      ...toolTurn("sup-old", "read", { filePath: "/tmp/x.txt", offset: 10, limit: 2 }, "alpha\nbeta\ngamma"),
+      ...padTurns("sup", SUMMARIZED_TURNS - 1),
+      ...toolTurn("sup-new", "read", { filePath: "/tmp/x.txt" }, "newest bytes"),
+      ...toolTurn("sup-tail", "read", { filePath: "/tmp/tail.txt" }, "tail bytes"),
+    ]
+
+    const outputs = outputsByCall(await MessageV2.toModelMessages(input, model, { replayToolOutputs: "summary" }))
+
+    expect(outputs.get("call-sup-old")).toBe(
+      "[Historical tool result summary]\ntool: read\nreference: /tmp/x.txt\nwindow: offset=10 limit=2\nmetrics: chars=16 lines=3 bytes=16 attachments=0",
+    )
+    // The two most recent tool turns always replay in full.
+    expect(outputs.get("call-sup-new")).toBe("newest bytes")
+    expect(outputs.get("call-sup-tail")).toBe("tail bytes")
+    // A turn old enough to fall past the pin budget is summarized too.
+    expect(outputs.get("call-sup-pad-0")).toContain("[Historical tool result summary]")
   })
 
-  test("summarizes historical tool inputs when rollout disables full input replay", async () => {
+  test("renders every message identically until the boundary jumps, so a cached prefix survives", async () => {
+    // A prompt cache matches a prefix byte for byte: re-rendering an already-sent
+    // message invalidates it from that point on. Adding a turn must therefore not
+    // change how any earlier turn renders, except on the block boundary itself.
+    const conversation = (turns: number) => [
+      ...toolTurn("stable-first", "read", { filePath: "/tmp/first.txt" }, "first bytes"),
+      ...padTurns("stable", turns - 1),
+    ]
+    const render = async (turns: number) =>
+      outputsByCall(await MessageV2.toModelMessages(conversation(turns), model, { replayToolOutputs: "summary" }))
+
+    const before = await render(SUMMARIZED_TURNS + TAIL_TURNS)
+    const after = await render(SUMMARIZED_TURNS + TAIL_TURNS + 1)
+
+    expect(before.get("call-stable-first")).toContain("[Historical tool result summary]")
+    for (const [callID, output] of before) {
+      if (callID === "call-stable-pad-19" || callID === "call-stable-pad-18") continue
+      expect(after.get(callID)).toBe(output)
+    }
+  })
+
+  test("summarizes nothing at all before the first boundary jump", async () => {
+    const input = [
+      ...toolTurn("short-first", "read", { filePath: "/tmp/short.txt" }, "short bytes"),
+      ...padTurns("short", SUMMARIZED_TURNS),
+    ]
+
+    const outputs = outputsByCall(await MessageV2.toModelMessages(input, model, { replayToolOutputs: "summary" }))
+
+    expect(outputs.get("call-short-first")).toBe("short bytes")
+    for (const output of outputs.values()) expect(output).not.toContain("[Historical tool result summary]")
+  })
+
+  test("omits raw historical tool outputs while preserving tool-result pairing in off mode", async () => {
+    const input = [
+      ...toolTurn("off-first", "bash", { cmd: "ls" }, "file-a\nfile-b"),
+      ...padTurns("off", SUMMARIZED_TURNS - 1),
+      ...toolTurn("off-recent", "bash", { cmd: "pwd" }, "/tmp"),
+      ...toolTurn("off-tail", "bash", { cmd: "whoami" }, "root"),
+    ]
+
+    const messages = await MessageV2.toModelMessages(input, model, { replayToolOutputs: "off" })
+    const outputs = outputsByCall(messages)
+
+    expect(outputs.get("call-off-first")).toBe(
+      "[Historical tool result omitted]\ntool: bash\nreference: call-off-first",
+    )
+    // Off mode drops the bytes outright — no reference is kept in full.
+    expect(outputs.get("call-off-pad-0")).toContain("[Historical tool result omitted]")
+    expect(outputs.get("call-off-recent")).toBe("/tmp")
+    expect(outputs.get("call-off-tail")).toBe("root")
+    // Every call still has exactly one paired result.
+    expect(outputs.size).toBe(inputsByCall(messages).size)
+  })
+
+  test("keeps the newest output of each referenced file in full past the summary boundary", async () => {
+    const input = [
+      ...padTurns("pin", SUMMARIZED_TURNS - 3),
+      ...toolTurn("pin-a-old", "read", { filePath: "/tmp/a.ts" }, "A older bytes"),
+      ...toolTurn("pin-a-new", "read", { filePath: "/tmp/a.ts" }, "A newest bytes"),
+      ...toolTurn("pin-stub", "read", { filePath: "/tmp/stub.ts" }, "<unchanged>stub</unchanged>", { unchanged: true }),
+      ...toolTurn("pin-recent", "read", { filePath: "/tmp/recent.ts" }, "recent bytes"),
+      ...toolTurn("pin-tail", "read", { filePath: "/tmp/tail.ts" }, "tail bytes"),
+    ]
+
+    const outputs = outputsByCall(await MessageV2.toModelMessages(input, model, { replayToolOutputs: "summary" }))
+
+    // Newest copy of a file survives past the boundary: it is the working set.
+    expect(outputs.get("call-pin-a-new")).toBe("A newest bytes")
+    // Its superseded copy is exactly the waste this mode targets.
+    expect(outputs.get("call-pin-a-old")).toContain("[Historical tool result summary]")
+    // A read-ledger stub carries no bytes, so pinning it would strand the model.
+    expect(outputs.get("call-pin-stub")).toContain("[Historical tool result summary]")
+    // The recent turns replay in full on their own.
+    expect(outputs.get("call-pin-recent")).toBe("recent bytes")
+    expect(outputs.get("call-pin-tail")).toBe("tail bytes")
+    // The pin budget is bounded: the oldest references still fall out.
+    expect(outputs.get("call-pin-pad-0")).toContain("[Historical tool result summary]")
+  })
+
+  test("replays mutating tool inputs verbatim even when input replay is summarized", async () => {
+    const patchText = `*** Begin Patch\n*** Update File: /tmp/example.ts\n@@\n-${"a".repeat(200)}\n+${"b".repeat(200)}\n*** End Patch\n`
+    const todos = Array.from({ length: 8 }, (_, index) => ({ content: `todo ${index}`, status: "pending" }))
+    const input = [
+      ...toolTurn("verb-patch", "apply_patch", { patchText }, "patched"),
+      ...toolTurn("verb-todo", "todowrite", { todos }, "written"),
+      ...toolTurn("verb-read", "read", { filePath: "/tmp/example.ts", pattern: "z".repeat(200) }, "read"),
+      ...padTurns("verb", SUMMARIZED_TURNS - 3),
+      ...toolTurn("verb-recent", "read", { filePath: "/tmp/recent.ts" }, "recent"),
+      ...toolTurn("verb-tail", "read", { filePath: "/tmp/tail.ts" }, "tail"),
+    ]
+
+    const messages = await MessageV2.toModelMessages(input, model, { replayToolInputs: "summary" })
+    const inputs = inputsByCall(messages)
+
+    // A payload the model would reproduce verbatim is never elided.
+    expect(inputs.get("call-verb-patch")).toStrictEqual({ patchText })
+    expect(inputs.get("call-verb-todo")).toStrictEqual({ todos })
+    // A read-only tool past the boundary drops its input entirely: any content
+    // left in context is reproducible, and the model has copied such markers
+    // back as a real argument before (object as grep pattern → TUI crash).
+    expect(inputs.get("call-verb-read")).toStrictEqual({ omitted: true, tool_input: "historical" })
+    expect(JSON.stringify(messages)).not.toContain("__elided")
+  })
+
+  test("keeps tool inputs intact while the conversation is short of the summary boundary", async () => {
     const userID1 = "m-user-tool-input-summary-1"
     const assistantID1 = "m-assistant-tool-input-summary-1"
     const userID2 = "m-user-tool-input-summary-2"

@@ -5,15 +5,79 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
-## [Unreleased]
-
-### Added
+## [v1.18.89] - 2026-08-18
 
 ### Changed
+- Widget sous-agents : la liste dépliée est désormais scrollable (hauteur bornée) au lieu d'être tronquée par un « +N more », et trie les sous-agents en cours d'exécution en premier.
 
 ### Fixed
+- Crash fatal du TUI (`TextNodeRenderable only accepts strings`). La cause : le modèle a recopié le marqueur d'élision structurel `{__elided: "string", head: "…"}` comme s'il s'agissait d'un vrai motif de `grep`, ce qui a produit un argument objet là où l'outil attend une chaîne — l'outil a échoué, puis le TUI a planté en insérant cet objet dans un nœud de texte. Double correctif : les entrées des outils en lecture seule ne sont plus du tout rejouées dans le contexte (aucun contenu partiel à recopier — c'est la deuxième fois que le modèle reproduit une élision, d'abord la chaîne tronquée, puis le marqueur lui-même) ; et le TUI affiche désormais les arguments non-chaîne via `JSON.stringify` au lieu de planter, de sorte qu'une entrée malformée ne puisse plus jamais faire tomber l'interface.
 
 ### Removed
+
+## [v1.18.88] - 2026-08-17
+
+### Added
+- Widget « Subagents » dans le TUI, juste au-dessus du prompt dès qu'une session a des enfants. **Plié par défaut, il n'occupe qu'une seule ligne** : « ▸ Subagents · 2 working · 6 total ». Un clic sur l'en-tête le déplie et affiche une ligne par sous-agent — spinner s'il travaille, tâche, agent, durée et coût — puis **un clic sur une ligne ouvre la session du sous-agent**. L'état plié/déplié est mémorisé entre les redémarrages. Un sous-agent lancé en arrière-plan n'était jusqu'ici visible que par une ligne enfouie dans la transcription — donc facile à oublier et à relancer en double.
+- `task` accepte deux actions de suivi sur un `task_id` existant : `action=check` rend compte de l'avancement et renvoie ce que le sous-agent a écrit jusqu'ici sans le déranger, `action=wait` bloque jusqu'à la fin et renvoie son résultat (`timeout_minutes` optionnel). L'agent principal n'a donc plus à choisir entre rester bloqué sur un enfant et l'abandonner : il lance en arrière-plan, continue son travail, consulte quand il veut et reste notifié à la fin.
+- Le mode arrière-plan n'est plus derrière `OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS` : il est disponible par défaut, c'est lui qui rend l'indépendance possible.
+
+### Removed
+- Plafond de temps de 15 minutes sur les sous-agents. Il coupait du travail réel pour résoudre un problème d'attente — or le parent n'attend plus. `OPENCODE_TASK_BUDGET_MINUTES` permet de le rétablir si besoin.
+
+
+### Changed
+- Seuil de compaction automatique remonté de 85 % à **95 %** de la fenêtre utilisable. Le seuil bas avait été choisi en supposant que les tokens de contexte coûtent plein tarif — ce qui n'était vrai que parce que le cache du fournisseur était cassé par la synthèse glissante. Une compaction réécrit tout le préfixe (donc jette le cache) *et* dépense un appel de résumé qui relit le contexte entier : de l'ordre de 2,50 $ pour un contexte de 256 k, contre ~0,06 $/tour économisés en portant un contexte plus petit. Le retour sur investissement n'arrive qu'après une quarantaine de tours. `compaction.threshold` reste réglable pour les fournisseurs sans cache de prompt.
+
+## [v1.18.85] - 2026-08-17
+
+### Changed
+- Synthèse figée : la frontière de résumé du contexte n'est plus glissante, elle avance par blocs de 20 tours d'outils. Un cache de prompt ne vaut que si le préfixe est identique octet pour octet, et les points de cache du fournisseur sont posés sur les derniers messages — exactement là où la fenêtre glissante réécrivait l'historique. Chaque tour invalidait donc le bloc que le tour précédent venait de mettre en cache. Mesuré sur une session réelle : 134 tours facturés à plus de 100 k tokens d'entrée fraîche pour **106,35 $**, avec seulement 54 046 tokens (le prompt système, invariant) touchant le cache ; les 15 tours qui ont réellement touché le cache ont coûté 1,67 $ à eux tous. Les mêmes 25 M de tokens lus en cache auraient coûté 19,80 $ au lieu de 132,50 $.
+- Entre deux sauts de frontière, tout message se rend à l'identique : le préfixe mis en cache s'accumule, un tour sur 20 paie une réécriture, et une session plus courte que le bloc ne résume rien du tout. Même règle appliquée aux entrées d'outils, qui glissaient de la même façon.
+- L'épinglage introduit en v1.18.84 ne pinne plus une copie déjà couverte en entier par la queue récente, et ne s'applique qu'au mode `summary` : le mode `off` reste un vrai `off`.
+
+## [v1.18.84] - 2026-08-17
+
+### Fixed
+- Livelock de relecture : le rejeu résumé des sorties d'outils évinçait un fichier sur lequel le modèle travaillait encore, qui le redemandait aussitôt — ce qui évinçait le précédent. Mesuré sur un sous-agent `explore` : **167 appels d'outils en 15 minutes pour 57 sorties distinctes**, une même sortie rapatriée 74 fois, en cycle parfait sur 3 fichiers. Comme opencode écrit un message assistant par étape, la fenêtre « 2 derniers tours » valait en pratique « les 2 derniers appels », soit moins que l'ensemble de travail du modèle. La sortie la plus récente de chaque référence distincte (8 au maximum) est désormais conservée en entier quel que soit son âge ; l'économie est prise sur les copies périmées, qui sont précisément le gaspillage que le résumé visait.
+- Le stub `<unchanged>` du registre de lecture affirmait « le contenu est déjà dans ton contexte, remonte » alors que le rejeu résumé venait de l'effacer. C'est ce mensonge qui a poussé le modèle à contourner `read` par `bash Get-Content` — hors de portée du registre comme du frein de répétition, qui exige des arguments byte-identiques (163 signatures distinctes pour 167 appels). L'épinglage rend la promesse vraie, et le stub indique désormais la sortie de secours : relire la plage précise avec `offset`/`limit` plutôt que le fichier entier par le shell.
+
+## [v1.18.83] - 2026-08-17
+
+Suite de l'audit de coût : le contexte rejoué ne doit ni mentir au modèle ni le brider.
+
+### Changed
+- Le plafond implicite de 50 étapes de la boucle d'agent est supprimé. Il coupait silencieusement un run autonome long alors que rien ne l'avait demandé ; seul un `agent.steps` explicitement configuré arrête désormais la boucle (`reachedStepLimit`). Un agent sans budget déclaré tourne jusqu'à ce que le modèle cesse d'appeler des outils.
+- La compaction automatique se déclenche à 85 % de la fenêtre utilisable au lieu de 100 %, réglable via `compaction.threshold` (borné à [0.1, 1]). Compacter seulement à saturation fait payer plein tarif à chaque étape précédente pour un contexte déjà périmé.
+
+### Fixed
+- Rejeu du contexte : les arguments des outils porteurs de charge utile (`bash`, `apply_patch`, `edit`, `write`, `todowrite`, `task`, outils MCP) ne sont plus élidés dans l'historique renvoyé au modèle. Le modèle réémettait la troncature qu'il lisait de ses propres appels : sur une session mesurée, 31 des 48 erreurs d'outils venaient de là — 28 patchs `missing Begin/End markers`, 3 `todowrite` invalides, des commandes PowerShell coupées en plein milieu, et deux sous-agents démarrés sur un brief amputé de 96 %.
+- Les élisions restantes (outils en lecture seule) sont émises comme objets structurels (`{ __elided: "string", chars: N, head }`) au lieu de chaînes ressemblant à un argument valide, donc inimitables comme corps de patch ou ligne de commande.
+- `task` refuse un prompt terminé par un marqueur d'élision : un sous-agent ne voit que ce prompt et n'a aucun moyen de détecter qu'il en manque la majeure partie.
+- Garde-fou de frontière dans `session/tools.ts` : tout appel d'outil, local ou MCP, dont un argument se termine par un marqueur d'élision est refusé avant exécution avec un message demandant la réémission complète, au lieu d'exécuter une commande ou un patch tronqué.
+
+## [v1.18.81] - 2026-08-16
+
+### Fixed
+- Maintenance SQLite : le checkpoint ajouté en v1.18.80 ne s'exécutait jamais sur une commande courte. `storage/db.ts::close()` n'est appelé nulle part dans le code, et le timer de 5 min n'est pas atteint par un process CLI de quelques secondes — vérifié sur l'installation réelle : après un `debug info` complet en 1.18.80, le WAL restait à 4 621 Mo. Un checkpoint est désormais posé sur la sortie du process (`checkpointOnExit`), déclenché uniquement au-delà de 64 Mo de WAL pour ne pas ralentir les commandes courantes. Mécanisme mesuré sur la base réelle : 4 621 Mo → 0 Mo, sans perte.
+
+## [v1.18.80] - 2026-08-16
+
+Garde-fous issus de l'audit de coût mesuré (`AUDIT-opencodev2.md`) : un plafond, un frein, une sonnette.
+
+### Added
+- Frein de cycle sur les appels d'outils (`tool/repetition.ts`), branché dans le point de passage unique `Tool.wrap`. Refuse un appel déjà prouvé improductif : 3 échecs identiques (outil + arguments), ou 3 sorties byte-identiques consécutives. Un appel répété dont la sortie change n'est jamais bloqué. La session auditée avait enchaîné 129 `edit` identiques (127 en erreur) sur 98 tours pour zéro fichier modifié.
+- Registre de lecture par session (`tool/read-ledger.ts`) : une relecture dont le contenu est prouvé identique (mtime + taille, ou digest) renvoie un résumé court au lieu du fichier. 71 % des 15 816 `read` mesurés étaient des relectures, soit 91,2 Mo réinjectés en contexte. Le registre est purgé à la compaction, sinon le résumé renverrait vers des octets disparus du contexte.
+- Classement des skills piloté par l'usage réel (`skill/usage.ts`) + plafond inconditionnel du catalogue. La branche BM25 existante était contournée quand le tour ne portait pas de texte utilisateur : les 189 skills partaient alors en entier (~13 500 tokens/tour au lieu de ~2 200). 10 places sont réservées aux skills jamais chargés pour préserver la découverte.
+- Test de budget de prompt en CI (`session/prompt-budget.test.ts`) : cliquet qui échoue si le catalogue redevient non borné (contrôle positif inclus — la version non plafonnée dépasse 10 000 tokens).
+- Détection de régression eval persistante (`eval/regression.ts`), comparée à la médiane historique, et alarme visible dans `opencodev2 eval watch`.
+- Budget de temps des sous-agents `task` (15 min par défaut, `OPENCODE_TASK_BUDGET_MINUTES`), en premier plan et en arrière-plan, avec restitution du travail partiel au lieu d'une perte sèche. Le p90 mesuré était de 56 minutes sans aucun timeout.
+- Maintenance SQLite périodique (`storage/maintenance.ts`) : checkpoint WAL `TRUNCATE` toutes les 5 min et à la fermeture, étendu aux bases secondaires `memory` et `eval`. Rétention des `part` anciens optionnelle via `OPENCODE_PART_RETENTION_DAYS` (désactivée par défaut, limitée aux parts `tool`, throttlée à 6 h).
+- Index `part_time_created_idx` sur `part(time_created)` (migration `20260816133346`), sans lequel une passe de rétention scanne toute la table.
+
+### Fixed
+- Régression eval invisible : `detectRegression` comparait chaque run au run *précédent*. Une suite uniformément cassée produit un delta nul, ce qui a laissé passer 36 runs consécutifs à 33 % pendant 58 h en affichant « No regression detected ».
+- MCP : l'outil capturait le client par valeur, si bien qu'après une reconnexion automatique réussie il continuait d'appeler le transport mort (`Not connected`) jusqu'à la fin de la session. Le client est désormais résolu à chaque appel, avec une reprise unique sur coupure de transport (les timeouts ne sont pas rejoués).
 
 ## [v1.18.79] - 2026-08-15
 
