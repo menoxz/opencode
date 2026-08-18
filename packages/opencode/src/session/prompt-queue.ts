@@ -11,14 +11,16 @@ export const turnClosed = (msgs: MessageV2.WithParts[], userID: MessageV2.User["
       (m.info.finish !== undefined || m.info.error !== undefined),
   )
 
-// Run-internal user messages (auto-compaction and its "continue" follow-up)
-// belong to the run that created them, not to the user's prompt queue.
+// Internal user-shaped messages belong to the runtime, not to the user's prompt
+// queue: compaction continues the run that created it, while a background-task
+// notification is data for the next real turn — never a request for a new one.
 const isRunInternalUser = (m: MessageV2.WithParts) =>
   m.parts.some(
     (p) =>
       p.type === "compaction" ||
       (p.type === "text" &&
-        (p as { metadata?: { compaction_continue?: unknown } }).metadata?.compaction_continue === true),
+        ((p as { metadata?: { compaction_continue?: unknown } }).metadata?.compaction_continue === true ||
+          (p as { metadata?: { background_notification?: unknown } }).metadata?.background_notification === true)),
   )
 
 // Oldest user prompt whose turn is not closed (FIFO over queued prompts).

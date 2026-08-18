@@ -5,6 +5,11 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v1.18.90] - 2026-08-18
+
+### Fixed
+- Une fin de sous-agent arrière-plan ne réarme plus automatiquement la session parente. Chaque rapport était persisté comme un nouveau message utilisateur *et* lançait `SessionPrompt.loop` : avec 21 enfants, la session devait donc répondre séparément à toute la file FIFO, même des heures après avoir intégré le travail et clos son objectif. Mesuré sur `ses_feba0c26…` : 12 rapports synthétiques datés de 10:54–11:54 ont provoqué 12 nouveaux tours entre 13:21 et 13:22, retardant l’instruction humaine « lancer le Lot 0.4 » ; Stop n’annulait que le run courant, puis le rapport suivant le relançait. Les rapports sont désormais persistés avec `noReply: true` et le marqueur `background_notification` : ils restent visibles au run actif ou au prochain vrai tour, mais sont exclus de la file des prompts et ne déclenchent jamais un appel modèle à eux seuls.
+
 ## [v1.18.89] - 2026-08-18
 
 ### Changed

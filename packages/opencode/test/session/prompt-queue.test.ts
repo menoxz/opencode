@@ -41,7 +41,7 @@ function assistant(id: string, parent: string, opts?: { finish?: string; error?:
   }
 }
 
-const text = (metadata?: { compaction_continue?: boolean }): MessageV2.Part =>
+const text = (metadata?: { compaction_continue?: boolean; background_notification?: boolean }): MessageV2.Part =>
   ({ id: PartID.ascending("prt-t"), type: "text", text: "x", metadata }) as unknown as MessageV2.Part
 
 const compaction = (): MessageV2.Part =>
@@ -99,6 +99,16 @@ describe("pendingUserID", () => {
     expect(PromptQueue.pendingUserID(msgs)).toBe(MessageID.ascending("msg0003"))
   })
 
+  test("ignores background completion notifications", () => {
+    const msgs = [
+      user("msg0001"),
+      assistant("msg0101", "msg0001", { finish: "stop" }),
+      user("msg0002", [text({ background_notification: true })]),
+      user("msg0003"),
+    ]
+    expect(PromptQueue.pendingUserID(msgs)).toBe(MessageID.ascending("msg0003"))
+  })
+
   test("skips interrupted turns (errored assistant)", () => {
     const msgs = [
       user("msg0001"),
@@ -151,6 +161,15 @@ describe("boundToRun", () => {
     const ids = view.map((m) => m.info.id as string)
     expect(ids).toContain("msg0002")
     expect(ids).toContain("msg0102")
+  })
+
+  test("keeps background completion notifications newer than the anchor", () => {
+    const msgs = [
+      user("msg0001"),
+      user("msg0002", [text({ background_notification: true })]),
+    ]
+    const view = PromptQueue.boundToRun(msgs, MessageID.ascending("msg0001"))
+    expect(view.map((m) => m.info.id as string)).toContain("msg0002")
   })
 
   test("drops a queued user's assistant when the user is newer than the anchor", () => {

@@ -270,6 +270,38 @@ describe("tool.task", () => {
     }),
   )
 
+  it.instance("execute rejects a prompt carrying a context-elision marker", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+
+      const exit = yield* def
+        .execute(
+          {
+            description: "inspect bug",
+            prompt: `Repo: /tmp. Shell = pwsh. Tu es le SEUL agent qu… [2455 chars]`,
+            subagent_type: "general",
+          },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps: stubOps() },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+        .pipe(Effect.exit)
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      expect(yield* sessions.children(chat.id)).toHaveLength(0)
+    }),
+  )
+
   it.instance("execute rejects task_id that does not exist", () =>
     Effect.gen(function* () {
       const sessions = yield* Session.Service
@@ -538,20 +570,80 @@ describe("tool.task", () => {
     },
   )
 
-  it.instance("rejects background execution when the experiment is disabled", () =>
+  it.instance("action=check reports a running task without disturbing it", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const ctx = {
+        sessionID: chat.id,
+        messageID: assistant.id,
+        agent: "build",
+        abort: new AbortController().signal,
+        extra: { promptOps: { ...stubOps(), prompt: () => Effect.never } satisfies TaskPromptOps },
+        messages: [],
+        metadata: () => Effect.void,
+        ask: () => Effect.void,
+      }
+
+      const started = yield* def.execute(
+        { description: "inspect bug", prompt: "look into the cache key path", subagent_type: "general", background: true },
+        ctx,
+      )
+      const checked = yield* def.execute(
+        { description: "check bug", prompt: "unused", subagent_type: "general", task_id: started.metadata.sessionId!, action: "check" },
+        ctx,
+      )
+
+      expect(checked.output).toContain('state="running"')
+      expect(checked.output).toContain("progress read")
+      // The check must not have stopped or replaced the task.
+      expect((yield* jobs.get(started.metadata.sessionId!))?.status).toBe("running")
+    }),
+  )
+
+  it.instance("action=wait returns the result once the task finishes", () =>
     Effect.gen(function* () {
       const { chat, assistant } = yield* seed()
       const tool = yield* TaskTool
       const def = yield* tool.init()
+      const ctx = {
+        sessionID: chat.id,
+        messageID: assistant.id,
+        agent: "build",
+        abort: new AbortController().signal,
+        extra: { promptOps: stubOps({ text: "subagent verdict" }) },
+        messages: [],
+        metadata: () => Effect.void,
+        ask: () => Effect.void,
+      }
 
+      const started = yield* def.execute(
+        { description: "inspect bug", prompt: "look into the cache key path", subagent_type: "general", background: true },
+        ctx,
+      )
+      const waited = yield* def.execute(
+        { description: "wait for bug", prompt: "unused", subagent_type: "general", task_id: started.metadata.sessionId!, action: "wait" },
+        ctx,
+      )
+
+      expect(waited.output).toContain('state="completed"')
+      expect(waited.output).toContain("subagent verdict")
+    }),
+  )
+
+  it.instance("action=check refuses a task that belongs to another session", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const { chat, assistant } = yield* seed()
+      const stranger = yield* sessions.create({ title: "Someone else" })
+
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
       const exit = yield* def
         .execute(
-          {
-            description: "inspect bug",
-            prompt: "look into the cache key path",
-            subagent_type: "general",
-            background: true,
-          },
+          { description: "peek", prompt: "unused", subagent_type: "general", task_id: stranger.id, action: "check" },
           {
             sessionID: chat.id,
             messageID: assistant.id,
@@ -566,6 +658,37 @@ describe("tool.task", () => {
         .pipe(Effect.exit)
 
       expect(Exit.isFailure(exit)).toBe(true)
+    }),
+  )
+
+  it.instance("launches a background task without the former experiment flag", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+
+      const result = yield* def.execute(
+        {
+          description: "inspect bug",
+          prompt: "look into the cache key path",
+          subagent_type: "general",
+          background: true,
+        },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: { promptOps: stubOps() },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+
+      expect(result.output).toContain('state="running"')
+      expect(yield* jobs.get(result.metadata.sessionId!)).toBeTruthy()
     }),
   )
 
@@ -637,6 +760,48 @@ describe("tool.task", () => {
       expect(waited.timedOut).toBe(false)
       expect(waited.info?.status).toBe("completed")
       expect(waited.info?.output).toBe("background done")
+    }),
+  )
+
+  background.instance("background completion persists a non-rearming notification", () =>
+    Effect.gen(function* () {
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      let notification: SessionPrompt.PromptInput | undefined
+
+      const result = yield* def.execute(
+        {
+          description: "inspect bug",
+          prompt: "look into the cache key path",
+          subagent_type: "general",
+          background: true,
+        },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: {
+            promptOps: {
+              ...stubOps({ text: "background done" }),
+              prompt: (input: SessionPrompt.PromptInput) => {
+                if (input.sessionID === chat.id) notification = input
+                return Effect.succeed(reply(input, "parent must not run"))
+              },
+            },
+          },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+
+      yield* (yield* BackgroundJob.Service).wait({ id: result.metadata.sessionId, timeout: 1_000 })
+
+      expect(notification?.noReply).toBe(true)
+      const synthetic = notification?.parts?.find((part) => part.type === "text" && part.synthetic)
+      expect(synthetic?.type === "text" ? synthetic.metadata?.background_notification : undefined).toBe(true)
     }),
   )
 
