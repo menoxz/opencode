@@ -47,6 +47,14 @@ const text = (metadata?: { compaction_continue?: boolean; background_notificatio
 const compaction = (): MessageV2.Part =>
   ({ id: PartID.ascending("prt-c"), type: "compaction", auto: true }) as unknown as MessageV2.Part
 
+const legacyBackgroundNotification = (synthetic = true): MessageV2.Part =>
+  ({
+    id: PartID.ascending("prt-bg"),
+    type: "text",
+    synthetic,
+    text: '<task id="ses_child" state="completed">\n<summary>Background task completed: audit</summary>',
+  }) as unknown as MessageV2.Part
+
 describe("turnClosed", () => {
   test("user with finished assistant is closed", () => {
     const msgs = [user("msg0001"), assistant("msg0101", "msg0001", { finish: "stop" })]
@@ -109,6 +117,21 @@ describe("pendingUserID", () => {
     expect(PromptQueue.pendingUserID(msgs)).toBe(MessageID.ascending("msg0003"))
   })
 
+  test("ignores legacy unmarked background completion notifications", () => {
+    const msgs = [
+      user("msg0001"),
+      assistant("msg0101", "msg0001", { finish: "stop" }),
+      user("msg0002", [legacyBackgroundNotification()]),
+      user("msg0003"),
+    ]
+    expect(PromptQueue.pendingUserID(msgs)).toBe(MessageID.ascending("msg0003"))
+  })
+
+  test("does not ignore human text that resembles a legacy notification", () => {
+    const msgs = [user("msg0001", [legacyBackgroundNotification(false)])]
+    expect(PromptQueue.pendingUserID(msgs)).toBe(MessageID.ascending("msg0001"))
+  })
+
   test("skips interrupted turns (errored assistant)", () => {
     const msgs = [
       user("msg0001"),
@@ -168,6 +191,12 @@ describe("boundToRun", () => {
       user("msg0001"),
       user("msg0002", [text({ background_notification: true })]),
     ]
+    const view = PromptQueue.boundToRun(msgs, MessageID.ascending("msg0001"))
+    expect(view.map((m) => m.info.id as string)).toContain("msg0002")
+  })
+
+  test("keeps legacy background completion notifications newer than the anchor", () => {
+    const msgs = [user("msg0001"), user("msg0002", [legacyBackgroundNotification()])]
     const view = PromptQueue.boundToRun(msgs, MessageID.ascending("msg0001"))
     expect(view.map((m) => m.info.id as string)).toContain("msg0002")
   })

@@ -5,6 +5,11 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v1.18.91] - 2026-08-18
+
+### Fixed
+- Rétrocompatibilité des notifications de sous-agents : 1.18.90 marque les nouveaux rapports `background_notification`, mais une session existante peut contenir des rapports synthétiques créés par les versions antérieures sans métadonnée. `ses_feba0c26…` en contenait exactement 12 ; relancer un prompt a donc ressuscité la même file FIFO malgré le correctif, et chaque ancien rapport a de nouveau déclenché un tour. `PromptQueue` reconnaît désormais l’enveloppe synthétique historique `<task …><summary>Background task …` — uniquement quand `synthetic === true`, de sorte qu’un humain collant un texte ressemblant ne soit jamais ignoré — et la traite comme une notification interne visible mais non exécutable.
+
 ## [v1.18.90] - 2026-08-18
 
 ### Fixed

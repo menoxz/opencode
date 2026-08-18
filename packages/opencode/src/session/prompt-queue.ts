@@ -20,7 +20,11 @@ const isRunInternalUser = (m: MessageV2.WithParts) =>
       p.type === "compaction" ||
       (p.type === "text" &&
         ((p as { metadata?: { compaction_continue?: unknown } }).metadata?.compaction_continue === true ||
-          (p as { metadata?: { background_notification?: unknown } }).metadata?.background_notification === true)),
+          (p as { metadata?: { background_notification?: unknown } }).metadata?.background_notification === true ||
+          // v1.18.88 and older persisted completion reports without metadata.
+          // Recognise their exact synthetic envelope so opening an old session
+          // cannot resurrect the FIFO and replay one model turn per child.
+          (p.synthetic === true && p.text.startsWith("<task ") && p.text.includes("<summary>Background task ")))),
   )
 
 // Oldest user prompt whose turn is not closed (FIFO over queued prompts).
