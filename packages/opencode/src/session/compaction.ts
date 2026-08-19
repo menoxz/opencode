@@ -106,6 +106,16 @@ export function compressGoalState(state: GoalState): string {
   return lines.join("\n") + "\n"
 }
 
+function stickyGoalContext(state: GoalState): string {
+  const findings = (state.findings ?? []).slice(0, 10).map((finding) =>
+    `FINDING ${finding.id} [${finding.severity}/${finding.status}]: ${finding.summary.slice(0, 240)}`,
+  )
+  const gaps = (state.completion?.unverified ?? []).slice(0, 10).map((item) =>
+    `UNVERIFIED: ${item.dod.slice(0, 160)} → ${item.reason.slice(0, 240)}`,
+  )
+  return [...findings, ...gaps].join("\n")
+}
+
 /**
  * Format a GoalState as an XML task-contract block for system prompt injection.
  * Returns empty string when status is "skipped".
@@ -115,11 +125,14 @@ export function formatGoalContext(state: GoalState): string {
 
   if (state.status === "completed") {
     const goal = state.goal.replace(/\n/g, " ").trim().slice(0, 200)
-    return `<task-contract status="completed">\nGOAL (DONE): ${goal}\nThis objective is achieved. Do not redo it. Await a new objective from the user.\n</task-contract>\n`
+    const sticky = stickyGoalContext(state)
+    const summary = state.completion?.summary?.trim().slice(0, 400)
+    return `<task-contract status="completed">\nGOAL (DONE): ${goal}${summary ? `\nSUMMARY: ${summary}` : ""}${sticky ? `\n${sticky}` : ""}\nThis objective is achieved. Do not redo it. Await a new objective from the user.\n</task-contract>\n`
   }
 
   const body = state.compressed ?? compressGoalState(state)
-  return `<task-contract status="${state.status}">\n${body}</task-contract>\n`
+  const sticky = stickyGoalContext(state)
+  return `<task-contract status="${state.status}">\n${body}${sticky ? `${sticky}\n` : ""}</task-contract>\n`
 }
 
 /** Status badge for TUI — always French labels. */

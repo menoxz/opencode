@@ -1,6 +1,7 @@
 import { Effect, Schema } from "effect"
 import { Session } from "@/session/session"
 import * as Tool from "./tool"
+import { mergeGoalFindings, type GoalFinding } from "@/session/goal-evidence"
 import {
   MINIMAL_DOD_ITEM,
   normalizeGoalList,
@@ -205,8 +206,9 @@ function nextGoalState(input: {
   const goal = input.objective.trim()
   const dod = normalizeGoalList(input.dod)
   const outOfScope = normalizeGoalList(input.outOfScope)
+  const { completion: _completion, ...previous } = input.previous ?? {}
   return {
-    ...(input.previous ?? {}),
+    ...previous,
     status: input.status,
     source: input.source,
     goal,
@@ -446,6 +448,14 @@ const CompleteParameters = Schema.Struct({
   ).annotate({
     description: "One entry per DoD item, each carrying a verifiable artifact. Required — completion is refused without it.",
   }),
+  findings: Schema.optional(Schema.Array(Schema.Struct({
+    id: Schema.String,
+    severity: Schema.Literals(["info", "low", "medium", "high", "critical"]),
+    status: Schema.Literals(["open", "closed", "residual", "out_of_scope"]),
+    summary: Schema.String,
+    scope: Schema.optional(Schema.String),
+    evidence: Schema.optional(Schema.Array(Schema.String)),
+  }))).annotate({ description: "Stable findings. OPEN blocks completion; closure requires independent evidence." }),
   unverified: Schema.optional(
     Schema.Array(
       Schema.Struct({
@@ -527,15 +537,6 @@ function completeToolDefinition() {
               warnings: ["No active objective to complete."],
             })
           }
-          if (previous.status === "completed") {
-            return responseResult({
-              status: "ok",
-              action: "complete",
-              updatedFields: [],
-              warnings: ["Objective already completed."],
-              goalState: previous ?? undefined,
-            })
-          }
           if (previous.status === "skipped") {
             return responseResult({
               status: "error",
@@ -550,6 +551,46 @@ function completeToolDefinition() {
           const dodItems = (previous.dod ?? []).map((item) => item.trim()).filter((item) => item && item !== MINIMAL_DOD_ITEM)
           const evidence = (params.evidence ?? []).filter((item) => item.dod?.trim() && item.proof?.trim())
           const unverified = (params.unverified ?? []).filter((item) => item.dod?.trim() && item.reason?.trim())
+          const now = Date.now()
+          const incomingFindings: GoalFinding[] = (params.findings ?? []).map((item) => ({
+            id: item.id, severity: item.severity, status: item.status, summary: item.summary, scope: item.scope,
+            evidence: [...(item.evidence ?? [])], firstSeenAt: now, updatedAt: now,
+          }))
+          const findings = mergeGoalFindings(previous.findings ?? [], incomingFindings, now)
+          const findingsChanged = JSON.stringify(findings) !== JSON.stringify(previous.findings ?? [])
+          const openFindings = findings.filter((finding) => finding.status === "open")
+          if (openFindings.length > 0) {
+            const pending = findingsChanged
+              ? {
+                  ...previous,
+                  status: previous.status === "completed" ? "edited" as const : previous.status,
+                  findings,
+                  version: (previous.version ?? 0) + 1,
+                  updatedAt: now,
+                }
+              : previous
+            if (findingsChanged) yield* sessions.setGoalState({ sessionID: ctx.sessionID, goalState: pending })
+            return responseResult({
+              status: "error", action: "complete", updatedFields: findingsChanged ? ["findings"] : [],
+              warnings: [
+                "Completion refused: sticky findings remain OPEN.",
+                ...openFindings.map((finding) => `${finding.id}: ${finding.summary}`),
+                "Close each finding with independent evidence, or explicitly mark it RESIDUAL/OUT-OF-SCOPE with evidence.",
+              ], goalState: pending,
+            })
+          }
+
+          if (previous.status === "completed") {
+            const completed = findingsChanged
+              ? { ...previous, findings, version: (previous.version ?? 0) + 1, updatedAt: now }
+              : previous
+            if (findingsChanged) yield* sessions.setGoalState({ sessionID: ctx.sessionID, goalState: completed })
+            return responseResult({
+              status: "ok", action: "complete", updatedFields: findingsChanged ? ["findings"] : [],
+              warnings: [findingsChanged ? "Objective already completed; sticky findings updated." : "Objective already completed."],
+              goalState: completed,
+            })
+          }
 
           if (dodItems.length > 0) {
             const weak = evidence.filter((item) => !proofIsSubstantive(item.proof))
@@ -578,8 +619,15 @@ function completeToolDefinition() {
             ...previous,
             status: "completed" as const,
             anchorUserID: lastUserMessageID(ctx.messages),
+            findings,
+            completion: {
+              summary: params.summary?.trim() || undefined,
+              evidence: evidence.map((item) => ({ ...item })),
+              unverified: unverified.map((item) => ({ ...item })),
+              completedAt: now,
+            },
             version: (previous.version ?? 0) + 1,
-            updatedAt: Date.now(),
+            updatedAt: now,
           }
           yield* sessions.setGoalState({ sessionID: ctx.sessionID, goalState: next })
 
@@ -590,7 +638,7 @@ function completeToolDefinition() {
             {
               status: "ok",
               action: "complete",
-              updatedFields: ["status"],
+              updatedFields: ["status", "completion", ...(findingsChanged ? ["findings"] : [])],
               warnings: unverified.map((item) => `Unverified DoD item: ${item.dod} (${item.reason})`),
               goalState: next,
             },

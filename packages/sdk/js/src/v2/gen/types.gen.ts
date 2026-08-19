@@ -752,6 +752,22 @@ export type GoalState = {
   outOfScope: Array<string>
   compressed?: string
   anchorUserID?: string
+  findings?: Array<{
+    id: string
+    severity: "info" | "low" | "medium" | "high" | "critical"
+    status: "open" | "closed" | "residual" | "out_of_scope"
+    summary: string
+    scope?: string
+    evidence: Array<string>
+    firstSeenAt: number
+    updatedAt: number
+  }>
+  completion?: {
+    summary?: string
+    evidence: Array<{ dod: string; proof: string }>
+    unverified: Array<{ dod: string; reason: string }>
+    completedAt: number
+  }
   version: number
   updatedAt: number
 }

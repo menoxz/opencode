@@ -5,6 +5,17 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v1.18.97] - 2026-08-19
+
+### Added
+- Persistance monotone des preuves de completion et findings dans `GoalState`; un finding OPEN bloque la clôture, et sa fermeture exige une preuve indépendante. Les résiduels restent visibles après compaction et via le SDK.
+- Advisories structurels du plan-engine pour dépendance optionnelle, fan-out et parallélisme mutatif sans scope; les plans de cache sont désormais revalidés.
+
+### Fixed
+- `inspect_batch` déduplique les opérations canoniquement identiques et est annoté read-only par le runtime natif.
+- Les sessions DAG deny-all exposent maintenant une allowlist stricte : outils custom et MCP non autorisés disparaissent du catalogue.
+- Les notifications terminales de sous-agents portent une clé stable et ne sont plus réinjectées après reprise/callback dupliqué; les résultats bornés restent récupérables dans le transcript enfant.
+
 ## [v1.18.96] - 2026-08-19
 
 ### Added

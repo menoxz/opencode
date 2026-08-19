@@ -12,6 +12,7 @@ import { Cause, Duration, Effect, Exit, Option, Schema, Scope } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { boundSubagentResult, SUBAGENT_RESULT_CONTRACT } from "./subagent-summary"
+import { hasTaskResultNotification, taskResultNotificationKey } from "./task-notification"
 
 export interface TaskPromptOps {
   cancel(sessionID: SessionID): Effect.Effect<void>
@@ -415,6 +416,12 @@ export const TaskTool = Tool.define(
         state: "completed" | "error" | "budget_exceeded",
         text: string,
       ) {
+        const bounded = flags.experimentalBoundedSubagentResults
+          ? boundSubagentResult(text)
+          : { text, truncated: false, sticky: [] }
+        const notificationKey = taskResultNotificationKey(nextSession.id, state)
+        const parentMessages = yield* sessions.messages({ sessionID: ctx.sessionID })
+        if (hasTaskResultNotification(parentMessages, notificationKey)) return
         const currentParent = yield* sessions.get(ctx.sessionID)
         yield* ops
           .prompt({
@@ -427,12 +434,12 @@ export const TaskTool = Tool.define(
               {
                 type: "text",
                 synthetic: true,
-                metadata: { background_notification: true },
+                metadata: { background_notification: true, task_result_key: notificationKey },
                 text: backgroundMessage({
                   sessionID: nextSession.id,
                   description: params.description,
                   state,
-                  text,
+                  text: bounded.text,
                 }),
               },
             ],
@@ -511,10 +518,17 @@ export const TaskTool = Tool.define(
               }
             }
 
+            const bounded = flags.experimentalBoundedSubagentResults
+              ? boundSubagentResult(text.value)
+              : { text: text.value, truncated: false, sticky: [] }
             return {
               title: params.description,
-              metadata,
-              output: output(nextSession.id, text.value),
+              metadata: {
+                ...metadata,
+                ...(bounded.truncated ? { resultTruncated: true } : {}),
+                ...(bounded.sticky.length ? { stickyFindings: bounded.sticky } : {}),
+              },
+              output: output(nextSession.id, bounded.text),
             }
           }),
         (_, exit) =>

@@ -2,6 +2,7 @@ import { Effect } from "effect"
 import * as Tool from "./tool"
 import { PlanEngine } from "@/plan-engine"
 import { Config } from "@/config/config"
+import { RuntimeFlags } from "@/effect/runtime-flags"
 
 const DESCRIPTION = [
   "Validate a structured execution plan (DAG of steps) before execution.",
@@ -17,6 +18,7 @@ export const PlanningTool = Tool.define(
   "planning",
   Effect.gen(function* () {
     const config = yield* Config.Service
+    const flags = yield* RuntimeFlags.Service
     return {
       description: DESCRIPTION,
       parameters: Parameters,

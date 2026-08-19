@@ -74,6 +74,47 @@ const mkContext = (sessionID: string, messages: Tool.Context["messages"] = []): 
 })
 
 describe("tool.goal-contract", () => {
+  it.instance("persists evidence and refuses completion while sticky findings remain open", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({ title: "sticky completion evidence" })
+      yield* sessions.setGoalState({
+        sessionID: session.id,
+        goalState: {
+          status: "draft", source: "user", goal: "Secure tenant search", dod: ["tenant isolation verified"], outOfScope: [],
+          version: 1, updatedAt: 1,
+          findings: [{ id: "SEC-001", severity: "high", status: "open", summary: "filter missing", evidence: ["audit ses_a"], firstSeenAt: 1, updatedAt: 1 }],
+        } as any,
+      })
+      const complete = yield* getTool("complete_objective")
+      const evidence = [{ dod: "tenant isolation verified", proof: "integration test tenant-isolation passed 4/4 exit 0" }]
+
+      const refused = (yield* complete.execute({ summary: "fixed", evidence }, mkContext(session.id))).metadata.result
+      expect(refused.status).toBe("error")
+      expect(refused.warnings.join(" ")).toContain("SEC-001")
+      expect((yield* sessions.get(session.id)).goalState?.status).toBe("draft")
+
+      const accepted = (yield* complete.execute({
+        summary: "fixed", evidence,
+        findings: [{ id: "SEC-001", severity: "high", status: "closed", summary: "filter missing", evidence: ["independent re-audit ses_b PASS 4/4"] }],
+      } as any, mkContext(session.id))).metadata.result
+      expect(accepted.status).toBe("ok")
+      const stored = (yield* sessions.get(session.id)).goalState as any
+      expect(stored.status).toBe("completed")
+      expect(stored.findings[0].status).toBe("closed")
+      expect(stored.completion.evidence).toEqual(evidence)
+      expect(stored.completion.summary).toBe("fixed")
+
+      const reopened = (yield* complete.execute({
+        findings: [{ id: "SEC-002", severity: "critical", status: "open", summary: "late audit leak", evidence: ["audit ses_c"] }],
+      } as any, mkContext(session.id))).metadata.result
+      expect(reopened.status).toBe("error")
+      const reopenedState = (yield* sessions.get(session.id)).goalState as any
+      expect(reopenedState.status).toBe("edited")
+      expect(reopenedState.findings.find((item: any) => item.id === "SEC-002")?.status).toBe("open")
+    }),
+  )
+
   it.instance("does not rewrite an unchanged goal contract", () =>
     Effect.gen(function* () {
       const sessions = yield* Session.Service

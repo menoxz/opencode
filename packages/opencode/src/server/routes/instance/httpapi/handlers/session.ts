@@ -173,6 +173,14 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
                   ...decoded.goalState,
                   dod: [...decoded.goalState.dod],
                   outOfScope: [...decoded.goalState.outOfScope],
+                  findings: decoded.goalState.findings?.map((finding) => ({ ...finding, evidence: [...finding.evidence] })),
+                  completion: decoded.goalState.completion
+                    ? {
+                        ...decoded.goalState.completion,
+                        evidence: decoded.goalState.completion.evidence.map((item) => ({ ...item })),
+                        unverified: decoded.goalState.completion.unverified.map((item) => ({ ...item })),
+                      }
+                    : undefined,
                 }
               : undefined,
           }
@@ -212,6 +220,14 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
               ...ctx.payload.goalState,
               dod: [...ctx.payload.goalState.dod],
               outOfScope: [...ctx.payload.goalState.outOfScope],
+              findings: ctx.payload.goalState.findings?.map((finding) => ({ ...finding, evidence: [...finding.evidence] })),
+              completion: ctx.payload.goalState.completion
+                ? {
+                    ...ctx.payload.goalState.completion,
+                    evidence: ctx.payload.goalState.completion.evidence.map((item) => ({ ...item })),
+                    unverified: ctx.payload.goalState.completion.unverified.map((item) => ({ ...item })),
+                  }
+                : undefined,
             },
           })
         }

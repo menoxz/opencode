@@ -157,6 +157,52 @@ export function heuristicComplexity(task: string): string {
   return Complexity.SIMPLE
 }
 
+export interface PlanRisk {
+  code: "required-depends-on-optional" | "parallel-mutation-scope-unknown" | "oversized-fanout"
+  severity: "warning"
+  stepIds: string[]
+  detail: string
+}
+
+export function assessPlanRisks(plan: ExecutionPlan): PlanRisk[] {
+  const risks: PlanRisk[] = []
+  const byID = new Map(plan.steps.map((step) => [step.id, step]))
+  const optionalDependencies = plan.steps
+    .filter((step) => !step.optional && step.depends.some((dep) => byID.get(dep)?.optional))
+    .map((step) => step.id)
+  if (optionalDependencies.length) {
+    risks.push({
+      code: "required-depends-on-optional",
+      severity: "warning",
+      stepIds: optionalDependencies,
+      detail: "Required steps depend on optional work; failure semantics are ambiguous.",
+    })
+  }
+  for (const group of plan.parallelGroups) {
+    if (group.length > 4) {
+      risks.push({
+        code: "oversized-fanout",
+        severity: "warning",
+        stepIds: [...group],
+        detail: "Parallel fan-out exceeds four steps; resource and cancellation pressure are unknown.",
+      })
+    }
+    const mutationUnknown = group.filter((id) => {
+      const agent = byID.get(id)?.agent.toLowerCase() ?? ""
+      return !["explore", "plan", "architect", "security", "qa"].includes(agent)
+    })
+    if (mutationUnknown.length > 1) {
+      risks.push({
+        code: "parallel-mutation-scope-unknown",
+        severity: "warning",
+        stepIds: mutationUnknown,
+        detail: "Multiple implementation-like steps are parallel but declare no path/access scope; advisory only, not authorization.",
+      })
+    }
+  }
+  return risks
+}
+
 export function validateExecutionPlan(plan: ExecutionPlan): ExecutionPlan {
   const ids = new Set<string>()
   for (const step of plan.steps) {
@@ -272,7 +318,7 @@ export const layer = Layer.effect(
       const cachedText = yield* afs.readFileStringSafe(cachePath)
       if (cachedText) {
         try {
-          const cachedPlan = JSON.parse(cachedText) as ExecutionPlan
+          const cachedPlan = validateExecutionPlan(JSON.parse(cachedText) as ExecutionPlan)
           log.info("plan cache hit", { taskLength: task.length, path: cachePath })
           return cachedPlan
         } catch (e) {

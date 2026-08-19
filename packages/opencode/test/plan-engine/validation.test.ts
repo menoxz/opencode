@@ -62,4 +62,23 @@ describe("plan-engine validation", () => {
       }),
     ).toThrow("cycle")
   })
+  test("reports structural risk advisories without changing plan validity", () => {
+    const plan = PlanEngine.validateExecutionPlan({
+      goal: "parallel implementation",
+      complexity: "complex",
+      estimatedTokens: 100,
+      steps: [
+        { id: "optional", description: "Optional", agent: "explore", prompt: "Explore", depends: [], complexity: 0.2, optional: true },
+        { id: "write-a", description: "Write A", agent: "build", prompt: "Implement A", depends: ["optional"], complexity: 0.5 },
+        { id: "write-b", description: "Write B", agent: "build", prompt: "Implement B", depends: ["optional"], complexity: 0.5 },
+      ],
+      parallelGroups: [],
+    })
+    expect(PlanEngine.assessPlanRisks(plan).map((risk) => risk.code)).toEqual([
+      "required-depends-on-optional",
+      "parallel-mutation-scope-unknown",
+    ])
+    expect(plan.parallelGroups).toEqual([["optional"], ["write-a", "write-b"]])
+  })
+
 })

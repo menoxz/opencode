@@ -1,5 +1,23 @@
 import { Schema, Types } from "effect"
 
+export const GoalFinding = Schema.Struct({
+  id: Schema.String,
+  severity: Schema.Literals(["info", "low", "medium", "high", "critical"]),
+  status: Schema.Literals(["open", "closed", "residual", "out_of_scope"]),
+  summary: Schema.String,
+  scope: Schema.optional(Schema.String),
+  evidence: Schema.Array(Schema.String),
+  firstSeenAt: Schema.Finite,
+  updatedAt: Schema.Finite,
+})
+
+export const GoalCompletion = Schema.Struct({
+  summary: Schema.optional(Schema.String),
+  evidence: Schema.Array(Schema.Struct({ dod: Schema.String, proof: Schema.String })),
+  unverified: Schema.Array(Schema.Struct({ dod: Schema.String, reason: Schema.String })),
+  completedAt: Schema.Finite,
+})
+
 export const GoalState = Schema.Struct({
   status: Schema.Literals(["draft", "pending_user", "approved", "edited", "completed", "skipped"]),
   source: Schema.Literals(["auto", "user"]),
@@ -11,6 +29,8 @@ export const GoalState = Schema.Struct({
   // "same turn, just completed" from "a new prompt after completion" so a finished
   // objective is not resurrected within the same turn (see ensureGoalState).
   anchorUserID: Schema.optional(Schema.String),
+  findings: Schema.optional(Schema.Array(GoalFinding)),
+  completion: Schema.optional(GoalCompletion),
   version: Schema.Finite,
   updatedAt: Schema.Finite,
 }).annotate({ identifier: "GoalState" })

@@ -35,6 +35,21 @@ function elidedArgument(args: Record<string, unknown>) {
   return ELIDED_ARGUMENT.test(JSON.stringify(args) ?? "")
 }
 
+export function deriveStrictToolAllowlist(rules: readonly { permission: string; action: string }[]) {
+  if (!rules.some((rule) => rule.permission === "*" && rule.action === "deny")) return undefined
+  return new Set(rules.filter((rule) => rule.permission !== "*" && rule.action === "allow").map((rule) => rule.permission))
+}
+
+export const SAFE_PARALLEL_LOCAL_TOOL_IDS = [
+  "read",
+  "glob",
+  "grep",
+  "inspect_batch",
+  "repo_overview",
+  "session_context",
+  "session_info",
+] as const
+
 export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   agent: Agent.Info
   model: Provider.Model
@@ -56,7 +71,8 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   const mcp = yield* MCP.Service
   const truncate = yield* Truncate.Service
   const config = yield* Config.Service
-  const safeParallelLocal = new Set(["read", "glob", "grep", "repo_overview", "session_context", "session_info"])
+  const safeParallelLocal = new Set<string>(SAFE_PARALLEL_LOCAL_TOOL_IDS)
+  const strictAllowlist = deriveStrictToolAllowlist(input.session.permission ?? [])
 
   type CatalogValue =
     | { source: "local"; item: Tool.Def; schema: ReturnType<typeof ProviderTransform.schema> }
@@ -77,6 +93,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     input.forceWriteTools ? "write" : "read",
     registryVersion,
     mcpVersion,
+    strictAllowlist ? [...strictAllowlist].sort().join(",") : "all-tools",
   ].join(":")
   const preparedAt = Date.now()
   const prepared = yield* ToolCatalog.getPreparedEffect(

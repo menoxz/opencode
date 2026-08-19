@@ -104,6 +104,36 @@ export function validateInspectActions(actions: readonly InspectAction[]): strin
   return errors
 }
 
+function inspectActionKey(action: InspectAction) {
+  const dependsOn = [...(action.dependsOn ?? [])].sort()
+  if (action.type === "read") return JSON.stringify([action.type, action.filePath, action.offset ?? null, action.limit ?? null, dependsOn])
+  if (action.type === "glob") return JSON.stringify([action.type, action.pattern, action.path ?? null, dependsOn])
+  return JSON.stringify([action.type, action.pattern, action.path ?? null, action.include ?? null, dependsOn])
+}
+
+export function deduplicateInspectActions(actions: readonly InspectAction[]) {
+  const primaryByKey = new Map<string, string>()
+  const aliases = new Map<string, string>()
+  const unique: InspectAction[] = []
+  for (const action of actions) {
+    const key = inspectActionKey(action)
+    const primary = primaryByKey.get(key)
+    if (primary) aliases.set(action.id, primary)
+    else {
+      primaryByKey.set(key, action.id)
+      unique.push(action)
+    }
+  }
+  const resolve = (id: string): string => aliases.has(id) ? resolve(aliases.get(id)!) : id
+  return {
+    actions: unique.map((action) => ({
+      ...action,
+      ...(action.dependsOn ? { dependsOn: [...new Set(action.dependsOn.map(resolve))] } : {}),
+    })) as InspectAction[],
+    aliases,
+  }
+}
+
 export function planInspectRounds(actions: readonly InspectAction[]): InspectAction[][] {
   const errors = validateInspectActions(actions)
   if (errors.length) throw new Error(errors.join("; "))
@@ -156,7 +186,8 @@ export const InspectBatchTool = Tool.define(
           const actions = [...params.actions]
           const errors = validateInspectActions(actions)
           if (errors.length > 0) throw new Error(errors.join("\n"))
-          const rounds = planInspectRounds(actions)
+          const deduped = deduplicateInspectActions(actions)
+          const rounds = planInspectRounds(deduped.actions)
           const concurrency = Math.max(1, Math.min(8, params.maxConcurrency ?? 4))
           const maxChars = Math.max(1000, Math.min(20_000, params.maxCharsPerResult ?? 8_000))
           const results = new Map<string, ActionResult>()
@@ -213,7 +244,11 @@ export const InspectBatchTool = Tool.define(
             for (const result of completed) results.set(result.id, result)
           }
 
-          const ordered = actions.map((action) => results.get(action.id)!)
+          const ordered = actions.map((action) => {
+            const primary = deduped.aliases.get(action.id) ?? action.id
+            const result = results.get(primary)!
+            return primary === action.id ? result : { ...result, id: action.id }
+          })
           const failed = ordered.filter((result) => result.status === "error").length
           const skipped = ordered.filter((result) => result.status === "skipped").length
           return {
@@ -225,6 +260,7 @@ export const InspectBatchTool = Tool.define(
               skipped,
               truncated: ordered.filter((result) => result.truncated).map((result) => result.id),
               readOnly: true,
+              deduplicated: deduped.aliases.size,
             },
             output: JSON.stringify({ readOnly: true, rounds: rounds.length, results: ordered }, null, 2),
           }
