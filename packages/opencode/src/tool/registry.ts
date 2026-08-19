@@ -21,6 +21,8 @@ import { EditTool } from "./edit"
 import { GlobTool } from "./glob"
 import { GrepTool } from "./grep"
 import { ReadTool } from "./read"
+import { InspectBatchTool } from "./inspect-batch"
+import { selectVisibleGoalContractTools } from "./protocol-dedupe"
 import { TaskTool } from "./task"
 import { TodoWriteTool } from "./todo"
 import { WebFetchTool } from "./webfetch"
@@ -157,6 +159,7 @@ export const layer: Layer.Layer<
     const invalid = yield* InvalidTool
     const task = yield* TaskTool
     const read = yield* ReadTool
+    const inspectBatch = yield* InspectBatchTool
     const question = yield* QuestionTool
     const todo = yield* TodoWriteTool
     const lsptool = yield* LspTool
@@ -317,6 +320,7 @@ export const layer: Layer.Layer<
           invalid: Tool.init(invalid),
           shell: Tool.init(shell),
           read: Tool.init(read),
+          inspect_batch: Tool.init(inspectBatch),
           glob: Tool.init(globtool),
           grep: Tool.init(greptool),
           edit: Tool.init(edit),
@@ -360,6 +364,7 @@ export const layer: Layer.Layer<
             ...(questionEnabled ? [tool.question] : []),
             tool.shell,
             tool.read,
+            ...(flags.experimentalInspectBatch || cfg.experimental?.batch_tool === true ? [tool.inspect_batch] : []),
             tool.glob,
             tool.grep,
             tool.edit,
@@ -374,14 +379,16 @@ export const layer: Layer.Layer<
             tool.subagent,
             tool.session_context,
             tool.session_info,
-            tool.create_objectif,
-            tool.create_objective,
-            tool.edit_objectif,
-            tool.edit_objective,
-            tool.suggest_objectif,
-            tool.complete_objectif,
-            tool.complete_objective,
-            tool.apply_contract_from_prompt,
+            ...(selectVisibleGoalContractTools(flags.experimentalLeanProtocolDedupe, {
+              create_objectif: tool.create_objectif,
+              create_objective: tool.create_objective,
+              edit_objectif: tool.edit_objectif,
+              edit_objective: tool.edit_objective,
+              suggest_objectif: tool.suggest_objectif,
+              complete_objectif: tool.complete_objectif,
+              complete_objective: tool.complete_objective,
+              apply_contract_from_prompt: tool.apply_contract_from_prompt,
+            }) as Tool.Def[]),
             tool.patch,
             ...(flags.experimentalLspTool ? [tool.lsp] : []),
             ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),

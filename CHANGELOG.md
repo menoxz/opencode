@@ -5,6 +5,15 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v1.18.96] - 2026-08-19
+
+### Added
+- Efficacité Lean opt-in et sûre : `inspect_batch` read-only avec DAG borné, dépendances explicites, permissions par action, sorties plafonnées et erreurs locales ; résumés causaux de sous-agents bornés avec findings sticky ; télémétrie `PhaseCapsule` shadow ; chemin QA et planificateur de risque advisory.
+
+### Changed
+- Les contrats goal identiques sont idempotents et ne réécrivent plus la session. Un flag peut masquer les alias français redondants tout en conservant leur compatibilité interne.
+- L'orchestrateur DAG exige désormais deux opt-ins et reste strictement read-only ; les écritures sont indisponibles tant que les path locks n'existent pas, et les graphes invalides sont rejetés avant création de sessions.
+
 ## [v1.18.95] - 2026-08-19
 
 ### Fixed

@@ -74,6 +74,26 @@ const mkContext = (sessionID: string, messages: Tool.Context["messages"] = []): 
 })
 
 describe("tool.goal-contract", () => {
+  it.instance("does not rewrite an unchanged goal contract", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({ title: "idempotent goal contract" })
+      const create = yield* getTool("create_objective")
+      const input = { objective: "Ship safely", dod: ["tests pass"], outOfScope: ["no deploy"] }
+
+      yield* create.execute(input, mkContext(session.id))
+      const first = (yield* sessions.get(session.id)).goalState
+      const result = parseResult(yield* create.execute(input, mkContext(session.id)))
+      const second = (yield* sessions.get(session.id)).goalState
+
+      expect(result.status).toBe("ok")
+      expect(result.updatedFields).toEqual([])
+      expect(result.warnings).toContain("No semantic change; goalState was not rewritten.")
+      expect(second?.version).toBe(first?.version)
+      expect(second?.updatedAt).toBe(first?.updatedAt)
+    }),
+  )
+
   it.instance("create_objectif creates goalState with structured response", () =>
     Effect.gen(function* () {
       const sessions = yield* Session.Service

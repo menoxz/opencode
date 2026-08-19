@@ -115,6 +115,20 @@ const scout = testEffect(
 const withBrokenPlugin = testEffect(
   Layer.mergeAll(registryLayer({ plugin: brokenPluginLayer }), node, Agent.defaultLayer) as unknown as Layer.Layer<never, never>,
 )
+const withInspectBatch = testEffect(
+  Layer.mergeAll(
+    registryLayer({ flags: { experimentalInspectBatch: true } as Partial<RuntimeFlags.Info> }),
+    node,
+    Agent.defaultLayer,
+  ) as unknown as Layer.Layer<never, never>,
+)
+const withProtocolDedupe = testEffect(
+  Layer.mergeAll(
+    registryLayer({ flags: { experimentalLeanProtocolDedupe: true } as Partial<RuntimeFlags.Info> }),
+    node,
+    Agent.defaultLayer,
+  ) as unknown as Layer.Layer<never, never>,
+)
 
 describe("tool.registry", () => {
   it.instance("hides repo research tools unless experimental", () =>
@@ -143,6 +157,26 @@ describe("tool.registry", () => {
       const ids = yield* registry.ids()
 
       expect(ids).not.toContain("task_status")
+      expect(ids).not.toContain("inspect_batch")
+    }),
+  )
+
+  withInspectBatch.instance("exposes inspect_batch only with the explicit read-only flag", () =>
+    Effect.gen(function* () {
+      const ids = yield* (yield* ToolRegistry.Service).ids()
+      expect(ids).toContain("inspect_batch")
+    }),
+  )
+
+  withProtocolDedupe.instance("hides French goal aliases while keeping canonical tools", () =>
+    Effect.gen(function* () {
+      const ids = yield* (yield* ToolRegistry.Service).ids()
+      expect(ids).not.toContain("create_objectif")
+      expect(ids).not.toContain("edit_objectif")
+      expect(ids).not.toContain("complete_objectif")
+      expect(ids).toContain("create_objective")
+      expect(ids).toContain("edit_objective")
+      expect(ids).toContain("complete_objective")
     }),
   )
 

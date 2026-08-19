@@ -63,6 +63,8 @@ import * as PostMortem from "@/memory/post-mortem"
 import { SessionRunState } from "./run-state"
 import * as PromptMethodology from "./prompt-methodology"
 import { createPromptContextSummary, createPromptInjectionCache } from "./prompt-context-summary"
+import { derivePhaseCapsule } from "./phase-capsule"
+import { buildQaProofAdvisory, buildRiskAdvisory, collectStickyFindings } from "./lean-advisory"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { SessionEvent } from "@opencode-ai/core/session-event"
@@ -1733,6 +1735,15 @@ export const layer = Layer.effect(
             msgs,
             Date.now() - messageFilteringStart,
           )
+          if (flags.experimentalPhaseCapsuleShadow) {
+            const capsule = derivePhaseCapsule(msgs)
+            contextSummary.add(
+              "phaseCapsuleShadow",
+              "derive deterministic phase/epoch telemetry without changing prompt context",
+              capsule,
+              0,
+            )
+          }
 
           const latest = MessageV2.latest(msgs)
           // `boundToRun` deliberately keeps newer internal users (compaction
@@ -2107,18 +2118,27 @@ export const layer = Layer.effect(
               goalState.status !== "skipped" && goalState.status !== "completed" && goalState.goal?.trim()
             if (goalActive && !system.some((entry) => entry.includes("<goal_reminder"))) {
               const goalReminderStart = Date.now()
-              const cachedGoalReminder = injectionCache.get("goalReminder:active")
+              const reminderKey = `goalReminder:active:${goalState.version}:${flags.experimentalLeanProtocolDedupe}:${flags.experimentalQaProofAdvisory}:${flags.experimentalRiskPlannerAdvisory}`
+              const cachedGoalReminder = injectionCache.get(reminderKey)
+              const editTool = flags.experimentalLeanProtocolDedupe ? "`edit_objective`" : "`edit_objectif`/`edit_objective`"
+              const completeTool = flags.experimentalLeanProtocolDedupe ? "`complete_objective`" : "`complete_objectif`/`complete_objective`"
+              const qaAdvisory = flags.experimentalQaProofAdvisory ? buildQaProofAdvisory(goalState) : ""
+              const riskAdvisory = flags.experimentalRiskPlannerAdvisory
+                ? buildRiskAdvisory(goalState, collectStickyFindings(msgs))
+                : ""
               const goalReminderText = [
                   "<goal_reminder>",
                   "- Compare the user's latest message with the current objective before acting.",
-                  "- If the latest message changes the objective, update it with `edit_objectif`/`edit_objective`; if the previous objective is already satisfied, complete it first.",
+                  `- If the latest message changes the objective, update it with ${editTool}; if the previous objective is already satisfied, complete it first.`,
                   "- Before finishing, verify the objective and DoD against the actual result and todo state.",
-                  "- When objective and DoD are satisfied, call `complete_objectif`/`complete_objective`; it completes without routine user approval.",
+                  `- When objective and DoD are satisfied, call ${completeTool}; it completes without routine user approval.`,
                   "</goal_reminder>",
-                ].join("\n") + "\n"
+                  qaAdvisory,
+                  riskAdvisory,
+                ].filter(Boolean).join("\n") + "\n"
               const goalReminder = cachedGoalReminder.cached && cachedGoalReminder.value !== undefined
                 ? cachedGoalReminder.value
-                : (injectionCache.set("goalReminder:active", goalReminderText) ?? goalReminderText)
+                : (injectionCache.set(reminderKey, goalReminderText) ?? goalReminderText)
               system.push(goalReminder)
               contextSummary.add("goal", "inject active objective lifecycle reminder", goalReminder, Date.now() - goalReminderStart, { cached: cachedGoalReminder.cached })
             }

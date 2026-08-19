@@ -184,6 +184,16 @@ function responseResult(result: ContractToolResponse) {
 }
 
 // Stored in Session.goalState and persisted by session projector/storage.
+function sameStringList(left: unknown, right: string[]) {
+  const normalized = normalizeGoalList(Array.isArray(left) ? left.filter((item): item is string => typeof item === "string") : [])
+  return normalized.length === right.length && normalized.every((item, index) => item === right[index])
+}
+
+function sameGoalContract(previous: any, objective: string, dod: string[], outOfScope: string[]) {
+  if (!previous) return false
+  return previous.goal?.trim() === objective.trim() && sameStringList(previous.dod, dod) && sameStringList(previous.outOfScope, outOfScope)
+}
+
 function nextGoalState(input: {
   previous: any
   objective: string
@@ -266,6 +276,16 @@ function createToolDefinition(actionId: "create" | "edit") {
           const baseDod =
             dodInput ?? (normalizeGoalList(previous?.dod).length > 0 ? normalizeGoalList(previous?.dod) : [MINIMAL_DOD_ITEM])
           const baseOos = oosInput ?? normalizeGoalList(previous?.outOfScope)
+
+          if (sameGoalContract(previous, baseObjective, baseDod, baseOos)) {
+            return responseResult({
+              status: "ok",
+              action: actionId,
+              updatedFields: [],
+              warnings: ["No semantic change; goalState was not rewritten."],
+              goalState: previous ?? undefined,
+            })
+          }
 
           const next = nextGoalState({
             previous,
@@ -373,6 +393,16 @@ export const ApplyContractFromPromptTool = Tool.define(
               action: "apply",
               updatedFields: [],
               warnings: warnings.length > 0 ? warnings : ["Unable to parse objective from prompt."],
+            })
+          }
+
+          if (sameGoalContract(previous, draft.objective, draft.dod, draft.outOfScope)) {
+            return responseResult({
+              status: "ok",
+              action: "apply",
+              updatedFields: [],
+              warnings: [...warnings, "No semantic change; goalState was not rewritten."],
+              goalState: previous ?? undefined,
             })
           }
 
@@ -503,7 +533,7 @@ function completeToolDefinition() {
               action: "complete",
               updatedFields: [],
               warnings: ["Objective already completed."],
-              goalState: previous,
+              goalState: previous ?? undefined,
             })
           }
           if (previous.status === "skipped") {
@@ -539,7 +569,7 @@ function completeToolDefinition() {
                   ...weak.map((item) => `Proof is an assertion, not an artifact, for: ${item.dod} → "${item.proof}"`),
                   "Provide `evidence: [{ dod, proof }]` where each proof is re-observable (command + exit code, test output, measured value, file path and content). Declare what you truly cannot prove in `unverified: [{ dod, reason }]`.",
                 ],
-                goalState: previous,
+                goalState: previous ?? undefined,
               })
             }
           }

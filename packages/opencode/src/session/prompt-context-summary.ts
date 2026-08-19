@@ -3,6 +3,7 @@ import { createHash } from "node:crypto"
 export type PromptContextSection =
   | "createUserMessage"
   | "messageFiltering"
+  | "phaseCapsuleShadow"
   | "reminders"
   | "toolResolution"
   | "skills"

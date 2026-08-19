@@ -42,6 +42,9 @@ export const DAGStepSchema = Schema.Struct({
   timeout: Schema.optional(PositiveInt),
   retries: Schema.optional(PositiveInt),
   optional: Schema.optional(Schema.Boolean),
+  access: Schema.optional(Schema.Literal("read-only")).annotate({
+    description: "Required by the guarded runtime; writer DAG execution is intentionally unavailable.",
+  }),
 })
 export type DAGStep = Schema.Schema.Type<typeof DAGStepSchema>
 
@@ -70,9 +73,70 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Orchestrator") {}
 
-export function dagRuntimeGuard(flags: { experimentalDagOrchestration: boolean }): string | undefined {
-  if (flags.experimentalDagOrchestration) return undefined
-  return "DAG orchestration runtime is disabled. Set OPENCODE_EXPERIMENTAL_DAG_ORCHESTRATION=true to opt in."
+export function dagRuntimeGuard(flags: {
+  experimentalDagOrchestration: boolean
+  experimentalDagReadOnly?: boolean
+}): string | undefined {
+  if (!flags.experimentalDagOrchestration) {
+    return "DAG orchestration runtime is disabled. Set OPENCODE_EXPERIMENTAL_DAG_ORCHESTRATION=true to opt in."
+  }
+  if (!flags.experimentalDagReadOnly) {
+    return "Writer DAG execution is unavailable without path locks. Set OPENCODE_EXPERIMENTAL_DAG_READ_ONLY=true for the strict read-only runtime."
+  }
+  return undefined
+}
+
+export function validateDagSteps(steps: readonly DAGStep[]): string[] {
+  const errors: string[] = []
+  const seen = new Set<string>()
+  const first = new Map<string, DAGStep>()
+  for (const step of steps) {
+    if (seen.has(step.id)) errors.push(`Duplicate DAG step id: ${step.id}`)
+    seen.add(step.id)
+    if (!first.has(step.id)) first.set(step.id, step)
+  }
+  for (const step of steps) {
+    for (const dep of step.depends ?? []) {
+      if (!seen.has(dep)) errors.push(`DAG step ${step.id} depends on unknown step: ${dep}`)
+    }
+    if (step.access !== "read-only") errors.push(`DAG step ${step.id} must declare access=read-only`)
+  }
+  const visiting = new Set<string>()
+  const visited = new Set<string>()
+  const stack: string[] = []
+  function visit(id: string): string[] | undefined {
+    if (visiting.has(id)) return [...stack.slice(stack.indexOf(id)), id]
+    if (visited.has(id)) return undefined
+    const step = first.get(id)
+    if (!step) return undefined
+    visiting.add(id)
+    stack.push(id)
+    for (const dep of step.depends ?? []) {
+      const cycle = visit(dep)
+      if (cycle) return cycle
+    }
+    stack.pop()
+    visiting.delete(id)
+    visited.add(id)
+    return undefined
+  }
+  for (const step of steps) {
+    const cycle = visit(step.id)
+    if (cycle) {
+      errors.push(`DAG dependency cycle detected: ${cycle.join(" -> ")}`)
+      break
+    }
+  }
+  return errors
+}
+
+export const READ_ONLY_DAG_TOOLS = ["read", "glob", "grep", "repo_overview", "session_context", "session_info"] as const
+
+export function readOnlyDagPermissions() {
+  return [
+    { permission: "*", pattern: "*", action: "deny" as const },
+    ...READ_ONLY_DAG_TOOLS.map((permission) => ({ permission, pattern: "*", action: "allow" as const })),
+  ]
 }
 
 export const layer = Layer.effect(
@@ -97,6 +161,7 @@ export const layer = Layer.effect(
           const subSession = yield* sessions.create({
             parentID: parentSessionID,
             title: step.description,
+            permission: readOnlyDagPermissions(),
           })
 
           const model = (agentInfo as any).model
