@@ -39,7 +39,7 @@ import { createHash } from "crypto"
 const log = Log.create({ service: "mcp" })
 const DEFAULT_TIMEOUT = 30_000
 
-const DEFAULT_HEALTH_INTERVAL_MS = 5_000
+export const defaultMcpHealthIntervalMs = 30_000
 const HEALTH_PING_TIMEOUT_MS = 3_000
 const RECONNECT_BACKOFF_BASE_MS = 1_000
 const RECONNECT_BACKOFF_MAX_MS = 30_000
@@ -187,8 +187,37 @@ function listTools(key: string, client: MCPClient, timeout: number) {
   )
 }
 
-// Convert MCP tool definition to AI SDK Tool type
-function convertMcpTool(mcpTool: MCPToolDef, client: MCPClient, timeout?: number): Tool {
+// Signatures of a transport that died under us, as opposed to a tool that
+// legitimately failed. Only these are worth retrying: a timeout (-32001) is
+// deliberately excluded, since retrying it doubles an already long wait.
+const DISCONNECTED_PATTERN =
+  /not connected|connection closed|transport closed|session not found|econnreset|epipe|-32000|-32600/i
+
+export function isDisconnected(error: unknown): boolean {
+  return DISCONNECTED_PATTERN.test(error instanceof Error ? error.message : String(error))
+}
+
+const HEALTH_FAILURE_THRESHOLD = 3
+
+export function shouldDisconnectAfterHealthFailures(failures: number): boolean {
+  return failures >= HEALTH_FAILURE_THRESHOLD
+}
+
+// Convert MCP tool definition to AI SDK Tool type.
+//
+// `resolve` deliberately re-reads the live client on every call instead of
+// capturing it (see AUDIT-opencodev2.md, D6): auto-reconnect replaces the
+// client object in state, but a captured reference keeps pointing at the dead
+// transport, so every later call in that session failed with `Not connected`
+// even though a healthy client was sitting right there. ~40 such failures were
+// measured over 45 days, plus a hundred timeouts.
+function convertMcpTool(
+  mcpTool: MCPToolDef,
+  resolve: () => MCPClient | undefined,
+  recover: (failed: MCPClient, error: unknown) => Promise<MCPClient | undefined>,
+  timeout?: number,
+  server?: string,
+): Tool {
   const inputSchema = mcpTool.inputSchema
 
   // Spread first, then override type to ensure it's always "object"
@@ -199,13 +228,15 @@ function convertMcpTool(mcpTool: MCPToolDef, client: MCPClient, timeout?: number
     additionalProperties: false,
   }
 
+  const label = server ?? mcpTool.name
+
   return dynamicTool({
     description: mcpTool.description ?? "",
     inputSchema: jsonSchema(schema),
     execute: async (args: unknown, options) => {
       const startedAt = Date.now()
-      try {
-        return await client.callTool(
+      const call = (client: MCPClient) =>
+        client.callTool(
           {
             name: mcpTool.name,
             arguments: (args || {}) as Record<string, unknown>,
@@ -217,13 +248,33 @@ function convertMcpTool(mcpTool: MCPToolDef, client: MCPClient, timeout?: number
             signal: options.abortSignal,
           },
         )
-      } finally {
-        log.info("tool call complete", {
-          tool: mcpTool.name,
-          durationMs: Date.now() - startedAt,
-          aborted: options.abortSignal?.aborted ?? false,
-        })
+
+      const live = resolve()
+      if (!live)
+        throw new Error(
+          `MCP server "${label}" is not connected, so the ${mcpTool.name} tool is unavailable right now. It reconnects automatically in the background — retry shortly, or use a non-MCP tool for this step.`,
+        )
+
+      const retryOnce = async (error: unknown) => {
+        if (!isDisconnected(error) || options.abortSignal?.aborted) throw error
+        log.warn("mcp tool call hit a dead transport, reconnecting before retry", { tool: mcpTool.name, server: label })
+        const fresh = await recover(live, error)
+        if (!fresh)
+          throw new Error(
+            `MCP server "${label}" dropped mid-call and has not reconnected yet, so ${mcpTool.name} could not run. It reconnects automatically in the background — retry shortly, or use a non-MCP tool for this step.`,
+          )
+        return await call(fresh)
       }
+
+      return await call(live)
+        .catch(retryOnce)
+        .finally(() =>
+          log.info("tool call complete", {
+            tool: mcpTool.name,
+            durationMs: Date.now() - startedAt,
+            aborted: options.abortSignal?.aborted ?? false,
+          }),
+        )
     },
   })
 }
@@ -295,6 +346,7 @@ interface State {
   clients: Record<string, MCPClient>
   defs: Record<string, MCPToolDef[]>
   fingerprints: Record<string, string>
+  healthFailures: Record<string, number>
   catalogVersion: number
 }
 
@@ -340,6 +392,7 @@ export const layer = Layer.effect(
     const auth = yield* McpAuth.Service
     const bus = yield* Bus.Service
     const reloadLock = Semaphore.makeUnsafe(1)
+    const reconnectLock = Semaphore.makeUnsafe(1)
 
     type Transport = StdioClientTransport | StreamableHTTPClientTransport | SSEClientTransport
 
@@ -354,7 +407,10 @@ export const layer = Layer.effect(
           Effect.tryPromise({
             try: () => {
               const client = new Client({ name: "opencode", version: InstallationVersion })
-              return withTimeout(client.connect(t), timeout).then(() => client)
+              return withTimeout(
+                client.connect(t).then(() => client.listTools()),
+                timeout,
+              ).then(() => client)
             },
             catch: (e) => (e instanceof Error ? e : new Error(String(e))),
           }),
@@ -415,68 +471,82 @@ export const layer = Layer.effect(
         },
       ]
 
+      // Race both remote protocols. Effect.raceAll waits for the first success;
+      // interrupted losers run connectTransport's release finalizer and close.
       const connectTimeout = mcp.timeout ?? DEFAULT_TIMEOUT
-      let lastStatus: Status | undefined
-
-      for (const { name, transport } of transports) {
-        const result = yield* connectTransport(transport, connectTimeout).pipe(
+      let authFailure:
+        | { error: Error; transport: TransportWithAuth; transportName: string }
+        | undefined
+      let lastError = new Error("Unknown error")
+      const attempts = transports.map(({ name, transport }) =>
+        connectTransport(transport, connectTimeout).pipe(
           Effect.map((client) => ({ client, transportName: name })),
-          Effect.catch((error) => {
-            const lastError = error instanceof Error ? error : new Error(String(error))
-            const isAuthError =
-              error instanceof UnauthorizedError || (authProvider && lastError.message.includes("OAuth"))
-
-            if (isAuthError) {
-              log.info("mcp server requires authentication", { key, transport: name })
-
-              if (lastError.message.includes("registration") || lastError.message.includes("client_id")) {
-                lastStatus = {
-                  status: "needs_client_registration" as const,
-                  error: "Server does not support dynamic client registration. Please provide clientId in config.",
-                }
-                return bus
-                  .publish(TuiEvent.ToastShow, {
-                    title: "MCP Authentication Required",
-                    message: `Server "${key}" requires a pre-registered client ID. Add clientId to your config.`,
-                    variant: "warning",
-                    duration: 8000,
-                  })
-                  .pipe(Effect.ignore, Effect.as(undefined))
-              } else {
-                pendingOAuthTransports.set(key, transport)
-                lastStatus = { status: "needs_auth" as const }
-                return bus
-                  .publish(TuiEvent.ToastShow, {
-                    title: "MCP Authentication Required",
-                    message: `Server "${key}" requires authentication. Run: opencodev2 mcp auth ${key}`,
-                    variant: "warning",
-                    duration: 8000,
-                  })
-                  .pipe(Effect.ignore, Effect.as(undefined))
+          Effect.tapError((error) =>
+            Effect.sync(() => {
+              lastError = error instanceof Error ? error : new Error(String(error))
+              if (error instanceof UnauthorizedError || (authProvider && lastError.message.includes("OAuth"))) {
+                authFailure = { error: lastError, transport, transportName: name }
               }
-            }
+              log.debug("transport connection failed", {
+                key,
+                transport: name,
+                url: mcp.url,
+                error: lastError.message,
+              })
+            }),
+          ),
+        ),
+      )
+      const outcome = yield* Effect.raceAll(attempts).pipe(
+        Effect.map((result) => ({ ok: true as const, result })),
+        Effect.catch((error) => Effect.succeed({ ok: false as const, error })),
+      )
 
-            log.debug("transport connection failed", {
-              key,
-              transport: name,
-              url: mcp.url,
-              error: lastError.message,
-            })
-            lastStatus = { status: "failed" as const, error: lastError.message }
-            return Effect.succeed(undefined)
-          }),
-        )
-        if (result) {
-          log.info("connected", { key, transport: result.transportName })
-          return { client: result.client as MCPClient | undefined, status: { status: "connected" } as Status }
+      if (outcome.ok) {
+        log.info("connected", { key, transport: outcome.result.transportName })
+        return {
+          client: outcome.result.client as MCPClient | undefined,
+          status: { status: "connected" } as Status,
         }
-        // If this was an auth error, stop trying other transports
-        if (lastStatus?.status === "needs_auth" || lastStatus?.status === "needs_client_registration") break
+      }
+
+      if (authFailure) {
+        log.info("mcp server requires authentication", { key, transport: authFailure.transportName })
+        if (authFailure.error.message.includes("registration") || authFailure.error.message.includes("client_id")) {
+          yield* bus
+            .publish(TuiEvent.ToastShow, {
+              title: "MCP Authentication Required",
+              message: `Server "${key}" requires a pre-registered client ID. Add clientId to your config.`,
+              variant: "warning",
+              duration: 8000,
+            })
+            .pipe(Effect.ignore)
+          return {
+            client: undefined as MCPClient | undefined,
+            status: {
+              status: "needs_client_registration" as const,
+              error: "Server does not support dynamic client registration. Please provide clientId in config.",
+            } as Status,
+          }
+        }
+        pendingOAuthTransports.set(key, authFailure.transport)
+        yield* bus
+          .publish(TuiEvent.ToastShow, {
+            title: "MCP Authentication Required",
+            message: `Server "${key}" requires authentication. Run: opencodev2 mcp auth ${key}`,
+            variant: "warning",
+            duration: 8000,
+          })
+          .pipe(Effect.ignore)
+        return {
+          client: undefined as MCPClient | undefined,
+          status: { status: "needs_auth" } as Status,
+        }
       }
 
       return {
         client: undefined as MCPClient | undefined,
-        status: (lastStatus ?? { status: "failed", error: "Unknown error" }) as Status,
+        status: { status: "failed", error: lastError.message } as Status,
       }
     })
 
@@ -610,6 +680,7 @@ export const layer = Layer.effect(
           clients: {},
           defs: {},
           fingerprints: {},
+          healthFailures: {},
           catalogVersion: 1,
         }
 
@@ -678,34 +749,54 @@ export const layer = Layer.effect(
           const pingTimeout = Math.min(cfgNow.experimental?.mcp_timeout ?? DEFAULT_TIMEOUT, HEALTH_PING_TIMEOUT_MS)
           const now = Date.now()
 
-          for (const [name, client] of Object.entries(s.clients)) {
-            if (s.status[name]?.status !== "connected") continue
-            const ok = yield* Effect.tryPromise(() => pingWithTimeout(client, pingTimeout)).pipe(
-              Effect.catch(() => Effect.succeed(false)),
-            )
-            if (!ok) yield* markDisconnected(s, name, client, "health check ping failed")
-          }
+          // A dead server must not delay the others: a serial loop costs
+          // N x pingTimeout per tick and starves the schedule.
+          yield* Effect.forEach(
+            Object.entries(s.clients),
+            ([name, client]) =>
+              s.status[name]?.status !== "connected"
+                ? Effect.void
+                : Effect.tryPromise(() => pingWithTimeout(client, pingTimeout)).pipe(
+                    Effect.catch(() => Effect.succeed(false)),
+                    Effect.flatMap((ok) => {
+                      if (ok) {
+                        delete s.healthFailures[name]
+                        return Effect.void
+                      }
+                      const failures = (s.healthFailures[name] ?? 0) + 1
+                      s.healthFailures[name] = failures
+                      if (!shouldDisconnectAfterHealthFailures(failures)) return Effect.void
+                      return markDisconnected(s, name, client, `health check ping failed ${failures} times`)
+                    }),
+                  ),
+            { concurrency: "unbounded", discard: true },
+          )
 
           if (!autoreconnect) return
-          for (const [name, st] of Object.entries(s.status)) {
-            if (st.status !== "failed" || s.clients[name]) continue
-            if ((nextAttemptAt.get(name) ?? 0) > now) continue
-            const attempt = reconnectAttempts.get(name) ?? 0
-            const ok = yield* reconnectServer(s, name)
-            if (ok) {
-              reconnectAttempts.delete(name)
-              nextAttemptAt.delete(name)
-            } else {
-              reconnectAttempts.set(name, attempt + 1)
-              nextAttemptAt.set(
-                name,
-                now + Math.min(RECONNECT_BACKOFF_BASE_MS * 2 ** attempt, RECONNECT_BACKOFF_MAX_MS),
-              )
-            }
-          }
+          yield* Effect.forEach(
+            Object.entries(s.status),
+            ([name, st]) =>
+              Effect.gen(function* () {
+                if (st.status !== "failed" || s.clients[name]) return
+                if ((nextAttemptAt.get(name) ?? 0) > now) return
+                const attempt = reconnectAttempts.get(name) ?? 0
+                const ok = yield* reconnectLock.withPermits(1)(reconnectServer(s, name))
+                if (ok) {
+                  reconnectAttempts.delete(name)
+                  nextAttemptAt.delete(name)
+                  return
+                }
+                reconnectAttempts.set(name, attempt + 1)
+                nextAttemptAt.set(
+                  name,
+                  now + Math.min(RECONNECT_BACKOFF_BASE_MS * 2 ** attempt, RECONNECT_BACKOFF_MAX_MS),
+                )
+              }),
+            { concurrency: "unbounded", discard: true },
+          )
         })
 
-        const healthInterval = cfg.experimental?.mcp_health_interval_ms ?? DEFAULT_HEALTH_INTERVAL_MS
+        const healthInterval = cfg.experimental?.mcp_health_interval_ms ?? defaultMcpHealthIntervalMs
         if (healthInterval > 0) {
           // Delay the first tick so freshly connected clients are stable before
           // the first ping (avoids a false "failed" right after startup).
@@ -761,6 +852,7 @@ export const layer = Layer.effect(
       s.status[name] = { status: "connected" }
       s.clients[name] = client
       s.defs[name] = listed
+      delete s.healthFailures[name]
       s.catalogVersion++
       watch(s, name, client, bridge, timeout)
       return s.status[name]
@@ -995,8 +1087,24 @@ export const layer = Layer.effect(
             }
 
             const timeout = entry?.timeout ?? defaultTimeout
+            const bridge = yield* EffectBridge.make()
             for (const mcpTool of listed) {
-              result[sanitize(clientName) + "_" + sanitize(mcpTool.name)] = convertMcpTool(mcpTool, client, timeout)
+              result[sanitize(clientName) + "_" + sanitize(mcpTool.name)] = convertMcpTool(
+                mcpTool,
+                // Re-read from live state so a reconnect is picked up mid-session.
+                () => s.clients[clientName],
+                (failed, error) =>
+                  bridge.promise(
+                    reconnectLock.withPermits(1)(
+                      markDisconnected(s, clientName, failed, `tool call failed: ${String(error)}`).pipe(
+                        Effect.flatMap(() => reconnectServer(s, clientName)),
+                        Effect.map(() => s.clients[clientName]),
+                      ),
+                    ),
+                  ),
+                timeout,
+                clientName,
+              )
             }
           }),
         { concurrency: "unbounded" },

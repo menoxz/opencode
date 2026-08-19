@@ -5,6 +5,17 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v1.18.95] - 2026-08-19
+
+### Fixed
+- File FIFO des prompts : un run frais répond désormais toujours au vrai message utilisateur qui l'a ancré, même si des notifications internes de sous-agents plus récentes restent visibles dans le contexte. Les prompts envoyés pendant un run sont drainés dans l'ordre, chacun reçoit son propre assistant, et les messages suivants ne restent plus bloqués derrière un prompt orphelin.
+
+## [v1.18.94] - 2026-08-18
+
+### Fixed
+- Résilience MCP : une session Streamable HTTP expirée (`-32600 Session not found`) déclenche désormais une reconnexion immédiate avant une unique nouvelle tentative, et le client ne capture plus une référence de transport périmée.
+- Le health-check MCP exige trois échecs consécutifs avant de déclarer un serveur mort, remet le compteur à zéro après un succès et sérialise les reconnexions concurrentes. Cela évite qu’une pointe de latence de trois secondes coupe un serveur encore sain.
+
 ## [v1.18.91] - 2026-08-18
 
 ### Fixed

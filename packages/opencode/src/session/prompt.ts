@@ -83,17 +83,12 @@ import type { GoalState } from "./goal-state"
 import { hasObjective } from "./goal-state"
 import { compressGoalState, formatGoalContext } from "./compaction"
 
-// Hard ceiling on loop iterations when an agent is not configured with an
-// explicit `steps` budget. Without it a model that keeps emitting tool calls
-// loops forever and starves any queued prompt, since a queued prompt is only
-// served once the current run settles.
-const DEFAULT_MAX_STEPS = 50
-
 // Finish reasons that leave the turn unfinished when the assistant carries no
 // error: a reply truncated by the output-token budget, and a provider reason
 // the adapter could not map (already treated as unfinished by the processor).
 // Continuing these is what removes the manual "continue" prompt; the step
-// budget above bounds any repetition, and an errored turn always stops.
+// explicitly configured agent step budget bounds repetition, and an errored
+// turn always stops.
 const UNFINISHED_FINISH = ["length", "unknown"]
 
 // @ts-ignore
@@ -375,6 +370,10 @@ function isContinuationPrompt(text: string): boolean {
 
 const log = Log.create({ service: "session.prompt" })
 const elog = EffectLogger.create({ service: "session.prompt" })
+
+export function reachedStepLimit(step: number, maxSteps?: number) {
+  return maxSteps !== undefined && step >= maxSteps
+}
 
 function isOrphanedInterruptedTool(part: MessageV2.ToolPart) {
   // cleanup() marks abandoned tool_use blocks this way after retries/aborts.
@@ -1736,12 +1735,22 @@ export const layer = Layer.effect(
           )
 
           const latest = MessageV2.latest(msgs)
-          const lastUser = latest.user
+          // `boundToRun` deliberately keeps newer internal users (compaction
+          // continuations and background task notifications) in context. They
+          // are data for this run, not the real user turn it was anchored to.
+          // Always answer the FIFO anchor; otherwise a newer closed internal
+          // turn can replace an older queued prompt and make the fresh run exit
+          // without writing an assistant child for that prompt.
+          const anchoredUser = msgs.find(
+            (msg): msg is MessageV2.WithParts & { info: MessageV2.User } =>
+              msg.info.role === "user" && msg.info.id === anchorUserID,
+          )
+          const lastUser = anchoredUser?.info
           const lastAssistant = latest.assistant
           const lastFinished = latest.finished
           const tasks = latest.tasks
 
-          if (!lastUser) throw new Error("No user message found in stream. This should never happen.")
+          if (!lastUser) throw new Error("Anchored user message not found in stream. This should never happen.")
 
           const hasPriorAssistantForCurrentUser = msgs.some(
             (message) => message.info.role === "assistant" && message.info.parentID === lastUser.id,
@@ -1915,8 +1924,8 @@ export const layer = Layer.effect(
           })
           contextSummary.add("goal", "ensure task contract state", goalState, Date.now() - goalStateStart)
 
-          const maxSteps = agent.steps ?? DEFAULT_MAX_STEPS
-          const isLastStep = step >= maxSteps
+          const maxSteps = agent.steps
+          const isLastStep = reachedStepLimit(step, maxSteps)
           const remindersStart = Date.now()
           msgs = yield* SessionReminders.apply({ messages: msgs, agent, session }).pipe(
             Effect.provideService(RuntimeFlags.Service, flags),
@@ -2248,9 +2257,9 @@ export const layer = Layer.effect(
             Effect.onInterrupt(() => finalizeInterruptedAssistant),
           )
           if (outcome === "break") break
-          // Hard stop: never exceed the step budget even when the model keeps
-          // returning tool calls (the MAX_STEPS nudge is a soft stop only).
-          if (step >= maxSteps) break
+          // Hard stop only when the agent explicitly configured a step budget.
+          // An omitted budget intentionally leaves the agentic loop unbounded.
+          if (reachedStepLimit(step, maxSteps)) break
           continue
         }
 

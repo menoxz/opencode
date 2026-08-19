@@ -292,6 +292,10 @@ export const Info = Schema.Struct({
       reserved: Schema.optional(NonNegativeInt).annotate({
         description: "Token buffer for compaction. Leaves enough window to avoid overflow during compaction.",
       }),
+      threshold: Schema.optional(Schema.Finite).annotate({
+        description:
+          "Fraction of the usable context that triggers automatic compaction, between 0.1 and 1 (default: 0.95). Compaction rewrites the whole prompt prefix and discards the provider cache, so lower values are only worth it when that cache is unavailable.",
+      }),
     }),
   ),
   experimental: Schema.optional(

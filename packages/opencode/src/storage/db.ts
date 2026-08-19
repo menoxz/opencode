@@ -14,6 +14,7 @@ import { Flag } from "@opencode-ai/core/flag/flag"
 import { InstallationChannel } from "@opencode-ai/core/installation/version"
 import { EffectBridge } from "@/effect/bridge"
 import { init, migrate } from "#db"
+import { StorageMaintenance } from "./maintenance"
 import { Effect, Schema } from "effect"
 
 declare const OPENCODE_MIGRATIONS: { sql: string; timestamp: number; name: string }[] | undefined
@@ -256,7 +257,9 @@ export const Client = Object.assign(
     db.run("PRAGMA busy_timeout = 5000")
     db.run("PRAGMA cache_size = -64000")
     db.run("PRAGMA foreign_keys = ON")
-    db.run("PRAGMA wal_checkpoint(PASSIVE)")
+    // Adaptive: PASSIVE normally, TRUNCATE once the WAL has drifted. The old
+    // unconditional PASSIVE never shrank the file — see storage/maintenance.ts.
+    StorageMaintenance.checkpointOnOpen(db, dbPath)
 
     // Apply schema migrations
     const entries =
@@ -278,6 +281,9 @@ export const Client = Object.assign(
 
     client = db
     loaded = true
+    // The timer covers long-lived processes; short CLI runs are covered by the
+    // adaptive checkpoint at open above.
+    StorageMaintenance.schedule(db)
     return db
   },
   {
@@ -291,6 +297,9 @@ export const Client = Object.assign(
 
 export function close() {
   if (!Client.loaded()) return
+  // Reclaim the WAL on the way out so the on-disk footprint is bounded even for
+  // short-lived processes that never reach a scheduled maintenance tick.
+  StorageMaintenance.checkpoint(Client())
   Client().$client.close()
   Client.reset()
 }

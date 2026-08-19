@@ -3,6 +3,7 @@ import { Effect, Duration, Schedule } from "effect"
 import { effectCmd } from "../effect-cmd"
 import { cmd } from "./cmd"
 import { Eval } from "@/eval"
+import { EvalRegression } from "@/eval/regression"
 import { commandExecutor, runScenarioReal } from "@/eval/real-runner"
 import type { ScenarioResult } from "@/eval/scenario"
 
@@ -270,6 +271,19 @@ const WatchCommand = effectCmd({
         `  Passed: ${report.passed}/${report.totalScenarios} (${(report.passRate * 100).toFixed(1)}%)  Duration: ${report.durationMs}ms` + EOL,
       )
 
+      // Sustained check first. A uniformly broken suite produces a run-over-run
+      // delta of zero, so the comparison below happily printed "no regression"
+      // for 36 consecutive runs across 58 hours of a real outage.
+      const sustainedOpt = yield* Effect.option(svc.detectSustainedRegression(suiteId))
+      const sustained = sustainedOpt._tag === "Some" ? sustainedOpt.value : null
+      if (sustained) {
+        process.stdout.write(EOL + "  " + "!".repeat(70) + EOL)
+        for (const line of EvalRegression.format(sustained).split(/\r?\n/)) {
+          process.stdout.write(`  ${line}` + EOL)
+        }
+        process.stdout.write("  " + "!".repeat(70) + EOL + EOL)
+      }
+
       const regressionOpt = yield* Effect.option(svc.detectRegression(suiteId))
       if (regressionOpt._tag === "Some") {
         const r = regressionOpt.value
@@ -281,10 +295,10 @@ const WatchCommand = effectCmd({
           if (r.details.newFailures.length > 0) {
             process.stdout.write(`  New failures: ${r.details.newFailures.join(", ")}` + EOL)
           }
-        } else {
+        } else if (!sustained) {
           process.stdout.write(`  ✅ No regression detected` + EOL)
         }
-      } else {
+      } else if (!sustained) {
         process.stdout.write(`  ✅ No regression detected` + EOL)
       }
     })

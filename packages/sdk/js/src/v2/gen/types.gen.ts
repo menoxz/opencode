@@ -937,7 +937,7 @@ export type GlobalEvent = {
 export type LogLevel = "DEBUG" | "INFO" | "WARN" | "ERROR"
 
 /**
- * Server configuration for opencode serve and web commands
+ * Server configuration for opencodev2 serve and web commands
  */
 export type ServerConfig = {
   port?: number
@@ -1362,6 +1362,7 @@ export type Config = {
     tail_turns?: number
     preserve_recent_tokens?: number
     reserved?: number
+    threshold?: number
   }
   experimental?: {
     disable_paste_summary?: boolean
@@ -1376,6 +1377,15 @@ export type Config = {
     continue_loop_on_deny?: boolean
     context_rollout?: ConfigContextRollout
     mcp_timeout?: number
+    mcp_health_interval_ms?: number
+    mcp_autoreconnect?: boolean
+    hot_path?: {
+      enabled?: boolean
+      jit_tools?: boolean
+      tool_threshold?: number
+      max_tools?: number
+      always_tools?: Array<string>
+    }
     postmortem?: {
       llm_decisions?: boolean
       llm_model?: string

@@ -4,6 +4,7 @@ import { Effect, Schema } from "effect"
 import * as Stream from "effect/Stream"
 import { Ripgrep } from "../file/ripgrep"
 import { Skill } from "../skill"
+import { SkillUsage } from "../skill/usage"
 import * as Tool from "./tool"
 import DESCRIPTION from "./skill.txt"
 
@@ -35,6 +36,9 @@ export const SkillTool = Tool.define(
 
           const dir = path.dirname(info.location)
           const base = pathToFileURL(dir).href
+          // Real usage is the only honest relevance signal for the catalog
+          // budget applied in session/system.ts. See skill/usage.ts.
+          SkillUsage.record(info.name)
           const limit = 10
           const files = yield* rg.files({ cwd: dir, follow: false, hidden: true, signal: ctx.abort }).pipe(
             Stream.filter((file) => !file.includes("SKILL.md")),

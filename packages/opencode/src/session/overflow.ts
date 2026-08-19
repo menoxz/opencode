@@ -5,7 +5,21 @@ import * as Log from "@opencode-ai/core/util/log"
 import type { MessageV2 } from "./message-v2"
 
 const COMPACTION_BUFFER = 20_000
+const DEFAULT_THRESHOLD = 0.95
 const log = Log.create({ service: "session.overflow" })
+
+// Compacting is not free: it rewrites the whole prompt prefix, which throws away
+// the provider cache, and it spends a summarisation call that reads the entire
+// context. Roughly 2.50 $ at a 256k context, against ~0.06 $/turn saved by
+// carrying a smaller one — it only pays back after ~40 turns. So compact late,
+// just short of the usable window rather than well inside it. A lower value is
+// only worth it when the provider cache is unavailable.
+function threshold(cfg: Config.Info) {
+  const configured = cfg.compaction?.threshold
+  if (configured === undefined) return DEFAULT_THRESHOLD
+  return Math.min(1, Math.max(0.1, configured))
+}
+
 
 function limits(input: { cfg: Config.Info; model: Provider.Model; outputTokenMax?: number }) {
   const context = input.model.limit.context
@@ -67,13 +81,15 @@ export function isOverflow(input: {
   }
 
   const count = tokenCount(input.tokens)
-  const result = count >= limit.usable
+  const trigger = Math.floor(limit.usable * threshold(input.cfg))
+  const result = count >= trigger
   log.debug("context overflow evaluated", {
     result,
     reason: result ? "token count reached usable context threshold" : "token count below usable context threshold",
     model: modelLabel(input.model),
     session: input.sessionID,
     tokens: count,
+    trigger,
     usable: limit.usable,
     context: limit.context,
     input: limit.input,

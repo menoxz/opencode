@@ -11,6 +11,7 @@ import { Instruction } from "../session/instruction"
 import { isPdfAttachment, sniffAttachmentMime } from "@/util/media"
 import { Reference } from "@/reference/reference"
 import { Service as ToolCacheService, DEFAULT_TTL } from "./cache"
+import { ReadLedger } from "./read-ledger"
 
 const DEFAULT_READ_LIMIT = 2000
 const MAX_LINE_LENGTH = 2000
@@ -294,11 +295,37 @@ export const ReadTool = Tool.define(
         return yield* Effect.fail(new Error(`Cannot read binary file: ${filepath}`))
       }
 
-      const cacheKey = `read:${filepath}:${params.offset || 1}:${params.limit ?? DEFAULT_READ_LIMIT}`
+      const offset = params.offset || 1
+      const limit = params.limit ?? DEFAULT_READ_LIMIT
+
+      // Session read ledger (D4): never re-send bytes the model already holds.
+      const ledgerKey = ReadLedger.key(filepath, offset, limit)
+      const mtime = stat.mtime.pipe(
+        Option.map((date) => date.getTime()),
+        Option.getOrElse(() => 0),
+      )
+      const size = Number(stat.size)
+      const seen = ReadLedger.get(ctx.sessionID, ledgerKey)
+      const reminder = loaded.length > 0 ? `\n\n<system-reminder>\n${loaded.map((item) => item.content).join("\n\n")}\n</system-reminder>` : ""
+      const unchanged = (entry: ReadLedger.Seen) => ({
+        title,
+        output: ReadLedger.stub(filepath, entry) + reminder,
+        metadata: {
+          preview: `unchanged since last read (${entry.range})`,
+          truncated: false,
+          loaded: loaded.map((item) => item.filepath),
+          unchanged: true,
+        },
+      })
+
+      // Unchanged mtime+size is proof: answer without touching the disk.
+      if (seen && ReadLedger.provenUnchanged(seen, mtime, size)) return unchanged(seen)
+
+      const cacheKey = `read:${filepath}:${offset}:${limit}`
       const cached = yield* cache.get(cacheKey)
       if (cached) return cached.data as Tool.ExecuteResult
 
-      const file = yield* lines(filepath, { limit: params.limit ?? DEFAULT_READ_LIMIT, offset: params.offset || 1 })
+      const file = yield* lines(filepath, { limit, offset })
       if (file.count < file.offset && !(file.count === 0 && file.offset === 1)) {
         return yield* Effect.fail(
           new Error(`Offset ${file.offset} is out of range for this file (${file.count} lines)`),
@@ -320,11 +347,21 @@ export const ReadTool = Tool.define(
       }
       output += "\n</content>"
 
+      // Digest the file rendering only — instruction reminders must not affect it.
+      const contentDigest = ReadLedger.digest(output)
+      const range = `lines ${file.offset}-${last} of ${file.count}`
+
+      // The file was touched but its bytes are identical: still nothing to re-send.
+      if (seen && seen.digest === contentDigest) {
+        const refreshed = { digest: contentDigest, mtime, size, range }
+        ReadLedger.put(ctx.sessionID, ledgerKey, refreshed)
+        return unchanged(refreshed)
+      }
+      ReadLedger.put(ctx.sessionID, ledgerKey, { digest: contentDigest, mtime, size, range })
+
       yield* warm(filepath)
 
-      if (loaded.length > 0) {
-        output += `\n\n<system-reminder>\n${loaded.map((item) => item.content).join("\n\n")}\n</system-reminder>`
-      }
+      output += reminder
 
       const result = {
         title,

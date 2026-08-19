@@ -102,6 +102,9 @@ export const PartTable = sqliteTable(
   (table) => [
     index("part_message_id_id_idx").on(table.message_id, table.id),
     index("part_session_idx").on(table.session_id),
+    // Retention sweeps (storage/maintenance.ts) filter on time_created; without
+    // this the purge is a full scan of the largest table in the database.
+    index("part_time_created_idx").on(table.time_created),
   ],
 )
 

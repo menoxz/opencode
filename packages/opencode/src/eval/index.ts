@@ -36,6 +36,7 @@ import { createSandbox, type SandboxOptions } from "./sandbox"
 import { runScenarioReal, commandExecutor, headlessSessionExecutor } from "./real-runner"
 import * as EvalMetricsMod from "./metrics"
 import type { EvalRunReport, EvalComparison, ScenarioMetrics } from "./metrics"
+import { EvalRegression } from "./regression"
 
 const log = Log.create({ service: "eval" })
 
@@ -94,6 +95,16 @@ export interface Interface {
   readonly runFullBenchmark: (opts?: Partial<EvalRunOptions>) => Effect.Effect<EvalRunReport>
   readonly recordRun: (results: ScenarioResult[], suiteId: string, suiteName: string) => Effect.Effect<EvalRunReport>
   readonly detectRegression: (suiteId?: string) => Effect.Effect<RegressionReport | null>
+  /**
+   * Detect a regression that has *persisted* across several runs, by comparing
+   * against the historical baseline rather than against the previous run.
+   *
+   * `detectRegression` above is blind to a uniformly broken suite: when every
+   * run fails identically the run-over-run delta is zero. That is how a 33 %
+   * pass rate survived 36 consecutive runs and 58 hours unnoticed. See
+   * eval/regression.ts.
+   */
+  readonly detectSustainedRegression: (suiteId?: string) => Effect.Effect<EvalRegression.Alert | null>
   readonly getBaseline: (suiteId: string) => Effect.Effect<EvalBaseline | null>
   readonly compareToBaseline: (report: EvalRunReport) => Effect.Effect<RegressionReport | null>
 }
@@ -457,8 +468,25 @@ export const layer = Layer.effect(
         }
       })
 
-    const getBaseline: Interface["getBaseline"] = (suiteId) =>
+    const detectSustainedRegression: Interface["detectSustainedRegression"] = (suiteId) =>
       Effect.gen(function* () {
+        const reports = yield* metricsSvc.listReports(200)
+        const candidates = suiteId ? reports.filter((r) => r.suiteId === suiteId) : reports
+        const alert = EvalRegression.detectSustained(
+          candidates.map((r) => ({
+            runId: r.runId,
+            suiteId: r.suiteId,
+            timestamp: r.timestamp,
+            passRate: r.passRate,
+          })),
+        )
+        // A regressor that notifies nobody is decoration, not a guard rail:
+        // log at error level so it surfaces wherever logs are actually watched.
+        if (alert) log.error("sustained eval regression", { alert: EvalRegression.format(alert) })
+        return alert
+      })
+
+    const getBaseline: Interface["getBaseline"] = (suiteId) =>      Effect.gen(function* () {
         const all = yield* metricsSvc.listReports(100)
         const candidates = all.filter((r) => r.suiteId === suiteId)
         if (candidates.length === 0) return null
@@ -558,6 +586,7 @@ export const layer = Layer.effect(
       runFullBenchmark: runFullBenchmark as any,
       recordRun: recordRun as any,
       detectRegression: detectRegression as any,
+      detectSustainedRegression: detectSustainedRegression as any,
       getBaseline: getBaseline as any,
       compareToBaseline: compareToBaseline as any,
     })

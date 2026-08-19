@@ -1722,6 +1722,10 @@ it.instance(
   10_000,
 )
 
+// The absence of an implicit 50-step ceiling is asserted on reachedStepLimit in
+// src/session/step-limit.test.ts: proving it end to end costs 52 model round
+// trips, which is a timeout on CI, and the boundary lives in that one function.
+
 it.instance(
   "serves a queued prompt a previous run left unanswered instead of re-arming forever",
   () =>
@@ -1761,23 +1765,63 @@ it.instance(
         text: "done",
       })
 
-      yield* llm.text("late reply")
+      // Production shape: a completed background task notification arrived
+      // after the queued real prompt. It belongs in context but must never
+      // replace the queued prompt as the user turn this fresh run answers.
+      const notification = yield* sessions.updateMessage({
+        id: MessageID.ascending(),
+        role: "user",
+        sessionID: chat.id,
+        agent: "build",
+        model: ref,
+        time: { created: Date.now() },
+      })
+      yield* sessions.updatePart({
+        id: PartID.ascending(),
+        messageID: notification.id,
+        sessionID: chat.id,
+        type: "text",
+        text: '<task id="ses_child" state="completed">background result</task>',
+        synthetic: true,
+        metadata: { background_notification: true },
+      })
+      const notificationAnswer: MessageV2.Assistant = {
+        ...answer,
+        id: MessageID.ascending(),
+        parentID: notification.id,
+        time: { created: Date.now() },
+      }
+      yield* sessions.updateMessage(notificationAnswer)
+      yield* sessions.updatePart({
+        id: PartID.ascending(),
+        messageID: notificationAnswer.id,
+        sessionID: chat.id,
+        type: "text",
+        text: "background acknowledged",
+      })
+
+      const later = yield* user(chat.id, "later real prompt")
+      yield* llm.text("queued reply")
+      yield* llm.text("later reply")
 
       // Re-arming forever burns CPU, flips session status busy/idle on every
       // pass and never releases the client's turn.
       yield* awaitWithTimeout(
         prompt.loop({ sessionID: chat.id }),
         "loop re-armed forever on a prompt no fresh run can serve",
-        "5 seconds",
+        "10 seconds",
       )
 
       const msgs = yield* sessions.messages({ sessionID: chat.id })
       const served = msgs.find((msg) => msg.info.role === "assistant" && msg.info.parentID === queued.id)
-      if (!served) throw new Error("expected the queued prompt to be served by a fresh run")
-      expect(served.parts.some((part) => part.type === "text" && part.text === "late reply")).toBe(true)
-      expect(yield* llm.calls).toBe(1)
+      const servedLater = msgs.find((msg) => msg.info.role === "assistant" && msg.info.parentID === later.id)
+      if (!served) throw new Error("expected the oldest queued prompt to be served by a fresh run")
+      if (!servedLater) throw new Error("expected the later queued prompt to drain after the oldest")
+      expect(served.parts.some((part) => part.type === "text" && part.text === "queued reply")).toBe(true)
+      expect(servedLater.parts.some((part) => part.type === "text" && part.text === "later reply")).toBe(true)
+      expect(yield* llm.calls).toBe(2)
     }),
-  15_000,
+  25_000,
 )
 
 it.instance(

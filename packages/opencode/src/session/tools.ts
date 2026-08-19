@@ -25,6 +25,16 @@ import { ToolExecutionMetadata } from "./tool-execution-metadata"
 
 const log = Log.create({ service: "session.tools" })
 
+// Historical tool calls can reach the model as elided renderings, and a model that
+// reproduces one executes a truncated command, patch or prompt with no visible sign
+// of loss. The marker only ever terminates an elided value, so an argument ending in
+// one is corruption rather than intent — refuse it and let the model resend.
+const ELIDED_ARGUMENT = /(?:… \[\d+ chars\]|\[\+\d+ more items\])"/
+
+function elidedArgument(args: Record<string, unknown>) {
+  return ELIDED_ARGUMENT.test(JSON.stringify(args) ?? "")
+}
+
 export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   agent: Agent.Info
   model: Provider.Model
@@ -161,6 +171,12 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         return run.promise(
           Effect.gen(function* () {
             const ctx = context(inputArgs, options)
+            if (elidedArgument(inputArgs))
+              return yield* Effect.fail(
+                new Error(
+                  `Arguments for ${item.id} are truncated: they end with a context-elision marker instead of the real value. Resend the call with the complete arguments.`,
+                ),
+              )
             yield* plugin.trigger(
               "tool.execute.before",
               { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID },
@@ -206,6 +222,12 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       run.promise(
         Effect.gen(function* () {
           const ctx = context(args, opts)
+          if (elidedArgument(args))
+            return yield* Effect.fail(
+              new Error(
+                `Arguments for ${key} are truncated: they end with a context-elision marker instead of the real value. Resend the call with the complete arguments.`,
+              ),
+            )
           yield* plugin.trigger(
             "tool.execute.before",
             { tool: key, sessionID: ctx.sessionID, callID: opts.toolCallId },

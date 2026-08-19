@@ -1,9 +1,10 @@
-import { Effect, Schema } from "effect"
+import { Effect, Exit, Schema } from "effect"
 import type { JSONSchema7 } from "@ai-sdk/provider"
 import type { MessageV2 } from "../session/message-v2"
 import type { Permission } from "../permission"
 import type { SessionID, MessageID } from "../session/schema"
 import * as Truncate from "./truncate"
+import { ToolRepetition } from "./repetition"
 import { Agent } from "@/agent/agent"
 
 interface Metadata {
@@ -28,6 +29,21 @@ export class InvalidArgumentsError extends Schema.TaggedErrorClass<InvalidArgume
 ) {
   override get message() {
     return `The ${this.tool} tool was called with invalid arguments: ${this.detail}.\nPlease rewrite the input so it satisfies the expected schema.`
+  }
+}
+
+/**
+ * Raised when the LLM calls a tool with arguments it has already been shown to
+ * be unproductive — the same call failing repeatedly, or returning identical
+ * output repeatedly. Blocking here converts a livelock that would otherwise
+ * burn one model round-trip per iteration into a single actionable error.
+ */
+export class RepeatedCallError extends Schema.TaggedErrorClass<RepeatedCallError>()("ToolRepeatedCallError", {
+  tool: Schema.String,
+  detail: Schema.String,
+}) {
+  override get message() {
+    return this.detail
   }
 }
 
@@ -125,7 +141,24 @@ function wrap<Parameters extends Schema.Decoder<unknown>, Result extends Metadat
                 }),
             ),
           )
-          const result = yield* execute(decoded as Schema.Schema.Type<Parameters>, ctx)
+
+          // Cycle brake — refuse a call already proven unproductive in this
+          // session before spending a round-trip on it. See tool/repetition.ts.
+          const verdict = ToolRepetition.inspect(ctx.sessionID, id, decoded)
+          if (verdict.blocked)
+            return yield* new RepeatedCallError({ tool: id, detail: ToolRepetition.explain(verdict) })
+
+          const exit = yield* Effect.exit(execute(decoded as Schema.Schema.Type<Parameters>, ctx))
+          if (Exit.isFailure(exit)) {
+            ToolRepetition.record(ctx.sessionID, id, decoded, { ok: false, digest: "" })
+            return yield* Effect.failCause(exit.cause)
+          }
+          const result = exit.value
+          ToolRepetition.record(ctx.sessionID, id, decoded, {
+            ok: true,
+            digest: ToolRepetition.digest(result.output),
+          })
+
           if (result.metadata.truncated !== undefined) {
             return result
           }

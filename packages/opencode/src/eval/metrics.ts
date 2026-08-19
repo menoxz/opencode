@@ -8,6 +8,7 @@ import { Effect, Context, Layer, Ref } from "effect"
 import * as Log from "@opencode-ai/core/util/log"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { open as openSqlite, type RawSqlite, type RawDrizzleDb } from "#sqlite-raw"
+import { StorageMaintenance } from "@/storage/maintenance"
 import { eq, desc } from "drizzle-orm"
 import { randomUUID } from "crypto"
 import path from "path"
@@ -306,6 +307,9 @@ export const layer = Layer.effect(
     sqlite.exec("PRAGMA journal_mode = WAL")
     sqlite.exec("PRAGMA synchronous = NORMAL")
     sqlite.exec("PRAGMA busy_timeout = 5000")
+    // WAL with no checkpoint grows without bound. No `part` table here, so
+    // checkpoint only.
+    StorageMaintenance.schedule(sqlite, { purge: false })
     createEvalTables(sqlite)
 
     const sync = <T>(fn: () => T): Effect.Effect<T> => Effect.sync(() => fn())

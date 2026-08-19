@@ -7,6 +7,7 @@ import type { Provider } from "@/provider/provider"
 import type { Agent } from "@/agent/agent"
 import { Permission } from "@/permission"
 import { Skill } from "@/skill"
+import { SkillUsage } from "@/skill/usage"
 import { PromptComposer } from "@/prompt-composer"
 import { SelfImprove } from "@/self-improve"
 import type { MessageV2 } from "./message-v2"
@@ -162,6 +163,16 @@ export const layer = Layer.effect(
           // order. Ranking already put the best candidates first.
           const kept = new Set(ranked.map((r) => r.id))
           list = list.filter((s) => kept.has(s.name))
+        }
+
+        // Budget enforcement (D3). The BM25 branch above is skipped whenever the
+        // turn carries no user text, and the whole catalog — 193 skills, 73 % of
+        // them never loaded once in 45 days — was being emitted in that case.
+        // Fall back to real usage recency and cap unconditionally; everything
+        // outside the budget remains reachable through the skill_search tool.
+        if (list.length > MAX_RELEVANT_SKILLS) {
+          yield* Effect.promise(() => SkillUsage.ready())
+          list = SkillUsage.prioritize(list, MAX_RELEVANT_SKILLS)
         }
 
         return [

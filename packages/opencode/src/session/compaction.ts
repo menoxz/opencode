@@ -1,4 +1,5 @@
 import { BusEvent } from "@/bus/bus-event"
+import { ReadLedger } from "@/tool/read-ledger"
 import { Bus } from "@/bus"
 import * as Session from "./session"
 import type { GoalState } from "./goal-state"
@@ -370,7 +371,7 @@ export const layer = Layer.effect(
     // calls, then erases output of older tool calls to free context space
     const prune = Effect.fn("SessionCompaction.prune")(function* (input: { sessionID: SessionID }) {
       const cfg = yield* config.get()
-      if (!cfg.compaction?.prune) return
+      if (cfg.compaction?.prune === false) return
       log.info("pruning")
 
       const msgs = yield* session
@@ -671,6 +672,11 @@ export const layer = Layer.effect(
             include: selected.tail_start_id,
           })
         }
+        // Compaction can drop earlier `read` output from the context, so the
+        // session read ledger must forget what it believes the model still
+        // holds — otherwise a later read would answer "unchanged, scroll back"
+        // pointing at bytes that no longer exist. See tool/read-ledger.ts.
+        ReadLedger.reset(input.sessionID)
         yield* bus.publish(Event.Compacted, { sessionID: input.sessionID })
       }
       return result

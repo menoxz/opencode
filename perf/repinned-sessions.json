@@ -1,0 +1,1662 @@
+[
+  {
+    "id": "ses_17930f401ffedl4oxGqDFoCtO5",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"high\"}",
+    "updated": 1780513871974
+  },
+  {
+    "id": "ses_17859257effe5qr0z1QdRDyj7e",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1780392362841
+  },
+  {
+    "id": "ses_17858532cffeGrA3DBKvusNqO4",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1780392443548
+  },
+  {
+    "id": "ses_1784db9c0ffe0oebxbf3OTJfBE",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1780393201579
+  },
+  {
+    "id": "ses_1687c3103ffeg4hXQjUkkpvjSR",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"high\"}",
+    "updated": 1780730400973
+  },
+  {
+    "id": "ses_1647a33c0ffeAnwNHppLNlj6vz",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"high\"}",
+    "updated": 1780750367838
+  },
+  {
+    "id": "ses_163015fabffeUipz4yaKTesMwp",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"high\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_162cf38aaffeqtKZcg9ws85289",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_16279bfe2ffes1JrG11D37KOK3",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_15e5b8a92ffeHOMKXveCyOoOrX",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"max\"}",
+    "updated": 1780916481276
+  },
+  {
+    "id": "ses_15d1c3621ffe283vj0smvOC8fC",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"max\"}",
+    "updated": 1780868710901
+  },
+  {
+    "id": "ses_15d07bdddffekegqidLzyQ6w2R",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1780850829593
+  },
+  {
+    "id": "ses_1594664d1ffeSXyEQqPEzoA8r0",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1780913721594
+  },
+  {
+    "id": "ses_1590791feffe9Cqr3KexLsbgrt",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"max\"}",
+    "updated": 1780931672794
+  },
+  {
+    "id": "ses_1582b3f6fffeQ73jhV3oc1n7MX",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"max\"}",
+    "updated": 1780967103568
+  },
+  {
+    "id": "ses_154d9bed8ffe2M4rAis2FlMloN",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"max\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_154368dacffekizboTZW47It9s",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"high\"}",
+    "updated": 1781002886741
+  },
+  {
+    "id": "ses_154082de4ffeNLvOrAsVz5RGBL",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781001609238
+  },
+  {
+    "id": "ses_15405e9a5ffegUMu6BT6FPLed7",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781002338971
+  },
+  {
+    "id": "ses_153fcd3a1ffepixuFvyFcak8zb",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781002458993
+  },
+  {
+    "id": "ses_153fb05acffeaMXF4ChFJUzpr3",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781002521937
+  },
+  {
+    "id": "ses_153fa09d6ffeTlM8niR1XxWFKl",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781002642505
+  },
+  {
+    "id": "ses_153f83610ffej91LjLL3DWMzCY",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781002739007
+  },
+  {
+    "id": "ses_1536c5f66ffe8rih4TpmDugLEt",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781011898247
+  },
+  {
+    "id": "ses_1536ac3a2ffe4koouLQ8e7ntcs",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781011922111
+  },
+  {
+    "id": "ses_1536a5ee5ffez2If14xleN861w",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781012311968
+  },
+  {
+    "id": "ses_1535d52b6ffeV2SHH2ljAlIWkZ",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781013102124
+  },
+  {
+    "id": "ses_153589553fferV2fUX9c1nv7y2",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781013123042
+  },
+  {
+    "id": "ses_14f192496ffe7I47ue8kUPL6Ra",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"max\"}",
+    "updated": 1781121510055
+  },
+  {
+    "id": "ses_14f033f84ffegoGf1RQaNEaaeR",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781086228462
+  },
+  {
+    "id": "ses_14ee60d94ffeHL4tDu9497BAtY",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781088097512
+  },
+  {
+    "id": "ses_14edd8755ffeE5raPSJfI6W6me",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781088371737
+  },
+  {
+    "id": "ses_14ed47f3fffe7eoPbah5AKt7pd",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781088878865
+  },
+  {
+    "id": "ses_14ecfa951ffe3iwYNjI4XnlLDh",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781089218350
+  },
+  {
+    "id": "ses_14ec4cf78ffe5lx8U0xQ0e8uA4",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781090272513
+  },
+  {
+    "id": "ses_14eba0840ffeyk9dB2hAoiBQBH",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781090928129
+  },
+  {
+    "id": "ses_14eb50999ffeLKhkQE8vXdD71F",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781091032014
+  },
+  {
+    "id": "ses_14eb33595ffe5Jv8lcXSomH403",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781091073035
+  },
+  {
+    "id": "ses_14e9ec8d1ffeMnPnl2OKer582n",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781092493710
+  },
+  {
+    "id": "ses_14e975365ffe0wnUyv7uxpf5hm",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781092979114
+  },
+  {
+    "id": "ses_14cfa7451ffeIvuZSrHSpXsKYl",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"max\"}",
+    "updated": 1781121147646
+  },
+  {
+    "id": "ses_14ce25bd7ffeNKYiKOolVfQkrX",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"max\"}",
+    "updated": 1781121594575
+  },
+  {
+    "id": "ses_14ce00e4effe7YhRHAnbrYtHrq",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"max\"}",
+    "updated": 1781162521444
+  },
+  {
+    "id": "ses_14cdbaf96ffexT9L5oolZhGjNr",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781121962217
+  },
+  {
+    "id": "ses_14cdaf954ffedn7SDa8CmSKEWB",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781122008824
+  },
+  {
+    "id": "ses_14cd9c6fcffeRUvaAHbaGJ4Bf0",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781122541814
+  },
+  {
+    "id": "ses_14cba0bd1ffev0mDwi6JZ9Z2Er",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781124389015
+  },
+  {
+    "id": "ses_14a9ad75bffed59O7wRF6rkBvO",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781160713846
+  },
+  {
+    "id": "ses_14a796efbffevKcd5SfLkvZo90",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781162038927
+  },
+  {
+    "id": "ses_14a77d542ffe99ubrwsd5kKsUN",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781162219047
+  },
+  {
+    "id": "ses_14a751e8affe3RH7MfHE5UOgOt",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781162492744
+  },
+  {
+    "id": "ses_148c1b3bcffeQephQuYEXFxAna",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"max\"}",
+    "updated": 1781194339348
+  },
+  {
+    "id": "ses_148c0b422ffe62DRERMvFefa7l",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781190927512
+  },
+  {
+    "id": "ses_14828bf83ffe8xAXC8xw59Gw09",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"max\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_14826569effeOkz1Y6B5uBtlmb",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_1482647bdffe4Q46OFbkCleNjA",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_148234f2dffez5bBLFLZaJX433",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_1482334e2ffetMeyifPii5u3eX",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_1481efbc3ffesLa99sMJowJbNC",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_1480643b3ffewASjPHjaUhE84Z",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_14806351bffeuDyAu9qfeLLb5U",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_148062694ffeAylnygUsAudyvW",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_148061196ffeocRX43okrA2eP3",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_146d7ae0affemlJScmletEK64e",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_146d22247ffe3Yc2D1XeEQ3faT",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_146cdfb22ffeEETSm1oyufSBLk",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_146cdcc4fffemn5GdiGVN0sxwV",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_146bac685ffeJ3CU5MqRrCxWal",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_146b48567ffeIQGjTuxVJnSgj0",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_146b31027ffeqflSPfSIVQ2HVU",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_146b26448ffePHqJUeVkOSkRUl",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_146b0f279ffeGjvLGSxyOHDu4x",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_146b04fefffe8woJ87ZgU2kNaX",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_1457fa3d3ffeEpnjpMpdbFyWN5",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_145730a71ffevBMR1BUPi0ZHF9",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_14569e1d4ffeKHk4WzlzCNCVxQ",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_14564366bffeX5VwYDp6ggD73t",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_1455ff5ccffeSlPkSL14e2plr5",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_145404889ffe5XZQtntTjuV3NP",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_144fb4037ffemd2syFAopQV6BD",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"max\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_144efe44dffemg4VkUqqo67b1q",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_144ee05fdffes5Pfpzq60CZh4b",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_144ed4d6dffeUAGN094mtfzMrC",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_144df6a88ffeh7EW4EkeiOZIHQ",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_144cab53cfferj9Ef5QRptnea7",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_14485231cffe24z4rCH0bn1DXv",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"max\"}",
+    "updated": 1781270495923
+  },
+  {
+    "id": "ses_1448022efffe77Bh2c80fWFYYR",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781262444032
+  },
+  {
+    "id": "ses_1447950e3ffeNLl9Nm7vovV0fg",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781263225478
+  },
+  {
+    "id": "ses_1441fa419ffeaaopJG5kDlxAP4",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781269406979
+  },
+  {
+    "id": "ses_1441fa3bfffexX9t77jl25G1l2",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781269167610
+  },
+  {
+    "id": "ses_14410916bffer7H6VtBoBzC7vm",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781269636933
+  },
+  {
+    "id": "ses_144107ebaffe4KjJR0VMiKuo2D",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781269583594
+  },
+  {
+    "id": "ses_1440d4aeeffe8y1Zg6r8jt9L8J",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781269959370
+  },
+  {
+    "id": "ses_1440d2536ffekMyvh47rSb1y3b",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781269787294
+  },
+  {
+    "id": "ses_1440d0776ffeeeF1e6zwMYxBJ5",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781269759077
+  },
+  {
+    "id": "ses_1440cddf8ffeFfx3EcbMQyPU6q",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781269846943
+  },
+  {
+    "id": "ses_1440cb803ffeAKBT9zAKEcgaAd",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781269836628
+  },
+  {
+    "id": "ses_1440935d6ffe563LwHHtY0mf3k",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781270045333
+  },
+  {
+    "id": "ses_143fe7401ffeMAeREqgar1DAaO",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781270994847
+  },
+  {
+    "id": "ses_143f981c8ffeYrbtboqkm9OJa7",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781271061725
+  },
+  {
+    "id": "ses_143f87673ffeMjIeGfWBiMzT5D",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781271189489
+  },
+  {
+    "id": "ses_143f86407ffevjUmJS0j5KkcXy",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781271182986
+  },
+  {
+    "id": "ses_142a568b5ffeM8afC8Wh15xB50",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"max\"}",
+    "updated": 1781337190935
+  },
+  {
+    "id": "ses_1411dfa34ffegrveS26frwhZ9U",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781319370550
+  },
+  {
+    "id": "ses_1400f5bc2ffegjZal0SjPym3kF",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781337141173
+  },
+  {
+    "id": "ses_13ff7d719ffeQEgB6u3UZ0HJEV",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"max\"}",
+    "updated": 1781338225824
+  },
+  {
+    "id": "ses_13f9dc82affedcEbAFcLetQ1dl",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781344153999
+  },
+  {
+    "id": "ses_13f9bccfcffe45ukJMdH7Sb6xs",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781344629330
+  },
+  {
+    "id": "ses_13f8d988cffewCTRCtbDX4ITnX",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781345263749
+  },
+  {
+    "id": "ses_13f8bdd3bffenZszyEmGMnwsQN",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781345586745
+  },
+  {
+    "id": "ses_13f8a2adbffePzGAMMSa9LEFPo",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"max\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_13f886319ffeQAnTZ9GHQDY0uJ",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"max\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_13f87e4d3ffeWFig2DN5hQJiUh",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_13f819604ffenV9ogVrvKz3RVn",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_13f7a7c8dffeSLtQRrspsTCQbL",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_13f79eea3ffeZWeJnTT2E0UcQ6",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781346740199
+  },
+  {
+    "id": "ses_13f7684a4ffeFjNxK5WYzSw0rx",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_13f76681dffeb4MHk3U6Tee6sn",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_13f75aa19ffev9kFcI3Go0RDmS",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781347060793
+  },
+  {
+    "id": "ses_13f70b614fferkTIpzlRJiAciP",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781347189412
+  },
+  {
+    "id": "ses_13f6a071dffeODxqUtLTix3Tt7",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_13f69d764ffezMc5KUeXHoqsQt",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_13f66e70fffe23BYIJ6YzzmbwM",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_13f650824ffeHe9BRiSKfzEVOa",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781347883664
+  },
+  {
+    "id": "ses_13f5da514ffenugcqJaEkkubAI",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_13f59252effeL1vBIv9UiLM5nr",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_13f526cd1ffepbheUlOOSYmZ60",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_13f4b8db6ffeAXOZzOmB21W0Bl",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_13f4138bdffeShP98VRb7hRwr0",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781351701680
+  },
+  {
+    "id": "ses_13f40b7fdffeAY65Y6s0FjxFeb",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_13f3ab193ffeKV2DvGZi5kVhJj",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_13f3a8c1bffesdlDHIgpMNTuRZ",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_13f3a7b02ffe0csNjrmEl9Xyhw",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_13f2ed5f2ffeZxa7x5Vj9L0DCX",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_13f283c44ffeO0ncI0CJ69I08x",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"max\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_13f28077affeFPdFkgAuAC9aVH",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_13f24338affefkq758UbxpMuJQ",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781352208252
+  },
+  {
+    "id": "ses_13f2366b4ffe0VASycrq2OWn13",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_13f21758affe6Tf6PJ0LinsiAl",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"max\"}",
+    "updated": 1781352270585
+  },
+  {
+    "id": "ses_13f1f8b28ffeXHePgKbcVhNHkm",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"max\"}",
+    "updated": 1781352681391
+  },
+  {
+    "id": "ses_13f1dbea9ffeYW2x9jVh0nXvFd",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781352630967
+  },
+  {
+    "id": "ses_13f1d9943ffeavAM0pRIqBlOvk",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781352523584
+  },
+  {
+    "id": "ses_13f1d4e9effe7NOd5SL64FXg1H",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781352891237
+  },
+  {
+    "id": "ses_13f1d1bf3ffe8uDFQuY00DtBwH",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781352889957
+  },
+  {
+    "id": "ses_13f1b09b0ffezJF2ytCoqg4Wpe",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_13a581bb3ffehkAtBNc0Ivoyeu",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_139ede9e2ffeT75DKdLtckU4Cl",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_139ebc185ffejCNEYOnB50SwuT",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_139e51fc1ffevJmUhXt4ml7Dfl",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_139d106ceffeWHO5gcJ735ra6S",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_139d0e482ffevM9upLALll4ouh",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_139cf23efffeXJFNJrHMeSPDaa",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_139be5112ffelCw4ZBUJEkmSzl",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_139bd76d2ffenWQjV9zXk28emf",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_1399d4ab1ffemIaLfL4FlT97B9",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_1399cfb76ffe1D1Rfkx19ihV5D",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_1399cd248ffeSKmMppGUirPb4F",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_1399b8c5affeeXTE0m3IbBDwpt",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_13999e207ffelD56T5188ruQeB",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_1398edf5fffevqvKRz7xbcKova",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_1397eeb4affeIig29lo9GDWhcQ",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_1397ecb1effe1y2BckwcFXBU9M",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_1397eb814ffe74R16C6RZU42Uy",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_1397c44d0ffec0g7tr2GtwAbRh",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_1397b2cb1ffepVWFGhOR0t5w61",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_13979e7afffeLwMEJbO2JcdhbQ",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_139752d03ffeqlKvdE0yE9q4oJ",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_1396f6193ffegCQDV7nI9EGO0t",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_1396f2e0fffe1kbsZrGta3gpqz",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_1392debf5ffeQhCMxUzHK0mt0e",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_1392d985bffegEqv4xM8GNVZDs",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_1392a60eeffeLXDCs5FwYcjoyd",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_13928efc5ffeM2DmB9QK1NxL5e",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_13928c31cffeS0r6KvyBsdP3YF",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_139289204ffe2Yfa3PkNfhCGCc",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_13925a183ffenxgoxNBjaDGEoq",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_13925507fffekwOCr2Y9GqaOVi",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_13922a8b9ffeh5B84V68wvIxzr",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_138fb2763ffe8W9D5tJpBF8VoU",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_138de7e18ffe3MJFTWw3IINq4w",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_138de6e23ffeYaCtH0H3g30oNe",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_138dbad74ffeFOdXpTxOKCnMgK",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_138db973affeEeJk2mhhx3R7My",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_138d6894fffet4iuElImUE0VXX",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_138d4b0baffeHebaguST287F1T",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_138d45a28ffePnUjJACR8mppxc",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_138cbee79ffeJoPRCPXoXy4lnu",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_138cbd876ffep2sOV2D3gktkCs",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_138c76e1cffe7eldMTxGSZjktt",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_138bfd163ffef4niO80uP4RQwD",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_138befd82ffei4c10Fi3chAEJ6",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_13876bb83ffegmAk64Nik2HqsR",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_13874f057ffec9kr0tYO377pTR",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_13874be7fffeZPcnuAauQJqorv",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_13870c2fbffe8GvJetJqtFbaO2",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_13870a1ccffekG8t7Ja9U0dUcK",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_135425265ffecWlTE54Vrwif64",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_1353ef8c5ffeeI9fv3ozuXjrso",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_1352c24e2ffetan7PNydT3LC0N",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_134db1c6dffe5yopiZLDFPP8Mg",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781524653481
+  },
+  {
+    "id": "ses_134daccd4ffeBBlt43maoYjM1R",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781525261796
+  },
+  {
+    "id": "ses_134d06b48ffe5mtw5IUX5MFHRo",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781526014437
+  },
+  {
+    "id": "ses_134d0574fffe1ReMWzn0YCUtk5",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781526228293
+  },
+  {
+    "id": "ses_134d044d2ffevGKEJIds4N4Sj6",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781526317412
+  },
+  {
+    "id": "ses_134d033e1ffe3iYfQ6UlCfT6Hm",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781525909394
+  },
+  {
+    "id": "ses_134c06c30ffepIbyxv7LAHLIY8",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781526936204
+  },
+  {
+    "id": "ses_134c047a6ffeVcdujYxW60bCoP",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781527146549
+  },
+  {
+    "id": "ses_134b4ced7ffe9UAAUPcNP19JmA",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781527756139
+  },
+  {
+    "id": "ses_134914e5fffeMCQ8X4DRFOxpwV",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781529882177
+  },
+  {
+    "id": "ses_134910356ffekjEeSq15IssU5q",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781529616760
+  },
+  {
+    "id": "ses_13490fd88ffeOW4uIZ8QqgUsOY",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781529556130
+  },
+  {
+    "id": "ses_13490fa03ffeU6QI2pUoUEvvoB",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781529534730
+  },
+  {
+    "id": "ses_134887362ffeoHnst12fsiLitB",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781530635500
+  },
+  {
+    "id": "ses_1347ef68fffePAIT2Im1G3q8nh",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781530810184
+  },
+  {
+    "id": "ses_1347cc2a5ffeisUl4JexVZAhxb",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781532313758
+  },
+  {
+    "id": "ses_13465d9f8ffe7rNSMDbNMLJSqk",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781537282243
+  },
+  {
+    "id": "ses_13465a513ffeaT3tt6Yvv13vw8",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781539459865
+  },
+  {
+    "id": "ses_13381da6cffe8KU01Qoxx0ieuI",
+    "model": "{\"id\":\"mimo-v2.5-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781547751253
+  },
+  {
+    "id": "ses_1333cb76dffeDp0yRko0hG6ekM",
+    "model": "{\"id\":\"mimo-v2.5-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781552677962
+  },
+  {
+    "id": "ses_133212982ffeTnMSx7ooISxB5K",
+    "model": "{\"id\":\"mimo-v2.5-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781553759481
+  },
+  {
+    "id": "ses_13319b9baffer37vrdVSxDt4Zp",
+    "model": "{\"id\":\"mimo-v2.5-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781554337893
+  },
+  {
+    "id": "ses_13315a31bffe5UIusryriFIkfP",
+    "model": "{\"id\":\"mimo-v2.5-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781554636619
+  },
+  {
+    "id": "ses_13105411fffe4R9nepR8JGnjyF",
+    "model": "{\"id\":\"mimo-v2.5-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781590040984
+  },
+  {
+    "id": "ses_130ee2ae2ffeLcvJNzqHkum4t1",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781590663522
+  },
+  {
+    "id": "ses_130ee1988ffekCVEIFDJPr4vUk",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781590657535
+  },
+  {
+    "id": "ses_130eb7a07ffeM8XevcYWSZDrxW",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781773037831
+  },
+  {
+    "id": "ses_130eb2877ffeNXaurxvQyq8obB",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781590831672
+  },
+  {
+    "id": "ses_130eb16d6ffejN96LtciECmeuv",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781590808780
+  },
+  {
+    "id": "ses_130e43e4effeniIKJXZ1eBnu17",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781591295255
+  },
+  {
+    "id": "ses_130e209bbffeM9yyPnzjSWjfku",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781773037831
+  },
+  {
+    "id": "ses_130e1ed21ffeAc5WXnSwHtauT9",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781591361724
+  },
+  {
+    "id": "ses_130e1c96cffe3kKRxk5dpWto74",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781773037831
+  },
+  {
+    "id": "ses_130bb31e5ffegxkM1QOYijfQ6k",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781594318759
+  },
+  {
+    "id": "ses_1309898eaffe2VnOcwKrxgPtwC",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781773037831
+  },
+  {
+    "id": "ses_1305a2e11ffej75sPQBYzZq01v",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781773037831
+  },
+  {
+    "id": "ses_1305a0347ffeGrr1Oxf8tq2A0N",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781773037831
+  },
+  {
+    "id": "ses_1304f0c5affeTJAEy8TtMSPtaW",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781773037831
+  },
+  {
+    "id": "ses_1304eca1dffeyZqKfyuXTnn6ap",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781773037831
+  },
+  {
+    "id": "ses_13049fe7cffezTb1muEBY9gQu9",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781601866778
+  },
+  {
+    "id": "ses_1304340d3ffeZmKjsSvJJ0dLI8",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781773037831
+  },
+  {
+    "id": "ses_1304297b9ffeI2y2V7mIXknjgo",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781773037831
+  },
+  {
+    "id": "ses_13038692effeisRKtaAawSTIR2",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781773037831
+  },
+  {
+    "id": "ses_13030d55cffe1ke5MadAkSSBch",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781603037411
+  },
+  {
+    "id": "ses_1302cfb6cffe5hIVTBfdBe1kXZ",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781603507334
+  },
+  {
+    "id": "ses_1302894c8ffeTMk9TK3peMVhlw",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781773037831
+  },
+  {
+    "id": "ses_130229d7effe0sMFgIhGmmCk3w",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781773037831
+  },
+  {
+    "id": "ses_13021a889ffeEk1Vf5dIncnKz1",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781603993220
+  },
+  {
+    "id": "ses_1301f14d9ffeIubLFry4GPoYiV",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781604085196
+  },
+  {
+    "id": "ses_1301ec376ffeTVTGsmGq74U0h5",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781604177366
+  },
+  {
+    "id": "ses_1301d88ceffeN28D4BqCh51BoX",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781604231303
+  },
+  {
+    "id": "ses_1301d86d9ffejm8A8nMg9x60BC",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781773037831
+  },
+  {
+    "id": "ses_1301ca816ffecJPCNGHx9Ks2cC",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781604386496
+  },
+  {
+    "id": "ses_1301a1465ffem1PEZl7X7HWGX3",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781604872465
+  },
+  {
+    "id": "ses_130101467ffeW5WGj0jQwZ8pX6",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781773037831
+  },
+  {
+    "id": "ses_12f8cfbeaffepO7Mz48w0yZHnr",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781773037831
+  },
+  {
+    "id": "ses_12f8b8b6cffey8vYjpfeoEPXng",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781773037831
+  },
+  {
+    "id": "ses_12f881f5bffe6z0wOpSqh8egdA",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781773037831
+  },
+  {
+    "id": "ses_12f82abc2ffe9qgHwu9EfUERTj",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781773037831
+  },
+  {
+    "id": "ses_1297d7a86ffec2CpuznvGRxzlb",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781773037831
+  },
+  {
+    "id": "ses_1297d5d92ffe2CMVyZ3SdaNlD9",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781773037831
+  },
+  {
+    "id": "ses_1297b5222ffe3Vm2bhSzHy7QyY",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781773037831
+  },
+  {
+    "id": "ses_12977b090ffe84E42yWl6eJgSe",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781773037831
+  },
+  {
+    "id": "ses_12969c7efffe9XApKVWqeKh10u",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781773037831
+  },
+  {
+    "id": "ses_129600889ffep0FgqH5hRlDq2a",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781773037831
+  },
+  {
+    "id": "ses_1295a190fffemtH9pArMVY1zJG",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781773037831
+  },
+  {
+    "id": "ses_129571f48ffeEe74ssl4RuJ5RJ",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781773037831
+  },
+  {
+    "id": "ses_12956f1c7ffe6Cfnx12RuMF7BO",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781773037831
+  },
+  {
+    "id": "ses_12952dda5ffehV1VHuMaoJCbZH",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781773037831
+  },
+  {
+    "id": "ses_1291b74dfffejN6YAyxnJJOjvm",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781773037831
+  },
+  {
+    "id": "ses_127e3fac3ffeQ6JT3YjDNyMs9K",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781773037831
+  },
+  {
+    "id": "ses_127d83eceffeg6TH1ZqI75KQOC",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781773037831
+  },
+  {
+    "id": "ses_127cae20affeiwT4yf22DmAhT4",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781773037831
+  },
+  {
+    "id": "ses_127c5650bffeax5NN7LdKvEXke",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781773037831
+  },
+  {
+    "id": "ses_124f8ddf4ffeYYBcKzOvaJYH0T",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781791188114
+  },
+  {
+    "id": "ses_124f5754cffeCiZyfNT9mol6ug",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781791509741
+  },
+  {
+    "id": "ses_124ef2cb7ffej7kiVGg5HkcfGX",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781791989354
+  },
+  {
+    "id": "ses_124ef1d6effelxKOR3kZD7gTWB",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781791924104
+  },
+  {
+    "id": "ses_124eeffccffeB9c7dYYmngmnyI",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781792043473
+  },
+  {
+    "id": "ses_124eee7c3ffessjnhWsnebsslk",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781791986914
+  },
+  {
+    "id": "ses_124eed12affeSe8XIrssE56pdk",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781791953933
+  },
+  {
+    "id": "ses_124ea2386ffeq9DvcaNsB5yOvU",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781792321254
+  },
+  {
+    "id": "ses_124e1b59fffeiom8qj7SuQINjs",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781792685726
+  },
+  {
+    "id": "ses_124e1073bffeCO1Kd3InAmRkjA",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781792837568
+  },
+  {
+    "id": "ses_124d6920effeffvSXbuWVxhm3V",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781793508715
+  },
+  {
+    "id": "ses_124d3daf4ffenXYQM2Vl6iI7Z9",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781793619493
+  },
+  {
+    "id": "ses_124d28741ffeXhbd5HFmuEkZTl",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781793651267
+  },
+  {
+    "id": "ses_124d23bc5ffeC7aMWU2tKNCliS",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781794203794
+  },
+  {
+    "id": "ses_124c9f791ffed48qbMLHU2j7nY",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781794287019
+  },
+  {
+    "id": "ses_124c9edc8ffecD018gE3kpnzTK",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781794358260
+  },
+  {
+    "id": "ses_124c33cddffefbma1KzL5ndLwm",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781794774012
+  },
+  {
+    "id": "ses_124bdd544ffe8hYQSkSk2mVjU1",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781795125241
+  },
+  {
+    "id": "ses_1249a8468ffe9bnChIVQIjcryX",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781797350901
+  },
+  {
+    "id": "ses_1249982f1ffee6l5DxyF16nXNk",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781797562739
+  },
+  {
+    "id": "ses_1249693beffeoTtkaKFCWdmbg4",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781797628075
+  },
+  {
+    "id": "ses_12494ad2effeGII2FSXGdq6o1A",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781797704944
+  },
+  {
+    "id": "ses_124946bbcffeEML3LF2ZrORknK",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781797926344
+  },
+  {
+    "id": "ses_124944af4ffe1JPd6KaFzX0yvq",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781797929780
+  },
+  {
+    "id": "ses_11f30f89bffeb4DNpCilIKKilM",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781889133464
+  },
+  {
+    "id": "ses_11f30ea69ffe1TapKKfnF0jPw2",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781888534778
+  },
+  {
+    "id": "ses_11f30d37fffeAPbNENLzi6DK1R",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781888546022
+  },
+  {
+    "id": "ses_11f30bcd8ffeDpN7EYkr7j537R",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781889178993
+  },
+  {
+    "id": "ses_11f30ae94ffe4cJHyzYEiu54K2",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781889125869
+  },
+  {
+    "id": "ses_11f1e84b2ffeQHLLAEjRNOONDe",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781889692677
+  },
+  {
+    "id": "ses_11f1e6eebffeN9ubrsIhfYfk3r",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781890070535
+  },
+  {
+    "id": "ses_11f1e4a1affeFt79rVCPxqOKF9",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781890064054
+  },
+  {
+    "id": "ses_11f1e3809ffek9kHrupCf0aRGh",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781890061042
+  },
+  {
+    "id": "ses_11f1e22a5ffec971vuohb9CTip",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781889580061
+  },
+  {
+    "id": "ses_11f12d6c4ffeI0EqOiuvz2cdI3",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781890535207
+  },
+  {
+    "id": "ses_11f12c74cffeE7IXVYbIhjFCkH",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781890566490
+  },
+  {
+    "id": "ses_11f12aea6ffeD7QRVLzR4Cg4Tv",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781891121751
+  },
+  {
+    "id": "ses_11f129fd7ffegdmR1uenqLWvMS",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781890551849
+  },
+  {
+    "id": "ses_11f128c70ffeuOzyZ42oc96JNW",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781891001786
+  },
+  {
+    "id": "ses_11f030552ffe2rpI9RL1Pi1bMm",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1781891311696
+  },
+  {
+    "id": "ses_11bcaec64ffebnsfIx4x8YKudn",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"high\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_11848b099ffeY3iriDf8N2virQ",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"high\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_11145cebdffe4cMyzwIqSFxxQ2",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1782121926271
+  },
+  {
+    "id": "ses_11145b0cbffeZkjuG3KKS8e0kK",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1782121849723
+  },
+  {
+    "id": "ses_111459148ffeqQjIhk3KFj5IWJ",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1782121858822
+  },
+  {
+    "id": "ses_11145717effeVLhhud82JAuXp4",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1782122085075
+  },
+  {
+    "id": "ses_1114552a5ffe9DDh6k9UEIWX3b",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1782121818409
+  },
+  {
+    "id": "ses_1114533a4ffeFWzSWDHtrKy156",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1782121949269
+  },
+  {
+    "id": "ses_0f80ff109ffeBwYeU2gcF4MNwi",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_0f80fddc8ffeEo9Mvt0VRKmMxA",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_0f80fc86affenFkxuTyK7EElen",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_0f80fb54cffeajjxkqUhVKtuP0",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_0c77ddbedffexDE1Q5kQZEpykD",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"high\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_0aa3249dcffeddzjLNpq3PakD2",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"high\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_0a34e9c50ffeSQuUIHBnMQIKO5",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"high\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_09fd81b51ffeEtMABE3s6jeuxS",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"high\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_0861f1223ffed0pOwuqmyog5OG",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_05bd9daefffeIH1bxqBxtHmXPW",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"high\"}",
+    "updated": 1785257233062
+  },
+  {
+    "id": "ses_ffaca53adffeKR0iZ0rly0XcJn",
+    "model": "{\"id\":\"deepseek-v4-flash-free\",\"providerID\":\"opencode\",\"variant\":\"default\"}",
+    "updated": 1786793806741
+  }
+]

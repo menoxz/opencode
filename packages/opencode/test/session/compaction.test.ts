@@ -400,6 +400,45 @@ describe("session.compaction.isOverflow", () => {
   )
 
   it.live(
+    "returns false immediately below the default 95 percent threshold",
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const compact = yield* SessionCompaction.Service
+        const model = createModel({ context: 200_000, output: 20_000 })
+        // usable = 200_000 - 20_000 = 180_000, so the trigger sits at 171_000.
+        const tokens = { input: 170_999, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
+        expect(yield* compact.isOverflow({ tokens, model })).toBe(false)
+      }),
+    ),
+  )
+
+  it.live(
+    "returns true exactly at the default 95 percent threshold",
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const compact = yield* SessionCompaction.Service
+        const model = createModel({ context: 200_000, output: 20_000 })
+        const tokens = { input: 171_000, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
+        expect(yield* compact.isOverflow({ tokens, model })).toBe(true)
+      }),
+    ),
+  )
+
+  it.live(
+    "honors a configured compaction threshold override",
+    provideTmpdirInstance(
+      () =>
+        Effect.gen(function* () {
+          const compact = yield* SessionCompaction.Service
+          const model = createModel({ context: 200_000, output: 20_000 })
+          const tokens = { input: 161_999, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
+          expect(yield* compact.isOverflow({ tokens, model })).toBe(false)
+        }),
+      { config: { compaction: { threshold: 0.9 } } },
+    ),
+  )
+
+  it.live(
     "includes cache.read in token count",
     provideTmpdirInstance(() =>
       Effect.gen(function* () {
@@ -429,7 +468,9 @@ describe("session.compaction.isOverflow", () => {
       Effect.gen(function* () {
         const compact = yield* SessionCompaction.Service
         const model = createModel({ context: 400_000, input: 272_000, output: 128_000 })
-        const tokens = { input: 200_000, output: 20_000, reasoning: 0, cache: { read: 10_000, write: 0 } }
+        // usable = 272_000 - 20_000 reserved = 252_000, and compaction now triggers
+        // at 85 % of it (214_200), so "within the caps" also means below that.
+        const tokens = { input: 170_000, output: 20_000, reasoning: 0, cache: { read: 10_000, write: 0 } }
         expect(yield* compact.isOverflow({ tokens, model })).toBe(false)
       }),
     ),
