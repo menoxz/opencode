@@ -241,6 +241,33 @@ describe("tool.task", () => {
     }),
   )
 
+  it.instance("step-limited child is reported as partial, never completed", () =>
+    Effect.gen(function* () {
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const promptOps: TaskPromptOps = {
+        ...stubOps(),
+        prompt: (input) => Effect.sync(() => {
+          const value = reply(input, "maximum steps reached; work remains")
+          if (value.info.role === "assistant") value.info.finish = "step-limit"
+          return value
+        }),
+      }
+      const result = yield* def.execute(
+        { description: "bounded work", prompt: "do work", subagent_type: "general" },
+        {
+          sessionID: chat.id, messageID: assistant.id, agent: "build",
+          abort: new AbortController().signal, extra: { promptOps }, messages: [],
+          metadata: () => Effect.void, ask: () => Effect.void,
+        },
+      )
+      expect(result.output).toContain('<task id="')
+      expect(result.output).toContain('state="budget_exceeded"')
+      expect(result.output).not.toContain('state="completed"')
+    }),
+  )
+
   it.instance("execute escapes task result markup from subagent output", () =>
     Effect.gen(function* () {
       const { chat, assistant } = yield* seed()

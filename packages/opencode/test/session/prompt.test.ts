@@ -1718,6 +1718,9 @@ it.instance(
       })
 
       expect(yield* llm.calls).toBe(2)
+      const messages = yield* sessions.messages({ sessionID: session.id })
+      const last = messages.findLast((message) => message.info.role === "user" ? false : message.info.role === "assistant")
+      expect(last?.info.role === "assistant" ? last.info.finish : undefined).toBe("step-limit")
     }),
   10_000,
 )

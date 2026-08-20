@@ -5,6 +5,18 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v1.18.98] - 2026-08-20
+
+### Added
+- Lean child contract with batching and bounded causal evidence.
+- Per-agent step and wall-clock budgets with durable partial states.
+- Bounded TaskTool evidence packets merged into parent sticky findings.
+- Deterministic qa:run workflow with unconditional reset.
+- Per-agent child cost and token metrics in session_info.
+
+### Changed
+- Lean prefers planning and workflows for independent read-only branches; writers remain sequential or isolated.
+
 ## [v1.18.97] - 2026-08-19
 
 ### Added

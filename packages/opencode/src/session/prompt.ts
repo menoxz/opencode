@@ -2207,6 +2207,10 @@ export const layer = Layer.effect(
               toolChoice: format.type === "json_schema" ? "required" : undefined,
             })
             contextSummary.add("handleProcess", "run provider/model processing", handle.message, Date.now() - handleProcessStart)
+            if (isLastStep && !handle.message.error) {
+              handle.message.finish = "step-limit"
+              yield* sessions.updateMessage(handle.message)
+            }
             log.info("prompt context summary", { sessionID, ...contextSummary.snapshot() })
 
             if (structured !== undefined) {

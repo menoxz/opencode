@@ -232,6 +232,23 @@ export const TasksTool = Tool.define(
             })
           }
 
+          const cleanupCommand = tasks[input.name]?.cleanupCommand
+          if (cleanupCommand) {
+            const rootTask = tasks[input.name]!
+            const shell = Shell.acceptable(rootTask.shell) ?? defaultShell
+            const cwd = rootTask.cwd ? path.resolve(directory, rootTask.cwd) : directory
+            const env = { ...process.env, ...(rootTask.env ?? {}) }
+            yield* ctx.metadata({ title: `tasks: cleanup ${input.name}`, metadata: { status: "cleanup", order } })
+            const start = Date.now()
+            const result = yield* Effect.tryPromise(() => Process.run([cleanupCommand], {
+              shell: shell ?? true, cwd, env, timeout: rootTask.timeout ?? DEFAULT_TIMEOUT_MS, nothrow: true,
+            })).pipe(Effect.catch((e) => Effect.succeed({ code: -1, stdout: Buffer.from(""), stderr: Buffer.from(String((e as any)?.message ?? e)) } as Process.Result)))
+            results.push({
+              name: `${input.name}:cleanup`, command: cleanupCommand, code: result.code, durationMs: Date.now() - start,
+              stdout: result.stdout.toString().trim(), stderr: result.stderr.toString().trim(),
+            })
+          }
+
           const failed = results.find((r) => r.code !== 0)
           const lines: string[] = []
           for (const r of results) {

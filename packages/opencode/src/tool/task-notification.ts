@@ -1,9 +1,5 @@
-import type { SessionID } from "@/session/schema"
-
-export type TaskTerminalState = "completed" | "error" | "budget_exceeded"
-
-export function taskResultNotificationKey(sessionID: SessionID, state: TaskTerminalState) {
-  return `task-result:${sessionID}:${state}`
+export function taskResultNotificationKey(taskCallID: string, revision: number) {
+  return `task-result:${taskCallID}:${revision}`
 }
 
 export function hasTaskResultNotification(messages: readonly { parts: readonly unknown[] }[], key: string) {

@@ -1,0 +1,11 @@
+{
+  "phases": {
+    "seed": "project-command seed-isolated-qa",
+    "services": "project-command start-required-services",
+    "ui": "project-command run-real-browser-assertions",
+    "network": "project-command assert-network-contract",
+    "database": "project-command assert-tenant-persistence",
+    "security": "project-command run-independent-security-checks",
+    "reset": "project-command reset-qa-data-and-stop-services"
+  }
+}

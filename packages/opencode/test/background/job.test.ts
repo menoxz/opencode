@@ -124,4 +124,17 @@ describe("background.job", () => {
       expect((yield* jobs.get(job.id))?.metadata?.value).toBe("initial")
     }),
   )
+  it.instance("preserves partial terminal results", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const job = yield* jobs.start({
+        type: "test",
+        run: Effect.succeed({ status: "partial" as const, output: "remaining work", reason: "steps" }),
+      })
+      const result = yield* jobs.wait({ id: job.id })
+      expect(result.info?.status).toBe("partial")
+      expect(result.info?.output).toBe("remaining work")
+      expect(result.info?.metadata?.reason).toBe("steps")
+    }),
+  )
 })

@@ -1054,6 +1054,7 @@ export type AgentConfig = {
    * Hex color code (e.g., #FF5733) or theme color (e.g., primary)
    */
   color?: string | "primary" | "secondary" | "accent" | "success" | "warning" | "error" | "info"
+  budget_minutes?: number
   steps?: number
   maxSteps?: number
   permission?: PermissionConfig
@@ -1744,6 +1745,7 @@ export type Agent = {
   options: {
     [key: string]: unknown
   }
+  budgetMinutes?: number
   steps?: number
 }
 

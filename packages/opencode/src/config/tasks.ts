@@ -39,6 +39,10 @@ export const Info = Schema.Struct({
   dependsOn: Schema.optional(Schema.Array(Schema.String)).annotate({
     description: "Names of other tasks to run (in order) before this task",
   }),
+  /** Cleanup command that always runs after the resolved workflow, even after failure. */
+  cleanupCommand: Schema.optional(Schema.String).annotate({
+    description: "Cleanup/reset command executed unconditionally after the workflow",
+  }),
   /** Timeout in milliseconds for the task. */
   timeout: Schema.optional(Schema.Number).annotate({
     description: "Timeout in milliseconds before the task is aborted",

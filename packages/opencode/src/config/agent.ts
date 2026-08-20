@@ -44,6 +44,7 @@ const AgentSchema = Schema.StructWithRest(
     color: Schema.optional(Color).annotate({
       description: "Hex color code (e.g., #FF5733) or theme color (e.g., primary)",
     }),
+    budget_minutes: Schema.optional(PositiveInt).annotate({ description: "Maximum wall-clock minutes for one task execution window" }),
     steps: Schema.optional(PositiveInt).annotate({
       description: "Maximum number of agentic iterations before forcing text-only response",
     }),
@@ -64,6 +65,7 @@ const KNOWN_KEYS = new Set([
   "mode",
   "hidden",
   "color",
+  "budget_minutes",
   "steps",
   "maxSteps",
   "options",

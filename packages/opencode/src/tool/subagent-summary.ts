@@ -37,3 +37,19 @@ export function boundSubagentResult(text: string, maxChars = 12_000) {
   const bounded = text.slice(0, headSize) + marker + stickyText + text.slice(-tailSize)
   return { text: bounded.slice(0, maxChars), truncated: true, sticky }
 }
+
+export const LEAN_SUBAGENT_CONTRACT = `
+<lean_child>
+Correctness, safety, explicit acceptance criteria, and OPEN findings are hard gates.
+Use the smallest sufficient trajectory: batch known-independent observations; prefer inspect_batch for 2+ independent read/glob/grep actions when available; otherwise emit independent calls together.
+Do not repeat unchanged observations. Stop when all required evidence is present.
+Return concise causal sections: outcome; decisions; evidence as claim -> exact command/test/file:line/result; changes or none; findings with stable status; residuals/unverified; next dependency only.
+Keep findings OPEN until independently CLOSED; never hide residuals.
+</lean_child>
+`
+
+export function subagentResultPolicy(parentAgent: string, boundedExperiment: boolean) {
+  if (parentAgent === "lean") return { contract: LEAN_SUBAGENT_CONTRACT, maxChars: 4_000 }
+  if (boundedExperiment) return { contract: SUBAGENT_RESULT_CONTRACT, maxChars: 12_000 }
+  return { contract: "", maxChars: undefined }
+}

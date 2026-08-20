@@ -22,6 +22,22 @@ function lastAssistantWithTokens(messages: MessageV2.WithParts[]): AssistantInfo
   }
 }
 
+export function aggregateAgentMetrics(items: Array<Pick<Session.Info, "agent" | "cost" | "tokens">>) {
+  const out: Record<string, { sessions: number; cost: number; input: number; output: number; reasoning: number; cacheRead: number; cacheWrite: number }> = {}
+  for (const item of items) {
+    const key = item.agent ?? "unknown"
+    const row = out[key] ??= { sessions: 0, cost: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0 }
+    row.sessions++
+    row.cost += item.cost ?? 0
+    row.input += item.tokens?.input ?? 0
+    row.output += item.tokens?.output ?? 0
+    row.reasoning += item.tokens?.reasoning ?? 0
+    row.cacheRead += item.tokens?.cache.read ?? 0
+    row.cacheWrite += item.tokens?.cache.write ?? 0
+  }
+  return out
+}
+
 function totalCost(messages: MessageV2.WithParts[]): number {
   return messages.reduce((sum, msg) => sum + (msg.info.role === "assistant" ? msg.info.cost : 0), 0)
 }
@@ -209,6 +225,7 @@ export const SessionInfoTool = Tool.define<typeof Parameters, InfoMetadata, Sess
               storedSessionCost: resolved.session.cost ?? 0,
             },
             messages: { count: resolved.messages.length },
+            subAgentMetrics: aggregateAgentMetrics(children),
             subAgents: children.map((child) => ({
               id: child.id,
               agent: child.agent,

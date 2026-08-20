@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { boundSubagentResult, SUBAGENT_RESULT_CONTRACT } from "./subagent-summary"
+import { boundSubagentResult, subagentResultPolicy, LEAN_SUBAGENT_CONTRACT, SUBAGENT_RESULT_CONTRACT } from "./subagent-summary"
 
 describe("bounded subagent results", () => {
   test("keeps short results unchanged", () => {
@@ -23,6 +23,17 @@ describe("bounded subagent results", () => {
       "SEC-001 HIGH OPEN: cross-tenant filter is missing",
       "RESIDUAL: DELETE still returns 500",
     ])
+  })
+
+  test("lean parent automatically gives every child the compact Lean policy", () => {
+    const lean = subagentResultPolicy("lean", false)
+    expect(lean.contract).toBe(LEAN_SUBAGENT_CONTRACT)
+    expect(lean.maxChars).toBe(4_000)
+    expect(lean.contract).toContain("inspect_batch")
+    expect(lean.contract).toContain("independent")
+    expect(lean.contract).toContain("residual")
+    expect(subagentResultPolicy("build", false)).toEqual({ contract: "", maxChars: undefined })
+    expect(subagentResultPolicy("build", true)).toEqual({ contract: SUBAGENT_RESULT_CONTRACT, maxChars: 12_000 })
   })
 
   test("contract requires causal evidence and sticky finding status", () => {

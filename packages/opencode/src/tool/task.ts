@@ -8,11 +8,13 @@ import { Agent } from "../agent/agent"
 import { deriveSubagentSessionPermission } from "../agent/subagent-permissions"
 import type { SessionPrompt } from "../session/prompt"
 import { Config } from "@/config/config"
-import { Cause, Duration, Effect, Exit, Option, Schema, Scope } from "effect"
+import { Cause, Duration, Effect, Exit, Option, Schema, Scope, Semaphore } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
-import { boundSubagentResult, SUBAGENT_RESULT_CONTRACT } from "./subagent-summary"
+import { boundSubagentResult, subagentResultPolicy } from "./subagent-summary"
 import { hasTaskResultNotification, taskResultNotificationKey } from "./task-notification"
+import { buildTaskEvidencePacket, type TaskEvidencePacket, type TaskEvidenceState } from "@/session/task-evidence"
+import { mergeGoalFindings } from "@/session/goal-evidence"
 
 export interface TaskPromptOps {
   cancel(sessionID: SessionID): Effect.Effect<void>
@@ -112,6 +114,21 @@ function budgetOutput(sessionID: SessionID, minutes: number, partial: string) {
   ].join("\n")
 }
 
+function stepLimitOutput(sessionID: SessionID, partial: string) {
+  return [
+    `<task id="${sessionID}" state="budget_exceeded">`,
+    "<summary>Subagent stopped at its configured step budget.</summary>",
+    "<task_result>",
+    partial.length > 0 ? escapeTaskMarkup(partial) : "The subagent produced no final summary before the step budget.",
+    "</task_result>",
+    "<guidance>",
+    "This result is partial and unverified; remaining work must be continued or split.",
+    `Its full transcript is preserved in session ${sessionID}.`,
+    "</guidance>",
+    "</task>",
+  ].join("\n")
+}
+
 /** Latest text a child has written, used for progress reads and salvage alike. */
 const childText = Effect.fn("TaskTool.childText")(function* (sessions: Session.Interface, sessionID: SessionID) {
   const messages = yield* sessions
@@ -126,7 +143,7 @@ const childText = Effect.fn("TaskTool.childText")(function* (sessions: Session.I
 
 function statusOutput(input: {
   sessionID: SessionID
-  status: "running" | "completed" | "error" | "cancelled" | "unknown"
+  status: "running" | "completed" | "partial" | "blocked" | "error" | "cancelled" | "unknown"
   partial: string
   waited?: boolean
 }) {
@@ -234,12 +251,17 @@ export const TaskTool = Tool.define(
     const sessions = yield* Session.Service
     const flags = yield* RuntimeFlags.Service
     const scope = yield* Scope.Scope
+    const evidenceLock = yield* Semaphore.make(1)
 
     const run = Effect.fn("TaskTool.execute")(function* (
       params: Schema.Schema.Type<typeof Parameters>,
       ctx: Tool.Context,
     ) {
       const cfg = yield* config.get()
+      const resultPolicy = subagentResultPolicy(ctx.agent, flags.experimentalBoundedSubagentResults)
+      const boundedResult = (text: string) => resultPolicy.maxChars
+        ? boundSubagentResult(text, resultPolicy.maxChars)
+        : { text, truncated: false, sticky: [] as string[] }
 
       // Follow-up on an existing task: report progress, or wait for the end.
       // The parent stays free to work while a subagent runs, so it never has to
@@ -269,9 +291,7 @@ export const TaskTool = Tool.define(
             : job?.status === "error" && job.error
               ? job.error
               : yield* childText(sessions, target)
-        const report = flags.experimentalBoundedSubagentResults
-          ? boundSubagentResult(rawReport).text
-          : rawReport
+        const report = boundedResult(rawReport).text
 
         // Only a background task can be followed up on: the parent is blocked for
         // a foreground one, so it can never reach this branch.
@@ -377,6 +397,30 @@ export const TaskTool = Tool.define(
         ...(runInBackground ? { background: true } : {}),
       }
 
+      const taskCallID = ctx.callID ?? `${ctx.messageID}:${nextSession.id}`
+      const evidenceRevision = 1
+      const persistEvidence = Effect.fn("TaskTool.persistEvidence")(function* (state: TaskEvidenceState, text: string) {
+        const child = yield* sessions.get(nextSession.id)
+        const effectiveState: TaskEvidenceState = state === "completed" && child.goalState && child.goalState.status !== "completed" ? "partial" : state
+        const packet = buildTaskEvidencePacket({
+          taskCallID, revision: evidenceRevision, parentSessionID: ctx.sessionID, childSessionID: nextSession.id,
+          state: effectiveState, text, goalState: child.goalState,
+        })
+        yield* evidenceLock.withPermits(1)(
+          Effect.gen(function* () {
+            const current = yield* sessions.get(ctx.sessionID)
+            if (!current.goalState || packet.findings.length === 0) return
+            const findings = mergeGoalFindings(current.goalState.findings ?? [], packet.findings)
+            if (JSON.stringify(findings) === JSON.stringify(current.goalState.findings ?? [])) return
+            yield* sessions.setGoalState({
+              sessionID: ctx.sessionID,
+              goalState: { ...current.goalState, findings, version: current.goalState.version + 1, updatedAt: Date.now() },
+            })
+          }),
+        )
+        return packet
+      })
+
       yield* ctx.metadata({
         title: params.description,
         metadata,
@@ -386,9 +430,7 @@ export const TaskTool = Tool.define(
       if (!ops) return yield* Effect.fail(new Error("TaskTool requires promptOps in ctx.extra"))
 
       const runTask = Effect.fn("TaskTool.runTask")(function* () {
-        const prompt = flags.experimentalBoundedSubagentResults
-          ? params.prompt + SUBAGENT_RESULT_CONTRACT
-          : params.prompt
+        const prompt = resultPolicy.contract ? params.prompt + resultPolicy.contract : params.prompt
         const parts = yield* ops.resolvePromptParts(prompt)
         const result = yield* ops.prompt({
           messageID: MessageID.ascending(),
@@ -405,7 +447,10 @@ export const TaskTool = Tool.define(
           },
           parts,
         })
-        return result.parts.findLast((item) => item.type === "text")?.text ?? ""
+        const text = result.parts.findLast((item) => item.type === "text")?.text ?? ""
+        const stepLimited = result.info.role === "assistant" && result.info.finish === "step-limit"
+        const packet = yield* persistEvidence(stepLimited ? "partial" : "completed", text)
+        return { text, state: packet.state, reason: stepLimited ? "steps" as const : undefined, packet }
       })
 
       // Salvage whatever the child wrote before it was stopped. The transcript
@@ -415,11 +460,10 @@ export const TaskTool = Tool.define(
       const inject = Effect.fn("TaskTool.injectBackgroundResult")(function* (
         state: "completed" | "error" | "budget_exceeded",
         text: string,
+        packet?: TaskEvidencePacket,
       ) {
-        const bounded = flags.experimentalBoundedSubagentResults
-          ? boundSubagentResult(text)
-          : { text, truncated: false, sticky: [] }
-        const notificationKey = taskResultNotificationKey(nextSession.id, state)
+        const bounded = boundedResult(text)
+        const notificationKey = taskResultNotificationKey(taskCallID, evidenceRevision)
         const parentMessages = yield* sessions.messages({ sessionID: ctx.sessionID })
         if (hasTaskResultNotification(parentMessages, notificationKey)) return
         const currentParent = yield* sessions.get(ctx.sessionID)
@@ -434,7 +478,7 @@ export const TaskTool = Tool.define(
               {
                 type: "text",
                 synthetic: true,
-                metadata: { background_notification: true, task_result_key: notificationKey },
+                metadata: { background_notification: true, task_result_key: notificationKey, evidence_packet: packet },
                 text: backgroundMessage({
                   sessionID: nextSession.id,
                   description: params.description,
@@ -453,7 +497,7 @@ export const TaskTool = Tool.define(
       }
 
       if (runInBackground) {
-        const minutes = taskBudgetMinutes()
+        const minutes = next.budgetMinutes ?? taskBudgetMinutes()
         const info = yield* background.start({
           id: nextSession.id,
           type: id,
@@ -462,15 +506,25 @@ export const TaskTool = Tool.define(
           // A background subagent cannot stall the parent, but it can still burn
           // tokens forever unattended. Same ceiling as the foreground path.
           run: withBudget(runTask(), minutes).pipe(
-            Effect.flatMap((text) =>
-              Option.isSome(text)
-                ? inject("completed", text.value).pipe(Effect.ignore, Effect.as(text.value))
-                : ops.cancel(nextSession.id).pipe(
-                    Effect.ignore,
-                    Effect.andThen(partialText()),
-                    Effect.tap((partial) => inject("budget_exceeded", partial).pipe(Effect.ignore)),
-                  ),
-            ),
+            Effect.flatMap((result) => {
+              if (Option.isSome(result)) {
+                const value = result.value
+                return value.state === "completed"
+                  ? inject("completed", value.text, value.packet).pipe(Effect.ignore, Effect.as(value.text as string | BackgroundJob.TerminalResult))
+                  : inject("budget_exceeded", value.text, value.packet).pipe(
+                      Effect.ignore,
+                      Effect.as({ status: "partial", output: value.text, reason: value.reason ?? "steps" } as BackgroundJob.TerminalResult),
+                    )
+              }
+              return ops.cancel(nextSession.id).pipe(
+                Effect.ignore,
+                Effect.andThen(partialText()),
+                Effect.flatMap((partial) => persistEvidence("partial", partial).pipe(
+                  Effect.tap((packet) => inject("budget_exceeded", partial, packet).pipe(Effect.ignore)),
+                  Effect.map((packet) => ({ status: "partial", output: partial, reason: "wall_clock", metadata: { evidencePacket: packet } } as BackgroundJob.TerminalResult)),
+                )),
+              )
+            }),
             Effect.catchCause((cause) =>
               (Cause.hasInterruptsOnly(cause)
                 ? Effect.void
@@ -503,28 +557,31 @@ export const TaskTool = Tool.define(
         }),
         () =>
           Effect.gen(function* () {
-            const minutes = taskBudgetMinutes()
-            const text = yield* withBudget(runTask(), minutes)
+            const minutes = next.budgetMinutes ?? taskBudgetMinutes()
+            const result = yield* withBudget(runTask(), minutes)
 
             // Budget exceeded: cancel the child, then salvage whatever it wrote.
             // The transcript is already persisted, so the work is not lost.
-            if (Option.isNone(text)) {
+            if (Option.isNone(result)) {
               yield* cancel.pipe(Effect.ignore)
               const partial = yield* partialText()
+              const packet = yield* persistEvidence("partial", partial)
               return {
                 title: params.description,
-                metadata,
+                metadata: { ...metadata, outcome: "partial", reason: "wall_clock", evidencePacket: packet },
                 output: budgetOutput(nextSession.id, minutes ?? 0, partial),
               }
             }
 
-            const bounded = flags.experimentalBoundedSubagentResults
-              ? boundSubagentResult(text.value)
-              : { text: text.value, truncated: false, sticky: [] }
+            if (result.value.state === "partial") {
+              return { title: params.description, metadata: { ...metadata, outcome: "partial", reason: result.value.reason, evidencePacket: result.value.packet }, output: stepLimitOutput(nextSession.id, result.value.text) }
+            }
+            const bounded = boundedResult(result.value.text)
             return {
               title: params.description,
               metadata: {
                 ...metadata,
+                evidencePacket: result.value.packet,
                 ...(bounded.truncated ? { resultTruncated: true } : {}),
                 ...(bounded.sticky.length ? { stickyFindings: bounded.sticky } : {}),
               },

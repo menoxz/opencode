@@ -2,7 +2,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { Identifier } from "@/id/id"
 import { Cause, Clock, Context, Deferred, Effect, Fiber, Layer, Scope, SynchronizedRef } from "effect"
 
-export type Status = "running" | "completed" | "error" | "cancelled"
+export type Status = "running" | "completed" | "partial" | "blocked" | "error" | "cancelled"
 
 export type Info = {
   id: string
@@ -32,12 +32,19 @@ type FinishResult = {
   done?: Deferred.Deferred<Info>
 }
 
+export type TerminalResult = {
+  status: "completed" | "partial" | "blocked"
+  output: string
+  reason?: string
+  metadata?: Record<string, unknown>
+}
+
 export type StartInput = {
   id?: string
   type: string
   title?: string
   metadata?: Record<string, unknown>
-  run: Effect.Effect<string, unknown>
+  run: Effect.Effect<string | TerminalResult, unknown>
 }
 
 export type WaitInput = {
@@ -87,7 +94,7 @@ export const layer = Layer.effect(
     const finish = Effect.fn("BackgroundJob.finish")(function* (
       id: string,
       status: Exclude<Status, "running">,
-      data?: { output?: string; error?: string },
+      data?: { output?: string; error?: string; metadata?: Record<string, unknown> },
     ) {
       const completed_at = yield* Clock.currentTimeMillis
       const result = yield* SynchronizedRef.modify(
@@ -105,6 +112,7 @@ export const layer = Layer.effect(
               completed_at,
               ...(data?.output !== undefined ? { output: data.output } : {}),
               ...(data?.error !== undefined ? { error: data.error } : {}),
+              ...(data?.metadata ? { metadata: { ...job.info.metadata, ...data.metadata } } : {}),
             },
           }
           return [{ info: snapshot(next), done: job.done }, new Map(jobs).set(id, next)]
@@ -140,7 +148,9 @@ export const layer = Layer.effect(
               if (existing?.info.status === "running") return [snapshot(existing), jobs] as const
               const fiber = yield* restore(input.run).pipe(
                 Effect.matchCauseEffect({
-                  onSuccess: (output) => finish(id, "completed", { output }),
+                  onSuccess: (result) => typeof result === "string"
+                    ? finish(id, "completed", { output: result })
+                    : finish(id, result.status, { output: result.output, metadata: { ...result.metadata, ...(result.reason ? { reason: result.reason } : {}) } }),
                   onFailure: (cause) =>
                     finish(id, Cause.hasInterruptsOnly(cause) ? "cancelled" : "error", {
                       error: errorText(Cause.squash(cause)),

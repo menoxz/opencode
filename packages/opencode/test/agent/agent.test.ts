@@ -340,6 +340,20 @@ it.instance(
 )
 
 it.instance(
+  "agent budget_minutes config sets runtime budgetMinutes",
+  () =>
+    Effect.gen(function* () {
+      const explore = yield* load((svc) => svc.get("explore"))
+      const security = yield* load((svc) => svc.get("security"))
+      expect(explore?.budgetMinutes).toBe(20)
+      expect(security?.budgetMinutes).toBe(60)
+    }),
+  {
+    config: { agent: { explore: { budget_minutes: 20 }, security: { mode: "subagent", budget_minutes: 60 } } },
+  },
+)
+
+it.instance(
   "agent mode can be overridden",
   () =>
     Effect.gen(function* () {
