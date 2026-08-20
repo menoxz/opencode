@@ -11,4 +11,3 @@ export function pendingAssistantID(messages: readonly MessageLike[]) {
     message.role === "assistant" && !message.time?.completed && !message.finish && !message.error,
   )?.id
 }
-
