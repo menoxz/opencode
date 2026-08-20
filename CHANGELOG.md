@@ -5,6 +5,11 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v1.18.100] - 2026-08-20
+
+### Fixed
+- TUI no longer shows a replied or aborted user message as QUEUED when the local time.completed event is stale; finish/error now close the pending marker consistently with the server queue.
+
 ## [v1.18.99] - 2026-08-20
 
 ### Fixed
