@@ -370,6 +370,7 @@ export const layer: Layer.Layer<
             tool.edit,
             tool.write,
             tool.task,
+            tool.tasks,
             tool.fetch,
             tool.todo,
             tool.search,

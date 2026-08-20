@@ -151,6 +151,13 @@ describe("tool.registry", () => {
     }),
   )
 
+  it.instance("exposes named workflow tasks tool", () =>
+    Effect.gen(function* () {
+      const ids = yield* (yield* ToolRegistry.Service).ids()
+      expect(ids).toContain("tasks")
+    }),
+  )
+
   it.instance("does not expose task_status", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service

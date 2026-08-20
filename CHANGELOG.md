@@ -5,6 +5,11 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v1.18.99] - 2026-08-20
+
+### Fixed
+- Expose the named 	asks workflow tool so qa:run and project workflows are actually callable by agents.
+
 ## [v1.18.98] - 2026-08-20
 
 ### Added
