@@ -13,8 +13,9 @@ import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { boundSubagentResult, subagentResultPolicy } from "./subagent-summary"
 import { hasTaskResultNotification, taskResultNotificationKey } from "./task-notification"
-import { buildTaskEvidencePacket, type TaskEvidencePacket, type TaskEvidenceState } from "@/session/task-evidence"
+import { buildTaskEvidencePacket, isEvidencePacketFresh, type TaskEvidencePacket, type TaskEvidenceState } from "@/session/task-evidence"
 import { mergeGoalFindings } from "@/session/goal-evidence"
+import { Snapshot } from "@/snapshot"
 
 export interface TaskPromptOps {
   cancel(sessionID: SessionID): Effect.Effect<void>
@@ -72,8 +73,18 @@ function escapeTaskMarkup(text: string) {
     .replaceAll(">", "&gt;")
 }
 
-function output(sessionID: SessionID, text: string) {
-  return [`<task id="${sessionID}" state="completed">`, "<task_result>", escapeTaskMarkup(text), "</task_result>", "</task>"].join("\n")
+function output(sessionID: SessionID, text: string, packet?: TaskEvidencePacket) {
+  return [
+    `<task id="${sessionID}" state="completed">`,
+    "<task_result>",
+    escapeTaskMarkup(text),
+    "</task_result>",
+    ...(packet?.workspace ? [
+      `<evidence_packet id="${packet.id}" workspace_fingerprint="${packet.workspace.fingerprint}" fresh="true" />`,
+      "<guidance>Reuse this child evidence while the workspace fingerprint is unchanged. Re-run only checks invalidated by later writes.</guidance>",
+    ] : []),
+    "</task>",
+  ].join("\n")
 }
 
 /**
@@ -250,6 +261,7 @@ export const TaskTool = Tool.define(
     const config = yield* Config.Service
     const sessions = yield* Session.Service
     const flags = yield* RuntimeFlags.Service
+    const snapshot = yield* Effect.serviceOption(Snapshot.Service)
     const scope = yield* Scope.Scope
     const evidenceLock = yield* Semaphore.make(1)
 
@@ -286,12 +298,17 @@ export const TaskTool = Tool.define(
         // A finished task reports exactly what the parent would have received;
         // a running one can only offer the transcript it has written so far.
         const rawReport =
-          job?.status === "completed" && job.output
+          (job?.status === "completed" || job?.status === "partial" || job?.status === "blocked") && job.output
             ? job.output
             : job?.status === "error" && job.error
               ? job.error
               : yield* childText(sessions, target)
         const report = boundedResult(rawReport).text
+        const evidencePacket = job?.metadata?.evidencePacket as TaskEvidencePacket | undefined
+        const currentFingerprint = evidencePacket?.workspace && Option.isSome(snapshot)
+          ? yield* snapshot.value.track().pipe(Effect.catch(() => Effect.succeed(undefined)))
+          : undefined
+        const evidenceFresh = evidencePacket ? isEvidencePacketFresh(evidencePacket, currentFingerprint) : undefined
 
         // Only a background task can be followed up on: the parent is blocked for
         // a foreground one, so it can never reach this branch.
@@ -304,12 +321,15 @@ export const TaskTool = Tool.define(
         return {
           title: params.description,
           metadata: followUpMetadata,
-          output: statusOutput({
-            sessionID: target,
-            status: job?.status ?? "unknown",
-            partial: report,
-            waited: params.action === "wait",
-          }),
+          output: [
+            statusOutput({
+              sessionID: target,
+              status: job?.status ?? "unknown",
+              partial: report,
+              waited: params.action === "wait",
+            }),
+            ...(evidencePacket?.workspace ? [`<evidence_packet id="${evidencePacket.id}" workspace_fingerprint="${evidencePacket.workspace.fingerprint}" fresh="${evidenceFresh}" />`] : []),
+          ].join("\n"),
         }
       }
 
@@ -401,10 +421,13 @@ export const TaskTool = Tool.define(
       const evidenceRevision = 1
       const persistEvidence = Effect.fn("TaskTool.persistEvidence")(function* (state: TaskEvidenceState, text: string) {
         const child = yield* sessions.get(nextSession.id)
+        const workspaceFingerprint = Option.isSome(snapshot)
+          ? yield* snapshot.value.track().pipe(Effect.catch(() => Effect.succeed(undefined)))
+          : undefined
         const effectiveState: TaskEvidenceState = state === "completed" && child.goalState && child.goalState.status !== "completed" ? "partial" : state
         const packet = buildTaskEvidencePacket({
           taskCallID, revision: evidenceRevision, parentSessionID: ctx.sessionID, childSessionID: nextSession.id,
-          state: effectiveState, text, goalState: child.goalState,
+          state: effectiveState, text, goalState: child.goalState, workspaceFingerprint, capturedAt: workspaceFingerprint ? Date.now() : undefined,
         })
         yield* evidenceLock.withPermits(1)(
           Effect.gen(function* () {
@@ -510,10 +533,10 @@ export const TaskTool = Tool.define(
               if (Option.isSome(result)) {
                 const value = result.value
                 return value.state === "completed"
-                  ? inject("completed", value.text, value.packet).pipe(Effect.ignore, Effect.as(value.text as string | BackgroundJob.TerminalResult))
+                  ? inject("completed", value.text, value.packet).pipe(Effect.ignore, Effect.as({ status: "completed", output: value.text, metadata: { evidencePacket: value.packet } } as BackgroundJob.TerminalResult))
                   : inject("budget_exceeded", value.text, value.packet).pipe(
                       Effect.ignore,
-                      Effect.as({ status: "partial", output: value.text, reason: value.reason ?? "steps" } as BackgroundJob.TerminalResult),
+                      Effect.as({ status: "partial", output: value.text, reason: value.reason ?? "steps", metadata: { evidencePacket: value.packet } } as BackgroundJob.TerminalResult),
                     )
               }
               return ops.cancel(nextSession.id).pipe(
@@ -585,7 +608,7 @@ export const TaskTool = Tool.define(
                 ...(bounded.truncated ? { resultTruncated: true } : {}),
                 ...(bounded.sticky.length ? { stickyFindings: bounded.sticky } : {}),
               },
-              output: output(nextSession.id, bounded.text),
+              output: output(nextSession.id, bounded.text, result.value.packet),
             }
           }),
         (_, exit) =>

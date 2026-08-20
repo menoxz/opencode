@@ -499,6 +499,16 @@ function matchesDodItem(claim: string, item: string): boolean {
 }
 
 
+const DELIVERY_ONLY_DOD = /^(?:rapport final concis|rapport de livraison|réponse finale(?: structurée)?|résumé final(?: de la réponse)?|concise final report|final response|delivery report|at delivery|report checks actually run)\b/i
+
+export function isDeliveryOnlyDod(item: string) {
+  return DELIVERY_ONLY_DOD.test(item.trim())
+}
+
+export function evidenceGatedDodItems(items: readonly string[]) {
+  return items.map((item) => item.trim()).filter((item) => item && item !== MINIMAL_DOD_ITEM && !isDeliveryOnlyDod(item))
+}
+
 function lastUserMessageID(messages: Tool.Context["messages"]): string | undefined {
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i]
@@ -548,7 +558,7 @@ function completeToolDefinition() {
 
           // The DoD is the contract. Without a gate here, "completed" only means
           // the model decided to say so — which is precisely what it is worst at.
-          const dodItems = (previous.dod ?? []).map((item) => item.trim()).filter((item) => item && item !== MINIMAL_DOD_ITEM)
+          const dodItems = evidenceGatedDodItems(previous.dod ?? [])
           const evidence = (params.evidence ?? []).filter((item) => item.dod?.trim() && item.proof?.trim())
           const unverified = (params.unverified ?? []).filter((item) => item.dod?.trim() && item.reason?.trim())
           const now = Date.now()

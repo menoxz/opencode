@@ -28,6 +28,8 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import * as DateTime from "effect/DateTime"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Usage, type LLMEvent } from "@opencode-ai/llm"
+import { Truncate } from "@/tool/truncate"
+import { isLeanTerminalTool, LEAN_TERMINAL_MAX_CHARS, LEAN_TERMINAL_MAX_LINES } from "@/tool/lean-output-policy"
 
 const DOOM_LOOP_THRESHOLD = 3
 const log = Log.create({ service: "session.processor" })
@@ -115,6 +117,7 @@ export const layer = Layer.effect(
     const image = yield* Image.Service
     const events = yield* EventV2Bridge.Service
     const flags = yield* RuntimeFlags.Service
+    const truncate = yield* Effect.serviceOption(Truncate.Service)
 
     const create = Effect.fn("SessionProcessor.create")(function* (input: Input) {
       // Pre-capture snapshot before the LLM stream starts. The AI SDK
@@ -502,6 +505,25 @@ export const layer = Layer.effect(
             const toolCall = yield* readToolCall(value.id)
             const rawOutput = toolResultOutput(value)
             rawOutput.output = stripTerminalArtifacts(rawOutput.output)
+            if (flags.experimentalLeanOutputBudget && truncate._tag === "Some" && toolCall && isLeanTerminalTool(toolCall.part.tool)) {
+              const agent = yield* agents.get(ctx.assistantMessage.agent)
+              const bounded = yield* truncate.value.output(
+                rawOutput.output,
+                { maxLines: LEAN_TERMINAL_MAX_LINES, maxBytes: LEAN_TERMINAL_MAX_CHARS, direction: "tail" },
+                agent,
+              )
+              rawOutput.output = bounded.content
+              rawOutput.metadata = {
+                ...rawOutput.metadata,
+                leanOutputBudget: {
+                  applied: true,
+                  maxChars: LEAN_TERMINAL_MAX_CHARS,
+                  maxLines: LEAN_TERMINAL_MAX_LINES,
+                  truncated: bounded.truncated,
+                  ...(bounded.truncated ? { outputPath: bounded.outputPath } : {}),
+                },
+              }
+            }
             const normalized = yield* Effect.forEach(rawOutput.attachments ?? [], (attachment) =>
               attachment.mime.startsWith("image/")
                 ? image.normalize(attachment).pipe(
@@ -972,6 +994,7 @@ export const defaultLayer = Layer.suspend(() =>
     Layer.provide(Config.defaultLayer),
     Layer.provide(RuntimeFlags.defaultLayer),
     Layer.provide(EventV2Bridge.defaultLayer),
+    Layer.provide(Truncate.defaultLayer),
   ),
 )
 

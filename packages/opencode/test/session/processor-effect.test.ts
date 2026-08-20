@@ -29,6 +29,7 @@ import { raw, reply, TestLLMServer } from "../lib/llm-server"
 import { SyncEvent } from "@/sync"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
+import { Truncate } from "@/tool/truncate"
 
 void Log.init({ print: false })
 
@@ -190,7 +191,8 @@ const env = Layer.mergeAll(
   SessionProcessor.layer.pipe(
     Layer.provide(summary),
     Layer.provide(Image.defaultLayer),
-    Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
+    Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true, experimentalLeanOutputBudget: true })),
+    Layer.provide(Truncate.defaultLayer),
     Layer.provideMerge(deps),
   ),
 )
@@ -723,6 +725,33 @@ it.live("session.processor effect tests complete AI SDK tool calls when native f
         expect(call.state.metadata).toEqual({ source: "test" })
         expect(call.state.time.start).toBeDefined()
         expect(call.state.time.end).toBeDefined()
+      }),
+    { config: (url) => providerCfg(url) },
+  ),
+)
+
+it.live("session.processor bounds terminal output and preserves the full artifact", () =>
+  provideTmpdirServer(
+    ({ dir, llm }) =>
+      Effect.gen(function* () {
+        const { processors, session, provider } = yield* boot()
+        yield* llm.tool("bash", { command: "verbose" })
+        const chat = yield* session.create({})
+        const parent = yield* user(chat.id, "verbose terminal")
+        const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+        const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
+        const handle = yield* processors.create({ assistantMessage: msg, sessionID: chat.id, model: mdl })
+        yield* handle.process({
+          user: { id: parent.id, sessionID: chat.id, role: "user", time: parent.time, agent: parent.agent, model: { providerID: ref.providerID, modelID: ref.modelID } } satisfies MessageV2.User,
+          sessionID: chat.id, model: mdl, agent: agent(), system: [], messages: [{ role: "user", content: "verbose terminal" }],
+          tools: { bash: tool({ description: "terminal", inputSchema: z.object({ command: z.string() }), execute: async () => ({ title: "terminal", output: "x".repeat(10_000), metadata: {} }) }) },
+        })
+        const call = MessageV2.parts(msg.id).find((part): part is MessageV2.ToolPart => part.type === "tool")
+        expect(call?.state.status).toBe("completed")
+        if (call?.state.status !== "completed") return
+        expect(call.state.output.length).toBeLessThan(6_000)
+        expect(call.state.output).toContain("Full output saved to:")
+        expect(call.state.metadata?.leanOutputBudget?.truncated).toBe(true)
       }),
     { config: (url) => providerCfg(url) },
   ),

@@ -5,6 +5,16 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v1.18.101] - 2026-08-20
+
+### Added
+- Experimental Lean output budget: inspect waves are limited to 8 actions and 16k total; terminal outputs spill full logs and keep a 4k context tail.
+- Evidence packets carry workspace fingerprints and report freshness for safe proof reuse.
+- Subsequent Lean patches require `causedBy` with the failed check or new observation that justifies the correction.
+
+### Fixed
+- Delivery-only DoD wording such as a concise final report no longer causes repeated evidence-gate failures; real business report artifacts remain gated.
+
 ## [v1.18.100] - 2026-08-20
 
 ### Fixed

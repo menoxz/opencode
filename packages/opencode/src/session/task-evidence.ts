@@ -16,6 +16,7 @@ export type TaskEvidencePacket = {
   residuals: Array<{ id: string; summary: string; reason: string }>
   omissions: Array<{ section: "tests" | "findings" | "residuals"; omitted: number; reason: "limit" }>
   source: { transcriptSessionID: string }
+  workspace?: { fingerprint: string; capturedAt: number }
 }
 
 const severity = { critical: 5, high: 4, medium: 3, low: 2, info: 1 } as const
@@ -29,6 +30,8 @@ export function buildTaskEvidencePacket(input: {
   state: TaskEvidenceState
   text: string
   goalState?: Pick<GoalState, "findings" | "completion">
+  workspaceFingerprint?: string
+  capturedAt?: number
 }): TaskEvidencePacket {
   const allFindings = [...(input.goalState?.findings ?? [])].toSorted((a, b) =>
     (status[b.status] - status[a.status]) || (severity[b.severity] - severity[a.severity]) || a.id.localeCompare(b.id),
@@ -61,5 +64,10 @@ export function buildTaskEvidencePacket(input: {
     residuals: allResiduals.slice(0, 32),
     omissions,
     source: { transcriptSessionID: input.childSessionID },
+    ...(input.workspaceFingerprint ? { workspace: { fingerprint: input.workspaceFingerprint, capturedAt: input.capturedAt ?? 0 } } : {}),
   }
+}
+
+export function isEvidencePacketFresh(packet: TaskEvidencePacket, currentFingerprint: string | undefined) {
+  return !!packet.workspace?.fingerprint && !!currentFingerprint && packet.workspace.fingerprint === currentFingerprint
 }

@@ -4,6 +4,8 @@ import * as Tool from "./tool"
 import { ReadTool } from "./read"
 import { GlobTool } from "./glob"
 import { GrepTool } from "./grep"
+import { RuntimeFlags } from "@/effect/runtime-flags"
+import { inspectBudget } from "./lean-output-policy"
 
 const Common = {
   id: Schema.String.annotate({ description: "Unique action id within this batch" }),
@@ -173,6 +175,7 @@ export const InspectBatchTool = Tool.define(
     const read = yield* Tool.init(readInfo)
     const glob = yield* Tool.init(globInfo)
     const grep = yield* Tool.init(grepInfo)
+    const flags = yield* RuntimeFlags.Service
 
     return {
       description: [
@@ -184,7 +187,9 @@ export const InspectBatchTool = Tool.define(
       execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context) =>
         Effect.gen(function* () {
           const actions = [...params.actions]
+          const budget = inspectBudget({ enabled: flags.experimentalLeanOutputBudget, actionCount: actions.length, requestedChars: params.maxCharsPerResult })
           const errors = validateInspectActions(actions)
+          if (actions.length > budget.maxActions) errors.push(`Lean inspection waves allow at most ${budget.maxActions} actions (received ${actions.length})`)
           if (errors.length > 0) throw new Error(errors.join("\n"))
           const deduped = deduplicateInspectActions(actions)
           const rounds = planInspectRounds(deduped.actions)

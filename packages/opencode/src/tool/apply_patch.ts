@@ -16,9 +16,12 @@ import { Format } from "../format"
 import * as Bom from "@/util/bom"
 import { Service as ToolCacheService } from "./cache"
 import { Service as SearchIndexService } from "./search-index"
+import { RuntimeFlags } from "@/effect/runtime-flags"
+import { requiresPatchCause } from "./lean-output-policy"
 
 export const Parameters = Schema.Struct({
   patchText: Schema.String.annotate({ description: "The full patch text that describes all changes to be made" }),
+  causedBy: Schema.optional(Schema.String).annotate({ description: "Required after the initial Lean patch: exact failed check or new observation that justifies this correction" }),
 })
 
 export const ApplyPatchTool = Tool.define(
@@ -28,11 +31,15 @@ export const ApplyPatchTool = Tool.define(
     const afs = yield* AppFileSystem.Service
     const format = yield* Format.Service
     const bus = yield* Bus.Service
+    const flags = yield* RuntimeFlags.Service
 
     const run = Effect.fn("ApplyPatchTool.execute")(function* (
       params: Schema.Schema.Type<typeof Parameters>,
       ctx: Tool.Context,
     ) {
+      if (flags.experimentalLeanOutputBudget && requiresPatchCause(ctx.messages) && !params.causedBy?.trim()) {
+        return yield* Effect.fail(new Error("A later Lean patch requires causedBy: cite the failed check or new observation that changed the decision."))
+      }
       if (!params.patchText) {
         return yield* Effect.fail(new Error("patchText is required"))
       }

@@ -263,4 +263,41 @@ describe("tool.goal-contract", () => {
       expect(updated.goalState?.goal).toBe("Add native contract tools")
     }),
   )
+  it.instance("does not evidence-gate self-referential delivery DoD", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({ title: "delivery-only DoD" })
+      yield* sessions.setGoalState({
+        sessionID: session.id,
+        goalState: {
+          status: "draft", source: "user", goal: "Implement feature",
+          dod: ["Targeted tests pass", "Rapport final concis : conception, fichiers changés, commandes et risques."],
+          outOfScope: [], version: 1, updatedAt: 1,
+        } as any,
+      })
+      const complete = yield* getTool("complete_objective")
+      const result = (yield* complete.execute({
+        summary: "done",
+        evidence: [{ dod: "Targeted tests pass", proof: "bun test target: 4 pass, exit 0" }],
+      }, mkContext(session.id))).metadata.result
+      expect(result.status).toBe("ok")
+      expect((yield* sessions.get(session.id)).goalState?.status).toBe("completed")
+    }),
+  )
+
+  it.instance("still evidence-gates a business artifact named final report", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({ title: "business final report" })
+      yield* sessions.setGoalState({ sessionID: session.id, goalState: {
+        status: "draft", source: "user", goal: "Generate report", dod: ["Rapport final PDF généré et signé"],
+        outOfScope: [], version: 1, updatedAt: 1,
+      } as any })
+      const complete = yield* getTool("complete_objective")
+      const result = (yield* complete.execute({ summary: "done", evidence: [] }, mkContext(session.id))).metadata.result
+      expect(result.status).toBe("error")
+      expect((yield* sessions.get(session.id)).goalState?.status).toBe("draft")
+    }),
+  )
+
 })

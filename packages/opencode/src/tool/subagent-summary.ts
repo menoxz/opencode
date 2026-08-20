@@ -41,8 +41,11 @@ export function boundSubagentResult(text: string, maxChars = 12_000) {
 export const LEAN_SUBAGENT_CONTRACT = `
 <lean_child>
 Correctness, safety, explicit acceptance criteria, and OPEN findings are hard gates.
-Use the smallest sufficient trajectory: batch known-independent observations; prefer inspect_batch for 2+ independent read/glob/grep actions when available; otherwise emit independent calls together.
-Do not repeat unchanged observations. Stop when all required evidence is present.
+CONTEXT: batch only known-independent observations. One inspect_batch wave has at most 8 actions, 2,000 characters per result by default, and 16,000 total; use another wave only when prior evidence changes its inputs. Read exact ranges, not whole files.
+TERMINAL: never return full terminal output to context. Capture the full log to an artifact, then return exit code + decision-relevant matches + bounded error tail.
+MUTATE: once inputs are known, emit one coherent initial patch. A later patch must cite new failed evidence that changed the decision; same-file/dependent writes stay serialized.
+VERIFY: batch independent narrow checks. Reuse child evidence while its workspace fingerprint matches; after writes, rerun only checks invalidated by changed files.
+Do not make final report/final response wording an evidence-gated DoD item.
 Return concise causal sections: outcome; decisions; evidence as claim -> exact command/test/file:line/result; changes or none; findings with stable status; residuals/unverified; next dependency only.
 Keep findings OPEN until independently CLOSED; never hide residuals.
 </lean_child>
