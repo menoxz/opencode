@@ -20,6 +20,8 @@ import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import * as Bom from "@/util/bom"
 import { Service as ToolCacheService } from "./cache"
 import { Service as SearchIndexService } from "./search-index"
+import { RuntimeFlags } from "@/effect/runtime-flags"
+import { requiresMutationCause } from "./lean-output-policy"
 
 function normalizeLineEndings(text: string): string {
   return text.replaceAll("\r\n", "\n")
@@ -52,6 +54,9 @@ export const Parameters = Schema.Struct({
   newString: Schema.String.annotate({
     description: "The text to replace it with (must be different from oldString)",
   }),
+  causedBy: Schema.optional(Schema.String).annotate({
+    description: "Required after the initial Lean mutation: failed check or new observation justifying this edit",
+  }),
   replaceAll: Schema.optional(Schema.Boolean).annotate({
     description: "Replace all occurrences of oldString (default false)",
   }),
@@ -64,12 +69,17 @@ export const EditTool = Tool.define(
     const afs = yield* AppFileSystem.Service
     const format = yield* Format.Service
     const bus = yield* Bus.Service
+    const flags = yield* RuntimeFlags.Service
 
     return {
       description: DESCRIPTION,
       parameters: Parameters,
       execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context) =>
         Effect.gen(function* () {
+          if (flags.experimentalLeanOutputBudget && requiresMutationCause(ctx.messages) && !params.causedBy?.trim()) {
+            throw new Error("A later Lean mutation requires causedBy: cite the failed check or new observation that changed the decision.")
+          }
+
           if (!params.filePath) {
             throw new Error("filePath is required")
           }

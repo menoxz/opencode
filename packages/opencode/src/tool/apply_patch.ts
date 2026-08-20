@@ -17,7 +17,7 @@ import * as Bom from "@/util/bom"
 import { Service as ToolCacheService } from "./cache"
 import { Service as SearchIndexService } from "./search-index"
 import { RuntimeFlags } from "@/effect/runtime-flags"
-import { requiresPatchCause } from "./lean-output-policy"
+import { requiresMutationCause } from "./lean-output-policy"
 
 export const Parameters = Schema.Struct({
   patchText: Schema.String.annotate({ description: "The full patch text that describes all changes to be made" }),
@@ -37,7 +37,7 @@ export const ApplyPatchTool = Tool.define(
       params: Schema.Schema.Type<typeof Parameters>,
       ctx: Tool.Context,
     ) {
-      if (flags.experimentalLeanOutputBudget && requiresPatchCause(ctx.messages) && !params.causedBy?.trim()) {
+      if (flags.experimentalLeanOutputBudget && requiresMutationCause(ctx.messages) && !params.causedBy?.trim()) {
         return yield* Effect.fail(new Error("A later Lean patch requires causedBy: cite the failed check or new observation that changed the decision."))
       }
       if (!params.patchText) {

@@ -7,6 +7,11 @@ import { GrepTool } from "./grep"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { inspectBudget } from "./lean-output-policy"
 
+const FlexiblePositiveInt = Schema.Union([
+  PositiveInt,
+  Schema.NumberFromString.check(Schema.isInt(), Schema.isGreaterThan(0)),
+])
+
 const Common = {
   id: Schema.String.annotate({ description: "Unique action id within this batch" }),
   dependsOn: Schema.optional(Schema.Array(Schema.String)).annotate({
@@ -18,8 +23,8 @@ const ReadAction = Schema.Struct({
   ...Common,
   type: Schema.Literal("read"),
   filePath: Schema.String,
-  offset: Schema.optional(PositiveInt),
-  limit: Schema.optional(PositiveInt),
+  offset: Schema.optional(FlexiblePositiveInt),
+  limit: Schema.optional(FlexiblePositiveInt),
 })
 const GlobAction = Schema.Struct({
   ...Common,
@@ -42,8 +47,8 @@ export const Parameters = Schema.Struct({
   actions: Schema.Array(InspectActionSchema).annotate({
     description: "At most 16 read-only actions. Independent actions run together; dependsOn creates barriers.",
   }),
-  maxConcurrency: Schema.optional(PositiveInt).annotate({ description: "Concurrency cap, clamped to 1..8" }),
-  maxCharsPerResult: Schema.optional(PositiveInt).annotate({
+  maxConcurrency: Schema.optional(FlexiblePositiveInt).annotate({ description: "Concurrency cap, clamped to 1..8" }),
+  maxCharsPerResult: Schema.optional(FlexiblePositiveInt).annotate({
     description: "Per-action output cap, clamped to 1000..20000 characters",
   }),
 })
@@ -156,7 +161,7 @@ export function planInspectRounds(actions: readonly InspectAction[]): InspectAct
   return rounds
 }
 
-type ActionResult = {
+export type ActionResult = {
   id: string
   type: InspectAction["type"]
   status: "success" | "error" | "skipped"
@@ -164,6 +169,27 @@ type ActionResult = {
   output?: string
   error?: string
   truncated?: boolean
+}
+
+export function localizeInspectAction<E, R>(
+  action: InspectAction,
+  run: () => Effect.Effect<{ title: string; output: string }, E, R>,
+  maxChars = Number.MAX_SAFE_INTEGER,
+) {
+  return Effect.try({ try: run, catch: (error) => error }).pipe(
+    Effect.flatMap((effect) => effect),
+    Effect.match({
+      onFailure: (cause): ActionResult => ({ id: action.id, type: action.type, status: "error", error: String(cause) }),
+      onSuccess: (result): ActionResult => {
+        const truncated = result.output.length > maxChars
+        return {
+          id: action.id, type: action.type, status: "success", title: result.title,
+          output: truncated ? result.output.slice(0, maxChars) + "\n... [inspect_batch result truncated]" : result.output,
+          truncated,
+        }
+      },
+    }),
+  )
 }
 
 export const InspectBatchTool = Tool.define(
@@ -194,7 +220,7 @@ export const InspectBatchTool = Tool.define(
           const deduped = deduplicateInspectActions(actions)
           const rounds = planInspectRounds(deduped.actions)
           const concurrency = Math.max(1, Math.min(8, params.maxConcurrency ?? 4))
-          const maxChars = Math.max(1000, Math.min(20_000, params.maxCharsPerResult ?? 8_000))
+          const maxChars = Math.max(1_000, Math.min(20_000, budget.maxCharsPerResult))
           const results = new Map<string, ActionResult>()
 
           for (const round of rounds) {
@@ -210,39 +236,13 @@ export const InspectBatchTool = Tool.define(
                     error: `Dependency ${blocked} did not complete successfully`,
                   })
                 }
-                const run = (() => {
+                return localizeInspectAction(action, () => {
                   if (action.type === "read") {
-                    return read.execute(
-                      { filePath: action.filePath, offset: action.offset, limit: action.limit },
-                      ctx,
-                    )
+                    return read.execute({ filePath: action.filePath, offset: action.offset, limit: action.limit }, ctx)
                   }
-                  if (action.type === "glob") {
-                    return glob.execute({ pattern: action.pattern, path: action.path }, ctx)
-                  }
+                  if (action.type === "glob") return glob.execute({ pattern: action.pattern, path: action.path }, ctx)
                   return grep.execute({ pattern: action.pattern, path: action.path, include: action.include }, ctx)
-                })()
-                return run.pipe(
-                  Effect.match({
-                    onFailure: (cause): ActionResult => ({
-                      id: action.id,
-                      type: action.type,
-                      status: "error",
-                      error: String(cause),
-                    }),
-                    onSuccess: (result): ActionResult => {
-                      const truncated = result.output.length > maxChars
-                      return {
-                        id: action.id,
-                        type: action.type,
-                        status: "success",
-                        title: result.title,
-                        output: truncated ? result.output.slice(0, maxChars) + "\n... [inspect_batch result truncated]" : result.output,
-                        truncated,
-                      }
-                    },
-                  }),
-                )
+                }, maxChars)
               },
               { concurrency },
             )

@@ -14,6 +14,7 @@ import { SessionID, MessageID } from "../../src/session/schema"
 import * as Tool from "../../src/tool/tool"
 import { testEffect } from "../lib/effect"
 import { FileWatcher } from "../../src/file/watcher"
+import { RuntimeFlags } from "@/effect/runtime-flags"
 
 const ctx = {
   sessionID: SessionID.make("ses_test-edit-session"),
@@ -37,6 +38,7 @@ const layer = Layer.mergeAll(
   Bus.layer,
   Truncate.defaultLayer,
   Agent.defaultLayer,
+  RuntimeFlags.layer({ experimentalLeanOutputBudget: true }),
 )
 
 const it = testEffect(layer)
@@ -91,6 +93,15 @@ const onceBus = Effect.fn("EditToolTest.onceBus")(function* (def: typeof FileWat
 })
 
 describe("tool.edit", () => {
+  it.live("requires causedBy after a prior edit", () =>
+    Effect.gen(function* () {
+      const previous = { ...ctx, messages: [{ parts: [{ type: "tool", tool: "edit", state: { status: "completed" } }] }] } as any
+      const exit = yield* run({ filePath: "missing.txt", oldString: "a", newString: "b" }, previous).pipe(Effect.exit)
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) expect(Cause.pretty(exit.cause)).toContain("requires causedBy")
+    }),
+  )
+
   describe("creating new files", () => {
     it.instance("creates new file when oldString is empty", () =>
       Effect.gen(function* () {

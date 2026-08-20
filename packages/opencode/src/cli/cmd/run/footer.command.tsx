@@ -44,7 +44,7 @@ const PANEL_PAD = 2
 const PANEL_LIST_ROWS = 10
 const PANEL_FRAME_ROWS = 6
 export const RUN_COMMAND_PANEL_ROWS = PANEL_LIST_ROWS + PANEL_FRAME_ROWS
-const SUBAGENT_LIST_ROWS = 12
+const SUBAGENT_LIST_ROWS = 5
 export const RUN_SUBAGENT_PANEL_ROWS = SUBAGENT_LIST_ROWS + PANEL_FRAME_ROWS
 const PANEL_PAGE = PANEL_LIST_ROWS - 1
 const PANEL_BORDER = {
@@ -117,6 +117,7 @@ function handleKey(input: {
   setQuery: (value: string) => void
   select: () => void
   close: () => void
+  pageSize?: number
 }) {
   const name = input.event.name.toLowerCase()
   const ctrl = input.event.ctrl && !input.event.meta && !input.event.shift && !input.event.super
@@ -141,13 +142,13 @@ function handleKey(input: {
 
   if (name === "pageup") {
     input.event.preventDefault()
-    input.menu.reveal(input.menu.selected() - PANEL_PAGE)
+    input.menu.reveal(input.menu.selected() - (input.pageSize ?? PANEL_PAGE))
     return
   }
 
   if (name === "pagedown") {
     input.event.preventDefault()
-    input.menu.reveal(input.menu.selected() + PANEL_PAGE)
+    input.menu.reveal(input.menu.selected() + (input.pageSize ?? PANEL_PAGE))
     return
   }
 
@@ -525,7 +526,7 @@ export function RunSubagentSelectBody(props: {
       return
     }
 
-    handleKey({ event, menu, field: () => field, setQuery, select, close: props.onClose })
+    handleKey({ event, menu, field: () => field, setQuery, select, close: props.onClose, pageSize: SUBAGENT_LIST_ROWS - 1 })
   })
 
   return (

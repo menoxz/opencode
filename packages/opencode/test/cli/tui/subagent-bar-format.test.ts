@@ -4,6 +4,7 @@ import {
   formatSubagentRow,
   formatSubagentSummary,
   splitSubagentTitle,
+  subagentViewportRows,
 } from "../../../src/cli/cmd/tui/routes/session/subagent-bar-format"
 
 describe("subagent bar helpers", () => {
@@ -48,5 +49,11 @@ describe("subagent bar helpers", () => {
 
     expect(formatSubagentSummary([row(true), row(true), row(false)])).toBe("2 working · 3 total")
     expect(formatSubagentSummary([row(false)])).toBe("all idle · 1 total")
+  })
+  test("sizes the expanded viewport to at most five subagents", () => {
+    expect(subagentViewportRows(0)).toBe(0)
+    expect(subagentViewportRows(2)).toBe(2)
+    expect(subagentViewportRows(5)).toBe(5)
+    expect(subagentViewportRows(8)).toBe(5)
   })
 })

@@ -16,11 +16,16 @@ import { assertExternalDirectoryEffect } from "./external-directory"
 import * as Bom from "@/util/bom"
 import { Service as ToolCacheService } from "./cache"
 import { Service as SearchIndexService } from "./search-index"
+import { RuntimeFlags } from "@/effect/runtime-flags"
+import { requiresMutationCause } from "./lean-output-policy"
 
 const MAX_PROJECT_DIAGNOSTICS_FILES = 5
 
 export const Parameters = Schema.Struct({
   content: Schema.String.annotate({ description: "The content to write to the file" }),
+  causedBy: Schema.optional(Schema.String).annotate({
+    description: "Required after the initial Lean mutation: failed check or new observation justifying this write",
+  }),
   filePath: Schema.String.annotate({
     description: "The absolute path to the file to write (must be absolute, not relative)",
   }),
@@ -33,12 +38,17 @@ export const WriteTool = Tool.define(
     const fs = yield* AppFileSystem.Service
     const bus = yield* Bus.Service
     const format = yield* Format.Service
+    const flags = yield* RuntimeFlags.Service
 
     return {
       description: DESCRIPTION,
       parameters: Parameters,
-      execute: (params: { content: string; filePath: string }, ctx: Tool.Context) =>
+      execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context) =>
         Effect.gen(function* () {
+          if (flags.experimentalLeanOutputBudget && requiresMutationCause(ctx.messages) && !params.causedBy?.trim()) {
+            throw new Error("A later Lean mutation requires causedBy: cite the failed check or new observation that changed the decision.")
+          }
+
           const instance = yield* InstanceState.context
           const filepath = path.isAbsolute(params.filePath)
             ? params.filePath

@@ -22,10 +22,12 @@ export function isLeanTerminalTool(tool: string) {
   return normalized === "bash" || normalized.endsWith("mcp-terminal_command_run")
 }
 
-export function requiresPatchCause(messages: readonly { parts?: readonly unknown[] }[]) {
+const MUTATION_TOOLS = new Set(["apply_patch", "edit", "write"])
+
+export function requiresMutationCause(messages: readonly { parts?: readonly unknown[] }[]) {
   return messages.some((message) => (message.parts ?? []).some((part) => {
     if (!part || typeof part !== "object") return false
     const value = part as { type?: string; tool?: string; state?: { status?: string } }
-    return value.type === "tool" && value.tool === "apply_patch" && value.state?.status === "completed"
+    return value.type === "tool" && !!value.tool && MUTATION_TOOLS.has(value.tool) && value.state?.status === "completed"
   }))
 }

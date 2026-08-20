@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { inspectBudget, isLeanTerminalTool, requiresPatchCause, LEAN_INSPECT_MAX_ACTIONS, LEAN_INSPECT_TOTAL_CHARS, LEAN_TERMINAL_MAX_CHARS } from "./lean-output-policy"
+import { inspectBudget, isLeanTerminalTool, requiresMutationCause, LEAN_INSPECT_MAX_ACTIONS, LEAN_INSPECT_TOTAL_CHARS, LEAN_TERMINAL_MAX_CHARS } from "./lean-output-policy"
 
 describe("lean output policy", () => {
   test("caps an inspection wave by actions, per-result and total characters", () => {
@@ -16,8 +16,10 @@ describe("lean output policy", () => {
     expect(isLeanTerminalTool("read")).toBe(false)
   })
   test("requires causal evidence after the first completed patch", () => {
-    expect(requiresPatchCause([] as any)).toBe(false)
-    expect(requiresPatchCause([{ parts: [{ type: "tool", tool: "apply_patch", state: { status: "completed" } }] }] as any)).toBe(true)
-    expect(requiresPatchCause([{ parts: [{ type: "tool", tool: "read", state: { status: "completed" } }] }] as any)).toBe(false)
+    expect(requiresMutationCause([] as any)).toBe(false)
+    expect(requiresMutationCause([{ parts: [{ type: "tool", tool: "apply_patch", state: { status: "completed" } }] }] as any)).toBe(true)
+    expect(requiresMutationCause([{ parts: [{ type: "tool", tool: "edit", state: { status: "completed" } }] }] as any)).toBe(true)
+    expect(requiresMutationCause([{ parts: [{ type: "tool", tool: "write", state: { status: "completed" } }] }] as any)).toBe(true)
+    expect(requiresMutationCause([{ parts: [{ type: "tool", tool: "read", state: { status: "completed" } }] }] as any)).toBe(false)
   })
 })

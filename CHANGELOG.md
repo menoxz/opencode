@@ -5,6 +5,13 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v1.18.102] - 2026-08-20
+
+### Fixed
+- `inspect_batch` accepts positive numeric strings from less strict models and localizes synchronous action failures instead of aborting the whole batch.
+- Lean mutation causality now covers `edit` and `write` in addition to `apply_patch`.
+- Both TUI subagent panels size to their list and display at most five subagents before scrolling; page navigation follows the five-row viewport.
+
 ## [v1.18.101] - 2026-08-20
 
 ### Added

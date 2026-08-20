@@ -7,7 +7,7 @@ import { SplitBorder } from "@tui/component/border"
 import { Spinner } from "@tui/component/spinner"
 import { Locale } from "@/util/locale"
 import { useCommandShortcut } from "../../keymap"
-import { formatSubagentRow, formatSubagentSummary } from "./subagent-bar-format"
+import { formatSubagentRow, formatSubagentSummary, SUBAGENT_VIEWPORT_MAX_ROWS, subagentViewportRows } from "./subagent-bar-format"
 
 /**
  * Live view of the subagents a session has started.
@@ -100,7 +100,7 @@ export function SubagentBar() {
           </text>
         </box>
         <Show when={expanded()}>
-          <scrollbox maxHeight={8} scrollbarOptions={{ visible: false }}>
+          <scrollbox height={subagentViewportRows(rows().length)} maxHeight={SUBAGENT_VIEWPORT_MAX_ROWS} scrollbarOptions={{ visible: false }}>
             <For each={rows()}>
               {(item) => (
                 <box

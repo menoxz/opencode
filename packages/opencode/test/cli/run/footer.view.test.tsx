@@ -334,6 +334,32 @@ test("direct subagent panel renders active subagents", async () => {
   }
 })
 
+test("direct subagent panel shows at most five rows", async () => {
+  const [tabs] = createSignal(Array.from({ length: 6 }, (_, index) =>
+    subagent({ sessionID: `s-${index + 1}`, label: `Agent ${index + 1}`, description: `Task ${index + 1}` }),
+  ))
+  const [current] = createSignal<string | undefined>("s-1")
+  let rows = 0
+  const app = await testRender(
+    () => (
+      <box width={100} height={RUN_SUBAGENT_PANEL_ROWS}>
+        <RunSubagentSelectBody theme={() => RUN_THEME_FALLBACK.footer} tabs={tabs} current={current}
+          onClose={() => {}} onSelect={() => {}} onRows={(value) => { rows = value }} />
+      </box>
+    ),
+    { width: 100, height: RUN_SUBAGENT_PANEL_ROWS },
+  )
+  try {
+    await app.renderOnce()
+    const frame = app.captureCharFrame()
+    expect(rows).toBe(11)
+    expect(frame).toContain("Task 5")
+    expect(frame).not.toContain("Task 6")
+  } finally {
+    app.renderer.destroy()
+  }
+})
+
 test("direct footer shows subagent indicator while prompt is running", async () => {
   const [state] = createSignal<FooterState>({
     phase: "running",

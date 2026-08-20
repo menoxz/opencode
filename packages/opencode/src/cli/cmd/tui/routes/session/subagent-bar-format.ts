@@ -64,3 +64,10 @@ export function formatSubagentSummary(rows: readonly SubagentRow[]) {
   const working = rows.filter((row) => row.working).length
   return `${working > 0 ? `${working} working` : "all idle"} · ${rows.length} total`
 }
+
+export const SUBAGENT_VIEWPORT_MAX_ROWS = 5
+
+export function subagentViewportRows(count: number) {
+  if (!Number.isFinite(count) || count <= 0) return 0
+  return Math.min(SUBAGENT_VIEWPORT_MAX_ROWS, Math.floor(count))
+}

@@ -14,6 +14,8 @@ import { SessionID, MessageID } from "../../src/session/schema"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
+import { RuntimeFlags } from "@/effect/runtime-flags"
+import { Cause, Exit } from "effect"
 
 const ctx = {
   sessionID: SessionID.make("ses_test-write-session"),
@@ -39,6 +41,7 @@ const it = testEffect(
     CrossSpawnSpawner.defaultLayer,
     Truncate.defaultLayer,
     Agent.defaultLayer,
+    RuntimeFlags.layer({ experimentalLeanOutputBudget: true }),
   ),
 )
 
@@ -56,6 +59,15 @@ const run = Effect.fn("WriteToolTest.run")(function* (
 })
 
 describe("tool.write", () => {
+  it.live("requires causedBy after a prior write", () =>
+    Effect.gen(function* () {
+      const previous = { ...ctx, messages: [{ parts: [{ type: "tool", tool: "write", state: { status: "completed" } }] }] } as any
+      const exit = yield* run({ filePath: "missing.txt", content: "x" }, previous).pipe(Effect.exit)
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) expect(Cause.pretty(exit.cause)).toContain("requires causedBy")
+    }),
+  )
+
   describe("new file creation", () => {
     it.instance("writes content to new file", () =>
       Effect.gen(function* () {
