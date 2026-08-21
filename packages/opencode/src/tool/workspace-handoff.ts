@@ -32,6 +32,13 @@ function isWithin(candidate: string, root: string) {
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))
 }
 
+export function handoffPermissionPlan(currentWorktree: string, targetDirectory: string, targetExists: boolean) {
+  const permissions: Array<"external_directory" | "edit"> = []
+  if (!isWithin(targetDirectory, currentWorktree)) permissions.push("external_directory")
+  if (!targetExists) permissions.push("edit")
+  return permissions
+}
+
 export function validateWorkspaceTarget(currentDirectory: string, targetDirectory: string) {
   if (!path.isAbsolute(targetDirectory)) return "Target workspace path must be absolute."
   const current = normalize(currentDirectory)
@@ -108,6 +115,9 @@ export const WorkspaceHandoffTool = Tool.define(
           const targetDirectory = path.resolve(params.path)
           const validation = validateWorkspaceTarget(sourceContext.directory, targetDirectory)
           if (validation) return yield* Effect.fail(new Error(validation))
+          if (handoffPermissionPlan(sourceContext.worktree, targetDirectory, true).includes("external_directory")) {
+            yield* ctx.ask({ permission: "external_directory", patterns: [targetDirectory], always: [targetDirectory], metadata: { targetDirectory, reason: params.reason } })
+          }
           const targetStat = yield* fs.stat(targetDirectory).pipe(Effect.catch(() => Effect.succeed(undefined)))
           if (targetStat && targetStat.type !== "Directory") {
             return yield* Effect.fail(new Error("Target workspace exists but is not a directory."))
@@ -116,9 +126,6 @@ export const WorkspaceHandoffTool = Tool.define(
             if (!params.createIfMissing) return yield* Effect.fail(new Error("Target workspace does not exist; set createIfMissing=true to create it."))
             yield* ctx.ask({ permission: "edit", patterns: [targetDirectory], always: ["*"], metadata: { targetDirectory, reason: params.reason } })
             yield* fs.ensureDir(targetDirectory)
-          }
-          if (!isWithin(targetDirectory, sourceContext.worktree)) {
-            yield* ctx.ask({ permission: "external_directory", patterns: [targetDirectory], always: [targetDirectory], metadata: { targetDirectory, reason: params.reason } })
           }
           const source = yield* sessions.get(ctx.sessionID)
           const messages = yield* sessions.messages({ sessionID: source.id })

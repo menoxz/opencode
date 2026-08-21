@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { buildHandoffCapsule, validateWorkspaceTarget } from "./workspace-handoff"
+import { buildHandoffCapsule, handoffPermissionPlan, validateWorkspaceTarget } from "./workspace-handoff"
 import { SECURITY_GATED_TOOLS } from "./security"
 
 describe("workspace_handoff", () => {
@@ -30,5 +30,9 @@ describe("workspace_handoff", () => {
   })
   test("is hidden from non-interactive eval mode", () => {
     expect(SECURITY_GATED_TOOLS).toContain("workspace_handoff")
+  })
+  test("asks external access before creating an external directory", () => {
+    expect(handoffPermissionPlan("C:\\repo", "C:\\projects\\demo", false)).toEqual(["external_directory", "edit"])
+    expect(handoffPermissionPlan("C:\\repo", "C:\\repo\\demo", false)).toEqual(["edit"])
   })
 })
