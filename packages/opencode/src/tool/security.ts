@@ -20,4 +20,4 @@ export type SecurityMode = "interactive-tui" | "eval" | "cli-batch"
  * output so the model never sees them. In "cli-batch" mode they are
  * advertised but not pre-approved.
  */
-export const SECURITY_GATED_TOOLS = new Set<string>(["write", "shell"])
+export const SECURITY_GATED_TOOLS = new Set<string>(["write", "shell", "workspace_handoff"])

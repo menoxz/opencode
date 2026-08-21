@@ -4,6 +4,7 @@ import { SessionContextTool, SessionInfoTool } from "./session-info"
 import { PlanExitTool } from "./plan"
 import { PlanningTool } from "./planning"
 import { TasksTool } from "./tasks"
+import { WorkspaceHandoffTool } from "./workspace-handoff"
 import {
   ApplyContractFromPromptTool,
   CompleteObjectifTool,
@@ -166,6 +167,7 @@ export const layer: Layer.Layer<
     const plan = yield* PlanExitTool
     const planning = yield* PlanningTool
     const tasks = yield* TasksTool
+    const workspaceHandoff = yield* WorkspaceHandoffTool
     const webfetch = yield* WebFetchTool
     const websearch = yield* WebSearchTool
     const mcpList = yield* McpListTool
@@ -327,6 +329,7 @@ export const layer: Layer.Layer<
           write: Tool.init(writetool),
           task: Tool.init(task),
           tasks: Tool.init(tasks),
+          workspace_handoff: Tool.init(workspaceHandoff),
           fetch: Tool.init(webfetch),
           todo: Tool.init(todo),
           search: Tool.init(websearch),
@@ -371,6 +374,7 @@ export const layer: Layer.Layer<
             tool.write,
             tool.task,
             tool.tasks,
+            tool.workspace_handoff,
             tool.fetch,
             tool.todo,
             tool.search,

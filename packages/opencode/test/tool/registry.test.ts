@@ -151,6 +151,13 @@ describe("tool.registry", () => {
     }),
   )
 
+  it.instance("exposes workspace handoff tool", () =>
+    Effect.gen(function* () {
+      const ids = yield* (yield* ToolRegistry.Service).ids()
+      expect(ids).toContain("workspace_handoff")
+    }),
+  )
+
   it.instance("exposes named workflow tasks tool", () =>
     Effect.gen(function* () {
       const ids = yield* (yield* ToolRegistry.Service).ids()

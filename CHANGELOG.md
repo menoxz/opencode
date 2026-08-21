@@ -5,6 +5,14 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v1.18.104] - 2026-08-21
+
+### Added
+- `workspace_handoff` creates a new root session in another project directory and transfers a bounded redacted objective/findings capsule while preserving the source session.
+
+### Security
+- Workspace handoff rejects roots, `.git` and `node_modules`, requires edit/external-directory approval, reports dirty source/target worktrees, and is hidden in non-interactive eval mode.
+
 ## [v1.18.103] - 2026-08-21
 
 ### Fixed
