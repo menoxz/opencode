@@ -61,10 +61,25 @@ const run = Effect.fn("WriteToolTest.run")(function* (
 describe("tool.write", () => {
   it.live("requires causedBy after a prior write", () =>
     Effect.gen(function* () {
-      const previous = { ...ctx, messages: [{ parts: [{ type: "tool", tool: "write", state: { status: "completed" } }] }] } as any
+      const previous = { ...ctx, messages: [{ parts: [{ type: "tool", tool: "write", state: { status: "completed", input: { filePath: "missing.txt" } } }] }] } as any
       const exit = yield* run({ filePath: "missing.txt", content: "x" }, previous).pipe(Effect.exit)
       expect(Exit.isFailure(exit)).toBe(true)
       if (Exit.isFailure(exit)) expect(Cause.pretty(exit.cause)).toContain("requires causedBy")
+    }),
+  )
+
+  it.instance("allows a new report artifact after an unrelated code mutation", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const report = path.join(test.directory, "reports", "audit.md")
+      const previous = { ...ctx, messages: [{ parts: [{
+        type: "tool", tool: "edit",
+        state: { status: "completed", input: { filePath: path.join(test.directory, "src", "feature.ts") } },
+      }] }] } as any
+      const result = yield* run({ filePath: report, content: "# Audit\n\nProof." }, previous)
+      expect(result.output).toContain("Wrote file successfully")
+      const saved = yield* Effect.promise(() => fs.readFile(report, "utf-8"))
+      expect(saved).toContain("# Audit")
     }),
   )
 

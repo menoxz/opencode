@@ -95,7 +95,7 @@ const onceBus = Effect.fn("EditToolTest.onceBus")(function* (def: typeof FileWat
 describe("tool.edit", () => {
   it.live("requires causedBy after a prior edit", () =>
     Effect.gen(function* () {
-      const previous = { ...ctx, messages: [{ parts: [{ type: "tool", tool: "edit", state: { status: "completed" } }] }] } as any
+      const previous = { ...ctx, messages: [{ parts: [{ type: "tool", tool: "edit", state: { status: "completed", input: { filePath: "missing.txt" } } }] }] } as any
       const exit = yield* run({ filePath: "missing.txt", oldString: "a", newString: "b" }, previous).pipe(Effect.exit)
       expect(Exit.isFailure(exit)).toBe(true)
       if (Exit.isFailure(exit)) expect(Cause.pretty(exit.cause)).toContain("requires causedBy")

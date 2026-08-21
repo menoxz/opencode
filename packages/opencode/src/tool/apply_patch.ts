@@ -37,7 +37,7 @@ export const ApplyPatchTool = Tool.define(
       params: Schema.Schema.Type<typeof Parameters>,
       ctx: Tool.Context,
     ) {
-      if (flags.experimentalLeanOutputBudget && requiresMutationCause(ctx.messages) && !params.causedBy?.trim()) {
+      if (flags.experimentalLeanOutputBudget && requiresMutationCause(ctx.messages, { tool: "apply_patch" }) && !params.causedBy?.trim()) {
         return yield* Effect.fail(new Error("A later Lean patch requires causedBy: cite the failed check or new observation that changed the decision."))
       }
       if (!params.patchText) {

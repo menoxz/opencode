@@ -5,6 +5,12 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v1.18.103] - 2026-08-21
+
+### Fixed
+- Lean mutation causality is scoped to the same artifact for `edit`/`write`, allowing independent evidence reports while still guarding repeated rewrites.
+- Browser and integrated Git tool outputs are capped at 8k context characters with full output retained as an artifact.
+
 ## [v1.18.102] - 2026-08-20
 
 ### Fixed

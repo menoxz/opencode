@@ -757,6 +757,34 @@ it.live("session.processor bounds terminal output and preserves the full artifac
   ),
 )
 
+it.live("session.processor bounds browser context and preserves the full artifact", () =>
+  provideTmpdirServer(
+    ({ dir, llm }) =>
+      Effect.gen(function* () {
+        const { processors, session, provider } = yield* boot()
+        yield* llm.tool("web-browser_git_status", { workspaceRoot: dir })
+        const chat = yield* session.create({})
+        const parent = yield* user(chat.id, "verbose browser status")
+        const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+        const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
+        const handle = yield* processors.create({ assistantMessage: msg, sessionID: chat.id, model: mdl })
+        yield* handle.process({
+          user: { id: parent.id, sessionID: chat.id, role: "user", time: parent.time, agent: parent.agent, model: { providerID: ref.providerID, modelID: ref.modelID } } satisfies MessageV2.User,
+          sessionID: chat.id, model: mdl, agent: agent(), system: [], messages: [{ role: "user", content: "verbose browser status" }],
+          tools: { "web-browser_git_status": tool({ description: "git status", inputSchema: z.object({ workspaceRoot: z.string() }), execute: async () => ({ title: "status", output: "y".repeat(20_000), metadata: {} }) }) },
+        })
+        const call = MessageV2.parts(msg.id).find((part): part is MessageV2.ToolPart => part.type === "tool")
+        expect(call?.state.status).toBe("completed")
+        if (call?.state.status !== "completed") return
+        expect(call.state.output.length).toBeLessThan(10_000)
+        expect(call.state.output).toContain("Full output saved to:")
+        expect(call.state.metadata?.leanOutputBudget?.maxChars).toBe(8_000)
+        expect(call.state.metadata?.leanOutputBudget?.truncated).toBe(true)
+      }),
+    { config: (url) => providerCfg(url) },
+  ),
+)
+
 it.live("session.processor effect tests mark pending tools as aborted on cleanup", () =>
   provideTmpdirServer(
     ({ dir, llm }) =>

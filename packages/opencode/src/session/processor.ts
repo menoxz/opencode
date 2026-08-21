@@ -29,7 +29,7 @@ import * as DateTime from "effect/DateTime"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Usage, type LLMEvent } from "@opencode-ai/llm"
 import { Truncate } from "@/tool/truncate"
-import { isLeanTerminalTool, LEAN_TERMINAL_MAX_CHARS, LEAN_TERMINAL_MAX_LINES } from "@/tool/lean-output-policy"
+import { leanToolOutputBudget } from "@/tool/lean-output-policy"
 
 const DOOM_LOOP_THRESHOLD = 3
 const log = Log.create({ service: "session.processor" })
@@ -505,11 +505,12 @@ export const layer = Layer.effect(
             const toolCall = yield* readToolCall(value.id)
             const rawOutput = toolResultOutput(value)
             rawOutput.output = stripTerminalArtifacts(rawOutput.output)
-            if (flags.experimentalLeanOutputBudget && truncate._tag === "Some" && toolCall && isLeanTerminalTool(toolCall.part.tool)) {
+            const outputBudget = toolCall ? leanToolOutputBudget(toolCall.part.tool) : undefined
+            if (flags.experimentalLeanOutputBudget && truncate._tag === "Some" && toolCall && outputBudget) {
               const agent = yield* agents.get(ctx.assistantMessage.agent)
               const bounded = yield* truncate.value.output(
                 rawOutput.output,
-                { maxLines: LEAN_TERMINAL_MAX_LINES, maxBytes: LEAN_TERMINAL_MAX_CHARS, direction: "tail" },
+                { maxLines: outputBudget.maxLines, maxBytes: outputBudget.maxChars, direction: outputBudget.direction },
                 agent,
               )
               rawOutput.output = bounded.content
@@ -517,8 +518,8 @@ export const layer = Layer.effect(
                 ...rawOutput.metadata,
                 leanOutputBudget: {
                   applied: true,
-                  maxChars: LEAN_TERMINAL_MAX_CHARS,
-                  maxLines: LEAN_TERMINAL_MAX_LINES,
+                  maxChars: outputBudget.maxChars,
+                  maxLines: outputBudget.maxLines,
                   truncated: bounded.truncated,
                   ...(bounded.truncated ? { outputPath: bounded.outputPath } : {}),
                 },

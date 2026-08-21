@@ -76,7 +76,7 @@ export const EditTool = Tool.define(
       parameters: Parameters,
       execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context) =>
         Effect.gen(function* () {
-          if (flags.experimentalLeanOutputBudget && requiresMutationCause(ctx.messages) && !params.causedBy?.trim()) {
+          if (flags.experimentalLeanOutputBudget && requiresMutationCause(ctx.messages, { tool: "edit", filePath: params.filePath }) && !params.causedBy?.trim()) {
             throw new Error("A later Lean mutation requires causedBy: cite the failed check or new observation that changed the decision.")
           }
 
