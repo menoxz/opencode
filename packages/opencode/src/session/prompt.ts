@@ -2049,10 +2049,11 @@ export const layer = Layer.effect(
               promptRollout,
             })
 
-            const [env, instructions] = yield* Effect.all([
+            const [env, loadedInstructions] = yield* Effect.all([
               sys.environment(model),
               instruction.system().pipe(Effect.orDie),
             ])
+            const instructions = process.env.OPENCODE_NATIVE_EVAL === "1" ? [] : loadedInstructions
             // Track the fixed system fragments so the context summary covers the
             // FULL system prompt, not only the variable sections.
             contextSummary.add("core", "base agent prompt (PROMPT_CORE or agent.prompt)", agent.prompt ?? PROMPT_CORE, 0)
@@ -2146,17 +2147,21 @@ export const layer = Layer.effect(
             const stepOneTail: string[] = []
             const turnMemories: Array<{ id: string; content: string }> = []
             if (step === 1) {
-              const { prompt: adaptive, memories } = yield* sys.adaptivePrompt({ messages: msgs, agent })
+              const { prompt: adaptive, memories } = process.env.OPENCODE_NATIVE_EVAL === "1"
+                ? { prompt: "", memories: [] }
+                : yield* sys.adaptivePrompt({ messages: msgs, agent })
               if (adaptive) stepOneTail.push(adaptive)
               turnMemories.push(...memories)
 
               // Inject personality context (learned user preferences)
-              const personality = yield* sys.personality()
+              const personality = process.env.OPENCODE_NATIVE_EVAL === "1" ? "" : yield* sys.personality()
               if (personality) stepOneTail.push(personality)
 
               // Pending trigger tasks from background daemon
               const daemonStart = Date.now()
-              const pendingTasks = yield* Effect.sync(() => TriggerHandler.listPendingTasks())
+              const pendingTasks = process.env.OPENCODE_NATIVE_EVAL === "1"
+                ? []
+                : yield* Effect.sync(() => TriggerHandler.listPendingTasks())
               if (pendingTasks.length > 0) {
                 stepOneTail.push(formatPendingTasksSection(pendingTasks))
               }

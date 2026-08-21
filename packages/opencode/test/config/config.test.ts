@@ -908,7 +908,7 @@ it.effect("installs dependencies in writable OPENCODE_CONFIG_DIR", () =>
 // core Npm.Service (via EffectFlock). Those behaviors are tested in the core
 // package's npm tests, not here.
 
-it.instance("resolves scoped npm plugins in config", () =>
+it.instance("ignores scoped npm plugins in project config", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     const pluginDir = path.join(test.directory, "node_modules", "@scope", "plugin")
@@ -933,11 +933,11 @@ it.instance("resolves scoped npm plugins in config", () =>
     yield* writeConfigEffect(test.directory, { plugin: ["@scope/plugin"] })
 
     const config = yield* Config.use.get()
-    expect(config.plugin ?? []).toContain("@scope/plugin")
+    expect(config.plugin ?? []).not.toContain("@scope/plugin")
   }),
 )
 
-it.effect("merges plugin arrays from global and local configs", () =>
+it.effect("ignores executable plugins from local config", () =>
   withConfigTree(
     {
       global: { plugin: ["global-plugin-1", "global-plugin-2"] },
@@ -948,10 +948,7 @@ it.effect("merges plugin arrays from global and local configs", () =>
 
       expect(plugins.some((p) => p.includes("global-plugin-1"))).toBe(true)
       expect(plugins.some((p) => p.includes("global-plugin-2"))).toBe(true)
-      expect(plugins.some((p) => p.includes("local-plugin-1"))).toBe(true)
-      expect(
-        plugins.filter((p) => p.includes("global-plugin") || p.includes("local-plugin")).length,
-      ).toBeGreaterThanOrEqual(3)
+      expect(plugins.some((p) => p.includes("local-plugin-1"))).toBe(false)
     }),
   ),
 )
@@ -1025,7 +1022,7 @@ it.effect("deduplicates duplicate instructions from global and local configs", (
   ),
 )
 
-it.effect("deduplicates duplicate plugins from global and local configs", () =>
+it.effect("keeps global plugins and ignores local overrides", () =>
   withConfigTree(
     {
       global: { plugin: ["duplicate-plugin", "global-plugin-1"] },
@@ -1035,18 +1032,18 @@ it.effect("deduplicates duplicate plugins from global and local configs", () =>
       const plugins = (yield* Config.use.get()).plugin ?? []
 
       expect(plugins.some((p) => p.includes("global-plugin-1"))).toBe(true)
-      expect(plugins.some((p) => p.includes("local-plugin-1"))).toBe(true)
+      expect(plugins.some((p) => p.includes("local-plugin-1"))).toBe(false)
       expect(plugins.filter((p) => p.includes("duplicate-plugin")).length).toBe(1)
       expect(
         plugins.filter(
           (p) => p.includes("global-plugin") || p.includes("local-plugin") || p.includes("duplicate-plugin"),
-        ).length,
-      ).toBe(3)
+      ).length,
+      ).toBe(2)
     }),
   ),
 )
 
-it.effect("keeps plugin origins aligned with merged plugin list", () =>
+it.effect("keeps plugin origins aligned after local plugins are ignored", () =>
   withConfigTree(
     {
       global: { plugin: [["shared-plugin@1.0.0", { source: "global" }], "global-only@1.0.0"] },
@@ -1058,13 +1055,13 @@ it.effect("keeps plugin origins aligned with merged plugin list", () =>
       const origins = config.plugin_origins ?? []
       const names = plugins.map((item) => ConfigPlugin.pluginSpecifier(item))
 
-      expect(names).toContain("shared-plugin@2.0.0")
-      expect(names).not.toContain("shared-plugin@1.0.0")
+      expect(names).not.toContain("shared-plugin@2.0.0")
+      expect(names).toContain("shared-plugin@1.0.0")
       expect(names).toContain("global-only@1.0.0")
-      expect(names).toContain("local-only@1.0.0")
+      expect(names).not.toContain("local-only@1.0.0")
       expect(origins.map((item) => item.spec)).toEqual(plugins)
-      expect(origins.find((item) => ConfigPlugin.pluginSpecifier(item.spec) === "shared-plugin@2.0.0")?.scope).toBe(
-        "local",
+      expect(origins.find((item) => ConfigPlugin.pluginSpecifier(item.spec) === "shared-plugin@1.0.0")?.scope).toBe(
+        "global",
       )
     }),
   ),
@@ -1294,7 +1291,7 @@ test("config parser preserves permission order while rejecting unknown top-level
 
 // MCP config merging tests
 
-it.instance("project config can override MCP server enabled status", () =>
+it.instance("ignores MCP servers declared by project config", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     // Simulates a base config (like from remote .well-known) with disabled MCP.
@@ -1330,20 +1327,12 @@ it.instance("project config can override MCP server enabled status", () =>
     )
 
     const config = yield* Config.use.get()
-    expect(config.mcp?.jira).toEqual({
-      type: "remote",
-      url: "https://jira.example.com/mcp",
-      enabled: true,
-    })
-    expect(config.mcp?.wiki).toEqual({
-      type: "remote",
-      url: "https://wiki.example.com/mcp",
-      enabled: false,
-    })
+    expect(config.mcp?.jira).toBeUndefined()
+    expect(config.mcp?.wiki).toBeUndefined()
   }),
 )
 
-it.instance("MCP config deep merges preserving base config properties", () =>
+it.instance("does not load project-local MCP configuration", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
@@ -1375,18 +1364,11 @@ it.instance("MCP config deep merges preserving base config properties", () =>
     )
 
     const config = yield* Config.use.get()
-    expect(config.mcp?.myserver).toEqual({
-      type: "remote",
-      url: "https://myserver.example.com/mcp",
-      enabled: true,
-      headers: {
-        "X-Custom-Header": "value",
-      },
-    })
+    expect(config.mcp?.myserver).toBeUndefined()
   }),
 )
 
-it.instance("local .opencode config can override MCP from project config", () =>
+it.instance("ignores MCP configuration from project and .opencode files", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
@@ -1416,7 +1398,7 @@ it.instance("local .opencode config can override MCP from project config", () =>
     )
 
     const config = yield* Config.use.get()
-    expect(config.mcp?.docs?.enabled).toBe(true)
+    expect(config.mcp?.docs).toBeUndefined()
   }),
 )
 
@@ -1427,12 +1409,12 @@ const remoteProjectOverride = wellKnown({
 })
 
 remoteProjectOverride.it.instance(
-  "project config overrides remote well-known config",
+  "project config cannot override remote well-known MCP config",
   () =>
     Effect.gen(function* () {
       const config = yield* Config.use.get()
       expect(remoteProjectOverride.seen.wellKnown).toBe("https://example.com/.well-known/opencode")
-      expect(config.mcp?.jira?.enabled).toBe(true)
+      expect(config.mcp?.jira?.enabled).toBe(false)
     }),
   {
     git: true,
@@ -1713,7 +1695,7 @@ describe("deduplicatePluginOrigins", () => {
     expect(result).toEqual(["a-plugin@1.0.0", "b-plugin@1.0.0", "c-plugin@1.0.0"])
   })
 
-  it.effect("loads auto-discovered local plugins as file urls", () =>
+  it.effect("ignores auto-discovered local plugins", () =>
     withConfigTree(
       { global: { plugin: ["my-plugin@1.0.0"] } },
       Effect.gen(function* () {
@@ -1725,7 +1707,7 @@ describe("deduplicatePluginOrigins", () => {
 
         const plugins = (yield* Config.use.get()).plugin ?? []
         expect(plugins.some((p) => ConfigPlugin.pluginSpecifier(p) === "my-plugin@1.0.0")).toBe(true)
-        expect(plugins.some((p) => ConfigPlugin.pluginSpecifier(p).startsWith("file://"))).toBe(true)
+        expect(plugins.some((p) => ConfigPlugin.pluginSpecifier(p).startsWith("file://"))).toBe(false)
       }),
     ),
   )

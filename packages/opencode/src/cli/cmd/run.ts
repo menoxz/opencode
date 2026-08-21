@@ -246,7 +246,7 @@ export const RunCommand = effectCmd({
       .option("headless", {
         type: "boolean",
         default: false,
-        describe: "run in headless mode: auto-approve permissions, output structured JSON result with diff",
+        describe: "run in headless mode: reject permission prompts and output structured JSON result with diff",
       }),
   handler: Effect.fn("Cli.run")(function* (args) {
     const agentSvc = yield* Agent.Service
@@ -307,11 +307,6 @@ export const RunCommand = effectCmd({
       }
 
       // In headless mode, auto-approve all permissions (no user to ask)
-      if (args.headless && !args["dangerously-skip-permissions"]) {
-        // Override: headless implies dangerously-skip-permissions
-        ;(args as Record<string, unknown>)["dangerously-skip-permissions"] = true
-      }
-
       if (args.interactive && !process.stdout.isTTY) {
         die("--interactive requires a TTY stdout")
       }

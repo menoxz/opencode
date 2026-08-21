@@ -2,7 +2,7 @@ import { Effect, Console } from "effect"
 import { AppRuntime } from "@/effect/app-runtime"
 import { effectCmd } from "../effect-cmd"
 import { create as createDaemon } from "../../daemon/index"
-import { checkTriggers, memoryConsolidate, tunnelHealthCheck, processQueue, detectPatterns, runSanityEval, autoGenerateSkills } from "../../daemon/triggers"
+import { checkTriggers, memoryConsolidate, tunnelHealthCheck, processQueue, detectPatterns, runSanityEval } from "../../daemon/triggers"
 import { processMCPCommands } from "../../daemon/mcp-control"
 import { every_30s, every_5m, every_1m, every_6h, every_24h, every_1h } from "../../daemon/scheduler"
 import { subscribeFileChanges, startFileWatcher } from "../../daemon/file-watcher"
@@ -93,8 +93,7 @@ export const daemonHandler = Effect.fn("Daemon.handler")(function* (
   // Periodic eval: run sanity suite and check for regression
   yield* daemon.register("sanity-eval", runSanityEval as unknown as () => Effect.Effect<void>, every_1h)
 
-  // Auto-generate skills from memory patterns (learning loop)
-  yield* daemon.register("skill-autogen", autoGenerateSkills as unknown as () => Effect.Effect<void>, every_24h)
+  // Candidate generation is part of pattern-detection so both use one report snapshot.
   yield* daemon.register("process-queue", processQueue, every_5m)
 
   // File watcher cleanup (periodic — removes stale cooldown entries)

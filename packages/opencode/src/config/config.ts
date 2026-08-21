@@ -617,8 +617,19 @@ export const layer = Layer.effect(
         })
 
         const merge = (source: string, next: Info, kind?: ConfigPlugin.Scope) => {
+          const scope = kind ?? "global"
+          if (scope === "local") {
+            if (next.mcp) {
+              log.warn("ignoring project-local MCP configuration; move trusted servers to global config", { source })
+              delete next.mcp
+            }
+            if (next.plugin?.length) {
+              log.warn("ignoring project-local plugins; move trusted plugins to global config", { source, count: next.plugin.length })
+              delete next.plugin
+            }
+          }
           result = mergeConfigConcatArrays(result, next)
-          return mergePluginOrigins(source, next.plugin, kind)
+          return mergePluginOrigins(source, next.plugin, scope)
         }
 
         for (const [key, value] of Object.entries(auth)) {
@@ -694,7 +705,7 @@ export const layer = Layer.effect(
             for (const file of ["opencode.json", "opencode.jsonc"]) {
               const source = path.join(dir, file)
               log.debug(`loading config from ${source}`)
-              yield* merge(source, yield* loadFile(source, authEnv))
+              yield* merge(source, yield* loadFile(source, authEnv), dir === Flag.OPENCODE_CONFIG_DIR ? "global" : "local")
               result.agent ??= {}
               result.mode ??= {}
               result.plugin ??= []
@@ -739,7 +750,15 @@ export const layer = Layer.effect(
           // Auto-discovered plugins under `.opencode/plugin(s)` are already local files, so ConfigPlugin.load
           // returns normalized Specs and we only need to attach origin metadata here.
           const list = yield* Effect.promise(() => ConfigPlugin.load(dir))
-          yield* mergePluginOrigins(dir, list)
+          const local = dir.endsWith(".opencode") || containsPath(dir, ctx)
+          if (local && list.length) {
+            log.warn("ignoring auto-discovered project plugins; move trusted plugins to global config", {
+              source: dir,
+              count: list.length,
+            })
+          } else {
+            yield* mergePluginOrigins(dir, list, "global")
+          }
         }
 
         if (process.env.OPENCODE_CONFIG_CONTENT) {

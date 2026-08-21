@@ -43,6 +43,29 @@ describe("util.process", () => {
     expect(Date.now() - started).toBeLessThan(1000)
   }, 3000)
 
+  test("times out a running process without an AbortSignal", async () => {
+    const started = Date.now()
+    const out = await Process.run(node("setInterval(() => {}, 1000)"), {
+      timeout: 25,
+      nothrow: true,
+    })
+
+    expect(out.code).not.toBe(0)
+    expect(Date.now() - started).toBeLessThan(1000)
+  }, 3000)
+
+  test("timeout terminates descendant processes", async () => {
+    if (process.platform === "win32") return
+    await using tmp = await tmpdir()
+    const marker = path.join(tmp.path, "orphan.txt")
+    await Process.run(
+      node(`const {spawn}=require('child_process');spawn(process.execPath,['-e',${JSON.stringify(`setTimeout(()=>require('fs').writeFileSync(${JSON.stringify(marker)},'orphan'),300)`) }],{stdio:'ignore'});setInterval(()=>{},1000)`),
+      { timeout: 25, nothrow: true },
+    )
+    await Bun.sleep(500)
+    expect(await fs.stat(marker).then(() => true, () => false)).toBe(false)
+  }, 3000)
+
   test("kills after timeout when process ignores terminate signal", async () => {
     if (process.platform === "win32") return
 

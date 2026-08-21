@@ -4,10 +4,11 @@ import { spawn, type ChildProcess } from "node:child_process"
 import * as fs from "node:fs"
 import * as path from "node:path"
 import { writeNotification } from "./notifications"
-import { listPendingTasks, markTaskDone, type TaskItem } from "./trigger-handler"
+import { listPendingTasks, markTaskDone, validateAutonomousTask, type TaskItem } from "./trigger-handler"
 import { autoCommit, hasUncommittedChanges, type CommitResult, type DiffInfo } from "./auto-commit"
 import { isPRTrigger, createPR, pushBranchOnly } from "./auto-pr"
 import { storeLearning, findLearningsByTaskId } from "./auto-memory"
+import { Process } from "@/util/process"
 
 const log = Log.create({ service: "daemon.auto-executor" })
 
@@ -419,6 +420,7 @@ function spawnHeadless(
   cwd: string,
 ): Promise<{ result: HeadlessResult | null; exitCode: number | null; rawOutput: string; timedOut: boolean }> {
   return new Promise((resolve) => {
+    let settled = false
     const binary = findBinary()
     if (!binary) {
       log.error("Cannot find opencode binary for auto-execution")
@@ -461,33 +463,34 @@ function spawnHeadless(
       outputChunks.push(chunk.toString())
     })
 
-    const cleanupTask = () => removeCompletedTask(taskId)
+    const finish = (value: { result: HeadlessResult | null; exitCode: number | null; rawOutput: string; timedOut: boolean }) => {
+      if (settled) return
+      settled = true
+      removeCompletedTask(taskId)
+      resolve(value)
+    }
 
     const timer = setTimeout(() => {
       log.warn("Auto-execution timed out", { taskId, timeoutMs: TASK_TIMEOUT_MS })
-      try { proc.kill("SIGTERM") } catch { /* best-effort */ }
-      setTimeout(() => {
-        cleanupTask()
-        resolve({ result: null, exitCode: null, rawOutput: outputChunks.join(""), timedOut: true })
-      }, 2000)
+      void Process.stop(proc).finally(() => {
+        finish({ result: null, exitCode: proc.exitCode, rawOutput: outputChunks.join(""), timedOut: true })
+      })
     }, TASK_TIMEOUT_MS)
 
     proc.on("exit", (exitCode) => {
       clearTimeout(timer)
       const rawOutput = outputChunks.join("")
-      cleanupTask()
       log.info("Headless execution completed", { taskId, exitCode })
 
       // Parse the last JSON line as the headless result
       const result = parseHeadlessResult(rawOutput)
-      resolve({ result, exitCode, rawOutput, timedOut: false })
+      finish({ result, exitCode, rawOutput, timedOut: false })
     })
 
     proc.on("error", (err) => {
       clearTimeout(timer)
-      cleanupTask()
       log.error("Headless execution error", { taskId, error: err.message })
-      resolve({ result: null, exitCode: null, rawOutput: err.message, timedOut: false })
+      finish({ result: null, exitCode: null, rawOutput: err.message, timedOut: false })
     })
   })
 }
@@ -664,8 +667,14 @@ export interface TaskResult {
 const executeSingleTask = Effect.fnUntraced(function* (task: TaskItem) {
   log.info("Processing task autonomously", { id: task.triggerId, source: task.source })
 
+  const validationError = validateAutonomousTask(task)
+  if (validationError) {
+    log.warn("Refusing unsafe autonomous trigger", { id: task.triggerId, source: task.source, reason: validationError })
+    return { status: "validation_failed", taskId: task.triggerId, summary: validationError } satisfies TaskResult
+  }
+
   const payload = task.payload as Record<string, unknown> | undefined
-  const repoDir = (payload?.local_dir as string) || process.cwd()
+  const repoDir = process.cwd()
   const prompt = yield* buildAutoPrompt(task)
 
   const { result, exitCode, rawOutput, timedOut } = yield* Effect.promise(() =>
@@ -869,12 +878,12 @@ export const processAllPendingTasks = Effect.fnUntraced(function* () {
  * Clears the active tasks map after cancellation.
  */
 export function cancelAllTasks(): Effect.Effect<void> {
-  return Effect.sync(() => {
+  return Effect.promise(async () => {
     const entries = Array.from(SynchronizedRef.getUnsafe(activeTasks).entries())
-    for (const [, info] of entries) {
-      try { info.process.kill("SIGTERM") } catch { /* best-effort */ }
-    }
-    SynchronizedRef.update(activeTasks, () => new Map())
+    await Promise.all(entries.map(async ([taskId, info]) => {
+      await Process.stop(info.process)
+      removeCompletedTask(taskId)
+    }))
   })
 }
 

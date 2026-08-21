@@ -1,6 +1,7 @@
 import { type ChildProcess } from "child_process"
 import launch from "cross-spawn"
 import { buffer } from "node:stream/consumers"
+import { once } from "node:events"
 import { errorMessage } from "./error"
 
 export type Stdio = "inherit" | "pipe" | "ignore"
@@ -65,27 +66,44 @@ export function spawn(cmd: string[], opts: Options = {}): Child {
     env: opts.env === null ? {} : opts.env ? { ...process.env, ...opts.env } : undefined,
     stdio: [opts.stdin ?? "ignore", opts.stdout ?? "ignore", opts.stderr ?? "ignore"],
     windowsHide: process.platform === "win32",
+    detached: process.platform !== "win32",
   })
 
   let closed = false
   let timer: ReturnType<typeof setTimeout> | undefined
+  let executionTimer: ReturnType<typeof setTimeout> | undefined
+
+  const killTree = (signal: NodeJS.Signals) => {
+    if (process.platform !== "win32" && proc.pid) {
+      try {
+        process.kill(-proc.pid, signal)
+        return
+      } catch {
+        // The process may have exited or failed to create a group; fall back to the child handle.
+      }
+    }
+    proc.kill(signal)
+  }
 
   const abort = () => {
     if (closed) return
     if (proc.exitCode !== null || proc.signalCode !== null) return
     closed = true
 
-    proc.kill(opts.kill ?? "SIGTERM")
+    const signal = opts.kill ?? "SIGTERM"
+    if (typeof signal === "number") proc.kill(signal)
+    else killTree(signal)
 
     const ms = opts.timeout ?? 5_000
     if (ms <= 0) return
-    timer = setTimeout(() => proc.kill("SIGKILL"), ms)
+    timer = setTimeout(() => killTree("SIGKILL"), ms)
   }
 
   const exited = new Promise<number>((resolve, reject) => {
     const done = () => {
       opts.abort?.removeEventListener("abort", abort)
       if (timer) clearTimeout(timer)
+      if (executionTimer) clearTimeout(executionTimer)
     }
 
     proc.once("exit", (code, signal) => {
@@ -103,6 +121,9 @@ export function spawn(cmd: string[], opts: Options = {}): Child {
   if (opts.abort) {
     opts.abort.addEventListener("abort", abort, { once: true })
     if (opts.abort.aborted) abort()
+  }
+  if (opts.timeout !== undefined && opts.timeout > 0) {
+    executionTimer = setTimeout(abort, opts.timeout)
   }
 
   const child = proc as Child
@@ -149,7 +170,17 @@ export async function stop(proc: ChildProcess) {
   if (proc.exitCode !== null || proc.signalCode !== null) return
 
   if (process.platform !== "win32" || !proc.pid) {
-    proc.kill()
+    if (proc.pid) {
+      try {
+        process.kill(-proc.pid, "SIGTERM")
+        await once(proc, "exit")
+        return
+      } catch {
+        // Fall through to direct child termination when no process group exists.
+      }
+    }
+    proc.kill("SIGTERM")
+    await once(proc, "exit")
     return
   }
 

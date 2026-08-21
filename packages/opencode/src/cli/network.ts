@@ -33,6 +33,14 @@ const options = {
 
 export type NetworkOptions = InferredOptionTypes<typeof options>
 
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"])
+
+export function validateNetworkAuthentication(hostname: string, password?: string) {
+  if (!LOOPBACK_HOSTS.has(hostname.toLowerCase()) && !password) {
+    throw new Error("OPENCODE_SERVER_PASSWORD is required when binding to a non-loopback hostname")
+  }
+}
+
 export function withNetworkOptions<T>(yargs: Argv<T>) {
   return yargs.options(options)
 }

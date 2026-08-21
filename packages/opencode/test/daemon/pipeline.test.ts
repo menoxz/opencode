@@ -134,6 +134,24 @@ describe("TriggerHandler task queue", () => {
     expect(content.status).toBe("pending")
   })
 
+  test("rejects trigger IDs that can escape the queue directory", () => {
+    for (const id of ["../escape", "..\\escape", "C:\\escape", "/escape", "a/b", "a\\b", "..", "CON", "nul.json"]) {
+      expect(() => TriggerHandler.writeTask({ id, source: "test", payload: {} })).toThrow("Invalid trigger ID")
+    }
+  })
+
+  test("only internal regression tasks are trusted for autonomous execution", () => {
+    expect(TriggerHandler.isTrustedForAutonomousExecution({ source: "eval-regression" })).toBe(true)
+    expect(TriggerHandler.isTrustedForAutonomousExecution({ source: "/github" })).toBe(false)
+    expect(TriggerHandler.isTrustedForAutonomousExecution({ source: "test" })).toBe(false)
+  })
+
+  test("rejects caller-controlled directories and malformed autonomous payloads", () => {
+    expect(TriggerHandler.validateAutonomousTask({ source: "eval-regression", payload: { suite: "sanity" } })).toBeUndefined()
+    expect(TriggerHandler.validateAutonomousTask({ source: "eval-regression", payload: { local_dir: "C:\\attacker" } })).toContain("local_dir")
+    expect(TriggerHandler.validateAutonomousTask({ source: "eval-regression", payload: "not-an-object" })).toContain("object")
+  })
+
   test("listPendingTasks returns only pending tasks", () => {
     const id1 = `test-pending-${Date.now()}`
     const id2 = `test-done-${Date.now()}`

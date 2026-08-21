@@ -22,6 +22,11 @@ function queueDir(): string {
 }
 
 function queueFile(triggerId: string): string {
+  const device = triggerId.split(".", 1)[0].toUpperCase()
+  const reserved = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/.test(device)
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(triggerId) || triggerId === "." || triggerId === ".." || reserved) {
+    throw new Error(`Invalid trigger ID: ${JSON.stringify(triggerId)}`)
+  }
   return path.join(queueDir(), `${triggerId}.json`)
 }
 
@@ -31,6 +36,18 @@ export interface TaskItem {
   payload: unknown
   receivedAt: string
   status: "pending" | "processing" | "done"
+}
+
+const AUTONOMOUS_SOURCES = new Set(["eval-regression"])
+
+export function isTrustedForAutonomousExecution(task: Pick<TaskItem, "source">): boolean {
+  return AUTONOMOUS_SOURCES.has(task.source)
+}
+
+export function validateAutonomousTask(task: Pick<TaskItem, "source" | "payload">): string | undefined {
+  if (!isTrustedForAutonomousExecution(task)) return "Trigger source is not trusted for autonomous execution"
+  if (task.payload !== null && (typeof task.payload !== "object" || Array.isArray(task.payload))) return "Trigger payload must be an object"
+  if ((task.payload as Record<string, unknown> | null)?.local_dir !== undefined) return "Caller-controlled local_dir is not allowed"
 }
 
 /**

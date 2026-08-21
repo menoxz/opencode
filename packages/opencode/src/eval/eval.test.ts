@@ -22,7 +22,7 @@ import {
   simulateScenario,
   executeScenarioInSandbox,
 } from "./index"
-import { commandExecutor, runScenarioReal, type RealScenarioExecutor } from "./real-runner"
+import { commandExecutor, diffToolCalls, headlessSessionArgs, headlessSessionCommand, nativeEvalEnvironment, runScenarioReal, type RealScenarioExecutor } from "./real-runner"
 import { createSandbox } from "./sandbox"
 import { mkdtempSync, writeFileSync, existsSync, rmSync, readFileSync, mkdirSync } from "node:fs"
 import { join, dirname } from "node:path"
@@ -246,6 +246,14 @@ describe("evaluateBehavior", () => {
     expect(evaluateBehavior(behavior, "out", calls, undefined)).toBe(true)
     expect(evaluateBehavior(behavior, "out", ["delete:x.js"], undefined)).toBe(false)
   })
+
+  it("maps the headless status diff schema to a write action", () => {
+    expect(diffToolCalls({ file: "fixed_calculate.js", status: "added" })).toEqual([
+      "added:fixed_calculate.js",
+      "write:fixed_calculate.js",
+    ])
+    expect(diffToolCalls({ file: "old.js", status: "deleted" })).toEqual(["deleted:old.js"])
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -462,6 +470,50 @@ describe("Sandbox isolation", () => {
 // ---------------------------------------------------------------------------
 
 describe("real runner", () => {
+  test("uses the bounded eval agent for native headless sessions", () => {
+    expect(headlessSessionArgs("do one thing")).toEqual([
+      "run",
+      "--headless",
+      "--dangerously-skip-permissions",
+      "--agent",
+      "eval-runner",
+      "do one thing",
+    ])
+  })
+
+  test("uses the current Bun source entry instead of a stale installed binary", () => {
+    const argv = [...process.argv]
+    try {
+      process.argv[0] = process.execPath
+      process.argv[1] = join(import.meta.dir, "..", "index.ts")
+      const command = headlessSessionCommand("do one thing")
+      expect(command.binary).toBe(process.execPath)
+      expect(command.args[0]).toEndWith("src\\index.ts")
+      expect(command.args.slice(1)).toEqual(headlessSessionArgs("do one thing"))
+    } finally {
+      process.argv.splice(0, process.argv.length, ...argv)
+    }
+  })
+
+  test("marks native eval children so project lifecycle instructions are skipped", () => {
+    expect(nativeEvalEnvironment({ TEST_VALUE: "kept" })).toMatchObject({
+      TEST_VALUE: "kept",
+      OPENCODE_DAEMON_AUTO: "1",
+      OPENCODE_NATIVE_EVAL: "1",
+    })
+  })
+
+  test("validates both arrow syntax and preserved logic against the artifact", async () => {
+    const executor: RealScenarioExecutor = ({ cwd }) =>
+      Effect.sync(() => {
+        writeFileSync(join(cwd, "arrow_refactored.js"), "const add = (a,b) => a+b\nconst multiply = (a,b) => a*b\nconst result = add(2,3)\n")
+        return { output: "created", toolCalls: ["write:arrow_refactored.js"], errors: [] }
+      })
+    const result = await Effect.runPromise(runScenarioReal(getScenario("refactor-to-arrow")!, executor))
+    expect(result.success).toBe(true)
+    expect(result.behaviorsMatched).toBe(2)
+  })
+
   test("runs a scenario in a sandbox and evaluates validation commands against real files", async () => {
     const executor: RealScenarioExecutor = ({ cwd }) =>
       Effect.sync(() => {

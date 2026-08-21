@@ -52,7 +52,7 @@ interface HeadlessResult {
   success: boolean
   error: string | null
   summary: { additions: number; deletions: number; files: number } | null
-  diffs?: Array<{ file: string; type: string }>
+  diffs?: Array<{ file?: string; status?: "added" | "deleted" | "modified"; type?: string }>
   agent: string | null
   model: string | null
 }
@@ -94,10 +94,31 @@ function parseHeadlessResult(output: string): HeadlessResult | null {
  */
 const WRITE_TYPES = ["add", "added", "modify", "modified", "create", "created"]
 
-function diffToolCalls(d: { file: string; type: string }): string[] {
-  const base = `${d.type}:${d.file}`
-  const w = WRITE_TYPES.includes(d.type)
-  return w ? [base, `write:${d.file}`] : [base]
+export function diffToolCalls(d: { file?: string; status?: string; type?: string }): string[] {
+  const kind = d.status ?? d.type ?? "unknown"
+  const file = d.file ?? ""
+  const base = `${kind}:${file}`
+  const w = WRITE_TYPES.includes(kind)
+  return w ? [base, `write:${file}`] : [base]
+}
+
+export function headlessSessionArgs(taskPrompt: string): string[] {
+  return ["run", "--headless", "--dangerously-skip-permissions", "--agent", "eval-runner", taskPrompt]
+}
+
+export function headlessSessionCommand(taskPrompt: string): { binary: string; args: string[] } {
+  const entry = process.argv[1]
+  if (/bun(\.exe)?$/i.test(process.argv[0] ?? "") && entry) {
+    const resolved = path.resolve(entry)
+    if (fs.existsSync(resolved) && /src[\\/]index\.ts$/i.test(resolved)) {
+      return { binary: process.argv[0], args: [resolved, ...headlessSessionArgs(taskPrompt)] }
+    }
+  }
+  return { binary: findOpencodeBinary(), args: headlessSessionArgs(taskPrompt) }
+}
+
+export function nativeEvalEnvironment(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return { ...base, OPENCODE_DAEMON_AUTO: "1", OPENCODE_NATIVE_EVAL: "1" }
 }
 
 export function headlessSessionExecutor(
@@ -105,14 +126,16 @@ export function headlessSessionExecutor(
 ): RealScenarioExecutor {
   return ({ scenario, cwd, timeoutSeconds }) =>
     Effect.sync(() => {
-      const binary = binaryPath ?? findOpencodeBinary()
-      const result = spawnSync(binary, ["run", "--headless", scenario.taskPrompt], {
+      const command = binaryPath
+        ? { binary: binaryPath, args: headlessSessionArgs(scenario.taskPrompt) }
+        : headlessSessionCommand(scenario.taskPrompt)
+      const result = spawnSync(command.binary, command.args, {
         cwd,
         encoding: "utf-8",
         timeout: timeoutSeconds * 1_000,
         maxBuffer: 64 * 1024 * 1024,
         windowsHide: true,
-        env: { ...process.env, OPENCODE_DAEMON_AUTO: "1" },
+        env: nativeEvalEnvironment(),
       })
       const rawOutput = `${result.stdout ?? ""}${result.stderr ?? ""}`.trim()
       const headless = parseHeadlessResult(rawOutput)
@@ -124,7 +147,7 @@ export function headlessSessionExecutor(
       if (!headless && result.status !== 0)
         errors.push(`headless exited ${result.status} (no headless_result)`)
       return {
-        output: `[headless ${headless?.model ?? binary}]\n${rawOutput}`,
+        output: `[headless ${headless?.model ?? command.binary}]\n${rawOutput}`,
         toolCalls,
         errors,
       }

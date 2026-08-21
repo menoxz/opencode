@@ -148,6 +148,16 @@ export const layer = Layer.effect(
             mode: "primary",
             native: true,
           },
+          "eval-runner": {
+            name: "eval-runner",
+            description: "Bounded agent for real evaluation scenarios.",
+            options: {},
+            permission: Permission.merge(defaults, user),
+            mode: "primary",
+            native: true,
+            hidden: true,
+            prompt: `You execute one bounded evaluation task. Create or modify only the artifact explicitly requested by the user, then stop immediately. Do not verify the artifact yourself because the evaluation harness performs validation. Do not create todos, delegate, research unrelated context, run quality workflows, update memory, or continue improving beyond the requested artifact.`,
+          },
           plan: {
             name: "plan",
             description: "Plan mode. Disallows all edit tools.",

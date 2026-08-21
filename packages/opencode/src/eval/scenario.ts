@@ -187,17 +187,18 @@ const refactorToArrow: EvalScenario = {
   id: "refactor-to-arrow",
   name: "Refactor to Arrow Functions",
   description: "Convert traditional functions to arrow functions in JavaScript",
-  taskPrompt: "Convert these traditional JavaScript functions to arrow functions and save to arrow_refactored.js:\n\n```js\nfunction add(a, b) {\n  return a + b\n}\n\nfunction multiply(a, b) {\n  return a * b\n}\n\nconst result = add(2, 3)\n```",
+  taskPrompt: "Convert these traditional JavaScript functions to arrow functions and save to arrow_refactored.js. Preserve add, multiply, and result. Stop immediately after writing the file; the harness will verify it:\n\n```js\nfunction add(a, b) {\n  return a + b\n}\n\nfunction multiply(a, b) {\n  return a * b\n}\n\nconst result = add(2, 3)\n```",
   expectedBehaviors: [
     {
       description: "Uses arrow functions",
       requiredKeywords: ["=>"],
       antiPatterns: ["function add", "function multiply"],
-      validationCommand: `node -e "const m = require('./arrow_refactored.js'); typeof m === 'function' ? process.exit(0) : process.exit(1)"`,
+      validationCommand: `node -e "const fs=require('fs'),vm=require('vm');const c=fs.readFileSync('arrow_refactored.js','utf8');if(!/(?:const|let|var)\\s+add\\s*=.*=>/.test(c)||!/(?:const|let|var)\\s+multiply\\s*=.*=>/.test(c)||/function\\s+(add|multiply)/.test(c))process.exit(1);const s={module:{exports:{}},exports:{}};vm.createContext(s);const v=vm.runInContext(c+';({add,multiply,result})',s);if(v.add(2,3)!==5||v.multiply(4,5)!==20||v.result!==5)process.exit(1)"`,
     },
     {
       description: "Preserves correct logic",
       requiredKeywords: ["add", "multiply", "result"],
+      validationCommand: `node -e "const fs=require('fs'),vm=require('vm');const c=fs.readFileSync('arrow_refactored.js','utf8');const s={module:{exports:{}},exports:{}};vm.createContext(s);const v=vm.runInContext(c+';({add,multiply,result})',s);if(v.add(2,3)!==5||v.multiply(4,5)!==20||v.result!==5)process.exit(1)"`,
     },
   ],
   category: "refactoring",

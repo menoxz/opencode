@@ -7,7 +7,8 @@ import { ACPNext } from "@/acp-next/agent"
 import { Server } from "@/server/server"
 import { ServerAuth } from "@/server/auth"
 import { createOpencodeClient } from "@opencode-ai/sdk/v2"
-import { withNetworkOptions, resolveNetworkOptions } from "../network"
+import { withNetworkOptions, resolveNetworkOptions, validateNetworkAuthentication } from "../network"
+import { Flag } from "@opencode-ai/core/flag/flag"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 
 const log = Log.create({ service: "acp-command" })
@@ -26,6 +27,7 @@ export const AcpCommand = effectCmd({
     process.env.OPENCODE_CLIENT = "acp"
     const flags = yield* RuntimeFlags.Service
     const opts = yield* resolveNetworkOptions(args)
+    validateNetworkAuthentication(opts.hostname, Flag.OPENCODE_SERVER_PASSWORD)
     const server = yield* Effect.promise(() => Server.listen(opts))
 
     const sdk = createOpencodeClient({
