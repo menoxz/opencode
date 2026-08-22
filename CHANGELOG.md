@@ -5,6 +5,12 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v1.18.106] - 2026-08-22
+
+### Changed
+- Subagent reports are no longer truncated for Lean or experimental bounded-result parents; foreground, background notifications, and task follow-ups return the complete child result.
+- Lean child prompts still request proportional causal reports, but the runtime no longer discards report content.
+
 ## [v1.18.105] - 2026-08-21
 
 ### Security

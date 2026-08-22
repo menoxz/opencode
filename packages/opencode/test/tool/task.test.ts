@@ -297,6 +297,27 @@ describe("tool.task", () => {
     }),
   )
 
+  it.instance("lean parent receives the complete child report without truncation", () =>
+    Effect.gen(function* () {
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const report = `BEGIN-${"x".repeat(9_000)}-END`
+      const result = yield* def.execute(
+        { description: "market report", prompt: "research market", subagent_type: "general" },
+        {
+          sessionID: chat.id, messageID: assistant.id, agent: "lean",
+          abort: new AbortController().signal, extra: { promptOps: stubOps({ text: report }) }, messages: [],
+          metadata: () => Effect.void, ask: () => Effect.void,
+        },
+      )
+      expect(result.output).toContain("BEGIN-")
+      expect(result.output).toContain("-END")
+      expect(result.output.length).toBeGreaterThan(9_000)
+      expect((result.metadata as Record<string, unknown>).resultTruncated).toBeUndefined()
+    }),
+  )
+
   it.instance("execute rejects a prompt carrying a context-elision marker", () =>
     Effect.gen(function* () {
       const sessions = yield* Session.Service

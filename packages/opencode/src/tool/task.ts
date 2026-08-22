@@ -11,7 +11,7 @@ import { Config } from "@/config/config"
 import { Cause, Duration, Effect, Exit, Option, Schema, Scope, Semaphore } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
-import { boundSubagentResult, subagentResultPolicy } from "./subagent-summary"
+import { subagentResultPolicy } from "./subagent-summary"
 import { hasTaskResultNotification, taskResultNotificationKey } from "./task-notification"
 import { buildTaskEvidencePacket, isEvidencePacketFresh, type TaskEvidencePacket, type TaskEvidenceState } from "@/session/task-evidence"
 import { mergeGoalFindings } from "@/session/goal-evidence"
@@ -271,9 +271,6 @@ export const TaskTool = Tool.define(
     ) {
       const cfg = yield* config.get()
       const resultPolicy = subagentResultPolicy(ctx.agent, flags.experimentalBoundedSubagentResults)
-      const boundedResult = (text: string) => resultPolicy.maxChars
-        ? boundSubagentResult(text, resultPolicy.maxChars)
-        : { text, truncated: false, sticky: [] as string[] }
 
       // Follow-up on an existing task: report progress, or wait for the end.
       // The parent stays free to work while a subagent runs, so it never has to
@@ -303,7 +300,7 @@ export const TaskTool = Tool.define(
             : job?.status === "error" && job.error
               ? job.error
               : yield* childText(sessions, target)
-        const report = boundedResult(rawReport).text
+        const report = rawReport
         const evidencePacket = job?.metadata?.evidencePacket as TaskEvidencePacket | undefined
         const currentFingerprint = evidencePacket?.workspace && Option.isSome(snapshot)
           ? yield* snapshot.value.track().pipe(Effect.catch(() => Effect.succeed(undefined)))
@@ -485,7 +482,6 @@ export const TaskTool = Tool.define(
         text: string,
         packet?: TaskEvidencePacket,
       ) {
-        const bounded = boundedResult(text)
         const notificationKey = taskResultNotificationKey(taskCallID, evidenceRevision)
         const parentMessages = yield* sessions.messages({ sessionID: ctx.sessionID })
         if (hasTaskResultNotification(parentMessages, notificationKey)) return
@@ -506,7 +502,7 @@ export const TaskTool = Tool.define(
                   sessionID: nextSession.id,
                   description: params.description,
                   state,
-                  text: bounded.text,
+                  text,
                 }),
               },
             ],
@@ -599,16 +595,10 @@ export const TaskTool = Tool.define(
             if (result.value.state === "partial") {
               return { title: params.description, metadata: { ...metadata, outcome: "partial", reason: result.value.reason, evidencePacket: result.value.packet }, output: stepLimitOutput(nextSession.id, result.value.text) }
             }
-            const bounded = boundedResult(result.value.text)
             return {
               title: params.description,
-              metadata: {
-                ...metadata,
-                evidencePacket: result.value.packet,
-                ...(bounded.truncated ? { resultTruncated: true } : {}),
-                ...(bounded.sticky.length ? { stickyFindings: bounded.sticky } : {}),
-              },
-              output: output(nextSession.id, bounded.text, result.value.packet),
+              metadata: { ...metadata, evidencePacket: result.value.packet },
+              output: output(nextSession.id, result.value.text, result.value.packet),
             }
           }),
         (_, exit) =>
