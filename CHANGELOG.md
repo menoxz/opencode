@@ -5,6 +5,11 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v1.18.107] - 2026-08-22
+
+### Fixed
+- Post-restart task follow-ups now recover the complete persisted child transcript instead of only the last three text blocks and 4,000 characters.
+
 ## [v1.18.106] - 2026-08-22
 
 ### Changed

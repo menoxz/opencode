@@ -1,4 +1,4 @@
-import { afterEach, describe, expect } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import { Effect, Exit, Fiber, Layer } from "effect"
 import { Agent } from "../../src/agent/agent"
 import { BackgroundJob } from "@/background/job"
@@ -12,7 +12,7 @@ import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { SessionRunState } from "@/session/run-state"
 import { SessionStatus } from "@/session/status"
 import { ModelID, ProviderID } from "../../src/provider/schema"
-import { TaskTool, type TaskPromptOps } from "../../src/tool/task"
+import { childTranscriptText, TaskTool, type TaskPromptOps } from "../../src/tool/task"
 import { Truncate } from "@/tool/truncate"
 import { ToolRegistry } from "@/tool/registry"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -126,6 +126,16 @@ function reply(input: SessionPrompt.PromptInput, text: string): MessageV2.WithPa
 }
 
 describe("tool.task", () => {
+  test("keeps the complete persisted child transcript after restart", () => {
+    const text = childTranscriptText([
+      { parts: [{ type: "text", text: "A".repeat(6_000) }] },
+      { parts: [{ type: "text", text: "B".repeat(6_000) }] },
+    ] as any)
+    expect(text.length).toBe(12_002)
+    expect(text.startsWith("A")).toBe(true)
+    expect(text.endsWith("B")).toBe(true)
+  })
+
   it.instance(
     "description sorts subagents by name and is stable across calls",
     () =>

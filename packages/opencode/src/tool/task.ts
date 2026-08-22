@@ -140,16 +140,18 @@ function stepLimitOutput(sessionID: SessionID, partial: string) {
   ].join("\n")
 }
 
-/** Latest text a child has written, used for progress reads and salvage alike. */
+/** Complete persisted child text, used for progress reads and post-restart salvage. */
+export function childTranscriptText(messages: MessageV2.WithParts[]) {
+  return messages
+    .flatMap((message) => message.parts.filter((part) => part.type === "text").map((part) => part.text))
+    .join("\n\n")
+}
+
 const childText = Effect.fn("TaskTool.childText")(function* (sessions: Session.Interface, sessionID: SessionID) {
   const messages = yield* sessions
     .messages({ sessionID })
     .pipe(Effect.catch(() => Effect.succeed([] as MessageV2.WithParts[])))
-  return messages
-    .flatMap((message) => message.parts.filter((part) => part.type === "text").map((part) => part.text))
-    .slice(-3)
-    .join("\n\n")
-    .slice(-4000)
+  return childTranscriptText(messages)
 })
 
 function statusOutput(input: {
