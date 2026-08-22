@@ -66,6 +66,13 @@ const FIXTURES = {
     `data: [DONE]`,
   ],
 
+  multipleReasoningOpaqueValues: [
+    `data: {"choices":[{"index":0,"delta":{"content":null,"role":"assistant","reasoning_text":"First thought. ","reasoning_opaque":"opaque-first"}}],"created":1787390826,"id":"fable-multi-opaque","usage":{"completion_tokens":0,"prompt_tokens":0,"total_tokens":0,"reasoning_tokens":0},"model":"claude-fable-5"}`,
+    `data: {"choices":[{"index":0,"delta":{"content":null,"role":"assistant","reasoning_text":"Second thought.","reasoning_opaque":"opaque-final"}}],"created":1787390827,"id":"fable-multi-opaque","usage":{"completion_tokens":0,"prompt_tokens":0,"total_tokens":0,"reasoning_tokens":0},"model":"claude-fable-5"}`,
+    `data: {"choices":[{"finish_reason":"stop","index":0,"delta":{"content":"Done","role":"assistant"}}],"created":1787390828,"id":"fable-multi-opaque","usage":{"completion_tokens":5,"prompt_tokens":10,"total_tokens":15,"reasoning_tokens":2},"model":"claude-fable-5"}`,
+    `data: [DONE]`,
+  ],
+
   reasoningOpaqueWithToolCallsNoReasoningText: [
     `data: {"choices":[{"index":0,"delta":{"content":null,"role":"assistant","tool_calls":[{"function":{"arguments":"{}","name":"read_file"},"id":"call_reasoning_only","index":0,"type":"function"}],"reasoning_opaque":"opaque-xyz"}}],"created":1769917420,"id":"opaque-only","usage":{"completion_tokens":0,"prompt_tokens":0,"prompt_tokens_details":{"cached_tokens":0},"total_tokens":0,"reasoning_tokens":0},"model":"gemini-3-flash-preview"}`,
     `data: {"choices":[{"finish_reason":"tool_calls","index":0,"delta":{"content":null,"role":"assistant","tool_calls":[{"function":{"arguments":"{}","name":"read_file"},"id":"call_reasoning_only_2","index":1,"type":"function"}]}}],"created":1769917420,"id":"opaque-only","usage":{"completion_tokens":12,"prompt_tokens":123,"prompt_tokens_details":{"cached_tokens":0},"total_tokens":135,"reasoning_tokens":0},"model":"gemini-3-flash-preview"}`,
@@ -266,6 +273,18 @@ describe("doStream", () => {
           reasoningOpaque: "/PMlTqxqSJZnUBDHgnnJKLVI4eZQ",
         },
       },
+    })
+  })
+
+  test("should accept multiple reasoning_opaque values and keep the latest", async () => {
+    const model = createModel(createMockFetch(FIXTURES.multipleReasoningOpaqueValues))
+    const { stream } = await model.doStream({ prompt: TEST_PROMPT, includeRawChunks: false })
+    const parts = await convertReadableStreamToArray(stream)
+    expect(parts.some((part) => part.type === "error")).toBe(false)
+    expect(parts.filter((part) => part.type === "reasoning-delta")).toHaveLength(2)
+    expect(parts.find((part) => part.type === "finish")).toMatchObject({
+      type: "finish",
+      providerMetadata: { copilot: { reasoningOpaque: "opaque-final" } },
     })
   })
 
