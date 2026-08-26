@@ -5,6 +5,16 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v1.19.0] - 2026-08-26
+
+### Added
+- Native `read` support for DOCX, text/scanned PDF and video: structured text, page provenance, embedded images, bounded keyframes, normalized audio and content-addressed artifacts.
+- File and data-URL attachments use the same extraction pipeline; DOCX/video uploads are accepted by the web client with pre-base64 size limits.
+- Artifact bytes are persisted by SHA-256 and hydrated only at the provider boundary, keeping binary payloads out of session SQLite rows.
+
+### Security
+- OOXML archive traversal/expanded-size limits, PDF page/asset limits, video size/duration/dimension/stream limits, absolute executable discovery, local-only FFmpeg protocols and process timeouts.
+
 ## [v1.18.110] - 2026-08-26
 
 ### Changed
