@@ -715,4 +715,14 @@ describe("tool.read documents", () => {
       }
     }),
   )
+  it.instance("reads TypeScript instead of routing video/mp2t to ffprobe", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const filepath = path.join(test.directory, "main.ts")
+      yield* put(filepath, "export const inventory = 12")
+      const result = yield* run({ filePath: filepath })
+      expect(result.output).toContain("export const inventory = 12")
+      expect(result.output).not.toContain("# Video")
+    }),
+  )
 })

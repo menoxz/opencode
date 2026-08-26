@@ -29,6 +29,7 @@ export interface DocumentExtraction {
 }
 
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+const VIDEO_MIMES = new Set(["video/mp4", "video/webm", "video/quicktime", "video/x-msvideo", "video/x-matroska", "video/mpeg"])
 const MAX_ZIP_ENTRIES = 2_000
 const MAX_UNCOMPRESSED_BYTES = 250 * 1024 * 1024
 
@@ -396,7 +397,7 @@ export namespace DocumentExtractor {
     const extension = path.extname(filename).toLowerCase()
     if (mime === DOCX_MIME || extension === ".docx") return "docx"
     if (mime === "application/pdf" || extension === ".pdf") return "pdf"
-    if (mime.startsWith("video/") || [".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi"].includes(extension)) return "video"
+    if (VIDEO_MIMES.has(mime) || [".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi", ".mpeg", ".mpg"].includes(extension)) return "video"
     if (extension === ".pptx") return "pptx"
     if (extension === ".xlsx") return "xlsx"
   }

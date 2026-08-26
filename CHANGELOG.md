@@ -5,6 +5,11 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v1.19.1] - 2026-08-26
+
+### Fixed
+- TypeScript `.ts` files reported by Windows as `video/mp2t` are treated as text instead of being routed to `ffprobe`; video detection now uses an explicit MIME/container allowlist.
+
 ## [v1.19.0] - 2026-08-26
 
 ### Added

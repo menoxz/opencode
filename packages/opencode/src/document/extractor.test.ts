@@ -90,4 +90,8 @@ describe("document extractor", () => {
     })
     await expect(DocumentExtractor.extractBytes(bytes, { filename: "unsafe.docx", mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" })).rejects.toThrow("Unsafe document archive entry")
   })
+  test("does not classify TypeScript video/mp2t MIME ambiguity as video", () => {
+    expect(DocumentExtractor.kind("main.ts", "video/mp2t")).toBeUndefined()
+    expect(DocumentExtractor.kind("clip.mp4", "video/mp2t")).toBe("video")
+  })
 })
