@@ -12,6 +12,10 @@ import { isPdfAttachment, sniffAttachmentMime } from "@/util/media"
 import { Reference } from "@/reference/reference"
 import { Service as ToolCacheService, DEFAULT_TTL } from "./cache"
 import { ReadLedger } from "./read-ledger"
+import { DocumentExtractor } from "@/document/extractor"
+import { ArtifactStore } from "@/artifact/store"
+import { supportsExtractedAudio } from "@/document/provider-support"
+import type { Provider } from "@/provider/provider"
 
 const DEFAULT_READ_LIMIT = 2000
 const MAX_LINE_LENGTH = 2000
@@ -269,6 +273,48 @@ export const ReadTool = Tool.define(
 
       const mime = sniffAttachmentMime(sample, AppFileSystem.mimeType(filepath))
       const isImage = SUPPORTED_IMAGE_MIMES.has(mime)
+
+      const documentKind = DocumentExtractor.kind(filepath, mime)
+      if (documentKind === "docx" || documentKind === "pdf" || documentKind === "video") {
+        if (Number(stat.size) > DocumentExtractor.maxInputBytes(documentKind)) {
+          return yield* Effect.fail(new Error(`${documentKind.toUpperCase()} source size exceeds safety limit`))
+        }
+        const bytes = yield* fs.readFile(filepath)
+        const extraction = yield* Effect.promise(() => DocumentExtractor.extractBytes(bytes, { filename: path.basename(filepath), mime }))
+        const markdown = Buffer.from(extraction.text, "utf8")
+        const textArtifact = yield* Effect.promise(() => ArtifactStore.put(markdown, { mime: "text/markdown", filename: `${path.basename(filepath)}.md` }))
+        const includeAudio = supportsExtractedAudio(ctx.extra?.model as Provider.Model | undefined)
+        const cut = markdown.byteLength > MAX_BYTES
+        const rendered = cut ? extraction.text.slice(0, MAX_BYTES) : extraction.text
+        const output = [
+          `<path>${filepath}</path>`,
+          `<type>document kind="${extraction.kind}" mime="${mime}" />`,
+          `<content>\n${rendered}\n</content>`,
+          cut ? `<continuation full_text_path="${textArtifact.blobPath}" artifact="${textArtifact.url}" />` : "",
+          extraction.assets.length ? `<assets>\n${extraction.assets.map((asset) => `${asset.sourceLocator} -> ${asset.url}`).join("\n")}\n</assets>` : "",
+        ].filter(Boolean).join("\n")
+        return {
+          title,
+          output,
+          metadata: {
+            preview: extraction.text.slice(0, 500),
+            truncated: cut,
+            loaded: loaded.map((item) => item.filepath),
+            document: extraction.metadata,
+            sourceArtifact: extraction.source.url,
+            textArtifact: textArtifact.url,
+            textArtifactPath: textArtifact.blobPath,
+          },
+          attachments: [
+            ...extraction.assets.filter((asset) => asset.mime.startsWith("image/") || (includeAudio && asset.mime.startsWith("audio/"))).map((asset) => ({
+              type: "file" as const, mime: asset.mime, filename: asset.filename, url: asset.url,
+            })),
+            ...(extraction.kind === "pdf" && extraction.source.size <= 10 * 1024 * 1024
+              ? [{ type: "file" as const, mime: "application/pdf", filename: path.basename(filepath), url: extraction.source.url }]
+              : []),
+          ],
+        }
+      }
 
       if (isImage || isPdfAttachment(mime)) {
         const bytes = yield* fs.readFile(filepath)

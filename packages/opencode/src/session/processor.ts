@@ -1,4 +1,5 @@
 import { Image } from "@/image/image"
+import { ArtifactStore } from "@/artifact/store"
 import { Cause, Deferred, Effect, Exit, Layer, Context, Scope, Schema } from "effect"
 import * as Stream from "effect/Stream"
 import { Agent } from "@/agent/agent"

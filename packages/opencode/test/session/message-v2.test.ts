@@ -6,6 +6,10 @@ import type { Provider } from "@/provider/provider"
 import { ModelID, ProviderID } from "../../src/provider/schema"
 import { SessionID, MessageID, PartID } from "../../src/session/schema"
 import { Question } from "../../src/question"
+import { ArtifactStore } from "../../src/artifact/store"
+import { promises as fs } from "node:fs"
+import os from "node:os"
+import path from "node:path"
 
 const sessionID = SessionID.make("session")
 const providerID = ProviderID.make("test")
@@ -489,6 +493,34 @@ describe("session.message-v2.toModelMessage", () => {
         ],
       },
     })
+  })
+
+  test("hydrates artifact references only at the provider boundary", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "message-artifact-"))
+    const previous = process.env.OPENCODE_ARTIFACT_ROOT
+    process.env.OPENCODE_ARTIFACT_ROOT = root
+    try {
+      const bytes = Buffer.from("image-bytes")
+      const artifact = await ArtifactStore.put(bytes, { mime: "image/png", filename: "inside.png" })
+      const userID = "m-user-artifact"
+      const input: MessageV2.WithParts[] = [{
+        info: userInfo(userID),
+        parts: [{
+          ...basePart(userID, "file-artifact"), type: "file", mime: "image/png", filename: "inside.png", url: artifact.url,
+        }] as MessageV2.Part[],
+      }]
+      const result = await MessageV2.toModelMessages(input, {
+        ...model, capabilities: { ...model.capabilities, attachment: true, input: { ...model.capabilities.input, image: true } },
+      })
+      expect(result[0]).toMatchObject({
+        role: "user",
+        content: [{ type: "file", mediaType: "image/png", filename: "inside.png", data: `data:image/png;base64,${bytes.toString("base64")}` }],
+      })
+    } finally {
+      if (previous === undefined) delete process.env.OPENCODE_ARTIFACT_ROOT
+      else process.env.OPENCODE_ARTIFACT_ROOT = previous
+      await fs.rm(root, { recursive: true, force: true })
+    }
   })
 
   test("moves bedrock pdf tool-result media into a separate user message", async () => {

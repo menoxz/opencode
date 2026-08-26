@@ -1,4 +1,5 @@
 import { BusEvent } from "@/bus/bus-event"
+import { ArtifactStore } from "@/artifact/store"
 import { SessionID, MessageID, PartID } from "./schema"
 import { Identifier } from "@/id/id"
 import { NamedError } from "@opencode-ai/core/util/error"
@@ -842,9 +843,12 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
               text: `[Attached ${part.mime}: ${part.filename ?? "file"}]`,
             })
           } else {
+            const url = ArtifactStore.isReference(part.url)
+              ? yield* Effect.promise(() => ArtifactStore.toDataUrl(part.url))
+              : part.url
             userMessage.parts.push({
               type: "file",
-              url: part.url,
+              url,
               mediaType: part.mime,
               filename: part.filename,
             })
@@ -922,7 +926,12 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
             const outputText = part.state.time.compacted
               ? "[Old tool result content cleared]"
               : truncateToolOutput(part.state.output, options?.toolOutputMaxChars)
-            const attachments = part.state.time.compacted || options?.stripMedia ? [] : (part.state.attachments ?? [])
+            const rawAttachments = part.state.time.compacted || options?.stripMedia ? [] : (part.state.attachments ?? [])
+            const attachments = yield* Effect.forEach(rawAttachments, (attachment) =>
+              ArtifactStore.isReference(attachment.url)
+                ? Effect.promise(() => ArtifactStore.toDataUrl(attachment.url)).pipe(Effect.map((url) => ({ ...attachment, url })))
+                : Effect.succeed(attachment),
+            )
             const replayedOutputText = summarizeToolOutput(part, outputText, attachments, toolReplayMode)
 
             // For providers that don't support media in tool results, extract media files

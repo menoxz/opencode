@@ -10,6 +10,25 @@ const IMAGE_EXTS = new Map([
   ["png", "image/png"],
   ["webp", "image/webp"],
 ])
+const BINARY_MIMES = new Set([
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "video/mp4",
+  "video/webm",
+  "video/quicktime",
+  "video/x-msvideo",
+])
+const BINARY_EXTS = new Map([
+  ["pdf", "application/pdf"],
+  ["docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
+  ["mp4", "video/mp4"],
+  ["m4v", "video/mp4"],
+  ["webm", "video/webm"],
+  ["mkv", "video/webm"],
+  ["mov", "video/quicktime"],
+  ["avi", "video/x-msvideo"],
+])
+
 const TEXT_MIMES = new Set([
   "application/json",
   "application/ld+json",
@@ -53,14 +72,21 @@ function textBytes(bytes: Uint8Array) {
 export async function attachmentMime(file: File) {
   const type = kind(file.type)
   if (IMAGE_MIMES.has(type)) return type
-  if (type === "application/pdf") return type
+  if (BINARY_MIMES.has(type)) return type
 
   const suffix = ext(file.name)
-  const fallback = IMAGE_EXTS.get(suffix) ?? (suffix === "pdf" ? "application/pdf" : undefined)
+  const fallback = IMAGE_EXTS.get(suffix) ?? BINARY_EXTS.get(suffix)
   if ((!type || type === "application/octet-stream") && fallback) return fallback
 
   if (textMime(type)) return "text/plain"
   const bytes = new Uint8Array(await file.slice(0, SAMPLE).arrayBuffer())
   if (!textBytes(bytes)) return
   return "text/plain"
+}
+
+export function attachmentMaxBytes(mime: string) {
+  if (mime.startsWith("video/")) return 100 * 1024 * 1024
+  if (mime === "application/pdf" || mime.includes("officedocument")) return 50 * 1024 * 1024
+  if (mime.startsWith("image/")) return 20 * 1024 * 1024
+  return 10 * 1024 * 1024
 }

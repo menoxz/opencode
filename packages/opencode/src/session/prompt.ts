@@ -1,4 +1,7 @@
 import path from "path"
+import { supportsExtractedAudio } from "@/document/provider-support"
+import { ArtifactStore } from "@/artifact/store"
+import { DocumentExtractor } from "@/document/extractor"
 import os from "os"
 import { createHash } from "node:crypto"
 import { SessionID, MessageID, PartID } from "./schema"
@@ -1291,7 +1294,29 @@ export const layer = Layer.effect(
           }
           const url = new URL(part.url)
           switch (url.protocol) {
-            case "data:":
+            case "data:": {
+              const documentKind = DocumentExtractor.kind(part.filename ?? "attachment", part.mime)
+              if (documentKind) {
+                const comma = part.url.indexOf(",")
+                if (comma === -1) throw new Error("Invalid document data URL")
+                const header = part.url.slice(0, comma)
+                const payload = part.url.slice(comma + 1)
+                const estimatedBytes = header.endsWith(";base64") ? Math.floor(payload.length * 3 / 4) : payload.length
+                if (estimatedBytes > DocumentExtractor.maxInputBytes(documentKind)) throw new Error(`${documentKind.toUpperCase()} source size exceeds safety limit`)
+                const bytes = header.endsWith(";base64") ? Buffer.from(payload, "base64") : Buffer.from(decodeURIComponent(payload), "utf8")
+                const extraction = yield* Effect.promise(() => DocumentExtractor.extractBytes(bytes, { filename: part.filename ?? `attachment.${documentKind}`, mime: part.mime }))
+                const attachmentModel = yield* provider.getModel(info.model.providerID, info.model.modelID).pipe(Effect.orDie)
+                const includeAudio = supportsExtractedAudio(attachmentModel)
+                return [
+                  { messageID: info.id, sessionID: input.sessionID, type: "text", synthetic: true, text: extraction.text },
+                  ...extraction.assets.filter((asset) => asset.mime.startsWith("image/") || (includeAudio && asset.mime.startsWith("audio/"))).map((asset) => ({
+                    type: "file" as const, mime: asset.mime, filename: asset.filename, url: asset.url, synthetic: true, messageID: info.id, sessionID: input.sessionID,
+                  })),
+                  ...(extraction.kind === "pdf" && extraction.source.size <= 10 * 1024 * 1024
+                    ? [{ type: "file" as const, mime: "application/pdf", filename: part.filename, url: extraction.source.url, synthetic: true, messageID: info.id, sessionID: input.sessionID }]
+                    : []),
+                ]
+              }
               if (part.mime === "text/plain") {
                 return [
                   {
@@ -1312,6 +1337,7 @@ export const layer = Layer.effect(
                 ]
               }
               break
+            }
             case "file:": {
               log.info("file", { mime: part.mime })
               const filepath = fileURLToPath(part.url)
@@ -1463,6 +1489,22 @@ export const layer = Layer.effect(
                 ]
               }
 
+              if (DocumentExtractor.kind(filepath, mime)) {
+                const args = { filePath: filepath }
+                const attachmentModel = yield* provider.getModel(info.model.providerID, info.model.modelID).pipe(Effect.orDie)
+                const exit = yield* execRead(args, { model: attachmentModel }).pipe(Effect.exit)
+                if (Exit.isFailure(exit)) {
+                  const error = Cause.squash(exit.cause)
+                  const message = error instanceof Error ? error.message : String(error)
+                  return [{ messageID: info.id, sessionID: input.sessionID, type: "text", synthetic: true, text: `Read tool failed to extract ${filepath}: ${message}` }]
+                }
+                return [
+                  ...(referenceContext ? [{ ...referenceContext, messageID: info.id, sessionID: input.sessionID }] : []),
+                  { messageID: info.id, sessionID: input.sessionID, type: "text", synthetic: true, text: `Called the Read tool with the following input: ${JSON.stringify(args)}` },
+                  { messageID: info.id, sessionID: input.sessionID, type: "text", synthetic: true, text: exit.value.output },
+                  ...(exit.value.attachments ?? []).map((attachment) => ({ ...attachment, synthetic: true, messageID: info.id, sessionID: input.sessionID })),
+                ]
+              }
               return [
                 ...(referenceContext ? [{ ...referenceContext, messageID: info.id, sessionID: input.sessionID }] : []),
                 {
@@ -1527,7 +1569,7 @@ export const layer = Layer.effect(
       )
 
       const parts = yield* Effect.forEach(resolvedParts, (part) =>
-        part.type === "file" && part.mime.startsWith("image/")
+        part.type === "file" && part.mime.startsWith("image/") && !ArtifactStore.isReference(part.url)
           ? image.normalize(part).pipe(
               Effect.catchIf(
                 (error) => error instanceof Image.ResizerUnavailableError,

@@ -1,6 +1,8 @@
 import { afterEach, describe, expect } from "bun:test"
 import { Cause, Effect, Exit, Layer, Stream } from "effect"
 import path from "path"
+import { promises as nodeFs } from "node:fs"
+import { spawnSync } from "node:child_process"
 import { Agent } from "../../src/agent/agent"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
@@ -19,6 +21,7 @@ import { Filesystem } from "@/util/filesystem"
 import { disposeAllInstances, provideInstance, TestInstance, tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { Reference } from "@/reference/reference"
+import { TextReader, Uint8ArrayReader, Uint8ArrayWriter, ZipWriter } from "@zip.js/zip.js"
 import { RepositoryCache } from "@/reference/repository-cache"
 
 const FIXTURES_DIR = path.join(import.meta.dir, "fixtures")
@@ -650,6 +653,66 @@ describe("tool.read binary detection", () => {
 
       const err = yield* fail(dir, { filePath: path.join(dir, "module.wasm") })
       expect(err.message).toContain("Cannot read binary file")
+    }),
+  )
+})
+describe("tool.read documents", () => {
+  it.instance("reads DOCX text and returns embedded image artifacts", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const filepath = path.join(test.directory, "sample.docx")
+      yield* Effect.promise(() => nodeFs.copyFile(path.join(FIXTURES_DIR, "sample-document.docx"), filepath))
+      const previous = process.env.OPENCODE_ARTIFACT_ROOT
+      process.env.OPENCODE_ARTIFACT_ROOT = path.join(test.directory, "artifacts")
+      try {
+        const result = yield* run({ filePath: filepath })
+        expect(result.output).toContain("Hello DOCX")
+        expect(result.output).not.toContain("Cannot read binary")
+        expect(result.attachments).toHaveLength(1)
+        expect(result.attachments?.[0]).toMatchObject({ mime: "image/png", filename: "image1.png" })
+        expect(result.attachments?.[0]?.url).toMatch(/^artifact:\/\/sha256\//)
+      } finally {
+        if (previous === undefined) delete process.env.OPENCODE_ARTIFACT_ROOT; else process.env.OPENCODE_ARTIFACT_ROOT = previous
+      }
+    }),
+  )
+  it.instance("reads PDF text and preserves the original as a CAS attachment", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const filepath = path.join(test.directory, "sample.pdf")
+      yield* Effect.promise(() => nodeFs.copyFile(path.join(FIXTURES_DIR, "sample-document.pdf"), filepath))
+      const previous = process.env.OPENCODE_ARTIFACT_ROOT
+      process.env.OPENCODE_ARTIFACT_ROOT = path.join(test.directory, "artifacts-pdf")
+      try {
+        const result = yield* run({ filePath: filepath })
+        expect(result.output).toContain("## Page 1")
+        expect(result.output).toContain("Quarterly Inventory Report")
+        expect(result.attachments?.some((item) => item.mime === "application/pdf" && item.url.startsWith("artifact://"))).toBe(true)
+      } finally {
+        if (previous === undefined) delete process.env.OPENCODE_ARTIFACT_ROOT; else process.env.OPENCODE_ARTIFACT_ROOT = previous
+      }
+    }),
+  )
+  it.instance("reads video metadata and returns keyframe attachments", () =>
+    Effect.gen(function* () {
+      if (spawnSync("ffprobe", ["-version"], { stdio: "ignore" }).status !== 0) return
+      const test = yield* TestInstance
+      const filepath = path.join(test.directory, "sample.mp4")
+      yield* Effect.promise(() => nodeFs.copyFile(path.join(FIXTURES_DIR, "sample-video.mp4"), filepath))
+      const previous = process.env.OPENCODE_ARTIFACT_ROOT
+      process.env.OPENCODE_ARTIFACT_ROOT = path.join(test.directory, "artifacts-video")
+      try {
+        const result = yield* run({ filePath: filepath }, {
+          ...ctx,
+          extra: { model: { api: { npm: "@ai-sdk/openai" }, capabilities: { input: { audio: true } } } },
+        } as any)
+        expect(result.output).toContain("# Video: sample.mp4")
+        expect(result.output).toContain("Visual timeline")
+        expect(result.attachments?.some((item) => item.mime.startsWith("image/"))).toBe(true)
+        expect(result.attachments?.some((item) => item.mime === "audio/wav")).toBe(true)
+      } finally {
+        if (previous === undefined) delete process.env.OPENCODE_ARTIFACT_ROOT; else process.env.OPENCODE_ARTIFACT_ROOT = previous
+      }
     }),
   )
 })

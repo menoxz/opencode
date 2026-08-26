@@ -5,7 +5,7 @@ import { usePrompt, type ContentPart, type ImageAttachmentPart } from "@/context
 import { useLanguage } from "@/context/language"
 import { uuid } from "@/utils/uuid"
 import { getCursorPosition } from "./editor-dom"
-import { attachmentMime } from "./files"
+import { attachmentMaxBytes, attachmentMime } from "./files"
 import { normalizePaste, pasteMode } from "./paste"
 
 function dataUrl(file: File, mime: string) {
@@ -48,6 +48,10 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
   const add = async (file: File, toast = true) => {
     const mime = await attachmentMime(file)
     if (!mime) {
+      if (toast) warn()
+      return false
+    }
+    if (file.size > attachmentMaxBytes(mime)) {
       if (toast) warn()
       return false
     }

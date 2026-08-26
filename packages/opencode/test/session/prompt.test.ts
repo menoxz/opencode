@@ -3,6 +3,7 @@ import { FetchHttpClient } from "effect/unstable/http"
 import { expect } from "bun:test"
 import { Cause, Deferred, Duration, Effect, Exit, Fiber, Layer } from "effect"
 import path from "path"
+import { promises as nodeFs } from "node:fs"
 import { fileURLToPath, pathToFileURL } from "url"
 import { NamedError } from "@opencode-ai/core/util/error"
 import { Agent as AgentSvc } from "../../src/agent/agent"
@@ -2582,6 +2583,62 @@ noLLMServer.instance(
     }),
   { config: cfg },
   30_000,
+)
+
+noLLMServer.instance(
+  "extracts local DOCX file parts before persistence",
+  () =>
+    Effect.gen(function* () {
+      const { directory: dir } = yield* TestInstance
+      const source = path.resolve(import.meta.dir, "../tool/fixtures/sample-document.docx")
+      const target = path.join(dir, "sample.docx")
+      yield* Effect.promise(() => nodeFs.copyFile(source, target))
+      const previous = process.env.OPENCODE_ARTIFACT_ROOT
+      process.env.OPENCODE_ARTIFACT_ROOT = path.join(dir, "artifacts-docx")
+      try {
+        const prompt = yield* SessionPrompt.Service
+        const sessions = yield* Session.Service
+        const session = yield* sessions.create({})
+        const msg = yield* prompt.prompt({
+          sessionID: session.id, agent: "build", noReply: true,
+          parts: [{ type: "file", url: pathToFileURL(target).href, filename: "sample.docx", mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }],
+        })
+        expect(msg.parts.some((part) => part.type === "text" && part.text.includes("Hello DOCX"))).toBe(true)
+        expect(msg.parts.some((part) => part.type === "file" && part.mime === "image/png" && part.url.startsWith("artifact://"))).toBe(true)
+        expect(msg.parts.some((part) => part.type === "file" && part.url.startsWith("data:"))).toBe(false)
+        yield* sessions.remove(session.id)
+      } finally {
+        if (previous === undefined) delete process.env.OPENCODE_ARTIFACT_ROOT; else process.env.OPENCODE_ARTIFACT_ROOT = previous
+      }
+    }),
+  { config: cfg },
+)
+
+noLLMServer.instance(
+  "extracts DOCX data URLs instead of persisting binary base64",
+  () =>
+    Effect.gen(function* () {
+      const { directory: dir } = yield* TestInstance
+      const bytes = yield* Effect.promise(() => nodeFs.readFile(path.resolve(import.meta.dir, "../tool/fixtures/sample-document.docx")))
+      const previous = process.env.OPENCODE_ARTIFACT_ROOT
+      process.env.OPENCODE_ARTIFACT_ROOT = path.join(dir, "artifacts-data-docx")
+      try {
+        const prompt = yield* SessionPrompt.Service
+        const sessions = yield* Session.Service
+        const session = yield* sessions.create({})
+        const msg = yield* prompt.prompt({
+          sessionID: session.id, agent: "build", noReply: true,
+          parts: [{ type: "file", url: `data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,${bytes.toString("base64")}`, filename: "sample.docx", mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }],
+        })
+        expect(msg.parts.some((part) => part.type === "text" && part.text.includes("Hello DOCX"))).toBe(true)
+        expect(msg.parts.some((part) => part.type === "file" && part.url.startsWith("artifact://"))).toBe(true)
+        expect(msg.parts.some((part) => part.type === "file" && part.url.startsWith("data:"))).toBe(false)
+        yield* sessions.remove(session.id)
+      } finally {
+        if (previous === undefined) delete process.env.OPENCODE_ARTIFACT_ROOT; else process.env.OPENCODE_ARTIFACT_ROOT = previous
+      }
+    }),
+  { config: cfg },
 )
 
 // Missing file handling
