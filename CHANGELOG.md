@@ -5,6 +5,11 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v1.18.109] - 2026-08-26
+
+### Fixed
+- `inspect_batch` classifies a read offset beyond EOF as an `empty` discovery result rather than an error; dependent inspections may continue while genuine read failures remain errors.
+
 ## [v1.18.108] - 2026-08-22
 
 ### Fixed

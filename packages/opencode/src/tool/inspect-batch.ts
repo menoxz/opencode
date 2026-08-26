@@ -164,11 +164,30 @@ export function planInspectRounds(actions: readonly InspectAction[]): InspectAct
 export type ActionResult = {
   id: string
   type: InspectAction["type"]
-  status: "success" | "error" | "skipped"
+  status: "success" | "empty" | "error" | "skipped"
   title?: string
   output?: string
   error?: string
   truncated?: boolean
+}
+
+const OFFSET_OUT_OF_RANGE = /Offset (\d+) is out of range for this file \((\d+) lines\)/
+
+function emptyReadResult(action: InspectAction, cause: unknown): ActionResult | undefined {
+  if (action.type !== "read") return
+  const match = String(cause).match(OFFSET_OUT_OF_RANGE)
+  if (!match) return
+  return {
+    id: action.id,
+    type: action.type,
+    status: "empty",
+    title: "No content at requested offset",
+    output: `Offset ${match[1]} is beyond the end of the file (${match[2]} lines).`,
+  }
+}
+
+export function inspectDependencySatisfied(result: ActionResult | undefined) {
+  return result?.status === "success" || result?.status === "empty"
 }
 
 export function localizeInspectAction<E, R>(
@@ -179,7 +198,7 @@ export function localizeInspectAction<E, R>(
   return Effect.try({ try: run, catch: (error) => error }).pipe(
     Effect.flatMap((effect) => effect),
     Effect.match({
-      onFailure: (cause): ActionResult => ({ id: action.id, type: action.type, status: "error", error: String(cause) }),
+      onFailure: (cause): ActionResult => emptyReadResult(action, cause) ?? ({ id: action.id, type: action.type, status: "error", error: String(cause) }),
       onSuccess: (result): ActionResult => {
         const truncated = result.output.length > maxChars
         return {
@@ -227,7 +246,7 @@ export const InspectBatchTool = Tool.define(
             const completed = yield* Effect.forEach(
               round,
               (action) => {
-                const blocked = (action.dependsOn ?? []).find((dep) => results.get(dep)?.status !== "success")
+                const blocked = (action.dependsOn ?? []).find((dep) => !inspectDependencySatisfied(results.get(dep)))
                 if (blocked) {
                   return Effect.succeed<ActionResult>({
                     id: action.id,
@@ -255,13 +274,15 @@ export const InspectBatchTool = Tool.define(
             return primary === action.id ? result : { ...result, id: action.id }
           })
           const failed = ordered.filter((result) => result.status === "error").length
+          const empty = ordered.filter((result) => result.status === "empty").length
           const skipped = ordered.filter((result) => result.status === "skipped").length
           return {
-            title: `inspect_batch: ${ordered.length} action(s), ${failed} error(s), ${skipped} skipped`,
+            title: `inspect_batch: ${ordered.length} action(s), ${failed} error(s), ${empty} empty, ${skipped} skipped`,
             metadata: {
               actions: ordered.length,
               rounds: rounds.length,
               failed,
+              empty,
               skipped,
               truncated: ordered.filter((result) => result.truncated).map((result) => result.id),
               readOnly: true,

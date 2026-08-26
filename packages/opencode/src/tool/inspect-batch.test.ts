@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { Effect, Schema } from "effect"
-import { deduplicateInspectActions, localizeInspectAction, Parameters, planInspectRounds, validateInspectActions, type InspectAction } from "./inspect-batch"
+import { deduplicateInspectActions, inspectDependencySatisfied, localizeInspectAction, Parameters, planInspectRounds, validateInspectActions, type InspectAction } from "./inspect-batch"
 import { SAFE_PARALLEL_LOCAL_TOOL_IDS } from "../session/tools"
 
 const actions = (...items: InspectAction[]) => items
@@ -69,5 +69,23 @@ describe("inspect batch planning", () => {
       () => Effect.succeed({ title: "ok", output: "content", metadata: {} }),
     ))
     expect(passed).toMatchObject({ id: "ok", status: "success", output: "content" })
+  })
+  test("classifies a read offset beyond EOF as empty discovery", async () => {
+    const empty = await Effect.runPromise(localizeInspectAction(
+      { id: "tail", type: "read", filePath: "/repo/a.ts", offset: 500 },
+      () => Effect.fail(new Error("Offset 500 is out of range for this file (473 lines)")),
+    ))
+    expect(empty).toEqual({
+      id: "tail", type: "read", status: "empty",
+      title: "No content at requested offset",
+      output: "Offset 500 is beyond the end of the file (473 lines).",
+    })
+    expect(inspectDependencySatisfied(empty)).toBe(true)
+    const realFailure = await Effect.runPromise(localizeInspectAction(
+      { id: "glob", type: "glob", pattern: "*" },
+      () => Effect.fail(new Error("Offset 500 is out of range for this file (473 lines)")),
+    ))
+    expect(realFailure.status).toBe("error")
+    expect(inspectDependencySatisfied(realFailure)).toBe(false)
   })
 })
