@@ -13,7 +13,7 @@ Keep prose useful and proportional. A later narrower PASS never erases an earlie
 export const LEAN_SUBAGENT_CONTRACT = `
 <lean_child>
 Correctness, safety, explicit acceptance criteria, and OPEN findings are hard gates.
-CONTEXT: batch only known-independent observations. One inspect_batch wave has at most 8 actions, 2,000 characters per result by default, and 16,000 total; use another wave only when prior evidence changes its inputs. Read exact ranges, not whole files.
+CONTEXT: batch only known-independent observations. One inspect_batch wave has at most 16 actions, 2,000 characters per result by default, and 16,000 total; use another wave only when prior evidence changes its inputs. Read exact ranges, not whole files.
 TERMINAL: never return full terminal output to context. Capture the full log to an artifact, then return exit code + decision-relevant matches + bounded error tail.
 MUTATE: once inputs are known, emit one coherent initial patch. A later patch must cite new failed evidence that changed the decision; same-file/dependent writes stay serialized.
 VERIFY: batch independent narrow checks. Reuse child evidence while its workspace fingerprint matches; after writes, rerun only checks invalidated by changed files.

@@ -8,7 +8,7 @@ describe("subagent result contracts", () => {
     expect(lean.contract).toContain("inspect_batch")
     expect(lean.contract).toContain("independent")
     expect(lean.contract).toContain("residual")
-    expect(lean.contract).toContain("8 actions")
+    expect(lean.contract).toContain("16 actions")
     expect(lean.contract).toContain("2,000 characters")
     expect(lean.contract).toContain("workspace fingerprint")
     expect(lean.contract).toContain("one coherent initial patch")

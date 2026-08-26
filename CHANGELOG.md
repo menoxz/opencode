@@ -5,6 +5,11 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v1.18.110] - 2026-08-26
+
+### Changed
+- Lean `inspect_batch` waves accept up to 16 actions instead of 8 while retaining the 16k total context budget.
+
 ## [v1.18.109] - 2026-08-26
 
 ### Fixed

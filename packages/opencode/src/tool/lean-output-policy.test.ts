@@ -3,9 +3,9 @@ import { inspectBudget, isLeanTerminalTool, leanToolOutputBudget, LEAN_BROWSER_M
 
 describe("lean output policy", () => {
   test("caps an inspection wave by actions, per-result and total characters", () => {
-    expect(LEAN_INSPECT_MAX_ACTIONS).toBe(8)
+    expect(LEAN_INSPECT_MAX_ACTIONS).toBe(16)
     expect(LEAN_INSPECT_TOTAL_CHARS).toBe(16_000)
-    expect(inspectBudget({ enabled: true, actionCount: 8, requestedChars: 20_000 })).toEqual({ maxActions: 8, maxCharsPerResult: 2_000, totalChars: 16_000 })
+    expect(inspectBudget({ enabled: true, actionCount: 16, requestedChars: 20_000 })).toEqual({ maxActions: 16, maxCharsPerResult: 1_000, totalChars: 16_000 })
     expect(inspectBudget({ enabled: true, actionCount: 4, requestedChars: 20_000 }).maxCharsPerResult).toBe(4_000)
     expect(inspectBudget({ enabled: false, actionCount: 16, requestedChars: 20_000 }).maxActions).toBe(16)
   })
