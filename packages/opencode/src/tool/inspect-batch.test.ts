@@ -81,6 +81,11 @@ describe("inspect batch planning", () => {
       output: "Offset 500 is beyond the end of the file (473 lines).",
     })
     expect(inspectDependencySatisfied(empty)).toBe(true)
+    const defect = await Effect.runPromise(localizeInspectAction(
+      { id: "tail-defect", type: "read", filePath: "/repo/a.ts", offset: 80 },
+      () => Effect.die(new Error("Offset 80 is out of range for this file (19 lines)")),
+    ))
+    expect(defect).toMatchObject({ id: "tail-defect", status: "empty" })
     const realFailure = await Effect.runPromise(localizeInspectAction(
       { id: "glob", type: "glob", pattern: "*" },
       () => Effect.fail(new Error("Offset 500 is out of range for this file (473 lines)")),

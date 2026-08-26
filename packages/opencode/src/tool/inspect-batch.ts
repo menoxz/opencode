@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Cause, Effect, Schema } from "effect"
 import { PositiveInt } from "@opencode-ai/core/schema"
 import * as Tool from "./tool"
 import { ReadTool } from "./read"
@@ -197,8 +197,11 @@ export function localizeInspectAction<E, R>(
 ) {
   return Effect.try({ try: run, catch: (error) => error }).pipe(
     Effect.flatMap((effect) => effect),
-    Effect.match({
-      onFailure: (cause): ActionResult => emptyReadResult(action, cause) ?? ({ id: action.id, type: action.type, status: "error", error: String(cause) }),
+    Effect.matchCause({
+      onFailure: (cause): ActionResult => {
+        const error = Cause.squash(cause)
+        return emptyReadResult(action, error) ?? { id: action.id, type: action.type, status: "error", error: String(error) }
+      },
       onSuccess: (result): ActionResult => {
         const truncated = result.output.length > maxChars
         return {
