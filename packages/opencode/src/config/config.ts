@@ -341,6 +341,8 @@ export const Info = Schema.Struct({
           tool_threshold: Schema.optional(PositiveInt),
           max_tools: Schema.optional(PositiveInt),
           always_tools: Schema.optional(Schema.mutable(Schema.Array(Schema.String))),
+          lean_dynamic_tools: Schema.optional(Schema.Literals(["off", "shadow", "enforce"])),
+          activation_ttl_ms: Schema.optional(PositiveInt),
         }),
       ).annotate({
         description: "Hot Path Fabric controls for prepared tool catalogs and just-in-time tool selection.",

@@ -5,6 +5,14 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v1.19.3] - 2026-08-27
+
+### Added
+- Lean-only dynamic tool catalogs with `off` / `shadow` / `enforce` modes, phase-aware compact cores, strict caps, permission-filtered deferred discovery, and sticky `tool_search` activation for the next model step.
+
+### Changed
+- Dynamic tool ranking no longer requires business-domain words to match tool descriptions in Lean enforce mode; non-Lean and legacy `jit_tools` behavior remains unchanged.
+
 ## [v1.19.2] - 2026-08-26
 
 ### Fixed

@@ -2027,9 +2027,10 @@ export const layer = Layer.effect(
               promptOps,
               forceWriteTools,
               securityMode,
-              query: lastUserMsg?.parts
+              query: anchoredUser.parts
                 .flatMap((part) => (part.type === "text" && !part.ignored ? [part.text] : []))
-                .join("\n") ?? "",
+                .join("\n"),
+              userTools: lastUser.tools,
             }).pipe(
               Effect.provideService(Plugin.Service, plugin),
               Effect.provideService(Permission.Service, permission),

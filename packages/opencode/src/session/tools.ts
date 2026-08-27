@@ -22,8 +22,16 @@ import { EffectBridge } from "@/effect/bridge"
 import { Config } from "@/config/config"
 import { ToolCatalog, type PreparedTool } from "./tool-catalog"
 import { ToolExecutionMetadata } from "./tool-execution-metadata"
+import { derivePhaseCapsule } from "./phase-capsule"
 
 const log = Log.create({ service: "session.tools" })
+const TOOL_SEARCH_ID = "tool_search"
+const activations = new ToolCatalog.ActivationStore()
+const LEAN_PHASE_CORE = {
+  discovery: ["inspect_batch", "read", "apply_patch", "bash", "skill", "todowrite", "question", "task", "llm-memory-tool_memory_retrieve"],
+  implementation: ["inspect_batch", "read", "apply_patch", "bash", "skill", "todowrite", "question", "task", "llm-memory-tool_memory_retrieve"],
+  unknown: ["inspect_batch", "read", "apply_patch", "bash", "skill", "todowrite", "question", "task", "llm-memory-tool_memory_retrieve"],
+} as const
 
 // Historical tool calls can reach the model as elided renderings, and a model that
 // reproduces one executes a truncated command, patch or prompt with no visible sign
@@ -61,6 +69,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   forceWriteTools?: boolean
   securityMode?: SecurityMode
   query?: string
+  userTools?: Record<string, boolean>
 }) {
   using _ = log.time("resolveTools")
   const tools: Record<string, AITool> = {}
@@ -126,14 +135,39 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       return output
     }),
   )
-  const selection = ToolCatalog.selectTools(prepared.catalog, input.query ?? "", {
-    // Prepared catalogs are safe by default. Context-reducing selection stays
-    // opt-in until shadow benchmarks prove recall for the active tool set.
+  const baseline = ToolCatalog.selectTools(prepared.catalog, input.query ?? "", {
     enabled: hotPathEnabled && hotPath?.jit_tools === true,
     threshold: hotPath?.tool_threshold,
     maxTools: hotPath?.max_tools,
     always: hotPath?.always_tools,
   })
+  const dynamicMode = input.agent.name === "lean" ? (hotPath?.lean_dynamic_tools ?? "off") : "off"
+  const rules = Permission.merge(input.agent.permission, input.session.permission ?? [])
+  const denied = Permission.disabled(prepared.catalog.tools.map((item) => item.id), rules)
+  const visibleCatalog = {
+    ...prepared.catalog,
+    tools: prepared.catalog.tools.filter((item) => !denied.has(item.id) && input.userTools?.[item.id] !== false),
+  }
+  const searchDenied = Permission.disabled([TOOL_SEARCH_ID], rules).has(TOOL_SEARCH_ID) || input.userTools?.[TOOL_SEARCH_ID] === false
+  if (dynamicMode !== "off" && prepared.catalog.tools.some((item) => item.id === TOOL_SEARCH_ID))
+    return yield* Effect.fail(new Error(`Reserved tool name collision: ${TOOL_SEARCH_ID}`))
+  const phase = derivePhaseCapsule(input.messages).phase
+  const core = LEAN_PHASE_CORE[phase]
+  const configuredMax = hotPath?.max_tools ?? 12
+  const sticky = activations.get(input.session.id)
+  const requiredCount = new Set([...core, ...(hotPath?.always_tools ?? [])].filter((id) => visibleCatalog.tools.some((item) => item.id === id))).size + 1
+  if (dynamicMode === "enforce" && !searchDenied && requiredCount > configuredMax)
+    return yield* Effect.fail(new Error(`Lean dynamic tool cap ${configuredMax} is smaller than ${requiredCount} mandatory tools`))
+  const proposed = ToolCatalog.selectTools(visibleCatalog, input.query ?? "", {
+    enabled: dynamicMode !== "off",
+    threshold: 0,
+    maxTools: Math.max(1, configuredMax - 1),
+    always: [...(hotPath?.always_tools ?? []), ...sticky],
+    core,
+    fallback: "core",
+    requireCoverage: false,
+  })
+  const selection = dynamicMode === "enforce" && !searchDenied ? proposed : baseline
   log.info("hot path catalog", {
     version: prepared.catalog.version,
     cacheHit: prepared.hit,
@@ -141,6 +175,10 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     selectedTools: selection.tools.length,
     selectionMode: selection.mode,
     selectionReason: selection.reason,
+    dynamicMode,
+    dynamicPhase: phase,
+    proposedTools: proposed.tools.length,
+    stickyTools: sticky.size,
     durationMs: Date.now() - preparedAt,
   })
 
@@ -323,6 +361,50 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     // serialized until a server-level trust policy is explicitly configured.
     ToolExecutionMetadata.set(wrapped, { destructiveHint: true })
     tools[key] = wrapped
+  }
+
+  if (dynamicMode === "enforce" && !searchDenied) {
+    tools[TOOL_SEARCH_ID] = tool({
+      description: "Activate a required missing capability for the next model step. Do not search for optional workflow, memory, todo, or reporting tools.",
+      inputSchema: jsonSchema({
+        type: "object",
+        additionalProperties: false,
+        required: ["query"],
+        properties: {
+          query: { type: "string", minLength: 2, maxLength: 500 },
+          limit: { type: "integer", minimum: 1, maximum: 8, default: 5 },
+        },
+      }),
+      execute(args) {
+        return run.promise(
+          Effect.sync(() => {
+            const value = args as { query: string; limit?: number }
+            const slots = Math.max(0, configuredMax - requiredCount)
+            const limit = Math.min(slots, Math.max(1, Math.min(8, value.limit ?? 5)))
+            const matches = ToolCatalog.search(
+              visibleCatalog,
+              value.query.slice(0, 500),
+              Math.min(32, limit + selection.tools.length),
+            )
+              .map((item) => item.id)
+              .filter((id) => id !== TOOL_SEARCH_ID && !selection.tools.some((item) => item.id === id))
+              .slice(0, limit)
+            activations.activate(
+              input.session.id,
+              matches,
+              Date.now(),
+              slots,
+              hotPath?.activation_ttl_ms,
+            )
+            return {
+              title: "Tools activated",
+              metadata: { activated: matches },
+              output: JSON.stringify({ activated: matches, available: "next-model-step" }),
+            }
+          }),
+        )
+      },
+    })
   }
 
   return tools
