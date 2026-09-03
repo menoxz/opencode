@@ -28,10 +28,14 @@ const log = Log.create({ service: "session.tools" })
 const TOOL_SEARCH_ID = "tool_search"
 const activations = new ToolCatalog.ActivationStore()
 const LEAN_PHASE_CORE = {
-  discovery: ["inspect_batch", "read", "apply_patch", "bash", "skill", "todowrite", "question", "task", "llm-memory-tool_memory_retrieve"],
-  implementation: ["inspect_batch", "read", "apply_patch", "bash", "skill", "todowrite", "question", "task", "llm-memory-tool_memory_retrieve"],
-  unknown: ["inspect_batch", "read", "apply_patch", "bash", "skill", "todowrite", "question", "task", "llm-memory-tool_memory_retrieve"],
+  discovery: ["invalid", "inspect_batch", "read", "glob", "grep", "apply_patch", "edit", "write", "bash", "skill", "todowrite", "question", "task", "llm-memory-tool_memory_retrieve"],
+  implementation: ["invalid", "inspect_batch", "read", "glob", "grep", "apply_patch", "edit", "write", "bash", "skill", "todowrite", "question", "task", "llm-memory-tool_memory_retrieve"],
+  unknown: ["invalid", "inspect_batch", "read", "glob", "grep", "apply_patch", "edit", "write", "bash", "skill", "todowrite", "question", "task", "llm-memory-tool_memory_retrieve"],
 } as const
+
+export function leanPhaseCoreTools(phase: keyof typeof LEAN_PHASE_CORE) {
+  return LEAN_PHASE_CORE[phase]
+}
 
 // Historical tool calls can reach the model as elided renderings, and a model that
 // reproduces one executes a truncated command, patch or prompt with no visible sign
@@ -152,8 +156,8 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   if (dynamicMode !== "off" && prepared.catalog.tools.some((item) => item.id === TOOL_SEARCH_ID))
     return yield* Effect.fail(new Error(`Reserved tool name collision: ${TOOL_SEARCH_ID}`))
   const phase = derivePhaseCapsule(input.messages).phase
-  const core = LEAN_PHASE_CORE[phase]
-  const configuredMax = hotPath?.max_tools ?? 12
+  const core = leanPhaseCoreTools(phase)
+  const configuredMax = hotPath?.max_tools ?? 14
   const sticky = activations.get(input.session.id)
   const requiredCount = new Set([...core, ...(hotPath?.always_tools ?? [])].filter((id) => visibleCatalog.tools.some((item) => item.id === id))).size + 1
   if (dynamicMode === "enforce" && !searchDenied && requiredCount > configuredMax)

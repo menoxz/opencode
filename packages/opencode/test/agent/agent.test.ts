@@ -402,6 +402,23 @@ it.instance(
 )
 
 it.instance(
+  "agent preload_skills config sets runtime preloadSkills",
+  () =>
+    Effect.gen(function* () {
+      const build = yield* load((svc) => svc.get("build"))
+      expect(build?.preloadSkills).toEqual(["lean-agent", "quality-gate"])
+      expect(build?.options.preload_skills).toBeUndefined()
+    }),
+  {
+    config: {
+      agent: {
+        build: { preload_skills: ["lean-agent", "quality-gate"] },
+      },
+    },
+  },
+)
+
+it.instance(
   "unknown agent properties are placed into options",
   () =>
     Effect.gen(function* () {

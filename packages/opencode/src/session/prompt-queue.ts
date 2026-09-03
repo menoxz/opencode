@@ -8,7 +8,8 @@ export const turnClosed = (msgs: MessageV2.WithParts[], userID: MessageV2.User["
     (m) =>
       m.info.role === "assistant" &&
       m.info.parentID === userID &&
-      (m.info.finish !== undefined || m.info.error !== undefined),
+      ((m.info.finish !== undefined && !["tool-calls", "unknown"].includes(m.info.finish)) ||
+        m.info.error !== undefined),
   )
 
 // Internal user-shaped messages belong to the runtime, not to the user's prompt
@@ -20,12 +21,43 @@ const isRunInternalUser = (m: MessageV2.WithParts) =>
       p.type === "compaction" ||
       (p.type === "text" &&
         ((p as { metadata?: { compaction_continue?: unknown } }).metadata?.compaction_continue === true ||
+          (p as { metadata?: { compaction_replay?: unknown } }).metadata?.compaction_replay === true ||
           (p as { metadata?: { background_notification?: unknown } }).metadata?.background_notification === true ||
           // v1.18.88 and older persisted completion reports without metadata.
           // Recognise their exact synthetic envelope so opening an old session
           // cannot resurrect the FIFO and replay one model turn per child.
           (p.synthetic === true && p.text.startsWith("<task ") && p.text.includes("<summary>Background task ")))),
   )
+
+export const compactionTaskParentID = (task: MessageV2.CompactionPart) => task.messageID
+
+const isCompactionReplayUser = (m: MessageV2.WithParts) =>
+  m.info.role === "user" &&
+  m.parts.some(
+    (part) =>
+      part.type === "text" &&
+      (part as { metadata?: { compaction_replay?: unknown } }).metadata?.compaction_replay === true,
+  )
+
+export const resolveAnchorUserID = (
+  msgs: MessageV2.WithParts[],
+  anchorUserID: MessageV2.User["id"],
+): MessageV2.User["id"] | undefined => {
+  if (msgs.some((m) => m.info.role === "user" && m.info.id === anchorUserID)) return anchorUserID
+  return msgs.findLast(isCompactionReplayUser)?.info.id
+}
+
+// At the start of a fresh runner, no assistant from a prior process can still
+// be executing. Persisted assistants without a terminal state are therefore
+// interrupted leftovers that must be reconciled before queue selection.
+export const staleAssistantsAtRunStart = (msgs: MessageV2.WithParts[]) =>
+  msgs.filter(
+    (m) =>
+      m.info.role === "assistant" &&
+      m.info.time.completed === undefined &&
+      m.info.finish === undefined &&
+      m.info.error === undefined,
+  ) as Array<MessageV2.WithParts & { info: MessageV2.Assistant }>
 
 // Oldest user prompt whose turn is not closed (FIFO over queued prompts).
 export const pendingUserID = (msgs: MessageV2.WithParts[]): MessageV2.User["id"] | undefined =>

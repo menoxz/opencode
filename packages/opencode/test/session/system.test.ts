@@ -67,6 +67,21 @@ const it = testEffect(
 )
 
 describe("session.system", () => {
+  it.effect("preloads configured skill bodies once from their source", () =>
+    Effect.gen(function* () {
+      const prompt = yield* SystemPrompt.Service
+      const lean = { ...build, name: "lean", preloadSkills: ["alpha-skill", "alpha-skill"] } as Agent.Info
+      const output = yield* prompt.preloadedSkills(lean)
+      const catalog = yield* prompt.skills(lean)
+
+      expect(output).toContain('<preloaded_skills>')
+      expect(output).toContain('<skill_content name="alpha-skill" source="/tmp/alpha-skill/SKILL.md">')
+      expect(output).toContain('# alpha-skill')
+      expect(output?.match(/<skill_content /g)).toHaveLength(1)
+      expect(catalog).not.toContain('alpha-skill')
+    }),
+  )
+
   it.effect("skills output is sorted by name and stable across calls", () =>
     Effect.gen(function* () {
       const prompt = yield* SystemPrompt.Service

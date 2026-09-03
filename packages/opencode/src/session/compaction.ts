@@ -441,6 +441,9 @@ export const layer = Layer.effect(
       }
       const userMessage = parent.info
       const compactionPart = parent.parts.find((part): part is MessageV2.CompactionPart => part.type === "compaction")
+      if (input.overflow && !compactionPart) {
+        throw new Error(`Overflow compaction parent must contain a compaction part: ${input.parentID}`)
+      }
 
       let messages = input.messages
       let replay:
@@ -601,8 +604,19 @@ export const layer = Layer.effect(
             if (part.type === "compaction") continue
             const replayPart =
               part.type === "file" && MessageV2.isMedia(part.mime)
-                ? { type: "text" as const, text: `[Attached ${part.mime}: ${part.filename ?? "file"}]` }
-                : part
+                ? {
+                    type: "text" as const,
+                    text: `[Attached ${part.mime}: ${part.filename ?? "file"}]`,
+                    synthetic: true,
+                    metadata: { compaction_replay: true },
+                  }
+                : part.type === "text"
+                  ? {
+                      ...part,
+                      synthetic: true,
+                      metadata: { ...part.metadata, compaction_replay: true },
+                    }
+                  : part
             yield* session.updatePart({
               ...replayPart,
               id: PartID.ascending(),

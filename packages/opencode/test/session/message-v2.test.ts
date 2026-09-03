@@ -1554,6 +1554,21 @@ describe("session.message-v2.toModelMessage", () => {
     expect(outputs.get("call-pin-pad-0")).toContain("[Historical tool result summary]")
   })
 
+  test("does not pin oversized read outputs past the summary boundary", async () => {
+    const huge = "x".repeat(80_000)
+    const input = [
+      ...toolTurn("huge-pin-read", "read", { filePath: "/tmp/huge.ts" }, huge),
+      ...padTurns("huge-pin", SUMMARIZED_TURNS - 1),
+      ...toolTurn("huge-pin-recent", "read", { filePath: "/tmp/recent.ts" }, "recent bytes"),
+      ...toolTurn("huge-pin-tail", "read", { filePath: "/tmp/tail.ts" }, "tail bytes"),
+    ]
+
+    const outputs = outputsByCall(await MessageV2.toModelMessages(input, model, { replayToolOutputs: "summary" }))
+
+    expect(outputs.get("call-huge-pin-read")).toContain("[Historical tool result summary]")
+    expect(outputs.get("call-huge-pin-read")).not.toContain(huge.slice(0, 1_000))
+  })
+
   test("replays mutating tool inputs verbatim even when input replay is summarized", async () => {
     const patchText = `*** Begin Patch\n*** Update File: /tmp/example.ts\n@@\n-${"a".repeat(200)}\n+${"b".repeat(200)}\n*** End Patch\n`
     const todos = Array.from({ length: 8 }, (_, index) => ({ content: `todo ${index}`, status: "pending" }))

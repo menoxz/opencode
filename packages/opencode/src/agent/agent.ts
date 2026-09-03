@@ -48,6 +48,7 @@ export const Info = Schema.Struct({
   ),
   variant: Schema.optional(Schema.String),
   prompt: Schema.optional(Schema.String),
+  preloadSkills: Schema.optional(Schema.Array(Schema.String)),
   options: Schema.Record(Schema.String, Schema.Unknown),
   steps: Schema.optional(Schema.Finite),
   budgetMinutes: Schema.optional(Schema.Finite),
@@ -342,6 +343,7 @@ export const layer = Layer.effect(
           item.name = value.name ?? item.name
           item.steps = value.steps ?? item.steps
           item.budgetMinutes = value.budget_minutes ?? item.budgetMinutes
+          item.preloadSkills = value.preload_skills ?? item.preloadSkills
           item.options = mergeDeep(item.options, value.options ?? {})
           item.permission = Permission.merge(item.permission, Permission.fromConfig(value.permission ?? {}))
         }

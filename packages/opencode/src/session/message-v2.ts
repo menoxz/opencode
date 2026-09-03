@@ -332,6 +332,9 @@ function summarizeToolOutput(part: ToolPart, outputText: string, attachments: Fi
 // three files. Duplicates are where the saving actually is; the newest copy of
 // each reference is what the model needs to stop asking.
 const PINNED_TOOL_REFERENCES = 8
+// Pinning prevents read livelocks, but replaying several 400–650 KB reads in
+// full defeated compaction and immediately triggered provider HTTP 413 errors.
+const PINNED_TOOL_OUTPUT_MAX_CHARS = 64_000
 
 function pinnedToolCallIDs(input: WithParts[], summarized: Set<string>, enabled: boolean) {
   const pinned = new Set<string>()
@@ -347,6 +350,7 @@ function pinnedToolCallIDs(input: WithParts[], summarized: Set<string>, enabled:
       // A read-ledger stub carries no bytes: pinning it would pin the very
       // message that tells the model to scroll back to bytes we dropped.
       if (part.state.metadata?.unchanged === true) continue
+      if (part.state.output.length > PINNED_TOOL_OUTPUT_MAX_CHARS) continue
       const reference = toolResultReference(part)
       if (seen.has(reference)) continue
       seen.add(reference)

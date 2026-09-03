@@ -41,7 +41,7 @@ function assistant(id: string, parent: string, opts?: { finish?: string; error?:
   }
 }
 
-const text = (metadata?: { compaction_continue?: boolean; background_notification?: boolean }): MessageV2.Part =>
+const text = (metadata?: { compaction_continue?: boolean; compaction_replay?: boolean; background_notification?: boolean }): MessageV2.Part =>
   ({ id: PartID.ascending("prt-t"), type: "text", text: "x", metadata }) as unknown as MessageV2.Part
 
 const compaction = (): MessageV2.Part =>
@@ -55,10 +55,43 @@ const legacyBackgroundNotification = (synthetic = true): MessageV2.Part =>
     text: '<task id="ses_child" state="completed">\n<summary>Background task completed: audit</summary>',
   }) as unknown as MessageV2.Part
 
+describe("compactionTaskParentID", () => {
+  test("uses the internal compaction message instead of a FIFO user anchor", () => {
+    const task = { type: "compaction", messageID: MessageID.ascending("msg-compaction") } as MessageV2.CompactionPart
+    expect(PromptQueue.compactionTaskParentID(task)).toBe(task.messageID)
+  })
+})
+
+describe("resolveAnchorUserID", () => {
+  test("reanchors to the synthetic replay when compaction removed the original user", () => {
+    const replay = user("msg0003", [text({ compaction_replay: true })])
+    expect(PromptQueue.resolveAnchorUserID([replay], MessageID.ascending("msg0001"))).toBe(replay.info.id)
+  })
+
+  test("keeps the original anchor while it remains in the retained tail", () => {
+    const anchor = user("msg0001")
+    const replay = user("msg0003", [text({ compaction_replay: true })])
+    expect(PromptQueue.resolveAnchorUserID([anchor, replay], anchor.info.id)).toBe(anchor.info.id)
+  })
+})
+
+describe("staleAssistantsAtRunStart", () => {
+  test("returns persisted incomplete assistants from a previous runner only", () => {
+    const stale = assistant("msg0101", "msg0001")
+    const completed = assistant("msg0102", "msg0002", { finish: "stop" })
+    expect(PromptQueue.staleAssistantsAtRunStart([user("msg0001"), stale, user("msg0002"), completed]).map((m) => m.info.id)).toEqual([stale.info.id])
+  })
+})
+
 describe("turnClosed", () => {
   test("user with finished assistant is closed", () => {
     const msgs = [user("msg0001"), assistant("msg0101", "msg0001", { finish: "stop" })]
     expect(PromptQueue.turnClosed(msgs, MessageID.ascending("msg0001"))).toBe(true)
+  })
+
+  test("tool-calls is an intermediate step and does not close the user turn", () => {
+    const msgs = [user("msg0001"), assistant("msg0101", "msg0001", { finish: "tool-calls" })]
+    expect(PromptQueue.turnClosed(msgs, MessageID.ascending("msg0001"))).toBe(false)
   })
 
   test("user with errored assistant is closed", () => {
@@ -102,6 +135,16 @@ describe("pendingUserID", () => {
       user("msg0001"),
       assistant("msg0101", "msg0001", { finish: "stop" }),
       user("msg0002", [compaction()]),
+      user("msg0003"),
+    ]
+    expect(PromptQueue.pendingUserID(msgs)).toBe(MessageID.ascending("msg0003"))
+  })
+
+  test("ignores synthetic compaction replay users", () => {
+    const msgs = [
+      user("msg0001"),
+      assistant("msg0101", "msg0001", { finish: "stop" }),
+      user("msg0002", [text({ compaction_replay: true })]),
       user("msg0003"),
     ]
     expect(PromptQueue.pendingUserID(msgs)).toBe(MessageID.ascending("msg0003"))
@@ -184,6 +227,15 @@ describe("boundToRun", () => {
     const ids = view.map((m) => m.info.id as string)
     expect(ids).toContain("msg0002")
     expect(ids).toContain("msg0102")
+  })
+
+  test("keeps compaction replay users inside the active run", () => {
+    const msgs = [
+      user("msg0001"),
+      user("msg0002", [text({ compaction_replay: true })]),
+    ]
+    const view = PromptQueue.boundToRun(msgs, MessageID.ascending("msg0001"))
+    expect(view.map((m) => m.info.id as string)).toContain("msg0002")
   })
 
   test("keeps background completion notifications newer than the anchor", () => {

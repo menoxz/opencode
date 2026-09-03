@@ -1744,6 +1744,40 @@ export const layer = Layer.effect(
       throw new Error("Impossible")
     })
 
+    const reconcileStaleAssistants = Effect.fn("SessionPrompt.reconcileStaleAssistants")(function* (sessionID: SessionID) {
+      const messages = yield* sessions.messages({ sessionID }).pipe(Effect.orDie)
+      const stale = PromptQueue.staleAssistantsAtRunStart(messages)
+      if (stale.length === 0) return
+      const end = Date.now()
+      let tools = 0
+      for (const message of stale) {
+        for (const part of message.parts) {
+          if (part.type !== "tool" || (part.state.status !== "pending" && part.state.status !== "running")) continue
+          const metadata = part.state.status === "running" ? part.state.metadata : undefined
+          yield* sessions.updatePart({
+            ...part,
+            state: {
+              status: "error",
+              input: part.state.input,
+              error: "Tool execution interrupted before this runner started",
+              metadata: { ...metadata, interrupted: true },
+              time: {
+                start: part.state.status === "running" ? part.state.time.start : end,
+                end,
+              },
+            },
+          })
+          tools++
+        }
+        yield* sessions.updateMessage({
+          ...message.info,
+          error: new MessageV2.AbortedError({ message: "Interrupted before this runner started" }).toObject(),
+          time: { ...message.info.time, completed: end },
+        })
+      }
+      yield* elog.warn("reconciled stale assistants", { sessionID, assistants: stale.length, tools })
+    })
+
     const runLoop = Effect.fn("SessionPrompt.run")(function* (sessionID: SessionID) {
         const ctx = yield* InstanceState.context
         const slog = elog.with({ sessionID })
@@ -1751,13 +1785,14 @@ export const layer = Layer.effect(
         let step = 0
         const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
         const injectionCache = createPromptInjectionCache()
+        yield* reconcileStaleAssistants(sessionID)
 
         // Anchor this run to the oldest user prompt whose turn is not closed.
         // Prompts queued while this run is active are never absorbed: they are
         // excluded from the run's message view below and picked up by a fresh
         // run after this one settles (see loop()'s re-arm).
         const anchorMsgs = yield* MessageV2.filterCompactedEffect(sessionID)
-        const anchorUserID =
+        let anchorUserID =
           PromptQueue.pendingUserID(anchorMsgs) ?? anchorMsgs.findLast((m) => m.info.role === "user")?.info.id
         if (!anchorUserID) throw new Error("No user message found in stream. This should never happen.")
 
@@ -1794,6 +1829,17 @@ export const layer = Layer.effect(
           // Always answer the FIFO anchor; otherwise a newer closed internal
           // turn can replace an older queued prompt and make the fresh run exit
           // without writing an assistant child for that prompt.
+          const resolvedAnchorUserID = PromptQueue.resolveAnchorUserID(msgs, anchorUserID)
+          if (!resolvedAnchorUserID) {
+            throw new Error("Anchored user message not found after compaction and no replay is available.")
+          }
+          if (resolvedAnchorUserID !== anchorUserID) {
+            yield* slog.info("reanchoring run to compaction replay", {
+              previousAnchorUserID: anchorUserID,
+              anchorUserID: resolvedAnchorUserID,
+            })
+            anchorUserID = resolvedAnchorUserID
+          }
           const anchoredUser = msgs.find(
             (msg): msg is MessageV2.WithParts & { info: MessageV2.User } =>
               msg.info.role === "user" && msg.info.id === anchorUserID,
@@ -1880,7 +1926,7 @@ export const layer = Layer.effect(
           if (task?.type === "compaction") {
             const result = yield* compaction.process({
               messages: msgs,
-              parentID: lastUser.id,
+              parentID: PromptQueue.compactionTaskParentID(task),
               sessionID,
               auto: task.auto,
               overflow: task.overflow,
@@ -2118,6 +2164,24 @@ export const layer = Layer.effect(
 
             // Extract the last user message for skill relevance filtering (every turn)
             const lastUserText = getCurrentTaskText(msgs) || undefined
+
+            // Preload configured skill bodies before the model starts working. The
+            // Skill service is the source of truth, so hot-reloaded SKILL.md changes
+            // are picked up on the next run without copying content into agent files.
+            const preloadStart = Date.now()
+            const preloadKey = `preloadedSkills:${agent.name}:${JSON.stringify(agent.preloadSkills ?? [])}`
+            const cachedPreload = injectionCache.get(preloadKey)
+            const preloadedSkills = cachedPreload.cached
+              ? cachedPreload.value
+              : injectionCache.set(preloadKey, yield* sys.preloadedSkills(agent))
+            if (preloadedSkills) system.push(preloadedSkills)
+            contextSummary.add(
+              "skills",
+              preloadedSkills ? `preload ${agent.preloadSkills?.length ?? 0} configured skill(s)` : "no configured skill preload",
+              preloadedSkills,
+              Date.now() - preloadStart,
+              { cached: cachedPreload.cached },
+            )
 
             // Inject available skills every turn so the agent can always discover them
             const skillsStart = Date.now()

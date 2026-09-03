@@ -293,9 +293,9 @@ export function Session() {
   const visible = createMemo(() => !session()?.parentID && permissions().length === 0 && questions().length === 0)
   const disabled = createMemo(() => permissions().length > 0 || questions().length > 0)
 
-  const pending = createMemo(() => {
-    return messages().findLast((x) => x.role === "assistant" && !x.time.completed)?.id
-  })
+  const pending = createMemo(() =>
+    pendingAssistantID(messages(), sync.data.session_status?.[route.sessionID]?.type === "busy"),
+  )
 
   const lastAssistant = createMemo(() => {
     return messages().findLast((x) => x.role === "assistant")

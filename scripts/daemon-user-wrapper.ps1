@@ -12,18 +12,14 @@ Start-Sleep -Seconds 10
 
 "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] OpenCode Daemon starting..." | Out-File $logFile -Append
 
-while ($true) {
-    try {
-        # IMPORTANT: Start-Process -Wait est utilisé au lieu du pipeline
-        # pour éviter que le script ne se termine quand le daemon
-        # n'écrit rien sur stdout.
-        $p = Start-Process -FilePath $binary -ArgumentList "watch", "--daemon" -WindowStyle Hidden -RedirectStandardOutput "$env:TEMP\opencode-daemon-out.log" -RedirectStandardError "$env:TEMP\opencode-daemon-err.log" -PassThru -Wait
-        $exitCode = $p.ExitCode
-        "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] Daemon exited with code $exitCode" | Out-File $logFile -Append
-    }
-    catch {
-        "CRASH at $(Get-Date): $_" | Out-File $logFile -Append
-    }
-    "RESTART at $(Get-Date), restarting in 5s..." | Out-File $logFile -Append
-    Start-Sleep -Seconds 5
+try {
+    # Run once per Windows login. An explicit `opencodev2 daemon stop` must
+    # remain authoritative: when the daemon exits, this wrapper exits too and
+    # never resurrects autonomous work behind a closed TUI.
+    $p = Start-Process -FilePath $binary -ArgumentList "watch", "--daemon" -WindowStyle Hidden -RedirectStandardOutput "$env:TEMP\opencode-daemon-out.log" -RedirectStandardError "$env:TEMP\opencode-daemon-err.log" -PassThru -Wait
+    $exitCode = $p.ExitCode
+    "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] Daemon exited with code $exitCode; wrapper stopping" | Out-File $logFile -Append
+}
+catch {
+    "CRASH at $(Get-Date): $_" | Out-File $logFile -Append
 }

@@ -1,5 +1,19 @@
 import { describe, expect, test } from "bun:test"
-import { deriveStrictToolAllowlist } from "./tools"
+import { deriveStrictToolAllowlist, leanPhaseCoreTools } from "./tools"
+
+describe("Lean dynamic core tools", () => {
+  test("always keeps discovery recovery tools available", () => {
+    for (const phase of ["discovery", "implementation", "unknown"] as const) {
+      const core = leanPhaseCoreTools(phase)
+      expect(core).toContain("grep")
+      expect(core).toContain("glob")
+      expect(core).toContain("invalid")
+      expect(core).toContain("apply_patch")
+      expect(core).toContain("edit")
+      expect(core).toContain("write")
+    }
+  })
+})
 
 describe("strict session tool allowlist", () => {
   test("is absent for ordinary permission sets", () => {

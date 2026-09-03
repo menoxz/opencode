@@ -189,6 +189,7 @@ function createCompactionMarker(sessionID: SessionID) {
         type: "compaction",
         auto: false,
       })
+      return msg
     }),
   )
 }
@@ -860,6 +861,27 @@ describe("session.compaction.process", () => {
   )
 
   it.instance(
+    "rejects an overflow parent without a compaction marker",
+    Effect.gen(function* () {
+      const ssn = yield* SessionNs.Service
+      const session = yield* ssn.create({})
+      const user = yield* createUserMessage(session.id, "overflowing request")
+      const msgs = yield* ssn.messages({ sessionID: session.id })
+
+      const exit = yield* Effect.exit(SessionCompaction.use.process({
+        parentID: user.id,
+        messages: msgs,
+        sessionID: session.id,
+        auto: true,
+        overflow: true,
+      }))
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) expect(String(Cause.squash(exit.cause))).toContain("must contain a compaction part")
+    }),
+  )
+
+  it.instance(
     "publishes compacted event on continue",
     Effect.gen(function* () {
       const bus = yield* Bus.Service
@@ -1163,11 +1185,11 @@ describe("session.compaction.process", () => {
         filename: "cat.png",
         url: "https://example.com/cat.png",
       })
-      const msg = yield* createUserMessage(session.id, "current")
+      const marker = yield* createCompactionMarker(session.id)
       const msgs = yield* ssn.messages({ sessionID: session.id })
 
       const result = yield* SessionCompaction.use.process({
-        parentID: msg.id,
+        parentID: marker.id,
         messages: msgs,
         sessionID: session.id,
         auto: true,
@@ -1180,7 +1202,13 @@ describe("session.compaction.process", () => {
       expect(last?.info.role).toBe("user")
       expect(last?.parts.some((part) => part.type === "file")).toBe(false)
       expect(
-        last?.parts.some((part) => part.type === "text" && part.text.includes("Attached image/png: cat.png")),
+        last?.parts.some(
+          (part) =>
+            part.type === "text" &&
+            part.synthetic === true &&
+            part.metadata?.compaction_replay === true &&
+            part.text.includes("Attached image/png: cat.png"),
+        ),
       ).toBe(true)
     }),
   )
@@ -1190,12 +1218,12 @@ describe("session.compaction.process", () => {
     Effect.gen(function* () {
       const ssn = yield* SessionNs.Service
       const session = yield* ssn.create({})
-      yield* createUserMessage(session.id, "earlier")
-      const msg = yield* createUserMessage(session.id, "current")
+      yield* createUserMessage(session.id, "current")
+      const marker = yield* createCompactionMarker(session.id)
       const msgs = yield* ssn.messages({ sessionID: session.id })
 
       const result = yield* SessionCompaction.use.process({
-        parentID: msg.id,
+        parentID: marker.id,
         messages: msgs,
         sessionID: session.id,
         auto: true,

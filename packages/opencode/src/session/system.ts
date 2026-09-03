@@ -98,6 +98,7 @@ function tasksAndShellGuidance(cfg: Config.Info): string {
 
 export interface Interface {
   readonly environment: (model: Provider.Model) => Effect.Effect<string[]>
+  readonly preloadedSkills: (agent: Agent.Info) => Effect.Effect<string | undefined>
   readonly skills: (agent: Agent.Info, lastUserMessage?: string) => Effect.Effect<string | undefined>
   /** Adaptive system prompt composed by PromptComposer module based on detected task type. */
   readonly adaptivePrompt: (input: {
@@ -140,6 +141,32 @@ export const layer = Layer.effect(
         ]
       }),
 
+      preloadedSkills: Effect.fn("SystemPrompt.preloadedSkills")(function* (agent: Agent.Info) {
+        const names = [...new Set(agent.preloadSkills ?? [])]
+        if (names.length === 0) return
+
+        const parts: string[] = ["<preloaded_skills>"]
+        for (const name of names) {
+          if (Permission.evaluate("skill", name, agent.permission).action === "deny") {
+            return yield* Effect.die(new Error(`Configured preload skill "${name}" is denied for agent "${agent.name}".`))
+          }
+          const info = yield* skill.require(name).pipe(Effect.orDie)
+          SkillUsage.record(info.name)
+          const source = info.location
+            .replaceAll("&", "&amp;")
+            .replaceAll('"', "&quot;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+          parts.push(
+            `<skill_content name="${info.name}" source="${source}">`,
+            info.content.trim(),
+            "</skill_content>",
+          )
+        }
+        parts.push("</preloaded_skills>")
+        return parts.join("\n")
+      }),
+
       skills: Effect.fn("SystemPrompt.skills")(function* (agent: Agent.Info, lastUserMessage?: string) {
         if (Permission.disabled(["skill"], agent.permission).has("skill")) return
 
@@ -147,6 +174,9 @@ export const layer = Layer.effect(
         const rollout = SessionContextRollout.resolve(settings)
 
         let list = yield* skill.available(agent)
+        const preloaded = new Set(agent.preloadSkills ?? [])
+        list = list.filter((info) => !preloaded.has(info.name))
+        if (list.length === 0) return
 
         // BM25 relevance filter: rank skills by semantic + keyword match
         if (lastUserMessage && list.length > MAX_RELEVANT_SKILLS) {
