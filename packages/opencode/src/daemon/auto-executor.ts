@@ -390,7 +390,10 @@ function verifyBinary(binaryPath: string): boolean {
     })
 
     const stdout = (result.stdout ?? "").trim()
-    const ok = result.status === 0 && stdout.toLowerCase().includes("opencode")
+    // `--version` prints only a semver string (e.g. "1.19.15"), so requiring
+    // the word "opencode" in stdout rejects every healthy binary. A zero exit
+    // code with non-empty version output is the real health signal.
+    const ok = result.status === 0 && /^\d+\.\d+\.\d+/.test(stdout)
 
     if (ok) {
       log.info("Binary health check passed", { binary: binaryPath, version: stdout })
