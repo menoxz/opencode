@@ -1,4 +1,4 @@
-import { Effect, Exit, Schema } from "effect"
+import { Effect, Exit, Schema, SchemaIssue } from "effect"
 import type { JSONSchema7 } from "@ai-sdk/provider"
 import type { MessageV2 } from "../session/message-v2"
 import type { Permission } from "../permission"
@@ -133,13 +133,28 @@ function wrap<Parameters extends Schema.Decoder<unknown>, Result extends Metadat
         }
         return Effect.gen(function* () {
           const decoded = yield* decode(args).pipe(
-            Effect.mapError(
-              (error) =>
-                new InvalidArgumentsError({
-                  tool: id,
-                  detail: toolInfo.formatValidationError ? toolInfo.formatValidationError(error) : String(error),
-                }),
-            ),
+            Effect.mapError((error) => {
+              // Model-facing, not debug prose: flatten the SchemaError into
+              // per-issue `path → message` lines so "Missing key at [pattern]"
+              // reads as `pattern: Missing key` instead of an internal
+              // pretty-print the model cannot act on. Fall back to String()
+              // for non-Schema decode errors.
+              const detail = toolInfo.formatValidationError
+                ? toolInfo.formatValidationError(error)
+                : Schema.isSchemaError(error)
+                  ? SchemaIssue.makeFormatterStandardSchemaV1()(error.issue)
+                      .issues.map((issue) => `${(issue.path ?? []).map(String).join(".")}: ${issue.message}`)
+                      .join("; ")
+                  : String(error)
+              // Decode failures never reach the post-run record() below (that
+              // one is keyed on the *decoded* args), so without this the model
+              // can livelock on the same invalid call indefinitely. Count them
+              // against the raw args with the same failure rule.
+              const verdict = ToolRepetition.inspect(ctx.sessionID, id, args)
+              if (verdict.blocked) return new RepeatedCallError({ tool: id, detail: ToolRepetition.explain(verdict) })
+              ToolRepetition.record(ctx.sessionID, id, args, { ok: false, digest: "" })
+              return new InvalidArgumentsError({ tool: id, detail })
+            }),
           )
 
           // Cycle brake — refuse a call already proven unproductive in this

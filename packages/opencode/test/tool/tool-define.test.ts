@@ -3,6 +3,7 @@ import { Cause, Effect, Exit, Layer, Schema } from "effect"
 import { Agent } from "../../src/agent/agent"
 import { MessageID, SessionID } from "../../src/session/schema"
 import { Tool } from "@/tool/tool"
+import { ToolRepetition } from "@/tool/repetition"
 import { Truncate } from "@/tool/truncate"
 import { testEffect } from "../lib/effect"
 
@@ -147,7 +148,52 @@ describe("Tool.define", () => {
       expect(args.tool).toBe("qtest")
       expect(args.message).toContain("qtest tool was called with invalid arguments")
       expect(args.message).toContain("Please rewrite the input")
-      expect(args.message).toContain(`["questions"][0]["question"]`)
+      // Flattened, model-actionable path — not the internal SchemaError pretty-print.
+      expect(args.message).toContain(`questions.0.question: Missing key`)
+      expect(args.message).not.toContain("SchemaError(")
+    }),
+  )
+
+  // Decode failures are recorded against the raw args in the repetition
+  // ledger, so a model that keeps emitting the same invalid call gets blocked
+  // by the frein instead of burning round-trips indefinitely (observed: 5
+  // identical grep calls missing `pattern`).
+  it.effect("identical invalid calls escalate to RepeatedCallError after the limit", () =>
+    Effect.gen(function* () {
+      ToolRepetition.reset()
+      const info = yield* Tool.define(
+        "badtest",
+        Effect.succeed({
+          description: "test tool",
+          parameters: Schema.Struct({ pattern: Schema.String }),
+          execute() {
+            return Effect.succeed({ title: "ok", output: "ok", metadata: { truncated: false } })
+          },
+        }),
+      )
+      const tool = yield* info.init()
+      const execute = tool.execute as unknown as (args: unknown, ctx: Tool.Context) => ReturnType<typeof tool.execute>
+      const ctx = makeCtx()
+      const run = () => Effect.exit(execute({ nope: "same" }, ctx))
+
+      const first = yield* run()
+      const second = yield* run()
+      expect(first).not.toBeNull()
+      expect(second).not.toBeNull()
+      for (const exit of [first, second]) {
+        if (!Exit.isFailure(exit)) return expect.unreachable()
+        const die = exit.cause.reasons.find(Cause.isDieReason)
+        expect(die?.defect).toBeInstanceOf(Tool.InvalidArgumentsError)
+      }
+
+      // Third byte-identical attempt: blocked before execution.
+      const third = yield* run()
+      if (!Exit.isFailure(third)) return expect.unreachable()
+      const die = third.cause.reasons.find(Cause.isDieReason)
+      const blocked = die?.defect
+      expect(blocked).toBeInstanceOf(Tool.RepeatedCallError)
+      expect((blocked as Tool.RepeatedCallError).message).toContain("Repeated call blocked")
+      expect((blocked as Tool.RepeatedCallError).message).toContain("badtest")
     }),
   )
 })
