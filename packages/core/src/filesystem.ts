@@ -1,9 +1,9 @@
 import { NodeFileSystem } from "@effect/platform-node"
-import { dirname, join, relative, resolve as pathResolve } from "path"
+import { dirname, isAbsolute, join, relative, resolve as pathResolve, sep } from "path"
 import { realpathSync } from "fs"
 import * as NFS from "fs/promises"
 import { lookup } from "mime-types"
-import { Context, Effect, FileSystem, Layer, Schema } from "effect"
+import { Context, Duration, Effect, FileSystem, Layer, Schedule, Schema } from "effect"
 import type { PlatformError } from "effect/PlatformError"
 import { Glob } from "./util/glob"
 import { serviceUse } from "./effect/service-use"
@@ -94,15 +94,33 @@ export namespace AppFileSystem {
         })
       })
 
+      // Atomic replace: rename is atomic on POSIX and Windows, so an interrupted
+      // process leaves the previous file intact instead of a half-written one.
+      // Non-atomic writes are what corrupted auth.json. The temp name carries a
+      // random suffix so two fibers writing the same target in one process
+      // cannot clobber each other's temp file. On Windows the rename itself can
+      // fail transiently (EPERM/EACCES/EBUSY) while another writer is replacing
+      // the same destination, so retry briefly on those codes only.
+      const tempFor = (path: string) => `${path}.${process.pid}.${Math.random().toString(36).slice(2, 10)}.tmp`
+      const transient = (e: PlatformError) => {
+        const code = (e.cause as { code?: string } | undefined)?.code ?? ""
+        return e.reason._tag === "PermissionDenied" || e.reason._tag === "Busy" || /^(EPERM|EACCES|EBUSY)$/.test(code)
+      }
+      const replace = Effect.fnUntraced(function* (temp: string, path: string) {
+        yield* fs
+          .rename(temp, path)
+          .pipe(
+            Effect.retry({ while: transient, times: 20, schedule: Schedule.spaced(Duration.millis(5)) }),
+            Effect.onError(() => fs.remove(temp).pipe(Effect.ignore)),
+          )
+      })
+
       const writeJson = Effect.fn("FileSystem.writeJson")(function* (path: string, data: unknown, mode?: number) {
         const content = JSON.stringify(data, null, 2)
-        // Write then rename: rename is atomic on POSIX and Windows, so an
-        // interrupted process leaves the previous file intact instead of a
-        // half-written one. Non-atomic writes are what corrupted auth.json.
-        const temp = `${path}.${process.pid}.tmp`
+        const temp = tempFor(path)
         yield* fs.writeFileString(temp, content)
         if (mode) yield* fs.chmod(temp, mode)
-        yield* fs.rename(temp, path).pipe(Effect.onError(() => fs.remove(temp).pipe(Effect.ignore)))
+        yield* replace(temp, path)
       })
 
       const ensureDir = Effect.fn("FileSystem.ensureDir")(function* (path: string) {
@@ -114,7 +132,11 @@ export namespace AppFileSystem {
         content: string | Uint8Array,
         mode?: number,
       ) {
-        const write = typeof content === "string" ? fs.writeFileString(path, content) : fs.writeFile(path, content)
+        // Same write-then-rename discipline as writeJson: session/message/part
+        // files are rewritten on every streaming update, and a kill mid-write
+        // must leave the previous version intact rather than a truncated file.
+        const temp = tempFor(path)
+        const write = typeof content === "string" ? fs.writeFileString(temp, content) : fs.writeFile(temp, content)
 
         yield* write.pipe(
           Effect.catchIf(
@@ -126,7 +148,8 @@ export namespace AppFileSystem {
               }),
           ),
         )
-        if (mode) yield* fs.chmod(path, mode)
+        if (mode) yield* fs.chmod(temp, mode)
+        yield* replace(temp, path)
       })
 
       const glob = Effect.fn("FileSystem.glob")(function* (pattern: string, options?: Glob.Options) {
@@ -247,13 +270,20 @@ export namespace AppFileSystem {
       .replace(/^\/mnt\/([a-zA-Z])(?:\/|$)/, (_, drive) => `${drive.toUpperCase()}:/`)
   }
 
+  // On Windows `relative()` returns an ABSOLUTE path (not `..`) when the two
+  // paths live on different drives or UNC shares, so `startsWith("..")` alone
+  // would report `D:\secret` as inside `C:\proj`. Conversely `..` must be a
+  // whole segment: a directory literally named `..cache` is inside the parent.
+  const outside = (rel: string) =>
+    rel === ".." || rel.startsWith(`..${sep}`) || rel.startsWith("../") || isAbsolute(rel)
+
   export function overlaps(a: string, b: string) {
     const relA = relative(a, b)
     const relB = relative(b, a)
-    return !relA || !relA.startsWith("..") || !relB || !relB.startsWith("..")
+    return !relA || !outside(relA) || !relB || !outside(relB)
   }
 
   export function contains(parent: string, child: string) {
-    return !relative(parent, child).startsWith("..")
+    return !outside(relative(parent, child))
   }
 }

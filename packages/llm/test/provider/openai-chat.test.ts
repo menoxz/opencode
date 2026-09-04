@@ -196,19 +196,80 @@ describe("OpenAI Chat route", () => {
     }),
   )
 
-  it.effect("rejects unsupported assistant reasoning content", () =>
-    Effect.gen(function* () {
-      const error = yield* LLMClient.prepare(
-        LLM.request({
-          id: "req_reasoning",
-          model,
-          messages: [Message.assistant({ type: "reasoning", text: "hidden" })],
-        }),
-      ).pipe(Effect.flip)
+    // Chat Completions has no native shape for historical reasoning blocks.
+    // Dropping them (rather than failing the request) is what lets a session that
+    // started on a reasoning model keep its history when switched to a chat model.
+    it.effect("drops assistant reasoning content instead of rejecting the request", () =>
+      Effect.gen(function* () {
+        const prepared = yield* LLMClient.prepare<OpenAIChat.OpenAIChatBody>(
+          LLM.request({
+            id: "req_reasoning",
+            model,
+            messages: [
+              Message.user("hi"),
+              Message.assistant([
+                { type: "reasoning", text: "hidden" },
+                { type: "text", text: "visible" },
+              ]),
+            ],
+          }),
+        )
 
-      expect(error.message).toContain("OpenAI Chat assistant messages only support text and tool-call content for now")
-    }),
-  )
+        expect(prepared.body.messages).toEqual([
+          { role: "user", content: "hi" },
+          { role: "assistant", content: "visible" },
+        ])
+      }),
+    )
+
+    // The session adapter (native-request.ts) nests provider options under
+    // `native.providerOptions.openaiCompatible`; DeepSeek-reasoner rejects a
+    // follow-up tool turn whose assistant message lacks `reasoning_content`.
+    it.effect("round-trips reasoning_content from both native shapes", () =>
+      Effect.gen(function* () {
+        const prepared = yield* LLMClient.prepare<OpenAIChat.OpenAIChatBody>(
+          LLM.request({
+            id: "req_reasoning_content",
+            model,
+            messages: [
+              Message.user("hi"),
+              Message.make({
+                role: "assistant",
+                content: "nested",
+                native: { providerOptions: { openaiCompatible: { reasoning_content: "why-nested" } } },
+              }),
+              Message.make({
+                role: "assistant",
+                content: "flat",
+                native: { openaiCompatible: { reasoning_content: "why-flat" } },
+              }),
+            ],
+          }),
+        )
+
+        expect(prepared.body.messages).toEqual([
+          { role: "user", content: "hi" },
+          { role: "assistant", content: "nested", reasoning_content: "why-nested" },
+          { role: "assistant", content: "flat", reasoning_content: "why-flat" },
+        ])
+      }),
+    )
+
+    it.effect("still rejects genuinely unsupported assistant content", () =>
+      Effect.gen(function* () {
+        const error = yield* LLMClient.prepare(
+          LLM.request({
+            id: "req_media",
+            model,
+            messages: [
+              Message.assistant([{ type: "media", data: "data:image/png;base64,AAAA", mediaType: "image/png" }]),
+            ],
+          }),
+        ).pipe(Effect.flip)
+
+        expect(error.message).toContain("OpenAI Chat assistant messages only support text and tool-call content for now")
+      }),
+    )
 
   it.effect("parses text and usage stream fixtures", () =>
     Effect.gen(function* () {

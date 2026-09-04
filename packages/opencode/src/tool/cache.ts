@@ -122,11 +122,21 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/To
             log.info("Cache fully invalidated", { removed: size })
             return size
           }
-          // Invalides les entrées dont la clé contient le pattern
+          // Invalidate entries whose key contains the pattern, plus any grep/glob
+          // search rooted at an ancestor of the changed path: those keys carry
+          // the search directory, never the edited file, so a plain substring
+          // match would leave a stale result for the whole TTL after an edit.
+          const changed = pattern.replaceAll("\\", "/")
+          const searchRoots = (k: string) => {
+            const m = /^(?:grep|glob):((?:[A-Za-z]:)?[^:]*)/.exec(k)
+            return m ? m[1].replaceAll("\\", "/") : undefined
+          }
           let removed = 0
           const toRemove: string[] = []
           for (const [k] of map) {
-            if (k.includes(pattern)) {
+            const root = searchRoots(k)
+            const ancestor = root !== undefined && (changed === root || changed.startsWith(root.endsWith("/") ? root : root + "/"))
+            if (k.includes(pattern) || ancestor) {
               toRemove.push(k)
               removed++
             }

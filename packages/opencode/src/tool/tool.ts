@@ -1,4 +1,4 @@
-import { Effect, Exit, Schema, SchemaIssue } from "effect"
+import { Cause, Effect, Exit, Schema, SchemaIssue } from "effect"
 import type { JSONSchema7 } from "@ai-sdk/provider"
 import type { MessageV2 } from "../session/message-v2"
 import type { Permission } from "../permission"
@@ -165,7 +165,18 @@ function wrap<Parameters extends Schema.Decoder<unknown>, Result extends Metadat
 
           const exit = yield* Effect.exit(execute(decoded as Schema.Schema.Type<Parameters>, ctx))
           if (Exit.isFailure(exit)) {
-            ToolRepetition.record(ctx.sessionID, id, decoded, { ok: false, digest: "" })
+            // Neither a human decision nor a cancellation says anything about the
+            // call itself: a permission refusal may be approved next time, and an
+            // interrupt (Esc, task cancel, timeout) never ran to a verdict. Only
+            // real execution failures feed the brake.
+            const failure = Cause.squash(exit.cause)
+            const permission =
+              typeof failure === "object" &&
+              failure !== null &&
+              "_tag" in failure &&
+              String(failure._tag).startsWith("Permission")
+            const interrupted = Cause.hasInterruptsOnly(exit.cause)
+            if (!permission && !interrupted) ToolRepetition.record(ctx.sessionID, id, decoded, { ok: false, digest: "" })
             return yield* Effect.failCause(exit.cause)
           }
           const result = exit.value

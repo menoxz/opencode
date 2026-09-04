@@ -72,10 +72,13 @@ function credentialFromRequest(request: HttpServerRequest.HttpServerRequest) {
 }
 
 function credentialFromURL(url: URL, request: HttpServerRequest.HttpServerRequest) {
-  const token = url.searchParams.get(AUTH_TOKEN_QUERY)
-  if (token) return decodeCredential(token)
+  // The Authorization header is the primary channel; the query fallback exists
+  // for clients that cannot set headers (app bootstrap, PTY WebSocket) and must
+  // never override an explicitly supplied header.
   const match = /^Basic\s+(.+)$/i.exec(request.headers.authorization ?? "")
   if (match) return decodeCredential(match[1])
+  const token = url.searchParams.get(AUTH_TOKEN_QUERY)
+  if (token) return decodeCredential(token)
   return Effect.succeed(emptyCredential())
 }
 

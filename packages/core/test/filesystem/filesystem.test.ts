@@ -5,8 +5,8 @@ import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { testEffect } from "../lib/effect"
 import path from "path"
 
-const live = AppFileSystem.layer.pipe(Layer.provideMerge(NodeFileSystem.layer))
-const { effect: it } = testEffect(live)
+const layer = AppFileSystem.layer.pipe(Layer.provideMerge(NodeFileSystem.layer))
+const { effect: it, live } = testEffect(layer)
 
 describe("AppFileSystem", () => {
   describe("isDir", () => {
@@ -188,6 +188,77 @@ describe("AppFileSystem", () => {
         expect(new Uint8Array(result)).toEqual(content)
       }),
     )
+
+    // Session/message/part files are rewritten on every streaming update, so a
+    // kill mid-write must leave the previous version intact. Write-then-rename
+    // also means no stray temp file is left behind on success.
+    it(
+      "replaces existing content atomically without leaving temp files",
+      Effect.gen(function* () {
+        const fs = yield* AppFileSystem.Service
+        const filesys = yield* FileSystem.FileSystem
+        const tmp = yield* filesys.makeTempDirectoryScoped()
+        const file = path.join(tmp, "session.json")
+
+        yield* fs.writeWithDirs(file, JSON.stringify({ v: 1 }))
+        yield* fs.writeWithDirs(file, JSON.stringify({ v: 2 }))
+
+        expect(JSON.parse(yield* filesys.readFileString(file))).toEqual({ v: 2 })
+        const leftovers = (yield* filesys.readDirectory(tmp)).filter((name) => name.endsWith(".tmp"))
+        expect(leftovers).toEqual([])
+      }),
+    )
+
+    // Runs on the real clock: the Windows rename retry sleeps via Schedule.spaced,
+    // which never advances under TestClock.
+    live(
+      "concurrent writes to the same target all land and leave no temp files",
+      Effect.gen(function* () {
+        const fs = yield* AppFileSystem.Service
+        const filesys = yield* FileSystem.FileSystem
+        const tmp = yield* filesys.makeTempDirectoryScoped()
+        const file = path.join(tmp, "auth.json")
+
+        yield* Effect.all(
+          Array.from({ length: 8 }, (_, i) => fs.writeWithDirs(file, JSON.stringify({ i }))),
+          { concurrency: "unbounded" },
+        )
+
+        const final = JSON.parse(yield* filesys.readFileString(file)) as { i: number }
+        expect(final.i).toBeGreaterThanOrEqual(0)
+        expect(final.i).toBeLessThan(8)
+        const leftovers = (yield* filesys.readDirectory(tmp)).filter((name) => name.endsWith(".tmp"))
+        expect(leftovers).toEqual([])
+      }),
+    )
+  })
+
+  describe("contains / overlaps", () => {
+    test("nested child is contained", () => {
+      const root = path.resolve("proj")
+      expect(AppFileSystem.contains(root, path.join(root, "src", "a.ts"))).toBe(true)
+      expect(AppFileSystem.contains(root, root)).toBe(true)
+    })
+
+    test("parent traversal is not contained", () => {
+      const root = path.resolve("proj")
+      expect(AppFileSystem.contains(root, path.resolve("proj", "..", "other"))).toBe(false)
+    })
+
+    test("a child whose name merely starts with '..' is contained", () => {
+      const root = path.resolve("proj")
+      expect(AppFileSystem.contains(root, path.join(root, "..cache", "x"))).toBe(true)
+      expect(AppFileSystem.contains(root, path.join(root, "..gitkeep"))).toBe(true)
+    })
+
+    // On Windows `path.relative` returns an ABSOLUTE path (not `..`) when the
+    // two paths live on different drives or UNC shares. Treating that as
+    // "inside" silently skipped the external_directory permission prompt.
+    test.if(process.platform === "win32")("another drive or UNC share is never contained", () => {
+      expect(AppFileSystem.contains("C:\\proj", "D:\\secret\\id_rsa")).toBe(false)
+      expect(AppFileSystem.contains("C:\\proj", "\\\\nas\\share\\x")).toBe(false)
+      expect(AppFileSystem.overlaps("C:\\proj", "D:\\proj")).toBe(false)
+    })
   })
 
   describe("findUp", () => {

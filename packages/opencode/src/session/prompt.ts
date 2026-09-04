@@ -1,5 +1,5 @@
 import path from "path"
-import { supportsExtractedAudio } from "@/document/provider-support"
+import { supportsExtractedAudio, supportsPdfInput } from "@/document/provider-support"
 import { ArtifactStore } from "@/artifact/store"
 import { DocumentExtractor } from "@/document/extractor"
 import os from "os"
@@ -1312,7 +1312,7 @@ export const layer = Layer.effect(
                   ...extraction.assets.filter((asset) => asset.mime.startsWith("image/") || (includeAudio && asset.mime.startsWith("audio/"))).map((asset) => ({
                     type: "file" as const, mime: asset.mime, filename: asset.filename, url: asset.url, synthetic: true, messageID: info.id, sessionID: input.sessionID,
                   })),
-                  ...(extraction.kind === "pdf" && extraction.source.size <= 10 * 1024 * 1024
+                  ...(extraction.kind === "pdf" && supportsPdfInput(attachmentModel) && extraction.source.size <= 10 * 1024 * 1024
                     ? [{ type: "file" as const, mime: "application/pdf", filename: part.filename, url: extraction.source.url, synthetic: true, messageID: info.id, sessionID: input.sessionID }]
                     : []),
                 ]
@@ -2570,38 +2570,43 @@ export const layer = Layer.effect(
       const args = raw.map((arg) => arg.replace(quoteTrimRegex, ""))
       const templateCommand = yield* Effect.promise(async () => cmd.template)
 
-      const placeholders = templateCommand.match(placeholderRegex) ?? []
+      // Resolve the template author's !`cmd` blocks on the RAW template, before
+      // any user argument is spliced in: arguments must never be able to add a
+      // shell command. Replacements are applied positionally afterwards.
+      const shellMatches = ConfigMarkdown.shell(templateCommand)
+      const shellOutputs = shellMatches.length
+        ? yield* Effect.gen(function* () {
+            const cfg = yield* config.get()
+            const sh = Shell.preferred(cfg.shell)
+            return yield* Effect.promise(() =>
+              Promise.all(
+                shellMatches.map(async ([, cmd]) => (await Process.text([cmd], { shell: sh, nothrow: true })).text),
+              ),
+            )
+          })
+        : []
+      let shellIndex = 0
+      const withShell = templateCommand.replace(bashRegex, () => shellOutputs[shellIndex++])
+
+      const placeholders = withShell.match(placeholderRegex) ?? []
       let last = 0
       for (const item of placeholders) {
         const value = Number(item.slice(1))
         if (value > last) last = value
       }
 
-      const withArgs = templateCommand.replaceAll(placeholderRegex, (_, index) => {
+      const withArgs = withShell.replaceAll(placeholderRegex, (_, index) => {
         const position = Number(index)
         const argIndex = position - 1
         if (argIndex >= args.length) return ""
         if (position === last) return args.slice(argIndex).join(" ")
         return args[argIndex]
       })
-      const usesArgumentsPlaceholder = templateCommand.includes("$ARGUMENTS")
+      const usesArgumentsPlaceholder = withShell.includes("$ARGUMENTS")
       let template = withArgs.replaceAll("$ARGUMENTS", input.arguments)
 
       if (placeholders.length === 0 && !usesArgumentsPlaceholder && input.arguments.trim()) {
         template = template + "\n\n" + input.arguments
-      }
-
-      const shellMatches = ConfigMarkdown.shell(template)
-      if (shellMatches.length > 0) {
-        const cfg = yield* config.get()
-        const sh = Shell.preferred(cfg.shell)
-        const results = yield* Effect.promise(() =>
-          Promise.all(
-            shellMatches.map(async ([, cmd]) => (await Process.text([cmd], { shell: sh, nothrow: true })).text),
-          ),
-        )
-        let index = 0
-        template = template.replace(bashRegex, () => results[index++])
       }
       template = template.trim()
 

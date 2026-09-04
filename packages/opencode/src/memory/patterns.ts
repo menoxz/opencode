@@ -24,6 +24,19 @@ import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import * as MemoryStore from "./store"
 import { tokenize } from "./search"
 
+// Tags are persisted as a JSON string. A single malformed row (external
+// writer, old migration) must not abort the whole 24h pattern-detection job,
+// so decode defensively — same contract as Memory.parseRowTags, duplicated
+// here because index.ts already imports this module.
+const rowTags = (raw: string): string[] => {
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed.filter((tag): tag is string => typeof tag === "string") : []
+  } catch {
+    return []
+  }
+}
+
 const log = Log.create({ service: "memory.patterns" })
 
 // ---------------------------------------------------------------------------
@@ -180,7 +193,7 @@ export const layer = Layer.effect(
         for (const entry of entries) {
           const keywords = extractKeywords(entry.content)
           const contentKeywords = Array.from(keywords).join(" ")
-          const categories = categorizeContent(entry.content, JSON.parse(entry.tags) as string[])
+          const categories = categorizeContent(entry.content, rowTags(entry.tags))
 
           for (const cat of categories) {
             const key = cat
@@ -190,7 +203,7 @@ export const layer = Layer.effect(
             const cluster = clusters.get(key)!
             cluster.ids.push(entry.id)
             cluster.contents.push(entry.content)
-            for (const tag of JSON.parse(entry.tags) as string[]) {
+            for (const tag of rowTags(entry.tags)) {
               cluster.tags.add(tag)
             }
           }
@@ -231,7 +244,7 @@ export const layer = Layer.effect(
 
         // Find memories tagged as pitfalls/errors
         const pitfallEntries = entries.filter((e) => {
-          const tags: string[] = JSON.parse(e.tags)
+          const tags = rowTags(e.tags)
           return tags.includes("pitfall") || tags.includes("error") || e.memory_type === "episodic"
         })
 

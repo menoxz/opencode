@@ -488,6 +488,25 @@ it.instance("handles environment variable substitution", () =>
   ),
 )
 
+// Regression: the value lands inside a JSON string literal, so a Windows path
+// (backslashes) or a quote must be escaped — before the fix `C:\Users\x` turned
+// into invalid `\U` escapes and the whole config failed to parse.
+it.instance("escapes env values that contain backslashes and quotes", () =>
+  withProcessEnv(
+    "WIN_PATH_VAR",
+    'C:\\Users\\jean "dev"\\AppData',
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      yield* writeConfigEffect(test.directory, {
+        $schema: "https://opencode.ai/config.json",
+        username: "{env:WIN_PATH_VAR}",
+      })
+      const config = yield* Config.use.get()
+      expect(config.username).toBe('C:\\Users\\jean "dev"\\AppData')
+    }),
+  ),
+)
+
 it.instance("preserves env variables when adding $schema to config", () =>
   withProcessEnv(
     "PRESERVE_VAR",

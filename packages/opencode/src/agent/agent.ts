@@ -382,14 +382,19 @@ export const layer = Layer.effect(
 
         const defaultInfo = Effect.fnUntraced(function* () {
           const c = yield* config.get()
+          const visible = Object.values(agents).find((a) => a.mode !== "subagent" && a.hidden !== true)
           if (c.default_agent) {
             const agent = agents[c.default_agent]
-            if (!agent) throw new Error(`default agent "${c.default_agent}" not found`)
-            if (agent.mode === "subagent") throw new Error(`default agent "${c.default_agent}" is a subagent`)
-            if (agent.hidden === true) throw new Error(`default agent "${c.default_agent}" is hidden`)
-            return agent
+            const usable = agent && agent.mode !== "subagent" && agent.hidden !== true
+            // The schema documents a fallback for an invalid default_agent
+            // (missing, disabled, hidden or subagent); honour it instead of
+            // making every session without an explicit agent fail.
+            if (usable) return agent
+            if (visible) {
+              yield* Effect.logWarning(`default agent "${c.default_agent}" is not a usable primary agent, falling back to "${visible.name}"`)
+              return visible
+            }
           }
-          const visible = Object.values(agents).find((a) => a.mode !== "subagent" && a.hidden !== true)
           if (!visible) throw new Error("no primary visible agent found")
           return visible
         })

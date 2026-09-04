@@ -185,8 +185,15 @@ const lowerToolCall = (part: ToolCallPart): OpenAIChatAssistantToolCall => ({
   },
 })
 
-const openAICompatibleReasoningContent = (native: unknown) =>
-  isRecord(native) && typeof native.reasoning_content === "string" ? native.reasoning_content : undefined
+// The session adapter (native-request.ts) nests provider options under
+// `native.providerOptions.openaiCompatible`; direct callers may pass
+// `native.openaiCompatible`. Accept both so reasoning_content round-trips.
+const openAICompatibleReasoningContent = (native: unknown) => {
+  if (!isRecord(native)) return undefined
+  const nested = isRecord(native.providerOptions) ? native.providerOptions.openaiCompatible : undefined
+  const compat = isRecord(nested) ? nested : native.openaiCompatible
+  return isRecord(compat) && typeof compat.reasoning_content === "string" ? compat.reasoning_content : undefined
+}
 
 const lowerUserMessage = Effect.fn("OpenAIChat.lowerUserMessage")(function* (message: OpenAIChatRequestMessage) {
   const content: TextPart[] = []
@@ -204,6 +211,11 @@ const lowerAssistantMessage = Effect.fn("OpenAIChat.lowerAssistantMessage")(func
   const content: TextPart[] = []
   const toolCalls: OpenAIChatAssistantToolCall[] = []
   for (const part of message.content) {
+    // Chat Completions has no native shape for historical reasoning blocks
+    // (the compatible `reasoning_content` field is fed via `native`). Drop them
+    // instead of rejecting the whole request, matching the AI SDK behaviour and
+    // the other protocols, which accept `reasoning` on assistant turns.
+    if (part.type === "reasoning") continue
     if (!ProviderShared.supportsContent(part, ["text", "tool-call"]))
       return yield* ProviderShared.unsupportedContent("OpenAI Chat", "assistant", ["text", "tool-call"])
     if (part.type === "text") {
@@ -219,7 +231,7 @@ const lowerAssistantMessage = Effect.fn("OpenAIChat.lowerAssistantMessage")(func
     role: "assistant" as const,
     content: content.length === 0 ? null : ProviderShared.joinText(content),
     tool_calls: toolCalls.length === 0 ? undefined : toolCalls,
-    reasoning_content: openAICompatibleReasoningContent(message.native?.openaiCompatible),
+    reasoning_content: openAICompatibleReasoningContent(message.native),
   }
 })
 

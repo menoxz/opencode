@@ -33,8 +33,12 @@ function dir(input: ParseSource) {
 /** Apply {env:VAR} and {file:path} substitutions to config text. */
 export async function substitute(input: SubstituteInput) {
   const missing = input.missing ?? "error"
+  // The value lands inside a JSON string literal, so escape it exactly like
+  // {file:} does below: a Windows path such as `C:\Users\x` would otherwise
+  // inject `\U` / `\x` and make the whole config fail to parse.
   let text = input.text.replace(/\{env:([^}]+)\}/g, (_, varName) => {
-    return (input.env?.[varName] ?? process.env[varName]) || ""
+    const value = (input.env?.[varName] ?? process.env[varName]) || ""
+    return JSON.stringify(value).slice(1, -1)
   })
 
   const fileMatches = Array.from(text.matchAll(/\{file:[^}]+\}/g))

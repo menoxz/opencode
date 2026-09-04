@@ -73,6 +73,51 @@ const expectLLMError = (error: unknown) => {
 const errorHttp = (error: LLMError) => ("http" in error.reason ? error.reason.http : undefined)
 
 describe("RequestExecutor", () => {
+  // Billing exhaustion must never be retried: Google phrases its 429 as
+  // "exceeded your current quota" (not "quota exceeded") and OpenRouter uses a
+  // 402. Both were previously classified as retryable rate limits.
+  it.effect("classifies Google-style quota 429 as QuotaExceeded without retrying", () =>
+    Effect.gen(function* () {
+      const executor = yield* RequestExecutor.Service
+      const error = yield* executor.execute(request).pipe(Effect.flip)
+      expectLLMError(error)
+      expect(error.reason._tag).toBe("QuotaExceeded")
+      expect(error.retryable).toBe(false)
+    }).pipe(
+      Effect.provide(
+        // A single response: a retry would hit the cursor past the end and fail differently.
+        responsesLayer([
+          new Response(
+            JSON.stringify({
+              error: {
+                code: 429,
+                status: "RESOURCE_EXHAUSTED",
+                message: "You exceeded your current quota, please check your plan and billing details.",
+              },
+            }),
+            { status: 429 },
+          ),
+        ]),
+      ),
+    ),
+  )
+
+  it.effect("classifies 402 Insufficient credits as QuotaExceeded", () =>
+    Effect.gen(function* () {
+      const executor = yield* RequestExecutor.Service
+      const error = yield* executor.execute(request).pipe(Effect.flip)
+      expectLLMError(error)
+      expect(error.reason._tag).toBe("QuotaExceeded")
+      expect(error.retryable).toBe(false)
+    }).pipe(
+      Effect.provide(
+        responsesLayer([
+          new Response(JSON.stringify({ error: { message: "Insufficient credits", code: 402 } }), { status: 402 }),
+        ]),
+      ),
+    ),
+  )
+
   it.effect("returns redacted diagnostics for retryable rate limits", () =>
     Effect.gen(function* () {
       const executor = yield* RequestExecutor.Service

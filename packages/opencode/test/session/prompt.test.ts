@@ -123,8 +123,8 @@ const mcp = Layer.succeed(
     prompts: () => Effect.succeed({}),
     resources: () => Effect.succeed({}),
     add: () => Effect.succeed({ status: { status: "disabled" as const } }),
-    connect: () => Effect.void,
-    disconnect: () => Effect.void,
+    connect: () => Effect.succeed({ status: { status: "connected" as const }, toolCount: 0 }),
+    disconnect: () => Effect.succeed({ status: { status: "disabled" as const }, toolCount: 0 }),
     getPrompt: () => Effect.succeed(undefined),
     readResource: () => Effect.succeed(undefined),
     startAuth: () => Effect.die("unexpected MCP auth in prompt-effect tests"),
@@ -134,7 +134,7 @@ const mcp = Layer.succeed(
     supportsOAuth: () => Effect.succeed(false),
     hasStoredTokens: () => Effect.succeed(false),
     getAuthStatus: () => Effect.succeed("not_authenticated" as const),
-    reload: () => Effect.void,
+    reload: () => Effect.succeed({}),
   }),
 )
 
@@ -2309,6 +2309,45 @@ unix(
         expect(result.info.role).toBe("assistant")
         const inputs = yield* llm.inputs
         expect(JSON.stringify(inputs.at(-1)?.messages)).toContain("configured")
+      }),
+    ),
+  30_000,
+)
+
+// Security regression: !`cmd` must only be honoured when written by the
+// template author. Previously $ARGUMENTS was spliced in BEFORE shell
+// detection, so a pasted argument could execute arbitrary commands.
+unix(
+  "command ! expansion never executes shell blocks supplied via $ARGUMENTS",
+  () =>
+    withSh(() =>
+      Effect.gen(function* () {
+        if (!(yield* hasBash)) return
+        const { llm } = yield* useServerConfig((url) => ({
+          ...providerCfg(url),
+          shell: "bash",
+          command: {
+            echo: {
+              template: "Summarize: $ARGUMENTS",
+            },
+          },
+        }))
+
+        const { prompt, chat } = yield* boot()
+        yield* llm.text("done")
+
+        const injected = "!`printf INJECTED_MARKER`"
+        yield* prompt.command({
+          sessionID: chat.id,
+          command: "echo",
+          arguments: injected,
+        })
+
+        const inputs = yield* llm.inputs
+        const sent = JSON.stringify(inputs.at(-1)?.messages)
+        expect(sent).not.toContain("INJECTED_MARKER")
+        // The argument is preserved verbatim as text, not evaluated.
+        expect(sent).toContain("printf INJECTED_MARKER")
       }),
     ),
   30_000,

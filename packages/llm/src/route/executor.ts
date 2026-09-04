@@ -238,10 +238,15 @@ const statusReason = (input: {
   if (input.status === 403) {
     return new AuthenticationReason({ message: input.message, kind: "insufficient-permissions", http: input.http })
   }
+  // Billing exhaustion is not retryable regardless of the status code the
+  // provider picks: OpenAI/Anthropic say "insufficient_quota" on 429, Google
+  // says "exceeded your current quota"/RESOURCE_EXHAUSTED on 429, OpenRouter
+  // returns 402 "Insufficient credits".
+  const quota = /insufficient[-_\s]?(quota|credits?)|quota[-_\s]?exceeded|exceeded[^.\n]{0,40}quota|RESOURCE_EXHAUSTED|billing/i
+  if (input.status === 402 || (input.status === 429 && quota.test(body))) {
+    return new QuotaExceededReason({ message: input.message, http: input.http })
+  }
   if (input.status === 429) {
-    if (/insufficient[-_\s]?quota|quota[-_\s]?exceeded/i.test(body)) {
-      return new QuotaExceededReason({ message: input.message, http: input.http })
-    }
     return new RateLimitReason({
       message: input.message,
       retryAfterMs: input.retryAfterMs,
