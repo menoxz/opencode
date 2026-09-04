@@ -202,9 +202,12 @@ export function selectTools<T>(
   const always = new Set(options.always ?? [])
   const maxTools = Math.max(1, options.maxTools ?? 20)
   const available = new Set(catalog.tools.map((item) => item.id))
-  // Sticky activations come first: when core saturates the cap they evict the
-  // lowest-priority core tools instead of being silently dropped.
-  const required = [...always, ...core].filter((id) => available.has(id)).slice(0, maxTools)
+  // Core tools are never evicted: the lean cap guard guarantees room for core
+  // plus a margin of dynamic slots, so sticky activations only compete among
+  // themselves for the remaining slots (callers pass them most-recent first).
+  const coreIds = [...core].filter((id) => available.has(id)).slice(0, maxTools)
+  const stickyIds = [...always].filter((id) => available.has(id) && !core.has(id)).slice(0, Math.max(0, maxTools - coreIds.length))
+  const required = [...coreIds, ...stickyIds]
   const compact = (ids: Iterable<string>) => {
     const selected = new Set([...ids].filter((id) => available.has(id)).slice(0, maxTools))
     return catalog.tools.filter((item) => selected.has(item.id))

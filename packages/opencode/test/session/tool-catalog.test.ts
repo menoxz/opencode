@@ -103,19 +103,29 @@ describe("session tool hot-path catalog", () => {
     expect(store.get("session-2", 2_001)).toEqual(new Set(["b", "c"]))
   })
 
-  test("sticky always tools survive core saturation of the cap", () => {
+  test("core tools are never evicted by sticky activations", () => {
+    const core = ["read", "glob", "grep", "edit", "write", "bash", "task", "todowrite"]
     const catalog = {
       version: "v1",
       createdAt: Date.now(),
-      tools: [tool("browser_snapshot", "Capture browser page"), ...Array.from({ length: 40 }, (_, i) => tool(`other_${i}`, `Other ${i}`))],
+      tools: [
+        ...core.map((id) => tool(id, `Core ${id}`)),
+        tool("mcp_a", "MCP tool a"),
+        tool("mcp_b", "MCP tool b"),
+        tool("mcp_c", "MCP tool c"),
+        ...Array.from({ length: 40 }, (_, i) => tool(`other_${i}`, `Other ${i}`)),
+      ],
     }
-    const core = ["read", "glob", "grep", "edit", "write", "bash", "task", "todowrite"]
+    // 8 core + 2 free slots; three stickies compete, most recent first.
     const selected = ToolCatalog.selectTools(catalog, "unknown request", {
-      enabled: true, threshold: 0, maxTools: 4, core, always: ["browser_snapshot"], fallback: "core", requireCoverage: false,
+      enabled: true, threshold: 0, maxTools: 10, core, always: ["mcp_c", "mcp_b", "mcp_a"], fallback: "core", requireCoverage: false,
     })
-    expect(selected.mode).toBe("jit")
-    expect(selected.tools.map((item) => item.id)).toContain("browser_snapshot")
-    expect(selected.tools.length).toBeLessThanOrEqual(4)
+    const ids = selected.tools.map((item) => item.id)
+    expect(ids).toEqual(expect.arrayContaining(core))
+    expect(ids).toContain("mcp_c")
+    expect(ids).toContain("mcp_b")
+    expect(ids).not.toContain("mcp_a")
+    expect(ids.length).toBe(10)
   })
 
   test("ranks deferred tools without exposing their schemas", () => {

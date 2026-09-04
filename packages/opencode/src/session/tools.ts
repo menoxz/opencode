@@ -7,6 +7,7 @@ import { Tool } from "@/tool/tool"
 import { ToolJsonSchema } from "@/tool/json-schema"
 import { ToolRegistry } from "@/tool/registry"
 import { Truncate } from "@/tool/truncate"
+import { isLeanAgent, LEAN_DYNAMIC_SLOT_MARGIN } from "@/tool/lean-output-policy"
 import { ModelID } from "@/provider/schema"
 import { Plugin } from "@/plugin"
 import type { TaskPromptOps } from "@/tool/task"
@@ -35,6 +36,19 @@ const LEAN_PHASE_CORE = {
 
 export function leanPhaseCoreTools(phase: keyof typeof LEAN_PHASE_CORE) {
   return LEAN_PHASE_CORE[phase]
+}
+
+// The cap must leave room for dynamic activations, not merely fit the mandatory
+// tools: with max_tools=14 and 12 mandatory tools only one MCP slot was left and
+// every tool_search evicted the previous activation.
+export function leanDynamicCapVerdict(input: { configuredMax: number; requiredCount: number }) {
+  const minimum = input.requiredCount + LEAN_DYNAMIC_SLOT_MARGIN
+  if (input.configuredMax >= minimum) return { ok: true as const, minimum }
+  return {
+    ok: false as const,
+    minimum,
+    reason: `Lean dynamic tool cap ${input.configuredMax} is too small: ${input.requiredCount} mandatory tools + ${LEAN_DYNAMIC_SLOT_MARGIN} dynamic slots require at least ${minimum} (hot_path.max_tools)`,
+  }
 }
 
 // Historical tool calls can reach the model as elided renderings, and a model that
@@ -145,7 +159,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     maxTools: hotPath?.max_tools,
     always: hotPath?.always_tools,
   })
-  const dynamicMode = input.agent.name === "lean" ? (hotPath?.lean_dynamic_tools ?? "off") : "off"
+  const dynamicMode = isLeanAgent(input.agent) ? (hotPath?.lean_dynamic_tools ?? "off") : "off"
   const rules = Permission.merge(input.agent.permission, input.session.permission ?? [])
   const denied = Permission.disabled(prepared.catalog.tools.map((item) => item.id), rules)
   const visibleCatalog = {
@@ -160,13 +174,15 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   const configuredMax = hotPath?.max_tools ?? 14
   const sticky = activations.get(input.session.id)
   const requiredCount = new Set([...core, ...(hotPath?.always_tools ?? [])].filter((id) => visibleCatalog.tools.some((item) => item.id === id))).size + 1
-  if (dynamicMode === "enforce" && !searchDenied && requiredCount > configuredMax)
-    return yield* Effect.fail(new Error(`Lean dynamic tool cap ${configuredMax} is smaller than ${requiredCount} mandatory tools`))
+  const cap = leanDynamicCapVerdict({ configuredMax, requiredCount })
+  if (dynamicMode === "enforce" && !searchDenied && !cap.ok) return yield* Effect.fail(new Error(cap.reason))
   const proposed = ToolCatalog.selectTools(visibleCatalog, input.query ?? "", {
     enabled: dynamicMode !== "off",
     threshold: 0,
     maxTools: Math.max(1, configuredMax - 1),
-    always: [...(hotPath?.always_tools ?? []), ...sticky],
+    // Most recent activation first: when stickies exceed the free slots the
+    // ones the model just asked for must win over stale ones.
+    always: [...(hotPath?.always_tools ?? []), ...[...sticky].reverse()],
     core,
     fallback: "core",
     requireCoverage: false,

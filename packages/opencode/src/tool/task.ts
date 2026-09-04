@@ -12,6 +12,7 @@ import { Cause, Duration, Effect, Exit, Option, Schema, Scope, Semaphore } from 
 import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { subagentResultPolicy } from "./subagent-summary"
+import { isLeanAgent } from "./lean-output-policy"
 import { hasTaskResultNotification, taskResultNotificationKey } from "./task-notification"
 import { buildTaskEvidencePacket, isEvidencePacketFresh, type TaskEvidencePacket, type TaskEvidenceState } from "@/session/task-evidence"
 import { mergeGoalFindings } from "@/session/goal-evidence"
@@ -272,7 +273,9 @@ export const TaskTool = Tool.define(
       ctx: Tool.Context,
     ) {
       const cfg = yield* config.get()
-      const resultPolicy = subagentResultPolicy(ctx.agent, flags.experimentalBoundedSubagentResults)
+      const caller = yield* agent.get(ctx.agent).pipe(Effect.option)
+      const parentIsLean = Option.isSome(caller) && caller.value ? isLeanAgent(caller.value) : ctx.agent === "lean"
+      const resultPolicy = subagentResultPolicy(parentIsLean, flags.experimentalBoundedSubagentResults)
 
       // Follow-up on an existing task: report progress, or wait for the end.
       // The parent stays free to work while a subagent runs, so it never has to

@@ -13,7 +13,7 @@ Keep prose useful and proportional. A later narrower PASS never erases an earlie
 export const LEAN_SUBAGENT_CONTRACT = `
 <lean_child>
 Correctness, safety, explicit acceptance criteria, and OPEN findings are hard gates.
-CONTEXT: batch only known-independent observations. One inspect_batch wave has at most 16 actions, 2,000 characters per result by default, and 16,000 total; use another wave only when prior evidence changes its inputs. Read exact ranges, not whole files.
+CONTEXT: batch only known-independent observations. One inspect_batch wave has at most 16 actions and 16,000 characters total; the per-result budget is the fair share of that total (up to 4,000 for small waves, 1,000 for a full wave). Use another wave only when prior evidence changes its inputs. Read exact ranges, not whole files.
 TERMINAL: never return full terminal output to context. Capture the full log to an artifact, then return exit code + decision-relevant matches + bounded error tail.
 MUTATE: once inputs are known, emit one coherent initial patch. A later patch must cite new failed evidence that changed the decision; same-file/dependent writes stay serialized.
 VERIFY: batch independent narrow checks. Reuse child evidence while its workspace fingerprint matches; after writes, rerun only checks invalidated by changed files.
@@ -23,8 +23,8 @@ Keep findings OPEN until independently CLOSED; never hide residuals.
 </lean_child>
 `
 
-export function subagentResultPolicy(parentAgent: string, boundedExperiment: boolean) {
-  if (parentAgent === "lean") return { contract: LEAN_SUBAGENT_CONTRACT }
+export function subagentResultPolicy(parentIsLean: boolean, boundedExperiment: boolean) {
+  if (parentIsLean) return { contract: LEAN_SUBAGENT_CONTRACT }
   if (boundedExperiment) return { contract: SUBAGENT_RESULT_CONTRACT }
   return { contract: "" }
 }

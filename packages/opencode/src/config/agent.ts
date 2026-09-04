@@ -38,6 +38,10 @@ const AgentSchema = Schema.StructWithRest(
       description:
         "Load these skills from their SKILL.md source into the system prompt before the model starts working. Missing or denied skills fail loudly.",
     }),
+    lean: Schema.optional(Schema.Boolean).annotate({
+      description:
+        "Opt this agent into the lean execution profile: dynamic tool catalog (hot_path.lean_dynamic_tools + tool_search), lean subagent contract, and lean output budgets. Replaces the historical hard-coded check on the agent name 'lean'.",
+    }),
     disable: Schema.optional(Schema.Boolean),
     description: Schema.optional(Schema.String).annotate({ description: "Description of when to use the agent" }),
     mode: Schema.optional(Schema.Literals(["subagent", "primary", "all"])),
@@ -78,6 +82,7 @@ const KNOWN_KEYS = new Set([
   "tools",
   "skills",
   "preload_skills",
+  "lean",
 ])
 
 // Post-parse normalisation:

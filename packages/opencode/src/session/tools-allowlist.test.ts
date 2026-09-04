@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { deriveStrictToolAllowlist, leanPhaseCoreTools } from "./tools"
+import { deriveStrictToolAllowlist, leanDynamicCapVerdict, leanPhaseCoreTools } from "./tools"
+import { LEAN_DYNAMIC_SLOT_MARGIN } from "@/tool/lean-output-policy"
 
 describe("Lean dynamic core tools", () => {
   test("always keeps discovery recovery tools available", () => {
@@ -12,6 +13,22 @@ describe("Lean dynamic core tools", () => {
       expect(core).toContain("edit")
       expect(core).toContain("write")
     }
+  })
+
+  // Observed in production: max_tools=14 with 12 mandatory tools passed the old
+  // guard yet left a single slot for every MCP tool, so activations evicted
+  // each other on every step.
+  test("rejects a cap that fits the mandatory tools but leaves no dynamic room", () => {
+    const verdict = leanDynamicCapVerdict({ configuredMax: 14, requiredCount: 12 })
+    expect(verdict.ok).toBe(false)
+    expect(verdict.minimum).toBe(12 + LEAN_DYNAMIC_SLOT_MARGIN)
+    if (!verdict.ok) expect(verdict.reason).toContain("hot_path.max_tools")
+  })
+
+  test("accepts a cap at or above mandatory tools plus the dynamic margin", () => {
+    expect(leanDynamicCapVerdict({ configuredMax: 12 + LEAN_DYNAMIC_SLOT_MARGIN, requiredCount: 12 }).ok).toBe(true)
+    expect(leanDynamicCapVerdict({ configuredMax: 26, requiredCount: 12 }).ok).toBe(true)
+    expect(leanDynamicCapVerdict({ configuredMax: 12 + LEAN_DYNAMIC_SLOT_MARGIN - 1, requiredCount: 12 }).ok).toBe(false)
   })
 })
 

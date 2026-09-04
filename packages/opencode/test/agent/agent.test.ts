@@ -728,35 +728,31 @@ it.instance(
   },
 )
 
-it.instance(
-  "defaultAgent throws when default_agent points to subagent",
-  () => expectDefaultAgentError('default agent "explore" is a subagent'),
-  {
-    config: {
-      default_agent: "explore",
-    },
-  },
-)
+// The schema documents: "Falls back to 'build' if not set or if the specified
+// agent is invalid." A subagent, a hidden agent or an unknown name must not make
+// every session without an explicit agent fail.
+const expectDefaultAgentFallback = Effect.fn("AgentTest.expectDefaultAgentFallback")(function* () {
+  const agent = yield* load((svc) => svc.defaultAgent())
+  expect(agent).toBe("build")
+})
 
-it.instance(
-  "defaultAgent throws when default_agent points to hidden agent",
-  () => expectDefaultAgentError('default agent "compaction" is hidden'),
-  {
-    config: {
-      default_agent: "compaction",
-    },
+it.instance("defaultAgent falls back when default_agent points to subagent", () => expectDefaultAgentFallback(), {
+  config: {
+    default_agent: "explore",
   },
-)
+})
 
-it.instance(
-  "defaultAgent throws when default_agent points to non-existent agent",
-  () => expectDefaultAgentError('default agent "does_not_exist" not found'),
-  {
-    config: {
-      default_agent: "does_not_exist",
-    },
+it.instance("defaultAgent falls back when default_agent points to hidden agent", () => expectDefaultAgentFallback(), {
+  config: {
+    default_agent: "compaction",
   },
-)
+})
+
+it.instance("defaultAgent falls back when default_agent points to non-existent agent", () => expectDefaultAgentFallback(), {
+  config: {
+    default_agent: "does_not_exist",
+  },
+})
 
 it.instance(
   "defaultAgent returns plan when build is disabled and default_agent not set",

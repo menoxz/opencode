@@ -49,8 +49,13 @@ import { Heap } from "./cli/heap"
 import { drizzle } from "drizzle-orm/bun-sqlite"
 import { ensureProcessMetadata } from "@opencode-ai/core/util/opencode-process"
 import { isRecord } from "@/util/record"
+import { loadExperimentalEnv } from "@/flag/experimental-env"
 
 const processMetadata = ensureProcessMetadata("main")
+
+// Declarative OPENCODE_EXPERIMENTAL_* defaults from <config>/experimental.env;
+// must run before any RuntimeFlags layer reads process.env.
+loadExperimentalEnv()
 
 process.on("unhandledRejection", (e) => {
   Log.Default.error("rejection", {
