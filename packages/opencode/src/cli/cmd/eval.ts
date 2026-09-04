@@ -4,7 +4,7 @@ import { effectCmd } from "../effect-cmd"
 import { cmd } from "./cmd"
 import { Eval } from "@/eval"
 import { EvalRegression } from "@/eval/regression"
-import { commandExecutor, runScenarioReal } from "@/eval/real-runner"
+import { commandExecutor, headlessSessionExecutor, runScenarioReal } from "@/eval/real-runner"
 import type { ScenarioResult } from "@/eval/scenario"
 
 /**
@@ -133,14 +133,10 @@ const RunCommand = effectCmd({
       if (agentArg) process.stdout.write("  Agent:      " + agentArg + EOL)
       if (modelArg) process.stdout.write("  Model:      " + modelArg.providerID + "/" + modelArg.modelID + EOL)
       if (runner === "real") {
-        if (!realCommand) {
-          process.stdout.write(
-            "Real eval CLI requires OPENCODE_EVAL_REAL_COMMAND for this iteration." + EOL +
-              "The command runs in the scenario sandbox; SessionPrompt LLM execution remains a future integration." + EOL,
-          )
-          return
-        }
-        const sc = yield* runScenarioReal(scenario, commandExecutor(realCommand))
+        // Headless LLM sessions are the default real runner; a custom shell
+        // command (OPENCODE_EVAL_REAL_COMMAND) only overrides them.
+        const executor = realCommand ? commandExecutor(realCommand) : headlessSessionExecutor()
+        const sc = yield* runScenarioReal(scenario, executor)
         const report = yield* svc.recordRun([sc], scenario.id, scenario.name)
         process.stdout.write("" + EOL)
         process.stdout.write("  Result:     " + outcome(sc) + EOL)
@@ -173,15 +169,11 @@ const RunCommand = effectCmd({
       if (agentArg) process.stdout.write("  Agent:      " + agentArg + EOL)
       if (modelArg) process.stdout.write("  Model:      " + modelArg.providerID + "/" + modelArg.modelID + EOL)
       if (runner === "real") {
-        if (!realCommand) {
-          process.stdout.write(
-            "Real eval CLI requires OPENCODE_EVAL_REAL_COMMAND for this iteration." + EOL +
-              "The command runs in each scenario sandbox; SessionPrompt LLM execution remains a future integration." + EOL,
-          )
-          return
-        }
+        // Headless LLM sessions are the default real runner; a custom shell
+        // command (OPENCODE_EVAL_REAL_COMMAND) only overrides them.
+        const executor = realCommand ? commandExecutor(realCommand) : headlessSessionExecutor()
         const results = []
-        for (const sc of suite.scenarios) results.push(yield* runScenarioReal(sc, commandExecutor(realCommand)))
+        for (const sc of suite.scenarios) results.push(yield* runScenarioReal(sc, executor))
         const report = yield* svc.recordRun(results, suite.id, suite.name)
         process.stdout.write("" + EOL)
         for (const sc of report.scenarios) {
