@@ -103,6 +103,21 @@ describe("session tool hot-path catalog", () => {
     expect(store.get("session-2", 2_001)).toEqual(new Set(["b", "c"]))
   })
 
+  test("sticky always tools survive core saturation of the cap", () => {
+    const catalog = {
+      version: "v1",
+      createdAt: Date.now(),
+      tools: [tool("browser_snapshot", "Capture browser page"), ...Array.from({ length: 40 }, (_, i) => tool(`other_${i}`, `Other ${i}`))],
+    }
+    const core = ["read", "glob", "grep", "edit", "write", "bash", "task", "todowrite"]
+    const selected = ToolCatalog.selectTools(catalog, "unknown request", {
+      enabled: true, threshold: 0, maxTools: 4, core, always: ["browser_snapshot"], fallback: "core", requireCoverage: false,
+    })
+    expect(selected.mode).toBe("jit")
+    expect(selected.tools.map((item) => item.id)).toContain("browser_snapshot")
+    expect(selected.tools.length).toBeLessThanOrEqual(4)
+  })
+
   test("ranks deferred tools without exposing their schemas", () => {
     const catalog = { version: "v1", createdAt: Date.now(), tools: [tool("browser_snapshot", "Capture browser page"), tool("ssh_exec", "Run command on remote server"), tool("github_issue", "Create GitHub issue")] }
     expect(ToolCatalog.search(catalog, "inspect browser page", 2).map((item) => item.id)).toEqual(["browser_snapshot"])

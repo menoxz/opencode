@@ -383,8 +383,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         return run.promise(
           Effect.sync(() => {
             const value = args as { query: string; limit?: number }
-            const slots = Math.max(0, configuredMax - requiredCount)
-            const limit = Math.min(slots, Math.max(1, Math.min(8, value.limit ?? 5)))
+            const limit = Math.max(1, Math.min(8, value.limit ?? 5))
             const matches = ToolCatalog.search(
               visibleCatalog,
               value.query.slice(0, 500),
@@ -393,11 +392,14 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               .map((item) => item.id)
               .filter((id) => id !== TOOL_SEARCH_ID && !selection.tools.some((item) => item.id === id))
               .slice(0, limit)
+            // Sticky activations are the model's only escape hatch to reach MCP
+            // tools when mandatory tools saturate the cap, so grant headroom
+            // above the cap instead of silently evicting the activations.
             activations.activate(
               input.session.id,
               matches,
               Date.now(),
-              slots,
+              configuredMax + matches.length,
               hotPath?.activation_ttl_ms,
             )
             return {

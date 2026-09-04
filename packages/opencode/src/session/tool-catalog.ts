@@ -199,10 +199,12 @@ export function selectTools<T>(
   }
   const threshold = options.threshold ?? 30
   const core = new Set(options.core ?? CORE)
-  const always = new Set([...core, ...(options.always ?? [])])
+  const always = new Set(options.always ?? [])
   const maxTools = Math.max(1, options.maxTools ?? 20)
   const available = new Set(catalog.tools.map((item) => item.id))
-  const required = [...always].filter((id) => available.has(id)).slice(0, maxTools)
+  // Sticky activations come first: when core saturates the cap they evict the
+  // lowest-priority core tools instead of being silently dropped.
+  const required = [...always, ...core].filter((id) => available.has(id)).slice(0, maxTools)
   const compact = (ids: Iterable<string>) => {
     const selected = new Set([...ids].filter((id) => available.has(id)).slice(0, maxTools))
     return catalog.tools.filter((item) => selected.has(item.id))
