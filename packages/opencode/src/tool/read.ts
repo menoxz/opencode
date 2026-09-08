@@ -14,7 +14,7 @@ import { Service as ToolCacheService, DEFAULT_TTL } from "./cache"
 import { ReadLedger } from "./read-ledger"
 import { DocumentExtractor } from "@/document/extractor"
 import { ArtifactStore } from "@/artifact/store"
-import { supportsExtractedAudio } from "@/document/provider-support"
+import { supportsExtractedAudio, supportsPdfInput } from "@/document/provider-support"
 import type { Provider } from "@/provider/provider"
 
 const DEFAULT_READ_LIMIT = 2000
@@ -283,7 +283,9 @@ export const ReadTool = Tool.define(
         const extraction = yield* Effect.promise(() => DocumentExtractor.extractBytes(bytes, { filename: path.basename(filepath), mime }))
         const markdown = Buffer.from(extraction.text, "utf8")
         const textArtifact = yield* Effect.promise(() => ArtifactStore.put(markdown, { mime: "text/markdown", filename: `${path.basename(filepath)}.md` }))
-        const includeAudio = supportsExtractedAudio(ctx.extra?.model as Provider.Model | undefined)
+        const extractionModel = ctx.extra?.model as Provider.Model | undefined
+        const includeAudio = supportsExtractedAudio(extractionModel)
+        const includePdf = supportsPdfInput(extractionModel)
         const cut = markdown.byteLength > MAX_BYTES
         const rendered = cut ? extraction.text.slice(0, MAX_BYTES) : extraction.text
         const output = [
@@ -309,7 +311,7 @@ export const ReadTool = Tool.define(
             ...extraction.assets.filter((asset) => asset.mime.startsWith("image/") || (includeAudio && asset.mime.startsWith("audio/"))).map((asset) => ({
               type: "file" as const, mime: asset.mime, filename: asset.filename, url: asset.url,
             })),
-            ...(extraction.kind === "pdf" && extraction.source.size <= 10 * 1024 * 1024
+            ...(extraction.kind === "pdf" && includePdf && extraction.source.size <= 10 * 1024 * 1024
               ? [{ type: "file" as const, mime: "application/pdf", filename: path.basename(filepath), url: extraction.source.url }]
               : []),
           ],

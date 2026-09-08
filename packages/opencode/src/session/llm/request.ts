@@ -13,6 +13,7 @@ import { jsonSchema, tool as aiTool, type ModelMessage, type Tool } from "ai"
 import type { Plugin } from "@/plugin"
 import { mergeDeep } from "remeda"
 import { SelfImprove } from "@/self-improve"
+import { WorkingState } from "../working-state"
 
 const USER_AGENT = `opencode/${InstallationVersion}`
 
@@ -34,6 +35,7 @@ type PrepareInput = {
   readonly isWorkflow: boolean
   /** First step of a session turn — lifts the output token cap. */
   readonly firstStep?: boolean
+  readonly workingState?: string
 }
 
 export type Prepared = {
@@ -250,7 +252,7 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
 
   return {
     system,
-    messages,
+    messages: input.isWorkflow ? messages : WorkingState.attach(messages, input.workingState),
     tools: sortedTools,
     params,
     messageTransformOptions: options,

@@ -95,6 +95,7 @@ export const layer = Layer.effect(
       id: string,
       status: Exclude<Status, "running">,
       data?: { output?: string; error?: string; metadata?: Record<string, unknown> },
+      expected?: Deferred.Deferred<Info>,
     ) {
       const completed_at = yield* Clock.currentTimeMillis
       const result = yield* SynchronizedRef.modify(
@@ -102,6 +103,7 @@ export const layer = Layer.effect(
         (jobs): readonly [FinishResult, Map<string, Active>] => {
           const job = jobs.get(id)
           if (!job) return [{}, jobs]
+          if (expected && job.done !== expected) return [{}, jobs]
           if (job.info.status !== "running") return [{ info: snapshot(job) }, jobs]
           const next = {
             ...job,
@@ -148,9 +150,13 @@ export const layer = Layer.effect(
               if (existing?.info.status === "running") return [snapshot(existing), jobs] as const
               const fiber = yield* restore(input.run).pipe(
                 Effect.matchCauseEffect({
-                  onSuccess: (result) => typeof result === "string"
-                    ? finish(id, "completed", { output: result })
-                    : finish(id, result.status, { output: result.output, metadata: { ...result.metadata, ...(result.reason ? { reason: result.reason } : {}) } }),
+                  onSuccess: (result) =>
+                    typeof result === "string"
+                      ? finish(id, "completed", { output: result })
+                      : finish(id, result.status, {
+                          output: result.output,
+                          metadata: { ...result.metadata, ...(result.reason ? { reason: result.reason } : {}) },
+                        }),
                   onFailure: (cause) =>
                     finish(id, Cause.hasInterruptsOnly(cause) ? "cancelled" : "error", {
                       error: errorText(Cause.squash(cause)),
@@ -197,8 +203,10 @@ export const layer = Layer.effect(
         yield* Fiber.interrupt(job.fiber).pipe(Effect.ignore)
         yield* Fiber.await(job.fiber).pipe(Effect.ignore)
       }
-      const info = yield* finish(id, "cancelled")
-      return info
+      // A waiter may already have restarted this id. Return this generation's
+      // terminal result instead of finishing (and cancelling) its replacement.
+      yield* finish(id, "cancelled", undefined, job.done)
+      return yield* Deferred.await(job.done)
     })
 
     return Service.of({ list, get, start, wait, cancel })

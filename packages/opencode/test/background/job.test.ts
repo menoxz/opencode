@@ -1,11 +1,49 @@
 import { describe, expect } from "bun:test"
-import { Deferred, Effect } from "effect"
+import { Deferred, Effect, Fiber } from "effect"
 import { BackgroundJob } from "@/background/job"
 import { testEffect } from "../lib/effect"
 
 const it = testEffect(BackgroundJob.defaultLayer)
 
 describe("background.job", () => {
+  it.instance("cancellation does not finish a replacement started by a waiter", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const gate = yield* Deferred.make<void>()
+      const first = yield* jobs.start({ id: "reused", type: "test", run: Effect.never })
+      const restart = yield* jobs
+        .wait({ id: first.id })
+        .pipe(
+          Effect.andThen(
+            jobs.start({ id: first.id, type: "test", run: Deferred.await(gate).pipe(Effect.as("replacement")) }),
+          ),
+          Effect.forkScoped,
+        )
+      const cancelled = yield* jobs.cancel(first.id)
+      yield* Fiber.join(restart)
+      expect(cancelled?.status).toBe("cancelled")
+      expect((yield* jobs.get(first.id))?.status).toBe("running")
+      yield* Deferred.succeed(gate, undefined)
+      expect((yield* jobs.wait({ id: first.id })).info?.output).toBe("replacement")
+    }),
+  )
+
+  it.instance("completion racing cancellation preserves a single terminal result", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const gate = yield* Deferred.make<void>()
+      const job = yield* jobs.start({ type: "test", run: Deferred.await(gate).pipe(Effect.as("finished")) })
+      const [cancelled] = yield* Effect.all([jobs.cancel(job.id), Deferred.succeed(gate, undefined)], {
+        concurrency: "unbounded",
+      })
+      const terminal = (yield* jobs.wait({ id: job.id })).info
+      expect(["completed", "cancelled"]).toContain(terminal?.status ?? "missing")
+      expect(cancelled).toEqual(terminal)
+      expect(yield* jobs.cancel(job.id)).toEqual(terminal)
+      if (terminal?.status === "completed") expect(terminal.output).toBe("finished")
+    }),
+  )
+
   it.instance("tracks started jobs through completion", () =>
     Effect.gen(function* () {
       const jobs = yield* BackgroundJob.Service

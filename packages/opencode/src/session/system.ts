@@ -63,7 +63,7 @@ function skillSearchText(skill: Skill.Info): string {
  * named tasks defined in config / tasks.json so it can run them via the
  * `tasks` tool instead of hand-rolling fragile shell one-liners.
  */
-function tasksAndShellGuidance(cfg: Config.Info): string {
+export function tasksAndShellGuidance(cfg: Config.Info): string {
   const shell = Shell.acceptable(cfg.shell)
   const shellName = shell ? Shell.name(shell) : "the platform default shell"
   const tasks = cfg.tasks ?? {}
@@ -77,6 +77,8 @@ function tasksAndShellGuidance(cfg: Config.Info): string {
     `Detect the active shell before writing commands; do not assume bash on Windows`,
     `(no \`tail\`/\`head\`/\`grep\` in pwsh — use \`Select-Object\`/\`Select-String\`).`,
     `Prefer cross-platform tools and absolute paths.`,
+    `Terminal commands: request only the information needed for the next decision. Prefer native summary/quiet modes and selected fields; avoid verbose/debug logs and full stack traces by default.`,
+    `Preserve the exit code, failure counts, error message and relevant location. For noisy commands, retain a diagnostic log and return a bounded summary with its path; inspect a targeted trace only when needed for diagnosis. Never hide failures or truncate a running producer in a way that changes its result.`,
     ``,
     `Tasks: prefer the \`tasks\` tool for repeatable project commands (build, test,`,
     `lint, run) instead of re-typing shell one-liners. Tasks come from the \`tasks\``,
@@ -148,7 +150,9 @@ export const layer = Layer.effect(
         const parts: string[] = ["<preloaded_skills>"]
         for (const name of names) {
           if (Permission.evaluate("skill", name, agent.permission).action === "deny") {
-            return yield* Effect.die(new Error(`Configured preload skill "${name}" is denied for agent "${agent.name}".`))
+            return yield* Effect.die(
+              new Error(`Configured preload skill "${name}" is denied for agent "${agent.name}".`),
+            )
           }
           const info = yield* skill.require(name).pipe(Effect.orDie)
           SkillUsage.record(info.name)
@@ -157,11 +161,7 @@ export const layer = Layer.effect(
             .replaceAll('"', "&quot;")
             .replaceAll("<", "&lt;")
             .replaceAll(">", "&gt;")
-          parts.push(
-            `<skill_content name="${info.name}" source="${source}">`,
-            info.content.trim(),
-            "</skill_content>",
-          )
+          parts.push(`<skill_content name="${info.name}" source="${source}">`, info.content.trim(), "</skill_content>")
         }
         parts.push("</preloaded_skills>")
         return parts.join("\n")
@@ -209,7 +209,12 @@ export const layer = Layer.effect(
           "Skills provide specialized instructions and workflows for specific tasks.",
           "Use the skill tool to load a skill when a task matches its description.",
           Skill.fmt(list, {
-            mode: rollout.injectionSkills === "verbose" ? "verbose" : settings.instruction_injection?.skills === "caveman" ? "caveman" : "summary",
+            mode:
+              rollout.injectionSkills === "verbose"
+                ? "verbose"
+                : settings.instruction_injection?.skills === "caveman"
+                  ? "caveman"
+                  : "summary",
           }),
         ].join("\n")
       }),
@@ -234,10 +239,12 @@ export const layer = Layer.effect(
           if (lastUserText) break
         }
 
-        if (!lastUserText) return { prompt: undefined as string | undefined, memories: [] as Array<{ id: string; content: string }> }
+        if (!lastUserText)
+          return { prompt: undefined as string | undefined, memories: [] as Array<{ id: string; content: string }> }
 
         const detected = yield* promptComposer.detect(lastUserText)
-        if (detected.confidence < 0.3) return { prompt: undefined as string | undefined, memories: [] as Array<{ id: string; content: string }> }
+        if (detected.confidence < 0.3)
+          return { prompt: undefined as string | undefined, memories: [] as Array<{ id: string; content: string }> }
 
         // Compose adaptive system prompt using the full composer pipeline
         const { sections: composed, memories } = yield* promptComposer.compose({

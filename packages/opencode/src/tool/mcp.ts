@@ -60,14 +60,18 @@ export const McpConnectTool = Tool.define(
             always: [params.name],
             metadata: { operation: "connect" },
           })
-          yield* mcp.connect(params.name).pipe(
+          const result = yield* mcp.connect(params.name).pipe(
             Effect.catchTag("MCP.NotFoundError", () =>
               Effect.fail(new Error(`MCP server "${params.name}" not found in configuration`))),
           )
+          if (result.status.status !== "connected") {
+            const detail = "error" in result.status ? `: ${result.status.error}` : ""
+            return yield* Effect.fail(new Error(`MCP server "${params.name}" is ${result.status.status}${detail}`))
+          }
           return {
             title: `Connected MCP: ${params.name}`,
-            metadata: {},
-            output: `✅ Connected to MCP server \`${params.name}\`.`,
+            metadata: result,
+            output: `✅ Connected to MCP server \`${params.name}\` and exposed ${result.toolCount} tool(s).`,
           }
         }).pipe(Effect.orDie),
     }
@@ -95,13 +99,13 @@ export const McpDisconnectTool = Tool.define(
             always: [params.name],
             metadata: { operation: "disconnect" },
           })
-          yield* mcp.disconnect(params.name).pipe(
+          const result = yield* mcp.disconnect(params.name).pipe(
             Effect.catchTag("MCP.NotFoundError", () =>
               Effect.fail(new Error(`MCP server "${params.name}" not found in configuration`))),
           )
           return {
             title: `Disconnected MCP: ${params.name}`,
-            metadata: {},
+            metadata: result,
             output: `✅ Disconnected MCP server \`${params.name}\`. All tools from this server are no longer available.`,
           }
         }).pipe(Effect.orDie),
@@ -113,17 +117,19 @@ export const McpDisconnectTool = Tool.define(
 
 function buildReloadSummary(
   before: Record<string, { status: string; error?: string }>,
-  after: Record<string, { status: string; error?: string }>,
+  results: Record<string, MCP.LifecycleResult>,
 ): string {
   const lines: string[] = ["**MCP Reload Summary:**"]
-  const allKeys = [...new Set([...Object.keys(before), ...Object.keys(after)])]
+  const allKeys = [...new Set([...Object.keys(before), ...Object.keys(results)])]
   for (const key of allKeys) {
     const b = before[key]
-    const a = after[key]
+    const a = results[key]?.status
     if (!b && a) lines.push(`- **${key}**: new (\`${a.status}\`)`)
     else if (b && !a) lines.push(`- **${key}**: removed`)
-    else if (b && a && b.status !== a.status) lines.push(`- **${key}**: \`${b.status}\` → \`${a.status}\``)
-    else if (b && a) lines.push(`- **${key}**: unchanged (\`${a.status}\`)`)
+    else if (b && a)
+      lines.push(
+        `- **${key}**: reconnected (\`${a.status}\`, ${results[key].toolCount} tool(s))${"error" in a ? ` — ${a.error}` : ""}`,
+      )
   }
   return lines.join("\n")
 }
@@ -144,12 +150,12 @@ export const McpReloadTool = Tool.define(
             metadata: { operation: "reload" },
           })
           const before = yield* mcp.status()
-          yield* mcp.reload()
+          const servers = yield* mcp.reload({ reconnect: true })
           const after = yield* mcp.status()
-          const output = buildReloadSummary(before as any, after as any)
+          const output = buildReloadSummary(before, servers)
           return {
             title: "MCP Reload Complete",
-            metadata: { before, after },
+            metadata: { before, after, servers },
             output,
           }
         }).pipe(Effect.orDie),

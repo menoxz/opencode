@@ -65,6 +65,22 @@ describe("document extractor", () => {
       await fs.rm(root, { recursive: true, force: true })
     }
   })
+  test.skipIf(spawnSync("python", ["-c", "import fitz"], { stdio: "ignore" }).status !== 0)("extracts Unicode PDF text on Windows code pages", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "pdf-unicode-extractor-"))
+    const previous = process.env.OPENCODE_ARTIFACT_ROOT
+    process.env.OPENCODE_ARTIFACT_ROOT = root
+    try {
+      const pdf = path.join(root, "unicode.pdf")
+      const generated = spawnSync("python", ["-c", "import fitz,sys; d=fitz.open(); p=d.new_page(); p.insert_font(fontname='china-s'); p.insert_text((72,72),'Criterion ● verified',fontname='china-s'); d.save(sys.argv[1])", pdf], { stdio: "ignore" })
+      expect(generated.status).toBe(0)
+      const bytes = await fs.readFile(pdf)
+      const extraction = await DocumentExtractor.extractBytes(bytes, { filename: "unicode.pdf", mime: "application/pdf" })
+      expect(extraction.text).toContain("Criterion ● verified")
+    } finally {
+      if (previous === undefined) delete process.env.OPENCODE_ARTIFACT_ROOT; else process.env.OPENCODE_ARTIFACT_ROOT = previous
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
   test.skipIf(spawnSync("ffprobe", ["-version"], { stdio: "ignore" }).status !== 0)("extracts video metadata keyframes and audio", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "video-extractor-"))
     const previous = process.env.OPENCODE_ARTIFACT_ROOT

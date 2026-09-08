@@ -30,7 +30,9 @@ import * as DateTime from "effect/DateTime"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Usage, type LLMEvent } from "@opencode-ai/llm"
 import { Truncate } from "@/tool/truncate"
-import { leanToolOutputBudget } from "@/tool/lean-output-policy"
+import { isLeanTerminalTool, leanToolOutputBudget } from "@/tool/lean-output-policy"
+import { compactTerminalOutput, createTerminalPollState } from "@/tool/terminal-output"
+import { InstanceState } from "@/effect/instance-state"
 
 const DOOM_LOOP_THRESHOLD = 3
 const log = Log.create({ service: "session.processor" })
@@ -119,6 +121,7 @@ export const layer = Layer.effect(
     const events = yield* EventV2Bridge.Service
     const flags = yield* RuntimeFlags.Service
     const truncate = yield* Effect.serviceOption(Truncate.Service)
+    const terminalPolls = yield* InstanceState.make(() => Effect.sync(createTerminalPollState))
 
     const create = Effect.fn("SessionProcessor.create")(function* (input: Input) {
       // Pre-capture snapshot before the LLM stream starts. The AI SDK
@@ -186,6 +189,33 @@ export const layer = Layer.effect(
         return part
       })
 
+      // Local object identity plus exact output, not tool-supplied marker fields.
+      const terminalEvidence = new WeakMap<object, { partID: string; output: string }>()
+      const normalizeTerminalOutput = Effect.fn("SessionProcessor.normalizeTerminalOutput")(function* (
+        part: MessageV2.ToolPart,
+        output: { output: string; metadata: Record<string, unknown> },
+      ) {
+        const trusted = terminalEvidence.get(output.metadata)
+        if (
+          !flags.experimentalLeanOutputBudget ||
+          truncate._tag !== "Some" ||
+          !isLeanTerminalTool(part.tool, part.state.input) ||
+          (trusted?.partID === part.id && trusted.output === output.output)
+        ) return output
+        const compact = yield* compactTerminalOutput({
+          tool: part.tool,
+          args: part.state.input,
+          sessionID: ctx.sessionID,
+          output: output.output,
+          metadata: output.metadata,
+          durationMs: part.state.status === "running" ? Date.now() - part.state.time.start : undefined,
+          polls: yield* InstanceState.get(terminalPolls),
+          store: truncate.value,
+        })
+        terminalEvidence.set(compact.metadata, { partID: part.id, output: compact.output })
+        return compact
+      })
+
       const completeToolCall = Effect.fn("SessionProcessor.completeToolCall")(function* (
         toolCallID: string,
         output: {
@@ -197,14 +227,15 @@ export const layer = Layer.effect(
       ) {
         const match = yield* readToolCall(toolCallID)
         if (!match || match.part.state.status !== "running") return
+        const normalized = yield* normalizeTerminalOutput(match.part, output)
         const end = Date.now()
         yield* session.updatePart({
           ...match.part,
           state: {
             status: "completed",
             input: match.part.state.input,
-            output: output.output,
-            metadata: output.metadata,
+            output: normalized.output,
+            metadata: normalized.metadata,
             title: output.title,
             time: { start: match.part.state.time.start, end },
             attachments: output.attachments,
@@ -214,7 +245,7 @@ export const layer = Layer.effect(
           toolCallID,
           tool: match.part.tool,
           duration: duration(match.part.state.time.start, end),
-          outputLength: output.output.length,
+          outputLength: normalized.output.length,
           attachments: output.attachments?.length ?? 0,
           providerExecuted: match.part.metadata?.providerExecuted === true,
         })
@@ -326,11 +357,19 @@ export const layer = Layer.effect(
 
       const toolResultOutput = (
         value: Extract<StreamEvent, { type: "tool-result" }>,
+        args: Record<string, unknown>,
       ): { title: string; metadata: Record<string, any>; output: string; attachments?: MessageV2.FilePart[] } => {
-        if (isRecord(value.result.value) && typeof value.result.value.output === "string") {
+        if (
+          isRecord(value.result.value) &&
+          typeof value.result.value.output === "string" &&
+          (!flags.experimentalLeanOutputBudget || isRecord(value.result.value.metadata) || !isLeanTerminalTool(value.name, args))
+        ) {
           return {
             title: typeof value.result.value.title === "string" ? value.result.value.title : value.name,
-            metadata: isRecord(value.result.value.metadata) ? value.result.value.metadata : {},
+            metadata: {
+              ...Object.fromEntries(Object.entries(value.result.value).filter(([key]) => !["output", "title", "metadata", "attachments"].includes(key))),
+              ...(isRecord(value.result.value.metadata) ? value.result.value.metadata : {}),
+            },
             output: value.result.value.output,
             attachments: Array.isArray(value.result.value.attachments)
               ? value.result.value.attachments.filter(isFilePart)
@@ -504,10 +543,19 @@ export const layer = Layer.effect(
 
           case "tool-result": {
             const toolCall = yield* readToolCall(value.id)
-            const rawOutput = toolResultOutput(value)
-            rawOutput.output = stripTerminalArtifacts(rawOutput.output)
+            if (!toolCall && MessageV2.parts(ctx.assistantMessage.id).some(
+              (part) => part.type === "tool" && part.callID === value.id && part.state.status === "completed",
+            )) return
+            const rawOutput = toolResultOutput(value, toolCall?.part.state.input ?? {})
+            const terminal = toolCall && isLeanTerminalTool(toolCall.part.tool, toolCall.part.state.input)
+            if (toolCall) {
+              const compact = yield* normalizeTerminalOutput(toolCall.part, rawOutput)
+              rawOutput.output = compact.output
+              rawOutput.metadata = compact.metadata
+            }
+            if (!terminal || !flags.experimentalLeanOutputBudget) rawOutput.output = stripTerminalArtifacts(rawOutput.output)
             const outputBudget = toolCall ? leanToolOutputBudget(toolCall.part.tool) : undefined
-            if (flags.experimentalLeanOutputBudget && truncate._tag === "Some" && toolCall && outputBudget) {
+            if (!terminal && flags.experimentalLeanOutputBudget && truncate._tag === "Some" && toolCall && outputBudget) {
               const agent = yield* agents.get(ctx.assistantMessage.agent)
               const bounded = yield* truncate.value.output(
                 rawOutput.output,

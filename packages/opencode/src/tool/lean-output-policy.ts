@@ -31,9 +31,14 @@ export function inspectBudget(input: { enabled: boolean; actionCount: number; re
   }
 }
 
-export function isLeanTerminalTool(tool: string) {
+export function isLeanTerminalTool(tool: string, input: Record<string, unknown> = {}) {
   const normalized = tool.replaceAll("__", "_").toLowerCase()
-  return normalized === "bash" || normalized.endsWith("mcp-terminal_command_run")
+  if (normalized === "bash") return true
+  if (normalized.endsWith("developer-tools_native_terminal")) {
+    return ["execute", "read", "stream_read"].includes(String(input.action))
+  }
+  if (normalized.endsWith("mcp-terminal_command_stream")) return ["start", "read"].includes(String(input.action))
+  return /(?:^|_)mcp-terminal_(?:command_run|command_chain|command_status|command_wait|terminal_read|ssh_run)$/.test(normalized)
 }
 
 export function leanToolOutputBudget(tool: string): { maxChars: number; maxLines: number; direction: "head" | "tail" } | undefined {

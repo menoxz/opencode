@@ -27,6 +27,9 @@ import { LLMAISDK } from "./llm/ai-sdk"
 import { LLMNativeRuntime } from "./llm/native-runtime"
 import { LLMRequestPrep } from "./llm/request"
 import { ContextFile } from "@/session/context-file"
+import { WorkingState } from "./working-state"
+import { Session } from "./session"
+import { Todo } from "./todo"
 
 const log = Log.create({ service: "llm" })
 export const OUTPUT_TOKEN_MAX = ProviderTransform.OUTPUT_TOKEN_MAX
@@ -52,6 +55,8 @@ export type StreamInput = {
   toolChoice?: "auto" | "required" | "none"
   /** First step of a session turn — lifts the output token cap so the model can reason freely. */
   firstStep?: boolean
+  /** Compaction uses a synthetic parent; retain the real request's state anchor. */
+  workingStateUserID?: string
 }
 
 export type StreamRequest = StreamInput & {
@@ -76,6 +81,8 @@ const live: Layer.Layer<
   | Permission.Service
   | LLMClientService
   | RuntimeFlags.Service
+  | Session.Service
+  | Todo.Service
 > = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -86,6 +93,8 @@ const live: Layer.Layer<
     const perm = yield* Permission.Service
     const llmClient = yield* LLMClient.Service
     const flags = yield* RuntimeFlags.Service
+    const sessions = yield* Session.Service
+    const todos = yield* Todo.Service
 
     const run = Effect.fn("LLM.run")(function* (input: StreamRequest) {
       const runStarted = Date.now()
@@ -122,6 +131,10 @@ const live: Layer.Layer<
       const prepStarted = Date.now()
       const prepared = yield* LLMRequestPrep.prepare({
         ...input,
+        workingState: yield* WorkingState.current(input.sessionID, input.workingStateUserID ?? input.user.id).pipe(
+          Effect.provideService(Session.Service, sessions),
+          Effect.provideService(Todo.Service, todos),
+        ),
         provider: item,
         auth: info,
         plugin,
@@ -459,7 +472,11 @@ const live: Layer.Layer<
   }),
 )
 
-export const layer = live.pipe(Layer.provide(Permission.defaultLayer))
+export const layer = live.pipe(
+  Layer.provide(Permission.defaultLayer),
+  Layer.provide(Session.defaultLayer),
+  Layer.provide(Todo.defaultLayer),
+)
 
 export const defaultLayer = Layer.suspend(() =>
   layer.pipe(

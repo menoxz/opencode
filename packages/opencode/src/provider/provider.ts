@@ -27,6 +27,7 @@ import { optionalOmitUndefined } from "@opencode-ai/core/schema"
 import * as ProviderTransform from "./transform"
 import { ModelID, ProviderID } from "./schema"
 import { ModelStatus } from "./model-status"
+import { wrapResponsesToolSearch } from "./responses-tool-search"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 
 const log = Log.create({ service: "provider" })
@@ -1745,8 +1746,9 @@ export const layer = Layer.effect(
                 ...model.options,
               })
             : sdk.languageModel(model.api.id)
-          s.models.set(key, language)
-          return language
+          const wrapped = wrapResponsesToolSearch(language, model.api.npm)
+          s.models.set(key, wrapped)
+          return wrapped
         },
         (cause) =>
           cause instanceof NoSuchModelError

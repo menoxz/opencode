@@ -181,7 +181,8 @@ describe("Truncate", () => {
         const result = yield* svc.output(lines, { maxLines: 10 })
 
         expect(result.truncated).toBe(true)
-        expect(result.content).toContain("The tool call succeeded but the output was truncated")
+        expect(result.content).toContain("Tool output was truncated")
+        expect(result.content).not.toContain("succeeded")
         expect(result.content).toContain("Grep")
         if (!result.truncated) throw new Error("expected truncated")
         expect(result.outputPath).toBeDefined()
@@ -193,7 +194,7 @@ describe("Truncate", () => {
       }),
     )
 
-    it.live("suggests Task tool when agent has task permission", () =>
+    it.live("does not delegate automatically even with task permission", () =>
       Effect.gen(function* () {
         const svc = yield* Truncate.Service
         const lines = Array.from({ length: 100 }, (_, i) => `line${i}`).join("\n")
@@ -202,7 +203,7 @@ describe("Truncate", () => {
 
         expect(result.truncated).toBe(true)
         expect(result.content).toContain("Grep")
-        expect(result.content).toContain("Task tool")
+        expect(result.content).not.toContain("Task tool")
       }),
     )
 

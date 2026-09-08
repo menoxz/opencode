@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test"
-import { Effect, Layer, FileSystem } from "effect"
+import { Effect, Layer, FileSystem, Exit } from "effect"
 import { NodeFileSystem } from "@effect/platform-node"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { testEffect } from "../lib/effect"
@@ -145,6 +145,160 @@ describe("AppFileSystem", () => {
   })
 
   describe("writeWithDirs", () => {
+    for (const content of ["", new Uint8Array()]) {
+      live(
+        `creates and truncates empty ${typeof content} content`,
+        Effect.gen(function* () {
+          const fs = yield* AppFileSystem.Service
+          const filesys = yield* FileSystem.FileSystem
+          const tmp = yield* filesys.makeTempDirectoryScoped()
+          const file = path.join(tmp, "nested", "empty")
+          yield* fs.writeWithDirs(file, content)
+          expect(yield* filesys.readFileString(file)).toBe("")
+          yield* fs.writeWithDirs(file, "previous content")
+          yield* fs.writeWithDirs(file, content)
+          expect(yield* filesys.readFileString(file)).toBe("")
+        }),
+      )
+    }
+    const posix = process.platform === "win32" ? live.skip : live
+    const windows = process.platform === "win32" ? live : live.skip
+
+    for (const content of ["replacement", new Uint8Array([1, 2, 3])]) {
+      posix(
+        `preserves existing 0600 permissions and ownership (${typeof content})`,
+        Effect.gen(function* () {
+          const fs = yield* AppFileSystem.Service
+          const filesys = yield* FileSystem.FileSystem
+          const tmp = yield* filesys.makeTempDirectoryScoped()
+          const file = path.join(tmp, "secret")
+          yield* filesys.writeFileString(file, "old", { mode: 0o600 })
+          const before = yield* filesys.stat(file)
+          yield* fs.writeWithDirs(file, content)
+          const after = yield* filesys.stat(file)
+          expect(after.mode & 0o777).toBe(0o600)
+          expect(after.uid).toEqual(before.uid)
+          expect(after.gid).toEqual(before.gid)
+          expect(after.ino).toEqual(before.ino)
+          expect(yield* filesys.readFile(file)).toEqual(
+            typeof content === "string" ? new TextEncoder().encode(content) : content,
+          )
+          expect(yield* filesys.readDirectory(tmp)).toEqual(["secret"])
+        }),
+      )
+    }
+
+    posix(
+      "preserves existing modes even when a different creation mode is requested",
+      Effect.gen(function* () {
+        const fs = yield* AppFileSystem.Service
+        const filesys = yield* FileSystem.FileSystem
+        const tmp = yield* filesys.makeTempDirectoryScoped()
+        const file = path.join(tmp, "secret")
+        yield* filesys.writeFileString(file, "old")
+        yield* filesys.chmod(file, 0o640)
+        yield* fs.writeWithDirs(file, "same")
+        expect((yield* filesys.stat(file)).mode & 0o777).toBe(0o640)
+        yield* fs.writeWithDirs(file, "not wider", 0o666)
+        expect((yield* filesys.stat(file)).mode & 0o777).toBe(0o640)
+        yield* fs.writeWithDirs(file, "narrower", 0o600)
+        expect((yield* filesys.stat(file)).mode & 0o777).toBe(0o640)
+        yield* fs.writeWithDirs(file, "none", 0)
+        expect((yield* filesys.stat(file)).mode & 0o777).toBe(0o640)
+      }),
+    )
+
+    posix(
+      "creates owner-only files by default and honors explicit creation modes",
+      Effect.gen(function* () {
+        const fs = yield* AppFileSystem.Service
+        const filesys = yield* FileSystem.FileSystem
+        const tmp = yield* filesys.makeTempDirectoryScoped()
+        for (const mode of [undefined, 0, 0o640]) {
+          const file = path.join(tmp, String(mode), "secret")
+          yield* fs.writeWithDirs(file, "new", mode)
+          expect((yield* filesys.stat(file)).mode & 0o777).toBe(mode ?? 0o600)
+        }
+      }),
+    )
+
+    windows(
+      "keeps a read-only Windows destination intact without changing protections",
+      Effect.gen(function* () {
+        const fs = yield* AppFileSystem.Service
+        const filesys = yield* FileSystem.FileSystem
+        const tmp = yield* filesys.makeTempDirectoryScoped()
+        const file = path.join(tmp, "readonly.txt")
+        yield* filesys.writeFileString(file, "old")
+        yield* filesys.chmod(file, 0o444)
+        yield* Effect.addFinalizer(() => filesys.chmod(file, 0o666).pipe(Effect.ignore))
+        const result = yield* fs.writeWithDirs(file, "new").pipe(Effect.exit)
+        expect(Exit.isFailure(result)).toBe(true)
+        expect(yield* filesys.readFileString(file)).toBe("old")
+        expect(yield* filesys.readDirectory(tmp)).toEqual(["readonly.txt"])
+      }),
+    )
+
+    live(
+      "leaves a nonempty directory destination intact without temporary files",
+      Effect.gen(function* () {
+        const fs = yield* AppFileSystem.Service
+        const filesys = yield* FileSystem.FileSystem
+        const tmp = yield* filesys.makeTempDirectoryScoped()
+        const target = path.join(tmp, "target")
+        yield* filesys.makeDirectory(target)
+        yield* filesys.writeFileString(path.join(target, "child"), "old")
+        expect(Exit.isFailure(yield* fs.writeWithDirs(target, "new").pipe(Effect.exit))).toBe(true)
+        expect(yield* filesys.readFileString(path.join(target, "child"))).toBe("old")
+        expect(yield* filesys.readDirectory(tmp)).toEqual(["target"])
+      }),
+    )
+
+    posix(
+      "updates hard links and symlink targets without replacing their inodes",
+      Effect.gen(function* () {
+        const fs = yield* AppFileSystem.Service
+        const filesys = yield* FileSystem.FileSystem
+        const tmp = yield* filesys.makeTempDirectoryScoped()
+        const target = path.join(tmp, "target")
+        const hard = path.join(tmp, "hard")
+        const symbolic = path.join(tmp, "symbolic")
+        yield* filesys.writeFileString(target, "long original content", { mode: 0o600 })
+        yield* filesys.link(target, hard)
+        yield* filesys.symlink(target, symbolic)
+        const before = yield* filesys.stat(target)
+        yield* fs.writeWithDirs(hard, "short", 0o777)
+        expect(yield* filesys.readFileString(target)).toBe("short")
+        yield* fs.writeWithDirs(symbolic, "last", 0o777)
+        expect(yield* filesys.readLink(symbolic)).toBe(target)
+        expect(yield* filesys.readFileString(hard)).toBe("last")
+        const after = yield* filesys.stat(target)
+        expect(after.ino).toEqual(before.ino)
+        expect(after.mode & 0o777).toBe(0o600)
+        expect(after.uid).toEqual(before.uid)
+        expect(after.gid).toEqual(before.gid)
+      }),
+    )
+    ;(process.platform === "linux" && Bun.which("setfacl") && Bun.which("getfacl") ? live : live.skip)(
+      "preserves an extended POSIX ACL through an existing-file update",
+      Effect.gen(function* () {
+        const fs = yield* AppFileSystem.Service
+        const filesys = yield* FileSystem.FileSystem
+        const tmp = yield* filesys.makeTempDirectoryScoped()
+        const target = path.join(tmp, "secret")
+        yield* filesys.writeFileString(target, "old", { mode: 0o600 })
+        expect(Bun.spawnSync(["setfacl", "-m", "u:12345:r--", target]).exitCode).toBe(0)
+        const before = Bun.spawnSync(["getfacl", "-cpn", target])
+        expect(before.exitCode).toBe(0)
+        expect(before.stdout.toString()).toContain("user:12345:r--")
+        yield* fs.writeWithDirs(target, "new", 0o777)
+        const after = Bun.spawnSync(["getfacl", "-cpn", target])
+        expect(after.exitCode).toBe(0)
+        expect(after.stdout.toString()).toBe(before.stdout.toString())
+        expect(yield* filesys.readFileString(target)).toBe("new")
+      }),
+    )
+
     it(
       "creates parent directories if missing",
       Effect.gen(function* () {
@@ -189,11 +343,9 @@ describe("AppFileSystem", () => {
       }),
     )
 
-    // Session/message/part files are rewritten on every streaming update, so a
-    // kill mid-write must leave the previous version intact. Write-then-rename
-    // also means no stray temp file is left behind on success.
+    // Existing-file updates preserve protections, not crash atomicity.
     it(
-      "replaces existing content atomically without leaving temp files",
+      "updates existing content without leaving temp files",
       Effect.gen(function* () {
         const fs = yield* AppFileSystem.Service
         const filesys = yield* FileSystem.FileSystem
@@ -209,10 +361,8 @@ describe("AppFileSystem", () => {
       }),
     )
 
-    // Runs on the real clock: the Windows rename retry sleeps via Schedule.spaced,
-    // which never advances under TestClock.
     live(
-      "concurrent writes to the same target all land and leave no temp files",
+      "handles concurrent exclusive creation of the same target without temp files",
       Effect.gen(function* () {
         const fs = yield* AppFileSystem.Service
         const filesys = yield* FileSystem.FileSystem
@@ -220,13 +370,11 @@ describe("AppFileSystem", () => {
         const file = path.join(tmp, "auth.json")
 
         yield* Effect.all(
-          Array.from({ length: 8 }, (_, i) => fs.writeWithDirs(file, JSON.stringify({ i }))),
+          Array.from({ length: 8 }, () => fs.writeWithDirs(file, "same content")),
           { concurrency: "unbounded" },
         )
 
-        const final = JSON.parse(yield* filesys.readFileString(file)) as { i: number }
-        expect(final.i).toBeGreaterThanOrEqual(0)
-        expect(final.i).toBeLessThan(8)
+        expect(yield* filesys.readFileString(file)).toBe("same content")
         const leftovers = (yield* filesys.readDirectory(tmp)).filter((name) => name.endsWith(".tmp"))
         expect(leftovers).toEqual([])
       }),

@@ -107,12 +107,12 @@ export function compressGoalState(state: GoalState): string {
 }
 
 function stickyGoalContext(state: GoalState): string {
-  const findings = (state.findings ?? []).slice(0, 10).map((finding) =>
-    `FINDING ${finding.id} [${finding.severity}/${finding.status}]: ${finding.summary.slice(0, 240)}`,
-  )
-  const gaps = (state.completion?.unverified ?? []).slice(0, 10).map((item) =>
-    `UNVERIFIED: ${item.dod.slice(0, 160)} → ${item.reason.slice(0, 240)}`,
-  )
+  const findings = (state.findings ?? [])
+    .slice(0, 10)
+    .map((finding) => `FINDING ${finding.id} [${finding.severity}/${finding.status}]: ${finding.summary.slice(0, 240)}`)
+  const gaps = (state.completion?.unverified ?? [])
+    .slice(0, 10)
+    .map((item) => `UNVERIFIED: ${item.dod.slice(0, 160)} → ${item.reason.slice(0, 240)}`)
   return [...findings, ...gaps].join("\n")
 }
 
@@ -492,24 +492,8 @@ export const layer = Layer.effect(
         { sessionID: input.sessionID },
         { context: [], prompt: undefined },
       )
-      // Align the summary's "## Goal" section with the session's current objective
-      // (active or completed) rather than letting it be re-derived from raw history,
-      // which could resurrect a previously finished objective. Only relevant on the
-      // default buildPrompt path (a plugin-provided prompt ignores `context`).
-      let context: string[] = compacting.context
-      if (compacting.prompt === undefined) {
-        const sessionInfo = yield* session.get(input.sessionID).pipe(Effect.option)
-        const gs = Option.isSome(sessionInfo) ? sessionInfo.value.goalState : undefined
-        if (gs && gs.status !== "skipped" && gs.goal?.trim()) {
-          const goal = gs.goal.replace(/\n/g, " ").trim().slice(0, 200)
-          const hint =
-            gs.status === "completed"
-              ? `For the "## Goal" section: the user's objective "${goal}" is COMPLETED. State the objective and that it is done; do not invent a different goal from the history.`
-              : `For the "## Goal" section: use the user's current active objective verbatim: "${goal}". Do not derive a different goal from the history.`
-          context = [...context, hint]
-        }
-      }
-      const nextPrompt = compacting.prompt ?? buildPrompt({ previousSummary, context })
+      // The LLM boundary supplies escaped live state, not a raw/stale goal hint.
+      const nextPrompt = compacting.prompt ?? buildPrompt({ previousSummary, context: compacting.context })
       const msgs = structuredClone(selected.head)
       yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
       const modelMessages = yield* MessageV2.toModelMessagesEffect(msgs, model, {
@@ -554,6 +538,13 @@ export const layer = Layer.effect(
       })
       const result = yield* processor.process({
         user: userMessage,
+        workingStateUserID: input.messages.findLast(
+          (message) =>
+            message.info.role === "user" &&
+            message.parts.some(
+              (part) => part.type === "file" || (part.type === "text" && !part.synthetic && !part.ignored),
+            ),
+        )?.info.id,
         agent,
         sessionID: input.sessionID,
         tools: {},

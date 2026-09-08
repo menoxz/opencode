@@ -1,5 +1,9 @@
 import { expect, mock, beforeEach } from "bun:test"
-import { Cause, Effect, Exit } from "effect"
+import { Cause, Effect, Exit, Layer } from "effect"
+import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
+import { Config } from "../../src/config/config"
+import { McpAuth } from "../../src/mcp/auth"
+import { Bus } from "../../src/bus"
 import fs from "fs/promises"
 import path from "path"
 import { InstanceState } from "../../src/effect/instance-state"
@@ -191,7 +195,30 @@ beforeEach(() => {
 const { MCP } = await import("../../src/mcp/index")
 const { McpOAuthCallback } = await import("../../src/mcp/oauth-callback")
 
-const it = testEffect(MCP.defaultLayer)
+const live = testEffect(MCP.defaultLayer)
+
+const controlled = testEffect(
+  MCP.layer.pipe(
+    Layer.provide(
+      Layer.mock(Config.Service, {
+        get: () =>
+          InstanceState.directory.pipe(
+            Effect.flatMap((directory) => Effect.promise(() => Bun.file(path.join(directory, "opencode.json")).json())),
+          ),
+        invalidate: () => Effect.void,
+        directories: () => Effect.succeed([]),
+      }),
+    ),
+    Layer.provide(McpAuth.defaultLayer),
+    Layer.provide(Bus.defaultLayer),
+    Layer.provide(CrossSpawnSpawner.defaultLayer),
+  ),
+)
+
+const it = {
+  ...controlled,
+  live: live.live,
+}
 
 function statusName(status: Record<string, MCPNS.Status> | MCPNS.Status, server: string) {
   if ("status" in status) return status.status
@@ -271,6 +298,32 @@ it.instance(
     config: {
       mcp: { "reload-server": { type: "local", command: ["echo", "before"] } },
     },
+  },
+)
+
+it.instance(
+  "forced reload reconnects an unchanged server and refreshes its tools",
+  () =>
+    MCP.Service.use((mcp: MCPNS.Interface) =>
+      Effect.gen(function* () {
+        lastCreatedClientName = "reload-server"
+        const serverState = getOrCreateClientState("reload-server")
+        const beforeClient = (yield* mcp.clients())["reload-server"]
+        const beforeVersion = yield* mcp.catalogVersion!()
+        serverState.tools = [
+          { name: "refreshed_tool", description: "new", inputSchema: { type: "object", properties: {} } },
+        ]
+
+        const results = yield* mcp.reload({ reconnect: true })
+
+        expect((yield* mcp.clients())["reload-server"]).not.toBe(beforeClient)
+        expect(yield* mcp.catalogVersion!()).toBeGreaterThan(beforeVersion)
+        expect(results["reload-server"]).toEqual({ status: { status: "connected" }, toolCount: 1 })
+        expect(Object.keys(yield* mcp.tools())).toContain("reload-server_refreshed_tool")
+      }),
+    ),
+  {
+    config: { mcp: { "reload-server": { type: "local", command: ["echo", "unchanged"] } } },
   },
 )
 
@@ -423,6 +476,26 @@ it.instance(
         },
       },
     },
+  },
+)
+
+it.instance(
+  "connect reports the real failed status instead of succeeding silently",
+  () =>
+    MCP.Service.use((mcp: MCPNS.Interface) =>
+      Effect.gen(function* () {
+        lastCreatedClientName = "fail-connect"
+        connectShouldFail = true
+        connectError = "Connection refused"
+
+        expect(yield* mcp.connect("fail-connect")).toEqual({
+          status: { status: "failed", error: "Connection refused" },
+          toolCount: 0,
+        })
+      }),
+    ),
+  {
+    config: { mcp: { "fail-connect": { type: "local", command: ["echo", "test"], enabled: false } } },
   },
 )
 

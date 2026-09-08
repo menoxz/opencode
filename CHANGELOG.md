@@ -5,6 +5,48 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v1.19.20] - 2026-09-08
+
+### Security
+- Preserve permissions, ownership and access-control lists when updating existing files. New files are created exclusively with owner-only permissions by default. Existing-file writes deliberately preserve the inode rather than providing atomic replacement.
+
+### Fixed
+- Support empty file creation and truncation through the permission-preserving writer.
+
+## [v1.19.19] - 2026-09-07
+
+### Changed
+- Compact inspect_batch rows show tool and target first, inline offset/limit/include and dependencies, and a trailing status icon; empty dependency notices and technical IDs are hidden.
+
+### Fixed
+- OpenAI/Azure Responses no longer confuse the local tool_search function with hosted tool search, preserving arguments and replay results through a provider-boundary alias.
+
+## [v1.19.18] - 2026-09-07
+
+### Added
+- Bounded, request-local attention cards refresh current working state near the end of model requests without accumulating in session history.
+- Readable inspect_batch action trees in both terminal session renderers.
+- Parent-scoped background subagent cancellation with generation-safe cleanup and resume coordination.
+
+### Changed
+- Agent and shell instructions prefer decision-focused terminal output and targeted diagnostics instead of default stack-trace dumps.
+
+## [v1.19.17] - 2026-09-05
+
+### Changed
+- Compact terminal results preserve failure evidence, operational controls and received-output journals; terminal polling and historical replay reduce repeated text.
+- TODO updates return compact deltas, avoid repeated skill suggestions, and support revision-checked targeted updates while retaining full UI state.
+
+### Fixed
+- TODO replay respects serialized snapshot order for parallel calls and recognizes both CLOSE and CLOSURE markers.
+- Terminal compaction never opens tool-supplied journal references or lets printed JSON override executor failure status.
+
+## [v1.19.14] - 2026-09-04
+
+### Fixed
+- Agent MCP controls now return observed connection state and discovered tool counts, fail instead of reporting false connection success, and force a fresh reconnect/tool discovery on reload.
+- MCP transport startup no longer performs a strict duplicate `tools/list` call before the tolerant tool-schema fallback can run.
+
 ## [v1.19.3] - 2026-08-27
 
 ### Added

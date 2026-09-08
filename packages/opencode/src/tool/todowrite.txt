@@ -1,4 +1,4 @@
-Create/maintain structured task list for session. Tracks progress, organizes multi-step work, surfaces status. Auto-suggests matching skills on create/update — load with `skill()`.
+Maintain session tasks for multi-step work. Full UI list is stored; replies contain counts and changed fields only. Avoid no-op calls. Skills suggested only for new/changed active task content (max 3).
 
 USE: 3+ distinct steps|non-trivial|user gives multiple tasks|new instructions→capture as todo|start task→mark `in_progress` (one at a time)|finish→mark `completed`+add follow-ups
 SKIP: single straightforward task (<3 steps)|informational/conversational|no organizational value
@@ -7,7 +7,9 @@ STATES: pending=not started|in_progress=actively working (exactly ONE)|completed
 
 RULES: real-time status updates|mark completed only after done+verified|exactly one in_progress at a time|blocked→keep in_progress+add blocker todo|preserve user commands verbatim (flags, args, order)|specific+actionable items, break large work
 
-MANDATORY AUTO-INJECTED TASKS: two tasks are auto-injected on every list — [RESEARCH] (first) and [CLOSE] (last). These are NOT optional and NOT decorative. You MUST actually execute them and mark them `completed` like any other task. NEVER cancel, delete, or silently skip them. [RESEARCH] runs BEFORE any acting task: if the subject is not mastered at 100%, research first (no guessing/creativity) and load an existing skill when one applies. [CLOSE] runs AFTER the work: commit/memory/quality/skill-extraction. If you ignore them the task is considered INCOMPLETE.
+INPUT: {todos:[{content,status,priority},...]} replaces the list. Or {revision,updates:[{id,status?,priority?,content?},...]} changes only specified fields, without reorder/deletion. IDs (t0, t1, ...) are position-derived: update IDs valid only for matching revision. A stale revision or unknown/duplicate ID rejects the entire update. Recover with {action:"read"} alone for the full list, IDs and revision. Never combine todos/updates/read. Revisions change with any stored field or order change.
+
+MANDATORY: [RESEARCH] first and [CLOSE] last are injected when absent; [CLOSURE] is an alias (case/leading whitespace ignored). Omitted wrappers retain their stored state, including completion. Execute, verify and complete them; NEVER cancel/delete/skip. Research uncertainties before acting, never guess, and load applicable skills. Closure: quality checks, useful memory and reusable skill extraction; commit ONLY if the user requested it. Retain every user obligation and command verbatim.
 
 EXAMPLES
 USE: "Add dark mode toggle and run tests" → multi-step+verification

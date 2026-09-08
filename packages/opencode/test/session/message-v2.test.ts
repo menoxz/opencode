@@ -320,6 +320,22 @@ describe("session.message-v2.toModelMessage", () => {
     ])
   })
 
+  test("downgrades historical PDF user parts when the current adapter cannot accept PDFs", async () => {
+    const messageID = "m-user-pdf-unsupported"
+    const input: MessageV2.WithParts[] = [{
+      info: userInfo(messageID),
+      parts: [{
+        ...basePart(messageID, "pdf-unsupported"),
+        type: "file",
+        mime: "application/pdf",
+        filename: "legacy.pdf",
+        url: "data:application/pdf;base64,JVBERi0xLjQK",
+      }] as MessageV2.Part[],
+    }]
+
+    expect(await MessageV2.toModelMessages(input, model)).toStrictEqual([{ role: "user", content: [{ type: "text", text: "[Attached application/pdf: legacy.pdf]" }] }])
+  })
+
   test("converts assistant tool completion into tool-call + tool-result messages with attachments", async () => {
     const userID = "m-user"
     const assistantID = "m-assistant"
@@ -628,6 +644,14 @@ describe("session.message-v2.toModelMessage", () => {
         ],
       },
     ])
+
+    const copilotModel = {
+      ...bedrockModel,
+      providerID: ProviderID.make("github-copilot"),
+      api: { ...bedrockModel.api, npm: "@ai-sdk/github-copilot" },
+    }
+    const copilotMessages = await MessageV2.toModelMessages(input, copilotModel)
+    expect(JSON.stringify(copilotMessages)).not.toContain("application/pdf")
   })
 
   test("omits provider metadata when assistant model differs", async () => {
@@ -1453,6 +1477,74 @@ describe("session.message-v2.toModelMessage", () => {
         .map((part: any) => [part.toolCallId as string, part.input]),
     )
 
+  test("replays the latest complete TODO state and supersedes only old validated updates", async () => {
+    const old = [{ content: "old todo payload", status: "pending", priority: "high" }]
+    const current = [{ content: "Preserve command bun test --timeout 30000", status: "in_progress", priority: "high" }]
+    const input = [
+      ...toolTurn("todo-old", "todowrite", { todos: old }, "old verbose output", { todos: old }),
+      ...padTurns("todo-fill", SUMMARIZED_TURNS - 1),
+      ...toolTurn("todo-new", "todowrite", { updates: [{ id: "task-1", status: "in_progress" }] }, "1 active", { todos: current }),
+      ...padTurns("todo-tail", TAIL_TURNS),
+    ]
+    const messages = await MessageV2.toModelMessages(input, model, { replayToolOutputs: "summary", replayToolInputs: "summary", toolOutputMaxChars: 5 })
+    expect(outputsByCall(messages).get("call-todo-old")).toContain("superseded")
+    expect(JSON.stringify(inputsByCall(messages).get("call-todo-old"))).not.toContain("old todo payload")
+    expect(outputsByCall(messages).get("call-todo-new")).toContain('"content":"Preserve command bun test --timeout 30000"')
+    expect(outputsByCall(messages).get("call-todo-new")).toContain('"id":"t0"')
+    expect(outputsByCall(messages).get("call-todo-new")).toContain('"revision":')
+    expect(inputsByCall(messages).get("call-todo-new")).toEqual({ updates: [{ id: "task-1", status: "in_progress" }] })
+    const full = await MessageV2.toModelMessages(input, model, { replayToolOutputs: "full", replayToolInputs: "full" })
+    expect(outputsByCall(full).get("call-todo-old")).toBe("old verbose output")
+    expect(inputsByCall(full).get("call-todo-old")).toEqual({ todos: old })
+    const off = await MessageV2.toModelMessages(input, model, { replayToolOutputs: "off" })
+    expect(outputsByCall(off).get("call-todo-new")).not.toContain("[TODO state]")
+  })
+
+  test("orders parallel TODO snapshots by locked sequence rather than part order", async () => {
+    const make = (sequence: number, scope = "registry") => ({ todos: [{ content: `snapshot-${sequence}`, status: "pending", priority: "high" }], todoOrder: { scope, sequence } })
+    const write = toolTurn("todo-write", "todowrite", {}, "newer write", make(2))
+    const read = toolTurn("todo-read", "todowrite", { action: "read" }, "older read", make(1))
+    write[1].parts.push(...read[1].parts)
+    const input = [...write, ...padTurns("todo-order-padding", SUMMARIZED_TURNS + TAIL_TURNS)]
+    const outputs = outputsByCall(await MessageV2.toModelMessages(input, model, { replayToolOutputs: "summary" }))
+    expect(outputs.get("call-todo-write")).toContain("snapshot-2")
+    expect(outputs.get("call-todo-write")).toContain("sequence=2")
+    expect(outputs.get("call-todo-read")).toContain("superseded")
+    const crossScope = [...input, ...toolTurn("todo-other-registry", "todowrite", {}, "other registry", make(1, "other"))]
+    const retained = outputsByCall(await MessageV2.toModelMessages(crossScope, model, { replayToolOutputs: "summary" }))
+    expect(retained.get("call-todo-write")).toContain("snapshot-2")
+  })
+
+  test("keeps recent TODO replay byte-stable when another update arrives", async () => {
+    const todos = [{ content: "first", status: "pending", priority: "medium" }]
+    const input = toolTurn("todo-stable", "todowrite", { todos }, "saved", { todos })
+    const before = outputsByCall(await MessageV2.toModelMessages(input, model, { replayToolOutputs: "summary" }))
+    const after = outputsByCall(await MessageV2.toModelMessages([
+      ...input,
+      ...toolTurn("todo-stable-next", "todowrite", { todos: [] }, "saved empty", { todos: [] }),
+    ], model, { replayToolOutputs: "summary" }))
+    expect(after.get("call-todo-stable")).toBe(before.get("call-todo-stable"))
+    expect(after.get("call-todo-stable-next")).toContain('"todos":[]')
+    const compacted = input.flatMap((msg) => msg.parts).find((part) => part.type === "tool")
+    if (compacted?.type !== "tool" || compacted.state.status !== "completed") throw new Error("Missing test tool")
+    compacted.state.time.compacted = 2
+    const cleared = outputsByCall(await MessageV2.toModelMessages(input, model, { replayToolOutputs: "summary" }))
+    expect(cleared.get("call-todo-stable")).not.toContain("[TODO state]")
+  })
+
+  test("does not supersede legacy TODO inputs without a later valid snapshot", async () => {
+    const todos = [{ content: "still necessary", status: "pending", priority: "medium" }]
+    const input = [
+      ...toolTurn("todo-only", "todowrite", { todos }, "saved", { todos }),
+      ...padTurns("todo-invalid-fill", SUMMARIZED_TURNS - 1),
+      ...toolTurn("todo-invalid", "todowrite", { updates: [] }, "invalid metadata", { todos: [{ content: 42 }] }),
+      ...padTurns("todo-invalid-tail", TAIL_TURNS),
+    ]
+    const messages = await MessageV2.toModelMessages(input, model, { replayToolOutputs: "summary", replayToolInputs: "summary" })
+    expect(inputsByCall(messages).get("call-todo-only")).toEqual({ todos })
+    expect(outputsByCall(messages).get("call-todo-only")).toContain('"content":"still necessary"')
+  })
+
   test("summarizes a superseded tool output while keeping the most recent turns full in summary mode", async () => {
     const input: MessageV2.WithParts[] = [
       // Superseded below: the same file is read again in the full tail.
@@ -1472,6 +1564,18 @@ describe("session.message-v2.toModelMessage", () => {
     expect(outputs.get("call-sup-tail")).toBe("tail bytes")
     // A turn old enough to fall past the pin budget is summarized too.
     expect(outputs.get("call-sup-pad-0")).toContain("[Historical tool result summary]")
+  })
+
+  test("retains compact terminal evidence in historical summary but respects explicit off", async () => {
+    const summary = "[Terminal result; exit=1]\nerror: early failure\nFull output saved to: /logs/raw"
+    const input = [
+      ...toolTurn("terminal-old", "bash", { command: "bun test" }, "stored excerpt", { terminalOutput: { version: 1, summary } }),
+      ...padTurns("terminal", SUMMARIZED_TURNS - 1),
+      ...padTurns("terminal-tail", TAIL_TURNS),
+    ]
+    expect(outputsByCall(await MessageV2.toModelMessages(input, model, { replayToolOutputs: "summary" })).get("call-terminal-old")).toBe(summary)
+    expect(outputsByCall(await MessageV2.toModelMessages(input, model, { replayToolOutputs: "off" })).get("call-terminal-old")).not.toContain("early failure")
+    expect(outputsByCall(await MessageV2.toModelMessages(input, model, { replayToolOutputs: "full" })).get("call-terminal-old")).toBe("stored excerpt")
   })
 
   test("renders every message identically until the boundary jumps, so a cached prefix survives", async () => {

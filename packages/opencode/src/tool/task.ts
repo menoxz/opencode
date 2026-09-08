@@ -14,7 +14,12 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { subagentResultPolicy } from "./subagent-summary"
 import { isLeanAgent } from "./lean-output-policy"
 import { hasTaskResultNotification, taskResultNotificationKey } from "./task-notification"
-import { buildTaskEvidencePacket, isEvidencePacketFresh, type TaskEvidencePacket, type TaskEvidenceState } from "@/session/task-evidence"
+import {
+  buildTaskEvidencePacket,
+  isEvidencePacketFresh,
+  type TaskEvidencePacket,
+  type TaskEvidenceState,
+} from "@/session/task-evidence"
 import { mergeGoalFindings } from "@/session/goal-evidence"
 import { Snapshot } from "@/snapshot"
 
@@ -38,17 +43,25 @@ const BACKGROUND_DESCRIPTION = [
     "Follow up on a background task with task_id and action:",
     "action=check reports whether it is still running and returns what it has written so far, without disturbing it;",
     "action=wait blocks until it finishes and returns its result.",
+    "action=cancel stops a directly owned background task, preserving its transcript and file changes; finished tasks are unchanged.",
+    "Follow-ups need only task_id and action, not launch fields.",
     "Prefer check when you can keep working, wait when you genuinely cannot proceed without it.",
   ].join(" "),
 ].join("\n")
 
 const BaseParameterFields = {
-  description: Schema.String.annotate({ description: "A short (3-5 words) description of the task" }),
-  prompt: Schema.String.annotate({ description: "The task for the agent to perform" }),
-  subagent_type: Schema.String.annotate({ description: "The type of specialized agent to use for this task" }),
+  description: Schema.optional(Schema.String).annotate({
+    description: "Required for launch/resume: a short (3-5 words) description",
+  }),
+  prompt: Schema.optional(Schema.String).annotate({
+    description: "Required for launch/resume: the task for the agent to perform",
+  }),
+  subagent_type: Schema.optional(Schema.String).annotate({
+    description: "Required for launch/resume: the specialized agent type",
+  }),
   task_id: Schema.optional(Schema.String).annotate({
     description:
-      "This should only be set if you mean to resume a previous task (you can pass a prior task_id and the task will continue the same subagent session as before instead of creating a fresh one)",
+      "Existing task to check, wait for, cancel, or resume. Without action, continue the same subagent session with a new prompt.",
   }),
   command: Schema.optional(Schema.String).annotate({ description: "The command that triggered this task" }),
 }
@@ -58,20 +71,24 @@ export const Parameters = Schema.Struct({
   background: Schema.optional(Schema.Boolean).annotate({
     description: "Run the agent in the background. You will be notified when it completes.",
   }),
-  action: Schema.optional(Schema.Literals(["check", "wait"])).annotate({
+  action: Schema.optional(Schema.Literals(["check", "wait", "cancel"])).annotate({
     description:
-      "Follow up on an existing task_id instead of starting work: check reports its progress so far, wait blocks until it finishes.",
+      "Follow up using only task_id: check reports progress, wait blocks until finished, cancel stops owned background work without reverting changes.",
   }),
   timeout_minutes: Schema.optional(Schema.Number).annotate({
     description: "Only with action=wait: give up waiting after this many minutes and report the task as still running.",
   }),
 })
 
+const LaunchParameters = Schema.Struct({
+  ...Parameters.fields,
+  description: Schema.String,
+  prompt: Schema.String,
+  subagent_type: Schema.String,
+})
+
 function escapeTaskMarkup(text: string) {
-  return text
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
+  return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
 }
 
 function output(sessionID: SessionID, text: string, packet?: TaskEvidencePacket) {
@@ -80,10 +97,12 @@ function output(sessionID: SessionID, text: string, packet?: TaskEvidencePacket)
     "<task_result>",
     escapeTaskMarkup(text),
     "</task_result>",
-    ...(packet?.workspace ? [
-      `<evidence_packet id="${packet.id}" workspace_fingerprint="${packet.workspace.fingerprint}" fresh="true" />`,
-      "<guidance>Reuse this child evidence while the workspace fingerprint is unchanged. Re-run only checks invalidated by later writes.</guidance>",
-    ] : []),
+    ...(packet?.workspace
+      ? [
+          `<evidence_packet id="${packet.id}" workspace_fingerprint="${packet.workspace.fingerprint}" fresh="true" />`,
+          "<guidance>Reuse this child evidence while the workspace fingerprint is unchanged. Re-run only checks invalidated by later writes.</guidance>",
+        ]
+      : []),
     "</task>",
   ].join("\n")
 }
@@ -186,7 +205,8 @@ function statusOutput(input: {
   ].join("\n")
 }
 
-function backgroundOutput(sessionID: SessionID) {  return [
+function backgroundOutput(sessionID: SessionID) {
+  return [
     `<task id="${sessionID}" state="running">`,
     "<summary>Background task started</summary>",
     "<task_result>",
@@ -241,9 +261,7 @@ function validateTaskSession(input: {
 }) {
   if (input.session.parentID !== input.parentSessionID) {
     return Effect.fail(
-      new Error(
-        `Cannot resume task ${input.taskID}: it does not belong to parent session ${input.parentSessionID}.`,
-      ),
+      new Error(`Cannot resume task ${input.taskID}: it does not belong to parent session ${input.parentSessionID}.`),
     )
   }
   if (input.session.agent && input.session.agent !== input.subagent.name) {
@@ -254,6 +272,18 @@ function validateTaskSession(input: {
     )
   }
   return Effect.succeed(input.session)
+}
+
+const lifecycleLocks = new WeakMap<BackgroundJob.Interface, Map<SessionID, Semaphore.Semaphore>>()
+
+function lifecycleLock(background: BackgroundJob.Interface, sessionID: SessionID) {
+  const locks = lifecycleLocks.get(background) ?? new Map<SessionID, Semaphore.Semaphore>()
+  lifecycleLocks.set(background, locks)
+  const existing = locks.get(sessionID)
+  if (existing) return existing
+  const next = Semaphore.makeUnsafe(1)
+  locks.set(sessionID, next)
+  return next
 }
 
 export const TaskTool = Tool.define(
@@ -269,7 +299,7 @@ export const TaskTool = Tool.define(
     const evidenceLock = yield* Semaphore.make(1)
 
     const run = Effect.fn("TaskTool.execute")(function* (
-      params: Schema.Schema.Type<typeof Parameters>,
+      input: Schema.Schema.Type<typeof Parameters>,
       ctx: Tool.Context,
     ) {
       const cfg = yield* config.get()
@@ -280,7 +310,8 @@ export const TaskTool = Tool.define(
       // Follow-up on an existing task: report progress, or wait for the end.
       // The parent stays free to work while a subagent runs, so it never has to
       // choose between blocking on a child and abandoning it.
-      if (params.action) {
+      if (input.action) {
+        const params = input
         if (!params.task_id)
           return yield* Effect.fail(new Error(`action=${params.action} requires the task_id of an existing task.`))
         const target = SessionID.make(params.task_id)
@@ -296,7 +327,30 @@ export const TaskTool = Tool.define(
                   ...(params.timeout_minutes ? { timeout: params.timeout_minutes * 60_000 } : {}),
                 })
                 .pipe(Effect.map((result) => result.info))
-            : yield* background.get(target)
+            : params.action === "cancel"
+              ? yield* lifecycleLock(background, target).withPermits(1)(
+                  Effect.gen(function* () {
+                    const current = yield* background.get(target)
+                    if (!current || current.status !== "running") return current
+                    if (current.type !== id)
+                      return yield* Effect.fail(new Error(`Task ${target} is not a managed subagent job.`))
+                    const ops = ctx.extra?.promptOps as TaskPromptOps | undefined
+                    if (!ops)
+                      return yield* Effect.fail(
+                        new Error("TaskTool requires promptOps in ctx.extra to cancel running work"),
+                      )
+                    // Settle the job first: session cancellation also traverses jobs,
+                    // so calling it from the job's finalizer would self-interrupt.
+                    return yield* Effect.uninterruptible(
+                      Effect.gen(function* () {
+                        const cancelled = yield* background.cancel(target)
+                        if (cancelled?.status === "cancelled") yield* ops.cancel(target)
+                        return cancelled
+                      }),
+                    )
+                  }),
+                )
+              : yield* background.get(target)
         // A finished task reports exactly what the parent would have received;
         // a running one can only offer the transcript it has written so far.
         const rawReport =
@@ -307,9 +361,10 @@ export const TaskTool = Tool.define(
               : yield* childText(sessions, target)
         const report = rawReport
         const evidencePacket = job?.metadata?.evidencePacket as TaskEvidencePacket | undefined
-        const currentFingerprint = evidencePacket?.workspace && Option.isSome(snapshot)
-          ? yield* snapshot.value.track().pipe(Effect.catch(() => Effect.succeed(undefined)))
-          : undefined
+        const currentFingerprint =
+          evidencePacket?.workspace && Option.isSome(snapshot)
+            ? yield* snapshot.value.track().pipe(Effect.catch(() => Effect.succeed(undefined)))
+            : undefined
         const evidenceFresh = evidencePacket ? isEvidencePacketFresh(evidencePacket, currentFingerprint) : undefined
 
         // Only a background task can be followed up on: the parent is blocked for
@@ -321,7 +376,7 @@ export const TaskTool = Tool.define(
         }
 
         return {
-          title: params.description,
+          title: params.description ?? `${params.action} task`,
           metadata: followUpMetadata,
           output: [
             statusOutput({
@@ -330,10 +385,24 @@ export const TaskTool = Tool.define(
               partial: report,
               waited: params.action === "wait",
             }),
-            ...(evidencePacket?.workspace ? [`<evidence_packet id="${evidencePacket.id}" workspace_fingerprint="${evidencePacket.workspace.fingerprint}" fresh="${evidenceFresh}" />`] : []),
+            ...(evidencePacket?.workspace
+              ? [
+                  `<evidence_packet id="${evidencePacket.id}" workspace_fingerprint="${evidencePacket.workspace.fingerprint}" fresh="${evidenceFresh}" />`,
+                ]
+              : []),
           ].join("\n"),
         }
       }
+
+      const params = yield* Schema.decodeUnknownEffect(LaunchParameters)(input).pipe(
+        Effect.mapError(
+          () =>
+            new Tool.InvalidArgumentsError({
+              tool: id,
+              detail: "Launch/resume requires description, prompt, and subagent_type strings",
+            }),
+        ),
+      )
 
       // A subagent only ever sees this prompt, so an elided one silently starves it.
       // Historical tool inputs replay as structural markers, never as inline text, so
@@ -369,21 +438,19 @@ export const TaskTool = Tool.define(
         ? yield* agent.get(parent.agent).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
         : undefined
       const session = params.task_id
-        ? yield* sessions
-            .get(SessionID.make(params.task_id))
-            .pipe(
-              Effect.catchCause(() =>
-                Effect.fail(new Error(`Cannot resume task ${params.task_id}: task_id does not exist.`)),
-              ),
-              Effect.andThen((item) =>
-                validateTaskSession({
-                  taskID: SessionID.make(params.task_id!),
-                  session: item,
-                  parentSessionID: ctx.sessionID,
-                  subagent: next,
-                }),
-              ),
-            )
+        ? yield* sessions.get(SessionID.make(params.task_id)).pipe(
+            Effect.catchCause(() =>
+              Effect.fail(new Error(`Cannot resume task ${params.task_id}: task_id does not exist.`)),
+            ),
+            Effect.andThen((item) =>
+              validateTaskSession({
+                taskID: SessionID.make(params.task_id!),
+                session: item,
+                parentSessionID: ctx.sessionID,
+                subagent: next,
+              }),
+            ),
+          )
         : undefined
       const nextSession =
         session ??
@@ -426,10 +493,18 @@ export const TaskTool = Tool.define(
         const workspaceFingerprint = Option.isSome(snapshot)
           ? yield* snapshot.value.track().pipe(Effect.catch(() => Effect.succeed(undefined)))
           : undefined
-        const effectiveState: TaskEvidenceState = state === "completed" && child.goalState && child.goalState.status !== "completed" ? "partial" : state
+        const effectiveState: TaskEvidenceState =
+          state === "completed" && child.goalState && child.goalState.status !== "completed" ? "partial" : state
         const packet = buildTaskEvidencePacket({
-          taskCallID, revision: evidenceRevision, parentSessionID: ctx.sessionID, childSessionID: nextSession.id,
-          state: effectiveState, text, goalState: child.goalState, workspaceFingerprint, capturedAt: workspaceFingerprint ? Date.now() : undefined,
+          taskCallID,
+          revision: evidenceRevision,
+          parentSessionID: ctx.sessionID,
+          childSessionID: nextSession.id,
+          state: effectiveState,
+          text,
+          goalState: child.goalState,
+          workspaceFingerprint,
+          capturedAt: workspaceFingerprint ? Date.now() : undefined,
         })
         yield* evidenceLock.withPermits(1)(
           Effect.gen(function* () {
@@ -439,7 +514,12 @@ export const TaskTool = Tool.define(
             if (JSON.stringify(findings) === JSON.stringify(current.goalState.findings ?? [])) return
             yield* sessions.setGoalState({
               sessionID: ctx.sessionID,
-              goalState: { ...current.goalState, findings, version: current.goalState.version + 1, updatedAt: Date.now() },
+              goalState: {
+                ...current.goalState,
+                findings,
+                version: current.goalState.version + 1,
+                updatedAt: Date.now(),
+              },
             })
           }),
         )
@@ -475,7 +555,7 @@ export const TaskTool = Tool.define(
         const text = result.parts.findLast((item) => item.type === "text")?.text ?? ""
         const stepLimited = result.info.role === "assistant" && result.info.finish === "step-limit"
         const packet = yield* persistEvidence(stepLimited ? "partial" : "completed", text)
-        return { text, state: packet.state, reason: stepLimited ? "steps" as const : undefined, packet }
+        return { text, state: packet.state, reason: stepLimited ? ("steps" as const) : undefined, packet }
       })
 
       // Salvage whatever the child wrote before it was stopped. The transcript
@@ -515,58 +595,90 @@ export const TaskTool = Tool.define(
           .pipe(Effect.ignore, Effect.forkIn(scope, { startImmediately: true }))
       })
 
-      const existing = yield* background.get(nextSession.id)
-      if (existing?.status === "running") {
-        return yield* Effect.fail(new Error(`Task ${nextSession.id} is already running.`))
-      }
-
       if (runInBackground) {
-        const minutes = next.budgetMinutes ?? taskBudgetMinutes()
-        const info = yield* background.start({
-          id: nextSession.id,
-          type: id,
-          title: params.description,
-          metadata,
-          // A background subagent cannot stall the parent, but it can still burn
-          // tokens forever unattended. Same ceiling as the foreground path.
-          run: withBudget(runTask(), minutes).pipe(
-            Effect.flatMap((result) => {
-              if (Option.isSome(result)) {
-                const value = result.value
-                return value.state === "completed"
-                  ? inject("completed", value.text, value.packet).pipe(Effect.ignore, Effect.as({ status: "completed", output: value.text, metadata: { evidencePacket: value.packet } } as BackgroundJob.TerminalResult))
-                  : inject("budget_exceeded", value.text, value.packet).pipe(
-                      Effect.ignore,
-                      Effect.as({ status: "partial", output: value.text, reason: value.reason ?? "steps", metadata: { evidencePacket: value.packet } } as BackgroundJob.TerminalResult),
-                    )
-              }
-              return ops.cancel(nextSession.id).pipe(
-                Effect.ignore,
-                Effect.andThen(partialText()),
-                Effect.flatMap((partial) => persistEvidence("partial", partial).pipe(
-                  Effect.tap((packet) => inject("budget_exceeded", partial, packet).pipe(Effect.ignore)),
-                  Effect.map((packet) => ({ status: "partial", output: partial, reason: "wall_clock", metadata: { evidencePacket: packet } } as BackgroundJob.TerminalResult)),
-                )),
-              )
-            }),
-            Effect.catchCause((cause) =>
-              (Cause.hasInterruptsOnly(cause)
-                ? Effect.void
-                : inject("error", errorText(Cause.squash(cause))).pipe(Effect.ignore)
-              ).pipe(Effect.andThen(Effect.failCause(cause))),
-            ),
-          ),
-        })
+        return yield* lifecycleLock(background, nextSession.id).withPermits(1)(
+          Effect.gen(function* () {
+            const existing = yield* background.get(nextSession.id)
+            if (existing?.status === "running")
+              return yield* Effect.fail(new Error(`Task ${nextSession.id} is already running.`))
+            const minutes = next.budgetMinutes ?? taskBudgetMinutes()
+            const info = yield* background.start({
+              id: nextSession.id,
+              type: id,
+              title: params.description,
+              metadata,
+              // A background subagent cannot stall the parent, but it can still burn
+              // tokens forever unattended. Same ceiling as the foreground path.
+              run: withBudget(runTask(), minutes).pipe(
+                Effect.flatMap((result) => {
+                  if (Option.isSome(result)) {
+                    const value = result.value
+                    return value.state === "completed"
+                      ? inject("completed", value.text, value.packet).pipe(
+                          Effect.ignore,
+                          Effect.as({
+                            status: "completed",
+                            output: value.text,
+                            metadata: { evidencePacket: value.packet },
+                          } as BackgroundJob.TerminalResult),
+                        )
+                      : inject("budget_exceeded", value.text, value.packet).pipe(
+                          Effect.ignore,
+                          Effect.as({
+                            status: "partial",
+                            output: value.text,
+                            reason: value.reason ?? "steps",
+                            metadata: { evidencePacket: value.packet },
+                          } as BackgroundJob.TerminalResult),
+                        )
+                  }
+                  return ops.cancel(nextSession.id).pipe(
+                    Effect.ignore,
+                    Effect.andThen(partialText()),
+                    Effect.flatMap((partial) =>
+                      persistEvidence("partial", partial).pipe(
+                        Effect.tap((packet) => inject("budget_exceeded", partial, packet).pipe(Effect.ignore)),
+                        Effect.map(
+                          (packet) =>
+                            ({
+                              status: "partial",
+                              output: partial,
+                              reason: "wall_clock",
+                              metadata: { evidencePacket: packet },
+                            }) as BackgroundJob.TerminalResult,
+                        ),
+                      ),
+                    ),
+                  )
+                }),
+                Effect.catchCause((cause) =>
+                  (Cause.hasInterruptsOnly(cause)
+                    ? Effect.void
+                    : inject("error", errorText(Cause.squash(cause))).pipe(Effect.ignore)
+                  ).pipe(Effect.andThen(Effect.failCause(cause))),
+                ),
+              ),
+            })
 
-        return {
-          title: params.description,
-          metadata: {
-            ...metadata,
-            jobId: info.id,
-          },
-          output: backgroundOutput(nextSession.id),
-        }
+            return {
+              title: params.description,
+              metadata: {
+                ...metadata,
+                jobId: info.id,
+              },
+              output: backgroundOutput(nextSession.id),
+            }
+          }),
+        )
       }
+
+      yield* lifecycleLock(background, nextSession.id).withPermits(1)(
+        Effect.gen(function* () {
+          const existing = yield* background.get(nextSession.id)
+          if (existing?.status === "running")
+            return yield* Effect.fail(new Error(`Task ${nextSession.id} is already running.`))
+        }),
+      )
 
       const runCancel = yield* EffectBridge.make()
       const cancel = ops.cancel(nextSession.id)
@@ -598,7 +710,16 @@ export const TaskTool = Tool.define(
             }
 
             if (result.value.state === "partial") {
-              return { title: params.description, metadata: { ...metadata, outcome: "partial", reason: result.value.reason, evidencePacket: result.value.packet }, output: stepLimitOutput(nextSession.id, result.value.text) }
+              return {
+                title: params.description,
+                metadata: {
+                  ...metadata,
+                  outcome: "partial",
+                  reason: result.value.reason,
+                  evidencePacket: result.value.packet,
+                },
+                output: stepLimitOutput(nextSession.id, result.value.text),
+              }
             }
             return {
               title: params.description,

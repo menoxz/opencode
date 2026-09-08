@@ -209,15 +209,32 @@ async function resolveExecutable(command: string) {
 }
 
 async function runPython(script: string, args: string[]) {
-  let last: unknown
-  for (const command of process.platform === "win32" ? ["python", "python3"] : ["python3", "python"]) {
+  const failures: string[] = []
+  const candidates = process.platform === "win32"
+    ? [
+        { command: "python", prefix: [] as string[] },
+        { command: "py", prefix: ["-3"] },
+        { command: "python3", prefix: [] as string[] },
+      ]
+    : [
+        { command: "python3", prefix: [] as string[] },
+        { command: "python", prefix: [] as string[] },
+      ]
+  for (const candidate of candidates) {
     try {
-      const executable = await resolveExecutable(command)
-      const result = await execFileAsync(executable, ["-c", script, ...args], { timeout: 60_000, maxBuffer: 16 * 1024 * 1024, windowsHide: true })
+      const executable = await resolveExecutable(candidate.command)
+      const result = await execFileAsync(executable, [...candidate.prefix, "-c", script, ...args], {
+        timeout: 60_000,
+        maxBuffer: 16 * 1024 * 1024,
+        windowsHide: true,
+        env: { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1" },
+      })
       return result.stdout
-    } catch (error) { last = error }
+    } catch (error) {
+      failures.push(`${candidate.command}: ${String(error)}`)
+    }
   }
-  throw new Error(`PDF extraction requires Python with PyMuPDF: ${String(last)}`)
+  throw new Error(`PDF extraction requires Python with PyMuPDF:\n${failures.join("\n")}`)
 }
 
 async function extractPdf(bytes: Uint8Array, options: { filename: string; mime: string }): Promise<DocumentExtraction> {

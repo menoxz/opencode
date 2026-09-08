@@ -20,6 +20,8 @@ import * as ProviderError from "@/provider/error"
 import { iife } from "@/util/iife"
 import { errorMessage } from "@/util/error"
 import { isMedia } from "@/util/media"
+import { supportsPdfInput } from "@/document/provider-support"
+import { renderTodoSnapshot, todoSnapshotOrder } from "@/tool/todo-output"
 import type { SystemError } from "bun"
 import type { Provider } from "@/provider/provider"
 import { ModelID, ProviderID } from "@/provider/schema"
@@ -304,11 +306,23 @@ function toolResultReference(part: ToolPart) {
   return part.callID
 }
 
+function todoSnapshot(part: ToolPart) {
+  if (part.tool !== "todowrite" || part.state.status !== "completed" || part.state.time.compacted) return
+  const snapshot = renderTodoSnapshot(part.state.metadata)
+  const order = todoSnapshotOrder(part.state.metadata)
+  const label = order ? `[TODO state scope=${order.scope} sequence=${order.sequence}; highest sequence in this scope is newest]` : "[TODO state]"
+  return snapshot === undefined ? undefined : `${label}\n${snapshot}`
+}
+
 function summarizeToolOutput(part: ToolPart, outputText: string, attachments: FilePart[], mode: ReplayToolOutputsMode) {
   if (mode === "full") return outputText
   const reference = toolResultReference(part)
   if (mode === "off") {
     return [`[Historical tool result omitted]`, `tool: ${part.tool}`, `reference: ${reference}`].join("\n")
+  }
+  if (part.state.status === "completed" && !part.state.time.compacted) {
+    const terminal = part.state.metadata?.terminalOutput
+    if (terminal?.version === 1 && typeof terminal.summary === "string") return terminal.summary
   }
   const lines = outputText === "" ? 0 : outputText.split("\n").length
   const bytes = Buffer.byteLength(outputText, "utf-8")
@@ -767,6 +781,22 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
   const summarizedToolTurns = summarizedToolOutputMessageIDs(input, replayToolOutputs)
   const pinnedToolCalls = pinnedToolCallIDs(input, summarizedToolTurns, replayToolOutputs === "summary")
   const summarizedToolInputTurns = summarizedToolInputMessageIDs(input, replayToolInputs)
+  // Reuse the existing block boundary: do not rewrite a cached prefix on every
+  // TODO update. Only supersede old payloads when a complete newer state remains.
+  const latestTodo = new Map<string, ToolPart>()
+  if (replayToolOutputs === "summary") {
+    for (const msg of input) {
+      if (msg.info.role !== "assistant" || (msg.info.error && !AbortedError.isInstance(msg.info.error))) continue
+      for (const part of msg.parts) {
+        if (part.type !== "tool" || part.state.status !== "completed" || todoSnapshot(part) === undefined) continue
+        const previous = latestTodo.get(msg.info.sessionID)
+        const oldOrder = previous?.state.status === "completed" ? todoSnapshotOrder(previous.state.metadata) : undefined
+        const order = todoSnapshotOrder(part.state.metadata)
+        if (order && oldOrder && order.scope === oldOrder.scope && order.sequence < oldOrder.sequence) continue
+        latestTodo.set(msg.info.sessionID, part)
+      }
+    }
+  }
   // Track media from tool results that need to be injected as user messages
   // for providers that don't support that media type in tool results.
   //
@@ -841,7 +871,7 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
           })
         // text/plain and directory files are converted into text parts, ignore them
         if (part.type === "file" && part.mime !== "text/plain" && part.mime !== "application/x-directory") {
-          if (options?.stripMedia && isMedia(part.mime)) {
+          if ((options?.stripMedia && isMedia(part.mime)) || (part.mime === "application/pdf" && !supportsPdfInput(model))) {
             userMessage.parts.push({
               type: "text",
               text: `[Attached ${part.mime}: ${part.filename ?? "file"}]`,
@@ -930,13 +960,25 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
             const outputText = part.state.time.compacted
               ? "[Old tool result content cleared]"
               : truncateToolOutput(part.state.output, options?.toolOutputMaxChars)
-            const rawAttachments = part.state.time.compacted || options?.stripMedia ? [] : (part.state.attachments ?? [])
+            const rawAttachments = (part.state.time.compacted || options?.stripMedia ? [] : (part.state.attachments ?? []))
+              .filter((attachment) => attachment.mime !== "application/pdf" || supportsPdfInput(model))
             const attachments = yield* Effect.forEach(rawAttachments, (attachment) =>
               ArtifactStore.isReference(attachment.url)
                 ? Effect.promise(() => ArtifactStore.toDataUrl(attachment.url)).pipe(Effect.map((url) => ({ ...attachment, url })))
                 : Effect.succeed(attachment),
             )
-            const replayedOutputText = summarizeToolOutput(part, outputText, attachments, toolReplayMode)
+            const newestTodo = latestTodo.get(msg.info.sessionID)
+            const order = todoSnapshotOrder(part.state.metadata)
+            const newestOrder = newestTodo?.state.status === "completed" ? todoSnapshotOrder(newestTodo.state.metadata) : undefined
+            const comparableTodo = (!order && !newestOrder) || (order && newestOrder && order.scope === newestOrder.scope && order.sequence < newestOrder.sequence)
+            const supersededTodo = part.tool === "todowrite" && newestTodo !== undefined && newestTodo !== part &&
+              comparableTodo && summarizedToolTurns.has(msg.info.id) && todoSnapshot(part) !== undefined
+            const snapshot = replayToolOutputs === "summary" ? todoSnapshot(part) : undefined
+            const replayedOutputText = supersededTodo
+              ? "[Historical TODO update superseded by the later complete TODO state]"
+              : snapshot !== undefined
+                ? `${outputText}\n${snapshot}`
+                : summarizeToolOutput(part, outputText, attachments, toolReplayMode)
 
             // For providers that don't support media in tool results, extract media files
             // (images, PDFs) to be sent as a separate user message
@@ -960,7 +1002,9 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
               type: ("tool-" + part.tool) as `tool-${string}`,
               state: "output-available",
               toolCallId: part.callID,
-              input: summarizeToolInput(part.state.input, toolInputReplayMode, part.tool),
+              input: supersededTodo && replayToolInputs !== "full"
+                ? { historical: "superseded TODO update; see the later complete TODO state" }
+                : summarizeToolInput(part.state.input, toolInputReplayMode, part.tool),
               output,
               ...(part.metadata?.providerExecuted ? { providerExecuted: true } : {}),
               ...(differentModel ? {} : { callProviderMetadata: providerMeta(part.metadata) }),

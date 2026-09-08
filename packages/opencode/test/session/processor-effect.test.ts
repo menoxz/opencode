@@ -744,15 +744,117 @@ it.live("session.processor bounds terminal output and preserves the full artifac
         yield* handle.process({
           user: { id: parent.id, sessionID: chat.id, role: "user", time: parent.time, agent: parent.agent, model: { providerID: ref.providerID, modelID: ref.modelID } } satisfies MessageV2.User,
           sessionID: chat.id, model: mdl, agent: agent(), system: [], messages: [{ role: "user", content: "verbose terminal" }],
-          tools: { bash: tool({ description: "terminal", inputSchema: z.object({ command: z.string() }), execute: async () => ({ title: "terminal", output: "x".repeat(10_000), metadata: {} }) }) },
+          tools: { bash: tool({ description: "terminal", inputSchema: z.object({ command: z.string() }), execute: async () => ({ title: "terminal", output: "x".repeat(10_000), metadata: { terminalOutput: { version: 1, summary: "FORGED_EVENT_MARKER" } } }) }) },
         })
         const call = MessageV2.parts(msg.id).find((part): part is MessageV2.ToolPart => part.type === "tool")
         expect(call?.state.status).toBe("completed")
         if (call?.state.status !== "completed") return
-        expect(call.state.output.length).toBeLessThan(6_000)
-        expect(call.state.output).toContain("Full output saved to:")
+        expect(Buffer.byteLength(call.state.output)).toBeLessThanOrEqual(4_000)
+        expect(call.state.output).toContain("Received output saved to:")
         expect(call.state.metadata?.leanOutputBudget?.truncated).toBe(true)
+        expect(call.state.metadata?.terminalOutput?.summary).not.toContain("FORGED_EVENT_MARKER")
+        const outputPath = call.state.metadata.outputPath
+        expect(typeof outputPath).toBe("string")
+        const saved = yield* Effect.promise(() => Bun.file(outputPath).text())
+        expect(saved).toBe("x".repeat(10_000))
+        const replay = yield* MessageV2.toModelMessagesEffect([{ info: msg, parts: [call] }], mdl)
+        expect(JSON.stringify(replay)).toContain("Received output saved to:")
+        expect(JSON.stringify(replay)).not.toContain("x".repeat(5_000))
       }),
+    { config: (url) => providerCfg(url) },
+  ),
+)
+
+for (const aborted of [false, true]) {
+  it.live(`session.processor direct completion compacts before replay (aborted=${aborted})`, () =>
+    provideTmpdirServer(
+      ({ dir, llm }) => Effect.gen(function* () {
+        const { processors, session, provider } = yield* boot()
+        yield* llm.tool("bash", { command: "verbose" })
+        const chat = yield* session.create({})
+        const parent = yield* user(chat.id, "direct terminal")
+        const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+        const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
+        const handle = yield* processors.create({ assistantMessage: msg, sessionID: chat.id, model: mdl })
+        const raw = `error: early failure\n${"prefix detail\n".repeat(500)}RAW_ONLY_DIRECT_SENTINEL\n${"tail detail\n".repeat(500)}last evidence`
+        const journal = yield* Effect.flatMap(Truncate.Service, (store) => store.write(raw)).pipe(
+          Effect.provide(Truncate.defaultLayer),
+        )
+        const output = {
+          title: "direct terminal",
+          output: aborted ? `${raw}\nFull output saved to: ${journal}` : raw,
+          metadata: { outputPath: journal, exit: 1, commandId: "direct", terminalId: "terminal", status: "failed", isError: true, interrupted: aborted, error: "failure details", terminalOutput: { version: 1, summary: "FORGED_COMPACT_MARKER" } },
+          attachments: [{ id: PartID.ascending(), sessionID: chat.id, messageID: msg.id, type: "file" as const, mime: "text/plain", url: "data:text/plain;base64,ZXZpZGVuY2U=", filename: "evidence.txt" }],
+        }
+        const started = defer<void>()
+        const release = defer<void>()
+        const run = yield* handle.process({
+          user: { id: parent.id, sessionID: chat.id, role: "user", time: parent.time, agent: parent.agent, model: ref } satisfies MessageV2.User,
+          sessionID: chat.id, model: mdl, agent: agent(), system: [], messages: [{ role: "user", content: "direct terminal" }],
+          tools: { bash: tool({ description: "terminal", inputSchema: z.object({ command: z.string() }), execute: async () => { started.resolve(); await release.promise; return output } }) },
+        }).pipe(Effect.forkChild)
+        yield* Effect.promise(() => started.promise)
+        yield* waitFor(
+          Effect.sync(() => MessageV2.parts(msg.id).find((part) => part.type === "tool" && part.state.status === "running")),
+          "timed out waiting for running direct tool call",
+        )
+        yield* handle.completeToolCall("call_1", output)
+        const call = MessageV2.parts(msg.id).find((part): part is MessageV2.ToolPart => part.type === "tool")
+        if (call?.state.status !== "completed") throw new Error("direct completion was not persisted")
+        expect(Buffer.byteLength(call.state.output)).toBeLessThanOrEqual(4000)
+        expect(call.state.output).toContain("early failure")
+        expect(call.state.output).toContain("last evidence")
+        expect(call.state.output).not.toContain("RAW_ONLY_DIRECT_SENTINEL")
+        expect(call.state.metadata).toMatchObject({ exit: 1, commandId: "direct", terminalId: "terminal", status: "failed", isError: true, interrupted: aborted, error: "failure details" })
+        expect(call.state.metadata.terminalOutput.outputPath).not.toBe(journal)
+        expect(call.state.metadata.upstreamOutputPaths).toEqual([journal])
+        expect(yield* Effect.promise(() => Bun.file(call.state.status === "completed" ? call.state.metadata.outputPath : "").text())).toBe(output.output)
+        expect(call.state.metadata.terminalOutput.summary).not.toContain("FORGED_COMPACT_MARKER")
+        expect(call.state.attachments).toEqual(output.attachments)
+        expect(yield* Effect.promise(() => Bun.file(journal).text())).toBe(raw)
+        const replay = yield* MessageV2.toModelMessagesEffect([{ info: msg, parts: [call] }], mdl)
+        expect(JSON.stringify(replay)).not.toContain("RAW_ONLY_DIRECT_SENTINEL")
+        expect(JSON.stringify(replay)).toContain("Received output saved to:")
+        yield* handle.completeToolCall("call_1", output)
+        expect(MessageV2.parts(msg.id).find((part) => part.type === "tool")).toEqual(call)
+        release.resolve()
+        if (aborted) yield* Fiber.interrupt(run)
+        if (!aborted) yield* Fiber.join(run)
+        expect(MessageV2.parts(msg.id).find((part) => part.type === "tool")).toEqual(call)
+      }),
+      { config: (url) => providerCfg(url) },
+    ),
+  )
+}
+
+it.live("session.processor polling survives new handles without crossing sessions or losing MCP controls", () =>
+  provideTmpdirServer(
+    ({ dir, llm }) => Effect.gen(function* () {
+      const { processors, session, provider } = yield* boot()
+      const chat = yield* session.create({})
+      const other = yield* session.create({})
+      const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
+      for (const [sessionID, text, incremental] of [[chat.id, "first\n", false], [chat.id, "first\nsecond\n", true], [other.id, "first\nsecond\nthird\n", false]] as const) {
+        yield* llm.tool("mcp-terminal_command_status", { commandId: "stable" })
+        const parent = yield* user(sessionID, "poll")
+        const msg = yield* assistant(sessionID, parent.id, path.resolve(dir))
+        const handle = yield* processors.create({ assistantMessage: msg, sessionID, model: mdl })
+        yield* handle.process({
+          user: { id: parent.id, sessionID, role: "user", time: parent.time, agent: parent.agent, model: { providerID: ref.providerID, modelID: ref.modelID } } satisfies MessageV2.User,
+          sessionID, model: mdl, agent: agent(), system: [], messages: [{ role: "user", content: "poll" }],
+          tools: { "mcp-terminal_command_status": tool({ description: "poll", inputSchema: z.object({ commandId: z.string() }), execute: async () => ({ commandId: "stable", terminalId: "terminal", status: "running", output: text }) }) },
+        })
+        const call = MessageV2.parts(msg.id).find((part): part is MessageV2.ToolPart => part.type === "tool")
+        expect(call?.state.status).toBe("completed")
+        if (call?.state.status !== "completed") throw new Error("missing persisted tool result")
+        expect(call.state.metadata.terminalOutput.incremental).toBe(incremental)
+        expect(call.state.output).toContain('"commandId":"stable"')
+        expect(call.state.output).toContain('"status":"running"')
+        const replay = yield* MessageV2.toModelMessagesEffect([{ info: msg, parts: [call] }], mdl)
+        expect(JSON.stringify(replay)).toContain("Received output saved to:")
+        if (incremental) expect(call.state.output).not.toContain("first\n")
+      }
+    }),
     { config: (url) => providerCfg(url) },
   ),
 )

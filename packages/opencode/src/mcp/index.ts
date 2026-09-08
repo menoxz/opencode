@@ -333,6 +333,11 @@ interface CreateResult {
   defs?: MCPToolDef[]
 }
 
+export interface LifecycleResult {
+  status: Status
+  toolCount: number
+}
+
 interface AuthResult {
   authorizationUrl: string
   oauthState: string
@@ -358,9 +363,9 @@ export interface Interface {
   readonly prompts: () => Effect.Effect<Record<string, PromptInfo & { client: string }>>
   readonly resources: () => Effect.Effect<Record<string, ResourceInfo & { client: string }>>
   readonly add: (name: string, mcp: ConfigMCP.Info) => Effect.Effect<{ status: Record<string, Status> | Status }>
-  readonly connect: (name: string) => Effect.Effect<void, NotFoundError>
-  readonly disconnect: (name: string) => Effect.Effect<void, NotFoundError>
-  readonly reload: () => Effect.Effect<void>
+  readonly connect: (name: string) => Effect.Effect<LifecycleResult, NotFoundError>
+  readonly disconnect: (name: string) => Effect.Effect<LifecycleResult, NotFoundError>
+  readonly reload: (options?: { reconnect?: boolean }) => Effect.Effect<Record<string, LifecycleResult>>
   readonly getPrompt: (
     clientName: string,
     name: string,
@@ -407,10 +412,7 @@ export const layer = Layer.effect(
           Effect.tryPromise({
             try: () => {
               const client = new Client({ name: "opencode", version: InstallationVersion })
-              return withTimeout(
-                client.connect(t).then(() => client.listTools()),
-                timeout,
-              ).then(() => client)
+              return withTimeout(client.connect(t), timeout).then(() => client)
             },
             catch: (e) => (e instanceof Error ? e : new Error(String(e))),
           }),
@@ -924,7 +926,10 @@ export const layer = Layer.effect(
 
     const connect = Effect.fn("MCP.connect")(function* (name: string) {
       const mcp = yield* requireMcpConfig(name)
-      yield* createAndStore(name, { ...mcp, enabled: true })
+      const status = yield* createAndStore(name, { ...mcp, enabled: true })
+      const s = yield* InstanceState.get(state)
+      yield* bus.publish(ToolsChanged, { server: name }).pipe(Effect.ignore)
+      return { status, toolCount: s.defs[name]?.length ?? 0 }
     })
 
     const disconnect = Effect.fn("MCP.disconnect")(function* (name: string) {
@@ -933,6 +938,8 @@ export const layer = Layer.effect(
       yield* closeClient(s, name)
       delete s.clients[name]
       s.status[name] = { status: "disabled" }
+      yield* bus.publish(ToolsChanged, { server: name }).pipe(Effect.ignore)
+      return { status: s.status[name], toolCount: 0 }
     })
 
     // --- Config file watcher for hot-reload ---
@@ -989,7 +996,7 @@ export const layer = Layer.effect(
     // Initial watcher setup (resilient: InstanceRef may not be available yet)
     yield* setupMcpWatchers().pipe(Effect.catchCause(() => Effect.void))
 
-    const reloadUnsafe = Effect.fn("MCP.reloadUnsafe")(function* () {
+    const reloadUnsafe = Effect.fn("MCP.reloadUnsafe")(function* (options?: { reconnect?: boolean }) {
       log.info("reloading MCP servers from config")
       const s = yield* InstanceState.get(state)
       yield* cfgSvc.invalidate()
@@ -1024,7 +1031,7 @@ export const layer = Layer.effect(
 
         const changed = s.fingerprints[key] !== fingerprint
         // Reconnect if not connected or if the effective configuration changed.
-        if (!s.clients[key] || changed) {
+        if (!s.clients[key] || changed || options?.reconnect === true) {
           const operation = s.clients[key] ? "reconnect" : "connect"
           const startedAt = Date.now()
           log.info(`${operation} started`, { key })
@@ -1055,10 +1062,13 @@ export const layer = Layer.effect(
       // Re-establish config watchers
       yield* setupMcpWatchers().pipe(Effect.catchCause(() => Effect.void))
       log.info("MCP reload complete")
+      return Object.fromEntries(
+        Object.entries(s.status).map(([name, status]) => [name, { status, toolCount: s.defs[name]?.length ?? 0 }]),
+      )
     })
 
-    const reload = Effect.fn("MCP.reload")(function* () {
-      return yield* reloadLock.withPermits(1)(reloadUnsafe())
+    const reload = Effect.fn("MCP.reload")(function* (options?: { reconnect?: boolean }) {
+      return yield* reloadLock.withPermits(1)(reloadUnsafe(options))
     })
 
     const tools = Effect.fn("MCP.tools")(function* () {

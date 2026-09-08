@@ -33,6 +33,13 @@ describe("lean output policy", () => {
     expect(isLeanTerminalTool("bash")).toBe(true)
     expect(isLeanTerminalTool("mcp-terminal_command_run")).toBe(true)
     expect(isLeanTerminalTool("read")).toBe(false)
+    for (const name of ["command_chain", "command_status", "command_wait", "terminal_read", "ssh_run"]) {
+      expect(isLeanTerminalTool(`mcp-terminal_${name}`)).toBe(true)
+    }
+    expect(isLeanTerminalTool("mcp-terminal_command_stream", { action: "read" })).toBe(true)
+    expect(isLeanTerminalTool("mcp-terminal_command_stream", { action: "close" })).toBe(false)
+    expect(isLeanTerminalTool("developer-tools_native_terminal", { action: "read" })).toBe(true)
+    expect(isLeanTerminalTool("developer-tools_native_terminal", { action: "signal" })).toBe(false)
   })
   test("requires causal evidence after the first completed patch", () => {
     expect(requiresMutationCause([] as any)).toBe(false)

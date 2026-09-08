@@ -3,6 +3,7 @@ import type { InternalTuiPlugin } from "../../plugin/internal"
 import { useSyncV2 } from "@tui/context/sync-v2"
 import { SplitBorder } from "@tui/component/border"
 import { Spinner } from "@tui/component/spinner"
+import { InspectBatchTree } from "@tui/component/inspect-batch-tree"
 import { useTheme } from "@tui/context/theme"
 import { useLocal } from "@tui/context/local"
 import { reasoningSummary, useThinkingMode } from "@tui/context/thinking"
@@ -458,6 +459,7 @@ function ReasoningHeader(props: { toggleable: boolean; open: boolean; done: bool
 
 function AssistantTool(props: { part: SessionMessageAssistantTool; sessionID: string }) {
   const input = createMemo(() => toolInputRecord(props.part.state.input))
+  const { theme } = useTheme()
   const toolprops = {
     get input() {
       return input()
@@ -473,6 +475,19 @@ function AssistantTool(props: { part: SessionMessageAssistantTool; sessionID: st
   }
   return (
     <Switch>
+      <Match when={props.part.name === "inspect_batch"}>
+        <InspectBatchTree
+          input={props.part.state.input}
+          output={toolprops.output}
+          metadata={toolprops.metadata}
+          status={props.part.state.status}
+          error={props.part.state.status === "error" ? props.part.state.error.message : undefined}
+          color={theme.text}
+          muted={theme.textMuted}
+          success={theme.success}
+          errorColor={theme.error}
+        />
+      </Match>
       <Match when={props.part.name === "bash"}>
         <Bash {...toolprops} />
       </Match>

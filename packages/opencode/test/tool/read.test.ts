@@ -676,7 +676,7 @@ describe("tool.read documents", () => {
       }
     }),
   )
-  it.instance("reads PDF text and preserves the original as a CAS attachment", () =>
+  it.instance("reads PDF text without attaching unsupported PDF media", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
       const filepath = path.join(test.directory, "sample.pdf")
@@ -687,7 +687,12 @@ describe("tool.read documents", () => {
         const result = yield* run({ filePath: filepath })
         expect(result.output).toContain("## Page 1")
         expect(result.output).toContain("Quarterly Inventory Report")
-        expect(result.attachments?.some((item) => item.mime === "application/pdf" && item.url.startsWith("artifact://"))).toBe(true)
+        expect(result.attachments?.some((item) => item.mime === "application/pdf")).toBe(false)
+        const supported = yield* run({ filePath: filepath }, {
+          ...ctx,
+          extra: { model: { api: { npm: "@ai-sdk/anthropic" }, capabilities: { input: { pdf: true } } } },
+        } as any)
+        expect(supported.attachments?.some((item) => item.mime === "application/pdf" && item.url.startsWith("artifact://"))).toBe(true)
       } finally {
         if (previous === undefined) delete process.env.OPENCODE_ARTIFACT_ROOT; else process.env.OPENCODE_ARTIFACT_ROOT = previous
       }

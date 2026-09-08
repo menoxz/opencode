@@ -22,6 +22,7 @@ import { useSync } from "@tui/context/sync"
 import { useEvent } from "@tui/context/event"
 import { SplitBorder } from "@tui/component/border"
 import { Spinner } from "@tui/component/spinner"
+import { InspectBatchTree } from "@tui/component/inspect-batch-tree"
 import { generateSubtleSyntax, selectedForeground, useTheme } from "@tui/context/theme"
 import { BoxRenderable, ScrollBoxRenderable, addDefaultParsers, TextAttributes, RGBA } from "@opentui/core"
 import { Prompt, type PromptRef } from "@tui/component/prompt"
@@ -1953,6 +1954,7 @@ function TextPart(props: { last: boolean; part: TextPart; message: AssistantMess
 function ToolPart(props: { last: boolean; part: ToolPart; message: AssistantMessage }) {
   const ctx = use()
   const sync = useSync()
+  const { theme } = useTheme()
 
   // Hide tool if showDetails is false and tool completed successfully
   const shouldHide = createMemo(() => {
@@ -1987,6 +1989,19 @@ function ToolPart(props: { last: boolean; part: ToolPart; message: AssistantMess
   return (
     <Show when={!shouldHide()}>
       <Switch>
+        <Match when={props.part.tool === "inspect_batch"}>
+          <InspectBatchTree
+            input={props.part.state.input}
+            output={toolprops.output}
+            metadata={toolprops.metadata}
+            status={props.part.state.status}
+            error={props.part.state.status === "error" ? props.part.state.error : undefined}
+            color={theme.text}
+            muted={theme.textMuted}
+            success={theme.success}
+            errorColor={theme.error}
+          />
+        </Match>
         <Match when={props.part.tool === ShellID.ToolID}>
           <Shell {...toolprops} />
         </Match>

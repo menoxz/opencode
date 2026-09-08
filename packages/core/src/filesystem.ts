@@ -107,12 +107,10 @@ export namespace AppFileSystem {
         return e.reason._tag === "PermissionDenied" || e.reason._tag === "Busy" || /^(EPERM|EACCES|EBUSY)$/.test(code)
       }
       const replace = Effect.fnUntraced(function* (temp: string, path: string) {
-        yield* fs
-          .rename(temp, path)
-          .pipe(
-            Effect.retry({ while: transient, times: 20, schedule: Schedule.spaced(Duration.millis(5)) }),
-            Effect.onError(() => fs.remove(temp).pipe(Effect.ignore)),
-          )
+        yield* fs.rename(temp, path).pipe(
+          Effect.retry({ while: transient, times: 20, schedule: Schedule.spaced(Duration.millis(5)) }),
+          Effect.onError(() => fs.remove(temp).pipe(Effect.ignore)),
+        )
       })
 
       const writeJson = Effect.fn("FileSystem.writeJson")(function* (path: string, data: unknown, mode?: number) {
@@ -132,24 +130,30 @@ export namespace AppFileSystem {
         content: string | Uint8Array,
         mode?: number,
       ) {
-        // Same write-then-rename discipline as writeJson: session/message/part
-        // files are rewritten on every streaming update, and a kill mid-write
-        // must leave the previous version intact rather than a truncated file.
-        const temp = tempFor(path)
-        const write = typeof content === "string" ? fs.writeFileString(temp, content) : fs.writeFile(temp, content)
-
-        yield* write.pipe(
-          Effect.catchIf(
-            (e) => e.reason._tag === "NotFound",
-            () =>
-              Effect.gen(function* () {
-                yield* fs.makeDirectory(dirname(path), { recursive: true })
-                yield* write
-              }),
+        // Updating the existing inode preserves ACLs, ownership and links.
+        // Deliberately non-atomic: interruption can leave partial content. Mode
+        // applies only at creation; chmod would change an existing ACL mask.
+        const open = fs.open(path, { flag: "r+" }).pipe(
+          Effect.catchReason("PlatformError", "NotFound", () =>
+            fs.open(path, { flag: "wx", mode: (mode ?? 0o600) & 0o777 }).pipe(
+              // A concurrent creator must never be replaced or chmodded.
+              Effect.catchReason("PlatformError", "AlreadyExists", () => fs.open(path, { flag: "r+" })),
+            ),
           ),
         )
-        if (mode) yield* fs.chmod(temp, mode)
-        yield* replace(temp, path)
+        yield* Effect.gen(function* () {
+          const file = yield* open.pipe(
+            Effect.catchReason("PlatformError", "NotFound", () =>
+              Effect.gen(function* () {
+                yield* fs.makeDirectory(dirname(path), { recursive: true })
+                return yield* open
+              }),
+            ),
+          )
+          yield* file.truncate(0)
+          if (content.length)
+            yield* file.writeAll(typeof content === "string" ? new TextEncoder().encode(content) : content)
+        }).pipe(Effect.scoped)
       })
 
       const glob = Effect.fn("FileSystem.glob")(function* (pattern: string, options?: Glob.Options) {

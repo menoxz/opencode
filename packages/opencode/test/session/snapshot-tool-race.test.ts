@@ -78,8 +78,8 @@ const mcp = Layer.succeed(
     prompts: () => Effect.succeed({}),
     resources: () => Effect.succeed({}),
     add: () => Effect.succeed({ status: { status: "disabled" as const } }),
-    connect: () => Effect.void,
-    disconnect: () => Effect.void,
+    connect: () => Effect.succeed({ status: { status: "connected" as const }, toolCount: 0 }),
+    disconnect: () => Effect.succeed({ status: { status: "disabled" as const }, toolCount: 0 }),
     getPrompt: () => Effect.succeed(undefined),
     readResource: () => Effect.succeed(undefined),
     startAuth: () => Effect.die("unexpected MCP auth"),
@@ -89,7 +89,7 @@ const mcp = Layer.succeed(
     supportsOAuth: () => Effect.succeed(false),
     hasStoredTokens: () => Effect.succeed(false),
     getAuthStatus: () => Effect.succeed("not_authenticated" as const),
-    reload: () => Effect.void,
+    reload: () => Effect.succeed({}),
   }),
 )
 

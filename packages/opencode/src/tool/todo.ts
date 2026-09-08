@@ -1,10 +1,11 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Semaphore } from "effect"
 import * as Tool from "./tool"
 import DESCRIPTION_WRITE from "./todowrite.txt"
 import { Todo } from "../session/todo"
 import { Skill } from "@/skill"
 import { Agent } from "@/agent/agent"
 import { rankDocuments } from "@/memory/search"
+import { mandatoryKind, renderTodoDelta, renderTodoSnapshot, substantiveTodoText, todoDelta, todoRevision, type TodoOutput } from "./todo-output"
 
 // Todo.Info is still a zod schema (session/todo.ts). Inline the field shape
 // here rather than referencing its `.shape` — the LLM-visible JSON Schema is
@@ -64,22 +65,51 @@ export const Parameters = Schema.Struct({
   todos: Schema.mutable(Schema.Array(TodoItem)).annotate({ description: "The updated todo list" }),
 })
 
+// Keep the legacy replacement schema export stable for existing consumers.
+export const InputParameters = Schema.Struct({
+  todos: Schema.optional(Schema.mutable(Schema.Array(TodoItem))).annotate({ description: "Full replacement; omit for updates/read" }),
+  updates: Schema.optional(Schema.Array(Schema.Struct({
+    id: Schema.String,
+    content: Schema.optional(Schema.String),
+    status: Schema.optional(Schema.Literals(["pending", "in_progress", "completed", "cancelled"])),
+    priority: Schema.optional(Schema.Literals(["high", "medium", "low"])),
+  }))),
+  revision: Schema.optional(Schema.String).annotate({ description: "Exact snapshot revision required with updates; IDs valid only for matching revision" }),
+  action: Schema.optional(Schema.Literal("read")).annotate({ description: "Recover full list, IDs and revision without writing; no other fields" }),
+})
+
 type Metadata = {
   todos: Todo.Info[]
+  todoOrder: { scope: string; sequence: number }
+  todoOutput: TodoOutput
+  truncated: false
 }
 
-export const TodoWriteTool = Tool.define<typeof Parameters, Metadata, Todo.Service | Skill.Service | Agent.Service>(
+export const TodoWriteTool = Tool.define<typeof InputParameters, Metadata, Todo.Service | Skill.Service | Agent.Service>(
   "todowrite",
   Effect.gen(function* () {
     const todo = yield* Todo.Service
     const skill = yield* Skill.Service
     const agents = yield* Agent.Service
+    // Registry resolves this outer effect once; per-turn init() copies retain this lock.
+    // One bounded lock also serializes full replacements against targeted updates.
+    const lock = yield* Semaphore.make(1)
+    const scope = crypto.randomUUID()
+    let sequence = 0
 
     return {
       description: DESCRIPTION_WRITE,
-      parameters: Parameters,
-      execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context<Metadata>) =>
+      parameters: InputParameters,
+      execute: (params: Schema.Schema.Type<typeof InputParameters>, ctx: Tool.Context<Metadata>) =>
         Effect.gen(function* () {
+          if (params.action === "read"
+            ? params.todos !== undefined || params.updates !== undefined || params.revision !== undefined
+            : (params.todos === undefined) === (params.updates === undefined)) {
+            return yield* Effect.fail(new Error("Supply exactly one of todos or updates, or action='read' alone."))
+          }
+          if (params.todos !== undefined && params.revision !== undefined) {
+            return yield* Effect.fail(new Error("revision is only accepted with updates."))
+          }
           yield* ctx.ask({
             permission: "todowrite",
             patterns: ["*"],
@@ -87,51 +117,61 @@ export const TodoWriteTool = Tool.define<typeof Parameters, Metadata, Todo.Servi
             metadata: {},
           })
 
-          // ── Auto-inject prefix/suffix tasks (MANDATORY — must be executed, never skipped) ──
-          const hasResearchTask = params.todos.some((t) =>
-            t.content.startsWith("[RESEARCH]"),
-          )
-          const hasCloseTask = params.todos.some((t) =>
-            t.content.startsWith("[CLOSE]"),
-          )
-
-          const prefixTasks: Array<{ content: string; status: string; priority: string }> = []
-          const suffixTasks: Array<{ content: string; status: string; priority: string }> = []
-
-          if (!hasResearchTask) {
-            prefixTasks.push({
-              content:
-                "[RESEARCH] If the topic is NOT mastered at 100%, research it FIRST (websearch / docs / codebase / existing skill) — NO guessing, NO creativity. Load an existing skill when one applies.",
-              status: "pending",
-              priority: "high",
+          const snapshot = yield* lock.withPermits(1)(Effect.gen(function* () {
+            const before = yield* todo.get(ctx.sessionID)
+            if (params.action === "read") return { before, todos: before, delta: todoDelta(before, before), order: { scope, sequence: ++sequence } }
+            const updates = params.updates
+            if (updates !== undefined) {
+              if (params.revision !== todoRevision(before)) {
+                return yield* Effect.fail(new Error("Stale or missing todo revision. Use action='read'; update IDs valid only for matching revision."))
+              }
+              const ids = new Set(before.map((_, i) => `t${i}`))
+              const seen = new Set<string>()
+              for (const update of updates) {
+                if (!ids.has(update.id) || seen.has(update.id)) {
+                  return yield* Effect.fail(new Error(`Unknown or duplicate todo ID: ${update.id}. Use action='read'.`))
+                }
+                if (update.content === undefined && update.status === undefined && update.priority === undefined) {
+                  return yield* Effect.fail(new Error(`Empty update: ${update.id}; supply content, status or priority.`))
+                }
+                seen.add(update.id)
+              }
+            }
+            const proposed = params.todos ?? before.map((t, i) => {
+              const update = updates?.find((u) => u.id === `t${i}`)
+              return {
+                content: update?.content ?? t.content,
+                status: update?.status ?? t.status,
+                priority: update?.priority ?? t.priority,
+              }
             })
-          }
-          if (!hasCloseTask) {
-            suffixTasks.push({
-              content:
-                "[CLOSE] git commit if code changed | memory_store if decision/architecture | evaluate quality (tests, typecheck) | extract a skill if recurring task",
-              status: "pending",
-              priority: "medium",
-            })
-          }
+            if (updates && before.some((t, i) => mandatoryKind(t.content) && mandatoryKind(proposed[i].content) !== mandatoryKind(t.content))) {
+              return yield* Effect.fail(new Error("Mandatory research/closure tasks cannot be removed or relabelled."))
+            }
+            const mandatory = (kind: "research" | "close", content: string, priority: string) => {
+              if (proposed.some((t) => mandatoryKind(t.content) === kind)) return []
+              const saved = before.filter((t) => mandatoryKind(t.content) === kind)
+              return saved.length ? saved : [{ content, status: "pending", priority }]
+            }
+            const allTodos = updates ? proposed : [
+              ...mandatory("research", "[RESEARCH] Research uncertainties; load applicable skills before acting.", "high"),
+              ...proposed,
+              ...mandatory("close", "[CLOSE] Verify quality; retain useful learning; extract reusable skills; commit only if requested.", "medium"),
+            ]
+            if (allTodos.some((t) => mandatoryKind(t.content) && t.status === "cancelled")) {
+              return yield* Effect.fail(new Error("Mandatory research/closure tasks cannot be cancelled."))
+            }
+            const delta = todoDelta(before, allTodos)
+            if (!delta.noOp) yield* todo.update({ sessionID: ctx.sessionID, todos: allTodos })
+            return { before, todos: allTodos, delta, order: { scope, sequence: ++sequence } }
+          }))
 
-          const allTodos = [...prefixTasks, ...params.todos, ...suffixTasks]
-
-          yield* todo.update({
-            sessionID: ctx.sessionID,
-            todos: allTodos,
-          })
-
-          // Auto-detect matching skills for pending/in-progress tasks
           let skillSuggestion = ""
-          const agentInfo = yield* agents.get(ctx.agent)
-          const allSkills = yield* skill.available(agentInfo)
-          if (allSkills.length > 0) {
-            const todoText = params.todos
-              .filter((t) => t.status === "pending" || t.status === "in_progress")
-              .map((t) => `${t.content} ${t.priority}`)
-              .join(" ")
-            if (todoText) {
+          const todoText = substantiveTodoText(snapshot.before, snapshot.todos)
+          if (todoText) {
+            const agentInfo = yield* agents.get(ctx.agent)
+            const allSkills = yield* skill.available(agentInfo)
+            if (allSkills.length > 0) {
               const docs = allSkills.map((s) => ({
                 id: s.name,
                 content: `${s.name} ${s.description ?? ""}`,
@@ -146,28 +186,24 @@ export const TodoWriteTool = Tool.define<typeof Parameters, Metadata, Todo.Servi
                 score: r.score + nameOverlapBoost(todoText, r.id),
               }))
               boosted.sort((a, b) => b.score - a.score)
-              const matched = boosted.filter((r) => r.score > 0).slice(0, 5)
+              const matched = boosted.filter((r) => r.score > 0).slice(0, 3)
               if (matched.length > 0) {
-                const note = "⚠️  Auto-suggestion may miss relevant skills — verify the list and browse skills/ if needed."
-                skillSuggestion = [
-                  "",
-                  "── Skill Suggestions ──",
-                  ...matched.map((m) => `  • ${m.id} — load with skill("${m.id}")`),
-                  "──────────────────────",
-                  note,
-                ].join("\n")
+                skillSuggestion = `\nSkills: ${matched.map((m) => `skill(${m.id})`).join(", ")}`
               }
             }
           }
 
           return {
-            title: `${allTodos.filter((x) => x.status !== "completed").length} todos`,
-            output: JSON.stringify(allTodos, null, 2) + skillSuggestion,
+            title: `${snapshot.delta.summary.pending + snapshot.delta.summary.in_progress + snapshot.delta.summary.other} active todos`,
+            output: (params.action === "read" ? renderTodoSnapshot({ todos: snapshot.todos }) ?? "" : renderTodoDelta(snapshot.delta)) + skillSuggestion,
             metadata: {
-              todos: allTodos,
+              todos: snapshot.todos,
+              todoOrder: snapshot.order,
+              todoOutput: snapshot.delta,
+              truncated: false as const,
             },
           }
-        }),
-    } satisfies Tool.DefWithoutID<typeof Parameters, Metadata>
+        }).pipe(Effect.orDie),
+    } satisfies Tool.DefWithoutID<typeof InputParameters, Metadata>
   }),
 )

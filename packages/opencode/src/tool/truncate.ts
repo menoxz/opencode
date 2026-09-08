@@ -3,7 +3,6 @@ import { Cause, Duration, Effect, Layer, Option, Schedule, Context } from "effec
 import path from "path"
 import type { Agent } from "../agent/agent"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
-import { evaluate } from "@/permission/evaluate"
 import { Config } from "@/config/config"
 import { Identifier } from "../id/id"
 import * as Log from "@opencode-ai/core/util/log"
@@ -24,11 +23,11 @@ export interface Options {
   maxLines?: number
   maxBytes?: number
   direction?: "head" | "tail"
+  outputPath?: string
 }
 
-function hasTaskTool(agent?: Agent.Info) {
-  if (!agent?.permission) return false
-  return evaluate("task", "*", agent.permission).action !== "deny"
+export function savedOutputPath(text: string) {
+  return text.match(/(?:^|\n|\. )Full output saved to: ([^\r\n]+)/)?.[1]?.trim()
 }
 
 export interface Interface {
@@ -83,7 +82,7 @@ export const layer = Layer.effect(
       }
     })
 
-    const output = Effect.fn("Truncate.output")(function* (text: string, options: Options = {}, agent?: Agent.Info) {
+    const output = Effect.fn("Truncate.output")(function* (text: string, options: Options = {}, _agent?: Agent.Info) {
       const resolved = yield* limits()
       const maxLines = options.maxLines ?? resolved.maxLines
       const maxBytes = options.maxBytes ?? resolved.maxBytes
@@ -125,11 +124,10 @@ export const layer = Layer.effect(
       const removed = hitBytes ? totalBytes - bytes : lines.length - out.length
       const unit = hitBytes ? "bytes" : "lines"
       const preview = out.join("\n")
+      const references = [...new Set([options.outputPath, savedOutputPath(text)].filter((value): value is string => value !== undefined))]
       const file = yield* write(text)
 
-      const hint = hasTaskTool(agent)
-        ? `The tool call succeeded but the output was truncated. Full output saved to: ${file}\nUse the Task tool to have explore agent process this file with Grep and Read (with offset/limit). Do NOT read the full file yourself - delegate to save context.`
-        : `The tool call succeeded but the output was truncated. Full output saved to: ${file}\nUse Grep to search the full content or Read with offset/limit to view specific sections.`
+      const hint = `Tool output was truncated. ${references.length ? "Received" : "Full"} output saved to: ${file}${references.map((reference) => `\nUpstream reference (unverified; not opened): ${JSON.stringify(reference)}`).join("")}\nUse Grep to search the full content or Read with offset/limit to view specific sections.`
 
       return {
         content:
