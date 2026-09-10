@@ -5,6 +5,31 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v1.19.24] - 2026-09-10
+
+### Added
+- The lean catalog exposes the full memory lifecycle (store, update, delete, consolidate) next to retrieval, so durable memory is reachable instead of silently missing.
+
+### Changed
+- Collapsible "Details" labels in the Context (last call) and Task Contract sidebar sections use the section color instead of the muted tone for readability.
+
+### Fixed
+- Token speed is measured over the actual text/reasoning generation windows instead of the assistant turn wall-clock, which mixed in prefill, network, tool execution and permission waits and understated throughput.
+- Reasoning replay is forced on for providers that round-trip `reasoning_content` (DeepSeek thinking mode), preventing the HTTP 400 "reasoning_content ... must be passed back to the API" when the measured rollout profile disables replay and the request carries tools.
+
+## [v1.19.21] - 2026-09-09
+
+### Added
+- Sidebar distinguishes last-call context/cost, loaded processed tokens, cache ratios, selected-session cost and known descendant costs, with explicit partial-data indicators.
+- Opt-in private cache-prefix diagnostics compare structural changes without logging prompt content or duplicating native request preparation.
+
+### Changed
+- Default inspection excerpts are bounded outside Lean too; duplicate actions share content and batch JSON is compact.
+- Inspection and delegation guidance discourages redundant reads and overlapping parent/child audits while preserving targeted verification.
+
+### Fixed
+- Truncation markers fit within inspection excerpt limits without splitting Unicode surrogate pairs.
+
 ## [v1.19.20] - 2026-09-08
 
 ### Security
