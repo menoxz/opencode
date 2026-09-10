@@ -1957,6 +1957,58 @@ describe("session.message-v2.toModelMessage", () => {
       },
     ])
   })
+
+  test("forces reasoning replay when the provider round-trips reasoning_content", async () => {
+    const assistantID = "m-assistant-forced-replay"
+    const deepseekModel: Provider.Model = {
+      ...model,
+      id: ModelID.make("deepseek/deepseek-v4.1-flash"),
+      providerID: ProviderID.make("command-code"),
+      api: {
+        id: "deepseek/deepseek-v4.1-flash",
+        url: "https://api.commandcode.ai/provider/v1",
+        npm: "@ai-sdk/openai-compatible",
+      },
+      capabilities: {
+        ...model.capabilities,
+        reasoning: true,
+        interleaved: { field: "reasoning_content" },
+      },
+    }
+    const input: MessageV2.WithParts[] = [
+      {
+        info: assistantInfo(assistantID, "m-parent", undefined, {
+          providerID: deepseekModel.providerID,
+          modelID: deepseekModel.id,
+        }),
+        parts: [
+          {
+            ...basePart(assistantID, "p1-forced-replay"),
+            type: "reasoning",
+            text: "internal chain of thought",
+            time: { start: 0 },
+          },
+          {
+            ...basePart(assistantID, "p2-forced-replay"),
+            type: "text",
+            text: "final answer",
+          },
+        ] as MessageV2.Part[],
+      },
+    ]
+
+    // "off" would drop the field and make DeepSeek reject the tool-bearing
+    // request with a 400, so reasoning replay is forced on for this provider.
+    expect(await MessageV2.toModelMessages(input, deepseekModel, { replayReasoning: "off" })).toStrictEqual([
+      {
+        role: "assistant",
+        content: [
+          { type: "reasoning", text: "internal chain of thought", providerOptions: undefined },
+          { type: "text", text: "final answer" },
+        ],
+      },
+    ])
+  })
 })
 
 describe("session.message-v2.fromError", () => {

@@ -763,6 +763,18 @@ function providerMeta(metadata: Record<string, any> | undefined) {
   return Object.keys(rest).length > 0 ? rest : undefined
 }
 
+// DeepSeek thinking mode carries the chain-of-thought in a top-level
+// `reasoning_content` field, and for requests that declare `tools` the field
+// must be passed back for every prior assistant turn or the API answers 400
+// ("The reasoning_content in the thinking mode must be passed back to the
+// API"). The measured rollout profile disables reasoning replay to save tokens,
+// which would drop the field and break the whole request, so reasoning replay is
+// forced on for models that round-trip it.
+const requiresReasoningReplay = (model: Provider.Model) => {
+  const interleaved = model.capabilities.interleaved
+  return typeof interleaved === "object" && interleaved.field === "reasoning_content"
+}
+
 export const toModelMessagesEffect = Effect.fnUntraced(function* (
   input: WithParts[],
   model: Provider.Model,
@@ -778,6 +790,7 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
   const toolNames = new Set<string>()
   const replayToolInputs = options?.replayToolInputs ?? "full"
   const replayToolOutputs = options?.replayToolOutputs ?? "full"
+  const replayReasoning = requiresReasoningReplay(model) ? "on" : options?.replayReasoning
   const summarizedToolTurns = summarizedToolOutputMessageIDs(input, replayToolOutputs)
   const pinnedToolCalls = pinnedToolCallIDs(input, summarizedToolTurns, replayToolOutputs === "summary")
   const summarizedToolInputTurns = summarizedToolInputMessageIDs(input, replayToolInputs)
@@ -1048,7 +1061,7 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
             })
         }
         if (part.type === "reasoning") {
-          if (options?.replayReasoning === "off") continue
+          if (replayReasoning === "off") continue
           if (differentModel) {
             if (part.text.trim().length > 0)
               assistantMessage.parts.push({
