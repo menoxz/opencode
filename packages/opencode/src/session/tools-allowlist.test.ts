@@ -15,6 +15,23 @@ describe("Lean dynamic core tools", () => {
     }
   })
 
+  test("exposes the full memory lifecycle, not just retrieval", () => {
+    const core = leanPhaseCoreTools("implementation")
+    for (const tool of [
+      "llm-memory-tool_memory_retrieve",
+      "llm-memory-tool_memory_store",
+      "llm-memory-tool_memory_update",
+      "llm-memory-tool_memory_delete",
+      "llm-memory-tool_memory_consolidate",
+    ] as const)
+      expect(core).toContain(tool)
+  })
+
+  test("keeps the shipped max_tools cap valid for the enlarged mandatory core", () => {
+    const requiredCount = leanPhaseCoreTools("unknown").length + 1
+    expect(leanDynamicCapVerdict({ configuredMax: 26, requiredCount }).ok).toBe(true)
+  })
+
   // Observed in production: max_tools=14 with 12 mandatory tools passed the old
   // guard yet left a single slot for every MCP tool, so activations evicted
   // each other on every step.

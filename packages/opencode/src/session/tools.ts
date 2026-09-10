@@ -28,10 +28,34 @@ import { derivePhaseCapsule } from "./phase-capsule"
 const log = Log.create({ service: "session.tools" })
 const TOOL_SEARCH_ID = "tool_search"
 const activations = new ToolCatalog.ActivationStore()
+// The lean catalog ships these tools plus `tool_search`; tool_search is told
+// not to chase core capabilities, so a missing write tool is unreachable. The
+// memory policy mandates store/update/delete/consolidate, hence their presence
+// here next to the hot-path retrieve.
+const LEAN_CORE_TOOLS = [
+  "invalid",
+  "inspect_batch",
+  "read",
+  "glob",
+  "grep",
+  "apply_patch",
+  "edit",
+  "write",
+  "bash",
+  "skill",
+  "todowrite",
+  "question",
+  "task",
+  "llm-memory-tool_memory_retrieve",
+  "llm-memory-tool_memory_store",
+  "llm-memory-tool_memory_update",
+  "llm-memory-tool_memory_delete",
+  "llm-memory-tool_memory_consolidate",
+] as const
 const LEAN_PHASE_CORE = {
-  discovery: ["invalid", "inspect_batch", "read", "glob", "grep", "apply_patch", "edit", "write", "bash", "skill", "todowrite", "question", "task", "llm-memory-tool_memory_retrieve"],
-  implementation: ["invalid", "inspect_batch", "read", "glob", "grep", "apply_patch", "edit", "write", "bash", "skill", "todowrite", "question", "task", "llm-memory-tool_memory_retrieve"],
-  unknown: ["invalid", "inspect_batch", "read", "glob", "grep", "apply_patch", "edit", "write", "bash", "skill", "todowrite", "question", "task", "llm-memory-tool_memory_retrieve"],
+  discovery: LEAN_CORE_TOOLS,
+  implementation: LEAN_CORE_TOOLS,
+  unknown: LEAN_CORE_TOOLS,
 } as const
 
 export function leanPhaseCoreTools(phase: keyof typeof LEAN_PHASE_CORE) {
@@ -385,7 +409,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
 
   if (dynamicMode === "enforce" && !searchDenied) {
     tools[TOOL_SEARCH_ID] = tool({
-      description: "Activate a required missing capability for the next model step. Do not search for optional workflow, memory, todo, or reporting tools.",
+      description: "Activate a required missing capability for the next model step. Do not search for optional workflow, todo, or reporting tools.",
       inputSchema: jsonSchema({
         type: "object",
         additionalProperties: false,
