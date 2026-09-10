@@ -1,5 +1,6 @@
 import { Effect, Schema } from "effect"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
+import { generationTokensPerSecond, type TokenSpeedPart } from "@opencode-ai/core/util/token-speed"
 import { Provider } from "@/provider/provider"
 import { Session } from "@/session/session"
 import type { MessageV2 } from "@/session/message-v2"
@@ -13,12 +14,14 @@ function tokenTotal(tokens: AssistantInfo["tokens"]): number {
   return tokens.input + tokens.output + tokens.reasoning + tokens.cache.read + tokens.cache.write
 }
 
-function lastAssistantWithTokens(messages: MessageV2.WithParts[]): AssistantInfo | undefined {
+type AssistantWithParts = { info: AssistantInfo; parts: MessageV2.WithParts["parts"] }
+
+function lastAssistantWithTokens(messages: MessageV2.WithParts[]): AssistantWithParts | undefined {
   for (let i = messages.length - 1; i >= 0; i--) {
-    const info = messages[i].info
-    if (info.role !== "assistant") continue
-    if (tokenTotal(info.tokens) <= 0) continue
-    return info
+    const message = messages[i]
+    if (message.info.role !== "assistant") continue
+    if (tokenTotal(message.info.tokens) <= 0) continue
+    return { info: message.info, parts: message.parts }
   }
 }
 
@@ -54,10 +57,13 @@ function formatTokens(tokens: AssistantInfo["tokens"]) {
   }
 }
 
-function formatTokensPerSecond(input: { output: number; created?: number; completed?: number }) {
-  if (!input.created || !input.completed || input.completed <= input.created || input.output <= 0) return undefined
-  const value = input.output / ((input.completed - input.created) / 1000)
-  if (!Number.isFinite(value) || value <= 0) return undefined
+function formatTokensPerSecond(input: {
+  parts?: readonly TokenSpeedPart[]
+  output: number
+  reasoning: number
+}) {
+  const value = generationTokensPerSecond(input)
+  if (value === undefined) return undefined
   return value >= 10 ? Math.round(value) : Number(value.toFixed(1))
 }
 
@@ -84,19 +90,19 @@ const resolveContext = Effect.fn("SessionInfo.resolveContext")(function* (input:
     input.sessions.messages({ sessionID: input.sessionID }).pipe(Effect.orDie),
   ])
   const last = lastAssistantWithTokens(messages)
-  const providerID = last?.providerID ?? session.model?.providerID
-  const modelID = last?.modelID ?? session.model?.id
+  const providerID = last?.info.providerID ?? session.model?.providerID
+  const modelID = last?.info.modelID ?? session.model?.id
   const model = providerID && modelID
     ? yield* input.providers.getModel(providerID, modelID).pipe(Effect.option)
     : undefined
   const modelValue = model?._tag === "Some" ? model.value : undefined
-  const tokens = last ? formatTokens(last.tokens) : undefined
+  const tokens = last ? formatTokens(last.info.tokens) : undefined
   const max = modelValue?.limit.context
   const usedPercent = tokens && max ? Math.round((tokens.total / max) * 100) : undefined
   return {
     session,
     messages,
-    lastAssistant: last,
+    lastAssistant: last?.info,
     model: modelValue,
     context: tokens
       ? {
@@ -105,9 +111,9 @@ const resolveContext = Effect.fn("SessionInfo.resolveContext")(function* (input:
           usedPercent,
           tokens,
           tokensPerSecond: formatTokensPerSecond({
-            output: last!.tokens.output,
-            created: last!.time.created,
-            completed: last!.time.completed,
+            parts: last!.parts,
+            output: last!.info.tokens.output,
+            reasoning: last!.info.tokens.reasoning,
           }),
         }
       : undefined,

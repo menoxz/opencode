@@ -11,14 +11,17 @@ describe("prompt usage helpers", () => {
     expect(formatFileTagHint()).toBe("@ tag files")
   })
 
-  test("includes tokens per second when output tokens and duration are available", () => {
+  test("computes tokens per second from generation windows, not wall clock", () => {
     const usage = formatPromptUsage({
       input: 100,
       output: 50,
       reasoning: 0,
       cache: { read: 0, write: 0 },
-      created: 1_000,
-      completed: 6_000,
+      parts: [
+        { type: "text", time: { start: 1_000, end: 2_000 } },
+        { type: "tool", time: { start: 2_000, end: 5_000 } },
+        { type: "reasoning", time: { start: 5_000, end: 6_000 } },
+      ],
       cost: 0.01,
       contextLimit: 1_000,
     })
@@ -26,18 +29,16 @@ describe("prompt usage helpers", () => {
     expect(usage).toEqual({
       context: "150 (15%)",
       cost: "$0.01",
-      tokensPerSecond: "10 tok/s",
+      tokensPerSecond: "25 tok/s",
     })
   })
 
-  test("omits tokens per second when duration is not reliable", () => {
+  test("omits tokens per second when no generation window is available", () => {
     const usage = formatPromptUsage({
       input: 100,
       output: 50,
       reasoning: 0,
       cache: { read: 0, write: 0 },
-      created: 6_000,
-      completed: 1_000,
       cost: 0,
       contextLimit: undefined,
     })

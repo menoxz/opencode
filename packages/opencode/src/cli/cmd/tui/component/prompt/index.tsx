@@ -18,7 +18,7 @@ import { useLocal } from "@tui/context/local"
 import { tint, useTheme } from "@tui/context/theme"
 import { EmptyBorder, SplitBorder } from "@tui/component/border"
 import { Spinner } from "@tui/component/spinner"
-import { formatCost, formatFileTagHint, formatTaggedFileCount } from "./usage"
+import { formatCost, formatFileTagHint, formatTaggedFileCount, formatTokensPerSecond } from "./usage"
 import { useSDK } from "@tui/context/sdk"
 import { useRoute } from "@tui/context/route"
 import { useProject } from "@tui/context/project"
@@ -338,13 +338,6 @@ export function Prompt(props: PromptProps) {
     return String(n)
   }
 
-  function formatTokensPerSecond(output: number, created?: number, completed?: number) {
-    if (!created || !completed || completed <= created || output <= 0) return undefined
-    const value = output / ((completed - created) / 1000)
-    if (!Number.isFinite(value) || value <= 0) return undefined
-    return value >= 10 ? Math.round(value).toLocaleString() : value.toFixed(1)
-  }
-
   const usage = createMemo(() => {
     if (!props.sessionID) return
     const session = sync.session.get(props.sessionID)
@@ -358,7 +351,11 @@ export function Prompt(props: PromptProps) {
 
     const model = sync.data.provider.find((item) => item.id === last.providerID)?.models[last.modelID]
     const max = model?.limit.context
-    const tokSpeed = formatTokensPerSecond(last.tokens.output, last.time?.created, last.time?.completed)
+    const tokSpeed = formatTokensPerSecond({
+      parts: sync.data.part[last.id],
+      output: last.tokens.output,
+      reasoning: last.tokens.reasoning,
+    })
     const pct = max ? Math.round((tokens / max) * 100) : undefined
     return {
       context: max ? `${formatK(tokens)}/${formatK(max)} (${pct}%)` : formatK(tokens),

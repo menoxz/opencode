@@ -7,6 +7,7 @@ import { useProviders } from "@/hooks/use-providers"
 import { useSync } from "@/context/sync"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { getSessionContextMetrics } from "./session-context-metrics"
+import { generationTokensPerSecond } from "@opencode-ai/core/util/token-speed"
 import { GoalTab } from "./goal-tab"
 import { TodoTab } from "./todo-tab"
 import { MCPTab } from "./mcp-tab"
@@ -59,13 +60,13 @@ export function SessionDetailWidget(props: { class?: string }) {
   const tokenSpeed = createMemo(() => {
     const ctx = context()
     if (!ctx) return undefined
-    const { created, completed } = ctx.message.time
-    if (!completed) return undefined
-    const elapsed = (completed - created) / 1000
-    if (elapsed <= 0) return undefined
-    const speed = ctx.message.tokens.output / elapsed
-    if (!Number.isFinite(speed) || speed <= 0) return undefined
-    return speed >= 10 ? Math.round(speed).toLocaleString(language.intl()) : speed.toFixed(1)
+    const value = generationTokensPerSecond({
+      parts: sync.data.part[ctx.message.id],
+      output: ctx.message.tokens.output,
+      reasoning: ctx.message.tokens.reasoning,
+    })
+    if (value === undefined) return undefined
+    return value >= 10 ? Math.round(value).toLocaleString(language.intl()) : value.toFixed(1)
   })
 
   const openGoalEdit = () => {

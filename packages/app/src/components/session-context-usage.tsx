@@ -2,6 +2,7 @@ import { Match, Show, Switch, createMemo, createSignal } from "solid-js"
 import { Tooltip, type TooltipProps } from "@opencode-ai/ui/tooltip"
 import { ProgressCircle } from "@opencode-ai/ui/progress-circle"
 import { Button } from "@opencode-ai/ui/button"
+import { generationTokensPerSecond } from "@opencode-ai/core/util/token-speed"
 
 import { useFile } from "@/context/file"
 import { useLayout } from "@/context/layout"
@@ -66,20 +67,15 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
   }
 
   const tokenSpeed = createMemo(() => {
-    const msgs = messages()
-    const last = msgs.findLast(
-      (m): m is typeof m & { role: "assistant"; tokens: { output: number }; time: { created: number; completed?: number } } =>
-        m.role === "assistant" && !!(m as any).tokens && (m as any).tokens.output > 0,
-    )
-    if (!last) return undefined
-    const created = last.time?.created
-    const completed = (last.time as { completed?: number } | undefined)?.completed
-    if (!created || !completed) return undefined
-    const elapsed = (completed - created) / 1000
-    if (elapsed <= 0) return undefined
-    const speed = last.tokens.output / elapsed
-    if (!Number.isFinite(speed) || speed <= 0) return undefined
-    return speed >= 10 ? Math.round(speed).toLocaleString() : speed.toFixed(1)
+    const ctx = context()
+    if (!ctx) return undefined
+    const value = generationTokensPerSecond({
+      parts: sync.data.part[ctx.message.id],
+      output: ctx.message.tokens.output,
+      reasoning: ctx.message.tokens.reasoning,
+    })
+    if (value === undefined) return undefined
+    return value >= 10 ? Math.round(value).toLocaleString(language.intl()) : value.toFixed(1)
   })
 
   const compactLabel = createMemo(() => {
