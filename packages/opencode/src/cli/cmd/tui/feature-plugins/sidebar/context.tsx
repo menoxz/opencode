@@ -1,48 +1,67 @@
-import type { AssistantMessage } from "@opencode-ai/sdk/v2"
 import type { TuiPlugin, TuiPluginApi } from "@opencode-ai/plugin/tui"
 import type { InternalTuiPlugin } from "../../plugin/internal"
-import { createMemo } from "solid-js"
+import { createMemo, createResource, createSignal, onCleanup } from "solid-js"
+import {
+  costTree,
+  lastCompletedAssistant,
+  loadCostSnapshot,
+  loadedUsage,
+  updateCostRows,
+  type CostSession,
+} from "./context-metrics"
+import { ContextUsage } from "./context-usage"
 
 const id = "internal:sidebar-context"
-
-const money = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-})
 
 function View(props: { api: TuiPluginApi; session_id: string }) {
   const theme = () => props.api.theme.current
   const msg = createMemo(() => props.api.state.session.messages(props.session_id))
   const session = createMemo(() => props.api.state.session.get(props.session_id))
-  const cost = createMemo(() => session()?.cost ?? 0)
-
-  const state = createMemo(() => {
-    const last = msg().findLast((item): item is AssistantMessage => item.role === "assistant" && item.tokens.output > 0)
-    if (!last) {
-      return {
-        tokens: 0,
-        percent: null,
-      }
-    }
-
-    const tokens =
-      last.tokens.input + last.tokens.output + last.tokens.reasoning + last.tokens.cache.read + last.tokens.cache.write
-    const model = props.api.state.provider.find((item) => item.id === last.providerID)?.models[last.modelID]
-    return {
-      tokens,
-      percent: model?.limit.context ? Math.round((tokens / model.limit.context) * 100) : null,
-    }
+  const usage = createMemo(() => loadedUsage(props.session_id, msg(), props.api.state.part))
+  const last = createMemo(() => usage().last?.message ?? lastCompletedAssistant(msg(), Date.now()))
+  const [updates, setUpdates] = createSignal<CostSession[]>([])
+  const [deleted, setDeleted] = createSignal<string[]>([])
+  for (const type of ["session.created", "session.updated", "session.deleted"] as const) {
+    const off = props.api.event.on(type, (event) => {
+      const row = event.properties.info
+      setUpdates((rows) => updateCostRows(rows, row, type === "session.deleted"))
+      setDeleted((ids) =>
+        [...ids.filter((id) => id !== row.id), ...(type === "session.deleted" ? [row.id] : [])].slice(-200),
+      )
+    })
+    onCleanup(off)
+  }
+  const [snapshot] = createResource(
+    () => props.session_id,
+    () => loadCostSnapshot(() => props.api.client.session.list({ limit: 200 }, { signal: AbortSignal.timeout(5000) })),
+  )
+  const tree = createMemo(() =>
+    costTree(
+      props.session_id,
+      [...(snapshot.loading ? [] : (snapshot()?.sessions ?? [])), ...updates()]
+        .filter((row) => !deleted().includes(row.id))
+        .map((row) => props.api.state.session.get(row.id) ?? row),
+      session()?.cost,
+    ),
+  )
+  const model = createMemo(() => {
+    const message = last()
+    if (!message) return
+    return props.api.state.provider.find((item) => item.id === message.providerID)?.models[message.modelID]
   })
 
   return (
-    <box>
-      <text fg={theme().text}>
-        <b>Context</b>
-      </text>
-      <text fg={theme().textMuted}>{state().tokens.toLocaleString()} tokens</text>
-      <text fg={theme().textMuted}>{`${state().percent ?? 0}% used`}</text>
-      <text fg={theme().textMuted}>{money.format(cost())} spent</text>
-    </box>
+    <ContextUsage
+      message={last()}
+      parts={last() ? props.api.state.part(last()!.id) : undefined}
+      limit={model()?.limit.context}
+      cost={session()?.cost}
+      history={usage()}
+      tree={tree()}
+      treeStatus={snapshot.loading ? "loading" : (snapshot()?.status ?? "error")}
+      color={theme().text}
+      muted={theme().textMuted}
+    />
   )
 }
 
