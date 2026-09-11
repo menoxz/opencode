@@ -5,6 +5,12 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v1.19.25] - 2026-09-10
+
+### Fixed
+- Token speed no longer reports exaggerated values on tool-heavy turns. Tool-call argument generation is completion output that had no text/reasoning window, so it is now timed and counted, overlapping parallel tool windows are merged, tool execution gaps stay excluded, and an implausible buffered sample is hidden instead of shown.
+- `inspect_batch` status icons sit immediately after each action's argument instead of floating in a far-right column, removing the large empty gap on short rows while still reserving the icon on narrow terminals.
+
 ## [v1.19.24] - 2026-09-10
 
 ### Added
