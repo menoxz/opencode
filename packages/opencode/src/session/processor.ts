@@ -189,6 +189,11 @@ export const layer = Layer.effect(
         return part
       })
 
+      // Seal the argument-generation window exactly once; later events (tool-call
+      // after tool-input-end) must not extend it, since the rest is execution.
+      const closeToolInput = (part: MessageV2.ToolPart): MessageV2.ToolPart["time"] =>
+        part.time?.end !== undefined ? part.time : { start: part.time?.start ?? Date.now(), end: Date.now() }
+
       // Local object identity plus exact output, not tool-supplied marker fields.
       const terminalEvidence = new WeakMap<object, { partID: string; output: string }>()
       const normalizeTerminalOutput = Effect.fn("SessionProcessor.normalizeTerminalOutput")(function* (
@@ -337,6 +342,7 @@ export const layer = Layer.effect(
           callID: input.id,
           state: { status: "pending", input: {}, raw: "" },
           metadata: input.providerExecuted ? { providerExecuted: true } : undefined,
+          time: { start: Date.now() },
         } satisfies MessageV2.ToolPart)
         ctx.toolcalls[input.id] = {
           done: yield* Deferred.make<void>(),
@@ -456,6 +462,7 @@ export const layer = Layer.effect(
               })
             }
             ctx.toolcalls[value.id] = { ...toolCall.call, inputEnded: true }
+            yield* updateToolCall(value.id, (match) => ({ ...match, time: closeToolInput(match) }))
             return
           }
 
@@ -493,6 +500,7 @@ export const layer = Layer.effect(
             yield* updateToolCall(value.id, (match) => ({
               ...match,
               tool: value.name,
+              time: closeToolInput(match),
               state:
                 match.state.status === "running"
                   ? { ...match.state, input }
@@ -878,6 +886,7 @@ export const layer = Layer.effect(
           const metadata = "metadata" in part.state && isRecord(part.state.metadata) ? part.state.metadata : {}
           yield* session.updatePart({
             ...part,
+            time: closeToolInput(part),
             state: {
               ...part.state,
               status: "error",

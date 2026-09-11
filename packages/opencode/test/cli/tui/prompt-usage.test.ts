@@ -11,15 +11,17 @@ describe("prompt usage helpers", () => {
     expect(formatFileTagHint()).toBe("@ tag files")
   })
 
-  test("computes tokens per second from generation windows, not wall clock", () => {
+  test("measures tokens per second over generation windows, counting tool-call arguments but not execution gaps", () => {
     const usage = formatPromptUsage({
       input: 100,
-      output: 50,
+      output: 60,
       reasoning: 0,
       cache: { read: 0, write: 0 },
+      // 1s text, 1s tool-call arguments, 1s reasoning; the 2s between windows is
+      // tool execution. Wall clock (5s) would report 12 tok/s.
       parts: [
         { type: "text", time: { start: 1_000, end: 2_000 } },
-        { type: "tool", time: { start: 2_000, end: 5_000 } },
+        { type: "tool", time: { start: 3_000, end: 4_000 } },
         { type: "reasoning", time: { start: 5_000, end: 6_000 } },
       ],
       cost: 0.01,
@@ -27,10 +29,25 @@ describe("prompt usage helpers", () => {
     })
 
     expect(usage).toEqual({
-      context: "150 (15%)",
+      context: "160 (16%)",
       cost: "$0.01",
-      tokensPerSecond: "25 tok/s",
+      tokensPerSecond: "20 tok/s",
     })
+  })
+
+  test("omits tokens per second for an implausible buffered sample", () => {
+    const usage = formatPromptUsage({
+      input: 100,
+      output: 4_000,
+      reasoning: 0,
+      cache: { read: 0, write: 0 },
+      // A non-streamed reply would otherwise report hundreds of thousands of tok/s.
+      parts: [{ type: "text", time: { start: 0, end: 5 } }],
+      cost: 0.01,
+      contextLimit: 200_000,
+    })
+
+    expect(usage?.tokensPerSecond).toBeUndefined()
   })
 
   test("omits tokens per second when no generation window is available", () => {

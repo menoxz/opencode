@@ -450,6 +450,16 @@ export const ToolPart = Schema.Struct({
   tool: Schema.String,
   state: ToolState,
   metadata: Schema.optional(Schema.Record(Schema.String, Schema.Any)),
+  // Window during which the model generated this call's arguments. Tool-call
+  // arguments are completion tokens but have no text/reasoning part, so without
+  // this the token-speed readout would divide them by an unrelated (much
+  // shorter) generation window and show an absurd rate.
+  time: Schema.optional(
+    Schema.Struct({
+      start: NonNegativeInt,
+      end: Schema.optional(NonNegativeInt),
+    }),
+  ),
 }).annotate({ identifier: "ToolPart" })
 export type ToolPart = Omit<Types.DeepMutable<Schema.Schema.Type<typeof ToolPart>>, "state"> & {
   state: ToolState

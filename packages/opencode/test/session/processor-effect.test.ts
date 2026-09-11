@@ -725,6 +725,13 @@ it.live("session.processor effect tests complete AI SDK tool calls when native f
         expect(call.state.metadata).toEqual({ source: "test" })
         expect(call.state.time.start).toBeDefined()
         expect(call.state.time.end).toBeDefined()
+        // The argument-generation window feeds the token-speed readout: without
+        // it, a turn dominated by this tool call would be divided by an
+        // unrelated (shorter) text/reasoning window and report an absurd rate.
+        expect(call.time?.start).toBeDefined()
+        expect(call.time?.end).toBeDefined()
+        if (!call.time?.start || call.time.end === undefined) return
+        expect(call.time.end).toBeGreaterThanOrEqual(call.time.start)
       }),
     { config: (url) => providerCfg(url) },
   ),
