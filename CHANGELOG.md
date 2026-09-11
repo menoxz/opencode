@@ -5,6 +5,12 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v1.19.26] - 2026-09-10
+
+### Fixed
+- The `attachment` model capability is honored again: it was stored but never read, so a model declaring image attachments (config or models.dev) was treated as text-only and every image went through the vision fallback, adding a full extra model round-trip of latency. Both the models.dev and config-merge mappings now derive image input from it.
+- Multi-image vision fallback analyses run concurrently instead of one after another, so N images no longer cost N sequential model round-trips.
+
 ## [v1.19.25] - 2026-09-10
 
 ### Fixed
