@@ -27,8 +27,10 @@ under the affected action, never full traces. No child content or JSON is dumped
 At most 16 children are rendered, with a hidden-count notice for invalid larger
 inputs. Targets are middle-elided (retaining filenames); dependency display
 shows at most four row references plus an omitted count. Controls and ANSI sequences are
-removed. Child rows truncate on narrow terminals with space reserved for the
-status icon, so it remains visible. Parsed input strings are
+removed. The status icon sits immediately after the argument (one space), not in
+a far-right column, so short rows have no empty gap; a trailing flex spacer
+absorbs the remaining width. Child rows truncate on narrow terminals with space
+reserved for the status icon, so it remains visible. Parsed input strings are
 capped at 128 KiB, result JSON at 2,000,000 characters; larger or truncated JSON
 falls back to input-derived rows and metadata truncation flags. Batch error
 text is single-line and capped at 120 characters.

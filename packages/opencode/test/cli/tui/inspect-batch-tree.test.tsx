@@ -59,6 +59,11 @@ test("read parameters and dependencies share exactly one rendered line", async (
   expect(lines).toHaveLength(3)
   expect(lines[2]).toContain("└─ read src/main.ts [offset=10, limit=20] · after grep #1")
   expect(lines[2].trimEnd()).toEndWith("✓")
+  // The status icon must sit right after the argument rather than float in a
+  // far-right column across the whole width, so the gap stays a single space.
+  const row = lines.find((line) => line.includes("· after grep #1"))!
+  expect(row).toContain("· after grep #1 ✓")
+  expect(/· after grep #1 {2,}✓/.test(row)).toBe(false)
 })
 
 test("results join by id and type, retain errors, skipped and truncation without raw dumps", () => {

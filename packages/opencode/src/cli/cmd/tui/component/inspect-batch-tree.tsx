@@ -20,7 +20,7 @@ export function InspectBatchTree(
         {(row) => (
           <box flexShrink={0}>
             <box flexDirection="row" height={1}>
-              <text fg={props.color} wrapMode="none" truncate flexGrow={1} flexShrink={1} minWidth={0}>
+              <text fg={props.color} wrapMode="none" truncate flexShrink={1} minWidth={0}>
                 {row.label}
               </text>
               <text
@@ -36,6 +36,9 @@ export function InspectBatchTree(
               >
                 {` ${row.icon}`}
               </text>
+              {/* Grow after the icon so it hugs the argument instead of floating
+                  in a far-right column; the label still shrinks to truncate. */}
+              <box flexGrow={1} flexShrink={0} />
             </box>
             <Show when={row.detail}>
               <text fg={props.muted} wrapMode="none" truncate paddingLeft={3}>
