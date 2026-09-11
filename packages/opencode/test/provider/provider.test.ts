@@ -854,6 +854,40 @@ it.instance(
 )
 
 it.instance(
+  "config model attachment capability enables image input",
+  Effect.gen(function* () {
+    const providers = yield* list
+    const model = providers[ProviderID.make("attach-provider")].models["attach-model"]
+    // Regression: `attachment: true` was stored but never read, so a custom
+    // provider model declared with attachments still triggered the vision
+    // fallback because input.image stayed false.
+    expect(model.capabilities.attachment).toBe(true)
+    expect(model.capabilities.input.image).toBe(true)
+  }),
+  {
+    config: {
+      provider: {
+        "attach-provider": {
+          name: "Attach Provider",
+          npm: "@ai-sdk/openai-compatible",
+          env: [],
+          api: "https://attach.example.com/v1",
+          models: {
+            "attach-model": {
+              name: "Attach Model",
+              tool_call: true,
+              attachment: true,
+              limit: { context: 32000, output: 8000 },
+            },
+          },
+          options: { apiKey: "test-key" },
+        },
+      },
+    },
+  },
+)
+
+it.instance(
   "disabled_providers and enabled_providers interaction",
   Effect.gen(function* () {
     yield* set("ANTHROPIC_API_KEY", "test-anthropic")
@@ -1301,6 +1335,36 @@ test("models.dev normalization fills required response fields", () => {
   expect(model.capabilities.attachment).toBe(false)
   expect(model.capabilities.toolcall).toBe(true)
   expect(model.release_date).toBe("")
+})
+
+test("models.dev attachment enables image input without modalities", () => {
+  const provider = {
+    id: "gateway",
+    name: "Gateway",
+    env: [],
+    models: {
+      "vlm-1": {
+        id: "vlm-1",
+        name: "VLM 1",
+        attachment: true,
+        cost: { input: 1, output: 1 },
+        limit: { context: 128_000, input: 128_000, output: 8_000 },
+      },
+      "text-1": {
+        id: "text-1",
+        name: "Text 1",
+        cost: { input: 1, output: 1 },
+        limit: { context: 128_000, input: 128_000, output: 8_000 },
+      },
+    },
+  } as unknown as ModelsDev.Provider
+
+  const models = Provider.fromModelsDevProvider(provider).models
+  // Regression: attachment was stored but never read, so this model was treated
+  // as text-only and every image went through the slow vision fallback.
+  expect(models["vlm-1"].capabilities.attachment).toBe(true)
+  expect(models["vlm-1"].capabilities.input.image).toBe(true)
+  expect(models["text-1"].capabilities.input.image).toBe(false)
 })
 
 it.instance("model variants are generated for reasoning models", () =>

@@ -1099,7 +1099,11 @@ function fromModelsDevModel(provider: ModelsDev.Provider, model: ModelsDev.Model
       input: {
         text: model.modalities?.input?.includes("text") ?? false,
         audio: model.modalities?.input?.includes("audio") ?? false,
-        image: model.modalities?.input?.includes("image") ?? false,
+        // `attachment` is models.dev's file/image-input capability. It was stored
+        // but never read, so a model declaring attachment without modalities was
+        // treated as text-only and its images were routed through the vision
+        // fallback. Honor it as image support.
+        image: model.modalities?.input?.includes("image") ?? model.attachment ?? false,
         video: model.modalities?.input?.includes("video") ?? false,
         pdf: model.modalities?.input?.includes("pdf") ?? false,
       },
@@ -1341,7 +1345,15 @@ export const layer = Layer.effect(
                 input: {
                   text: model.modalities?.input?.includes("text") ?? existingModel?.capabilities.input.text ?? true,
                   audio: model.modalities?.input?.includes("audio") ?? existingModel?.capabilities.input.audio ?? false,
-                  image: model.modalities?.input?.includes("image") ?? existingModel?.capabilities.input.image ?? false,
+                  // `attachment` was stored but never read, so `attachment: true`
+                  // had no effect on vision. User config wins over the derived
+                  // model, consistent with every other capability here.
+                  image:
+                    model.modalities?.input?.includes("image") ??
+                    model.attachment ??
+                    existingModel?.capabilities.input.image ??
+                    existingModel?.capabilities.attachment ??
+                    false,
                   video: model.modalities?.input?.includes("video") ?? existingModel?.capabilities.input.video ?? false,
                   pdf: model.modalities?.input?.includes("pdf") ?? existingModel?.capabilities.input.pdf ?? false,
                 },
