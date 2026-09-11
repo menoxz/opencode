@@ -1072,6 +1072,15 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
         }
         if (part.type === "reasoning") {
           if (replayReasoning === "off") continue
+          // A stream that emits an extra reasoning-start can persist a
+          // zero-length reasoning part (observed: 2 reasoning-start events for a
+          // single reasoning-end). Replayed, it becomes an empty reasoning
+          // block, and a provider that round-trips the field (DeepSeek thinking
+          // mode with tools) then answers 400 because a prior assistant turn
+          // carries no `reasoning_content`. Drop it unless it holds provider
+          // metadata (Anthropic signature, OpenAI encrypted id) that must be
+          // replayed even when empty.
+          if (part.text.length === 0 && (part.metadata == null || Object.keys(part.metadata).length === 0)) continue
           if (differentModel) {
             if (part.text.trim().length > 0)
               assistantMessage.parts.push({

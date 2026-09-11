@@ -2009,6 +2009,91 @@ describe("session.message-v2.toModelMessage", () => {
       },
     ])
   })
+
+  test("drops empty unsigned reasoning parts for providers that round-trip reasoning_content", async () => {
+    const assistantID = "m-assistant-empty-reasoning"
+    const deepseekModel: Provider.Model = {
+      ...model,
+      id: ModelID.make("deepseek/deepseek-v4.1-flash"),
+      providerID: ProviderID.make("command-code"),
+      api: {
+        id: "deepseek/deepseek-v4.1-flash",
+        url: "https://api.commandcode.ai/provider/v1",
+        npm: "@ai-sdk/openai-compatible",
+      },
+      capabilities: {
+        ...model.capabilities,
+        reasoning: true,
+        interleaved: { field: "reasoning_content" },
+      },
+    }
+    const input: MessageV2.WithParts[] = [
+      {
+        info: assistantInfo(assistantID, "m-parent", undefined, {
+          providerID: deepseekModel.providerID,
+          modelID: deepseekModel.id,
+        }),
+        parts: [
+          {
+            ...basePart(assistantID, "p1-empty-reasoning"),
+            type: "step-start",
+          },
+          {
+            ...basePart(assistantID, "p2-empty-reasoning"),
+            type: "reasoning",
+            text: "",
+            time: { start: 0 },
+          },
+          {
+            ...basePart(assistantID, "p3-empty-reasoning"),
+            type: "step-start",
+          },
+          {
+            ...basePart(assistantID, "p4-empty-reasoning"),
+            type: "reasoning",
+            text: "internal chain of thought",
+            time: { start: 0 },
+          },
+        ] as MessageV2.Part[],
+      },
+    ]
+
+    // A zero-length reasoning part without provider metadata replays as an empty
+    // reasoning block; DeepSeek thinking mode with tools then answers 400 because
+    // a prior assistant turn carries no `reasoning_content`.
+    expect(await MessageV2.toModelMessages(input, deepseekModel, { replayReasoning: "off" })).toStrictEqual([
+      {
+        role: "assistant",
+        content: [{ type: "reasoning", text: "internal chain of thought", providerOptions: undefined }],
+      },
+    ])
+  })
+
+  test("keeps empty reasoning parts that carry provider metadata", async () => {
+    const assistantID = "m-assistant-empty-signed-reasoning"
+    const input: MessageV2.WithParts[] = [
+      {
+        info: assistantInfo(assistantID, "m-parent"),
+        parts: [
+          {
+            ...basePart(assistantID, "p1-empty-signed-reasoning"),
+            type: "reasoning",
+            text: "",
+            metadata: { anthropic: { signature: "sig" } },
+            time: { start: 0 },
+          },
+        ] as MessageV2.Part[],
+      },
+    ]
+
+    // Signature/encrypted-id reasoning must survive replay even when empty.
+    expect(await MessageV2.toModelMessages(input, model)).toStrictEqual([
+      {
+        role: "assistant",
+        content: [{ type: "reasoning", text: "", providerOptions: { anthropic: { signature: "sig" } } }],
+      },
+    ])
+  })
 })
 
 describe("session.message-v2.fromError", () => {

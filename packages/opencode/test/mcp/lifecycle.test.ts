@@ -21,8 +21,11 @@ interface MockClientState {
   listToolsError: string
   listPromptsShouldFail: boolean
   listResourcesShouldFail: boolean
+  listPromptsCalls: number
+  listResourcesCalls: number
   prompts: Array<{ name: string; description?: string }>
   resources: Array<{ name: string; uri: string; description?: string }>
+  capabilities: { prompts?: object; resources?: object }
   closed: boolean
   notificationHandlers: Map<unknown, (...args: any[]) => any>
 }
@@ -50,8 +53,11 @@ function getOrCreateClientState(name?: string): MockClientState {
       listToolsError: "listTools failed",
       listPromptsShouldFail: false,
       listResourcesShouldFail: false,
+      listPromptsCalls: 0,
+      listResourcesCalls: 0,
       prompts: [],
       resources: [],
+      capabilities: { prompts: {}, resources: {} },
       closed: false,
       notificationHandlers: new Map(),
     }
@@ -156,6 +162,7 @@ void mock.module("@modelcontextprotocol/sdk/client/index.js", () => ({
     }
 
     async listPrompts() {
+      if (this._state) this._state.listPromptsCalls++
       if (this._state?.listPromptsShouldFail) {
         throw new Error("listPrompts failed")
       }
@@ -163,10 +170,15 @@ void mock.module("@modelcontextprotocol/sdk/client/index.js", () => ({
     }
 
     async listResources() {
+      if (this._state) this._state.listResourcesCalls++
       if (this._state?.listResourcesShouldFail) {
         throw new Error("listResources failed")
       }
       return { resources: this._state?.resources ?? [] }
+    }
+
+    getServerCapabilities() {
+      return this._state?.capabilities
     }
 
     async callTool(_request: unknown, _schema: unknown, options?: { signal?: AbortSignal }) {
@@ -749,6 +761,43 @@ it.instance(
     config: {
       mcp: {
         "resource-server": {
+          type: "local",
+          command: ["echo", "test"],
+        },
+      },
+    },
+  },
+)
+
+it.instance(
+  "prompts() and resources() skip servers that do not advertise the capability",
+  () =>
+    MCP.Service.use((mcp: MCPNS.Interface) =>
+      Effect.gen(function* () {
+        lastCreatedClientName = "no-primitives-server"
+        const serverState = getOrCreateClientState("no-primitives-server")
+        // mcp-terminal/developer-tools answer -32601 Method not found to
+        // listPrompts/listResources; initialize reports no such capability, so
+        // the client must not ask (that was logged as an error per enumeration).
+        serverState.prompts = [{ name: "hidden", description: "Should not appear" }]
+        serverState.resources = [{ name: "hidden", uri: "file:///hidden.txt" }]
+        serverState.capabilities = {}
+
+        yield* mcp.add("no-primitives-server", {
+          type: "local",
+          command: ["echo", "test"],
+        })
+
+        expect(Object.keys(yield* mcp.prompts()).length).toBe(0)
+        expect(Object.keys(yield* mcp.resources()).length).toBe(0)
+        expect(serverState.listPromptsCalls).toBe(0)
+        expect(serverState.listResourcesCalls).toBe(0)
+      }),
+    ),
+  {
+    config: {
+      mcp: {
+        "no-primitives-server": {
           type: "local",
           command: ["echo", "test"],
         },

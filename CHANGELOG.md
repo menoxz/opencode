@@ -5,6 +5,16 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v1.19.28] - 2026-09-11
+
+### Fixed
+- MCP `prompts()`/`resources()` asked every connected server for its prompts and resources, including servers that never advertised those capabilities. Those servers answer `-32601 Method not found`, which was logged as an error on every enumeration. The client now filters by the capabilities negotiated during `initialize`.
+
+## [v1.19.27] - 2026-09-11
+
+### Fixed
+- A stream that emits an extra `reasoning-start` can persist a zero-length reasoning part. Replayed, it became an empty reasoning block, and DeepSeek thinking mode with tools rejected the whole request with HTTP 400 "The `reasoning_content` in the thinking mode must be passed back to the API". Empty reasoning parts without provider metadata are now dropped from replayed context; signed/encrypted reasoning (Anthropic signature, OpenAI item id) is preserved even when empty.
+
 ## [v1.19.26] - 2026-09-10
 
 ### Fixed

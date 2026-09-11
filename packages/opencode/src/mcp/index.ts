@@ -1122,13 +1122,21 @@ export const layer = Layer.effect(
       return result
     })
 
+    // Only ask a server for primitives it advertised during initialize: calling
+    // listPrompts/listResources on a server without that capability answers
+    // -32601 Method not found, which was logged as an error for every such
+    // server on every enumeration.
     function collectFromConnected<T extends { name: string }>(
       s: State,
+      capability: "prompts" | "resources",
       listFn: (c: Client) => Promise<T[]>,
       label: string,
     ) {
       return Effect.forEach(
-        Object.entries(s.clients).filter(([name]) => s.status[name]?.status === "connected"),
+        Object.entries(s.clients).filter(
+          ([name, client]) =>
+            s.status[name]?.status === "connected" && Boolean(client.getServerCapabilities()?.[capability]),
+        ),
         ([clientName, client]) =>
           fetchFromClient(clientName, client, listFn, label).pipe(Effect.map((items) => Object.entries(items ?? {}))),
         { concurrency: "unbounded" },
@@ -1137,12 +1145,12 @@ export const layer = Layer.effect(
 
     const prompts = Effect.fn("MCP.prompts")(function* () {
       const s = yield* InstanceState.get(state)
-      return yield* collectFromConnected(s, (c) => c.listPrompts().then((r) => r.prompts), "prompts")
+      return yield* collectFromConnected(s, "prompts", (c) => c.listPrompts().then((r) => r.prompts), "prompts")
     })
 
     const resources = Effect.fn("MCP.resources")(function* () {
       const s = yield* InstanceState.get(state)
-      return yield* collectFromConnected(s, (c) => c.listResources().then((r) => r.resources), "resources")
+      return yield* collectFromConnected(s, "resources", (c) => c.listResources().then((r) => r.resources), "resources")
     })
 
     const withClient = Effect.fnUntraced(function* <A>(
