@@ -608,7 +608,7 @@ export const layer = Layer.effect(
             continue
           }
           changed = true
-          const analyses = yield* Effect.forEach(images, analyze)
+          const analyses = yield* Effect.forEach(images, analyze, { concurrency: "unbounded" })
           if (part.type === "file") {
             parts.push({
               id: PartID.ascending(),
