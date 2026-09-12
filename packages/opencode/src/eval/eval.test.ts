@@ -22,7 +22,7 @@ import {
   simulateScenario,
   executeScenarioInSandbox,
 } from "./index"
-import { commandExecutor, diffToolCalls, headlessSessionArgs, headlessSessionCommand, nativeEvalEnvironment, runScenarioReal, type RealScenarioExecutor } from "./real-runner"
+import { commandExecutor, diffToolCalls, headlessSessionArgs, headlessSessionCommand, isTransientExecutionError, nativeEvalEnvironment, runScenarioReal, type RealScenarioExecutor } from "./real-runner"
 import { createSandbox } from "./sandbox"
 import { mkdtempSync, writeFileSync, existsSync, rmSync, readFileSync, mkdirSync } from "node:fs"
 import { join, dirname } from "node:path"
@@ -548,6 +548,73 @@ describe("real runner", () => {
 
     expect(result.success).toBe(false)
     expect(result.behaviorsMatched).toBe(0)
+  })
+
+  test("classifies spawn/socket failures as transient but a grading failure as permanent", () => {
+    expect(isTransientExecutionError(["spawnSync C:\\Users\\x\\opencodev2.exe ETIMEDOUT"])).toBe(true)
+    expect(isTransientExecutionError(["socket hang up"])).toBe(true)
+    expect(isTransientExecutionError(["headless exited null (no headless_result)"])).toBe(false)
+    expect(isTransientExecutionError([])).toBe(false)
+  })
+
+  test("retries a transient headless timeout once, in a fresh sandbox", async () => {
+    const sandboxes: string[] = []
+    let calls = 0
+    const executor: RealScenarioExecutor = ({ cwd }) => {
+      calls += 1
+      sandboxes.push(cwd)
+      // First attempt reproduces the daemon incident: the headless child is killed
+      // by the spawn budget before it writes anything.
+      if (calls === 1) {
+        return Effect.succeed({
+          output: "",
+          toolCalls: [],
+          errors: ["spawnSync C:\\Users\\x\\opencodev2.exe ETIMEDOUT", "headless exited null (no headless_result)"],
+        })
+      }
+      writeFileSync(join(cwd, "hello_eval.py"), `print("Hello, Eval Framework!")`)
+      return Effect.succeed({ output: "created", toolCalls: ["write:hello_eval.py"], errors: [] })
+    }
+
+    const result = await Effect.runPromise(
+      runScenarioReal(getScenario("hello-world")!, executor, { retries: 1, retryDelayMs: 1 }),
+    )
+
+    expect(calls).toBe(2)
+    expect(new Set(sandboxes).size).toBe(2)
+    expect(result.success).toBe(true)
+    expect(result.errors).toEqual([])
+  })
+
+  test("does not retry a genuine grading failure", async () => {
+    let calls = 0
+    const executor: RealScenarioExecutor = () => {
+      calls += 1
+      return Effect.succeed({ output: "claimed hello_eval.py was created", toolCalls: ["write"], errors: [] })
+    }
+
+    const result = await Effect.runPromise(
+      runScenarioReal(getScenario("hello-world")!, executor, { retryDelayMs: 1 }),
+    )
+
+    expect(calls).toBe(1)
+    expect(result.success).toBe(false)
+  })
+
+  test("stops after the bounded retry budget when the failure stays transient", async () => {
+    let calls = 0
+    const executor: RealScenarioExecutor = () => {
+      calls += 1
+      return Effect.succeed({ output: "", toolCalls: [], errors: ["spawnSync x ETIMEDOUT"] })
+    }
+
+    const result = await Effect.runPromise(
+      runScenarioReal(getScenario("hello-world")!, executor, { retries: 1, retryDelayMs: 1 }),
+    )
+
+    expect(calls).toBe(2)
+    expect(result.success).toBe(false)
+    expect(result.errors.join(" ")).toContain("ETIMEDOUT")
   })
 
   test("commandExecutor runs a real command in the sandbox", async () => {

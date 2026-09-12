@@ -121,6 +121,23 @@ export function nativeEvalEnvironment(base: NodeJS.ProcessEnv = process.env): No
   return { ...base, OPENCODE_DAEMON_AUTO: "1", OPENCODE_NATIVE_EVAL: "1" }
 }
 
+/**
+ * Execution errors that are environmental rather than a verdict on the agent:
+ * the headless child was killed by the OS timeout (`spawnSync … ETIMEDOUT`) or
+ * the provider socket dropped mid-session. These are worth one more attempt.
+ *
+ * Deliberately excludes a bare "headless exited null (no headless_result)": a
+ * child that ran and produced no result can be a genuine failure, so it is only
+ * retried when it also carries a timeout/socket signature.
+ */
+const TRANSIENT_EXECUTION_PATTERN =
+  /\bETIMEDOUT\b|\bESOCKETTIMEDOUT\b|\bECONNRESET\b|\bECONNREFUSED\b|\bECONNABORTED\b|\bEAI_AGAIN\b|\bEPIPE\b|socket hang up|timed?\s*out|timeout/i
+
+/** True when at least one recorded error is a transient spawn/socket failure. */
+export function isTransientExecutionError(errors: readonly string[]): boolean {
+  return errors.some((error) => TRANSIENT_EXECUTION_PATTERN.test(error))
+}
+
 export function headlessSessionExecutor(
   binaryPath?: string,
 ): RealScenarioExecutor {
@@ -156,6 +173,14 @@ export function headlessSessionExecutor(
 
 export interface RealRunnerOptions extends Partial<EvalRunOptions> {
   sandbox?: SandboxOptions & { writeSetupFiles?: boolean }
+  /**
+   * Extra attempts after a transient execution failure (spawn timeout, dropped
+   * socket). Default 1, so a flaky headless start cannot be scored as a real
+   * scenario failure and trigger a false regression alarm.
+   */
+  retries?: number
+  /** Delay between attempts, in milliseconds. Default 2000. */
+  retryDelayMs?: number
 }
 
 function writeSetupFiles(scenario: EvalScenario, sandboxDir: string) {
@@ -172,41 +197,59 @@ export function runScenarioReal(
   executor: RealScenarioExecutor,
   options: RealRunnerOptions = {},
 ): Effect.Effect<ScenarioResult> {
-  return createSandbox(
-    (sandboxDir) =>
-      Effect.gen(function* () {
-        const startedAt = Date.now()
-        if (options.sandbox?.writeSetupFiles !== false) writeSetupFiles(scenario, sandboxDir)
+  const maxAttempts = Math.max(1, (options.retries ?? 1) + 1)
+  const retryDelayMs = options.retryDelayMs ?? 2_000
 
-        const execution = yield* executor({
-          scenario,
-          cwd: sandboxDir,
-          timeoutSeconds: options.timeoutSeconds ?? scenario.timeoutSeconds,
-        })
-        const grade = autoEvaluate(scenario, execution.output, execution.toolCalls, sandboxDir)
-        const completedAt = Date.now()
-        const errors = execution.errors ?? []
-        const verdict = scenarioVerdict(grade, errors)
+  // A fresh sandbox per attempt: a sandbox reused after a timed-out child could
+  // carry half-written artifacts and let a retry pass on the previous run's work.
+  const attempt = () =>
+    createSandbox(
+      (sandboxDir) =>
+        Effect.gen(function* () {
+          const startedAt = Date.now()
+          if (options.sandbox?.writeSetupFiles !== false) writeSetupFiles(scenario, sandboxDir)
 
-        return {
-          scenarioId: scenario.id,
-          scenarioName: scenario.name,
-          success: verdict === "pass",
-          verdict,
-          durationMs: Math.max(completedAt - startedAt, 1),
-          tokensUsed: execution.tokensUsed ?? Math.round(execution.output.length * 1.5),
-          toolCalls: execution.toolCalls.length,
-          errors:
-            verdict === "unverified"
-              ? [...errors, `${UNVERIFIED_PREFIX} ${grade.unverified} of ${grade.total} behaviors of "${scenario.id}" could not be checked`]
-              : errors,
-          behaviorsMatched: grade.matched,
-          behaviorsTotal: grade.total,
-          output: `Task: ${scenario.taskPrompt}\n\n[Real] Output:\n${execution.output}`,
-          startedAt,
-          completedAt,
-        }
-      }),
-    options.sandbox,
-  )
+          const execution = yield* executor({
+            scenario,
+            cwd: sandboxDir,
+            timeoutSeconds: options.timeoutSeconds ?? scenario.timeoutSeconds,
+          })
+          const grade = autoEvaluate(scenario, execution.output, execution.toolCalls, sandboxDir)
+          const completedAt = Date.now()
+          const errors = execution.errors ?? []
+          const verdict = scenarioVerdict(grade, errors)
+
+          return {
+            scenarioId: scenario.id,
+            scenarioName: scenario.name,
+            success: verdict === "pass",
+            verdict,
+            durationMs: Math.max(completedAt - startedAt, 1),
+            tokensUsed: execution.tokensUsed ?? Math.round(execution.output.length * 1.5),
+            toolCalls: execution.toolCalls.length,
+            errors:
+              verdict === "unverified"
+                ? [...errors, `${UNVERIFIED_PREFIX} ${grade.unverified} of ${grade.total} behaviors of "${scenario.id}" could not be checked`]
+                : errors,
+            behaviorsMatched: grade.matched,
+            behaviorsTotal: grade.total,
+            output: `Task: ${scenario.taskPrompt}\n\n[Real] Output:\n${execution.output}`,
+            startedAt,
+            completedAt,
+          }
+        }),
+      options.sandbox,
+    )
+
+  return Effect.gen(function* () {
+    let result = yield* attempt()
+    for (let n = 1; n < maxAttempts; n++) {
+      // Only an environmental failure is retried; an agent that actually ran and
+      // failed the scenario keeps its verdict (and its cost is not doubled).
+      if (!isTransientExecutionError(result.errors)) return result
+      yield* Effect.sleep(retryDelayMs)
+      result = yield* attempt()
+    }
+    return result
+  })
 }
