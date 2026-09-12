@@ -193,7 +193,7 @@ const refactorToArrow: EvalScenario = {
       description: "Uses arrow functions",
       requiredKeywords: ["=>"],
       antiPatterns: ["function add", "function multiply"],
-      validationCommand: `node -e "const fs=require('fs'),vm=require('vm');const c=fs.readFileSync('arrow_refactored.js','utf8');if(!/(?:const|let|var)\\s+add\\s*=.*=>/.test(c)||!/(?:const|let|var)\\s+multiply\\s*=.*=>/.test(c)||/function\\s+(add|multiply)/.test(c))process.exit(1);const s={module:{exports:{}},exports:{}};vm.createContext(s);const v=vm.runInContext(c+';({add,multiply,result})',s);if(v.add(2,3)!==5||v.multiply(4,5)!==20||v.result!==5)process.exit(1)"`,
+      validationCommand: `node -e "const fs=require('fs'),vm=require('vm');const c=fs.readFileSync('arrow_refactored.js','utf8');if(!/\\badd\\s*=\\s*(?:\\([\\w,\\s$]*\\)|[A-Za-z_$][\\w$]*)\\s*=>/.test(c)||!/\\bmultiply\\s*=\\s*(?:\\([\\w,\\s$]*\\)|[A-Za-z_$][\\w$]*)\\s*=>/.test(c)||/function\\s+(add|multiply)/.test(c))process.exit(1);const s={module:{exports:{}},exports:{}};vm.createContext(s);const v=vm.runInContext(c+';({add,multiply,result})',s);if(v.add(2,3)!==5||v.multiply(4,5)!==20||v.result!==5)process.exit(1)"`,
     },
     {
       description: "Preserves correct logic",

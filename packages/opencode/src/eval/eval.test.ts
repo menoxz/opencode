@@ -515,6 +515,42 @@ describe("real runner", () => {
     expect(result.behaviorsMatched).toBe(2)
   })
 
+  test("accepts arrow refactors bound through globalThis/member targets (regression)", async () => {
+    const executor: RealScenarioExecutor = ({ cwd }) =>
+      Effect.sync(() => {
+        writeFileSync(
+          join(cwd, "arrow_refactored.js"),
+          [
+            "globalThis.add = (a, b) => a + b",
+            "globalThis.multiply = (a, b) => a * b",
+            "globalThis.result = globalThis.add(2, 3)",
+            "if (typeof module !== 'undefined' && module.exports) {",
+            "  module.exports = { add: globalThis.add, multiply: globalThis.multiply, result: globalThis.result }",
+            "}",
+            "",
+          ].join("\n"),
+        )
+        return { output: "created", toolCalls: ["write:arrow_refactored.js"], errors: [] }
+      })
+    const result = await Effect.runPromise(runScenarioReal(getScenario("refactor-to-arrow")!, executor))
+    expect(result.success).toBe(true)
+    expect(result.behaviorsMatched).toBe(2)
+  })
+
+  test("still rejects refactors that keep a traditional function declaration", async () => {
+    const executor: RealScenarioExecutor = ({ cwd }) =>
+      Effect.sync(() => {
+        writeFileSync(
+          join(cwd, "arrow_refactored.js"),
+          "const add = (a, b) => a + b\nfunction multiply(a, b) { return a * b }\nconst result = add(2, 3)\n",
+        )
+        return { output: "created", toolCalls: ["write:arrow_refactored.js"], errors: [] }
+      })
+    const result = await Effect.runPromise(runScenarioReal(getScenario("refactor-to-arrow")!, executor))
+    expect(result.success).toBe(false)
+    expect(result.behaviorsMatched).toBe(1)
+  })
+
   test("runs a scenario in a sandbox and evaluates validation commands against real files", async () => {
     const executor: RealScenarioExecutor = ({ cwd }) =>
       Effect.sync(() => {
