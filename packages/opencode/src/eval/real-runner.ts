@@ -217,7 +217,14 @@ export function runScenarioReal(
           const grade = autoEvaluate(scenario, execution.output, execution.toolCalls, sandboxDir)
           const completedAt = Date.now()
           const errors = execution.errors ?? []
-          const verdict = scenarioVerdict(grade, errors)
+          // A child killed by a transient spawn/provider failure before it made a
+          // single tool call produced no agent verdict at all. Scoring that as a
+          // failed scenario turns an environmental outage into a phantom
+          // capability regression, so it is reported as unverified instead; the
+          // daemon's "verified nothing" guard then skips the run rather than
+          // enqueuing a regression investigation.
+          const neverExecuted = execution.toolCalls.length === 0 && isTransientExecutionError(errors)
+          const verdict = neverExecuted ? "unverified" : scenarioVerdict(grade, errors)
 
           return {
             scenarioId: scenario.id,
@@ -229,7 +236,14 @@ export function runScenarioReal(
             toolCalls: execution.toolCalls.length,
             errors:
               verdict === "unverified"
-                ? [...errors, `${UNVERIFIED_PREFIX} ${grade.unverified} of ${grade.total} behaviors of "${scenario.id}" could not be checked`]
+                ? [
+                    ...errors,
+                    `${UNVERIFIED_PREFIX} ${
+                      neverExecuted
+                        ? `execution failed before producing any agent verdict (transient: ${errors.join("; ") || "unknown"})`
+                        : `${grade.unverified} of ${grade.total} behaviors of "${scenario.id}" could not be checked`
+                    }`,
+                  ]
                 : errors,
             behaviorsMatched: grade.matched,
             behaviorsTotal: grade.total,

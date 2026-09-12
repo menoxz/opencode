@@ -11,6 +11,7 @@ import {
   listScenarios,
   ALL_SCENARIOS,
   ALL_SUITES,
+  UNVERIFIED_PREFIX,
   type EvalScenario,
 } from "./scenario"
 import {
@@ -615,6 +616,51 @@ describe("real runner", () => {
     expect(calls).toBe(2)
     expect(result.success).toBe(false)
     expect(result.errors.join(" ")).toContain("ETIMEDOUT")
+  })
+
+  test("reports an unexecuted transient failure as unverified so it cannot raise a regression", async () => {
+    // Reproduces the 2026-09-12 sanity incident: the provider was unreachable,
+    // the headless child was killed by the spawn budget before its first tool
+    // call, and every scenario was scored 0/2 — a phantom 1.0 -> 0.0 regression.
+    // A run that verified nothing must be "unverified", never "fail".
+    const executor: RealScenarioExecutor = () =>
+      Effect.succeed({
+        output: "",
+        toolCalls: [],
+        errors: [
+          "spawnSync C:\\Users\\x\\opencodev2.exe ETIMEDOUT",
+          "headless exited null (no headless_result)",
+        ],
+      })
+
+    const result = await Effect.runPromise(
+      runScenarioReal(getScenario("hello-world")!, executor, { retries: 0 }),
+    )
+
+    expect(result.success).toBe(false)
+    expect(result.verdict).toBe("unverified")
+    expect(result.toolCalls).toBe(0)
+    expect(result.errors.some((e) => e.startsWith(UNVERIFIED_PREFIX))).toBe(true)
+    expect(result.errors.join(" ")).toContain("ETIMEDOUT")
+  })
+
+  test("keeps a transient failure that made tool calls as a real failure", async () => {
+    // The agent got far enough to act, so the timeout is a verdict on the run,
+    // not an environmental non-result: it must stay a failure and not be masked.
+    const executor: RealScenarioExecutor = () =>
+      Effect.succeed({
+        output: "wrote a partial file",
+        toolCalls: ["write:hello_eval.py"],
+        errors: ["spawnSync x ETIMEDOUT"],
+      })
+
+    const result = await Effect.runPromise(
+      runScenarioReal(getScenario("hello-world")!, executor, { retries: 0 }),
+    )
+
+    expect(result.success).toBe(false)
+    expect(result.verdict).toBe("fail")
+    expect(result.errors.join(" ")).not.toContain(UNVERIFIED_PREFIX)
   })
 
   test("commandExecutor runs a real command in the sandbox", async () => {

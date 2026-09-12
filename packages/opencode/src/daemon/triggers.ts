@@ -223,13 +223,19 @@ export const runSanityEval = Effect.fnUntraced(function* () {
     if (real) log.info("sanity eval: REAL runner enabled (OPENCODE_DAEMON_EVAL_REAL=1)")
     const report = yield* evalSvc.runSuite("sanity", real ? { mode: "real" } : undefined)
 
-    // A simulated run executes no agent and therefore verifies nothing. Comparing
-    // its pass rate to a baseline would report a permanent phantom regression and
-    // enqueue an investigation task every hour. Say the truth once instead.
+    // A run that verified nothing must never be compared to a baseline: a
+    // simulated run executes no agent at all, and a real run whose children were
+    // killed by a transient spawn/provider failure before their first tool call
+    // produces no agent verdict either. Either way, turning 0/0 into a pass-rate
+    // drop would report a phantom regression and enqueue an investigation task
+    // every hour. Say the truth once instead.
     if (report.scenarios.every((sc) => sc.verdict === "unverified")) {
-      log.warn("sanity eval verified nothing: simulated mode runs no agent", {
+      log.warn("sanity eval verified nothing — no agent verdict was produced", {
+        mode: real ? "real" : "simulated",
         scenarios: report.totalScenarios,
-        hint: "set OPENCODE_DAEMON_EVAL_REAL=1 to actually exercise the agent",
+        hint: real
+          ? "every scenario failed before its first tool call; check provider/network reachability"
+          : "set OPENCODE_DAEMON_EVAL_REAL=1 to actually exercise the agent",
       })
       return
     }
