@@ -13,6 +13,7 @@ import {
   ALL_SUITES,
   UNVERIFIED_PREFIX,
   type EvalScenario,
+  type ScenarioResult,
 } from "./scenario"
 import {
   autoEvaluate,
@@ -22,7 +23,11 @@ import {
   scenarioVerdict,
   simulateScenario,
   executeScenarioInSandbox,
+  verifiedPassRate,
+  compareReportToBaseline,
+  type EvalBaseline,
 } from "./index"
+import type { EvalRunReport } from "./metrics"
 import { commandExecutor, diffToolCalls, headlessSessionArgs, headlessSessionCommand, isTransientExecutionError, nativeEvalEnvironment, runScenarioReal, type RealScenarioExecutor } from "./real-runner"
 import { createSandbox } from "./sandbox"
 import { mkdtempSync, writeFileSync, existsSync, rmSync, readFileSync, mkdirSync } from "node:fs"
@@ -809,6 +814,112 @@ describe("harness self-check", () => {
     } finally {
       rmSync(tmpDir, { recursive: true, force: true })
     }
+  })
+})
+
+describe("baseline comparison is blind to unverified scenarios", () => {
+  const makeScenario = (
+    id: string,
+    verdict: "pass" | "fail" | "unverified",
+    durationMs = 1_000,
+  ): ScenarioResult => ({
+    scenarioId: id,
+    scenarioName: id,
+    success: verdict === "pass",
+    verdict,
+    durationMs,
+    tokensUsed: 0,
+    toolCalls: 0,
+    errors: verdict === "unverified" ? [`${UNVERIFIED_PREFIX} execution failed before producing any agent verdict`] : [],
+    behaviorsMatched: verdict === "pass" ? 2 : 0,
+    behaviorsTotal: 2,
+    output: "",
+    startedAt: 0,
+    completedAt: durationMs,
+  })
+
+  const makeReport = (scenarios: ScenarioResult[]): EvalRunReport => ({
+    runId: "run-current",
+    suiteId: "sanity",
+    suiteName: "Sanity",
+    timestamp: 2,
+    durationMs: scenarios.reduce((n, s) => n + s.durationMs, 0),
+    totalScenarios: scenarios.length,
+    passed: scenarios.filter((s) => s.success).length,
+    failed: scenarios.filter((s) => !s.success).length,
+    passRate: scenarios.filter((s) => s.success).length / scenarios.length,
+    avgDurationPerScenario: scenarios.reduce((n, s) => n + s.durationMs, 0) / scenarios.length,
+    totalTokensUsed: 0,
+    totalToolCalls: 0,
+    scenarios,
+    metrics: [],
+  })
+
+  const baseline: EvalBaseline = {
+    suiteId: "sanity",
+    passRate: 1,
+    avgDurationMs: 1_000,
+    runCount: 5,
+    scenarioResults: {
+      "hello-world": { passRate: 1, avgDurationMs: 1_000 },
+      "fix-syntax-error": { passRate: 1, avgDurationMs: 1_000 },
+      "refactor-to-arrow": { passRate: 1, avgDurationMs: 1_000 },
+    },
+  }
+
+  test("a transiently unverified scenario is neutral, not a new failure", () => {
+    // Reproduces eval-1789292542212-ev7a44: two verified passes, one headless
+    // timeout that never produced a verdict.
+    const cmp = compareReportToBaseline(
+      makeReport([
+        makeScenario("hello-world", "pass"),
+        makeScenario("fix-syntax-error", "pass"),
+        makeScenario("refactor-to-arrow", "unverified", 180_000),
+      ]),
+      baseline,
+    )
+
+    expect(cmp).not.toBeNull()
+    expect(cmp!.details.newFailures).toEqual([])
+    expect(cmp!.details.passRateRegression).toBe(false)
+    expect(cmp!.details.behaviorRegression).toBe(false)
+    expect(cmp!.major).toBe(false)
+    expect(cmp!.passRate.current).toBe(1)
+  })
+
+  test("a genuine failure still raises a major regression", () => {
+    const cmp = compareReportToBaseline(
+      makeReport([
+        makeScenario("hello-world", "pass"),
+        makeScenario("fix-syntax-error", "pass"),
+        makeScenario("refactor-to-arrow", "fail"),
+      ]),
+      baseline,
+    )
+
+    expect(cmp).not.toBeNull()
+    expect(cmp!.details.newFailures).toEqual(["refactor-to-arrow"])
+    expect(cmp!.severity).toBe("major")
+    expect(cmp!.major).toBe(true)
+  })
+
+  test("a run that verified nothing yields no comparison", () => {
+    const cmp = compareReportToBaseline(
+      makeReport([
+        makeScenario("hello-world", "unverified"),
+        makeScenario("fix-syntax-error", "unverified"),
+        makeScenario("refactor-to-arrow", "unverified"),
+      ]),
+      baseline,
+    )
+
+    expect(cmp).toBeNull()
+  })
+
+  test("verifiedPassRate excludes unverified scenarios from both counts", () => {
+    expect(verifiedPassRate([makeScenario("a", "pass"), makeScenario("b", "unverified")])).toBe(1)
+    expect(verifiedPassRate([makeScenario("a", "pass"), makeScenario("b", "fail")])).toBe(0.5)
+    expect(verifiedPassRate([makeScenario("a", "unverified")])).toBeNull()
   })
 })
 

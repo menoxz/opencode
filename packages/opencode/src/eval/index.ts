@@ -255,6 +255,78 @@ export function autoEvaluate(
 }
 
 /**
+ * Pass rate over the scenarios that produced an actual verdict.
+ *
+ * An `unverified` scenario — a transient spawn/provider failure, or a behavior
+ * whose validation command could not run — is no evidence about the agent.
+ * Counting it as a failure turns an environmental flake into a phantom
+ * capability regression, so it is excluded from both numerator and denominator.
+ * Returns `null` when the run verified nothing at all.
+ */
+export function verifiedPassRate(scenarios: readonly ScenarioResult[]): number | null {
+  const verified = scenarios.filter((s) => s.verdict !== "unverified")
+  if (verified.length === 0) return null
+  return verified.filter((s) => s.verdict === "pass").length / verified.length
+}
+
+/**
+ * Compare a run report against a historical baseline, ignoring scenarios that
+ * produced no verdict.
+ *
+ * Unverified scenarios are excluded from the pass rate and from the
+ * new-failure/new-pass tallies; a run that verified nothing returns `null`.
+ * Without this, one hourly headless timeout taking one scenario to `unverified`
+ * while the rest pass was reported as a major regression (incident
+ * eval-regression-sanity) even though the harness had no failing verdict.
+ */
+export function compareReportToBaseline(
+  report: EvalRunReport,
+  baseline: EvalBaseline,
+): RegressionReport | null {
+  const currentPassRate = verifiedPassRate(report.scenarios)
+  if (currentPassRate === null) return null
+
+  const passRateDelta = currentPassRate - baseline.passRate
+  const durationDelta = report.avgDurationPerScenario - baseline.avgDurationMs
+
+  const newFailures: string[] = []
+  const newPasses: string[] = []
+  for (const sc of report.scenarios) {
+    if (sc.verdict === "unverified") continue
+    const bl = baseline.scenarioResults[sc.scenarioId]
+    if (!bl) continue
+    // Previously passing scenario that now fails
+    if (bl.passRate >= 0.5 && sc.verdict === "fail") newFailures.push(sc.scenarioId)
+    // Previously failing scenario that now passes
+    if (bl.passRate < 0.5 && sc.verdict === "pass") newPasses.push(sc.scenarioId)
+  }
+
+  const passRateRegression = passRateDelta < -0.05
+  const durationRegression = baseline.avgDurationMs > 0
+    ? durationDelta / baseline.avgDurationMs > 0.2
+    : false
+  const behaviorRegression = newFailures.length > 0
+
+  let severity: RegressionReport["severity"] = "none"
+  if (passRateRegression && behaviorRegression) severity = "major"
+  else if (behaviorRegression) severity = "behavior"
+  else if (passRateRegression) severity = "major"
+  else if (durationRegression) severity = "performance"
+  else if (Math.abs(passRateDelta) > 0.02) severity = "minor"
+
+  return {
+    suiteId: report.suiteId,
+    currentRunId: report.runId,
+    baselineRunId: "",
+    passRate: { current: currentPassRate, baseline: baseline.passRate, delta: passRateDelta },
+    avgDurationMs: { current: report.avgDurationPerScenario, baseline: baseline.avgDurationMs, delta: durationDelta },
+    severity,
+    major: severity === "major" || severity === "behavior",
+    details: { passRateRegression, durationRegression, behaviorRegression, newFailures, newPasses },
+  }
+}
+
+/**
  * Simulate scenario execution — a dry run that executes no agent.
  *
  * It therefore verifies nothing and can never report success. The previous
@@ -431,16 +503,22 @@ export const layer = Layer.effect(
         const current = candidates[0]
         const baseline = candidates[1]
 
-        const passRateDelta = current.passRate - baseline.passRate
+        // Verdictless runs must not read as a regression: compare only what each
+        // run actually verified (see compareReportToBaseline).
+        const currentPassRate = verifiedPassRate(current.scenarios)
+        const baselinePassRate = verifiedPassRate(baseline.scenarios)
+        if (currentPassRate === null || baselinePassRate === null) return null
+        const passRateDelta = currentPassRate - baselinePassRate
         const durationDelta = current.avgDurationPerScenario - baseline.avgDurationPerScenario
 
         const newFailures: string[] = []
         const newPasses: string[] = []
         for (const sc of current.scenarios) {
+          if (sc.verdict === "unverified") continue
           const other = baseline.scenarios.find((s2) => s2.scenarioId === sc.scenarioId)
-          if (!other) continue
-          if (other.success && !sc.success) newFailures.push(sc.scenarioId)
-          if (!other.success && sc.success) newPasses.push(sc.scenarioId)
+          if (!other || other.verdict === "unverified") continue
+          if (other.verdict === "pass" && sc.verdict === "fail") newFailures.push(sc.scenarioId)
+          if (other.verdict === "fail" && sc.verdict === "pass") newPasses.push(sc.scenarioId)
         }
 
         const passRateRegression = passRateDelta < -0.05
@@ -492,7 +570,13 @@ export const layer = Layer.effect(
         if (candidates.length === 0) return null
 
         const recent = candidates.slice(0, Math.min(5, candidates.length))
-        const passRates = recent.map((r) => r.passRate).sort((a, b) => a - b)
+        // Only scenarios that produced a verdict inform the baseline: an
+        // unverified run says nothing about the suite, so it must neither drag
+        // the baseline down nor count as a real 0 %.
+        const passRates = recent
+          .map((r) => verifiedPassRate(r.scenarios))
+          .filter((rate): rate is number => rate !== null)
+          .sort((a, b) => a - b)
         const durations = recent.map((r) => r.avgDurationPerScenario).sort((a, b) => a - b)
 
         const median = <T>(sorted: T[]): T => sorted[Math.floor(sorted.length / 2)]
@@ -504,6 +588,7 @@ export const layer = Layer.effect(
 
         for (const r of recent) {
           for (const s of r.scenarios) {
+            if (s.verdict === "unverified") continue
             const passes = scenarioPasses.get(s.scenarioId) ?? []
             passes.push(s.success ? 1 : 0)
             scenarioPasses.set(s.scenarioId, passes)
@@ -523,7 +608,7 @@ export const layer = Layer.effect(
 
         return {
           suiteId,
-          passRate: median(passRates),
+          passRate: passRates.length > 0 ? median(passRates) : 0,
           avgDurationMs: median(durations),
           runCount: recent.length,
           scenarioResults,
@@ -534,45 +619,7 @@ export const layer = Layer.effect(
       Effect.gen(function* () {
         const baseline = yield* getBaseline(report.suiteId)
         if (!baseline) return null
-
-        const passRateDelta = report.passRate - baseline.passRate
-        const durationDelta = report.avgDurationPerScenario - baseline.avgDurationMs
-
-        const newFailures: string[] = []
-        const newPasses: string[] = []
-
-        for (const sc of report.scenarios) {
-          const bl = baseline.scenarioResults[sc.scenarioId]
-          if (!bl) continue
-          // Previously passing scenario that now fails
-          if (bl.passRate >= 0.5 && !sc.success) newFailures.push(sc.scenarioId)
-          // Previously failing scenario that now passes
-          if (bl.passRate < 0.5 && sc.success) newPasses.push(sc.scenarioId)
-        }
-
-        const passRateRegression = passRateDelta < -0.05
-        const durationRegression = baseline.avgDurationMs > 0
-          ? durationDelta / baseline.avgDurationMs > 0.2
-          : false
-        const behaviorRegression = newFailures.length > 0
-
-        let severity: RegressionReport["severity"] = "none"
-        if (passRateRegression && behaviorRegression) severity = "major"
-        else if (behaviorRegression) severity = "behavior"
-        else if (passRateRegression) severity = "major"
-        else if (durationRegression) severity = "performance"
-        else if (Math.abs(passRateDelta) > 0.02) severity = "minor"
-
-        return {
-          suiteId: report.suiteId,
-          currentRunId: report.runId,
-          baselineRunId: "",
-          passRate: { current: report.passRate, baseline: baseline.passRate, delta: passRateDelta },
-          avgDurationMs: { current: report.avgDurationPerScenario, baseline: baseline.avgDurationMs, delta: durationDelta },
-          severity,
-          major: severity === "major" || severity === "behavior",
-          details: { passRateRegression, durationRegression, behaviorRegression, newFailures, newPasses },
-        }
+        return compareReportToBaseline(report, baseline)
       })
 
     return Service.of({
