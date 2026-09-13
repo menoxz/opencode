@@ -42,6 +42,14 @@ const AgentSchema = Schema.StructWithRest(
       description:
         "Opt this agent into the lean execution profile: dynamic tool catalog (hot_path.lean_dynamic_tools + tool_search), lean subagent contract, and lean output budgets. Replaces the historical hard-coded check on the agent name 'lean'.",
     }),
+    autocontinue: Schema.optional(Schema.Boolean).annotate({
+      description:
+        "Keep the run going when the model stops with text-only while its anchored objective is still open. Defaults to the lean profile; set false to disable.",
+    }),
+    environment_state: Schema.optional(Schema.Boolean).annotate({
+      description:
+        "Inject the normalized environment observation capsule into this agent's prompt, so computer-use state is harness-tracked instead of model-remembered. Defaults to hot_path.environment_state.",
+    }),
     disable: Schema.optional(Schema.Boolean),
     description: Schema.optional(Schema.String).annotate({ description: "Description of when to use the agent" }),
     mode: Schema.optional(Schema.Literals(["subagent", "primary", "all"])),
@@ -83,6 +91,7 @@ const KNOWN_KEYS = new Set([
   "skills",
   "preload_skills",
   "lean",
+  "autocontinue",
 ])
 
 // Post-parse normalisation:

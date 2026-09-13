@@ -125,6 +125,7 @@ const mcp = Layer.succeed(
     add: () => Effect.succeed({ status: { status: "disabled" as const } }),
     connect: () => Effect.succeed({ status: { status: "connected" as const }, toolCount: 0 }),
     disconnect: () => Effect.succeed({ status: { status: "disabled" as const }, toolCount: 0 }),
+    restart: () => Effect.succeed({ status: { status: "disabled" as const }, toolCount: 0 }),
     getPrompt: () => Effect.succeed(undefined),
     readResource: () => Effect.succeed(undefined),
     startAuth: () => Effect.die("unexpected MCP auth in prompt-effect tests"),
@@ -973,6 +974,122 @@ it.instance("loop continues when finish is tool-calls", () =>
       expect(result.info.finish).toBe("stop")
     }
   }),
+)
+
+it.instance("auto-continue keeps working after a text-only stop while the objective is open", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig((url) => ({
+      ...providerCfg(url),
+      agent: { build: { autocontinue: true } },
+    }))
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const session = yield* sessions.create({
+      title: "Auto continue",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+    yield* prompt.prompt({
+      sessionID: session.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "Explain the design, then implement the fix and run the full test suite." }],
+    })
+    for (let i = 1; i <= 5; i++) yield* llm.text(`reply ${i}`)
+
+    yield* prompt.loop({ sessionID: session.id })
+
+    // One initial call plus AUTO_CONTINUE_LIMIT (4) text-only continuations
+    // before the guard returns control to the user.
+    expect(yield* llm.calls).toBe(5)
+  }),
+  30000,
+)
+
+it.instance("keeps working across lots while the objective is open and todos remain", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig((url) => ({
+      ...providerCfg(url),
+      agent: { build: { autocontinue: true } },
+    }))
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const session = yield* sessions.create({
+      title: "Multi lot",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+    yield* prompt.prompt({
+      sessionID: session.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "Implement all three lots of the plan." }],
+    })
+    const messages = yield* sessions.messages({ sessionID: session.id })
+    const lastUser = messages.findLast((message) => message.info.role === "user")
+    yield* sessions.setGoalState({
+      sessionID: session.id,
+      goalState: {
+        status: "approved",
+        source: "user",
+        goal: "Implement the three-lot plan",
+        dod: ["lot 1 implemented", "lot 2 implemented", "lot 3 implemented"],
+        outOfScope: [],
+        anchorUserID: lastUser?.info.id,
+        version: 1,
+        updatedAt: 1,
+      } as any,
+    })
+    for (let i = 1; i <= 5; i++) yield* llm.text(`lot ${i} progress`)
+
+    yield* prompt.loop({ sessionID: session.id })
+
+    // The mission stays open across lots: one initial call plus the four
+    // autonomous continuations allowed by the idle budget.
+    expect(yield* llm.calls).toBe(5)
+  }),
+  30000,
+)
+
+it.instance("stops immediately when the objective is already completed", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig((url) => ({
+      ...providerCfg(url),
+      agent: { build: { autocontinue: true } },
+    }))
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const session = yield* sessions.create({
+      title: "Completed stop",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+    yield* prompt.prompt({
+      sessionID: session.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "Summarise the completed work." }],
+    })
+    const messages = yield* sessions.messages({ sessionID: session.id })
+    const lastUser = messages.findLast((message) => message.info.role === "user")
+    yield* sessions.setGoalState({
+      sessionID: session.id,
+      goalState: {
+        status: "completed",
+        source: "user",
+        goal: "Ship the plan",
+        dod: ["lot 1 implemented", "lot 2 implemented", "lot 3 implemented"],
+        outOfScope: [],
+        anchorUserID: lastUser?.info.id,
+        version: 1,
+        updatedAt: 1,
+      } as any,
+    })
+    for (let i = 1; i <= 5; i++) yield* llm.text(`reply ${i}`)
+
+    yield* prompt.loop({ sessionID: session.id })
+
+    // A legitimate end state stops the loop even with autocontinue enabled.
+    expect(yield* llm.calls).toBe(1)
+  }),
+  30000,
 )
 
 it.instance("glob tool keeps instance context during prompt runs", () =>

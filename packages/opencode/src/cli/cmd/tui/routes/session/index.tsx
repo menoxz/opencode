@@ -68,6 +68,7 @@ import { DialogSessionRename } from "../../component/dialog-session-rename"
 import { Sidebar } from "./sidebar"
 import { SubagentBar } from "./subagent-bar.tsx"
 import { SubagentFooter } from "./subagent-footer.tsx"
+import { taskFollowUpLabel } from "./task-followup"
 import { LANGUAGE_EXTENSIONS } from "@/lsp/language"
 import parsers from "../../../../../../parsers-config.ts"
 import * as Clipboard from "../../util/clipboard"
@@ -1764,7 +1765,15 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
           )
         }}
       </For>
-      <Show when={props.parts.some((x) => x.type === "tool" && x.tool === "task")}>
+      <Show
+        when={props.parts.some(
+          (x) =>
+            x.type === "tool" &&
+            x.tool === "task" &&
+            (x.state.status === "pending" ||
+              typeof (x.state.input as { description?: unknown } | undefined)?.description === "string"),
+        )}
+      >
         <box paddingTop={1} paddingLeft={3}>
           <text fg={theme.text}>
             {childShortcut()}
@@ -2174,15 +2183,20 @@ function InlineTool(props: {
         </Match>
         <Match when={true}>
           <text paddingLeft={3} fg={fg()} attributes={denied() ? TextAttributes.STRIKETHROUGH : undefined}>
-            <Show fallback={<>~ {props.pending}</>} when={props.complete}>
-              <span style={{ fg: props.iconColor }}>{props.icon}</span> {props.children}
+            <Show
+              fallback={
+                <>
+                  <span style={{ fg: error() ? theme.error : undefined }}>{error() ? "✗" : "~"}</span> {props.pending}
+                </>
+              }
+              when={props.complete}
+            >
+              <span style={{ fg: error() ? theme.error : props.iconColor }}>{error() ? "✗" : props.icon}</span>{" "}
+              {props.children}
             </Show>
           </text>
         </Match>
       </Switch>
-      <Show when={error() && !denied()}>
-        <text fg={theme.error}>{error()}</text>
-      </Show>
     </box>
   )
 }
@@ -2220,6 +2234,9 @@ function BlockTool(props: {
         when={props.spinner}
         fallback={
           <text paddingLeft={3} fg={theme.textMuted}>
+            <Show when={error()}>
+              <span style={{ fg: theme.error }}>✗ </span>
+            </Show>
             {props.title}
           </text>
         }
@@ -2227,9 +2244,6 @@ function BlockTool(props: {
         <Spinner color={theme.textMuted}>{props.title.replace(/^# /, "")}</Spinner>
       </Show>
       {props.children}
-      <Show when={error()}>
-        <text fg={theme.error}>{error()}</text>
-      </Show>
     </box>
   )
 }
@@ -2441,8 +2455,10 @@ function Task(props: ToolProps<typeof TaskTool>) {
     return assistant - first
   })
 
+  const followUp = createMemo(() => taskFollowUpLabel(props.input.action))
+
   const content = createMemo(() => {
-    if (!props.input.description) return ""
+    if (!props.input.description) return followUp()
     const description =
       props.metadata.background === true ? `${props.input.description} (background)` : props.input.description
     let content = [`${Locale.titlecase(props.input.subagent_type ?? "General")} Task — ${description}`]
@@ -2471,7 +2487,7 @@ function Task(props: ToolProps<typeof TaskTool>) {
     <InlineTool
       icon="│"
       spinner={isRunning()}
-      complete={props.input.description}
+      complete={props.input.description || followUp()}
       pending="Delegating..."
       part={props.part}
       onClick={() => {

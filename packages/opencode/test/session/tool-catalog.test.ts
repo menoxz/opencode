@@ -152,4 +152,23 @@ describe("session tool hot-path catalog", () => {
     ] }
     expect(ToolCatalog.search(catalog, "write file", 2)[0]?.id).toBe("write")
   })
+
+  test("keeps a used tool resident after the activation TTL expires", () => {
+    const store = new ToolCatalog.ActivationStore(100)
+    store.activate("session", ["browser_snapshot"], 1_000)
+    store.promote("session", "browser_snapshot")
+    expect(store.get("session", 1_500)).toEqual(new Set(["browser_snapshot"]))
+  })
+
+  test("still expires activations the model never used", () => {
+    const store = new ToolCatalog.ActivationStore(100)
+    store.activate("session", ["mobile_mcp_page"], 1_000)
+    expect(store.get("session", 1_500)).toEqual(new Set())
+  })
+
+  test("promotes a tool only when it was dynamically activated", () => {
+    const store = new ToolCatalog.ActivationStore(100)
+    store.promote("session", "read")
+    expect(store.get("session")).toEqual(new Set())
+  })
 })

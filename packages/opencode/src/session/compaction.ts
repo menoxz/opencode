@@ -136,7 +136,7 @@ export function formatGoalContext(state: GoalState): string {
 }
 
 /** Status badge for TUI — always French labels. */
-export function formatGoalStatusBadge(state: GoalState): string {
+export function formatGoalStatusBadge(state: Pick<GoalState, "status">): string {
   const labels: Record<GoalState["status"], string> = {
     approved: "approuvé",
     draft: "brouillon",
@@ -144,6 +144,7 @@ export function formatGoalStatusBadge(state: GoalState): string {
     edited: "édité",
     pending_user: "en attente",
     completed: "terminé",
+    blocked: "bloqué",
   }
   return `[Goal: ${labels[state.status]}]`
 }

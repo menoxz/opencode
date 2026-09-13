@@ -16,7 +16,8 @@ export function isLeanAgent(agent: { name: string; lean?: boolean }) {
 }
 
 export function inspectBudget(input: { enabled: boolean; actionCount: number; requestedChars?: number }) {
-  if (!input.enabled) return { maxActions: 16, maxCharsPerResult: input.requestedChars ?? 8_000, totalChars: Number.POSITIVE_INFINITY }
+  if (!input.enabled && input.requestedChars !== undefined)
+    return { maxActions: 16, maxCharsPerResult: input.requestedChars, totalChars: Number.POSITIVE_INFINITY }
   const count = Math.max(1, input.actionCount)
   // The per-result default scales with the wave: a 2-action wave may read up
   // to the hard per-result cap, a 16-action wave gets 1k each. An explicit
@@ -38,10 +39,14 @@ export function isLeanTerminalTool(tool: string, input: Record<string, unknown> 
     return ["execute", "read", "stream_read"].includes(String(input.action))
   }
   if (normalized.endsWith("mcp-terminal_command_stream")) return ["start", "read"].includes(String(input.action))
-  return /(?:^|_)mcp-terminal_(?:command_run|command_chain|command_status|command_wait|terminal_read|ssh_run)$/.test(normalized)
+  return /(?:^|_)mcp-terminal_(?:command_run|command_chain|command_status|command_wait|terminal_read|ssh_run)$/.test(
+    normalized,
+  )
 }
 
-export function leanToolOutputBudget(tool: string): { maxChars: number; maxLines: number; direction: "head" | "tail" } | undefined {
+export function leanToolOutputBudget(
+  tool: string,
+): { maxChars: number; maxLines: number; direction: "head" | "tail" } | undefined {
   if (isLeanTerminalTool(tool)) {
     return { maxChars: LEAN_TERMINAL_MAX_CHARS, maxLines: LEAN_TERMINAL_MAX_LINES, direction: "tail" }
   }
@@ -71,16 +76,25 @@ function patchPaths(patchText: unknown) {
   return [...patchText.matchAll(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm)].map((match) => match[1].trim())
 }
 
-export function requiresMutationCause(
-  messages: readonly { parts?: readonly unknown[] }[],
-  current?: MutationTarget,
-) {
-  const prior = messages.flatMap((message) => (message.parts ?? []).flatMap((part) => {
-    if (!part || typeof part !== "object") return []
-    const value = part as { type?: string; tool?: string; state?: { status?: string; input?: Record<string, unknown> } }
-    if (value.type !== "tool" || !value.tool || !MUTATION_TOOLS.has(value.tool) || value.state?.status !== "completed") return []
-    return [{ tool: value.tool, input: value.state.input ?? {} }]
-  }))
+export function requiresMutationCause(messages: readonly { parts?: readonly unknown[] }[], current?: MutationTarget) {
+  const prior = messages.flatMap((message) =>
+    (message.parts ?? []).flatMap((part) => {
+      if (!part || typeof part !== "object") return []
+      const value = part as {
+        type?: string
+        tool?: string
+        state?: { status?: string; input?: Record<string, unknown> }
+      }
+      if (
+        value.type !== "tool" ||
+        !value.tool ||
+        !MUTATION_TOOLS.has(value.tool) ||
+        value.state?.status !== "completed"
+      )
+        return []
+      return [{ tool: value.tool, input: value.state.input ?? {} }]
+    }),
+  )
   if (!current) return prior.length > 0
   if (current.tool === "apply_patch") return prior.length > 0
   return prior.some((item) => {

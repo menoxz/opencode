@@ -1205,11 +1205,22 @@ export function Prompt(props: PromptProps) {
               id: PartID.ascending(),
               type: "text",
               text: inputText,
+              // While a run is active, hand this prompt to that run at its next
+              // step (answer + keep working) instead of queueing a fresh turn.
+              ...(status().type !== "idle" ? { metadata: { steer: true } } : {}),
             },
             ...nonTextParts.map(assign),
           ],
         })
-        .catch(() => {})
+        .then((result) => {
+          if (!result.error) return
+          console.log("Sending the prompt failed:", result.error)
+          toast.show({ message: "Sending the prompt failed. Open console for more details.", variant: "error" })
+        })
+        .catch((error) => {
+          console.log("Sending the prompt failed:", error)
+          toast.show({ message: "Sending the prompt failed. Open console for more details.", variant: "error" })
+        })
       if (editorParts.length > 0) editor.markSelectionSent()
     }
     history.append({

@@ -13,3 +13,4 @@ USAGE:
 1|Run agents concurrently when tasks independent. Batch tool calls in one message. Use background=true if parent has other work to do while child runs.
 2|Agent returns single msg (invisible to user). Send text msg summary to user. Output has task_id to resume same session.
 3|Fresh context unless task_id provided (resumes prior msgs/tools). Fresh: detailed prompt + specify exact info to return in final msg.
+4|Assign non-overlapping scopes and share existing evidence references. Do not repeat a child's audit in the parent while it runs; use the result and verify critical claims with targeted checks. Repeat broad research only for a specific gap, changed source or contradiction.

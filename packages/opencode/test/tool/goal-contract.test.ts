@@ -115,6 +115,84 @@ describe("tool.goal-contract", () => {
     }),
   )
 
+  it.instance("does not accept an unverified required DoD item as completion", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({ title: "strict closure" })
+      yield* sessions.setGoalState({
+        sessionID: session.id,
+        goalState: {
+          status: "draft",
+          source: "user",
+          goal: "Ship three lots",
+          dod: ["authentication implemented", "billing migration applied", "reporting endpoint shipped"],
+          outOfScope: [],
+          version: 1,
+          updatedAt: 1,
+        } as any,
+      })
+      const complete = yield* getTool("complete_objective")
+
+      // Unverified no longer counts as done: a required gap keeps the objective open.
+      const refused = (yield* complete.execute(
+        {
+          summary: "authentication done",
+          evidence: [{ dod: "authentication implemented", proof: "bun test auth.test.ts: 3 pass, exit 0" }],
+          unverified: [
+            { dod: "billing migration applied", reason: "not started yet" },
+            { dod: "reporting endpoint shipped", reason: "not started yet" },
+          ],
+        } as any,
+        mkContext(session.id),
+      )).metadata.result
+      expect(refused.status).toBe("error")
+      expect((yield* sessions.get(session.id)).goalState?.status).toBe("draft")
+
+      // A genuine external obstacle is recorded as blocked, not completed.
+      const blocked = (yield* complete.execute(
+        {
+          outcome: "blocked",
+          summary: "authentication done",
+          evidence: [{ dod: "authentication implemented", proof: "bun test auth.test.ts: 3 pass, exit 0" }],
+          unverified: [
+            { dod: "billing migration applied", reason: "third-party staging returns HTTP 503, ticket VENDOR-42 opened" },
+            { dod: "reporting endpoint shipped", reason: "third-party staging returns HTTP 503, ticket VENDOR-42 opened" },
+          ],
+        } as any,
+        mkContext(session.id),
+      )).metadata.result
+      expect(blocked.status).toBe("ok")
+      const stored = (yield* sessions.get(session.id)).goalState as any
+      expect(stored.status).toBe("blocked")
+      expect(stored.completion.unverified).toHaveLength(2)
+    }),
+  )
+
+  it.instance("refuses a blocked outcome without a declared external blocker", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({ title: "blocked needs a reason" })
+      yield* sessions.setGoalState({
+        sessionID: session.id,
+        goalState: {
+          status: "draft",
+          source: "user",
+          goal: "Ship the lot",
+          dod: ["lot implemented"],
+          outOfScope: [],
+          version: 1,
+          updatedAt: 1,
+        } as any,
+      })
+      const complete = yield* getTool("complete_objective")
+      const refused = (yield* complete.execute({ outcome: "blocked", evidence: [] } as any, mkContext(session.id))).metadata
+        .result
+      expect(refused.status).toBe("error")
+      expect(refused.warnings.join(" ")).toContain("No blocker declared")
+      expect((yield* sessions.get(session.id)).goalState?.status).toBe("draft")
+    }),
+  )
+
   it.instance("does not rewrite an unchanged goal contract", () =>
     Effect.gen(function* () {
       const sessions = yield* Session.Service

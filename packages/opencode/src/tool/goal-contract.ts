@@ -1,5 +1,6 @@
 import { Effect, Schema } from "effect"
 import { Session } from "@/session/session"
+import { BackgroundJob } from "@/background/job"
 import * as Tool from "./tool"
 import { mergeGoalFindings, type GoalFinding } from "@/session/goal-evidence"
 import {
@@ -456,6 +457,12 @@ const CompleteParameters = Schema.Struct({
     scope: Schema.optional(Schema.String),
     evidence: Schema.optional(Schema.Array(Schema.String)),
   }))).annotate({ description: "Stable findings. OPEN blocks completion; closure requires independent evidence." }),
+  outcome: Schema.optional(
+    Schema.Literals(["completed", "blocked"]).annotate({
+      description:
+        'Use "blocked" only when a required DoD item cannot be proven because of an external obstacle you cannot remove (missing credential or permission, unavailable service, third party). A locally fixable gap is not a blocker: keep working. Defaults to "completed".',
+    }),
+  ),
   unverified: Schema.optional(
     Schema.Array(
       Schema.Struct({
@@ -465,7 +472,7 @@ const CompleteParameters = Schema.Struct({
     ),
   ).annotate({
     description:
-      "DoD items you are explicitly NOT claiming to have verified. Completion is still allowed, but the gap is recorded and shown to the user.",
+      'Required DoD items you cannot prove. On a normal completion they keep the objective open; with outcome "blocked" they must each name the external obstacle, and the objective is recorded as blocked for the user.',
   }),
 })
 
@@ -509,6 +516,36 @@ export function evidenceGatedDodItems(items: readonly string[]) {
   return items.map((item) => item.trim()).filter((item) => item && item !== MINIMAL_DOD_ITEM && !isDeliveryOnlyDod(item))
 }
 
+/** For an implementation objective, a high-severity finding left `residual` is a
+ *  renamed unresolved defect, not completion: the model must close it with
+ *  evidence, mark it `out_of_scope` as an explicit scope decision, or record the
+ *  objective as `blocked` for an obstacle outside its control. Audits, plans and
+ *  plain answers are unaffected — documenting a defect can be their result. */
+export function blockingResidualFindings(
+  deliverable: string | undefined,
+  findings: readonly GoalFinding[],
+): GoalFinding[] {
+  if (deliverable !== "implementation") return []
+  return findings.filter(
+    (finding) => finding.status === "residual" && (finding.severity === "high" || finding.severity === "critical"),
+  )
+}
+
+/** Background jobs started by one session. A running one is unresolved work, so
+ *  the objective cannot be declared done until it finishes or is cancelled. */
+export function sessionRunningJobs(
+  jobs: readonly {
+    id: string
+    type: string
+    status: string
+    started_at: number
+    metadata?: Record<string, unknown>
+  }[],
+  sessionID: string,
+) {
+  return jobs.filter((job) => job.status === "running" && job.metadata?.parentSessionId === sessionID)
+}
+
 function lastUserMessageID(messages: Tool.Context["messages"]): string | undefined {
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i]
@@ -532,7 +569,7 @@ function completeToolDefinition() {
 
     return {
       description:
-        "Mark the current task objective as achieved. Requires evidence: one verifiable artifact per DoD item (command + exit code, test output, measured value, file path, observed behaviour). Completion is refused when a DoD item has no proof or the proof is a mere assertion of success. Items you cannot prove must be declared in `unverified` with a reason; they are then reported to the user.",
+        'Mark the current task objective as achieved, or record an external blocker with outcome "blocked". Requires evidence: one verifiable artifact per DoD item (command + exit code, test output, measured value, file path, observed behaviour). Completion is refused when a required DoD item has no proof: an unverified item no longer counts as done. A gap you can still fix is more work, not completion; use outcome "blocked" only for an obstacle outside your control and declare it in `unverified` with a reason.',
       parameters: CompleteParameters,
       execute: (params: Schema.Schema.Type<typeof CompleteParameters>, ctx: Tool.Context<Metadata>) =>
         Effect.gen(function* () {
@@ -561,6 +598,7 @@ function completeToolDefinition() {
           const dodItems = evidenceGatedDodItems(previous.dod ?? [])
           const evidence = (params.evidence ?? []).filter((item) => item.dod?.trim() && item.proof?.trim())
           const unverified = (params.unverified ?? []).filter((item) => item.dod?.trim() && item.reason?.trim())
+          const outcome = params.outcome ?? "completed"
           const now = Date.now()
           const incomingFindings: GoalFinding[] = (params.findings ?? []).map((item) => ({
             id: item.id, severity: item.severity, status: item.status, summary: item.summary, scope: item.scope,
@@ -590,6 +628,54 @@ function completeToolDefinition() {
             })
           }
 
+          // Async work started by this session must finish before the objective is
+          // declared done: a running background subagent is unresolved work, not a
+          // completed mission. `blocked` stays available for a stalled task.
+          const backgroundService = yield* Effect.serviceOption(BackgroundJob.Service)
+          const runningJobs = backgroundService._tag === "Some" ? yield* backgroundService.value.list() : []
+          const blockingJobs = sessionRunningJobs(runningJobs, ctx.sessionID)
+          if (outcome !== "blocked" && blockingJobs.length > 0) {
+            return responseResult({
+              status: "error",
+              action: "complete",
+              updatedFields: [],
+              warnings: [
+                "Completion refused: background work started by this session is still running.",
+                ...blockingJobs.map(
+                  (job) => `${job.id} (${job.type}) running since ${new Date(job.started_at).toISOString()}`,
+                ),
+                "Wait for it with the task tool (action=wait), collect its result, or cancel it before completing.",
+              ],
+              goalState: previous,
+            })
+          }
+
+          // An implementation objective is not done while a high-severity defect
+          // it surfaced is merely relabelled `residual`. Audits may legitimately
+          // end with documented defects, so the rule is scoped to implementation.
+          const blockingResidual = blockingResidualFindings(previous.deliverable, findings)
+          if (blockingResidual.length > 0) {
+            const pending = {
+              ...previous,
+              status: "edited" as const,
+              findings,
+              version: (previous.version ?? 0) + 1,
+              updatedAt: now,
+            }
+            yield* sessions.setGoalState({ sessionID: ctx.sessionID, goalState: pending })
+            return responseResult({
+              status: "error",
+              action: "complete",
+              updatedFields: ["findings"],
+              warnings: [
+                "Completion refused: an implementation objective cannot close with high-severity findings left residual.",
+                ...blockingResidual.map((finding) => `${finding.id}: ${finding.summary}`),
+                'Close them with evidence, mark them out_of_scope as an explicit scope decision, or use outcome "blocked" for an obstacle outside your control.',
+              ],
+              goalState: pending,
+            })
+          }
+
           if (previous.status === "completed") {
             const completed = findingsChanged
               ? { ...previous, findings, version: (previous.version ?? 0) + 1, updatedAt: now }
@@ -604,12 +690,31 @@ function completeToolDefinition() {
 
           if (dodItems.length > 0) {
             const weak = evidence.filter((item) => !proofIsSubstantive(item.proof))
-            const unproven = dodItems.filter(
-              (item) =>
-                !evidence.some((entry) => proofIsSubstantive(entry.proof) && matchesDodItem(entry.dod, item)) &&
-                !unverified.some((entry) => matchesDodItem(entry.dod, item)),
-            )
-            if (unproven.length > 0 || weak.length > 0) {
+            const provenByEvidence = (item: string) =>
+              evidence.some((entry) => proofIsSubstantive(entry.proof) && matchesDodItem(entry.dod, item))
+            const declaredGap = (item: string) => unverified.some((entry) => matchesDodItem(entry.dod, item))
+            const unproven = dodItems.filter((item) => !provenByEvidence(item))
+
+            if (outcome === "blocked") {
+              // A blocker is a claim too: each unproven item must name the external
+              // obstacle, otherwise "blocked" becomes the new silent success.
+              const undeclared = unproven.filter((item) => !declaredGap(item))
+              const shallow = unverified.filter((entry) => entry.reason.trim().length < 12)
+              if (undeclared.length > 0 || shallow.length > 0) {
+                return responseResult({
+                  status: "error",
+                  action: "complete",
+                  updatedFields: [],
+                  warnings: [
+                    "Blocked outcome refused: every unproven DoD item needs a declared external blocker.",
+                    ...undeclared.map((item) => `No blocker declared for DoD item: ${item}`),
+                    ...shallow.map((entry) => `Blocker reason too vague for: ${entry.dod}`),
+                    "Pass `unverified: [{ dod, reason }]` naming the obstacle and why it is outside your control, or keep working.",
+                  ],
+                  goalState: previous ?? undefined,
+                })
+              }
+            } else if (unproven.length > 0 || weak.length > 0) {
               return responseResult({
                 status: "error",
                 action: "complete",
@@ -618,7 +723,8 @@ function completeToolDefinition() {
                   "Completion refused: the DoD is not backed by verifiable evidence.",
                   ...unproven.map((item) => `No proof for DoD item: ${item}`),
                   ...weak.map((item) => `Proof is an assertion, not an artifact, for: ${item.dod} → "${item.proof}"`),
-                  "Provide `evidence: [{ dod, proof }]` where each proof is re-observable (command + exit code, test output, measured value, file path and content). Declare what you truly cannot prove in `unverified: [{ dod, reason }]`.",
+                  "Provide `evidence: [{ dod, proof }]` where each proof is re-observable (command + exit code, test output, measured value, file path and content).",
+                  'A required item you cannot prove is more work, not completion. Only for a genuine external obstacle, call again with `outcome: "blocked"` and a reasoned `unverified` entry.',
                 ],
                 goalState: previous ?? undefined,
               })
@@ -627,7 +733,7 @@ function completeToolDefinition() {
 
           const next = {
             ...previous,
-            status: "completed" as const,
+            status: outcome === "blocked" ? ("blocked" as const) : ("completed" as const),
             anchorUserID: lastUserMessageID(ctx.messages),
             findings,
             completion: {
@@ -643,7 +749,7 @@ function completeToolDefinition() {
 
           const summaryLine = params.summary?.trim() ? `\nWhat was done: ${params.summary.trim()}` : ""
           const evidenceLines = evidence.map((item) => `  - ${item.dod} → ${item.proof}`)
-          const gapLines = unverified.map((item) => `  - NOT VERIFIED: ${item.dod} → ${item.reason}`)
+          const blockerLines = unverified.map((item) => `  - BLOCKED: ${item.dod} → ${item.reason}`)
           return responseWithOutput(
             {
               status: "ok",
@@ -653,11 +759,15 @@ function completeToolDefinition() {
               goalState: next,
             },
             [
-              "Objective marked as completed (evidence-gated).",
+              outcome === "blocked"
+                ? "Objective marked as BLOCKED (external obstacle recorded)."
+                : "Objective marked as completed (evidence-gated).",
               `Objective: ${previous.goal}${summaryLine}`,
               ...(evidenceLines.length > 0 ? ["Evidence:", ...evidenceLines] : []),
-              ...(gapLines.length > 0 ? ["Gaps:", ...gapLines] : []),
-              "Await the user's next objective.",
+              ...(blockerLines.length > 0 ? ["Blockers:", ...blockerLines] : []),
+              outcome === "blocked"
+                ? "Report the blocker and await the user's next objective."
+                : "Await the user's next objective.",
             ].join("\n"),
           )
         }),

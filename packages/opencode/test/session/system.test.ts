@@ -60,6 +60,7 @@ const it = testEffect(
           dirs: () => Effect.succeed([]),
           available: () => Effect.succeed(skills),
           reload: () => Effect.succeed(0),
+          revision: () => Effect.succeed(0),
         }),
       ),
     ),

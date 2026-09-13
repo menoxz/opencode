@@ -265,3 +265,33 @@ describe("boundToRun", () => {
     expect(ids).toEqual(["msg0001", "msg0101"])
   })
 })
+
+const steer = (): MessageV2.Part =>
+  ({ id: PartID.ascending("prt-s"), type: "text", text: "x", metadata: { steer: true } }) as unknown as MessageV2.Part
+
+describe("steering messages", () => {
+  test("are visible to the active run even when newer than the anchor", () => {
+    const msgs = [user("msg0001"), user("msg0002", [steer()])]
+    const view = PromptQueue.boundToRun(msgs, MessageID.ascending("msg0001"))
+    expect(view.map((m) => m.info.id as string)).toContain("msg0002")
+  })
+
+  test("do not open a second turn once an assistant answered after them", () => {
+    const msgs = [
+      user("msg0001"),
+      assistant("msg0101", "msg0001", { finish: "stop" }),
+      user("msg0002", [steer()]),
+      assistant("msg0102", "msg0001", { finish: "tool-calls" }),
+    ]
+    expect(PromptQueue.pendingUserID(msgs)).toBeUndefined()
+  })
+
+  test("fall back to a pending turn when the run settled before serving them", () => {
+    const msgs = [
+      user("msg0001"),
+      assistant("msg0002", "msg0001", { finish: "stop" }),
+      user("msg0003", [steer()]),
+    ]
+    expect(PromptQueue.pendingUserID(msgs)).toBe(MessageID.ascending("msg0003"))
+  })
+})

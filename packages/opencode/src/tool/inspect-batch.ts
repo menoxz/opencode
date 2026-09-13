@@ -49,7 +49,8 @@ export const Parameters = Schema.Struct({
   }),
   maxConcurrency: Schema.optional(FlexiblePositiveInt).annotate({ description: "Concurrency cap, clamped to 1..8" }),
   maxCharsPerResult: Schema.optional(FlexiblePositiveInt).annotate({
-    description: "Per-action output cap, clamped to 1000..20000 characters",
+    description:
+      "Per-action cap; default min(4000, 16000/action count). Explicit 1000..20000, further bounded by Lean policy when enabled.",
   }),
 })
 
@@ -113,7 +114,8 @@ export function validateInspectActions(actions: readonly InspectAction[]): strin
 
 function inspectActionKey(action: InspectAction) {
   const dependsOn = [...(action.dependsOn ?? [])].sort()
-  if (action.type === "read") return JSON.stringify([action.type, action.filePath, action.offset ?? null, action.limit ?? null, dependsOn])
+  if (action.type === "read")
+    return JSON.stringify([action.type, action.filePath, action.offset ?? null, action.limit ?? null, dependsOn])
   if (action.type === "glob") return JSON.stringify([action.type, action.pattern, action.path ?? null, dependsOn])
   return JSON.stringify([action.type, action.pattern, action.path ?? null, action.include ?? null, dependsOn])
 }
@@ -131,7 +133,7 @@ export function deduplicateInspectActions(actions: readonly InspectAction[]) {
       unique.push(action)
     }
   }
-  const resolve = (id: string): string => aliases.has(id) ? resolve(aliases.get(id)!) : id
+  const resolve = (id: string): string => (aliases.has(id) ? resolve(aliases.get(id)!) : id)
   return {
     actions: unique.map((action) => ({
       ...action,
@@ -169,6 +171,25 @@ export type ActionResult = {
   output?: string
   error?: string
   truncated?: boolean
+  aliasOf?: string
+}
+
+export function orderedInspectResults(
+  actions: readonly InspectAction[],
+  aliases: ReadonlyMap<string, string>,
+  results: ReadonlyMap<string, ActionResult>,
+) {
+  return actions.map((action) => {
+    const primary = aliases.get(action.id) ?? action.id
+    const result = results.get(primary)!
+    if (primary === action.id) return result
+    return {
+      ...result,
+      id: action.id,
+      aliasOf: primary,
+      ...(result.output === undefined ? {} : { output: `Same inspection as ${primary}; use that result.` }),
+    }
+  })
 }
 
 const OFFSET_OUT_OF_RANGE = /Offset (\d+) is out of range for this file \((\d+) lines\)/
@@ -190,6 +211,13 @@ export function inspectDependencySatisfied(result: ActionResult | undefined) {
   return result?.status === "success" || result?.status === "empty"
 }
 
+function inspectionExcerpt(output: string, maxChars: number) {
+  const marker = "\n... [inspect_batch result truncated]"
+  const end = Math.max(0, maxChars - marker.length)
+  const highSurrogate = end > 0 && /[\uD800-\uDBFF]/.test(output[end - 1])
+  return output.slice(0, highSurrogate ? end - 1 : end) + marker.slice(0, maxChars)
+}
+
 export function localizeInspectAction<E, R>(
   action: InspectAction,
   run: () => Effect.Effect<{ title: string; output: string }, E, R>,
@@ -200,13 +228,18 @@ export function localizeInspectAction<E, R>(
     Effect.matchCause({
       onFailure: (cause): ActionResult => {
         const error = Cause.squash(cause)
-        return emptyReadResult(action, error) ?? { id: action.id, type: action.type, status: "error", error: String(error) }
+        return (
+          emptyReadResult(action, error) ?? { id: action.id, type: action.type, status: "error", error: String(error) }
+        )
       },
       onSuccess: (result): ActionResult => {
         const truncated = result.output.length > maxChars
         return {
-          id: action.id, type: action.type, status: "success", title: result.title,
-          output: truncated ? result.output.slice(0, maxChars) + "\n... [inspect_batch result truncated]" : result.output,
+          id: action.id,
+          type: action.type,
+          status: "success",
+          title: result.title,
+          output: truncated ? inspectionExcerpt(result.output, maxChars) : result.output,
           truncated,
         }
       },
@@ -230,14 +263,20 @@ export const InspectBatchTool = Tool.define(
         "Run a bounded read-only inspection DAG in one tool call.",
         "Supports read, glob and grep only; at most 16 actions; dependencies must be explicit.",
         "Permissions are checked per action, errors stay local, and outputs are capped with provenance.",
+        "Group already-known independent inspections to avoid extra model turns; use exact paths, grep include and read offset/limit. Follow truncated results with only the missing relevant range. Duplicate actions reference their primary result rather than repeating content.",
       ].join(" "),
       parameters: Parameters,
       execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context) =>
         Effect.gen(function* () {
           const actions = [...params.actions]
-          const budget = inspectBudget({ enabled: flags.experimentalLeanOutputBudget, actionCount: actions.length, requestedChars: params.maxCharsPerResult })
+          const budget = inspectBudget({
+            enabled: flags.experimentalLeanOutputBudget,
+            actionCount: actions.length,
+            requestedChars: params.maxCharsPerResult,
+          })
           const errors = validateInspectActions(actions)
-          if (actions.length > budget.maxActions) errors.push(`Lean inspection waves allow at most ${budget.maxActions} actions (received ${actions.length})`)
+          if (actions.length > budget.maxActions)
+            errors.push(`Lean inspection waves allow at most ${budget.maxActions} actions (received ${actions.length})`)
           if (errors.length > 0) throw new Error(errors.join("\n"))
           const deduped = deduplicateInspectActions(actions)
           const rounds = planInspectRounds(deduped.actions)
@@ -258,24 +297,27 @@ export const InspectBatchTool = Tool.define(
                     error: `Dependency ${blocked} did not complete successfully`,
                   })
                 }
-                return localizeInspectAction(action, () => {
-                  if (action.type === "read") {
-                    return read.execute({ filePath: action.filePath, offset: action.offset, limit: action.limit }, ctx)
-                  }
-                  if (action.type === "glob") return glob.execute({ pattern: action.pattern, path: action.path }, ctx)
-                  return grep.execute({ pattern: action.pattern, path: action.path, include: action.include }, ctx)
-                }, maxChars)
+                return localizeInspectAction(
+                  action,
+                  () => {
+                    if (action.type === "read") {
+                      return read.execute(
+                        { filePath: action.filePath, offset: action.offset, limit: action.limit },
+                        ctx,
+                      )
+                    }
+                    if (action.type === "glob") return glob.execute({ pattern: action.pattern, path: action.path }, ctx)
+                    return grep.execute({ pattern: action.pattern, path: action.path, include: action.include }, ctx)
+                  },
+                  maxChars,
+                )
               },
               { concurrency },
             )
             for (const result of completed) results.set(result.id, result)
           }
 
-          const ordered = actions.map((action) => {
-            const primary = deduped.aliases.get(action.id) ?? action.id
-            const result = results.get(primary)!
-            return primary === action.id ? result : { ...result, id: action.id }
-          })
+          const ordered = orderedInspectResults(actions, deduped.aliases, results)
           const failed = ordered.filter((result) => result.status === "error").length
           const empty = ordered.filter((result) => result.status === "empty").length
           const skipped = ordered.filter((result) => result.status === "skipped").length
@@ -291,7 +333,7 @@ export const InspectBatchTool = Tool.define(
               readOnly: true,
               deduplicated: deduped.aliases.size,
             },
-            output: JSON.stringify({ readOnly: true, rounds: rounds.length, results: ordered }, null, 2),
+            output: JSON.stringify({ readOnly: true, rounds: rounds.length, results: ordered }),
           }
         }),
     }

@@ -19,6 +19,9 @@ import { Skill } from "@/skill"
 import { Agent } from "@/agent/agent"
 import { BackgroundJob } from "@/background/job"
 import { Session } from "@/session/session"
+import { resetEnvironment } from "@/session/environment"
+import { progressFor, resetProgress } from "@/session/progress"
+import { resetRecipes } from "@/session/recipes"
 import { SessionStatus } from "@/session/status"
 import { Provider } from "@/provider/provider"
 import { Git } from "@/git"
@@ -40,19 +43,22 @@ import { Orchestrator } from "@/orchestrator"
 import { MCP } from "@/mcp"
 
 const node = CrossSpawnSpawner.defaultLayer
-const configLayer = TestConfig.layer({
-  directories: () => InstanceState.directory.pipe(Effect.map((dir) => [path.join(dir, ".opencode")])),
-})
+const configLayer = (overrides: Parameters<typeof TestConfig.layer>[0] = {}) =>
+  TestConfig.layer({
+    directories: () => InstanceState.directory.pipe(Effect.map((dir) => [path.join(dir, ".opencode")])),
+    ...overrides,
+  })
 
 type RegistryLayerOptions = {
   flags?: Partial<RuntimeFlags.Info>
   plugin?: Layer.Layer<Plugin.Service>
+  config?: Parameters<typeof TestConfig.layer>[0]
 }
 
 const registryLayer = (opts: RegistryLayerOptions = {}) =>
   ToolRegistry.layer
     .pipe(
-      Layer.provide(configLayer),
+      Layer.provide(configLayer(opts.config)),
       Layer.provide(opts.plugin ?? Plugin.defaultLayer),
       Layer.provide(Question.defaultLayer),
       Layer.provide(Todo.defaultLayer),
@@ -122,6 +128,15 @@ const withInspectBatch = testEffect(
     Agent.defaultLayer,
   ) as unknown as Layer.Layer<never, never>,
 )
+const withEnvironmentState = testEffect(
+  Layer.mergeAll(
+    registryLayer({
+      config: { get: () => Effect.succeed({ experimental: { hot_path: { environment_state: true } } }) },
+    }),
+    node,
+    Agent.defaultLayer,
+  ) as unknown as Layer.Layer<never, never>,
+)
 const withProtocolDedupe = testEffect(
   Layer.mergeAll(
     registryLayer({ flags: { experimentalLeanProtocolDedupe: true } as Partial<RuntimeFlags.Info> }),
@@ -179,6 +194,79 @@ describe("tool.registry", () => {
     Effect.gen(function* () {
       const ids = yield* (yield* ToolRegistry.Service).ids()
       expect(ids).toContain("inspect_batch")
+    }),
+  )
+
+  withEnvironmentState.instance("exposes the environment tool and a non-empty capsule when the gate is on", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const ids = yield* registry.ids()
+      expect(ids).toContain("environment")
+
+      const agents = yield* Agent.Service
+      const build = yield* agents.get("build")
+      const sessionID = SessionID.make("ses_environment_gate")
+      const environment = (yield* registry.tools({
+        providerID: ProviderID.opencode,
+        modelID: ModelID.make("test"),
+        agent: build,
+      })).find((tool) => tool.id === "environment")
+      if (!environment) throw new Error("environment tool not found")
+
+      const context = {
+        sessionID,
+        messageID: MessageID.ascending(),
+        agent: build.name,
+        abort: new AbortController().signal,
+        messages: [],
+        metadata: () => Effect.void,
+        ask: () => Effect.void,
+      } satisfies Tool.Context
+
+      yield* environment.execute(
+        { action: "observe", scope: "tab:cart", summary: "cart page with 3 items", truth: "observed" },
+        context,
+      )
+      const state = yield* environment.execute({ action: "state" }, context)
+      expect(state.output).toContain("<environment_state>")
+      expect(state.output).toContain("cart page with 3 items")
+
+      progressFor(sessionID).observe({
+        name: "browser_use",
+        args: { url: "https://shop.test/cart" },
+        scope: "tab:cart",
+        truth: "observed",
+        summary: "cart page with 3 items",
+        at: Date.now(),
+      })
+      const withProgress = yield* environment.execute({ action: "state" }, context)
+      expect(withProgress.output).toContain("<progress_state>")
+
+      yield* environment.execute(
+        {
+          action: "recipe_save",
+          title: "Export June sales",
+          objective: "export the June sales report",
+          adapter: "browser",
+          steps: ["open Reports", "select June", "click Export"],
+          verify: "file exists and covers June",
+        },
+        context,
+      )
+      const withRecipe = yield* environment.execute({ action: "state" }, context)
+      expect(withRecipe.output).toContain("<recipes>")
+      expect(withRecipe.output).toContain("Export June sales")
+
+      resetEnvironment(sessionID)
+      resetProgress(sessionID)
+      resetRecipes(sessionID)
+    }),
+  )
+
+  it.instance("hides the environment tool by default", () =>
+    Effect.gen(function* () {
+      const ids = yield* (yield* ToolRegistry.Service).ids()
+      expect(ids).not.toContain("environment")
     }),
   )
 

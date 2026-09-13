@@ -5,6 +5,101 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v2.2.3] - 2026-09-13
+
+### Added
+- **Fiabilisation de `tool_search`** (`session/tool-catalog.ts`, `session/tools.ts`, `mcp/index.ts`) : la récupération d'outil passe par un ordre de correspondance explicite (`exact_id` > `normalized_id` > `id_token` > `lexical`), un `resolveExact` déterministe (id exact puis normalisé `[\s_-]+`/casse, ambiguïté signalée) et un mode `browse` paginé par id stable, filtrable par `source`/`server` (métadonnées `PreparedTool.source/server`, `MCP.sanitize` exporté).
+- **`tool_search` à trois modes** (`search`/`browse`/`activate`) avec états structurés (`already_available`, `reserved`, `capacity_exceeded`, `not_available`, `ambiguous`) et capacité réelle (`max`/`mandatory`/`dynamic`). Les réservations sont plafonnées aux emplacements dynamiques effectivement exposables par la sélection suivante.
+
+### Fixed
+- Un identifiant exact contenant `_` (ex. `browser_snapshot`) n'est plus manqué : la normalisation était asymétrique (le `_` n'était réécrit que dans l'index, pas dans la requête). Le classement est désormais indépendant de l'ordre d'enregistrement du catalogue.
+- `tool_search` ne sur-promet plus l'exposition : au-delà du budget dynamique réel, la réponse est `capacity_exceeded` au lieu d'un `reserved` voué à être évincé.
+
+### Tests
+- `test/session/tool-catalog-reliability.test.ts` : id exact `_`, `write` vs `write_file` (ordre du catalogue), ambiguïté normalisée, pagination/filtres `browse`.
+- `test/session/tool-search-benchmark.test.ts` + `script/bench-tool-search.ts` : identity 8/8, lexical 10/10, plafond paraphrase mesuré.
+- Suites impactées : 48 pass / 0 fail (catalogue + fournisseur + allowlist + lean policy), 3 pass MCP, `bun typecheck` = 0.
+- Documentation : `docs/tool-search-reliability.md`.
+
+## [v2.2.2] - 2026-09-12
+
+### Fixed
+- **Lot 6 inclus dans le binaire** : `formatGoalStatusBadge` accepte désormais `Pick<GoalState, "status">` et le test `src/session/goal-status-badge.test.ts` (les 7 états d'objectif, libellés distincts) est livré. Le binaire 2.2.1 avait été construit avant ce changement ; ce build réaligne source et artefact déployé.
+
+## [v2.2.1] - 2026-09-12
+
+### Fixed
+- **Clôture pendant un travail asynchrone** (`tool/goal-contract.ts`, lot 5) : `complete_objective` refuse désormais de clôturer tant qu'un job `BackgroundJob` **démarré par cette session** est `running` (filtre `sessionRunningJobs` sur `metadata.parentSessionId`). Un sous-agent en arrière-plan est du travail non résolu, pas une mission terminée : il faut l'attendre (`task action=wait`), collecter son résultat ou l'annuler — ou déclarer `outcome: "blocked"` pour une tâche réellement bloquée. `BackgroundJob` est résolu via `Effect.serviceOption` afin de rester inerte dans les contextes (tests) qui ne le fournissent pas.
+- Tests : `src/tool/goal-residual.test.ts` couvre la propriété du job (session étrangère, job fini, job sans métadonnées).
+
+## [v2.2.0] - 2026-09-12
+
+### Added
+- **Contrôleur de fin de mission (lots 1–4 du plan)** :
+  - `session/tools.ts` — `edit_objective` et `complete_objective` sont désormais **épinglés dans le noyau** dès qu'un objectif est actif, donc accessibles même quand `tool_search` ne trouve rien ou que le plafond d'outils est saturé. C'était la cause racine observée : le modèle ne pouvait clôturer qu'en prose (« complete_objective n'est pas exposé »), ce qui produisait des réponses finales répétées.
+  - `session/goal-state.ts` — nouveau champ `deliverable` (`answer | audit | plan | implementation`) inféré par `inferDeliverable()` (verbes d'action vs plan vs audit), pour adapter les règles de clôture à la nature de la mission.
+  - `tool/goal-contract.ts` — `blockingResidualFindings()` : pour un objectif `implementation`, un constat `high`/`critical` laissé `residual` **refuse la clôture** (il doit être fermé avec preuve, passé `out_of_scope` par décision explicite, ou l'objectif déclaré `blocked`). Les audits, plans et réponses restent libres de documenter un défaut, conformément au besoin métier.
+
+### Tests
+- `src/session/tools-allowlist.test.ts` : pinning des outils de cycle de vie + plafond.
+- `src/session/goal-deliverable.test.ts` : inférence de livrable (FR/EN).
+- `src/tool/goal-residual.test.ts` : règle residual (bloque en implémentation, jamais en audit/plan/réponse).
+- Suites affectées : typecheck 0 ; les 3 échecs `create_objectif`/`edit_objectif` de `goal-contract` sont la baseline préexistante, inchangée.
+
+## [v2.1.0] - 2026-09-12
+
+### Added
+- **Redémarrage des serveurs MCP distants** (`config/mcp.ts`, `mcp/index.ts`, `daemon/mcp-control.ts`) : un serveur `type: "remote"` peut déclarer une commande `restart` (tableau de chaînes). OpenCode ne lance pas les serveurs distants ; lorsque la configuration effective d'un serveur change, lors d'un `mcp_reload` forcé, ou via l'action `restart` de `mcp-control`, la commande est exécutée (spawn détaché du scope Effect, attente bornée à 30 s) avant la reconnexion. Une commande lente n'est jamais tuée : l'autoreconnect reprend le relais. L'action `restart` de `mcp-control` exécute désormais la commande au lieu d'un simple disconnect/connect.
+
+### Fixed
+- **Hot reload des skills** (`skill/index.ts`, `session/system.ts`, `session/prompt.ts`) : le watcher ne surveillait que le dossier de configuration global. Il couvre désormais toutes les racines de découverte — dossiers de configuration (projet/global/`OPENCODE_CONFIG_DIR`), `.claude`/`.agents` global et remontée projet, et `skills.paths` — avec debounce 300 ms, rechargement complet sur `filename` nul (débordement Windows) et fermeture des watchers au teardown de la couche. Une édition de même longueur n'est plus servie depuis un cache obsolète : le cache de classement est clé par hash du contenu, et le compteur `revision()` incrémenté à chaque reload invalide le cache d'injection du prompt pendant l'exécution.
+- Tests : `test/skill/skill.test.ts` (révision + relecture de contenu) et `test/mcp/lifecycle.test.ts` (commande de redémarrage distante sur `restart` et sur reload forcé).
+
+## [v2.0.1] - 2026-09-12
+
+### Changed
+- **TUI — erreurs d'outils masquées** : les erreurs d'exécution d'outils (arguments invalides, appel répété bloqué, échec de schéma…) ne sont plus imprimées dans la conversation. Un appel d'outil échoué est seulement marqué d'une croix rouge `✗` — sur la ligne inline (`InlineTool`), sur le titre du bloc (`BlockTool`) et par action dans l'arbre `inspect_batch` — sans exposer le texte destiné à l'agent. Les refus de permission conservent leur barré.
+
+## [v2.0.0] - 2026-09-12
+
+### Added
+- **Mission continuity** (`session/turn-intent.ts`, `ensureGoalState`): a turn is now classified as `continuation`, `intervention` (steering) or `new_topic`. An active mission survives lots — a continuation ("ok", "lot 2", "étape suivante", "poursuis") or a steering message re-anchors the objective to the current turn instead of leaving it bound to an older message id, which is exactly what silently disabled auto-continue between lots. Only a substantial new prompt starts a new objective; a terminal objective (completed/skipped/blocked) is still never resurrected by a short reply. Classification is accent- and case-insensitive.
+- **Unified stop decision** (`session/continuation.ts` `decideRunDecision`, wired in `session/prompt.ts`): the loop no longer decides to stop from the objective alone. One pure function crosses the objective state, the session todo list, pending tool calls, the step limit and the autocontinue gate, and returns `continue` / `wait` / `stop` with a named reason (`open-objective`, `pending-todos`, `objective-complete`, `objective-blocked`, `awaiting-user`, `mission-skipped`, `no-objective`, `idle-budget`, `step-limit`, `autocontinue-disabled`). Open todos can now keep an autonomous run alive even without a formal contract, and every exit is logged with its reason instead of a bare `exiting loop`.
+- **Strict closure** (`tool/goal-contract.ts`): `complete_objective` now takes an `outcome` (`completed` default, or `blocked`). An `unverified` required DoD item no longer counts as done — it keeps the objective open, so a locally fixable gap is more work, not a silent success. A genuine external obstacle is recorded through `outcome: "blocked"`, which requires a reasoned blocker per unproven item and sets the new terminal `blocked` status (badge "bloqué"); a vague or undeclared blocker is refused. The goal reminder and the tool descriptions state the same rule.
+- Tests: `session/turn-intent.test.ts` and the new `decideRunDecision` cases in `session/continuation.test.ts`; strict-closure and blocked tests in `test/tool/goal-contract.test.ts`; two end-to-end autonomy tests in `test/session/prompt.test.ts` (a mission kept alive across lots, and an immediate stop on a completed objective). The generated JS SDK was regenerated so the `GoalState` union includes `blocked`.
+
+## [v1.19.30] - 2026-09-12
+
+### Lot 1 — Observation d'environnement
+- A per-session **environment observation ledger** (`session/environment.ts`) normalizes what the tools actually saw instead of asking the model to remember it. Every MCP result is recorded with its source, inferred scope (explicit `scope`/`url`/`window`/`tab`/`app` argument, otherwise the tool name), timestamp, attachment count and truth: `observed` for a payload, `error` for a clean MCP `isError`, and `unknown` for a thrown/disconnected call whose action may or may not have happened. Wired into the MCP path in `session/tools.ts`.
+- New `environment` native tool: `state` returns the compact current state, `observe` records a structured observation derived from a screenshot or tool result, and `anchor` checks whether an earlier observation id is still current before acting on it. This covers the case where an MCP result is only an image.
+- **Superseding and anchoring**: a newer observation of the same scope invalidates the older ones, so acting from a stale screen is detectable. The capsule marks old state `STALE` and reports `last action → truth`.
+- A compact `<environment_state>` capsule is injected into the prompt, so a weak model never has to reconstruct where it is, what is fresh, or what is still unknown. Non-environment MCP calls (memory, search) are recorded but excluded from the capsule, while anomalies (`error`/`unknown`) always surface. The capsule is bounded by scope count and character budget.
+- Gated by `experimental.hot_path.environment_state` (native tool + lean-core exposure) and `agent.environment_state` (capsule injection), default off, so existing behaviour and the shipped `max_tools` cap are unchanged. Unit tests live in `session/environment.test.ts`.
+
+### Lot 2 — Contrôleur de progression
+- New `session/progress.ts` controller: an expectation can be declared before an action (`expect`), the outcome after it is classified (`expected` / `progress` / `different` / `no-progress` / `failed` / `unknown`), an anti-repetition guard warns then blocks, recovery is bounded, and stagnation is counted. Deterministic bookkeeping stays in the harness; planning stays with the model.
+- Wired into the MCP path in `session/tools.ts`: before each environment-relevant call the guard runs (`warn` on a repeat, `block` after `MAX_IDENTICAL_REPEATS` repeats with no progress), and after it the verdict is recorded from the normalized observation. A thrown call is recorded as `unknown`, so the next identical retry is warned instead of silently doubling the effect.
+- Exposed to the model: `<progress_state>` is injected into the prompt and returned by the `environment` tool `state` action, alongside the Lot 1 capsule. The tool gains an `expect` action and now reports both states.
+- Unit tests in `session/progress.test.ts`; end-to-end coverage in `test/tool/registry.test.ts` proves the `environment` tool is registered only when the gate is on, is absent by default, and returns a non-empty capsule after a normalized observation.
+
+### Lot 3 — Adaptateurs et recettes
+- New `session/adapters.ts`: explicit descriptors classify an environment call as `browser`, `desktop`, `mobile` or `generic`, replacing the Lot 1 single-regex heuristic. Built-ins cover the servers actually in use (`browser_*` / `web_browser_*` / `chrome-devtools`, Windows-MCP PascalCase plus `dump_ui` / `list_windows` / `press_key`, `mobile_*` / Android / iOS / Appium), and configuration can register overrides ahead of them. Each adapter exposes its own target keys (`url`, `window`, `device`), so scope inference is adapter-aware; observations carry their adapter kind and the capsule shows it.
+- New `session/recipes.ts`: reusable recipes (objective, preconditions, steps, verification) with a `draft` / `validated` / `failed` verdict. A recipe is validated only after an observed success and is invalidated by a failure, so a broken path is not replayed. Matching selects the best recipe for the current objective, preferring the active adapter and validated recipes.
+- Exposed through the existing gate: the `environment` tool gains `recipes`, `recipe_save` and `recipe_validate` actions, and its `state` now returns the environment, progress and recipe capsules. The prompt injects the recipe matched to the anchored objective and the most recent adapter.
+- Unit tests in `session/adapters.test.ts` and `session/recipes.test.ts`; the end-to-end registry test also proves recipe exposure.
+
+## [v1.19.29] - 2026-09-12
+
+### Added
+- The session run keeps working after a text-only assistant stop while its anchored objective is still open, instead of treating every reply as the end of the task. Enabled by `agent.autocontinue` (defaults to the lean profile) and bounded to 4 consecutive text-only stops without a tool call, so it cannot loop forever.
+- A prompt submitted while a run is already active is delivered to that run at its next step (the TUI marks it `steer`), so the agent can answer the intervention and then resume its task without a new prompt. If the active run settled before consuming it, it falls back to a normal queued turn instead of being lost.
+
+### Fixed
+- Delegated subagent follow-ups (`task` action `check`/`wait`/`cancel`) carried no description and rendered as `~ Delegating...` or a bare spinner. They now get explicit labels ("Waiting for/Checking/Stopping subagent"), and the per-message "view subagents" hint is only shown for an actual launch instead of being repeated after every poll.
+- `MemoryStore.search` crashed with SQLite `Expression tree is too large (maximum depth 1000)` on long prompts: it built one `LIKE` per word in a flat `OR` chain. Conditions are now deduplicated and folded into a balanced tree (depth O(log n)).
+- A failed prompt submission was swallowed by `.catch(() => {})`, making a large or rejected prompt look like it silently "did not start". The error is now logged and surfaced in a toast.
+
 ## [v1.19.28] - 2026-09-11
 
 ### Fixed

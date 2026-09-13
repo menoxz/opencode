@@ -343,6 +343,10 @@ export const Info = Schema.Struct({
           always_tools: Schema.optional(Schema.mutable(Schema.Array(Schema.String))),
           lean_dynamic_tools: Schema.optional(Schema.Literals(["off", "shadow", "enforce"])),
           activation_ttl_ms: Schema.optional(PositiveInt),
+          environment_state: Schema.optional(Schema.Boolean).annotate({
+            description:
+              "Expose the normalized environment observation ledger for computer-use tasks: an `environment` tool plus a compact state capsule injected into the prompt. Default: false.",
+          }),
         }),
       ).annotate({
         description: "Hot Path Fabric controls for prepared tool catalogs and just-in-time tool selection.",

@@ -102,6 +102,8 @@ export interface Interface {
   readonly dirs: () => Effect.Effect<string[]>
   readonly available: (agent?: Agent.Info) => Effect.Effect<Info[]>
   readonly reload: () => Effect.Effect<number>
+  /** Monotonic counter bumped on every reload, used to invalidate downstream caches. */
+  readonly revision: () => Effect.Effect<number>
 }
 
 const add = Effect.fnUntraced(function* (state: State, match: string, bus: Bus.Interface) {
@@ -286,17 +288,20 @@ export const layer = Layer.effect(
     )
 
     // --- Hot-reload file watcher ---
-    // Uses a single fs.watch on ~/.config/opencodev2/ to detect SKILL.md changes.
-    // On Windows, fs.watch may fire with filename=null on buffer overflow — we
-    // treat that as a signal to reload everything.
+    // Watches every skill discovery root (config dirs, project/global .claude and
+    // .agents, configured skills.paths), not just the global config directory:
+    // discovery already scanned those, so watching only ~/.config/opencodev2 left
+    // project/external skills silently stale. Events are debounced, and a null
+    // filename (Windows buffer overflow) reloads everything.
     let _started = false
-    let _watcher: fs.FSWatcher | null = null
+    let _watchers: fs.FSWatcher[] = []
     const _timers = new Map<string, ReturnType<typeof setTimeout>>()
     const DEBOUNCE_MS = 300
+    let _revision = 0
 
     const setupWatchers = Effect.fnUntraced(function* () {
-      // Close previous watcher
-      if (_watcher) { _watcher.close(); _watcher = null }
+      for (const w of _watchers) w.close()
+      _watchers = []
       for (const t of _timers.values()) clearTimeout(t)
       _timers.clear()
 
@@ -310,26 +315,41 @@ export const layer = Layer.effect(
         }, DEBOUNCE_MS))
       }
 
-      // Watch the global config directory recursively — covers all skills/
-      const watchDir = Global.Path.config
-      if (!fs.existsSync(watchDir)) {
-        log.warn("config directory not found, cannot watch for skill changes", { dir: watchDir })
-        return
+      const ctx = yield* InstanceState.context
+      const cfg = yield* config.get()
+      const roots = new Set<string>([Global.Path.config, ...(yield* config.directories())])
+      if (!flags.disableExternalSkills) {
+        const externalDirs = flags.disableClaudeCodeSkills
+          ? [AGENTS_EXTERNAL_DIR]
+          : [CLAUDE_EXTERNAL_DIR, AGENTS_EXTERNAL_DIR]
+        for (const dir of externalDirs) roots.add(path.join(global.home, dir))
+        const ups = yield* fsys
+          .up({ targets: externalDirs, start: ctx.directory, stop: ctx.worktree })
+          .pipe(Effect.catch(() => Effect.succeed([] as string[])))
+        for (const dir of ups) roots.add(dir)
+      }
+      for (const item of cfg.skills?.paths ?? []) {
+        const expanded = item.startsWith("~/") ? path.join(global.home, item.slice(2)) : item
+        roots.add(path.isAbsolute(expanded) ? expanded : path.join(ctx.directory, expanded))
       }
 
-      try {
-        _watcher = fs.watch(watchDir, { recursive: true }, (eventType, filename) => {
-          if (!filename) {
-            // Windows: null filename means buffer overflow → reload all
-            trigger(watchDir)
-            return
-          }
-          trigger(path.join(watchDir, filename.toString()))
-        })
-        log.info("hot-reload watchers active", { dir: watchDir })
-      } catch (err) {
-        log.warn("cannot start file watcher for skills", { dir: watchDir, err })
+      for (const dir of roots) {
+        if (!fs.existsSync(dir)) continue
+        try {
+          _watchers.push(
+            fs.watch(dir, { recursive: true }, (_eventType, filename) => {
+              if (!filename) {
+                bridge.promise(reload()).catch((err) => log.error("reload error", { err }))
+                return
+              }
+              trigger(path.join(dir, filename.toString()))
+            }),
+          )
+        } catch (err) {
+          log.warn("cannot watch directory for skills", { dir, err })
+        }
       }
+      if (_watchers.length > 0) log.info("hot-reload watchers active", { dirs: _watchers.length })
     })
 
     const ensureStarted = Effect.fnUntraced(function* () {
@@ -379,18 +399,36 @@ export const layer = Layer.effect(
 
     const reload = Effect.fn("Skill.reload")(function* () {
       yield* ensureStarted()
+      // Bump the revision so downstream caches (prompt injection, retrieval
+      // ranking) drop stale skill text.
+      _revision += 1
       // Invalidate both caches — next get() re-runs discovery + loading
       yield* InstanceState.invalidate(discovered)
       yield* InstanceState.invalidate(state)
       const s = yield* InstanceState.get(state)
       const count = Object.keys(s.skills).length
-      log.info("reload", { count })
-      // Re-establish watchers (dirs may have changed after re-discovery)
+      log.info("reload", { count, revision: _revision })
+      // Re-establish watchers (roots may have changed after re-discovery)
       yield* setupWatchers().pipe(Effect.catchCause(() => Effect.void))
       return count
     })
 
-    return Service.of({ get, require, all, dirs, available, reload })
+    const revision = Effect.fn("Skill.revision")(function* () {
+      return _revision
+    })
+
+    // Close every watcher when the layer scope is torn down so the process (and
+    // tests) do not leak fs.watch handles.
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        for (const w of _watchers) w.close()
+        _watchers = []
+        for (const t of _timers.values()) clearTimeout(t)
+        _timers.clear()
+      }),
+    )
+
+    return Service.of({ get, require, all, dirs, available, reload, revision })
   }),
 )
 

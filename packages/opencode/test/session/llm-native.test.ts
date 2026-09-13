@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { ToolFailure } from "@opencode-ai/llm"
-import { LLMClient, RequestExecutor, WebSocketExecutor } from "@opencode-ai/llm/route"
+import { ToolFailure, LLMRequest, Model, HttpOptions } from "@opencode-ai/llm"
+import { Auth as RouteAuth, LLMClient, RequestExecutor, WebSocketExecutor } from "@opencode-ai/llm/route"
 import { jsonSchema, tool, type ModelMessage, type Tool } from "ai"
 import { Effect, Layer, Stream } from "effect"
 import { LLMNative } from "@/session/llm/native-request"
@@ -10,6 +10,8 @@ import { ModelID, ProviderID } from "@/provider/schema"
 import { OAUTH_DUMMY_KEY } from "@/auth"
 import { ToolExecutionMetadata } from "@/session/tool-execution-metadata"
 import { testEffect } from "../lib/effect"
+import { CachePrefix } from "@/session/llm/cache-prefix"
+import { CachePrefixAdapters } from "@/session/llm/cache-prefix-adapters"
 
 const baseModel: Provider.Model = {
   id: ModelID.make("gpt-5-mini"),
@@ -149,6 +151,101 @@ const expectOpenAIResponsesRequest = (input: {
   })
 
 describe("session.llm-native.request", () => {
+  it.effect("F2/F3 native actual compile authenticates once; failing observer cannot hide transport failure", () =>
+    Effect.gen(function* () {
+      const client = yield* LLMClient.Service
+      for (const failure of [false, true]) {
+        let authCount = 0
+        let calls = 0
+        let observations = 0
+        let authenticatedBody = ""
+        let sentBody: unknown
+        const d = CachePrefix.create(() => true)
+        const summaries: CachePrefix.Summary[] = []
+        const wrapped: typeof client = {
+          ...client,
+          stream: (input: LLMRequest | Parameters<typeof client.stream>[0], observe?: (body: unknown) => void) => {
+            const request = "request" in input ? input.request : input
+            const changed = LLMRequest.update(request, {
+              model: Model.update(request.model, {
+                route: request.model.route.with({
+                  auth: RouteAuth.custom((auth) =>
+                    Effect.sync(() => {
+                      authCount++
+                      authenticatedBody = auth.body
+                      return { ...auth.headers, "x-auth-count": String(authCount) }
+                    }),
+                  ),
+                }),
+              }),
+              http: HttpOptions.make({ body: { metadata: { observation: "final-overlay" } } }),
+            })
+            const compiledObserver = (body: unknown) => {
+              observe?.(body)
+              throw new Error("compile observer failure")
+            }
+            return "request" in input
+              ? client.stream({ ...input, request: changed }, compiledObserver)
+              : client.stream(changed, compiledObserver)
+          },
+        }
+        const native = LLMNativeRuntime.stream({
+          model: baseModel,
+          provider: {
+            ...providerInfo,
+            options: {
+              apiKey: OAUTH_DUMMY_KEY,
+              baseURL: "http://127.0.0.1:1/v1",
+              fetch: Object.assign(
+                async (input: Parameters<typeof fetch>[0], init: Parameters<typeof fetch>[1]) => {
+                  calls++
+                  const request = input instanceof Request ? input : new Request(input, init)
+                  sentBody = await request.json()
+                  expect(request.headers.get("x-auth-count")).toBe("1")
+                  if (failure) return new Response('{"error":{"message":"transport failed"}}', { status: 400 })
+                  return responsesStream([
+                    { type: "response.completed", response: { usage: { input_tokens: 1, output_tokens: 0 } } },
+                  ])
+                },
+                { preconnect: () => undefined },
+              ),
+            },
+          },
+          llmClient: wrapped,
+          auth: { type: "oauth", refresh: "offline", access: "offline", expires: Date.now() + 60_000 },
+          messages: [{ role: "user", content: "hello" }],
+          tools: {},
+          headers: {},
+          abort: new AbortController().signal,
+          observePrefix: (boundary, p) => {
+            observations++
+            summaries.push(d.observe("a", boundary, p)!)
+            const proxy = new Proxy(
+              {},
+              {
+                ownKeys() {
+                  throw new Error("private hash failure")
+                },
+              },
+            )
+            expect(d.observe("broken", boundary, { ...p, messages: [proxy] })?.complete).toBe(false)
+            throw new Error("private log failure")
+          },
+        })
+        if (native.type === "unsupported") throw new Error(native.reason)
+        const exit = yield* native.stream.pipe(Stream.runCollect, Effect.exit)
+        if (!failure && exit._tag === "Failure") return yield* Effect.failCause(exit.cause)
+        expect(exit._tag).toBe(failure ? "Failure" : "Success")
+        expect(authCount).toBe(1)
+        expect(calls).toBe(1)
+        expect(observations).toBe(1)
+        expect(sentBody).toEqual(JSON.parse(authenticatedBody))
+        CachePrefixAdapters.native((boundary, p) => summaries.push(d.observe("a", boundary, p)!), sentBody)
+        expect(summaries[1].status).toBe("equal")
+        d.dispose()
+      }
+    }),
+  )
   test("maps normalized stream inputs to a native LLM request", () => {
     const messages: ModelMessage[] = [
       {
@@ -678,22 +775,43 @@ describe("session.llm-native.request", () => {
       ) satisfies typeof fetch
 
       const llmClient = yield* LLMClient.Service
+      const prefix = CachePrefix.create(() => true)
+      const summaries: CachePrefix.Summary[] = []
       const native = LLMNativeRuntime.stream({
         model: baseModel,
         provider: { ...providerInfo, options: { apiKey: OAUTH_DUMMY_KEY, fetch: customFetch } },
         auth: { type: "oauth", refresh: "refresh", access: "access", expires: Date.now() + 60_000 },
         llmClient,
         messages: [{ role: "user", content: "hello" }],
-        tools: {},
+        tools: {
+          test: tool({
+            description: "offline tool",
+            inputSchema: jsonSchema({ type: "object", properties: {} }),
+            execute: async () => "ok",
+          }),
+        },
         providerOptions: { instructions: "You are concise." },
         headers: {},
         abort: new AbortController().signal,
+        observePrefix: (boundary, payload) => summaries.push(prefix.observe("offline", boundary, payload)!),
       })
       expect(native.type).toBe("supported")
       if (native.type === "unsupported") throw new Error(native.reason)
       const events = Array.from(yield* native.stream.pipe(Stream.runCollect))
 
       expect(captures).toHaveLength(1)
+      expect(summaries[0]?.status).toBe("baseline")
+      const wire = captures[0].body as Record<string, unknown>
+      expect(wire.stream).toBe(true)
+      CachePrefixAdapters.native(
+        (boundary, payload) => summaries.push(prefix.observe("offline", boundary, payload)!),
+        wire,
+      )
+      expect(summaries[1]?.status).toBe("equal")
+      yield* native.stream.pipe(Stream.runCollect)
+      expect(summaries[2]?.status).toBe("equal")
+      expect(wire.tools).toHaveLength(1)
+      prefix.dispose()
       expect(captures[0]).toMatchObject({
         url: "https://api.openai.com/v1/responses",
         body: {

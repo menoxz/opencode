@@ -1,6 +1,7 @@
 import { type SecurityMode, SECURITY_GATED_TOOLS } from "./security"
 import { SubagentListTool } from "./subagent"
 import { SessionContextTool, SessionInfoTool } from "./session-info"
+import { EnvironmentTool } from "./environment"
 import { PlanExitTool } from "./plan"
 import { PlanningTool } from "./planning"
 import { TasksTool } from "./tasks"
@@ -187,6 +188,7 @@ export const layer: Layer.Layer<
     const subagentlist = yield* SubagentListTool
     const sessionContext = yield* SessionContextTool
     const sessionInfo = yield* SessionInfoTool
+    const environment = yield* EnvironmentTool
     const createObjectif = yield* CreateObjectifTool
     const createObjective = yield* CreateObjectiveTool
     const editObjectif = yield* EditObjectifTool
@@ -340,6 +342,7 @@ export const layer: Layer.Layer<
           subagent: Tool.init(subagentlist),
           session_context: Tool.init(sessionContext),
           session_info: Tool.init(sessionInfo),
+          environment: Tool.init(environment),
           create_objectif: Tool.init(createObjectif),
           create_objective: Tool.init(createObjective),
           edit_objectif: Tool.init(editObjectif),
@@ -384,6 +387,7 @@ export const layer: Layer.Layer<
             tool.subagent,
             tool.session_context,
             tool.session_info,
+            ...(cfg.experimental?.hot_path?.environment_state === true ? [tool.environment] : []),
             ...(selectVisibleGoalContractTools(flags.experimentalLeanProtocolDedupe, {
               create_objectif: tool.create_objectif,
               create_objective: tool.create_objective,

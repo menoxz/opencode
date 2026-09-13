@@ -12,6 +12,7 @@ import { tool as nativeTool, ToolFailure, type JsonSchema, type LLMEvent } from 
 import type { LLMClientShape } from "@opencode-ai/llm/route"
 import { LLMNative } from "./native-request"
 import { ToolExecutionMetadata } from "../tool-execution-metadata"
+import { CachePrefixAdapters } from "./cache-prefix-adapters"
 
 const log = Log.create({ service: "session.llm.native-runtime" })
 
@@ -47,6 +48,7 @@ type StreamInput = {
   readonly providerOptions?: Record<string, any>
   readonly headers: Record<string, string>
   readonly abort: AbortSignal
+  readonly observePrefix?: CachePrefixAdapters.Observer
 }
 
 export function status(input: Pick<StreamInput, "model" | "provider" | "auth">): RuntimeStatus {
@@ -98,23 +100,27 @@ export function stream(input: StreamInput): StreamResult {
   log.debug("native stream request", diagnostics)
   let stream: Stream.Stream<LLMEvent, unknown>
   try {
+    const outgoing = {
+      request: LLMNative.request({
+        model: input.model,
+        apiKey: current.apiKey,
+        baseURL: current.baseURL,
+        messages: ProviderTransform.message(input.messages, input.model, input.providerOptions ?? {}),
+        toolChoice: input.toolChoice,
+        temperature: input.temperature,
+        topP: input.topP,
+        topK: input.topK,
+        maxOutputTokens: input.maxOutputTokens,
+        providerOptions: ProviderTransform.providerOptions(input.model, input.providerOptions ?? {}),
+        headers: requestHeaders,
+      }),
+      tools: nativeTools(input.tools, input),
+    }
     stream = input.llmClient
-      .stream({
-        request: LLMNative.request({
-          model: input.model,
-          apiKey: current.apiKey,
-          baseURL: current.baseURL,
-          messages: ProviderTransform.message(input.messages, input.model, input.providerOptions ?? {}),
-          toolChoice: input.toolChoice,
-          temperature: input.temperature,
-          topP: input.topP,
-          topK: input.topK,
-          maxOutputTokens: input.maxOutputTokens,
-          providerOptions: ProviderTransform.providerOptions(input.model, input.providerOptions ?? {}),
-          headers: requestHeaders,
-        }),
-        tools: nativeTools(input.tools, input),
-      })
+      .stream(
+        outgoing,
+        input.observePrefix ? (body) => CachePrefixAdapters.native(input.observePrefix!, body) : undefined,
+      )
       .pipe(
         Stream.tapError((error) =>
           Effect.sync(() => {

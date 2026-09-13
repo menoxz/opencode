@@ -639,4 +639,28 @@ description: A skill in the .opencode/skills directory.
       expect(Skill.fmt(list, { mode: "summary" }).length).toBeLessThan(long.length * 2)
     }),
   )
+
+  it.live("reload bumps the revision and re-reads edited skill content", () =>
+    provideTmpdirInstance((dir) =>
+      Effect.gen(function* () {
+        const skillFile = path.join(dir, ".opencode", "skill", "rev-skill", "SKILL.md")
+        yield* Effect.promise(() =>
+          Bun.write(skillFile, `---\nname: rev-skill\ndescription: A revision test skill.\n---\n\nAAAA\n`),
+        )
+
+        const skill = yield* Skill.Service
+        const before = yield* skill.revision()
+        expect((yield* skill.require("rev-skill")).content).toContain("AAAA")
+
+        yield* Effect.promise(() =>
+          Bun.write(skillFile, `---\nname: rev-skill\ndescription: A revision test skill.\n---\n\nBBBB\n`),
+        )
+        const count = yield* skill.reload()
+
+        expect(count).toBeGreaterThanOrEqual(1)
+        expect(yield* skill.revision()).toBeGreaterThan(before)
+        expect((yield* skill.require("rev-skill")).content).toContain("BBBB")
+      }),
+    ),
+  )
 })

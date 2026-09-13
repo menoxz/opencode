@@ -15,6 +15,7 @@ export type PromptContextSection =
   | "handleProcess"
   | "core"
   | "env"
+  | "environment"
   | "instructions"
   | "userSystem"
 

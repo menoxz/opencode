@@ -39,6 +39,21 @@ const isCompactionReplayUser = (m: MessageV2.WithParts) =>
       (part as { metadata?: { compaction_replay?: unknown } }).metadata?.compaction_replay === true,
   )
 
+// A steering message is a user prompt delivered to the run already in progress:
+// it must be visible to that run (boundToRun keeps it) but must not open a
+// second turn. Once an assistant is written after it, the active run has served
+// it, so pendingUserID skips it. If that run settled before consuming it, no
+// assistant follows it and it falls back to a normal pending turn instead of
+// being lost.
+export const isSteerUser = (m: MessageV2.WithParts) =>
+  m.info.role === "user" &&
+  m.parts.some(
+    (part) => part.type === "text" && (part as { metadata?: { steer?: unknown } }).metadata?.steer === true,
+  )
+
+const steerServed = (msgs: MessageV2.WithParts[], steerID: MessageV2.User["id"]) =>
+  msgs.some((m) => m.info.role === "assistant" && m.info.id > steerID)
+
 export const resolveAnchorUserID = (
   msgs: MessageV2.WithParts[],
   anchorUserID: MessageV2.User["id"],
@@ -62,7 +77,12 @@ export const staleAssistantsAtRunStart = (msgs: MessageV2.WithParts[]) =>
 // Oldest user prompt whose turn is not closed (FIFO over queued prompts).
 export const pendingUserID = (msgs: MessageV2.WithParts[]): MessageV2.User["id"] | undefined =>
   msgs
-    .filter((m) => m.info.role === "user" && !isRunInternalUser(m) && !turnClosed(msgs, m.info.id))
+    .filter((m) => {
+      if (m.info.role !== "user") return false
+      if (isRunInternalUser(m)) return false
+      if (isSteerUser(m)) return !steerServed(msgs, m.info.id)
+      return !turnClosed(msgs, m.info.id)
+    })
     .sort((a, b) => (a.info.id < b.info.id ? -1 : a.info.id > b.info.id ? 1 : 0))[0]?.info.id
 
 // Restrict a run's message view to the anchored turn. Run-internal users
@@ -71,7 +91,9 @@ export const pendingUserID = (msgs: MessageV2.WithParts[]): MessageV2.User["id"]
 // to it.
 export const boundToRun = (msgs: MessageV2.WithParts[], anchorUserID: MessageV2.User["id"]) => {
   const internal = new Set(
-    msgs.filter((m) => m.info.role === "user" && isRunInternalUser(m)).map((m) => m.info.id),
+    msgs
+      .filter((m) => m.info.role === "user" && (isRunInternalUser(m) || isSteerUser(m)))
+      .map((m) => m.info.id),
   )
   return msgs.filter((m) => {
     if (m.info.role === "user") return m.info.id <= anchorUserID || internal.has(m.info.id)

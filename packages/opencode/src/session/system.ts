@@ -1,4 +1,5 @@
 import { Context, Effect, Layer, Option } from "effect"
+import { createHash } from "node:crypto"
 
 import { InstanceState } from "@/effect/instance-state"
 
@@ -43,7 +44,8 @@ const skillSearchTextCache = new Map<string, string>()
 function skillSearchText(skill: Skill.Info): string {
   const head = `${skill.name} ${skill.description ?? ""}`
   if (!skill.content) return head
-  const key = `${skill.location}:${skill.content.length}`
+  // Key by a content hash, not length: a same-length body edit reused stale ranking text.
+  const key = `${skill.location}:${createHash("sha256").update(skill.content).digest("hex")}`
   const cached = skillSearchTextCache.get(key)
   if (cached !== undefined) return cached
   const body = skill.content
@@ -77,6 +79,10 @@ export function tasksAndShellGuidance(cfg: Config.Info): string {
     `Detect the active shell before writing commands; do not assume bash on Windows`,
     `(no \`tail\`/\`head\`/\`grep\` in pwsh — use \`Select-Object\`/\`Select-String\`).`,
     `Prefer cross-platform tools and absolute paths.`,
+    `Reduce avoidable model round trips: when independent read-only inspections are already known, send them together through inspect_batch (if available) or parallel tool calls. Do not batch speculative work or operations that depend on an unknown result; keep mutations and their dependent checks ordered.`,
+    `Delegate non-overlapping scopes and pass existing evidence references to the child. While a child owns an audit, do not repeat that audit in the parent: work on another scope or wait for its result. Verify the returned critical claims with targeted checks; repeat broader research only for a specific gap, changed source, or contradiction.`,
+    `For an overview, first locate relevant sections with scoped grep/glob, then read those ranges; do not exhaustively read every file merely because it fits a batch. Batch size is a ceiling, not a quota. Do not infer total spend from the latest context size, or dollars from tool-output character counts; cached input and repeated processing change the estimate.`,
+    `Scope inspections to the next decision: exact paths, grep include filters, and read offset/limit ranges. If a result is truncated, follow up only on the missing relevant range, not the whole file. Reuse evidence already present unless files changed or it is insufficient. Wait on an owned background job when no independent work remains instead of repeatedly polling. These practices reduce redundant work, not necessary verification.`,
     `Terminal commands: request only the information needed for the next decision. Prefer native summary/quiet modes and selected fields; avoid verbose/debug logs and full stack traces by default.`,
     `Preserve the exit code, failure counts, error message and relevant location. For noisy commands, retain a diagnostic log and return a bounded summary with its path; inspect a targeted trace only when needed for diagnosis. Never hide failures or truncate a running producer in a way that changes its result.`,
     ``,
@@ -111,6 +117,8 @@ export interface Interface {
   readonly personality: () => Effect.Effect<string | undefined>
   /** Advertises which write/shell tools are gated based on the active security mode. */
   readonly toolList: (securityMode: SecurityMode) => Effect.Effect<string | undefined>
+  /** Monotonic skill revision, so callers can drop caches when skills reload. */
+  readonly skillRevision: () => Effect.Effect<number>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/SystemPrompt") {}
@@ -300,6 +308,10 @@ export const layer = Layer.effect(
         lines.push(`</personality_context>`)
 
         return lines.join("\n")
+      }),
+
+      skillRevision: Effect.fn("SystemPrompt.skillRevision")(function* () {
+        return yield* skill.revision()
       }),
 
       toolList: Effect.fn("SystemPrompt.toolList")(function* (securityMode: SecurityMode) {

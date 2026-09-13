@@ -62,9 +62,9 @@ let unhook: (() => void) | undefined
  * ENABLE_PROCESSED_INPUT is set. Various runtimes can re-apply console modes
  * (sometimes on a later tick), and the flag is console-global, not per-process.
  *
- * We combine:
- * - A `setRawMode(...)` hook to re-clear after known raw-mode toggles.
- * - A low-frequency poll as a backstop for native/external mode changes.
+ * Re-clear after known raw-mode toggles. Do not poll through Bun FFI: Bun
+ * 1.3.14 standalone executables can crash in JSFFIFunction::trampoline under
+ * sustained Windows console polling (oven-sh/bun#31941).
  */
 export function win32InstallCtrlCGuard() {
   if (process.platform !== "win32") return
@@ -109,15 +109,11 @@ export function win32InstallCtrlCGuard() {
   // Ensure it's cleared immediately too (covers any earlier mode changes).
   later()
 
-  const interval = setInterval(enforce, 100)
-  interval.unref()
-
   let done = false
   unhook = () => {
     if (done) return
     done = true
 
-    clearInterval(interval)
     if (wrapped && stdin.setRawMode === wrapped) {
       stdin.setRawMode = original
     }

@@ -339,6 +339,35 @@ it.instance(
   },
 )
 
+it.instance(
+  "runs the configured restart command for a remote server on restart and forced reload",
+  () =>
+    MCP.Service.use((mcp: MCPNS.Interface) =>
+      Effect.gen(function* () {
+        const dir = yield* InstanceState.directory
+        const marker = path.join(dir, "restart-marker.txt")
+        const configFile = path.join(dir, "opencode.json")
+        const command = ["node", "-e", `require('fs').writeFileSync(${JSON.stringify(marker)}, 'ok')`]
+        yield* Effect.promise(() =>
+          fs.writeFile(
+            configFile,
+            JSON.stringify({
+              mcp: { "remote-server": { type: "remote", url: "http://127.0.0.1:1/mcp", restart: command } },
+            }),
+          ),
+        )
+
+        yield* mcp.restart("remote-server")
+        expect(yield* Effect.promise(() => fs.readFile(marker, "utf8").catch(() => ""))).toBe("ok")
+
+        yield* Effect.promise(() => fs.rm(marker, { force: true }))
+        yield* mcp.reload({ reconnect: true })
+        expect(yield* Effect.promise(() => fs.readFile(marker, "utf8").catch(() => ""))).toBe("ok")
+      }),
+    ),
+  { config: { mcp: {} } },
+)
+
 // ========================================================================
 // Test: tools() are cached after connect
 // ========================================================================

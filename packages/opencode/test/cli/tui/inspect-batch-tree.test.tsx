@@ -24,7 +24,6 @@ const output = JSON.stringify({
 test("pending and running preserve targets without inventing child execution", () => {
   const pending = inspectBatchTree({ input: JSON.stringify(input), status: "pending" })
   expect(pending.rows[0].label).toBe("├─ read src/main.ts [offset=10, limit=20]")
-  expect(pending.rows[0].detail).toBe("")
   expect(pending.rows[0].icon).toBe("…")
   const running = inspectBatchTree({ input, status: "running" })
   expect(running.rows[1].label).toContain('├─ grep "export" @ src [include=*.ts] · after read #1')
@@ -66,12 +65,12 @@ test("read parameters and dependencies share exactly one rendered line", async (
   expect(/· after grep #1 {2,}✓/.test(row)).toBe(false)
 })
 
-test("results join by id and type, retain errors, skipped and truncation without raw dumps", () => {
+test("results join by id and type, mark errors/skips without exposing their text", () => {
   const tree = inspectBatchTree({ input, output, status: "completed" })
   expect(tree.title).toBe("inspect_batch · 3 actions")
   expect(tree.rows[0].label).toContain("· truncated")
   expect(tree.rows.map((row) => row.icon)).toEqual(["✓", "✗", "−"])
-  expect(tree.rows[1].detail).toBe("File missing")
+  expect(JSON.stringify(tree)).not.toContain("File missing")
   expect(JSON.stringify(tree)).not.toContain("RAW")
 })
 
@@ -117,7 +116,7 @@ test("batch failure and outer truncation do not fabricate child failure or compl
   })
   expect(tree.rows[0].icon).toBe("?")
   expect(tree.rows[0].label).toContain("· truncated")
-  expect(tree.note).toBe("Batch failed: Denied unsafe")
+  expect(tree.note).toBe("Batch failed")
   const truncated = inspectBatchTree({
     input,
     status: "completed",
@@ -164,7 +163,7 @@ test("large actions, fields, dependencies and output are bounded and sanitized",
   expect(tree.rows[15].label).toStartWith("└─")
   expect(tree.rows[0].label).toContain("important.ts")
   expect(tree.rows[0].label).toContain("(+46)")
-  expect(tree.rows.every((row) => row.label.length < 180 && row.detail.length < 130)).toBe(true)
+  expect(tree.rows.every((row) => row.label.length < 180)).toBe(true)
   expect(JSON.stringify(tree)).not.toContain("\\u001b")
 })
 
@@ -189,13 +188,15 @@ test("real terminal component updates from pending to completed then batch error
   expect(frame).toContain("· truncated")
   expect(frame).toContain("after read #1, grep #2")
   expect(frame).toContain('└─ glob "**/*.ts" @ .')
-  expect(frame).toContain("File missing")
+  expect(frame).not.toContain("File missing")
   const rows = frame.split("\n").filter((line) => /[├└]─/.test(line))
   expect(rows.map((line) => line.trimEnd().slice(-1))).toEqual(["✓", "✗", "−"])
   expect(frame).not.toContain("RAW")
   setState({ input, status: "error", error: "Denied" })
   await app.renderOnce()
-  expect(app.captureCharFrame()).toContain("Batch failed: Denied")
+  const errorFrame = app.captureCharFrame()
+  expect(errorFrame).toContain("Batch failed")
+  expect(errorFrame).not.toContain("Denied")
 })
 
 test("real narrow terminal keeps long child rows from wrapping into unbounded output", async () => {

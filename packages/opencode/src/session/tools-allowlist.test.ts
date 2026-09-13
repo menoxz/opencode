@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { deriveStrictToolAllowlist, leanDynamicCapVerdict, leanPhaseCoreTools } from "./tools"
+import { deriveStrictToolAllowlist, leanCoreTools, leanDynamicCapVerdict, leanPhaseCoreTools } from "./tools"
 import { LEAN_DYNAMIC_SLOT_MARGIN } from "@/tool/lean-output-policy"
 
 describe("Lean dynamic core tools", () => {
@@ -46,6 +46,27 @@ describe("Lean dynamic core tools", () => {
     expect(leanDynamicCapVerdict({ configuredMax: 12 + LEAN_DYNAMIC_SLOT_MARGIN, requiredCount: 12 }).ok).toBe(true)
     expect(leanDynamicCapVerdict({ configuredMax: 26, requiredCount: 12 }).ok).toBe(true)
     expect(leanDynamicCapVerdict({ configuredMax: 12 + LEAN_DYNAMIC_SLOT_MARGIN - 1, requiredCount: 12 }).ok).toBe(false)
+  })
+})
+
+// Observed in production: a solved turn could not call complete_objective because
+// it was not selected, then spent extra turns announcing the result in prose.
+describe("Live objective keeps its lifecycle tools reachable", () => {
+  test("pins edit_objective and complete_objective while a goal is active", () => {
+    const core = leanCoreTools({ phase: "implementation", environmentState: false, goalActive: true })
+    expect(core).toContain("edit_objective")
+    expect(core).toContain("complete_objective")
+  })
+
+  test("does not pin lifecycle tools without an active goal", () => {
+    const core = leanCoreTools({ phase: "implementation", environmentState: false, goalActive: false })
+    expect(core).not.toContain("edit_objective")
+    expect(core).not.toContain("complete_objective")
+  })
+
+  test("the shipped cap still fits the core once lifecycle tools are pinned", () => {
+    const requiredCount = leanCoreTools({ phase: "unknown", environmentState: true, goalActive: true }).length + 1
+    expect(leanDynamicCapVerdict({ configuredMax: 28, requiredCount }).ok).toBe(true)
   })
 })
 

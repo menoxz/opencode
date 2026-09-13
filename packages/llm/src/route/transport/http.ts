@@ -17,6 +17,7 @@ export interface JsonRequestParts<Body = unknown> {
 }
 
 export interface HttpPrepared<Frame> {
+  readonly observationBody: unknown
   readonly request: HttpClientRequest.HttpClientRequest
   readonly framing: FramingDef<Frame>
 }
@@ -76,6 +77,7 @@ export const httpJson = <Body, Frame>(input: HttpJsonInput<Body, Frame>): HttpJs
       ...prepareInput,
     }).pipe(
       Effect.map((parts) => ({
+        observationBody: parts.jsonBody,
         request: ProviderShared.jsonPost({ url: parts.url, body: parts.bodyText, headers: parts.headers }),
         framing: input.framing,
       })),

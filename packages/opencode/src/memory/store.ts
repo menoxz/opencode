@@ -14,7 +14,7 @@
 import { sqliteTable, text, real, integer } from "drizzle-orm/sqlite-core"
 import { open as openSqlite, type RawSqlite, type RawDrizzleDb } from "#sqlite-raw"
 import { StorageMaintenance } from "@/storage/maintenance"
-import { eq, and, sql, like, or, desc, asc, gte, inArray } from "drizzle-orm"
+import { eq, and, sql, like, or, desc, asc, gte, inArray, type SQL } from "drizzle-orm"
 import { Effect, Context, Layer } from "effect"
 import { randomUUID } from "crypto"
 import path from "path"
@@ -72,6 +72,23 @@ export const memoryLinksTable = sqliteTable("memory_links", {
 export type MemoryRow = typeof memoryTable.$inferSelect
 export type MemoryInsert = Omit<MemoryRow, "id" | "created_at" | "updated_at" | "access_count" | "last_access_at" | "forgetting_rate" | "encoding_context" | "query_context" | "feedback" | "cue_variants" | "search_count">
 export type LinkRow = typeof memoryLinksTable.$inferSelect
+
+// SQLite rejects any single expression whose parse tree is deeper than
+// SQLITE_MAX_EXPR_DEPTH (1000). A flat `or(a, b, c, ...)` chain parses as a
+// left-deep tree, so a query built from ~1000 prompt words throws "Expression
+// tree is too large". Folding the conditions pairwise into a balanced tree keeps
+// the depth at O(log n) and preserves every condition.
+export function balancedOr(conditions: SQL[]): SQL | undefined {
+  if (conditions.length === 0) return undefined
+  let level = conditions
+  while (level.length > 1) {
+    const next: SQL[] = []
+    for (let i = 0; i < level.length; i += 2)
+      next.push(level[i + 1] ? or(level[i], level[i + 1])! : level[i])
+    level = next
+  }
+  return level[0]
+}
 
 // ---------------------------------------------------------------------------
 // Interface
@@ -275,9 +292,11 @@ export const layer = Layer.effect(
         )
       }
 
-      // Build a WHERE clause matching any token in content
-      const conditions = tokens.map((token) => like(memoryTable.content, `%${token}%`))
-      const whereClause = or(...conditions)
+      // Build a WHERE clause matching any token in content. Deduplicate and fold
+      // into a balanced OR tree: a flat chain breaks SQLite's expression-depth
+      // limit once the prompt has ~1000+ distinct words.
+      const conditions = [...new Set(tokens)].map((token) => like(memoryTable.content, `%${token}%`))
+      const whereClause = balancedOr(conditions)
 
       const rows = yield* sync(() =>
         db

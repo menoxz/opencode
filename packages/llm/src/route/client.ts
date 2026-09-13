@@ -157,8 +157,11 @@ export interface Interface {
 }
 
 export interface StreamMethod {
-  (request: LLMRequest): Stream.Stream<LLMEvent, LLMError>
-  <T extends Tools>(options: ToolRuntime.RunOptions<T>): Stream.Stream<LLMEvent, LLMError>
+  (request: LLMRequest, observeBody?: (body: unknown) => void): Stream.Stream<LLMEvent, LLMError>
+  <T extends Tools>(
+    options: ToolRuntime.RunOptions<T>,
+    observeBody?: (body: unknown) => void,
+  ): Stream.Stream<LLMEvent, LLMError>
 }
 
 export interface GenerateMethod {
@@ -368,10 +371,22 @@ const prepareWith = Effect.fn("LLMClient.prepare")(function* (request: LLMReques
   })
 })
 
-const streamRequestWith = (runtime: TransportRuntime) => (request: LLMRequest) =>
+const streamRequestWith = (runtime: TransportRuntime) => (request: LLMRequest, observeBody?: (body: unknown) => void) =>
   Stream.unwrap(
     Effect.gen(function* () {
       const compiled = yield* compile(request)
+      // Diagnostics cannot change authentication, compilation or transport failure semantics.
+      if (observeBody) {
+        try {
+          observeBody(
+            compiled.prepared && typeof compiled.prepared === "object" && "observationBody" in compiled.prepared
+              ? compiled.prepared.observationBody
+              : compiled.body,
+          )
+        } catch {
+          /* Best-effort observer only. */
+        }
+      }
       return compiled.route.streamPrepared(compiled.prepared, compiled.request, runtime)
     }),
   )
@@ -379,10 +394,13 @@ const streamRequestWith = (runtime: TransportRuntime) => (request: LLMRequest) =
 const isToolRunOptions = (input: LLMRequest | ToolRuntime.RunOptions<Tools>): input is ToolRuntime.RunOptions<Tools> =>
   "request" in input && "tools" in input
 
-const streamWith = (streamRequest: (request: LLMRequest) => Stream.Stream<LLMEvent, LLMError>): StreamMethod =>
-  ((input: LLMRequest | ToolRuntime.RunOptions<Tools>) => {
-    if (isToolRunOptions(input)) return ToolRuntime.stream({ ...input, stream: streamRequest })
-    return streamRequest(input)
+const streamWith = (
+  streamRequest: (request: LLMRequest, observeBody?: (body: unknown) => void) => Stream.Stream<LLMEvent, LLMError>,
+): StreamMethod =>
+  ((input: LLMRequest | ToolRuntime.RunOptions<Tools>, observeBody?: (body: unknown) => void) => {
+    if (isToolRunOptions(input))
+      return ToolRuntime.stream({ ...input, stream: (request) => streamRequest(request, observeBody) })
+    return streamRequest(input, observeBody)
   }) as StreamMethod
 
 const generateWith = (stream: Interface["stream"]) =>

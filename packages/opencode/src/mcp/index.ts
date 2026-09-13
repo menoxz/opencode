@@ -121,7 +121,7 @@ function isMcpConfigured(entry: McpEntry): entry is ConfigMCP.Info {
   return typeof entry === "object" && entry !== null && "type" in entry
 }
 
-const sanitize = (s: string) => s.replace(/[^a-zA-Z0-9_-]/g, "_")
+export const sanitize = (s: string) => s.replace(/[^a-zA-Z0-9_-]/g, "_")
 
 // Clients we are closing on purpose (disconnect/reload/replace) — their
 // transport close event must NOT trigger an automatic reconnect.
@@ -365,6 +365,7 @@ export interface Interface {
   readonly add: (name: string, mcp: ConfigMCP.Info) => Effect.Effect<{ status: Record<string, Status> | Status }>
   readonly connect: (name: string) => Effect.Effect<LifecycleResult, NotFoundError>
   readonly disconnect: (name: string) => Effect.Effect<LifecycleResult, NotFoundError>
+  readonly restart: (name: string) => Effect.Effect<LifecycleResult, NotFoundError>
   readonly reload: (options?: { reconnect?: boolean }) => Effect.Effect<Record<string, LifecycleResult>>
   readonly getPrompt: (
     clientName: string,
@@ -616,6 +617,36 @@ export const layer = Layer.effect(
       log.info("connection complete", { key, type: mcp.type, status: status.status, durationMs: Date.now() - startedAt })
       return { mcpClient, status, defs: listed } satisfies CreateResult
     })
+
+    // Optional lifecycle hook for remote servers that opencode does not spawn:
+    // the configured command (re)starts the external process before we reconnect.
+    // Bun.spawn is not tied to the Effect scope, so a bounded wait never kills a
+    // slow restart; if it exceeds the wait the child keeps running and the
+    // autoreconnect loop brings the server back.
+    const runRestartCommand = Effect.fn("MCP.runRestartCommand")(function* (key: string, mcp: ConfigMCP.Info) {
+      if (mcp.type !== "remote" || !mcp.restart || mcp.restart.length === 0) return
+      const [bin, ...args] = mcp.restart
+      if (!bin) return
+      log.info("mcp restart command started", { key, bin, args })
+      const startedAt = Date.now()
+      const exitCode = yield* Effect.tryPromise(() =>
+        Bun.spawn([bin, ...args], { stdin: "ignore", stdout: "ignore", stderr: "ignore" }).exited,
+      ).pipe(
+        Effect.timeoutOption(Duration.seconds(30)),
+        Effect.catchCause((cause) =>
+          Effect.sync(() => {
+            log.warn("mcp restart command did not finish within the wait", { key, cause: String(cause) })
+            return Option.none<number>()
+          }),
+        ),
+      )
+      log.info("mcp restart command awaited", {
+        key,
+        exitCode: Option.getOrUndefined(exitCode),
+        durationMs: Date.now() - startedAt,
+      })
+    })
+
     const cfgSvc = yield* Config.Service
 
     const descendants = Effect.fnUntraced(
@@ -942,6 +973,15 @@ export const layer = Layer.effect(
       return { status: s.status[name], toolCount: 0 }
     })
 
+    const restart = Effect.fn("MCP.restart")(function* (name: string) {
+      const mcp = yield* requireMcpConfig(name)
+      yield* runRestartCommand(name, mcp).pipe(Effect.catchCause(() => Effect.void))
+      const status = yield* createAndStore(name, { ...mcp, enabled: true })
+      const s = yield* InstanceState.get(state)
+      yield* bus.publish(ToolsChanged, { server: name }).pipe(Effect.ignore)
+      return { status, toolCount: s.defs[name]?.length ?? 0 }
+    })
+
     // --- Config file watcher for hot-reload ---
     let mcpWatcherCleanup: (() => void) | null = null
 
@@ -1032,6 +1072,11 @@ export const layer = Layer.effect(
         const changed = s.fingerprints[key] !== fingerprint
         // Reconnect if not connected or if the effective configuration changed.
         if (!s.clients[key] || changed || options?.reconnect === true) {
+          // A config change or a forced reload also restarts the external process
+          // of a remote server, which opencode cannot re-spawn by itself.
+          if (changed || options?.reconnect === true) {
+            yield* runRestartCommand(key, mcp).pipe(Effect.catchCause(() => Effect.void))
+          }
           const operation = s.clients[key] ? "reconnect" : "connect"
           const startedAt = Date.now()
           log.info(`${operation} started`, { key })
@@ -1379,6 +1424,7 @@ export const layer = Layer.effect(
       add,
       connect,
       disconnect,
+      restart,
       reload,
       getPrompt,
       readResource,

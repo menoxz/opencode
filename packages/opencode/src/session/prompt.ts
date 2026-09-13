@@ -7,6 +7,12 @@ import { createHash } from "node:crypto"
 import { SessionID, MessageID, PartID } from "./schema"
 import { MessageV2 } from "./message-v2"
 import { PromptQueue } from "./prompt-queue"
+import { AUTO_CONTINUE_INSTRUCTION, decideRunDecision } from "./continuation"
+import { capsuleFor, environmentStateEnabled, ledgerFor } from "./environment"
+import { progressCapsule } from "./progress"
+import { matchedRecipeCapsule } from "./recipes"
+import { isLeanAgent } from "@/tool/lean-output-policy"
+import { isContinuationPrompt, classifyUserMessage } from "./turn-intent"
 import * as Log from "@opencode-ai/core/util/log"
 import { SessionRevert } from "./revert"
 import { TriggerHandler } from "../daemon/trigger-handler"
@@ -85,7 +91,8 @@ import { SessionTools } from "./tools"
 import { LLMEvent } from "@opencode-ai/llm"
 import { Question } from "@/question"
 import type { GoalState } from "./goal-state"
-import { hasObjective } from "./goal-state"
+import { hasObjective, inferDeliverable, isTerminalStatus } from "./goal-state"
+import { Todo } from "./todo"
 import { compressGoalState, formatGoalContext } from "./compaction"
 
 // Finish reasons that leave the turn unfinished when the assistant carries no
@@ -316,63 +323,6 @@ function buildGoalSourceText(input: { msgs: MessageV2.WithParts[]; lastUserID: M
   return recentUserTexts.join("\n") || currentUserText
 }
 
-const AUTO_PLAN_CONTINUATION_TOKENS = new Set([
-  "ok",
-  "okay",
-  "continue",
-  "continuer",
-  "commence",
-  "commencer",
-  "reprends",
-  "reprendre",
-  "poursuis",
-  "poursuivre",
-  "resume",
-  "reprend",
-  "go",
-  "suite",
-  "next",
-  "vas",
-  "y",
-])
-
-const AUTO_PLAN_CONTINUATION_FILLER_TOKENS = new Set([
-  "please",
-  "pls",
-  "stp",
-  "svp",
-  "now",
-  "maintenant",
-  "alors",
-])
-
-function isContinuationPrompt(text: string): boolean {
-  const normalized = text
-    .toLowerCase()
-    .trim()
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim()
-
-  if (!normalized) return false
-
-  const tokens = normalized.split(/\s+/).filter(Boolean)
-  if (tokens.length === 0 || tokens.length > 4) return false
-
-  let hasContinuationToken = false
-  for (const token of tokens) {
-    if (AUTO_PLAN_CONTINUATION_FILLER_TOKENS.has(token)) continue
-    if (AUTO_PLAN_CONTINUATION_TOKENS.has(token)) {
-      hasContinuationToken = true
-      continue
-    }
-    return false
-  }
-
-  return hasContinuationToken
-}
-
-
-
 const log = Log.create({ service: "session.prompt" })
 const elog = EffectLogger.create({ service: "session.prompt" })
 
@@ -404,6 +354,7 @@ export const layer = Layer.effect(
     const status = yield* SessionStatus.Service
     const sessions = yield* Session.Service
     const agents = yield* Agent.Service
+    const todos = yield* Todo.Service
     const provider = yield* Provider.Service
     const processor = yield* SessionProcessor.Service
     const compaction = yield* SessionCompaction.Service
@@ -1796,6 +1747,13 @@ export const layer = Layer.effect(
           PromptQueue.pendingUserID(anchorMsgs) ?? anchorMsgs.findLast((m) => m.info.role === "user")?.info.id
         if (!anchorUserID) throw new Error("No user message found in stream. This should never happen.")
 
+        // A text-only assistant stop no longer ends the run while the anchored
+        // objective is still open; `idleContinues` bounds those extra steps and
+        // resets on any tool call. `autoContinueInstruction` carries the nudge
+        // into the next provider request.
+        let idleContinues = 0
+        let autoContinueInstruction: string | undefined
+
         while (true) {
           const contextSummary = createPromptContextSummary(step + 1)
           yield* status.set(sessionID, { type: "busy" })
@@ -1865,6 +1823,7 @@ export const layer = Layer.effect(
             lastAssistantMsg?.parts.some(
               (part) => part.type === "tool" && !part.metadata?.providerExecuted && !isOrphanedInterruptedTool(part),
             ) ?? false
+          if (hasToolCalls) idleContinues = 0
 
           // A turn stays open while tool calls are pending, and — when it
           // carries no error — while the provider cut it short (`length`) or
@@ -1888,18 +1847,36 @@ export const layer = Layer.effect(
             lastUser.id < lastAssistant.id &&
             PromptQueue.turnClosed(msgs, lastUser.id)
           ) {
-            const orphan = lastAssistantMsg?.parts.find(
-              (part): part is MessageV2.ToolPart => part.type === "tool" && isOrphanedInterruptedTool(part),
-            )
-            if (orphan) {
-              yield* slog.warn("loop exit with orphaned interrupted tool", {
-                messageID: lastAssistant.id,
-                tool: orphan.tool,
-                callID: orphan.callID,
-              })
+            const continuationAgent = yield* agents.get(lastUser.agent)
+            const decision = decideRunDecision({
+              goal: (yield* sessions.get(sessionID).pipe(Effect.orDie)).goalState,
+              userID: lastUser.id,
+              todos: yield* todos.get(sessionID),
+              idleContinues,
+              autocontinueEnabled:
+                lastUser.format?.type !== "json_schema" &&
+                (continuationAgent?.autocontinue ?? isLeanAgent(continuationAgent)),
+              stepLimitReached: reachedStepLimit(step, continuationAgent?.steps),
+              pendingTools: hasToolCalls,
+            })
+            if (decision.action === "continue" || decision.action === "wait") {
+              idleContinues++
+              autoContinueInstruction = AUTO_CONTINUE_INSTRUCTION
+              yield* slog.info("auto-continue", { step, idleContinues, reason: decision.reason })
+            } else {
+              const orphan = lastAssistantMsg?.parts.find(
+                (part): part is MessageV2.ToolPart => part.type === "tool" && isOrphanedInterruptedTool(part),
+              )
+              if (orphan) {
+                yield* slog.warn("loop exit with orphaned interrupted tool", {
+                  messageID: lastAssistant.id,
+                  tool: orphan.tool,
+                  callID: orphan.callID,
+                })
+              }
+              yield* slog.info("exiting loop", { step, reason: decision.reason })
+              break
             }
-            yield* slog.info("exiting loop")
-            break
           }
 
           step++
@@ -2169,7 +2146,10 @@ export const layer = Layer.effect(
             // Skill service is the source of truth, so hot-reloaded SKILL.md changes
             // are picked up on the next run without copying content into agent files.
             const preloadStart = Date.now()
-            const preloadKey = `preloadedSkills:${agent.name}:${JSON.stringify(agent.preloadSkills ?? [])}`
+            // Include the skill revision so a mid-run skill reload is not masked by
+            // the run-scoped injection cache.
+            const skillRev = yield* sys.skillRevision()
+            const preloadKey = `preloadedSkills:${skillRev}:${agent.name}:${JSON.stringify(agent.preloadSkills ?? [])}`
             const cachedPreload = injectionCache.get(preloadKey)
             const preloadedSkills = cachedPreload.cached
               ? cachedPreload.value
@@ -2185,7 +2165,7 @@ export const layer = Layer.effect(
 
             // Inject available skills every turn so the agent can always discover them
             const skillsStart = Date.now()
-            const skillsKey = `skills:${agent.name}:${createHash("sha1").update(lastUserText ?? "").digest("hex")}`
+            const skillsKey = `skills:${skillRev}:${agent.name}:${createHash("sha1").update(lastUserText ?? "").digest("hex")}`
             const cachedSkills = injectionCache.get(skillsKey)
             const skills = cachedSkills.cached ? cachedSkills.value : injectionCache.set(skillsKey, yield* sys.skills(agent, lastUserText))
             if (skills) system.push(skills)
@@ -2220,10 +2200,45 @@ export const layer = Layer.effect(
               )
             }
 
+            // Inject the normalized environment state for computer-use tasks. It is
+            // rebuilt from harness observations, not from the model's memory, so a
+            // weak model never has to reconstruct where it is or what is stale.
+            if (
+              environmentStateEnabled({
+                agentFlag: agent.environment_state,
+                configFlag: cfg.experimental?.hot_path?.environment_state,
+              }) &&
+              !system.some(
+                (entry) =>
+                  entry.includes("<environment_state>") ||
+                  entry.includes("<progress_state>") ||
+                  entry.includes("<recipe>") ||
+                  entry.includes("<recipes>"),
+              )
+            ) {
+              const environmentStart = Date.now()
+              const recent = ledgerFor(sessionID).surface().at(-1)
+              const capsule = [
+                capsuleFor(sessionID),
+                progressCapsule(sessionID),
+                matchedRecipeCapsule(sessionID, goalState.goal ?? "", recent?.adapter),
+              ]
+                .filter(Boolean)
+                .join("\n\n")
+              if (capsule) {
+                system.push(capsule)
+                contextSummary.add(
+                  "environment",
+                  "inject normalized environment state",
+                  capsule,
+                  Date.now() - environmentStart,
+                )
+              }
+            }
+
             // Nudge the agent to drive the objective lifecycle (only while an objective
             // is actively being worked on — not when skipped or already completed).
-            const goalActive =
-              goalState.status !== "skipped" && goalState.status !== "completed" && goalState.goal?.trim()
+            const goalActive = !isTerminalStatus(goalState.status) && goalState.goal?.trim()
             if (goalActive && !system.some((entry) => entry.includes("<goal_reminder"))) {
               const goalReminderStart = Date.now()
               const reminderKey = `goalReminder:active:${goalState.version}:${flags.experimentalLeanProtocolDedupe}:${flags.experimentalQaProofAdvisory}:${flags.experimentalRiskPlannerAdvisory}`
@@ -2240,6 +2255,7 @@ export const layer = Layer.effect(
                   `- If the latest message changes the objective, update it with ${editTool}; if the previous objective is already satisfied, complete it first.`,
                   "- Before finishing, verify the objective and DoD against the actual result and todo state.",
                   `- When objective and DoD are satisfied, call ${completeTool}; it completes without routine user approval.`,
+                  `- A required DoD item with no verifiable evidence leaves the objective open: keep working. Only for an external obstacle you cannot remove, call ${completeTool} with outcome "blocked" and a reasoned unverified entry.`,
                   "</goal_reminder>",
                   qaAdvisory,
                   riskAdvisory,
@@ -2312,12 +2328,14 @@ export const layer = Layer.effect(
                 ...modelMsgs,
                 ...(stepOneMessage ? [{ role: "user" as const, content: PromptMethodology.wrapInjectedGuidance(stepOneMessage)! }] : []),
                 ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS }] : []),
+                ...(autoContinueInstruction ? [{ role: "assistant" as const, content: autoContinueInstruction }] : []),
               ],
               tools,
               model,
               firstStep: step === 1,
               toolChoice: format.type === "json_schema" ? "required" : undefined,
             })
+            autoContinueInstruction = undefined
             contextSummary.add("handleProcess", "run provider/model processing", handle.message, Date.now() - handleProcessStart)
             if (isLastStep && !handle.message.error) {
               handle.message.finish = "step-limit"
@@ -2442,21 +2460,39 @@ export const layer = Layer.effect(
       const existing = Option.isSome(currentSession) ? currentSession.value.goalState : undefined
       const previousVersion = Option.isSome(currentSession) ? (currentSession.value.goalState?.version ?? 0) : 0
 
-      // A completed objective must NOT be resurrected within the same turn, nor on a
-      // continuation prompt ("ok"/"continue"), which would fall back to old user text
-      // (buildGoalSourceText) and make the agent redo the finished work. Only a real,
-      // substantial new prompt (new lastUserID) re-derives a fresh objective.
-      if (existing && existing.status === "completed") {
+      const currentUserMsg = input.msgs.findLast(
+        (candidate) => candidate.info.role === "user" && candidate.info.id === input.lastUserID,
+      )
+      const currentUserText = currentUserMsg ? getUserPromptText(currentUserMsg).trim() : ""
+      const turnKind = currentUserMsg ? classifyUserMessage(currentUserMsg) : "new_topic"
+
+      // An active mission spans several lots. A continuation ("ok", "lot 2",
+      // "poursuis") or a steering message belongs to that mission: keep its
+      // objective/DoD and re-anchor it to the current turn so the next autonomous
+      // step stays bound to it. Only a real, substantial new prompt starts a new one.
+      if (isValidGoalState(existing) && !isTerminalStatus(existing.status)) {
+        if (turnKind === "continuation" || turnKind === "intervention") {
+          if (existing.anchorUserID === input.lastUserID) return existing
+          const reanchored: GoalState = {
+            ...existing,
+            anchorUserID: input.lastUserID,
+            version: previousVersion + 1,
+            updatedAt: Date.now(),
+          }
+          yield* sessions.setGoalState({ sessionID: input.sessionID, goalState: reanchored })
+          return reanchored
+        }
+        return existing
+      }
+
+      // A terminal objective (completed/skipped/blocked) must NOT be resurrected
+      // within the same turn nor on a continuation prompt, which would fall back to
+      // old user text (buildGoalSourceText) and make the agent redo finished work.
+      if (existing && isTerminalStatus(existing.status) && existing.status !== "skipped") {
         if (existing.anchorUserID === input.lastUserID) return existing
-        const currentUserMsg = input.msgs.findLast(
-          (candidate) => candidate.info.role === "user" && candidate.info.id === input.lastUserID,
-        )
-        const currentUserText = currentUserMsg ? getUserPromptText(currentUserMsg).trim() : ""
-        const isSubstantial = currentUserText.length >= 40 && !isContinuationPrompt(currentUserText)
+        const isSubstantial = currentUserText.length >= 40 && turnKind !== "continuation"
         if (!isSubstantial) return existing
         // else: fall through to regeneration from the new prompt below
-      } else if (isValidGoalState(existing)) {
-        return existing
       }
 
       const sourceText = buildGoalSourceText({ msgs: input.msgs, lastUserID: input.lastUserID })
@@ -2482,6 +2518,7 @@ export const layer = Layer.effect(
           ? draft.dod
           : ["Produire une réponse utile et actionnable alignée avec la demande en cours."],
         outOfScope: stickyUserGoal ? existing.outOfScope : (draft?.outOfScope ?? []),
+        deliverable: existing?.deliverable ?? inferDeliverable(sourceText),
         compressed: "",
         anchorUserID: input.lastUserID,
         version: previousVersion + 1,
@@ -2703,6 +2740,7 @@ export const defaultLayer = Layer.suspend(() =>
         Truncate.defaultLayer,
         Question.defaultLayer,
         ToolCacheService.defaultLayer,
+        Todo.defaultLayer,
       ),
     ),
     Layer.provide(

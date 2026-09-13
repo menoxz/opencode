@@ -77,8 +77,6 @@ export function inspectBatchTree(props: InspectBatchViewInput) {
               : state === "pending" || state === "awaiting result"
                 ? "…"
                 : "?",
-      detail:
-        state === "error" && typeof result.error === "string" ? concise(result.error.split(/[\r\n]/, 1)[0], 120) : "",
     }
   })
   return {
@@ -91,9 +89,7 @@ export function inspectBatchTree(props: InspectBatchViewInput) {
       status === "completed" && !Array.isArray(parsed.results)
         ? "Child results unavailable (missing, malformed or oversized output)"
         : "",
-      status === "error"
-        ? `Batch failed${typeof props.error === "string" ? `: ${concise(props.error, 120)}` : ""}`
-        : "",
+      status === "error" ? "Batch failed" : "",
     ]
       .filter(Boolean)
       .join(" · "),

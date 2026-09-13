@@ -638,6 +638,10 @@ export type ToolPart = {
   metadata?: {
     [key: string]: unknown
   }
+  time?: {
+    start: number
+    end?: number
+  }
 }
 
 export type StepStartPart = {
@@ -745,10 +749,11 @@ export type PermissionRule = {
 export type PermissionRuleset = Array<PermissionRule>
 
 export type GoalState = {
-  status: "draft" | "pending_user" | "approved" | "edited" | "completed" | "skipped"
+  status: "draft" | "pending_user" | "approved" | "edited" | "completed" | "skipped" | "blocked"
   source: "auto" | "user"
   goal: string
   dod: Array<string>
+  deliverable?: "answer" | "audit" | "plan" | "implementation"
   outOfScope: Array<string>
   compressed?: string
   anchorUserID?: string
@@ -764,8 +769,14 @@ export type GoalState = {
   }>
   completion?: {
     summary?: string
-    evidence: Array<{ dod: string; proof: string }>
-    unverified: Array<{ dod: string; reason: string }>
+    evidence: Array<{
+      dod: string
+      proof: string
+    }>
+    unverified: Array<{
+      dod: string
+      reason: string
+    }>
     completedAt: number
   }
   version: number
@@ -976,6 +987,7 @@ export type ConfigTask = {
   }
   group?: string
   dependsOn?: Array<string>
+  cleanupCommand?: string
   /**
    * Timeout in milliseconds before the task is aborted
    */
@@ -1043,6 +1055,10 @@ export type AgentConfig = {
     [key: string]: boolean
   }
   skills?: Array<string>
+  preload_skills?: Array<string>
+  lean?: boolean
+  autocontinue?: boolean
+  environment_state?: boolean
   disable?: boolean
   description?: string
   mode?: "subagent" | "primary" | "all"
@@ -1065,6 +1081,7 @@ export type AgentConfig = {
     | {
         [key: string]: boolean
       }
+    | Array<string>
     | Array<string>
     | boolean
     | "subagent"
@@ -1208,6 +1225,7 @@ export type McpRemoteConfig = {
    * OAuth authentication configuration for the MCP server. Set to false to disable OAuth auto-detection.
    */
   oauth?: McpOAuthConfig | false
+  restart?: Array<string>
   timeout?: number
 }
 
@@ -1402,6 +1420,9 @@ export type Config = {
       tool_threshold?: number
       max_tools?: number
       always_tools?: Array<string>
+      lean_dynamic_tools?: "off" | "shadow" | "enforce"
+      activation_ttl_ms?: number
+      environment_state?: boolean
     }
     postmortem?: {
       llm_decisions?: boolean
@@ -1742,11 +1763,15 @@ export type Agent = {
   }
   variant?: string
   prompt?: string
+  preloadSkills?: Array<string>
+  lean?: boolean
+  autocontinue?: boolean
+  environment_state?: boolean
   options: {
     [key: string]: unknown
   }
-  budgetMinutes?: number
   steps?: number
+  budgetMinutes?: number
 }
 
 export type LspStatus = {

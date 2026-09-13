@@ -13,7 +13,7 @@ import { Plugin } from "@/plugin"
 import type { TaskPromptOps } from "@/tool/task"
 import type { SecurityMode } from "@/tool/security"
 import { type Tool as AITool, tool, jsonSchema, type ToolExecutionOptions, asSchema } from "ai"
-import { Effect } from "effect"
+import { Cause, Effect, Exit } from "effect"
 import { MessageV2 } from "./message-v2"
 import * as Session from "./session"
 import { SessionProcessor } from "./processor"
@@ -24,9 +24,17 @@ import { Config } from "@/config/config"
 import { ToolCatalog, type PreparedTool } from "./tool-catalog"
 import { ToolExecutionMetadata } from "./tool-execution-metadata"
 import { derivePhaseCapsule } from "./phase-capsule"
+import * as Environment from "./environment"
+import { environmentStateEnabled } from "./environment"
+import * as Progress from "./progress"
+import { isActiveGoal } from "./goal-state"
 
 const log = Log.create({ service: "session.tools" })
 const TOOL_SEARCH_ID = "tool_search"
+// The tools that move a live objective forward. A model that cannot reach them
+// can only assert completion in prose — the exact failure this harness exists to
+// prevent — so they are pinned whenever a goal is active (see `core` below).
+const GOAL_LIFECYCLE_TOOLS = ["edit_objective", "complete_objective"] as const
 const activations = new ToolCatalog.ActivationStore()
 // The lean catalog ships these tools plus `tool_search`; tool_search is told
 // not to chase core capabilities, so a missing write tool is unreachable. The
@@ -60,6 +68,21 @@ const LEAN_PHASE_CORE = {
 
 export function leanPhaseCoreTools(phase: keyof typeof LEAN_PHASE_CORE) {
   return LEAN_PHASE_CORE[phase]
+}
+
+// Composition of the always-present core set. Kept pure so the pinning rules —
+// notably "a live objective keeps its lifecycle tools" — are testable without
+// standing up the whole tool resolver.
+export function leanCoreTools(input: {
+  phase: keyof typeof LEAN_PHASE_CORE
+  environmentState: boolean
+  goalActive: boolean
+}): string[] {
+  return [
+    ...LEAN_PHASE_CORE[input.phase],
+    ...(input.environmentState ? ["environment"] : []),
+    ...(input.goalActive ? GOAL_LIFECYCLE_TOOLS : []),
+  ]
 }
 
 // The cap must leave room for dynamic activations, not merely fit the mandatory
@@ -162,15 +185,24 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         output.push({
           id: item.id,
           description: item.description,
+          source: "local",
           value: { source: "local", item, schema: ProviderTransform.schema(input.model, ToolJsonSchema.fromTool(item)) },
         })
       }
+      // MCP ids are `sanitize(server)_sanitize(tool)`; matching the connected
+      // server identities against that prefix is exact, unlike splitting on the
+      // first underscore, which a server or tool name containing one breaks.
+      const mcpServers = Object.keys(cfg.mcp ?? {})
+        .map((name) => MCP.sanitize(name))
+        .toSorted((a, b) => b.length - a.length)
       for (const [key, item] of Object.entries(yield* mcp.tools())) {
         if (!item.execute) continue
         const schema = yield* Effect.promise(() => Promise.resolve(asSchema(item.inputSchema).jsonSchema))
         output.push({
           id: key,
           description: item.description ?? "",
+          source: "mcp",
+          server: mcpServers.find((name) => key.startsWith(`${name}_`)),
           value: { source: "mcp", key, item, schema: ProviderTransform.schema(input.model, schema) },
         })
       }
@@ -194,7 +226,17 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   if (dynamicMode !== "off" && prepared.catalog.tools.some((item) => item.id === TOOL_SEARCH_ID))
     return yield* Effect.fail(new Error(`Reserved tool name collision: ${TOOL_SEARCH_ID}`))
   const phase = derivePhaseCapsule(input.messages).phase
-  const core = leanPhaseCoreTools(phase)
+  const environmentState = environmentStateEnabled({
+    agentFlag: input.agent.environment_state,
+    configFlag: hotPath?.environment_state,
+  })
+  // The environment ledger joins the lean core only when the config or agent gate
+  // is on; otherwise the shipped max_tools cap and selection stay unchanged.
+  // A live objective must stay closable: the model needs edit_objective and
+  // complete_objective even when tool_search finds nothing, so they are pinned
+  // into the core set (and counted in requiredCount) whenever a goal is active,
+  // independent of dynamic selection and eviction.
+  const core = leanCoreTools({ phase, environmentState, goalActive: isActiveGoal(input.session.goalState) })
   const configuredMax = hotPath?.max_tools ?? 14
   const sticky = activations.get(input.session.id)
   const requiredCount = new Set([...core, ...(hotPath?.always_tools ?? [])].filter((id) => visibleCatalog.tools.some((item) => item.id === id))).size + 1
@@ -282,6 +324,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               { args: inputArgs },
             )
             const result = yield* item.execute(inputArgs, ctx)
+            activations.promote(input.session.id, item.id)
             const output = {
               ...result,
               attachments: result.attachments?.map((attachment) => ({
@@ -332,7 +375,23 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             { tool: key, sessionID: ctx.sessionID, callID: opts.toolCallId },
             { args },
           )
-          const result: Awaited<ReturnType<NonNullable<typeof execute>>> = yield* Effect.gen(function* () {
+          const startedAt = Date.now()
+          const relevant = Environment.isEnvironmentTool(key, args)
+          const scope = Environment.inferScope(args, key)
+          const tracked = environmentState && relevant
+          const decision = tracked
+            ? Progress.progressFor(input.session.id).guard({ name: key, args })
+            : ({ kind: "allow", repeats: 0 } as const)
+          if (decision.kind === "block") {
+            return {
+              title: `Blocked repeated action: ${key}`,
+              metadata: { environmentState: "blocked" },
+              output: decision.message ?? "Repeated action blocked.",
+              attachments: [],
+              content: [],
+            }
+          }
+          const outcome = yield* Effect.gen(function* () {
             yield* ctx.ask({ permission: key, metadata: {}, patterns: ["*"], always: ["*"] })
             return yield* Effect.promise(() => execute(args, opts))
           }).pipe(
@@ -344,7 +403,32 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
                 "message.id": input.processor.message.id,
               },
             }),
+            Effect.exit,
           )
+          if (Exit.isFailure(outcome)) {
+            // The action may or may not have reached its target: record an
+            // unknown outcome instead of letting the model assume it failed.
+            const unknown = Environment.recordUnknownOutcome(Environment.ledgerFor(input.session.id), {
+              name: key,
+              args,
+              at: startedAt,
+              relevant,
+              cause: Cause.pretty(outcome.cause),
+            })
+            if (tracked) {
+              Progress.progressFor(input.session.id).observe({
+                name: key,
+                args,
+                scope,
+                truth: unknown.truth,
+                summary: unknown.summary,
+                at: unknown.at,
+              })
+            }
+            return yield* Effect.failCause(outcome.cause)
+          }
+          const result: Awaited<ReturnType<NonNullable<typeof execute>>> = outcome.value
+          activations.promote(input.session.id, key)
           yield* plugin.trigger(
             "tool.execute.after",
             { tool: key, sessionID: ctx.sessionID, callID: opts.toolCallId, args },
@@ -394,6 +478,24 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             })),
             content: result.content,
           }
+          const observation = Environment.recordToolResult(Environment.ledgerFor(input.session.id), {
+            name: key,
+            args,
+            at: startedAt,
+            relevant,
+            attachmentCount: attachments.length,
+            result,
+          })
+          if (tracked) {
+            Progress.progressFor(input.session.id).observe({
+              name: key,
+              args,
+              scope,
+              truth: observation.truth,
+              summary: observation.summary,
+              at: observation.at,
+            })
+          }
           if (opts.abortSignal?.aborted) {
             yield* input.processor.completeToolCall(opts.toolCallId, output)
           }
@@ -409,44 +511,117 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
 
   if (dynamicMode === "enforce" && !searchDenied) {
     tools[TOOL_SEARCH_ID] = tool({
-      description: "Activate a required missing capability for the next model step. Do not search for optional workflow, todo, or reporting tools.",
+      description:
+        "Reach a tool the lean catalog did not expose. mode=search (default) finds one by natural language, mode=browse lists the authorized catalog when search misses, mode=activate loads exact tool ids. Activation applies to the next model step. Do not search for optional workflow, todo, or reporting tools.",
       inputSchema: jsonSchema({
         type: "object",
         additionalProperties: false,
-        required: ["query"],
         properties: {
+          mode: { type: "string", enum: ["search", "browse", "activate"], default: "search" },
           query: { type: "string", minLength: 2, maxLength: 500 },
+          ids: { type: "array", items: { type: "string" }, maxItems: 8 },
+          source: { type: "string", enum: ["local", "mcp"] },
+          server: { type: "string" },
+          cursor: { type: "string" },
           limit: { type: "integer", minimum: 1, maximum: 8, default: 5 },
         },
       }),
       execute(args) {
         return run.promise(
           Effect.sync(() => {
-            const value = args as { query: string; limit?: number }
-            const limit = Math.max(1, Math.min(8, value.limit ?? 5))
-            const matches = ToolCatalog.search(
-              visibleCatalog,
-              value.query.slice(0, 500),
-              Math.min(32, limit + selection.tools.length),
-            )
-              .map((item) => item.id)
-              .filter((id) => id !== TOOL_SEARCH_ID && !selection.tools.some((item) => item.id === id))
-              .slice(0, limit)
-            // Sticky activations are the model's only escape hatch to reach MCP
-            // tools when mandatory tools saturate the cap, so grant headroom
-            // above the cap instead of silently evicting the activations.
-            activations.activate(
-              input.session.id,
-              matches,
-              Date.now(),
-              configuredMax + matches.length,
-              hotPath?.activation_ttl_ms,
-            )
-            return {
-              title: "Tools activated",
-              metadata: { activated: matches },
-              output: JSON.stringify({ activated: matches, available: "next-model-step" }),
+            const value = args as {
+              mode?: "search" | "browse" | "activate"
+              query?: string
+              ids?: string[]
+              source?: "local" | "mcp"
+              server?: string
+              cursor?: string
+              limit?: number
             }
+            const limit = Math.max(1, Math.min(8, value.limit ?? 5))
+            const current = new Set(selection.tools.map((item) => item.id))
+            // Dynamic slots the next selection can actually expose: the cap minus
+            // the mandatory core and the tool_search slot, minus what sticky
+            // activations already occupy. Anything past this budget is reported,
+            // never promised, because selectTools slices sticky ids to the same
+            // free-slot count.
+            const slots = Math.max(0, configuredMax - requiredCount - activations.get(input.session.id).size)
+            const reserve = (candidates: { id: string; match?: string }[], prefix: Record<string, unknown>[] = []) => {
+              let slotsLeft = slots
+              const reserved = candidates.map((entry) => {
+                if (slotsLeft <= 0) return { id: entry.id, state: "capacity_exceeded" as const, match: entry.match }
+                slotsLeft--
+                return { id: entry.id, state: "reserved" as const, match: entry.match }
+              })
+              const ids = reserved.flatMap((result) => (result.state === "reserved" ? [result.id] : []))
+              // Sticky activations are the model's only escape hatch to reach MCP
+              // tools when mandatory tools saturate the cap, so grant headroom
+              // above the cap instead of silently evicting the activations.
+              if (ids.length > 0)
+                activations.activate(input.session.id, ids, Date.now(), configuredMax + ids.length, hotPath?.activation_ttl_ms)
+              return {
+                title: "Tools activated",
+                metadata: { mode: value.mode ?? "search", activated: ids },
+                output: JSON.stringify({
+                  activated: ids,
+                  results: [...prefix, ...reserved],
+                  available: "next-model-step",
+                  capacity: { max: configuredMax, mandatory: requiredCount, dynamic: Math.max(0, configuredMax - requiredCount) },
+                }),
+              }
+            }
+
+            if (value.mode === "browse") {
+              const page = ToolCatalog.browse(visibleCatalog, {
+                source: value.source,
+                server: value.server,
+                cursor: value.cursor,
+                limit,
+              })
+              return {
+                title: "Tool catalog page",
+                metadata: { mode: "browse", total: page.total },
+                output: JSON.stringify({
+                  mode: "browse",
+                  total: page.total,
+                  tools: page.tools.map((item) => ({
+                    id: item.id,
+                    description: item.description,
+                    state: current.has(item.id) ? "already_available" : "available",
+                  })),
+                  next_cursor: page.nextCursor,
+                }),
+              }
+            }
+
+            if (value.mode === "activate") {
+              const requested = (value.ids ?? []).map((id) => id.trim()).filter(Boolean).slice(0, limit)
+              const pending: { id: string; match?: string }[] = []
+              const unresolved = requested.flatMap<Record<string, unknown>>((id) => {
+                if (id === TOOL_SEARCH_ID || current.has(id)) return [{ id, state: "already_available" }]
+                const resolved = ToolCatalog.resolveExact(visibleCatalog, id)
+                if (!resolved) return [{ id, state: "not_available" }]
+                if ("ambiguous" in resolved)
+                  return [{ id, state: "ambiguous", candidates: resolved.ambiguous.map((item) => item.id) }]
+                pending.push({ id: resolved.tool.id, match: resolved.match })
+                return []
+              })
+              return reserve(pending, unresolved)
+            }
+
+            const matches = ToolCatalog.rankMatches(
+              visibleCatalog,
+              (value.query ?? "").slice(0, 500),
+              Math.min(32, limit + current.size),
+            )
+              .filter((match) => match.tool.id !== TOOL_SEARCH_ID)
+              .slice(0, limit)
+            return reserve(
+              matches.flatMap((match) => (current.has(match.tool.id) ? [] : [{ id: match.tool.id, match: match.reason }])),
+              matches.flatMap<Record<string, unknown>>((match) =>
+                current.has(match.tool.id) ? [{ id: match.tool.id, state: "already_available", match: match.reason }] : [],
+              ),
+            )
           }),
         )
       },

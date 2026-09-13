@@ -30,6 +30,9 @@ import { ContextFile } from "@/session/context-file"
 import { WorkingState } from "./working-state"
 import { Session } from "./session"
 import { Todo } from "./todo"
+import { CachePrefix } from "./llm/cache-prefix"
+import { CachePrefixAdapters } from "./llm/cache-prefix-adapters"
+import { InstanceState } from "@/effect/instance-state"
 
 const log = Log.create({ service: "llm" })
 export const OUTPUT_TOKEN_MAX = ProviderTransform.OUTPUT_TOKEN_MAX
@@ -95,9 +98,31 @@ const live: Layer.Layer<
     const flags = yield* RuntimeFlags.Service
     const sessions = yield* Session.Service
     const todos = yield* Todo.Service
+    const prefixState = yield* InstanceState.make(() =>
+      Effect.gen(function* () {
+        const diagnostics = CachePrefix.create()
+        const unsubscribe = Bus.subscribe(Session.Event.Deleted, (event) =>
+          diagnostics.forget(event.properties.info.id),
+        )
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => {
+            unsubscribe()
+            diagnostics.dispose()
+          }),
+        )
+        return diagnostics
+      }),
+    )
 
     const run = Effect.fn("LLM.run")(function* (input: StreamRequest) {
       const runStarted = Date.now()
+      const prefix = yield* InstanceState.get(prefixState)
+      const observe: CachePrefixAdapters.Observer | undefined = prefix.enabled()
+        ? (boundary, payload) => {
+            const summary = prefix.observe(input.sessionID, boundary, payload)
+            if (summary) log.info("cache prefix comparison", { sessionID: input.sessionID, ...summary })
+          }
+        : undefined
       const l = log
         .clone()
         .tag("providerID", input.model.providerID)
@@ -284,6 +309,7 @@ const live: Layer.Layer<
           providerOptions: prepared.params.options,
           headers: prepared.headers,
           abort: input.abort,
+          observePrefix: observe,
         })
         l.info("native runtime evaluated", {
           duration: elapsed(nativeStarted),
@@ -382,6 +408,7 @@ const live: Layer.Layer<
                 return args.params
               },
             },
+            ...(observe ? [CachePrefixAdapters.aiSDK(observe)] : []),
           ],
         }),
         experimental_telemetry: {

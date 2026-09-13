@@ -48,6 +48,10 @@ export const Remote = Schema.Struct({
   oauth: Schema.optional(Schema.Union([OAuth, Schema.Literal(false)])).annotate({
     description: "OAuth authentication configuration for the MCP server. Set to false to disable OAuth auto-detection.",
   }),
+  restart: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
+    description:
+      "Command and arguments used to (re)start the remote server process before reconnecting. OpenCode does not spawn remote servers, so it runs this command and waits for it when the server's configuration changes or on a forced mcp_reload. The command must start the service and return (do not run a blocking foreground process).",
+  }),
   timeout: Schema.optional(PositiveInt).annotate({
     description: "Timeout in ms for MCP server requests. Defaults to 30000 (30 seconds) if not specified.",
   }),

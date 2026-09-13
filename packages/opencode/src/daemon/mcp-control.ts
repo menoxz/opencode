@@ -103,8 +103,7 @@ const executeCommand = Effect.fnUntraced(function* (cmd: MCPCommand) {
   }
   if (cmd.action === "restart") {
     if (!cmd.name) return { _tag: "error" as const, error: "Missing 'name' for restart command" }
-    yield* mcp.disconnect(cmd.name)
-    yield* mcp.connect(cmd.name)
+    yield* mcp.restart(cmd.name)
     return { _tag: "ok" as const, value: "Restarted" }
   }
   if (cmd.action === "list") {

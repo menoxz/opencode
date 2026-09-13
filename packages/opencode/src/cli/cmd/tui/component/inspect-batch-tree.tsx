@@ -40,11 +40,6 @@ export function InspectBatchTree(
                   in a far-right column; the label still shrinks to truncate. */}
               <box flexGrow={1} flexShrink={0} />
             </box>
-            <Show when={row.detail}>
-              <text fg={props.muted} wrapMode="none" truncate paddingLeft={3}>
-                {row.detail}
-              </text>
-            </Show>
           </box>
         )}
       </For>

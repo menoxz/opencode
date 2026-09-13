@@ -1,11 +1,36 @@
 import { describe, expect, test } from "bun:test"
-import { inspectBudget, isLeanAgent, isLeanTerminalTool, leanToolOutputBudget, LEAN_BROWSER_MAX_CHARS, LEAN_DYNAMIC_SLOT_MARGIN, requiresMutationCause, LEAN_INSPECT_MAX_ACTIONS, LEAN_INSPECT_TOTAL_CHARS, LEAN_TERMINAL_MAX_CHARS } from "./lean-output-policy"
+import {
+  inspectBudget,
+  isLeanAgent,
+  isLeanTerminalTool,
+  leanToolOutputBudget,
+  LEAN_BROWSER_MAX_CHARS,
+  LEAN_DYNAMIC_SLOT_MARGIN,
+  requiresMutationCause,
+  LEAN_INSPECT_MAX_ACTIONS,
+  LEAN_INSPECT_TOTAL_CHARS,
+  LEAN_TERMINAL_MAX_CHARS,
+} from "./lean-output-policy"
 
 describe("lean output policy", () => {
+  test("non-Lean default is bounded while explicit deeper inspection remains available", () => {
+    for (const actionCount of [1, 4, 8, 16]) {
+      const result = inspectBudget({ enabled: false, actionCount })
+      expect(result.maxCharsPerResult * actionCount).toBeLessThanOrEqual(16_000)
+      expect(result.maxCharsPerResult).toBeLessThanOrEqual(4_000)
+      expect(result.totalChars).toBe(16_000)
+    }
+    expect(inspectBudget({ enabled: false, actionCount: 4, requestedChars: 8_000 }).maxCharsPerResult).toBe(8_000)
+    expect(inspectBudget({ enabled: true, actionCount: 4, requestedChars: 8_000 }).maxCharsPerResult).toBe(4_000)
+  })
   test("caps an inspection wave by actions, per-result and total characters", () => {
     expect(LEAN_INSPECT_MAX_ACTIONS).toBe(16)
     expect(LEAN_INSPECT_TOTAL_CHARS).toBe(16_000)
-    expect(inspectBudget({ enabled: true, actionCount: 16, requestedChars: 20_000 })).toEqual({ maxActions: 16, maxCharsPerResult: 1_000, totalChars: 16_000 })
+    expect(inspectBudget({ enabled: true, actionCount: 16, requestedChars: 20_000 })).toEqual({
+      maxActions: 16,
+      maxCharsPerResult: 1_000,
+      totalChars: 16_000,
+    })
     expect(inspectBudget({ enabled: true, actionCount: 4, requestedChars: 20_000 }).maxCharsPerResult).toBe(4_000)
     expect(inspectBudget({ enabled: false, actionCount: 16, requestedChars: 20_000 }).maxActions).toBe(16)
   })
@@ -43,28 +68,58 @@ describe("lean output policy", () => {
   })
   test("requires causal evidence after the first completed patch", () => {
     expect(requiresMutationCause([] as any)).toBe(false)
-    expect(requiresMutationCause([{ parts: [{ type: "tool", tool: "apply_patch", state: { status: "completed" } }] }] as any)).toBe(true)
-    expect(requiresMutationCause([{ parts: [{ type: "tool", tool: "edit", state: { status: "completed" } }] }] as any)).toBe(true)
-    expect(requiresMutationCause([{ parts: [{ type: "tool", tool: "write", state: { status: "completed" } }] }] as any)).toBe(true)
-    expect(requiresMutationCause([{ parts: [{ type: "tool", tool: "read", state: { status: "completed" } }] }] as any)).toBe(false)
+    expect(
+      requiresMutationCause([
+        { parts: [{ type: "tool", tool: "apply_patch", state: { status: "completed" } }] },
+      ] as any),
+    ).toBe(true)
+    expect(
+      requiresMutationCause([{ parts: [{ type: "tool", tool: "edit", state: { status: "completed" } }] }] as any),
+    ).toBe(true)
+    expect(
+      requiresMutationCause([{ parts: [{ type: "tool", tool: "write", state: { status: "completed" } }] }] as any),
+    ).toBe(true)
+    expect(
+      requiresMutationCause([{ parts: [{ type: "tool", tool: "read", state: { status: "completed" } }] }] as any),
+    ).toBe(false)
   })
   test("scopes edit/write causality to the same artifact", () => {
-    const previous = [{ parts: [{
-      type: "tool", tool: "edit",
-      state: { status: "completed", input: { filePath: "C:\\repo\\src\\feature.ts" } },
-    }] }] as any
-    expect(requiresMutationCause(previous, { tool: "write", filePath: "C:\\Users\\me\\.config\\reports\\audit.md" })).toBe(false)
+    const previous = [
+      {
+        parts: [
+          {
+            type: "tool",
+            tool: "edit",
+            state: { status: "completed", input: { filePath: "C:\\repo\\src\\feature.ts" } },
+          },
+        ],
+      },
+    ] as any
+    expect(
+      requiresMutationCause(previous, { tool: "write", filePath: "C:\\Users\\me\\.config\\reports\\audit.md" }),
+    ).toBe(false)
     expect(requiresMutationCause(previous, { tool: "edit", filePath: "c:/repo/src/feature.ts" })).toBe(true)
     expect(requiresMutationCause(previous, { tool: "apply_patch" })).toBe(true)
   })
 
   test("allows the first report write but guards a later rewrite of that report", () => {
-    const previous = [{ parts: [{
-      type: "tool", tool: "write",
-      state: { status: "completed", input: { filePath: "C:\\Users\\me\\.config\\reports\\audit.md" } },
-    }] }] as any
-    expect(requiresMutationCause(previous, { tool: "write", filePath: "C:\\Users\\me\\.config\\reports\\other.md" })).toBe(false)
-    expect(requiresMutationCause(previous, { tool: "write", filePath: "C:\\Users\\me\\.config\\reports\\audit.md" })).toBe(true)
+    const previous = [
+      {
+        parts: [
+          {
+            type: "tool",
+            tool: "write",
+            state: { status: "completed", input: { filePath: "C:\\Users\\me\\.config\\reports\\audit.md" } },
+          },
+        ],
+      },
+    ] as any
+    expect(
+      requiresMutationCause(previous, { tool: "write", filePath: "C:\\Users\\me\\.config\\reports\\other.md" }),
+    ).toBe(false)
+    expect(
+      requiresMutationCause(previous, { tool: "write", filePath: "C:\\Users\\me\\.config\\reports\\audit.md" }),
+    ).toBe(true)
   })
   test("bounds browser and git context separately from terminal tails", () => {
     expect(LEAN_BROWSER_MAX_CHARS).toBe(8_000)
