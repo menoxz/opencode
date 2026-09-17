@@ -11,7 +11,8 @@ IMPORTANT: This tool is for terminal operations like git, npm, docker, etc. DO N
 ${commandSection}
 
 # Git and GitHub
-- Only commit, amend, push, or create PRs when explicitly requested.
+- Version every code change: committing is mandatory. As soon as a change is coherent and verified (build, tests, docs), commit it without waiting for an explicit request; never end a task or report delivery with finished work left unversioned.
+- Push, amend an already-pushed commit, rebase, force-push, and PR creation still require an explicit request, because they touch the remote or shared history.
 - Before committing, inspect `git status`, `git diff`, and `git log --oneline -10`; stage only intended files and never commit secrets.
 - Write a concise commit message that matches the repo style.
 - Do not update git config, skip hooks, use interactive `-i`, force-push, or create empty commits unless explicitly requested.

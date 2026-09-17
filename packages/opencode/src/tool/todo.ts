@@ -156,7 +156,7 @@ export const TodoWriteTool = Tool.define<typeof InputParameters, Metadata, Todo.
             const allTodos = updates ? proposed : [
               ...mandatory("research", "[RESEARCH] Research uncertainties; load applicable skills before acting.", "high"),
               ...proposed,
-              ...mandatory("close", "[CLOSE] Verify quality; retain useful learning; extract reusable skills; commit only if requested.", "medium"),
+              ...mandatory("close", "[CLOSE] Verify quality; retain useful learning; extract reusable skills; commit the completed work (versioning is mandatory).", "medium"),
             ]
             if (allTodos.some((t) => mandatoryKind(t.content) && t.status === "cancelled")) {
               return yield* Effect.fail(new Error("Mandatory research/closure tasks cannot be cancelled."))
