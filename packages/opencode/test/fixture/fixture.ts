@@ -1,4 +1,3 @@
-import { $ } from "bun"
 import * as Observability from "@opencode-ai/core/effect/observability"
 import * as fs from "fs/promises"
 import os from "os"
@@ -72,7 +71,16 @@ function clean(dir: string) {
 
 async function stop(dir: string) {
   if (!(await exists(dir))) return
-  await $`git fsmonitor--daemon stop`.cwd(dir).quiet().nothrow()
+  await git(dir, "fsmonitor--daemon", "stop").catch(() => {})
+}
+
+// Bun Shell spawns an intermediate shell that intermittently fails with
+// "Operation not permitted" on Windows; spawn git directly instead.
+async function git(cwd: string, ...args: string[]) {
+  const proc = Bun.spawn(["git", ...args], { cwd, stdout: "ignore", stderr: "pipe" })
+  const stderr = await new Response(proc.stderr).text()
+  const code = await proc.exited
+  if (code !== 0) throw new Error(`git ${args.join(" ")} failed (${code}): ${stderr.trim()}`)
 }
 
 type TmpDirOptions<T> = {
@@ -85,12 +93,12 @@ export async function tmpdir<T>(options?: TmpDirOptions<T>) {
   const dirpath = sanitizePath(path.join(os.tmpdir(), "opencode-test-" + Math.random().toString(36).slice(2)))
   await fs.mkdir(dirpath, { recursive: true })
   if (options?.git) {
-    await $`git init`.cwd(dirpath).quiet()
-    await $`git config core.fsmonitor false`.cwd(dirpath).quiet()
-    await $`git config commit.gpgsign false`.cwd(dirpath).quiet()
-    await $`git config user.email "test@opencode.test"`.cwd(dirpath).quiet()
-    await $`git config user.name "Test"`.cwd(dirpath).quiet()
-    await $`git commit --allow-empty -m "root commit ${dirpath}"`.cwd(dirpath).quiet()
+    await git(dirpath, "init")
+    await git(dirpath, "config", "core.fsmonitor", "false")
+    await git(dirpath, "config", "commit.gpgsign", "false")
+    await git(dirpath, "config", "user.email", "test@opencode.test")
+    await git(dirpath, "config", "user.name", "Test")
+    await git(dirpath, "commit", "--allow-empty", "-m", `root commit ${dirpath}`)
   }
   if (options?.config) {
     await Bun.write(

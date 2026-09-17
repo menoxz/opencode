@@ -3,7 +3,7 @@
 import { $ } from "bun"
 import fs from "fs"
 import path from "path"
-import { fileURLToPath } from "url"
+import { fileURLToPath, pathToFileURL } from "url"
 import { createSolidTransformPlugin } from "@opentui/solid/bun-plugin"
 
 const __filename = fileURLToPath(import.meta.url)
@@ -75,7 +75,10 @@ const createEmbeddedWebUIBundle = async () => {
   console.log(`Building Web UI to embed in the binary`)
   const appDir = path.join(import.meta.dirname, "../../app")
   const dist = path.join(appDir, "dist")
-  await $`OPENCODE_CHANNEL=${Script.channel} bun run --cwd ${appDir} build`
+  process.env.OPENCODE_CHANNEL = Script.channel
+  const vite = await import(pathToFileURL(path.join(appDir, "node_modules/vite/dist/node/index.js")).href)
+  const config = (await import(pathToFileURL(path.join(appDir, "vite.config.ts")).href)).default
+  await vite.build({ ...config, root: appDir, configFile: false })
   const files = (await Array.fromAsync(new Bun.Glob("**/*").scan({ cwd: dist })))
     .map((file) => file.replaceAll("\\", "/"))
     .filter((file) => !file.endsWith(".map"))
@@ -192,8 +195,18 @@ try {
 
 const binaries: Record<string, string> = {}
 if (!skipInstall) {
-  await $`bun install --os="*" --cpu="*" @opentui/core@${pkg.dependencies["@opentui/core"]}`
-  await $`bun install --os="*" --cpu="*" @parcel/watcher@${pkg.dependencies["@parcel/watcher"]}`
+  for (const dependency of [
+    `@opentui/core@${pkg.dependencies["@opentui/core"]}`,
+    `@parcel/watcher@${pkg.dependencies["@parcel/watcher"]}`,
+  ]) {
+    const install = Bun.spawn([process.execPath, "install", "--ignore-scripts", "--os=*", "--cpu=*", dependency], {
+      cwd: dir,
+      stdout: "inherit",
+      stderr: "inherit",
+    })
+    const exitCode = await install.exited
+    if (exitCode !== 0) throw new Error(`Installing ${dependency} failed with exit code ${exitCode}`)
+  }
 }
 for (const item of targets) {
   const name = [
@@ -207,7 +220,7 @@ for (const item of targets) {
     .filter(Boolean)
     .join("-")
   console.log(`building ${name}`)
-  await $`mkdir -p dist/${name}/bin`
+  await fs.promises.mkdir(path.join(dir, `dist/${name}/bin`), { recursive: true })
 
   const localPath = path.resolve(dir, "node_modules/@opentui/core/parser.worker.js")
   const rootPath = path.resolve(dir, "../../node_modules/@opentui/core/parser.worker.js")
@@ -233,10 +246,7 @@ for (const item of targets) {
       autoloadTsconfig: true,
       autoloadPackageJson: true,
       target: name.replace(pkg.name, "bun") as any,
-      // On Windows, the running binary is locked → output to a temp path and rotate
-      outfile: process.platform === "win32"
-        ? path.join(dir, `../../dist/bin/opencode.new`)
-        : `dist/${name}/bin/opencode`,
+      outfile: `dist/${name}/bin/opencode`,
       execArgv: [`--user-agent=opencode/${Script.version}`, "--use-system-ca", "--"],
       windows: {},
     },
@@ -256,25 +266,42 @@ for (const item of targets) {
   // Smoke test: only run if binary is for current platform
   if (item.os === process.platform && item.arch === process.arch && !item.abi) {
     const binaryPath = process.platform === "win32"
-      ? path.resolve(dir, `../../dist/bin/opencode.new`)
+      ? path.resolve(dir, `dist/${name}/bin/opencode.exe`)
       : `dist/${name}/bin/opencode`
     console.log(`Running smoke test: ${binaryPath} --version`)
-    try {
-      const versionOutput = await $`${binaryPath} --version`.text()
-      console.log(`Smoke test passed: ${versionOutput.trim()}`)
-    } catch (e) {
-      console.error(`Smoke test failed for ${name}:`, e)
-      process.exit(1)
+    // Bun.build can resolve before Windows releases the freshly linked PE for
+    // CreateProcess. The file is already readable but uv_spawn returns EPERM
+    // during this short handoff window (antivirus scanning the new PE can widen
+    // it), so retry briefly instead of failing an otherwise successful build.
+    const runSmoke = async () => {
+      const smoke = Bun.spawn([binaryPath, "--version"], { stdout: "pipe", stderr: "pipe" })
+      const [exitCode, stdout, stderr] = await Promise.all([
+        smoke.exited,
+        new Response(smoke.stdout).text(),
+        new Response(smoke.stderr).text(),
+      ])
+      return { exitCode, stdout, stderr }
     }
+    const smoke = await (async () => {
+      for (let attempt = 0; ; attempt++) {
+        try {
+          return await runSmoke()
+        } catch (error) {
+          const handoff = process.platform === "win32" && error instanceof Error && (error as NodeJS.ErrnoException).code === "EPERM"
+          if (!handoff || attempt >= 19) throw error
+          await Bun.sleep(250)
+        }
+      }
+    })()
+    if (smoke.exitCode !== 0) throw new Error(`Smoke test failed for ${name}: ${smoke.stderr.trim() || `exit ${smoke.exitCode}`}`)
+    console.log(`Smoke test passed: ${smoke.stdout.trim()}`)
 
     // Copy to root dist/bin/ for local launcher (npm ps1 points here)
     // On Windows, rename the in-use binary first (rename works even when file is locked),
     // then copy the new one.  If rename also fails, skip (binary will be updated on next build).
     const ext = item.os === "win32" ? ".exe" : ""
     const rootDistBin = path.resolve(dir, "../../dist/bin")
-    const src = process.platform === "win32"
-      ? path.resolve(dir, `../../dist/bin/opencode.new${ext}`)
-      : `dist/${name}/bin/opencode${ext}`
+    const src = path.resolve(dir, `dist/${name}/bin/opencode${ext}`)
     const dest = path.join(rootDistBin, `opencode${ext}`)
     const backup = path.join(rootDistBin, `opencode.old${ext}`)
     await fs.promises.mkdir(rootDistBin, { recursive: true })
@@ -295,7 +322,7 @@ for (const item of targets) {
     }
   }
 
-  try { await $`rm -rf ./dist/${name}/bin/tui` } catch { fs.rmSync(path.join(dir, `dist/${name}/bin/tui`), { recursive: true, force: true }) }
+  fs.rmSync(path.join(dir, `dist/${name}/bin/tui`), { recursive: true, force: true })
   await Bun.file(`dist/${name}/package.json`).write(
     JSON.stringify(
       {

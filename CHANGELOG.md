@@ -5,6 +5,73 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v2.2.11] - 2026-09-16
+
+> Première version publiée depuis `v2.2.3` : elle agrège les travaux non publiés des versions intermédiaires.
+
+### Added
+- Plans de travail de session : chaque modification de tâche persiste le plan complet dans `.opencode/plans/<session>.md` (ou le répertoire de données global hors dépôt git) et ne réinjecte à chaque tour qu'une référence virtuelle `AGENTS.md` compacte — compteurs de progression et phase active — le plan restant lisible sur disque sans consommer de contexte.
+- Garde-fous QA pour les vérifications autonomes longues : budgets configurables (étapes, minutes, coût), disjoncteur navigateur, périmètre d'outils et diagnostic de fin, afin d'arrêter une dérive avec une raison observable au lieu d'un échec silencieux.
+- Démarrage du worker TUI sous Bun 1.4.0 : le worker émet `worker.ready` après `Rpc.listen` et le parent attend cet événement (échec ou délai de 30 s → arrêt du worker), car une requête RPC émise avant l'installation de `onmessage` était définitivement perdue et `SyncProvider` attendait indéfiniment.
+- Résumé de compaction replié par défaut dans le TUI, dépliable au clavier et à la souris.
+
+### Fixed
+- Supprime automatiquement un `index.lock` git obsolète (plus de 60 s) avant chaque opération de snapshot (`track`, `patch`, `diff`). Un lock laissé par un processus git tué bloquait encore toutes les captures suivantes (`fatal: Unable to create '.../index.lock': File exists`) et déclenchait des `EPIPE` en cascade (136 erreurs et 131 avertissements dans une seule session).
+- Le smoke test de build n'échoue plus sur l'`EPERM` transitoire de spawn du binaire Windows fraîchement lié : retry borné au lieu d'un simple `sleep` fixe.
+
+### Changed
+- Réduit le bruit de journal : le `stderr` des serveurs MCP (health-checks du navigateur), les démarrages `tool.registry` et les publications du bus passent d'INFO à DEBUG. Environ 16 000 lignes de log par jour en moins sur une session de travail.
+
+### Tests
+- Deux tests de snapshot déterministes : un lock périmé est supprimé et la capture reprend ; un lock frais appartenant à un git concurrent est conservé.
+
+## [v2.2.8] - 2026-09-14
+
+### Changed
+- Stabilise le préfixe du prompt système et conserve ses fragments afin d'améliorer la réutilisation du cache fournisseur.
+- Impose la localisation préalable des zones pertinentes, les lectures et sorties bornées, ainsi que des critères explicites de délégation.
+- Déclenche la compaction à 100 000 tokens, ou dès 80 000 lorsque les sorties de lecture accumulées deviennent importantes.
+- Replie par défaut les résumés de compaction dans le TUI, avec expansion accessible au clavier et à la souris.
+
+### Tests
+- Couvre la stabilité du préfixe, la politique système, les seuils de compaction et le rendu replié du TUI.
+
+## [v2.2.7] - 2026-09-14
+
+### Fixed
+- L’annulation d’un sous-agent attend désormais l’arrêt réel de son runner et de tous ses descendants avant d’afficher l’état terminal `cancelled`; l’état transitoire `cancelling` évite les faux arrêts.
+- Corrige l'écran noir avec Bun 1.4.0 : attente explicite du worker après installation de son gestionnaire RPC, avant envoi des requêtes de démarrage. Les messages envoyés pendant ses imports asynchrones pouvaient être perdus.
+- Erreur explicite et arrêt du worker en cas d'échec ou après 30 secondes sans confirmation.
+
+### Tests
+- Quatre tests avec de vrais workers : imports asynchrones, démarrage immédiat, timeout et erreur.
+
+## [v2.2.6] - 2026-09-14
+
+### Changed
+- Reconstruction avec Bun 1.4.0 et alignement du runtime local sur le runtime épinglé. Cette version ne corrigeait pas l'écran noir au démarrage ; le correctif est en 2.2.7.
+
+## [v2.2.5] - 2026-09-14
+
+### Fixed
+- Les binaires autonomes Windows sont désormais construits avec Bun 1.4.0 minimum, qui remplace le trampoline TinyCC de `bun:ffi` responsable des segmentation faults après une utilisation TUI prolongée (`oven-sh/bun#31941`, corrigé par `oven-sh/bun#35246`).
+- Les recherches `glob` sont interrompues après 30 secondes au lieu de laisser un tour actif indéfiniment, et la réserve configurée déclenche correctement la compaction pour les modèles sans limite d'entrée explicite.
+
+### Tests
+- Le build refuse explicitement une cible Windows sous Bun 1.4.0 ; les régressions ciblées couvrent le timeout `glob` et la réserve de compaction.
+
+## [v2.2.4] - 2026-09-14
+
+### Changed
+- La continuité autonome dépend désormais d'une prochaine action exécutable plutôt que de la seule présence d'un objectif ou de todos ouverts ; les attentes utilisateur et rapports terminaux ne relancent plus l'agent en boucle.
+- Les travaux non triviaux disposent d'un plan de session persistant référencé de façon compacte dans le contexte AGENTS, avec une projection todo bornée autour de la phase active.
+
+### Fixed
+- Les questions identiques déjà pendantes sont coalescées afin d'éviter les demandes répétées sans changement d'état.
+
+### Tests
+- Couverture ciblée de la décision de continuation, de la persistance/référence du plan, de la projection compacte des todos et de la déduplication des questions.
+
 ## [v2.2.3] - 2026-09-13
 
 ### Added

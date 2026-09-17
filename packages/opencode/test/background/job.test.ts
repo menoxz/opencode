@@ -148,6 +148,32 @@ describe("background.job", () => {
     }),
   )
 
+  it.instance("waits for cancellation cleanup before reporting cancelled", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const entered = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const cleaned = yield* Deferred.make<void>()
+      const job = yield* jobs.start({
+        type: "test",
+        run: Effect.never,
+        onCancel: Deferred.succeed(entered, undefined).pipe(
+          Effect.andThen(Deferred.await(release)),
+          Effect.andThen(Deferred.succeed(cleaned, undefined)),
+          Effect.asVoid,
+        ),
+      })
+
+      const cancelling = yield* jobs.cancel(job.id).pipe(Effect.forkScoped)
+      yield* Deferred.await(entered)
+      expect((yield* jobs.get(job.id))?.status).toBe("cancelling")
+      expect((yield* jobs.wait({ id: job.id, timeout: 0 })).timedOut).toBe(true)
+      yield* Deferred.succeed(release, undefined)
+      expect((yield* Fiber.join(cancelling))?.status).toBe("cancelled")
+      expect(yield* Deferred.isDone(cleaned)).toBe(true)
+    }),
+  )
+
   it.instance("returns immutable snapshots", () =>
     Effect.gen(function* () {
       const jobs = yield* BackgroundJob.Service

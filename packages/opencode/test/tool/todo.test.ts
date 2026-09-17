@@ -9,8 +9,10 @@ import { TodoWriteTool } from "@/tool/todo"
 import type { Tool } from "@/tool/tool"
 import { Truncate } from "@/tool/truncate"
 import { InstanceState } from "@/effect/instance-state"
+import { SessionWorkPlan } from "@/session/work-plan"
 import { renderTodoSnapshot, substantiveTodoText, todoDelta, todoRevision } from "@/tool/todo-output"
-import { disposeAllInstances } from "../fixture/fixture"
+import { disposeAllInstances, TestInstance } from "../fixture/fixture"
+import path from "path"
 import { testEffect } from "../lib/effect"
 
 afterEach(disposeAllInstances)
@@ -45,6 +47,11 @@ describe("todowrite real service / SQLite", () => {
     expect(first.metadata.todoOutput.summary).toEqual({ total: 4, pending: 3, in_progress: 0, completed: 0, cancelled: 1, other: 0 })
     expect(yield* todo.get(ctx.sessionID)).toEqual(first.metadata.todos)
     expect(first.metadata.todoOutput.ids).toEqual(["t0", "t1", "t2", "t3"])
+    yield* TestInstance
+    const planPath = SessionWorkPlan.pathFor(ctx.sessionID, yield* InstanceState.context)
+    const plan = yield* Effect.promise(() => Bun.file(planPath).text())
+    expect(plan).toContain(`Stable reference: opencode://session/${ctx.sessionID}/plan`)
+    expect(plan).toContain("Run bun test --timeout 30000")
     const done = yield* tool.execute({ todos: first.metadata.todos.map((t) => ({ ...t, status: "completed" })) }, ctx)
     expect(done.title).toBe("0 active todos")
     expect(done.output).not.toContain("Run bun test")
@@ -175,6 +182,11 @@ test("pure replay, exact revision, deltas, substantive lookup gate and verbatim 
   expect(renderTodoSnapshot({ todos: [] })).toContain('"todos":[]')
   expect(renderTodoSnapshot({ todos: [{ status: "pending" }] })).toBeUndefined()
   expect(renderTodoSnapshot(undefined)).toBeUndefined()
+  const many = Array.from({ length: 12 }, (_, index) => item(`Phase ${index}`, index === 7 ? "in_progress" : "pending"))
+  const compact = JSON.parse(renderTodoSnapshot({ todos: many })!) as { todos: Array<{ content: string }>; omitted: number }
+  expect(compact.todos).toHaveLength(8)
+  expect(compact.todos.some((todo) => todo.content === "Phase 7")).toBe(true)
+  expect(compact.omitted).toBe(4)
   const command = "bun test " + "--verbatim-arg ".repeat(1000)
   expect(todoDelta([], [item(command)]).changed[0].content).toBe(command)
 })

@@ -31,12 +31,13 @@ const isRunInternalUser = (m: MessageV2.WithParts) =>
 
 export const compactionTaskParentID = (task: MessageV2.CompactionPart) => task.messageID
 
-const isCompactionReplayUser = (m: MessageV2.WithParts) =>
+const isCompactionRecoveryUser = (m: MessageV2.WithParts) =>
   m.info.role === "user" &&
   m.parts.some(
     (part) =>
       part.type === "text" &&
-      (part as { metadata?: { compaction_replay?: unknown } }).metadata?.compaction_replay === true,
+      ((part as { metadata?: { compaction_replay?: unknown } }).metadata?.compaction_replay === true ||
+        (part as { metadata?: { compaction_continue?: unknown } }).metadata?.compaction_continue === true),
   )
 
 // A steering message is a user prompt delivered to the run already in progress:
@@ -59,7 +60,7 @@ export const resolveAnchorUserID = (
   anchorUserID: MessageV2.User["id"],
 ): MessageV2.User["id"] | undefined => {
   if (msgs.some((m) => m.info.role === "user" && m.info.id === anchorUserID)) return anchorUserID
-  return msgs.findLast(isCompactionReplayUser)?.info.id
+  return msgs.findLast(isCompactionRecoveryUser)?.info.id
 }
 
 // At the start of a fresh runner, no assistant from a prior process can still

@@ -1,6 +1,7 @@
 import { afterEach, expect } from "bun:test"
 import { $ } from "bun"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
+import { Global } from "@opencode-ai/core/global"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import fs from "fs/promises"
 import path from "path"
@@ -1130,5 +1131,72 @@ it.instance(
     for (let i = 0; i < base.length; i++) expect(yield* readText(base[i])).toBe(`base-${i}`)
     for (const file of fresh) expect(yield* exists(file)).toBe(false)
   }),
+  { git: true },
+)
+
+// A git index.lock left behind by a killed git process used to block every later
+// snapshot with "fatal: Unable to create '.../index.lock': File exists".
+// locateGitdir finds this worktree's private snapshot repo (the one that knows `hash`).
+const locateGitdir = Effect.fn("SnapshotTest.locateGitdir")(function* (hash: string) {
+  return yield* Effect.promise(async () => {
+    // Layout is snapshot/<project.id>/<hash(worktree)>; never recurse into objects/.
+    const root = path.join(Global.Path.data, "snapshot")
+    const projects = await fs.readdir(root, { withFileTypes: true }).catch(() => [])
+    for (const project of projects) {
+      if (!project.isDirectory()) continue
+      const base = path.join(root, project.name)
+      const repos = await fs.readdir(base, { withFileTypes: true }).catch(() => [])
+      for (const repo of repos) {
+        if (!repo.isDirectory()) continue
+        const dir = path.join(base, repo.name)
+        // track() returns a `write-tree` hash: the owning repo holds the loose object.
+        if (await fs.stat(path.join(dir, "objects", hash.slice(0, 2), hash.slice(2))).catch(() => undefined))
+          return dir
+      }
+    }
+    return undefined
+  })
+})
+
+it.instance(
+  "removes a stale index.lock before tracking new changes",
+  withTrackedSnapshot(({ tmp, snapshot, before }) =>
+    Effect.gen(function* () {
+      const gitdir = yield* locateGitdir(before)
+      expect(gitdir).toBeTruthy()
+
+      const lock = path.join(gitdir!, "index.lock")
+      yield* write(lock, "")
+      const stale = new Date(Date.now() - 5 * 60_000)
+      yield* Effect.promise(() => fs.utimes(lock, stale, stale))
+
+      yield* write(`${tmp.path}/after-stale-lock.txt`, "after")
+      const patch = yield* snapshot.patch(before)
+
+      expect(patch.files.some((file) => file.includes("after-stale-lock.txt"))).toBe(true)
+      expect(yield* exists(lock)).toBe(false)
+    }),
+  ),
+  { git: true },
+)
+
+it.instance(
+  "keeps a fresh index.lock owned by a concurrent git run",
+  withTrackedSnapshot(({ tmp, snapshot, before }) =>
+    Effect.gen(function* () {
+      const gitdir = yield* locateGitdir(before)
+      expect(gitdir).toBeTruthy()
+
+      const lock = path.join(gitdir!, "index.lock")
+      yield* write(lock, "")
+
+      yield* write(`${tmp.path}/fresh-lock.txt`, "fresh")
+      const patch = yield* snapshot.patch(before)
+
+      // The lock is preserved, so git add stays blocked and the change is not staged.
+      expect(yield* exists(lock)).toBe(true)
+      expect(patch.files.some((file) => file.includes("fresh-lock.txt"))).toBe(false)
+    }),
+  ),
   { git: true },
 )

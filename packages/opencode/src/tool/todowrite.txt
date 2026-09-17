@@ -9,6 +9,8 @@ RULES: real-time status updates|mark completed only after done+verified|exactly 
 
 INPUT: {todos:[{content,status,priority},...]} replaces the list. Or {revision,updates:[{id,status?,priority?,content?},...]} changes only specified fields, without reorder/deletion. IDs (t0, t1, ...) are position-derived: update IDs valid only for matching revision. A stale revision or unknown/duplicate ID rejects the entire update. Recover with {action:"read"} alone for the full list, IDs and revision. Never combine todos/updates/read. Revisions change with any stored field or order change.
 
+PLAN PROJECTION: the complete list is persisted as the session work plan. Keep todos compact: one item per plan phase, plus detailed substeps only for the active phase. When the phase changes, collapse completed detail and expand the new active phase. Large responses are bounded; use action="read" or the referenced persistent plan when omitted phases matter.
+
 MANDATORY: [RESEARCH] first and [CLOSE] last are injected when absent; [CLOSURE] is an alias (case/leading whitespace ignored). Omitted wrappers retain their stored state, including completion. Execute, verify and complete them; NEVER cancel/delete/skip. Research uncertainties before acting, never guess, and load applicable skills. Closure: quality checks, useful memory and reusable skill extraction; commit ONLY if the user requested it. Retain every user obligation and command verbatim.
 
 EXAMPLES

@@ -73,31 +73,16 @@ const summarizeMessages = (messages: ModelMessage[]) => ({
 export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: PrepareInput) {
   const isOpenaiOauth = input.provider.id === "openai" && input.auth?.type === "oauth"
   const system = [
-    [
-      ...(input.agent.prompt ? [input.agent.prompt] : SystemPrompt.provider(input.model)),
-      ...input.system,
-      ...(input.user.system ? [input.user.system] : []),
-    ]
-      .filter((x) => x)
-      .join("\n"),
-  ]
+    ...(input.agent.prompt ? [input.agent.prompt] : SystemPrompt.provider(input.model)),
+    ...input.system,
+    ...(input.user.system ? [input.user.system] : []),
+  ].filter((x) => x)
 
-  const header = system[0]
   yield* input.plugin.trigger(
     "experimental.chat.system.transform",
     { sessionID: input.sessionID, model: input.model },
     { system },
   )
-  const systemTransformChangedHeader = system[0] !== header
-  // Preserve provider behavior: only collapse plugin-added fragments when the
-  // original header is still intact. If a plugin rewrites/removes/reorders the
-  // header, keep its exact system array to avoid guessing intent.
-  if (system.length > 2 && !systemTransformChangedHeader) {
-    const rest = system.slice(1)
-    system.length = 0
-    system.push(header, rest.join("\n"))
-  }
-
   const variant =
     !input.small && input.model.variants && input.user.model.variant
       ? input.model.variants[input.user.model.variant]
@@ -222,8 +207,7 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
     system: {
       count: system.length,
       approxChars: approxSize(system),
-      headerApproxChars: approxSize(header),
-      transformChangedHeader: systemTransformChangedHeader,
+      headerApproxChars: approxSize(system[0]),
     },
     messages: summarizeMessages(messages),
     tools: {

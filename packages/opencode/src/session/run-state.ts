@@ -153,6 +153,8 @@ const cancelBackgroundJobs = Effect.fn("SessionRunState.cancelBackgroundJobs")(f
   const pending = new Set<string>([sessionID])
   const cancelled = new Set<string>()
   const matches = (job: BackgroundJob.Info) => {
+    // A cancelling job owns its cleanup and must not recursively wait on
+    // itself. Its onCancel hook still discovers every running descendant.
     if (job.status !== "running") return false
     if (cancelled.has(job.id)) return false
     if (pending.has(job.id)) return true

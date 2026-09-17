@@ -267,6 +267,7 @@ export interface Interface {
   readonly isOverflow: (input: {
     tokens: MessageV2.Assistant["tokens"]
     model: Provider.Model
+    messages?: MessageV2.WithParts[]
   }) => Effect.Effect<boolean>
   readonly prune: (input: { sessionID: SessionID }) => Effect.Effect<void>
   readonly process: (input: {
@@ -305,11 +306,13 @@ export const layer = Layer.effect(
     const isOverflow = Effect.fn("SessionCompaction.isOverflow")(function* (input: {
       tokens: MessageV2.Assistant["tokens"]
       model: Provider.Model
+      messages?: MessageV2.WithParts[]
     }) {
       return overflow({
         cfg: yield* config.get(),
         tokens: input.tokens,
         model: input.model,
+        messages: input.messages,
         outputTokenMax: flags.outputTokenMax,
       })
     })

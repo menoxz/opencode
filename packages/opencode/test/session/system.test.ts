@@ -4,7 +4,7 @@ import type { Agent } from "../../src/agent/agent"
 import { NamedError } from "@opencode-ai/core/util/error"
 import { Skill } from "../../src/skill"
 import { Permission } from "../../src/permission"
-import { SystemPrompt } from "../../src/session/system"
+import { SystemPrompt, provider, tasksAndShellGuidance } from "../../src/session/system"
 import { PromptComposer } from "../../src/prompt-composer"
 import { TestConfig } from "../fixture/config"
 import { testEffect } from "../lib/effect"
@@ -101,6 +101,26 @@ describe("session.system", () => {
       expect(zeta).toBeGreaterThan(middle)
       expect(output).not.toContain("manual-skill")
       expect(output).not.toContain("<available_skills>")
+    }),
+  )
+
+  it.effect("keeps shell guidance stable and free of runtime environment values", () =>
+    Effect.sync(() => {
+      const stable = tasksAndShellGuidance({})
+      expect(stable).toContain("<shell-and-tasks>")
+      expect(stable).not.toContain("Today's date")
+      expect(stable).not.toContain("Working directory:")
+    }),
+  )
+
+  it.effect("core policy requires targeted inspection, bounded output, and deliberate delegation", () =>
+    Effect.sync(() => {
+      const core = provider({} as never).join("\n")
+      expect(core).toContain("locate likely files, symbols, keywords, or exact ranges before reading")
+      expect(core).toContain("Keep tool output bounded")
+      expect(core).toContain("Delegate when work is independent")
+      expect(core).toContain("Do not delegate trivial or tightly sequential work")
+      expect(core).toContain("verify critical child claims")
     }),
   )
 })

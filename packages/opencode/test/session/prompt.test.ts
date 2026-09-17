@@ -976,7 +976,7 @@ it.instance("loop continues when finish is tool-calls", () =>
   }),
 )
 
-it.instance("auto-continue keeps working after a text-only stop while the objective is open", () =>
+it.instance("does not relaunch after a text-only report while the objective is open", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig((url) => ({
       ...providerCfg(url),
@@ -994,18 +994,16 @@ it.instance("auto-continue keeps working after a text-only stop while the object
       noReply: true,
       parts: [{ type: "text", text: "Explain the design, then implement the fix and run the full test suite." }],
     })
-    for (let i = 1; i <= 5; i++) yield* llm.text(`reply ${i}`)
+    yield* llm.text("reply 1")
 
     yield* prompt.loop({ sessionID: session.id })
 
-    // One initial call plus AUTO_CONTINUE_LIMIT (4) text-only continuations
-    // before the guard returns control to the user.
-    expect(yield* llm.calls).toBe(5)
+    expect(yield* llm.calls).toBe(1)
   }),
   30000,
 )
 
-it.instance("keeps working across lots while the objective is open and todos remain", () =>
+it.instance("does not relaunch solely because objective and todos remain open", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig((url) => ({
       ...providerCfg(url),
@@ -1038,13 +1036,11 @@ it.instance("keeps working across lots while the objective is open and todos rem
         updatedAt: 1,
       } as any,
     })
-    for (let i = 1; i <= 5; i++) yield* llm.text(`lot ${i} progress`)
+    yield* llm.text("lot 1 progress")
 
     yield* prompt.loop({ sessionID: session.id })
 
-    // The mission stays open across lots: one initial call plus the four
-    // autonomous continuations allowed by the idle budget.
-    expect(yield* llm.calls).toBe(5)
+    expect(yield* llm.calls).toBe(1)
   }),
   30000,
 )

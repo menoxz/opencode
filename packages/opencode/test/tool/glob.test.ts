@@ -1,6 +1,6 @@
 import { describe, expect } from "bun:test"
 import path from "path"
-import { Cause, Effect, Exit, Layer } from "effect"
+import { Cause, Effect, Exit, Layer, Stream } from "effect"
 import { GlobTool } from "../../src/tool/glob"
 import { SessionID, MessageID } from "../../src/session/schema"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
@@ -41,6 +41,25 @@ const toolLayer = (flags: Partial<RuntimeFlags.Info> = {}) =>
 
 const it = testEffect(toolLayer())
 const scout = testEffect(toolLayer({ experimentalScout: true }))
+const stalled = testEffect(
+  Layer.mergeAll(
+    CrossSpawnSpawner.defaultLayer,
+    AppFileSystem.defaultLayer,
+    Layer.succeed(
+      Ripgrep.Service,
+      Ripgrep.Service.of({
+        files: () => Stream.never,
+        search: () => Effect.never,
+        tree: () => Effect.never,
+      }),
+    ),
+    Truncate.defaultLayer,
+    Agent.defaultLayer,
+    Git.defaultLayer,
+    ToolCacheService.defaultLayer,
+    referenceLayer(),
+  ),
+)
 
 const ctx = {
   sessionID: SessionID.make("ses_test"),
@@ -105,6 +124,18 @@ const invalidateCache = Effect.fn("GlobToolTest.invalidateCache")(function* (pat
 })
 
 describe("tool.glob", () => {
+  stalled.instance("fails instead of leaving a turn running when ripgrep stalls", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const info = yield* GlobTool
+      const glob = yield* info.init()
+      const exit = yield* glob.execute({ pattern: "*.ts", path: test.directory }, ctx).pipe(Effect.exit)
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) expect(Cause.pretty(exit.cause)).toContain("glob timed out")
+    }),
+    40_000,
+  )
+
   it.instance("caches glob results and refreshes after invalidation", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance

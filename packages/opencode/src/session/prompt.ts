@@ -8,6 +8,7 @@ import { SessionID, MessageID, PartID } from "./schema"
 import { MessageV2 } from "./message-v2"
 import { PromptQueue } from "./prompt-queue"
 import { AUTO_CONTINUE_INSTRUCTION, decideRunDecision } from "./continuation"
+import { SessionWorkPlan } from "./work-plan"
 import { capsuleFor, environmentStateEnabled, ledgerFor } from "./environment"
 import { progressCapsule } from "./progress"
 import { matchedRecipeCapsule } from "./recipes"
@@ -1789,10 +1790,10 @@ export const layer = Layer.effect(
           // without writing an assistant child for that prompt.
           const resolvedAnchorUserID = PromptQueue.resolveAnchorUserID(msgs, anchorUserID)
           if (!resolvedAnchorUserID) {
-            throw new Error("Anchored user message not found after compaction and no replay is available.")
+            throw new Error("Anchored user message not found after compaction and no recovery prompt is available.")
           }
           if (resolvedAnchorUserID !== anchorUserID) {
-            yield* slog.info("reanchoring run to compaction replay", {
+            yield* slog.info("reanchoring run after compaction", {
               previousAnchorUserID: anchorUserID,
               anchorUserID: resolvedAnchorUserID,
             })
@@ -1849,9 +1850,7 @@ export const layer = Layer.effect(
           ) {
             const continuationAgent = yield* agents.get(lastUser.agent)
             const decision = decideRunDecision({
-              goal: (yield* sessions.get(sessionID).pipe(Effect.orDie)).goalState,
-              userID: lastUser.id,
-              todos: yield* todos.get(sessionID),
+              nextAction: { kind: hasToolCalls ? "await_tool" : "none" },
               idleContinues,
               autocontinueEnabled:
                 lastUser.format?.type !== "json_schema" &&
@@ -1915,7 +1914,7 @@ export const layer = Layer.effect(
           if (
             lastFinished &&
             lastFinished.summary !== true &&
-            (yield* compaction.isOverflow({ tokens: lastFinished.tokens, model }))
+            (yield* compaction.isOverflow({ tokens: lastFinished.tokens, model, messages: msgs }))
           ) {
             yield* compaction.create({ sessionID, agent: lastUser.agent, model: lastUser.model, auto: true })
             continue
@@ -2120,10 +2119,14 @@ export const layer = Layer.effect(
               instruction.system().pipe(Effect.orDie),
             ])
             const instructions = process.env.OPENCODE_NATIVE_EVAL === "1" ? [] : loadedInstructions
+            const planPath = SessionWorkPlan.pathFor(sessionID, ctx)
+            const plan = (yield* fsys.existsSafe(planPath))
+              ? SessionWorkPlan.reference({ sessionID, planPath, todos: yield* todos.get(sessionID) })
+              : undefined
             // Track the fixed system fragments so the context summary covers the
             // FULL system prompt, not only the variable sections.
             contextSummary.add("core", "base agent prompt (PROMPT_CORE or agent.prompt)", agent.prompt ?? PROMPT_CORE, 0)
-            contextSummary.add("env", "inject environment info", env, 0)
+            contextSummary.add("env", "inject environment info", [env.stable, env.runtime], 0)
             contextSummary.add("instructions", "inject AGENTS.md instruction files", instructions, 0)
             const modelMessageConversionStart = Date.now()
             const modelMsgs = yield* MessageV2.toModelMessagesEffect(preparedMsgs, model, {
@@ -2137,7 +2140,7 @@ export const layer = Layer.effect(
               modelMsgs,
               Date.now() - modelMessageConversionStart,
             )
-            const system = [...env, ...instructions]
+            const system: string[] = []
 
             // Extract the last user message for skill relevance filtering (every turn)
             const lastUserText = getCurrentTaskText(msgs) || undefined
@@ -2154,7 +2157,6 @@ export const layer = Layer.effect(
             const preloadedSkills = cachedPreload.cached
               ? cachedPreload.value
               : injectionCache.set(preloadKey, yield* sys.preloadedSkills(agent))
-            if (preloadedSkills) system.push(preloadedSkills)
             contextSummary.add(
               "skills",
               preloadedSkills ? `preload ${agent.preloadSkills?.length ?? 0} configured skill(s)` : "no configured skill preload",
@@ -2168,14 +2170,10 @@ export const layer = Layer.effect(
             const skillsKey = `skills:${skillRev}:${agent.name}:${createHash("sha1").update(lastUserText ?? "").digest("hex")}`
             const cachedSkills = injectionCache.get(skillsKey)
             const skills = cachedSkills.cached ? cachedSkills.value : injectionCache.set(skillsKey, yield* sys.skills(agent, lastUserText))
-            if (skills) system.push(skills)
-            contextSummary.add("skills", skills ? "inject relevant skill summary" : "no relevant skill summary", skills, Date.now() - skillsStart, { cached: cachedSkills.cached })
-
             // Conditionally advertise write/shell tools based on security mode
             const toolListStart = Date.now()
             const cachedToolList = injectionCache.get(`toolList:${securityMode}`)
             const toolList = cachedToolList.cached ? cachedToolList.value : injectionCache.set(`toolList:${securityMode}`, yield* sys.toolList(securityMode))
-            if (toolList) system.push(toolList)
             contextSummary.add(
               "toolList",
               toolList ? `inject tool list for security mode ${securityMode}` : "no tool list available",
@@ -2183,6 +2181,12 @@ export const layer = Layer.effect(
               Date.now() - toolListStart,
               { cached: cachedToolList.cached },
             )
+
+            system.push([...instructions, env.stable, preloadedSkills, toolList].filter((entry) => entry).join("\n"))
+            system.push(env.runtime)
+            if (plan) system.push(plan)
+            if (skills) system.push(skills)
+            contextSummary.add("skills", skills ? "inject relevant skill summary" : "no relevant skill summary", skills, Date.now() - skillsStart, { cached: cachedSkills.cached })
 
             // Inject task contract (Goal/DoD) once per turn if available
             if (!system.some((entry) => entry.includes("<task-contract")) && goalState.status !== "skipped") {

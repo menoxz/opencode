@@ -97,3 +97,4 @@ export const rpc = {
 }
 
 Rpc.listen(rpc)
+Rpc.emit("worker.ready", undefined)

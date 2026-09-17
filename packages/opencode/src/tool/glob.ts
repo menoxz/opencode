@@ -77,6 +77,10 @@ export const GlobTool = Tool.define(
             ),
             Stream.take(limit + 1),
             Stream.runCollect,
+            Effect.timeoutOrElse({
+              duration: "30 seconds",
+              orElse: () => Effect.fail(new Error(`glob timed out after 30 seconds: ${search}`)),
+            }),
             Effect.map((chunk) => [...chunk]),
           )
 

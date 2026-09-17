@@ -23,6 +23,7 @@ import { useEvent } from "@tui/context/event"
 import { SplitBorder } from "@tui/component/border"
 import { Spinner } from "@tui/component/spinner"
 import { InspectBatchTree } from "@tui/component/inspect-batch-tree"
+import { CompactionDisclosure } from "@tui/component/compaction-summary"
 import { generateSubtleSyntax, selectedForeground, useTheme } from "@tui/context/theme"
 import { BoxRenderable, ScrollBoxRenderable, addDefaultParsers, TextAttributes, RGBA } from "@opentui/core"
 import { Prompt, type PromptRef } from "@tui/component/prompt"
@@ -1748,23 +1749,39 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
 
   const childShortcut = useCommandShortcut("session.child.first")
 
+  const parts = () => (
+    <For each={props.parts}>
+      {(part, index) => {
+        const component = createMemo(() => PART_MAPPING[part.type as keyof typeof PART_MAPPING])
+        return (
+          <Show when={component()}>
+            <Dynamic
+              last={index() === props.parts.length - 1}
+              component={component()}
+              part={part as any}
+              message={props.message}
+            />
+          </Show>
+        )
+      }}
+    </For>
+  )
+
   return (
     <>
-      <For each={props.parts}>
-        {(part, index) => {
-          const component = createMemo(() => PART_MAPPING[part.type as keyof typeof PART_MAPPING])
-          return (
-            <Show when={component()}>
-              <Dynamic
-                last={index() === props.parts.length - 1}
-                component={component()}
-                part={part as any}
-                message={props.message}
-              />
-            </Show>
-          )
-        }}
-      </For>
+      <Show when={props.message.summary} fallback={parts()}>
+        <box marginTop={1} flexShrink={0}>
+          <CompactionDisclosure
+            label="Compacted context"
+            color={theme.text}
+            muted={theme.textMuted}
+            align="left"
+            paddingLeft={3}
+          >
+            {parts()}
+          </CompactionDisclosure>
+        </box>
+      </Show>
       <Show
         when={props.parts.some(
           (x) =>

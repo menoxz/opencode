@@ -34,6 +34,7 @@ tsconfig.tsbuildinfo
 # local build and diagnostic artifacts
 build.txt
 packages/opencode/tsc.txt
+packages/opencode/.bun-cache/
 
 
 # Agent Swarm scratch space (manifests, worker results, reports)

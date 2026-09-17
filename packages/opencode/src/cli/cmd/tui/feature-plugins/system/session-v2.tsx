@@ -4,6 +4,7 @@ import { useSyncV2 } from "@tui/context/sync-v2"
 import { SplitBorder } from "@tui/component/border"
 import { Spinner } from "@tui/component/spinner"
 import { InspectBatchTree } from "@tui/component/inspect-batch-tree"
+import { CompactionDisclosure } from "@tui/component/compaction-summary"
 import { useTheme } from "@tui/context/theme"
 import { useLocal } from "@tui/context/local"
 import { reasoningSummary, useThinkingMode } from "@tui/context/thinking"
@@ -228,18 +229,22 @@ function ShellMessage(props: { message: SessionMessageShell }) {
   )
 }
 
-function CompactionMessage(props: { message: SessionMessageCompaction }) {
+export function CompactionMessage(props: { message: SessionMessageCompaction }) {
   const { theme, syntax } = useTheme()
   return (
     <box
       marginTop={1}
       border={["top"]}
-      title={props.message.reason === "auto" ? " Auto Compaction " : " Compaction "}
       titleAlignment="center"
       borderColor={theme.borderActive}
       flexShrink={0}
     >
-      <Show when={props.message.summary}>
+      <CompactionDisclosure
+        label={props.message.reason === "auto" ? "Auto Compaction" : "Compaction"}
+        color={theme.text}
+        muted={theme.textMuted}
+      >
+        <Show when={props.message.summary}>
         {(summary) => (
           <box paddingLeft={3} paddingTop={1}>
             <code
@@ -253,7 +258,8 @@ function CompactionMessage(props: { message: SessionMessageCompaction }) {
             />
           </box>
         )}
-      </Show>
+        </Show>
+      </CompactionDisclosure>
     </box>
   )
 }

@@ -7,6 +7,9 @@ import { eq } from "drizzle-orm"
 import { asc } from "drizzle-orm"
 import { TodoTable } from "./session.sql"
 import * as Log from "@opencode-ai/core/util/log"
+import { AppFileSystem } from "@opencode-ai/core/filesystem"
+import { InstanceState } from "@/effect/instance-state"
+import { SessionWorkPlan } from "./work-plan"
 
 const log = Log.create({ service: "session.todo" })
 
@@ -44,6 +47,7 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const bus = yield* Bus.Service
+    const fsys = yield* AppFileSystem.Service
 
     const update = Effect.fn("Todo.update")(function* (input: { sessionID: SessionID; todos: Info[] }) {
       const start = Date.now()
@@ -67,6 +71,10 @@ export const layer = Layer.effect(
       )
       log.debug("update", { sessionID: input.sessionID, count, ms: elapsed(start) })
       yield* bus.publish(Event.Updated, input)
+      const planPath = SessionWorkPlan.pathFor(input.sessionID, yield* InstanceState.context)
+      yield* fsys
+        .writeWithDirs(planPath, SessionWorkPlan.render({ sessionID: input.sessionID, planPath, todos: input.todos }))
+        .pipe(Effect.catch(Effect.die))
     })
 
     const get = Effect.fn("Todo.get")(function* (sessionID: SessionID) {
@@ -88,6 +96,6 @@ export const layer = Layer.effect(
   }),
 )
 
-export const defaultLayer = layer.pipe(Layer.provide(Bus.layer))
+export const defaultLayer = layer.pipe(Layer.provide(Bus.layer), Layer.provide(AppFileSystem.defaultLayer))
 
 export * as Todo from "./todo"

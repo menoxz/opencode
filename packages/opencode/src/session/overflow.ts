@@ -6,6 +6,10 @@ import type { MessageV2 } from "./message-v2"
 
 const COMPACTION_BUFFER = 20_000
 const DEFAULT_THRESHOLD = 0.95
+const READ_HEAVY_FRACTION = 0.8
+const READ_HEAVY_MIN_TOKENS = 20_000
+const CHARS_PER_TOKEN = 4
+const INSPECTION_TOOLS = new Set(["read", "grep", "glob", "inspect_batch", "repo_overview"])
 const log = Log.create({ service: "session.overflow" })
 
 // Compacting is not free: it rewrites the whole prompt prefix, which throws away
@@ -20,7 +24,6 @@ function threshold(cfg: Config.Info) {
   return Math.min(1, Math.max(0.1, configured))
 }
 
-
 function limits(input: { cfg: Config.Info; model: Provider.Model; outputTokenMax?: number }) {
   const context = input.model.limit.context
   const maxOutput = ProviderTransform.maxOutputTokens(input.model, input.outputTokenMax)
@@ -29,7 +32,7 @@ function limits(input: { cfg: Config.Info; model: Provider.Model; outputTokenMax
     ? 0
     : input.model.limit.input
       ? Math.max(0, input.model.limit.input - reserved)
-      : Math.max(0, context - maxOutput)
+      : Math.max(0, context - Math.max(maxOutput, reserved))
 
   return {
     context,
@@ -46,6 +49,20 @@ function tokenCount(tokens: MessageV2.Assistant["tokens"]) {
   return tokens.total || tokens.input + tokens.output + tokens.cache.read + tokens.cache.write
 }
 
+function inspectionTokens(messages: MessageV2.WithParts[]) {
+  let chars = 0
+  for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex--) {
+    const message = messages[messageIndex]!
+    if (message.info.role === "assistant" && message.info.summary) break
+    if (message.parts.some((part) => part.type === "compaction")) break
+    for (const part of message.parts) {
+      if (part.type !== "tool" || !INSPECTION_TOOLS.has(part.tool) || part.state.status !== "completed") continue
+      chars += part.state.output.length
+    }
+  }
+  return Math.ceil(chars / CHARS_PER_TOKEN)
+}
+
 function modelLabel(model: Provider.Model) {
   return `${model.providerID}/${model.id}`
 }
@@ -60,6 +77,7 @@ export function isOverflow(input: {
   model: Provider.Model
   outputTokenMax?: number
   sessionID?: string
+  messages?: MessageV2.WithParts[]
 }) {
   if (input.cfg.compaction?.auto === false) {
     log.debug("context overflow skipped", {
@@ -81,7 +99,13 @@ export function isOverflow(input: {
   }
 
   const count = tokenCount(input.tokens)
-  const trigger = Math.floor(limit.usable * threshold(input.cfg))
+  const inspected = input.messages ? inspectionTokens(input.messages) : 0
+  const readHeavy = inspected >= (input.cfg.compaction?.read_heavy_min_tokens ?? READ_HEAVY_MIN_TOKENS)
+  const proportional = Math.floor(limit.usable * threshold(input.cfg))
+  const absolute = input.cfg.compaction?.absolute_trigger ?? proportional
+  const readHeavyTrigger =
+    input.cfg.compaction?.read_heavy_trigger ?? Math.floor(proportional * READ_HEAVY_FRACTION)
+  const trigger = Math.min(proportional, absolute, readHeavy ? readHeavyTrigger : Number.POSITIVE_INFINITY)
   const result = count >= trigger
   log.debug("context overflow evaluated", {
     result,
@@ -89,6 +113,8 @@ export function isOverflow(input: {
     model: modelLabel(input.model),
     session: input.sessionID,
     tokens: count,
+    inspected,
+    readHeavy,
     trigger,
     usable: limit.usable,
     context: limit.context,

@@ -115,6 +115,22 @@ it.instance(
   { git: true },
 )
 
+it.instance(
+  "ask - coalesces identical pending questions",
+  () =>
+    Effect.gen(function* () {
+      const input = { sessionID: SessionID.make("ses_test"), questions: [{ question: "Which environment?", header: "Environment", options: [{ label: "Dev", description: "Development" }] }] }
+      const first = yield* askEffect(input).pipe(Effect.forkScoped)
+      const second = yield* askEffect(input).pipe(Effect.forkScoped)
+      const pending = yield* waitForPending(1)
+      expect(pending).toHaveLength(1)
+      yield* replyEffect({ requestID: pending[0].id, answers: [["Dev"]] })
+      expect(yield* Fiber.join(first)).toEqual([["Dev"]])
+      expect(yield* Fiber.join(second)).toEqual([["Dev"]])
+    }),
+  { git: true },
+)
+
 // reply tests
 
 it.instance(

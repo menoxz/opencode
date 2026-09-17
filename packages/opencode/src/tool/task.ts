@@ -176,18 +176,20 @@ const childText = Effect.fn("TaskTool.childText")(function* (sessions: Session.I
 
 function statusOutput(input: {
   sessionID: SessionID
-  status: "running" | "completed" | "partial" | "blocked" | "error" | "cancelled" | "unknown"
+  status: "running" | "cancelling" | "completed" | "partial" | "blocked" | "error" | "cancelled" | "unknown"
   partial: string
   waited?: boolean
 }) {
-  const running = input.status === "running"
+  const running = input.status === "running" || input.status === "cancelling"
   return [
     `<task id="${input.sessionID}" state="${running ? "running" : input.status}">`,
     `<summary>${
       running
         ? input.waited
           ? "Still running when the wait expired."
-          : "Still running."
+          : input.status === "cancelling"
+            ? "Cancellation is still stopping descendant work."
+            : "Still running."
         : `Finished with status ${input.status}.`
     }</summary>`,
     "<task_result>",
@@ -331,7 +333,7 @@ export const TaskTool = Tool.define(
               ? yield* lifecycleLock(background, target).withPermits(1)(
                   Effect.gen(function* () {
                     const current = yield* background.get(target)
-                    if (!current || current.status !== "running") return current
+                    if (!current || (current.status !== "running" && current.status !== "cancelling")) return current
                     if (current.type !== id)
                       return yield* Effect.fail(new Error(`Task ${target} is not a managed subagent job.`))
                     const ops = ctx.extra?.promptOps as TaskPromptOps | undefined
@@ -339,15 +341,7 @@ export const TaskTool = Tool.define(
                       return yield* Effect.fail(
                         new Error("TaskTool requires promptOps in ctx.extra to cancel running work"),
                       )
-                    // Settle the job first: session cancellation also traverses jobs,
-                    // so calling it from the job's finalizer would self-interrupt.
-                    return yield* Effect.uninterruptible(
-                      Effect.gen(function* () {
-                        const cancelled = yield* background.cancel(target)
-                        if (cancelled?.status === "cancelled") yield* ops.cancel(target)
-                        return cancelled
-                      }),
-                    )
+                    return yield* background.cancel(target)
                   }),
                 )
               : yield* background.get(target)
@@ -607,6 +601,10 @@ export const TaskTool = Tool.define(
               type: id,
               title: params.description,
               metadata,
+              // The session runner is a separate fiber from the background job.
+              // Tie both lifecycles together for every cancellation path, not
+              // only action=cancel follow-ups.
+              onCancel: ops.cancel(nextSession.id),
               // A background subagent cannot stall the parent, but it can still burn
               // tokens forever unattended. Same ceiling as the foreground path.
               run: withBudget(runTask(), minutes).pipe(

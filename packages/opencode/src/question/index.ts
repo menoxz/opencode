@@ -105,6 +105,7 @@ export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("Que
 interface PendingEntry {
   info: Request
   deferred: Deferred.Deferred<ReadonlyArray<Answer>, RejectedError>
+  fingerprint: string
 }
 
 interface State {
@@ -158,6 +159,9 @@ export const layer = Layer.effect(
       tool?: Tool
     }) {
       const pending = (yield* InstanceState.get(state)).pending
+      const fingerprint = JSON.stringify([input.sessionID, input.questions, input.tool])
+      const duplicate = [...pending.values()].find((entry) => entry.fingerprint === fingerprint)
+      if (duplicate) return yield* Deferred.await(duplicate.deferred)
       const id = QuestionID.ascending()
       log.info("asking", { id, questions: input.questions.length })
 
@@ -168,7 +172,7 @@ export const layer = Layer.effect(
         questions: input.questions,
         tool: input.tool,
       }
-      pending.set(id, { info, deferred })
+      pending.set(id, { info, deferred, fingerprint })
       yield* bus.publish(Event.Asked, info)
 
       return yield* Effect.ensuring(

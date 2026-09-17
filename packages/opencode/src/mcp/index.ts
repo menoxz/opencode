@@ -571,7 +571,7 @@ export const layer = Layer.effect(
         },
       })
       transport.stderr?.on("data", (chunk: Buffer) => {
-        log.info(`mcp stderr: ${chunk.toString()}`, { key })
+        log.debug(`mcp stderr: ${chunk.toString()}`, { key })
       })
 
       const connectTimeout = mcp.timeout ?? DEFAULT_TIMEOUT

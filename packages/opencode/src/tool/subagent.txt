@@ -1,4 +1,4 @@
-List all active sub-agents spawned by the current session. Returns their ID, agent type, description, and running time.
+List all sub-agents spawned by the current session. Returns their ID, agent type, description, managed execution state, and elapsed time.
 
 Use this to:
 - Check if background sub-agents are still running

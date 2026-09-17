@@ -47,6 +47,20 @@ import { ConfigVariable } from "./variable"
 import { Npm } from "@opencode-ai/core/npm"
 import { withTransientReadRetry } from "@/util/effect-http-client"
 
+const validCompactionThresholds = Schema.makeFilter<{
+  absolute_trigger?: number
+  read_heavy_trigger?: number
+  threshold?: number
+}>((value) =>
+  value.threshold !== undefined && (value.threshold < 0.1 || value.threshold > 1)
+    ? "compaction.threshold must be between 0.1 and 1"
+    : value.absolute_trigger !== undefined &&
+        value.read_heavy_trigger !== undefined &&
+        value.read_heavy_trigger > value.absolute_trigger
+      ? "compaction.read_heavy_trigger must be less than or equal to compaction.absolute_trigger"
+      : undefined,
+)
+
 const log = Log.create({ service: "config" })
 
 // Custom merge function that concatenates array fields instead of replacing them
@@ -296,7 +310,18 @@ export const Info = Schema.Struct({
         description:
           "Fraction of the usable context that triggers automatic compaction, between 0.1 and 1 (default: 0.95). Compaction rewrites the whole prompt prefix and discards the provider cache, so lower values are only worth it when that cache is unavailable.",
       }),
-    }),
+      absolute_trigger: Schema.optional(PositiveInt).annotate({
+        description: "Maximum context tokens before automatic compaction regardless of workload (default: 95% of the usable context).",
+      }),
+      read_heavy_trigger: Schema.optional(PositiveInt).annotate({
+        description:
+          "Context tokens that trigger automatic compaction for read-heavy workloads (default: 80% of the compaction threshold). Must not exceed absolute_trigger when both are configured.",
+      }),
+      read_heavy_min_tokens: Schema.optional(PositiveInt).annotate({
+        description:
+          "Minimum estimated tokens from read, grep, glob, inspect_batch, or repo_overview output that classify the current context as read-heavy (default: 20000).",
+      }),
+    }).check(validCompactionThresholds),
   ),
   experimental: Schema.optional(
     Schema.Struct({

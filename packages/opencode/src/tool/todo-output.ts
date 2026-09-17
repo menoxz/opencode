@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto"
+import { SessionWorkPlan } from "@/session/work-plan"
 
 export type TodoItem = { content: string; status: string; priority: string }
 export type TodoSummary = ReturnType<typeof summarizeTodos>
@@ -83,10 +84,12 @@ export function renderTodoSnapshot(metadata: unknown): string | undefined {
     if (!item || typeof item !== "object" || typeof item.content !== "string" || typeof item.status !== "string" || typeof item.priority !== "string") return undefined
     todos.push({ content: item.content, status: item.status, priority: item.priority })
   }
+  const projection = SessionWorkPlan.projectTodos(todos)
   return JSON.stringify({
     summary: summarizeTodos(todos),
     revision: todoRevision(todos),
-    todos: todos.map((t, i) => ({ id: `t${i}`, ...t })),
+    todos: projection.todos.map((todo, index) => ({ id: `t${projection.indexes[index]}`, ...todo })),
+    ...(projection.omitted ? { omitted: projection.omitted, note: "Read the persistent work plan for omitted phases." } : {}),
   })
 }
 

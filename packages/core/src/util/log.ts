@@ -169,7 +169,7 @@ export function create(tags?: Record<string, any>) {
     },
     time(message: string, extra?: Record<string, any>) {
       const now = Date.now()
-      result.info(message, { status: "started", ...extra })
+      result.debug(message, { status: "started", ...extra })
       function stop() {
         result.info(message, {
           status: "completed",

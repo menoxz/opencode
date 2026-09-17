@@ -1,4 +1,4 @@
-import { Cause, Duration, Effect, Layer, Schedule, Schema, Semaphore, Context } from "effect"
+import { Cause, Duration, Effect, Layer, Option, Schedule, Schema, Semaphore, Context } from "effect"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { formatPatch, structuredPatch } from "diff"
 import path from "path"
@@ -31,6 +31,7 @@ export type FileDiff = typeof FileDiff.Type
 const log = Log.create({ service: "snapshot" })
 const prune = "7.days"
 const limit = 2 * 1024 * 1024
+const staleLock = 60_000
 const core = ["-c", "core.longpaths=true", "-c", "core.symlinks=true"]
 const cfg = ["-c", "core.autocrlf=false", ...core]
 const quote = [...cfg, "-c", "core.quotepath=false"]
@@ -165,6 +166,20 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
           const remove = (file: string) => fs.remove(file).pipe(Effect.catch(() => Effect.void))
           const locked = <A, E, R>(fx: Effect.Effect<A, E, R>) => lock(state.gitdir).withPermits(1)(fx)
 
+          // A git index.lock survives a killed/crashed git process and blocks every
+          // later snapshot forever (fatal: Unable to create '.../index.lock': File exists).
+          // The snapshot gitdir is private to this process and serialized by `locked`,
+          // so any lock older than `staleLock` cannot belong to a live git run.
+          const unlock = Effect.fnUntraced(function* () {
+            const file = path.join(state.gitdir, "index.lock")
+            const stat = yield* fs.stat(file).pipe(Effect.catch(() => Effect.succeed(undefined)))
+            if (!stat) return
+            const age = Date.now() - Option.getOrElse(stat.mtime, () => new Date(0)).getTime()
+            if (age < staleLock) return
+            yield* remove(file)
+            log.warn("removed stale index.lock", { file, age })
+          })
+
           const enabled = Effect.fnUntraced(function* () {
             if (state.vcs !== "git") return false
             return (yield* config.get()).snapshot !== false
@@ -292,6 +307,7 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
                   yield* git(["--git-dir", state.gitdir, "config", "core.fsmonitor", "false"])
                   log.info("initialized")
                 }
+                yield* unlock()
                 yield* add()
                 const result = yield* git(args(["write-tree"]), { cwd: state.directory })
                 const hash = result.text.trim()
@@ -304,6 +320,7 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
           const patch = Effect.fnUntraced(function* (hash: string) {
             return yield* locked(
               Effect.gen(function* () {
+                yield* unlock()
                 yield* add()
                 const result = yield* git(
                   [...quote, ...args(["diff", "--cached", "--no-ext-diff", "--name-only", hash, "--", "."])],
@@ -501,6 +518,7 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
           const diff = Effect.fnUntraced(function* (hash: string) {
             return yield* locked(
               Effect.gen(function* () {
+                yield* unlock()
                 yield* add()
                 const result = yield* git([...quote, ...args(["diff", "--cached", "--no-ext-diff", hash, "--", "."])], {
                   cwd: state.worktree,

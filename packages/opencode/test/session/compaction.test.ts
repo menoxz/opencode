@@ -15,6 +15,7 @@ import { Plugin } from "../../src/plugin"
 import { provideTmpdirInstance, TestInstance } from "../fixture/fixture"
 import { Session as SessionNs } from "@/session/session"
 import { MessageV2 } from "../../src/session/message-v2"
+import { PromptQueue } from "../../src/session/prompt-queue"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { SessionStatus } from "../../src/session/status"
 import { SessionSummary } from "../../src/session/summary"
@@ -376,6 +377,206 @@ function autocontinue(enabled: boolean) {
 }
 
 describe("session.compaction.isOverflow", () => {
+  const messagesWithInspection = (tool: string, outputChars: number): MessageV2.WithParts[] => [
+    {
+      info: {
+        id: MessageID.make("msg_user-inspection"),
+        role: "user",
+        sessionID: SessionID.make("session-inspection"),
+        agent: "build",
+        model: ref,
+        time: { created: 1 },
+      },
+      parts: [],
+    },
+    {
+      info: {
+        id: MessageID.make("msg_assistant-inspection"),
+        role: "assistant",
+        sessionID: SessionID.make("session-inspection"),
+        parentID: MessageID.make("msg_user-inspection"),
+        mode: "build",
+        agent: "build",
+        path: { cwd: "/tmp", root: "/tmp" },
+        cost: 0,
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        modelID: ref.modelID,
+        providerID: ref.providerID,
+        time: { created: 2 },
+      },
+      parts: [
+        {
+          id: PartID.make("prt_inspection"),
+          messageID: MessageID.make("msg_assistant-inspection"),
+          sessionID: SessionID.make("session-inspection"),
+          type: "tool",
+          callID: "call_inspection",
+          tool,
+          state: {
+            status: "completed",
+            input: {},
+            output: "x".repeat(outputChars),
+            title: "inspection",
+            metadata: {},
+            time: { start: 1, end: 2 },
+          },
+        },
+      ],
+    },
+  ]
+
+  it.live(
+    "compacts at the read-heavy fraction of usable context after substantial inspection output",
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const compact = yield* SessionCompaction.Service
+        const model = createModel({ context: 400_000, output: 20_000 })
+        const messages = messagesWithInspection("read", 80_000)
+        // 80k no longer triggers early compaction on a 400k context (usable 380k, read-heavy trigger 288.8k)
+        expect(
+          yield* compact.isOverflow({
+            tokens: { input: 80_000, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+            model,
+            messages,
+          }),
+        ).toBe(false)
+        expect(
+          yield* compact.isOverflow({
+            tokens: { input: 290_000, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+            model,
+            messages,
+          }),
+        ).toBe(true)
+      }),
+    ),
+  )
+
+  it.live(
+    "keeps an 80k context without substantial inspection output",
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const compact = yield* SessionCompaction.Service
+        const model = createModel({ context: 400_000, output: 20_000 })
+        const tokens = { input: 80_000, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
+        expect(yield* compact.isOverflow({ tokens, model, messages: messagesWithInspection("bash", 80_000) })).toBe(false)
+      }),
+    ),
+  )
+
+  it.live(
+    "compacts at 95% of usable context even without inspection output",
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const compact = yield* SessionCompaction.Service
+        const model = createModel({ context: 200_000, output: 20_000 })
+        // usable = 180k, trigger = 171k
+        expect(
+          yield* compact.isOverflow({
+            tokens: { input: 100_000, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+            model,
+          }),
+        ).toBe(false)
+        expect(
+          yield* compact.isOverflow({
+            tokens: { input: 175_000, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+            model,
+          }),
+        ).toBe(true)
+      }),
+    ),
+  )
+
+  it.live(
+    "uses configured automatic compaction token thresholds",
+    provideTmpdirInstance(
+      () =>
+        Effect.gen(function* () {
+          const compact = yield* SessionCompaction.Service
+          const model = createModel({ context: 400_000, output: 20_000 })
+          expect(
+            yield* compact.isOverflow({
+              tokens: { input: 89_999, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+              model,
+              messages: messagesWithInspection("read", 100_000),
+            }),
+          ).toBe(false)
+          expect(
+            yield* compact.isOverflow({
+              tokens: { input: 90_000, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+              model,
+              messages: messagesWithInspection("read", 100_000),
+            }),
+          ).toBe(true)
+          expect(
+            yield* compact.isOverflow({
+              tokens: { input: 119_999, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+              model,
+            }),
+          ).toBe(false)
+          expect(
+            yield* compact.isOverflow({
+              tokens: { input: 120_000, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+              model,
+            }),
+          ).toBe(true)
+        }),
+      {
+        config: {
+          compaction: {
+            absolute_trigger: 120_000,
+            read_heavy_trigger: 90_000,
+            read_heavy_min_tokens: 25_000,
+          },
+        },
+      },
+    ),
+  )
+
+  it.live(
+    "ignores inspection output before the latest compaction boundary",
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const compact = yield* SessionCompaction.Service
+        const model = createModel({ context: 400_000, output: 20_000 })
+        const tokens = { input: 80_000, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
+        const messages = messagesWithInspection("read", 80_000)
+        messages.push({
+          info: {
+            id: MessageID.make("msg_compaction-boundary"),
+            role: "user",
+            sessionID: SessionID.make("session-inspection"),
+            agent: "build",
+            model: ref,
+            time: { created: 3 },
+          },
+          parts: [
+            {
+              id: PartID.make("prt_compaction-boundary"),
+              messageID: MessageID.make("msg_compaction-boundary"),
+              sessionID: SessionID.make("session-inspection"),
+              type: "compaction",
+              auto: true,
+            },
+          ],
+        })
+        expect(yield* compact.isOverflow({ tokens, model, messages })).toBe(false)
+      }),
+    ),
+  )
+
+  it.live(
+    "keeps automatic compaction disabled when configured off",
+    provideTmpdirInstance(
+      () =>
+        Effect.gen(function* () {
+          const compact = yield* SessionCompaction.Service
+          const model = createModel({ context: 400_000, output: 20_000 })
+          const tokens = { input: 100_000, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
+          expect(yield* compact.isOverflow({ tokens, model, messages: messagesWithInspection("read", 80_000) })).toBe(false)
+        }),
+      { config: { compaction: { auto: false } } },
+    ),
+  )
   it.live(
     "returns true when token count exceeds usable context",
     provideTmpdirInstance(() =>
@@ -389,26 +590,36 @@ describe("session.compaction.isOverflow", () => {
   )
 
   it.live(
-    "returns false when token count within usable context",
+    "returns false below the proportional trigger when token count is within usable context",
     provideTmpdirInstance(() =>
       Effect.gen(function* () {
         const compact = yield* SessionCompaction.Service
         const model = createModel({ context: 200_000, output: 32_000 })
-        const tokens = { input: 100_000, output: 10_000, reasoning: 0, cache: { read: 0, write: 0 } }
+        const tokens = { input: 90_000, output: 9_000, reasoning: 0, cache: { read: 0, write: 0 } }
         expect(yield* compact.isOverflow({ tokens, model })).toBe(false)
       }),
     ),
   )
 
   it.live(
-    "returns false immediately below the default 95 percent threshold",
+    "compacts at the proportional trigger before a larger model threshold",
     provideTmpdirInstance(() =>
       Effect.gen(function* () {
         const compact = yield* SessionCompaction.Service
         const model = createModel({ context: 200_000, output: 20_000 })
-        // usable = 200_000 - 20_000 = 180_000, so the trigger sits at 171_000.
-        const tokens = { input: 170_999, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
-        expect(yield* compact.isOverflow({ tokens, model })).toBe(false)
+        // usable = 180k, trigger = 171k: 100k stays below, 175k overflows
+        expect(
+          yield* compact.isOverflow({
+            tokens: { input: 100_000, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+            model,
+          }),
+        ).toBe(false)
+        expect(
+          yield* compact.isOverflow({
+            tokens: { input: 175_000, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+            model,
+          }),
+        ).toBe(true)
       }),
     ),
   )
@@ -426,16 +637,30 @@ describe("session.compaction.isOverflow", () => {
   )
 
   it.live(
-    "honors a configured compaction threshold override",
+    "keeps the configured threshold when it is below the proportional trigger",
     provideTmpdirInstance(
       () =>
         Effect.gen(function* () {
           const compact = yield* SessionCompaction.Service
           const model = createModel({ context: 200_000, output: 20_000 })
-          const tokens = { input: 161_999, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
+          const tokens = { input: 99_999, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
           expect(yield* compact.isOverflow({ tokens, model })).toBe(false)
         }),
       { config: { compaction: { threshold: 0.9 } } },
+    ),
+  )
+
+  it.live(
+    "honors configured compaction reserve when the model has no explicit input limit",
+    provideTmpdirInstance(
+      () =>
+        Effect.gen(function* () {
+          const compact = yield* SessionCompaction.Service
+          const model = createModel({ context: 400_000, output: 128_000 })
+          const tokens = { input: 70_000, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
+          expect(yield* compact.isOverflow({ tokens, model })).toBe(true)
+        }),
+      { config: { compaction: { reserved: 320_000, threshold: 0.85 } } },
     ),
   )
 
@@ -464,15 +689,24 @@ describe("session.compaction.isOverflow", () => {
   )
 
   it.live(
-    "returns false when input/output are within input caps",
+    "compacts at the proportional trigger even when model input/output caps are larger",
     provideTmpdirInstance(() =>
       Effect.gen(function* () {
         const compact = yield* SessionCompaction.Service
         const model = createModel({ context: 400_000, input: 272_000, output: 128_000 })
-        // usable = 272_000 - 20_000 reserved = 252_000, and compaction now triggers
-        // at 85 % of it (214_200), so "within the caps" also means below that.
-        const tokens = { input: 170_000, output: 20_000, reasoning: 0, cache: { read: 10_000, write: 0 } }
-        expect(yield* compact.isOverflow({ tokens, model })).toBe(false)
+        // usable = 272k - 20k reserved = 252k, trigger = 239.4k
+        expect(
+          yield* compact.isOverflow({
+            tokens: { input: 170_000, output: 20_000, reasoning: 0, cache: { read: 10_000, write: 0 } },
+            model,
+          }),
+        ).toBe(false)
+        expect(
+          yield* compact.isOverflow({
+            tokens: { input: 220_000, output: 20_000, reasoning: 0, cache: { read: 10_000, write: 0 } },
+            model,
+          }),
+        ).toBe(true)
       }),
     ),
   )
@@ -967,6 +1201,9 @@ describe("session.compaction.process", () => {
       if (last?.parts[0]?.type === "text") {
         expect(last.parts[0].text).toContain("Continue if you have next steps")
       }
+      expect(PromptQueue.resolveAnchorUserID(MessageV2.filterCompacted(all).filter((item) => item.info.id !== msg.id), msg.id)).toBe(
+        last?.info.id,
+      )
     }),
   )
 

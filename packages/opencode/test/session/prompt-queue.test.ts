@@ -68,6 +68,11 @@ describe("resolveAnchorUserID", () => {
     expect(PromptQueue.resolveAnchorUserID([replay], MessageID.ascending("msg0001"))).toBe(replay.info.id)
   })
 
+  test("reanchors to the synthetic continuation when successful compaction removed the original user", () => {
+    const continuation = user("msg0003", [text({ compaction_continue: true })])
+    expect(PromptQueue.resolveAnchorUserID([continuation], MessageID.ascending("msg0001"))).toBe(continuation.info.id)
+  })
+
   test("keeps the original anchor while it remains in the retained tail", () => {
     const anchor = user("msg0001")
     const replay = user("msg0003", [text({ compaction_replay: true })])

@@ -1,6 +1,7 @@
 import { Effect, Schema } from "effect"
 import * as Tool from "./tool"
 import { Session } from "@/session/session"
+import { BackgroundJob } from "@/background/job"
 import DESCRIPTION from "./subagent.txt"
 
 export const Parameters = Schema.Struct({})
@@ -17,10 +18,11 @@ function formatDuration(ms: number): string {
   return `${minutes}m ${seconds}s`
 }
 
-export const SubagentListTool = Tool.define<typeof Parameters, Metadata, Session.Service>(
+export const SubagentListTool = Tool.define<typeof Parameters, Metadata, Session.Service | BackgroundJob.Service>(
   "subagent_list",
   Effect.gen(function* () {
     const sessions = yield* Session.Service
+    const background = yield* BackgroundJob.Service
 
     return {
       description: DESCRIPTION,
@@ -28,6 +30,7 @@ export const SubagentListTool = Tool.define<typeof Parameters, Metadata, Session
       execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context) =>
         Effect.gen(function* () {
           const children = yield* sessions.children(ctx.sessionID)
+          const jobs = new Map((yield* background.list()).map((job) => [job.id, job]))
           const now = Date.now()
 
           if (children.length === 0) {
@@ -55,6 +58,7 @@ export const SubagentListTool = Tool.define<typeof Parameters, Metadata, Session
                 created: formatTime(child.time.created),
                 running_for: formatDuration(runningFor),
                 running_ms: runningFor,
+                status: jobs.get(child.id)?.status ?? "unknown",
               }
             })
             // Most recent first
@@ -62,7 +66,7 @@ export const SubagentListTool = Tool.define<typeof Parameters, Metadata, Session
 
           const lines = items.map(
             (item) =>
-              `  <subagent id="${item.id}" agent="${item.agent}" running="${item.running_for}" created="${item.created}">${item.title}</subagent>`,
+              `  <subagent id="${item.id}" agent="${item.agent}" status="${item.status}" elapsed="${item.running_for}" created="${item.created}">${item.title}</subagent>`,
           )
 
           return {

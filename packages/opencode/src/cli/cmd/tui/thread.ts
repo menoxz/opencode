@@ -21,6 +21,7 @@ import {
   sanitizedProcessEnv,
 } from "@opencode-ai/core/util/opencode-process"
 import { validateSession } from "./validate-session"
+import { waitForWorkerReady } from "./worker-ready"
 
 declare global {
   const OPENCODE_WORKER_PATH: string
@@ -157,6 +158,7 @@ export const TuiThreadCommand = cmd({
       }
 
       const client = Rpc.client<typeof rpc>(worker)
+      await waitForWorkerReady(worker, client)
       const error = (e: unknown) => {
         Log.Default.error("process error", { error: errorMessage(e) })
       }

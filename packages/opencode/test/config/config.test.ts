@@ -1308,6 +1308,36 @@ test("config parser preserves permission order while rejecting unknown top-level
   }
 })
 
+test("config parser validates and preserves automatic compaction thresholds", () => {
+  const config = ConfigParse.schema(
+    Config.Info,
+    {
+      compaction: {
+        absolute_trigger: 120_000,
+        read_heavy_trigger: 90_000,
+        read_heavy_min_tokens: 25_000,
+      },
+    },
+    "test",
+  )
+  expect(config.compaction).toMatchObject({
+    absolute_trigger: 120_000,
+    read_heavy_trigger: 90_000,
+    read_heavy_min_tokens: 25_000,
+  })
+  expect(() =>
+    ConfigParse.schema(
+      Config.Info,
+      { compaction: { absolute_trigger: 80_000, read_heavy_trigger: 100_000 } },
+      "test",
+    ),
+  ).toThrow()
+  expect(() =>
+    ConfigParse.schema(Config.Info, { compaction: { absolute_trigger: 0 } }, "test"),
+  ).toThrow()
+  expect(() => ConfigParse.schema(Config.Info, { compaction: { threshold: 0.05 } }, "test")).toThrow()
+})
+
 // MCP config merging tests
 
 it.instance("ignores MCP servers declared by project config", () =>

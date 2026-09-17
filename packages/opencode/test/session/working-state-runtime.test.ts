@@ -223,6 +223,10 @@ for (const native of [false, true]) {
           isWorkflow: true,
           workingState: WorkingState.render({ userID: user.id, todos: [] }),
         })
+        expect(workflow.system[0]).not.toContain("Stable prefix")
+        expect(workflow.system[1]).toBe("Stable prefix")
+        expect(workflow.system.length).toBeGreaterThan(1)
+        expect(workflow.system.join("\n")).toContain("You are")
         expect(workflow.messages).toEqual(workflowBefore)
         expect(workflowMessages).toEqual(workflowBefore)
         expect(JSON.stringify(workflow.messages)).not.toContain(WorkingState.MARKER)

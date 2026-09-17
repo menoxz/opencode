@@ -105,7 +105,7 @@ export function tasksAndShellGuidance(cfg: Config.Info): string {
 }
 
 export interface Interface {
-  readonly environment: (model: Provider.Model) => Effect.Effect<string[]>
+  readonly environment: (model: Provider.Model) => Effect.Effect<{ stable: string; runtime: string }>
   readonly preloadedSkills: (agent: Agent.Info) => Effect.Effect<string | undefined>
   readonly skills: (agent: Agent.Info, lastUserMessage?: string) => Effect.Effect<string | undefined>
   /** Adaptive system prompt composed by PromptComposer module based on detected task type. */
@@ -135,8 +135,8 @@ export const layer = Layer.effect(
       environment: Effect.fn("SystemPrompt.environment")(function* (model: Provider.Model) {
         const ctx = yield* InstanceState.context
         const cfg = yield* config.get()
-        return [
-          [
+        return {
+          runtime: [
             `You are powered by the model named ${model.api.id}. The exact model ID is ${model.providerID}/${model.api.id}`,
             `Here is some useful information about the environment you are running in:`,
             `<env>`,
@@ -147,8 +147,8 @@ export const layer = Layer.effect(
             `  Today's date: ${new Date().toDateString()}`,
             `</env>`,
           ].join("\n"),
-          tasksAndShellGuidance(cfg),
-        ]
+          stable: tasksAndShellGuidance(cfg),
+        }
       }),
 
       preloadedSkills: Effect.fn("SystemPrompt.preloadedSkills")(function* (agent: Agent.Info) {

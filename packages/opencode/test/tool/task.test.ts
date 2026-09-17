@@ -840,6 +840,52 @@ describe("tool.task", () => {
     }),
   )
 
+  it.instance("background job cancellation also stops the independent child session runner", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const jobs = yield* BackgroundJob.Service
+      const runs = yield* SessionRunState.Service
+      const { chat, assistant } = yield* seed()
+      const entered = yield* Deferred.make<SessionID>()
+      const stopped = yield* Deferred.make<void>()
+      const def = yield* (yield* TaskTool).init()
+      const ctx = {
+        sessionID: chat.id,
+        messageID: assistant.id,
+        agent: "build",
+        abort: new AbortController().signal,
+        messages: [],
+        metadata: () => Effect.void,
+        ask: () => Effect.void,
+        extra: {
+          promptOps: {
+            ...stubOps(),
+            cancel: runs.cancel,
+            prompt: (input: SessionPrompt.PromptInput) =>
+              runs.ensureRunning(
+                input.sessionID,
+                Effect.succeed(reply(input, "cancelled")),
+                Deferred.succeed(entered, input.sessionID).pipe(
+                  Effect.andThen(Effect.never),
+                  Effect.ensuring(Deferred.succeed(stopped, undefined)),
+                ),
+              ),
+          } satisfies TaskPromptOps,
+        },
+      }
+      const launched = yield* def.execute(
+        { description: "work", prompt: "work", subagent_type: "general", background: true },
+        ctx,
+      )
+      const target = yield* Deferred.await(entered)
+      expect(target).toBe(launched.metadata.sessionId)
+
+      expect((yield* jobs.cancel(target))?.status).toBe("cancelled")
+      yield* Deferred.await(stopped).pipe(Effect.timeout("1 second"))
+      yield* runs.waitForIdle(target).pipe(Effect.timeout("1 second"))
+    }),
+  )
+
   it.instance("resumes across definitions wait for cancellation cleanup in foreground and background", () =>
     Effect.gen(function* () {
       const sessions = yield* Session.Service
@@ -847,7 +893,6 @@ describe("tool.task", () => {
       const { chat, assistant } = yield* seed()
       for (const background of [false, true]) {
         const child = yield* sessions.create({ parentID: chat.id })
-        yield* jobs.start({ id: child.id, type: "task", run: Effect.never })
         const entered = yield* Deferred.make<void>()
         const release = yield* Deferred.make<void>()
         const attempted = yield* Deferred.make<void>()
@@ -857,6 +902,7 @@ describe("tool.task", () => {
           cancel: () => Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(release))),
           prompt: (input) => Deferred.succeed(started, undefined).pipe(Effect.as(reply(input, "replacement"))),
         }
+        yield* jobs.start({ id: child.id, type: "task", run: Effect.never, onCancel: ops.cancel(child.id) })
         const ctx = {
           sessionID: chat.id,
           messageID: assistant.id,
@@ -1321,6 +1367,58 @@ describe("tool.task", () => {
 
       expect((yield* jobs.get(child.id))?.status).toBe("cancelled")
       expect((yield* jobs.get(grandchild.id))?.status).toBe("cancelled")
+    }),
+  )
+
+  it.instance("background cancellation waits for descendant session runners to stop", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const runState = yield* SessionRunState.Service
+      const sessions = yield* Session.Service
+      const { chat } = yield* seed()
+      const child = yield* sessions.create({ parentID: chat.id, title: "child" })
+      const grandchild = yield* sessions.create({ parentID: child.id, title: "grandchild" })
+      const childStopped = yield* Deferred.make<void>()
+      const grandchildStopped = yield* Deferred.make<void>()
+      const childEntered = yield* Deferred.make<void>()
+      const grandchildEntered = yield* Deferred.make<void>()
+
+      const running = (sessionID: SessionID, entered: Deferred.Deferred<void>, stopped: Deferred.Deferred<void>) =>
+        runState
+          .ensureRunning(
+            sessionID,
+            Effect.succeed(reply({ sessionID, agent: "general", parts: [] }, "cancelled")),
+            Deferred.succeed(entered, undefined).pipe(
+              Effect.andThen(Effect.never),
+              Effect.ensuring(Deferred.succeed(stopped, undefined)),
+            ),
+          )
+          .pipe(Effect.forkScoped)
+      yield* running(child.id, childEntered, childStopped)
+      yield* running(grandchild.id, grandchildEntered, grandchildStopped)
+      yield* Deferred.await(childEntered)
+      yield* Deferred.await(grandchildEntered)
+      yield* jobs.start({
+        id: grandchild.id,
+        type: "task",
+        metadata: { parentSessionId: child.id, sessionId: grandchild.id },
+        run: Effect.never,
+        onCancel: runState.cancel(grandchild.id),
+      })
+      yield* jobs.start({
+        id: child.id,
+        type: "task",
+        metadata: { parentSessionId: chat.id, sessionId: child.id },
+        run: Effect.never,
+        onCancel: runState.cancel(child.id),
+      })
+
+      expect((yield* jobs.cancel(child.id))?.status).toBe("cancelled")
+      expect((yield* jobs.get(grandchild.id))?.status).toBe("cancelled")
+      expect(yield* Deferred.isDone(childStopped)).toBe(true)
+      expect(yield* Deferred.isDone(grandchildStopped)).toBe(true)
+      yield* runState.waitForIdle(child.id).pipe(Effect.timeout("1 second"))
+      yield* runState.waitForIdle(grandchild.id).pipe(Effect.timeout("1 second"))
     }),
   )
 })
