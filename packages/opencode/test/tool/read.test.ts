@@ -1,7 +1,8 @@
-import { afterEach, describe, expect } from "bun:test"
+import { afterEach, beforeEach, describe, expect } from "bun:test"
 import { Cause, Effect, Exit, Layer, Stream } from "effect"
 import path from "path"
-import { promises as nodeFs } from "node:fs"
+import { mkdtempSync, promises as nodeFs } from "node:fs"
+import { tmpdir } from "node:os"
 import { spawnSync } from "node:child_process"
 import { Agent } from "../../src/agent/agent"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
@@ -15,6 +16,7 @@ import { SessionID, MessageID } from "../../src/session/schema"
 import { Instruction } from "../../src/session/instruction"
 import { ReadTool } from "../../src/tool/read"
 import { Service as ToolCacheService } from "../../src/tool/cache"
+import { ReadLedger } from "@/tool/read-ledger"
 import { Truncate } from "@/tool/truncate"
 import { Tool } from "@/tool/tool"
 import { Filesystem } from "@/util/filesystem"
@@ -26,8 +28,16 @@ import { RepositoryCache } from "@/reference/repository-cache"
 
 const FIXTURES_DIR = path.join(import.meta.dir, "fixtures")
 
+// The ledger snapshots into the state dir by default: keep test runs out of it.
+process.env.OPENCODE_READ_LEDGER_DIR = mkdtempSync(path.join(tmpdir(), "opencode-read-test-"))
+
 afterEach(async () => {
   await disposeAllInstances()
+})
+
+// Every test here shares one session id, and content dedup keys on the content.
+beforeEach(() => {
+  ReadLedger.reset()
 })
 
 const ctx = {
@@ -728,6 +738,83 @@ describe("tool.read documents", () => {
       const result = yield* run({ filePath: filepath })
       expect(result.output).toContain("export const inventory = 12")
       expect(result.output).not.toContain("# Video")
+    }),
+  )
+})
+
+describe("tool.read content dedup", () => {
+  const body = (count: number) => Array.from({ length: count }, (_, i) => `line ${i + 1}`).join("\n")
+
+  it.instance("answers a re-read of identical content under a different key with a stub", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const filepath = path.join(test.directory, "same.txt")
+      yield* put(filepath, body(40))
+
+      const first = yield* run({ filePath: filepath })
+      expect(first.output).toContain("line 40")
+
+      // Same bytes, different ledger key: another limit renders the same lines.
+      const second = yield* run({ filePath: filepath, limit: 1000 })
+      expect(second.output).toContain("<duplicate>")
+      expect(second.output).not.toContain("line 40")
+      expect(second.metadata.unchanged).toBe(true)
+    }),
+  )
+
+  it.instance("serves the bytes when the same content is asked for again", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const filepath = path.join(test.directory, "again.txt")
+      yield* put(filepath, body(40))
+
+      yield* run({ filePath: filepath })
+      const withheld = yield* run({ filePath: filepath, limit: 1000 })
+      expect(withheld.output).toContain("<duplicate>")
+
+      // One withhold per digest and per epoch: the next request must succeed.
+      const served = yield* run({ filePath: filepath, limit: 1000 })
+      expect(served.output).toContain("line 40")
+    }),
+  )
+
+  it.instance("dedups identical bytes reached through a different path", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const original = path.join(test.directory, "original.txt")
+      const copy = path.join(test.directory, "copy.txt")
+      yield* put(original, body(40))
+      yield* put(copy, body(40))
+
+      expect((yield* run({ filePath: original })).output).toContain("line 40")
+      const second = yield* run({ filePath: copy })
+      expect(second.output).toContain("<duplicate>")
+      expect(second.output).toContain("original.txt")
+      expect(second.output).not.toContain("line 40")
+    }),
+  )
+
+  it.instance("survives a restart and resumes after a compaction", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const filepath = path.join(test.directory, "restart.txt")
+      yield* put(filepath, body(40))
+
+      yield* run({ filePath: filepath })
+      ReadLedger.unload() // what a process restart does to memory
+
+      const afterRestart = yield* run({ filePath: filepath })
+      expect(afterRestart.output).not.toContain("line 40")
+      expect(afterRestart.metadata.unchanged).toBe(true)
+
+      ReadLedger.reset(ctx.sessionID) // what compaction does
+      expect(ReadLedger.epoch(ctx.sessionID)).toBe(1)
+
+      // The bytes were dropped by compaction: the next read must send them.
+      const cache = yield* ToolCacheService
+      yield* cache.invalidate()
+      const afterCompaction = yield* run({ filePath: filepath })
+      expect(afterCompaction.output).toContain("line 40")
     }),
   )
 })

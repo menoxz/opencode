@@ -17,16 +17,57 @@
  * or because the freshly rendered output digests to the same value. Any real
  * change — including a change that preserves size — produces the full output.
  *
+ * Two dedup axes:
+ *
+ *  1. KEY — the same `(filepath, offset, limit)` was already sent. Answered
+ *     from the ledger without touching the disk when `(mtime, size)` still
+ *     prove the bytes identical, and from the digest of the fresh rendering
+ *     otherwise.
+ *  2. CONTENT — the rendering digests to bytes already sent under a *different*
+ *     key: another path to the same file, or a different limit that renders the
+ *     same lines. See `duplicateOf`: at most one withheld copy per digest and
+ *     per epoch, so the model always obtains the bytes on the next request and
+ *     no withhold loop can form.
+ *
+ * Cache safety is why a withheld copy is a *written artifact* and never a
+ * rewrite: the stub becomes the tool result once, joins the immutable prefix of
+ * the conversation, and is never re-rendered. A transform that rewrote earlier
+ * messages would invalidate the provider's cached prefix and re-bill it.
+ *
  * State is a module-level session-keyed map for the same reason as
  * tool/repetition.ts: the saving must apply on every read path with no layer
- * wiring to forget.
+ * wiring to forget. It is snapshotted to the state directory so a restart
+ * resumes the saving instead of re-sending bytes the model still holds — the
+ * snapshot preserves a saving, it is not what makes the dedup correct.
+ *
+ * Epoch: a compaction can drop earlier `read` output from the context, so the
+ * ledger forgets every entry and increments its epoch (session/compaction.ts
+ * calls `reset`). That clear is persisted, so a restart can never resurrect a
+ * stub pointing at bytes a compaction removed.
  */
+import { Effect, Option, Schema } from "effect"
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs"
+import path from "node:path"
+import { Global } from "@opencode-ai/core/global"
 
 /** Sessions retained before the oldest ledger is evicted. */
 export const MAX_SESSIONS = 64
 
 /** Distinct read keys retained per session. */
 export const MAX_ENTRIES = 512
+
+/** Distinct content fingerprints retained per session (the cross-key index). */
+export const MAX_CONTENT = 512
+
+/**
+ * Shortest interval between two snapshots of one session. A crash inside the
+ * window loses at most the entries written since the last snapshot — a lost
+ * saving, never a wrong answer. `reset` and `flush` always write.
+ */
+export const FLUSH_MS = 250
+
+/** Snapshot format version; an unrecognised version loads as an empty ledger. */
+const VERSION = 1
 
 export type Seen = {
   digest: string
@@ -36,9 +77,127 @@ export type Seen = {
   range: string
 }
 
-type Ledger = Map<string, Seen>
+/** Where an identical rendering was first sent in a session. */
+export type Duplicate = {
+  filepath: string
+  range: string
+}
 
-const sessions = new Map<string, Ledger>()
+type Tracked = Duplicate & {
+  /** Set once a withhold was decided, so the same bytes are served next time. */
+  withheld: boolean
+}
+
+type Book = {
+  epoch: number
+  entries: Map<string, Seen>
+  content: Map<string, Tracked>
+  /** Nothing is written while clean, so a session that never changed is silent. */
+  dirty: boolean
+}
+
+const sessions = new Map<string, Book>()
+const writtenAt = new Map<string, number>()
+
+const decode = Schema.decodeUnknownOption(Schema.UnknownFromJsonString)
+
+/** Directory of the snapshots. Overridable so tests never touch the real state dir. */
+function dir(): string {
+  return process.env.OPENCODE_READ_LEDGER_DIR ?? path.join(Global.Path.state, "read-ledger")
+}
+
+function file(sessionID: string): string {
+  return path.join(dir(), `${sessionID.replace(/[^a-zA-Z0-9_-]/g, "_")}.json`)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function isSeen(value: unknown): value is Seen {
+  if (!isRecord(value)) return false
+  return (
+    typeof value.digest === "string" &&
+    typeof value.mtime === "number" &&
+    typeof value.size === "number" &&
+    typeof value.range === "string"
+  )
+}
+
+function isTracked(value: unknown): value is Tracked {
+  if (!isRecord(value)) return false
+  return (
+    typeof value.filepath === "string" && typeof value.range === "string" && typeof value.withheld === "boolean"
+  )
+}
+
+/** A snapshot is honoured only when its shape is intact; anything else loads empty. */
+function parse(text: string): Book | undefined {
+  const raw = Option.getOrUndefined(decode(text))
+  if (!isRecord(raw) || raw.v !== VERSION) return undefined
+  if (typeof raw.epoch !== "number" || !Number.isInteger(raw.epoch)) return undefined
+  if (!isRecord(raw.entries) || !isRecord(raw.content)) return undefined
+  return {
+    epoch: raw.epoch,
+    entries: new Map(Object.entries(raw.entries).flatMap(([k, v]) => (isSeen(v) ? [[k, v] as [string, Seen]] : []))),
+    content: new Map(
+      Object.entries(raw.content).flatMap(([k, v]) => (isTracked(v) ? [[k, v] as [string, Tracked]] : [])),
+    ),
+    dirty: false,
+  }
+}
+
+function readText(target: string): string {
+  return Effect.runSync(
+    Effect.try({ try: () => readFileSync(target, "utf8"), catch: () => undefined }).pipe(Effect.orElseSucceed(() => "")),
+  )
+}
+
+/** Atomic write: a crash can leave a stale snapshot, never a half-written one. */
+function persist(sessionID: string, state: Book): void {
+  const target = file(sessionID)
+  const payload = JSON.stringify({
+    v: VERSION,
+    epoch: state.epoch,
+    entries: Object.fromEntries(state.entries),
+    content: Object.fromEntries(state.content),
+  })
+  Effect.runSync(
+    Effect.try({
+      try: () => {
+        mkdirSync(dir(), { recursive: true })
+        writeFileSync(`${target}.tmp`, payload)
+        renameSync(`${target}.tmp`, target)
+      },
+      catch: () => undefined,
+    }).pipe(Effect.ignore),
+  )
+  state.dirty = false
+  writtenAt.set(sessionID, Date.now())
+}
+
+function snapshot(sessionID: string, state: Book): void {
+  if (!state.dirty) return
+  if (Date.now() - (writtenAt.get(sessionID) ?? 0) < FLUSH_MS) return
+  persist(sessionID, state)
+}
+
+function ledger(sessionID: string): Book {
+  const hit = sessions.get(sessionID)
+  if (hit) return hit
+  const next = parse(readText(file(sessionID))) ?? { epoch: 0, entries: new Map(), content: new Map(), dirty: false }
+  if (sessions.size >= MAX_SESSIONS) {
+    const oldest = sessions.keys().next()
+    if (!oldest.done) {
+      const evicted = sessions.get(oldest.value)
+      if (evicted?.dirty) persist(oldest.value, evicted)
+      sessions.delete(oldest.value)
+      writtenAt.delete(oldest.value)
+    }
+  }
+  sessions.set(sessionID, next)
+  return next
+}
 
 export function key(filepath: string, offset: number, limit: number): string {
   return `${filepath}\u0000${offset}\u0000${limit}`
@@ -56,31 +215,61 @@ export function digest(output: string): string {
   return `${(h1 >>> 0).toString(36)}:${(h2 >>> 0).toString(36)}:${output.length}`
 }
 
-function ledger(sessionID: string): Ledger {
-  const hit = sessions.get(sessionID)
-  if (hit) return hit
-  if (sessions.size >= MAX_SESSIONS) {
-    const oldest = sessions.keys().next()
-    if (!oldest.done) sessions.delete(oldest.value)
-  }
-  const next: Ledger = new Map()
-  sessions.set(sessionID, next)
-  return next
-}
-
 export function get(sessionID: string, entryKey: string): Seen | undefined {
-  return sessions.get(sessionID)?.get(entryKey)
+  return ledger(sessionID).entries.get(entryKey)
 }
 
 export function put(sessionID: string, entryKey: string, seen: Seen): void {
-  const book = ledger(sessionID)
-  book.delete(entryKey)
-  book.set(entryKey, seen)
-  while (book.size > MAX_ENTRIES) {
-    const oldest = book.keys().next()
+  const state = ledger(sessionID)
+  state.entries.delete(entryKey)
+  state.entries.set(entryKey, seen)
+  while (state.entries.size > MAX_ENTRIES) {
+    const oldest = state.entries.keys().next()
     if (oldest.done) break
-    book.delete(oldest.value)
+    state.entries.delete(oldest.value)
   }
+  state.dirty = true
+  snapshot(sessionID, state)
+}
+
+/** Record where the bytes behind `digestKey` were sent, keeping any withhold decision. */
+export function putContent(sessionID: string, digestKey: string, where: Duplicate): void {
+  const state = ledger(sessionID)
+  const sent = state.content.get(digestKey)
+  state.content.delete(digestKey)
+  state.content.set(digestKey, { ...where, withheld: sent?.withheld ?? false })
+  while (state.content.size > MAX_CONTENT) {
+    const oldest = state.content.keys().next()
+    if (oldest.done) break
+    state.content.delete(oldest.value)
+  }
+  state.dirty = true
+  snapshot(sessionID, state)
+}
+
+/**
+ * The location of bytes already sent under a *different* key, when this
+ * rendering may be withheld. Identity is the content digest alone: the same
+ * rendering can be produced by several keys (another limit, another spelling of
+ * the path), and those bytes are in context whatever key produced them.
+ *
+ * Withholds at most once per digest and per epoch: the second request for the
+ * same content returns `undefined`, so the caller sends the bytes. That bound is
+ * what makes the dedup livelock-free.
+ */
+export function duplicateOf(sessionID: string, digestKey: string): Duplicate | undefined {
+  const state = ledger(sessionID)
+  const sent = state.content.get(digestKey)
+  if (!sent || sent.withheld) return undefined
+  sent.withheld = true
+  state.dirty = true
+  snapshot(sessionID, state)
+  return sent
+}
+
+/** The compaction generation this session's dedup decisions belong to. */
+export function epoch(sessionID: string): number {
+  return ledger(sessionID).epoch
 }
 
 /**
@@ -107,8 +296,58 @@ export function stub(filepath: string, seen: Seen): string {
   ].join("\n")
 }
 
-/** Test/maintenance hook: drop a session's ledger (or all of them). */
+/** The stub returned in place of bytes already sent under a different key. */
+export function duplicateStub(filepath: string, where: Duplicate): string {
+  return [
+    `<path>${filepath}</path>`,
+    `<type>file</type>`,
+    `<duplicate>`,
+    `These bytes are already in your context: the identical content was returned earlier in this session as ${where.range} of ${where.filepath}.`,
+    `The bytes are deliberately not repeated here: re-sending content you already hold is the single largest source of wasted context in this harness.`,
+    `Requesting these bytes again returns them in full: a copy is withheld at most once per compaction epoch.`,
+    `</duplicate>`,
+  ].join("\n")
+}
+
+/** Force the snapshot of one session, or of every loaded session. */
+export function flush(sessionID?: string): void {
+  if (sessionID === undefined) {
+    for (const [id, state] of sessions) if (state.dirty) persist(id, state)
+    return
+  }
+  const state = ledger(sessionID)
+  if (state.dirty) persist(sessionID, state)
+}
+
+/**
+ * Forget a session's ledger and open a new epoch. Called by compaction, whose
+ * dropped bytes must never be pointed at by a later stub; the clear is written
+ * out so it survives a restart. Without an argument this is the test hook and
+ * also removes the snapshots this process wrote.
+ */
 export function reset(sessionID?: string): void {
+  if (sessionID === undefined) {
+    for (const id of writtenAt.keys())
+      Effect.runSync(
+        Effect.try({ try: () => rmSync(file(id), { force: true }), catch: () => undefined }).pipe(Effect.ignore),
+      )
+    sessions.clear()
+    writtenAt.clear()
+    return
+  }
+  const state = ledger(sessionID)
+  state.entries.clear()
+  state.content.clear()
+  state.epoch += 1
+  state.dirty = true
+  persist(sessionID, state)
+}
+
+/**
+ * Test/maintenance hook: drop in-memory state without writing anything, which
+ * is exactly what a process restart does. The next access reloads the snapshot.
+ */
+export function unload(sessionID?: string): void {
   if (sessionID === undefined) sessions.clear()
   else sessions.delete(sessionID)
 }

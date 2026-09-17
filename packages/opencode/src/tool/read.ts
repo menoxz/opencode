@@ -366,6 +366,20 @@ export const ReadTool = Tool.define(
         },
       })
 
+      // Identical bytes reached through a different key — another path to this
+      // file, or a different limit rendering the same lines — are already in
+      // context and must not be re-sent under the new name either.
+      const duplicate = (where: ReadLedger.Duplicate) => ({
+        title,
+        output: ReadLedger.duplicateStub(filepath, where) + reminder,
+        metadata: {
+          preview: `identical to content already sent (${where.range} of ${where.filepath})`,
+          truncated: false,
+          loaded: loaded.map((item) => item.filepath),
+          unchanged: true,
+        },
+      })
+
       // Unchanged mtime+size is proof: answer without touching the disk.
       if (seen && ReadLedger.provenUnchanged(seen, mtime, size)) return unchanged(seen)
 
@@ -395,8 +409,10 @@ export const ReadTool = Tool.define(
       }
       output += "\n</content>"
 
-      // Digest the file rendering only — instruction reminders must not affect it.
-      const contentDigest = ReadLedger.digest(output)
+      // Digest the rendered content: the <path> line is excluded so the same
+      // bytes reached under another spelling of the path dedup too, and the
+      // instruction reminder is appended later so it can never affect this.
+      const contentDigest = ReadLedger.digest(output.slice(output.indexOf("<content>")))
       const range = `lines ${file.offset}-${last} of ${file.count}`
 
       // The file was touched but its bytes are identical: still nothing to re-send.
@@ -405,7 +421,14 @@ export const ReadTool = Tool.define(
         ReadLedger.put(ctx.sessionID, ledgerKey, refreshed)
         return unchanged(refreshed)
       }
+
+      // Already sent once in this epoch under another key: withhold the bytes,
+      // at most once per digest, so a request for them again always succeeds.
+      const elsewhere = ReadLedger.duplicateOf(ctx.sessionID, contentDigest)
+      if (elsewhere) return duplicate(elsewhere)
+
       ReadLedger.put(ctx.sessionID, ledgerKey, { digest: contentDigest, mtime, size, range })
+      ReadLedger.putContent(ctx.sessionID, contentDigest, { filepath, range })
 
       yield* warm(filepath)
 

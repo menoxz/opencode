@@ -7,7 +7,15 @@
  * Run: bun test src/tool/read-ledger.test.ts
  */
 import { describe, expect, test, beforeEach } from "bun:test"
+import { mkdtempSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import path from "node:path"
 import { ReadLedger } from "./read-ledger"
+
+// Snapshots stay out of the real state directory.
+const LEDGER_DIR = mkdtempSync(path.join(tmpdir(), "opencode-read-ledger-"))
+process.env.OPENCODE_READ_LEDGER_DIR = LEDGER_DIR
+const snapshotOf = (sessionID: string) => path.join(LEDGER_DIR, `${sessionID}.json`)
 
 const SESSION = "ses_test"
 const FILE = "/repo/lib/dashboard_page.dart"
@@ -116,5 +124,119 @@ describe("stub", () => {
   test("is dramatically smaller than the payload it replaces", () => {
     // The audited worst case re-sent 5.5 MB across 793 re-reads of one file.
     expect(ReadLedger.stub(FILE, seen()).length).toBeLessThan(700)
+  })
+})
+
+describe("content dedup", () => {
+  const DIGEST = ReadLedger.digest("<content>identical bytes</content>")
+  const AT = { filepath: FILE, range: "lines 1-120 of 120" }
+
+  test("withholds identical content once per epoch, then serves it", () => {
+    ReadLedger.putContent(SESSION, DIGEST, AT)
+    expect(ReadLedger.duplicateOf(SESSION, DIGEST)).toMatchObject(AT)
+    expect(ReadLedger.duplicateOf(SESSION, DIGEST)).toBeUndefined()
+  })
+
+  test("withholds again in the next epoch", () => {
+    ReadLedger.putContent(SESSION, DIGEST, AT)
+    expect(ReadLedger.duplicateOf(SESSION, DIGEST)).toMatchObject(AT)
+    ReadLedger.reset(SESSION)
+    ReadLedger.putContent(SESSION, DIGEST, AT)
+    expect(ReadLedger.duplicateOf(SESSION, DIGEST)).toMatchObject(AT)
+  })
+
+  test("does not re-withhold once the bytes have been sent again", () => {
+    ReadLedger.putContent(SESSION, DIGEST, AT)
+    ReadLedger.duplicateOf(SESSION, DIGEST)
+    // The second request was served in full, so this location is the current one.
+    ReadLedger.putContent(SESSION, DIGEST, { filepath: "/repo/other.dart", range: "lines 1-120 of 120" })
+    expect(ReadLedger.duplicateOf(SESSION, DIGEST)).toBeUndefined()
+  })
+
+  test("never withholds content the session was never sent", () => {
+    expect(ReadLedger.duplicateOf(SESSION, DIGEST)).toBeUndefined()
+  })
+
+  test("does not withhold across sessions", () => {
+    ReadLedger.putContent(SESSION, DIGEST, AT)
+    expect(ReadLedger.duplicateOf("ses_other", DIGEST)).toBeUndefined()
+  })
+
+  test("identifies content by its digest alone, not by the key that produced it", () => {
+    ReadLedger.putContent(SESSION, ReadLedger.digest("<content>same</content>"), AT)
+    expect(ReadLedger.duplicateOf(SESSION, ReadLedger.digest("<content>same</content>"))).toMatchObject(AT)
+  })
+})
+
+describe("duplicateStub", () => {
+  const AT = { filepath: FILE, range: "lines 1-120 of 120" }
+
+  test("names both places and never contains the body", () => {
+    const out = ReadLedger.duplicateStub("/repo/copy.dart", AT)
+    expect(out).toContain("/repo/copy.dart")
+    expect(out).toContain(FILE)
+    expect(out).toContain("lines 1-120 of 120")
+    expect(out).not.toContain("body")
+  })
+
+  test("is a pure function of its inputs, whatever the ledger is doing", () => {
+    const before = ReadLedger.duplicateStub(FILE, AT)
+    ReadLedger.putContent(SESSION, ReadLedger.digest("x"), AT)
+    ReadLedger.reset(SESSION)
+    ReadLedger.unload()
+    expect(ReadLedger.duplicateStub(FILE, AT)).toBe(before)
+  })
+})
+
+describe("snapshot", () => {
+  test("a restart resumes the ledger from the snapshot", () => {
+    ReadLedger.put(SESSION, KEY, seen())
+    ReadLedger.flush()
+    ReadLedger.unload()
+    expect(ReadLedger.get(SESSION, KEY)?.digest).toBe(seen().digest)
+  })
+
+  test("a restart resumes the content index too", () => {
+    const where = { filepath: FILE, range: seen().range }
+    ReadLedger.putContent(SESSION, seen().digest, where)
+    ReadLedger.flush()
+    ReadLedger.unload()
+    expect(ReadLedger.duplicateOf(SESSION, seen().digest)).toMatchObject(where)
+  })
+
+  test("the compaction epoch increments and survives a restart", () => {
+    expect(ReadLedger.epoch(SESSION)).toBe(0)
+    ReadLedger.reset(SESSION)
+    expect(ReadLedger.epoch(SESSION)).toBe(1)
+    ReadLedger.unload()
+    expect(ReadLedger.epoch(SESSION)).toBe(1)
+  })
+
+  test("no stub survives a compaction, even across a restart", () => {
+    ReadLedger.put(SESSION, KEY, seen())
+    ReadLedger.putContent(SESSION, seen().digest, { filepath: FILE, range: seen().range })
+    ReadLedger.flush()
+    ReadLedger.reset(SESSION)
+    ReadLedger.unload()
+    // Compaction dropped those bytes: pointing at them would be a false answer.
+    expect(ReadLedger.get(SESSION, KEY)).toBeUndefined()
+    expect(ReadLedger.duplicateOf(SESSION, seen().digest)).toBeUndefined()
+  })
+
+  test("ignores a snapshot it does not understand", () => {
+    ReadLedger.put(SESSION, KEY, seen())
+    ReadLedger.flush()
+    writeFileSync(snapshotOf(SESSION), '{"v":99,"epoch":3,"entries":{},"content":{}}')
+    ReadLedger.unload()
+    expect(ReadLedger.get(SESSION, KEY)).toBeUndefined()
+    expect(ReadLedger.epoch(SESSION)).toBe(0)
+  })
+
+  test("ignores a corrupted snapshot", () => {
+    ReadLedger.put(SESSION, KEY, seen())
+    ReadLedger.flush()
+    writeFileSync(snapshotOf(SESSION), "{not json")
+    ReadLedger.unload()
+    expect(ReadLedger.get(SESSION, KEY)).toBeUndefined()
   })
 })
