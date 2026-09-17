@@ -5,6 +5,13 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [Unreleased]
+
+### Changed
+- Le versionnement devient obligatoire : tout changement de code cohérent et vérifié doit être commité, sans attendre une demande explicite de l'utilisateur. La nouvelle formulation est portée par les descriptions d'outils `src/tool/shell/shell.txt` et `src/tool/todowrite.txt`, ainsi que par le texte du todo `[CLOSE]` injecté dans `src/tool/todo.ts`. `push`, `amend` d'un commit déjà poussé, `rebase`, `force-push` et la création de PR restent subordonnés à une demande explicite, car ils engagent l'historique partagé.
+
+> **Conséquence opérationnelle** — ces descriptions sont importées statiquement au build (`import DESCRIPTION from "./shell.txt"` dans `shell/prompt.ts`, `import DESCRIPTION_WRITE from "./todowrite.txt"` dans `todo.ts`) : elles sont donc **figées dans le binaire**. Après édition, la règle n'atteint le canal embarqué qu'après reconstruction et redéploiement du binaire. Le canal effectif immédiat, sans rebuild, reste `AGENTS.md` (global et projet) et les skills, relus à chaud. Un binaire installé portant encore l'ancienne règle doit être reconstruit avant d'être considéré à jour.
+
 ## [v2.2.11] - 2026-09-16
 
 > Première version publiée depuis `v2.2.3` : elle agrège les travaux non publiés des versions intermédiaires.
