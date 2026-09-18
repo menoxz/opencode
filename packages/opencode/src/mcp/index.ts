@@ -203,6 +203,19 @@ export function shouldDisconnectAfterHealthFailures(failures: number): boolean {
   return failures >= HEALTH_FAILURE_THRESHOLD
 }
 
+// A disconnected MCP server is only "retry shortly" when the health loop is
+// allowed to bring it back (experimental.mcp_autoreconnect). Promising a
+// recovery that is switched off sends the model to wait for a server that will
+// never return in this process, and hides the only remedy that works.
+export function mcpUnavailableMessage(server: string, tool: string, autoreconnect: boolean, dropped: boolean): string {
+  const state = dropped
+    ? `MCP server "${server}" dropped mid-call and has not reconnected yet, so ${tool} could not run.`
+    : `MCP server "${server}" is not connected, so the ${tool} tool is unavailable right now.`
+  return autoreconnect
+    ? `${state} It reconnects automatically in the background — retry shortly, or use a non-MCP tool for this step.`
+    : `${state} Automatic reconnection is disabled (experimental.mcp_autoreconnect=false), so it will not come back on its own in this process — run "opencode mcp reload", restart opencode, or use a non-MCP tool for this step.`
+}
+
 // Convert MCP tool definition to AI SDK Tool type.
 //
 // `resolve` deliberately re-reads the live client on every call instead of
@@ -217,6 +230,7 @@ function convertMcpTool(
   recover: (failed: MCPClient, error: unknown) => Promise<MCPClient | undefined>,
   timeout?: number,
   server?: string,
+  autoreconnect = true,
 ): Tool {
   const inputSchema = mcpTool.inputSchema
 
@@ -250,19 +264,13 @@ function convertMcpTool(
         )
 
       const live = resolve()
-      if (!live)
-        throw new Error(
-          `MCP server "${label}" is not connected, so the ${mcpTool.name} tool is unavailable right now. It reconnects automatically in the background — retry shortly, or use a non-MCP tool for this step.`,
-        )
+      if (!live) throw new Error(mcpUnavailableMessage(label, mcpTool.name, autoreconnect, false))
 
       const retryOnce = async (error: unknown) => {
         if (!isDisconnected(error) || options.abortSignal?.aborted) throw error
         log.warn("mcp tool call hit a dead transport, reconnecting before retry", { tool: mcpTool.name, server: label })
         const fresh = await recover(live, error)
-        if (!fresh)
-          throw new Error(
-            `MCP server "${label}" dropped mid-call and has not reconnected yet, so ${mcpTool.name} could not run. It reconnects automatically in the background — retry shortly, or use a non-MCP tool for this step.`,
-          )
+        if (!fresh) throw new Error(mcpUnavailableMessage(label, mcpTool.name, autoreconnect, true))
         return await call(fresh)
       }
 
@@ -1159,6 +1167,7 @@ export const layer = Layer.effect(
                   ),
                 timeout,
                 clientName,
+                cfg.experimental?.mcp_autoreconnect !== false,
               )
             }
           }),
