@@ -5,7 +5,7 @@ import { Context, Effect, Layer } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { AbsolutePath } from "./schema"
 import { AppFileSystem } from "./filesystem"
-import { AppProcess } from "./process"
+import { AppProcess, retryTransientLaunch } from "./process"
 
 export interface Repo {
   /**
@@ -91,18 +91,18 @@ interface Result {
 
 function run(cwd: string, proc: AppProcess.Interface) {
   return (args: string[]) =>
-    proc
-      .run(
+    retryTransientLaunch(
+      proc.run(
         ChildProcess.make("git", args, {
           cwd,
           extendEnv: true,
           stdin: "ignore",
         }),
-      )
-      .pipe(
-        Effect.map((result) => ({ exitCode: result.exitCode, text: result.stdout.toString("utf8") }) satisfies Result),
-        Effect.catch(() => Effect.succeed({ exitCode: 1, text: "" } satisfies Result)),
-      )
+      ),
+    ).pipe(
+      Effect.map((result) => ({ exitCode: result.exitCode, text: result.stdout.toString("utf8") }) satisfies Result),
+      Effect.catch(() => Effect.succeed({ exitCode: 1, text: "" } satisfies Result)),
+    )
 }
 
 function resolvePath(cwd: string, value: string) {

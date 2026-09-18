@@ -1,4 +1,4 @@
-import { AppProcess } from "@opencode-ai/core/process"
+import { AppProcess, retryTransientLaunch } from "@opencode-ai/core/process"
 import { Effect, Layer, Context, Option, Stream } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { DEFAULT_TTL, Service as ToolCacheService } from "@/tool/cache"
@@ -110,16 +110,18 @@ export const layer = Layer.effect(
 
     const run = Effect.fn("Git.run")(
       function* (args: string[], opts: Options) {
-        const result = yield* appProcess.run(
-          ChildProcess.make("git", [...cfg, ...args], {
-            cwd: opts.cwd,
-            env: opts.env,
-            extendEnv: true,
-            stdin: opts.stdin ?? "ignore",
-            stdout: "pipe",
-            stderr: "pipe",
-          }),
-          { maxOutputBytes: opts.maxOutputBytes },
+        const result = yield* retryTransientLaunch(
+          appProcess.run(
+            ChildProcess.make("git", [...cfg, ...args], {
+              cwd: opts.cwd,
+              env: opts.env,
+              extendEnv: true,
+              stdin: opts.stdin ?? "ignore",
+              stdout: "pipe",
+              stderr: "pipe",
+            }),
+            { maxOutputBytes: opts.maxOutputBytes },
+          ),
         )
         return {
           exitCode: result.exitCode,

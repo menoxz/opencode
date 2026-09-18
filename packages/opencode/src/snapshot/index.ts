@@ -2,7 +2,7 @@ import { Cause, Duration, Effect, Layer, Option, Schedule, Schema, Semaphore, Co
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { formatPatch, structuredPatch } from "diff"
 import path from "path"
-import { AppProcess } from "@opencode-ai/core/process"
+import { AppProcess, retryTransientLaunch } from "@opencode-ai/core/process"
 import { InstanceState } from "@/effect/instance-state"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { Hash } from "@opencode-ai/core/util/hash"
@@ -35,15 +35,6 @@ const staleLock = 60_000
 const core = ["-c", "core.longpaths=true", "-c", "core.symlinks=true"]
 const cfg = ["-c", "core.autocrlf=false", ...core]
 const quote = [...cfg, "-c", "core.quotepath=false"]
-
-// Windows intermittently refuses to create the git process (`EPERM`/`EACCES`,
-// "Accès refusé"). That is a launch failure, not a git failure: the process
-// never started, so retrying cannot duplicate or corrupt repository state.
-export function isTransientLaunchFailure(error: unknown): boolean {
-  return /EPERM|EACCES|EBUSY|Access is denied|Accès refusé|error launching/i.test(
-    error instanceof Error ? error.message : String(error),
-  )
-}
 
 interface GitResult {
   readonly code: ChildProcessSpawner.ExitCode
@@ -99,14 +90,9 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
 
           const git = Effect.fnUntraced(
             function* (cmd: string[], opts?: { cwd?: string; env?: Record<string, string>; stdin?: string }) {
-              const result = yield* appProcess.run(
-                ChildProcess.make("git", cmd, { cwd: opts?.cwd, env: opts?.env, extendEnv: true }),
-                { stdin: opts?.stdin },
-              ).pipe(
-                Effect.retry({
-                  schedule: Schedule.exponential(Duration.millis(50)).pipe(Schedule.jittered),
-                  times: 4,
-                  while: isTransientLaunchFailure,
+              const result = yield* retryTransientLaunch(
+                appProcess.run(ChildProcess.make("git", cmd, { cwd: opts?.cwd, env: opts?.env, extendEnv: true }), {
+                  stdin: opts?.stdin,
                 }),
               )
               return {
@@ -612,12 +598,14 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
                     })
                     if (!refs.length) return new Map<string, { before: string; after: string }>()
 
-                    const batch = yield* appProcess.run(
-                      ChildProcess.make("git", [...cfg, ...args(["cat-file", "--batch"])], {
-                        cwd: state.directory,
-                        extendEnv: true,
-                      }),
-                      { stdin: refs.map((item) => item.ref).join("\n") + "\n" },
+                    const batch = yield* retryTransientLaunch(
+                      appProcess.run(
+                        ChildProcess.make("git", [...cfg, ...args(["cat-file", "--batch"])], {
+                          cwd: state.directory,
+                          extendEnv: true,
+                        }),
+                        { stdin: refs.map((item) => item.ref).join("\n") + "\n" },
+                      ),
                     )
                     if (batch.exitCode !== 0) {
                       log.info("git cat-file --batch failed during snapshot diff, falling back to per-file git show", {

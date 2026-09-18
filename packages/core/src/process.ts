@@ -1,4 +1,4 @@
-import { Context, Duration, Effect, Fiber, Layer, Schema, Stream } from "effect"
+import { Context, Duration, Effect, Fiber, Layer, Schedule, Schema, Stream } from "effect"
 import type { PlatformError } from "effect/PlatformError"
 import { ChildProcess } from "effect/unstable/process"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
@@ -10,6 +10,33 @@ export class AppProcessError extends Schema.TaggedErrorClass<AppProcessError>()(
   stderr: Schema.optional(Schema.String),
   cause: Schema.optional(Schema.Defect),
 }) {}
+
+// Windows intermittently refuses to create a child process (`EPERM`/`EACCES`,
+// "Accès refusé"). The process never started, so retrying cannot duplicate or
+// corrupt repository state. `AppProcessError` carries an empty `message`: the
+// denial only survives in `cause`/`stderr`, so those must be inspected too.
+const transientLaunch = /EPERM|EACCES|EBUSY|Access is denied|Accès refusé|error launching/i
+
+export function isTransientLaunchFailure(error: unknown): boolean {
+  const inspect = (value: unknown, seen: Set<unknown>): boolean => {
+    if (value === null || value === undefined || seen.has(value)) return false
+    if (typeof value === "string") return transientLaunch.test(value)
+    if (value instanceof Error && transientLaunch.test(value.message)) return true
+    seen.add(value)
+    const fields = value as { cause?: unknown; stderr?: unknown }
+    return inspect(fields.cause, seen) || inspect(fields.stderr, seen)
+  }
+  return inspect(error, new Set())
+}
+
+export const retryTransientLaunch = <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  self.pipe(
+    Effect.retry({
+      schedule: Schedule.exponential(Duration.millis(50)).pipe(Schedule.jittered),
+      times: 4,
+      while: isTransientLaunchFailure,
+    }),
+  )
 
 export interface RunOptions {
   readonly maxOutputBytes?: number

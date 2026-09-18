@@ -15,7 +15,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { Effect, Layer, Scope, Context, Stream, Types, Schema } from "effect"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
-import { AppProcess } from "@opencode-ai/core/process"
+import { AppProcess, retryTransientLaunch } from "@opencode-ai/core/process"
 import { Project as ProjectV2 } from "@opencode-ai/core/project"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { AbsolutePath, NonNegativeInt, optionalOmitUndefined } from "@opencode-ai/core/schema"
@@ -149,8 +149,8 @@ export const layer = Layer.effect(
 
     const git = Effect.fnUntraced(
       function* (args: string[], opts?: { cwd?: string }) {
-        const handle = yield* spawner.spawn(
-          ChildProcess.make("git", args, { cwd: opts?.cwd, extendEnv: true, stdin: "ignore" }),
+        const handle = yield* retryTransientLaunch(
+          spawner.spawn(ChildProcess.make("git", args, { cwd: opts?.cwd, extendEnv: true, stdin: "ignore" })),
         )
         const [text, stderr] = yield* Effect.all(
           [Stream.mkString(Stream.decodeText(handle.stdout)), Stream.mkString(Stream.decodeText(handle.stderr))],
