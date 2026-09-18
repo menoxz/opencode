@@ -5,7 +5,7 @@ import { spawn, execSync } from "node:child_process"
 import { cmd } from "./cmd"
 import { daemonHandler } from "./watch"
 import { dataDir, isProcessRunning, logFilePath, pidFilePath, readPidFile } from "@/daemon/paths"
-import { spawnDaemonDetached } from "@/daemon/autostart"
+import { acquireSpawnLock, releaseSpawnLock, spawnDaemonDetached } from "@/daemon/autostart"
 import { AppRuntime } from "@/effect/app-runtime"
 import * as Log from "@opencode-ai/core/util/log"
 import { readLatestReport } from "../../daemon/idle"
@@ -18,14 +18,21 @@ const logFile = (serviceMode = false) => logFilePath(dataDir(serviceMode))
 const readPid = (serviceMode = false) => readPidFile(dataDir(serviceMode))
 
 /** How long `daemon start --detach` waits for the child to publish its PID file. */
-const DAEMON_START_TIMEOUT_MS = 5000
+const DAEMON_START_TIMEOUT_MS = 20000
 
-/** Poll until the detached child has written a PID whose process is alive. */
-async function waitForDaemon(timeoutMs = DAEMON_START_TIMEOUT_MS): Promise<number | null> {
+/**
+ * Poll until the detached child has written a PID whose process is alive.
+ * Returns early (null) as soon as a known child PID has died.
+ */
+async function waitForDaemon(
+  timeoutMs = DAEMON_START_TIMEOUT_MS,
+  childPid?: number,
+): Promise<number | null> {
   const deadline = Date.now() + timeoutMs
   for (;;) {
     const pid = readPid()
     if (pid && isProcessRunning(pid)) return pid
+    if (childPid !== undefined && !isProcessRunning(childPid)) return null
     if (Date.now() >= deadline) return null
     await new Promise((r) => setTimeout(r, 100))
   }
@@ -158,9 +165,12 @@ const StartCommand = cmd({
 
     if (args.detach && !isService) {
       process.stdout.write(`🧠 Starting opencodev2-daemon in background...${EOL}`)
-      spawnDaemonDetached()
-      const pid = await waitForDaemon()
+      const acquired = acquireSpawnLock()
+      const childPid = acquired ? spawnDaemonDetached() : undefined
+      const pid =
+        acquired && childPid === undefined ? null : await waitForDaemon(DAEMON_START_TIMEOUT_MS, childPid)
       if (!pid) {
+        if (acquired && (childPid === undefined || !isProcessRunning(childPid))) releaseSpawnLock()
         process.stdout.write(`❌ Failed to start the daemon in the background${EOL}`)
         process.stdout.write(
           `   No live PID appeared within ${DAEMON_START_TIMEOUT_MS / 1000}s — check ${logFile()}${EOL}`,
@@ -168,6 +178,7 @@ const StartCommand = cmd({
         process.exitCode = 1
         return
       }
+      releaseSpawnLock()
       process.stdout.write(`✅ Daemon started in background (PID ${pid})${EOL}`)
       process.stdout.write(`   PID file: ${pidFile()}${EOL}`)
       return

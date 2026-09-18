@@ -4,11 +4,13 @@ import os from "os"
 import path from "path"
 import {
   NO_AUTOSTART_ENV,
+  acquireSpawnLock,
   daemonBinary,
   isDaemonRunning,
+  releaseSpawnLock,
   shouldAutoStart,
 } from "@/daemon/autostart"
-import { logFilePath, pidFilePath, readPidFile } from "@/daemon/paths"
+import { logFilePath, pidFilePath, readPidFile, spawnLockPath } from "@/daemon/paths"
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "daemon-autostart-"))
 
@@ -57,5 +59,23 @@ describe("pid helpers", () => {
     // A certainly-dead PID: the daemon directory of an arbitrary high number.
     fs.writeFileSync(pidFilePath(dir), "999999999")
     expect(isDaemonRunning(dir)).toBe(false)
+  })
+})
+
+describe("spawn lock", () => {
+  test("serialises launchers and can be released", () => {
+    const dir = tmp()
+    expect(acquireSpawnLock(dir)).toBe(true)
+    expect(acquireSpawnLock(dir)).toBe(false)
+    releaseSpawnLock(dir)
+    expect(acquireSpawnLock(dir)).toBe(true)
+    releaseSpawnLock(dir)
+  })
+
+  test("steals a lock abandoned by a crashed launcher", () => {
+    const dir = tmp()
+    acquireSpawnLock(dir)
+    fs.writeFileSync(spawnLockPath(dir), String(Date.now() - 60_000))
+    expect(acquireSpawnLock(dir)).toBe(true)
   })
 })

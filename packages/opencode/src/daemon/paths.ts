@@ -29,6 +29,15 @@ export function pidFilePath(dir: string): string {
   return path.join(dir, "daemon.pid")
 }
 
+/**
+ * Lock held by a launcher while its detached child is still booting (the child
+ * can take seconds to publish its PID file, during which a PID check alone
+ * would let a second launcher spawn a duplicate daemon).
+ */
+export function spawnLockPath(dir: string): string {
+  return path.join(dir, "daemon.spawn.lock")
+}
+
 export function logFilePath(dir: string): string {
   return path.join(dir, "daemon.log")
 }

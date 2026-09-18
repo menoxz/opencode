@@ -11,6 +11,7 @@ import * as Log from "@opencode-ai/core/util/log"
 import * as fs from "node:fs"
 import * as path from "node:path"
 import { daemonDir, pidFilePath, serviceDir } from "@/daemon/paths"
+import { releaseSpawnLock } from "@/daemon/autostart"
 
 const log = Log.create({ service: "daemon.cli" })
 
@@ -57,9 +58,11 @@ export const daemonHandler = Effect.fn("Daemon.handler")(function* (
   if (isService) {
     // Service mode: write PID to system-wide directory, log via structured logger
     writePidFile(dd)
+    releaseSpawnLock(dd)
     log.info("daemon start (service mode)", { pid: process.pid, pidDir: dd })
   } else if (isDaemon) {
     writePidFile(dd)
+    releaseSpawnLock(dd)
     log.info("daemon start", { pid: process.pid, pidDir: dd })
   } else {
     Console.log(`🧠 opencodev2-daemon starting (PID: ${process.pid})`)
