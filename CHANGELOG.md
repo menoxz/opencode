@@ -7,6 +7,12 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.2.13] - 2026-09-18
+
+### Fixed
+- Un serveur MCP dont la connexion est perdue annonçait « it reconnects automatically in the background — retry shortly » alors que la reconnexion automatique était désactivée (`experimental.mcp_autoreconnect: false`) : le message promettait un retour qui ne pouvait pas se produire. Le texte dépend désormais de la politique réellement active, et distingue la perte survenue en cours d'appel d'outil (résultat perdu, à rejouer) d'un serveur simplement indisponible. Les outils de mémoire durable redeviennent visibles dès que la reconnexion est autorisée.
+- Un lancement de `git` refusé par le système (`EPERM`/`EACCES`, « Accès refusé » sur le wrapper `cmd\git.exe`) faisait échouer la commande alors que le processus n'avait jamais démarré. Le lancement est maintenant retenté jusqu'à 4 fois avec une attente exponentielle jitterée. Le retry ne peut pas dupliquer une opération : il ne couvre que l'échec d'AMORÇAGE (le processus n'existe pas), jamais un code de sortie rendu par git.
+
 ## [v2.2.12] - 2026-09-18
 
 ### Added
