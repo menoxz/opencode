@@ -7,6 +7,11 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.2.14] - 2026-09-18
+
+### Fixed
+- La carte `<working-state>` et le bloc `<task-contract>` injecté dans le prompt divergeaient sur un tour qui relance une mission (`new_topic`) : la carte exigeait que l'ancre du contrat (`anchorUserID`) soit l'utilisateur du tour, alors que l'injection dans le prompt n'applique pas ce filtre. Un contrat actif restait donc injecté dans le prompt tout en étant annoncé « unavailable or stale » sur la carte (`goal: ""`, todo « unanchored »). L'ancre ne filtre plus que les états terminaux : un contrat en cours est désormais visible sur tous les types de tour, tandis qu'un contrat terminé hors ancre (`completed`/`blocked`) et un contrat `skipped` restent masqués sur la carte.
+
 ## [v2.2.13] - 2026-09-18
 
 ### Fixed
