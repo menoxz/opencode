@@ -18,6 +18,7 @@ import { Service as ToolCacheService } from "./cache"
 import { Service as SearchIndexService } from "./search-index"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { requiresMutationCause } from "./lean-output-policy"
+import { ReadLedger } from "./read-ledger"
 
 export const Parameters = Schema.Struct({
   patchText: Schema.String.annotate({ description: "The full patch text that describes all changes to be made" }),
@@ -269,6 +270,27 @@ export const ApplyPatchTool = Tool.define(
       // Publish file change events
       for (const update of updates) {
         yield* bus.publish(FileWatcher.Event.Updated, update)
+      }
+
+      // Every file this patch produced already reached the model's context as the
+      // patch it sent, so a read of an untouched result must not re-send the
+      // bytes. One stat per written file is the whole cost of recording that.
+      for (const change of fileChanges) {
+        if (change.type === "delete") continue
+        const target = change.movePath ?? change.filePath
+        const written = yield* afs.stat(target).pipe(Effect.catch(() => Effect.void))
+        if (!written) continue
+        ReadLedger.recordProduced(
+          ctx.sessionID,
+          target,
+          change.newContent,
+          written.mtime.pipe(
+            Option.map((date) => date.getTime()),
+            Option.getOrElse(() => 0),
+          ),
+          Number(written.size),
+          "apply_patch",
+        )
       }
 
       const cache = yield* Effect.serviceOption(ToolCacheService).pipe(Effect.map(Option.getOrUndefined))

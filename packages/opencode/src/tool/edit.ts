@@ -22,6 +22,7 @@ import { Service as ToolCacheService } from "./cache"
 import { Service as SearchIndexService } from "./search-index"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { requiresMutationCause } from "./lean-output-policy"
+import { ReadLedger } from "./read-ledger"
 
 function normalizeLineEndings(text: string): string {
   return text.replaceAll("\r\n", "\n")
@@ -197,6 +198,24 @@ export const EditTool = Tool.define(
               )
             }).pipe(Effect.orDie),
           )
+
+          // The model produced this file itself, so its bytes already reached the
+          // context as the edit it sent; a read of the untouched result must not
+          // re-send them. A single stat is the whole cost of recording that.
+          const written = yield* afs.stat(filePath).pipe(Effect.catch(() => Effect.void))
+          if (written) {
+            ReadLedger.recordProduced(
+              ctx.sessionID,
+              filePath,
+              contentNew,
+              written.mtime.pipe(
+                Option.map((date) => date.getTime()),
+                Option.getOrElse(() => 0),
+              ),
+              Number(written.size),
+              "edit",
+            )
+          }
 
           let additions = 0
           let deletions = 0

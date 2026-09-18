@@ -240,3 +240,83 @@ describe("snapshot", () => {
     expect(ReadLedger.get(SESSION, KEY)).toBeUndefined()
   })
 })
+
+describe("produced", () => {
+  const BODY = "export const answer = 42\n"
+  const record = (over: Partial<{ mtime: number; size: number; by: string }> = {}) =>
+    ReadLedger.recordProduced(SESSION, FILE, BODY, over.mtime ?? 111, over.size ?? 25, over.by ?? "write")
+
+  test("withholds a file the model produced, at most once", () => {
+    record()
+    expect(ReadLedger.takeProduced(SESSION, FILE, 111, 25)?.by).toBe("write")
+    expect(ReadLedger.takeProduced(SESSION, FILE, 111, 25)).toBeUndefined()
+  })
+
+  test("never withholds a file the session did not produce", () => {
+    expect(ReadLedger.takeProduced(SESSION, FILE, 111, 25)).toBeUndefined()
+  })
+
+  test("serves the bytes when the file changed since the write", () => {
+    record()
+    // A later write always moves the mtime; a same-size rewrite is caught too.
+    expect(ReadLedger.takeProduced(SESSION, FILE, 112, 25)).toBeUndefined()
+    expect(ReadLedger.takeProduced(SESSION, FILE, 111, 26)).toBeUndefined()
+  })
+
+  test("keeps the option to withhold the new version after a rewrite", () => {
+    record()
+    ReadLedger.takeProduced(SESSION, FILE, 111, 25)
+    record({ mtime: 222, size: 30 })
+    expect(ReadLedger.takeProduced(SESSION, FILE, 222, 30)?.by).toBe("write")
+  })
+
+  test("never claims proof when the platform reports no mtime", () => {
+    ReadLedger.recordProduced(SESSION, FILE, BODY, 0, 25, "write")
+    expect(ReadLedger.takeProduced(SESSION, FILE, 0, 25)).toBeUndefined()
+  })
+
+  test("does not withhold across sessions", () => {
+    record()
+    expect(ReadLedger.takeProduced("ses_other", FILE, 111, 25)).toBeUndefined()
+  })
+
+  test("does not withhold after a compaction epoch", () => {
+    record()
+    ReadLedger.reset(SESSION)
+    expect(ReadLedger.epoch(SESSION)).toBe(1)
+    expect(ReadLedger.takeProduced(SESSION, FILE, 111, 25)).toBeUndefined()
+  })
+
+  test("resumes the produced index across a restart", () => {
+    record()
+    ReadLedger.flush()
+    ReadLedger.unload()
+    expect(ReadLedger.takeProduced(SESSION, FILE, 111, 25)?.by).toBe("write")
+  })
+
+  test("evicts the oldest produced file beyond the cap", () => {
+    for (let i = 0; i < ReadLedger.MAX_PRODUCED + 5; i++)
+      ReadLedger.recordProduced(SESSION, `/f${i}.ts`, BODY, 1, 25, "write")
+    expect(ReadLedger.takeProduced(SESSION, "/f0.ts", 1, 25)).toBeUndefined()
+    expect(ReadLedger.takeProduced(SESSION, `/f${ReadLedger.MAX_PRODUCED + 4}.ts`, 1, 25)).toBeDefined()
+  })
+})
+
+describe("producedStub", () => {
+  test("names the file and the tool, and never contains the body", () => {
+    const out = ReadLedger.producedStub(FILE, { digest: "d", mtime: 1, size: 25, by: "edit", withheld: true })
+    expect(out).toContain(FILE)
+    expect(out).toContain("edit")
+    expect(out).toContain("<produced>")
+    expect(out).not.toContain("export const")
+  })
+
+  test("is a pure function of its inputs, whatever the ledger is doing", () => {
+    const entry: ReadLedger.Produced = { digest: "d", mtime: 1, size: 25, by: "apply_patch", withheld: false }
+    const before = ReadLedger.producedStub(FILE, entry)
+    ReadLedger.recordProduced(SESSION, FILE, "x", 1, 1, "write")
+    ReadLedger.reset(SESSION)
+    ReadLedger.unload()
+    expect(ReadLedger.producedStub(FILE, entry)).toBe(before)
+  })
+})

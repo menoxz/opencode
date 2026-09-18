@@ -15,6 +15,11 @@ import { Permission } from "../../src/permission"
 import { SessionID, MessageID } from "../../src/session/schema"
 import { Instruction } from "../../src/session/instruction"
 import { ReadTool } from "../../src/tool/read"
+import { WriteTool } from "../../src/tool/write"
+import { EditTool } from "../../src/tool/edit"
+import { ApplyPatchTool } from "../../src/tool/apply_patch"
+import { Bus } from "../../src/bus"
+import { Format } from "../../src/format"
 import { Service as ToolCacheService } from "../../src/tool/cache"
 import { ReadLedger } from "@/tool/read-ledger"
 import { Truncate } from "@/tool/truncate"
@@ -72,6 +77,10 @@ const readLayer = (flags: Partial<RuntimeFlags.Info> = {}) =>
 
 const it = testEffect(readLayer())
 const scout = testEffect(readLayer({ experimentalScout: true }))
+
+// The produced-content axis is only reachable through the writing tools, so its
+// end-to-end proof runs write and read on one runtime.
+const producedIt = testEffect(Layer.mergeAll(readLayer(), Bus.layer, Format.defaultLayer, RuntimeFlags.layer({})))
 
 const init = Effect.fn("ReadToolTest.init")(function* () {
   const info = yield* ReadTool
@@ -815,6 +824,87 @@ describe("tool.read content dedup", () => {
       yield* cache.invalidate()
       const afterCompaction = yield* run({ filePath: filepath })
       expect(afterCompaction.output).toContain("line 40")
+    }),
+  )
+})
+
+describe("tool.read produced-content dedup", () => {
+  const body = (count: number) => Array.from({ length: count }, (_, i) => `line ${i + 1}`).join("\n")
+
+  producedIt.instance("answers a read of a file that write just produced with a stub", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const filepath = path.join(test.directory, "produced.txt")
+      const write = yield* (yield* WriteTool).init()
+      yield* write.execute({ filePath: filepath, content: body(40) }, ctx)
+
+      const read = yield* run({ filePath: filepath })
+      expect(read.output).toContain("<produced>")
+      expect(read.output).not.toContain("line 40")
+      expect(read.metadata.unchanged).toBe(true)
+
+      // One withhold per produced version: the request that follows is served.
+      const served = yield* run({ filePath: filepath })
+      expect(served.output).toContain("line 40")
+    }),
+  )
+
+  producedIt.instance("serves the bytes when the file changed after the write", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const filepath = path.join(test.directory, "rewritten.txt")
+      const write = yield* (yield* WriteTool).init()
+      yield* write.execute({ filePath: filepath, content: body(40) }, ctx)
+
+      yield* put(filepath, body(41))
+      const read = yield* run({ filePath: filepath })
+      expect(read.output).not.toContain("<produced>")
+      expect(read.output).toContain("line 41")
+    }),
+  )
+
+  producedIt.instance("serves the bytes after a compaction epoch", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const filepath = path.join(test.directory, "compacted.txt")
+      const write = yield* (yield* WriteTool).init()
+      yield* write.execute({ filePath: filepath, content: body(40) }, ctx)
+
+      expect((yield* run({ filePath: filepath })).output).toContain("<produced>")
+
+      ReadLedger.reset(ctx.sessionID)
+      const read = yield* run({ filePath: filepath })
+      expect(read.output).not.toContain("<produced>")
+      expect(read.output).toContain("line 40")
+    }),
+  )
+
+  producedIt.instance("answers a read of a file that edit just produced with a stub", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const filepath = path.join(test.directory, "edited.txt")
+      yield* put(filepath, body(40))
+      const edit = yield* (yield* EditTool).init()
+      yield* edit.execute({ filePath: filepath, oldString: "line 40", newString: "line 40 changed" }, ctx)
+
+      const read = yield* run({ filePath: filepath })
+      expect(read.output).toContain("<produced>")
+      expect(read.output).not.toContain("line 40 changed")
+    }),
+  )
+
+  producedIt.instance("answers a read of a file that apply_patch just produced with a stub", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const patch = yield* (yield* ApplyPatchTool).init()
+      yield* patch.execute(
+        { patchText: `*** Begin Patch\n*** Add File: patched.txt\n+${body(40).split("\n").join("\n+")}\n*** End Patch` },
+        ctx,
+      )
+
+      const read = yield* run({ filePath: path.join(test.directory, "patched.txt") })
+      expect(read.output).toContain("<produced>")
+      expect(read.output).not.toContain("line 40")
     }),
   )
 })

@@ -17,7 +17,7 @@
  * or because the freshly rendered output digests to the same value. Any real
  * change — including a change that preserves size — produces the full output.
  *
- * Two dedup axes:
+ * Three dedup axes:
  *
  *  1. KEY — the same `(filepath, offset, limit)` was already sent. Answered
  *     from the ledger without touching the disk when `(mtime, size)` still
@@ -28,6 +28,11 @@
  *     same lines. See `duplicateOf`: at most one withheld copy per digest and
  *     per epoch, so the model always obtains the bytes on the next request and
  *     no withhold loop can form.
+ *  3. PRODUCED — the file was written earlier in this session by `write`, `edit`
+ *     or `apply_patch`, so its bytes already reached the context as the arguments
+ *     the model sent. See `recordProduced`/`takeProduced`: the read is answered
+ *     by a stub while `(mtime, size)` still prove the file unchanged, withheld at
+ *     most once per produced version and per epoch.
  *
  * Cache safety is why a withheld copy is a *written artifact* and never a
  * rewrite: the stub becomes the tool result once, joins the immutable prefix of
@@ -48,6 +53,7 @@
 import { Effect, Option, Schema } from "effect"
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs"
 import path from "node:path"
+import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { Global } from "@opencode-ai/core/global"
 
 /** Sessions retained before the oldest ledger is evicted. */
@@ -58,6 +64,9 @@ export const MAX_ENTRIES = 512
 
 /** Distinct content fingerprints retained per session (the cross-key index). */
 export const MAX_CONTENT = 512
+
+/** Distinct files the model produced itself retained per session. */
+export const MAX_PRODUCED = 512
 
 /**
  * Shortest interval between two snapshots of one session. A crash inside the
@@ -83,6 +92,18 @@ export type Duplicate = {
   range: string
 }
 
+/** A file the model produced itself this session with write, edit or apply_patch. */
+export type Produced = {
+  /** Digest of the content the model wrote, for identity and diagnostics. */
+  digest: string
+  mtime: number
+  size: number
+  /** The tool that produced the file: "write", "edit" or "apply_patch". */
+  by: string
+  /** Set once a withhold was decided, so the same version is served next time. */
+  withheld: boolean
+}
+
 type Tracked = Duplicate & {
   /** Set once a withhold was decided, so the same bytes are served next time. */
   withheld: boolean
@@ -92,6 +113,7 @@ type Book = {
   epoch: number
   entries: Map<string, Seen>
   content: Map<string, Tracked>
+  produced: Map<string, Produced>
   /** Nothing is written while clean, so a session that never changed is silent. */
   dirty: boolean
 }
@@ -131,6 +153,17 @@ function isTracked(value: unknown): value is Tracked {
   )
 }
 
+function isProduced(value: unknown): value is Produced {
+  if (!isRecord(value)) return false
+  return (
+    typeof value.digest === "string" &&
+    typeof value.mtime === "number" &&
+    typeof value.size === "number" &&
+    typeof value.by === "string" &&
+    typeof value.withheld === "boolean"
+  )
+}
+
 /** A snapshot is honoured only when its shape is intact; anything else loads empty. */
 function parse(text: string): Book | undefined {
   const raw = Option.getOrUndefined(decode(text))
@@ -143,13 +176,22 @@ function parse(text: string): Book | undefined {
     content: new Map(
       Object.entries(raw.content).flatMap(([k, v]) => (isTracked(v) ? [[k, v] as [string, Tracked]] : [])),
     ),
+    // A snapshot written before PRODUCED existed has no `produced` map: load it
+    // empty rather than discarding the whole ledger.
+    produced: new Map(
+      Object.entries(isRecord(raw.produced) ? raw.produced : {}).flatMap(([k, v]) =>
+        isProduced(v) ? [[k, v] as [string, Produced]] : [],
+      ),
+    ),
     dirty: false,
   }
 }
 
 function readText(target: string): string {
   return Effect.runSync(
-    Effect.try({ try: () => readFileSync(target, "utf8"), catch: () => undefined }).pipe(Effect.orElseSucceed(() => "")),
+    Effect.try({ try: () => readFileSync(target, "utf8"), catch: () => undefined }).pipe(
+      Effect.orElseSucceed(() => ""),
+    ),
   )
 }
 
@@ -161,6 +203,7 @@ function persist(sessionID: string, state: Book): void {
     epoch: state.epoch,
     entries: Object.fromEntries(state.entries),
     content: Object.fromEntries(state.content),
+    produced: Object.fromEntries(state.produced),
   })
   Effect.runSync(
     Effect.try({
@@ -185,7 +228,13 @@ function snapshot(sessionID: string, state: Book): void {
 function ledger(sessionID: string): Book {
   const hit = sessions.get(sessionID)
   if (hit) return hit
-  const next = parse(readText(file(sessionID))) ?? { epoch: 0, entries: new Map(), content: new Map(), dirty: false }
+  const next = parse(readText(file(sessionID))) ?? {
+    epoch: 0,
+    entries: new Map(),
+    content: new Map(),
+    produced: new Map(),
+    dirty: false,
+  }
   if (sessions.size >= MAX_SESSIONS) {
     const oldest = sessions.keys().next()
     if (!oldest.done) {
@@ -201,6 +250,16 @@ function ledger(sessionID: string): Book {
 
 export function key(filepath: string, offset: number, limit: number): string {
   return `${filepath}\u0000${offset}\u0000${limit}`
+}
+
+/**
+ * The path a file is known by across `read` and the writing tools. `read`
+ * resolves the real path on Windows; the writing tools do not, so that
+ * normalisation lives here once. Without it, a produced file would never be
+ * recognised by the read that follows it.
+ */
+export function fileKey(filepath: string): string {
+  return process.platform === "win32" ? AppFileSystem.normalizePath(filepath) : filepath
 }
 
 /** Cheap, allocation-light digest of rendered read output. */
@@ -248,6 +307,33 @@ export function putContent(sessionID: string, digestKey: string, where: Duplicat
 }
 
 /**
+ * Record that the model itself produced `filepath` with `content` via `by`
+ * (write, edit or apply_patch). A later `read` of the file returns a stub instead
+ * of re-sending bytes the model already wrote into its own context; the
+ * `(mtime, size)` of the file just after the write is the proof the read checks.
+ */
+export function recordProduced(
+  sessionID: string,
+  filepath: string,
+  content: string,
+  mtime: number,
+  size: number,
+  by: string,
+): void {
+  const state = ledger(sessionID)
+  const k = fileKey(filepath)
+  state.produced.delete(k)
+  state.produced.set(k, { digest: digest(content), mtime, size, by, withheld: false })
+  while (state.produced.size > MAX_PRODUCED) {
+    const oldest = state.produced.keys().next()
+    if (oldest.done) break
+    state.produced.delete(oldest.value)
+  }
+  state.dirty = true
+  snapshot(sessionID, state)
+}
+
+/**
  * The location of bytes already sent under a *different* key, when this
  * rendering may be withheld. Identity is the content digest alone: the same
  * rendering can be produced by several keys (another limit, another spelling of
@@ -267,6 +353,28 @@ export function duplicateOf(sessionID: string, digestKey: string): Duplicate | u
   return sent
 }
 
+/**
+ * Withhold the bytes of a file the model produced earlier in this session, when
+ * `(mtime, size)` still prove it unchanged. Withheld at most once per produced
+ * version and per epoch, so the request after a withhold always receives bytes.
+ * `undefined` means the caller must render and send the file.
+ */
+export function takeProduced(
+  sessionID: string,
+  filepath: string,
+  mtime: number,
+  size: number,
+): Produced | undefined {
+  const state = ledger(sessionID)
+  const hit = state.produced.get(fileKey(filepath))
+  if (!hit || hit.withheld) return undefined
+  if (!provenUnchanged(hit, mtime, size)) return undefined
+  hit.withheld = true
+  state.dirty = true
+  snapshot(sessionID, state)
+  return hit
+}
+
 /** The compaction generation this session's dedup decisions belong to. */
 export function epoch(sessionID: string): number {
   return ledger(sessionID).epoch
@@ -276,7 +384,7 @@ export function epoch(sessionID: string): number {
  * True when `(mtime, size)` prove the file cannot have changed since `seen`, so
  * the re-read can be answered without touching the disk at all.
  */
-export function provenUnchanged(seen: Seen, mtime: number, size: number): boolean {
+export function provenUnchanged(seen: { mtime: number; size: number }, mtime: number, size: number): boolean {
   // mtime 0 means the platform gave us no timestamp — never claim proof from it.
   return seen.mtime !== 0 && mtime !== 0 && seen.mtime === mtime && seen.size === size
 }
@@ -309,6 +417,20 @@ export function duplicateStub(filepath: string, where: Duplicate): string {
   ].join("\n")
 }
 
+/** The stub returned in place of bytes the model itself produced this session. */
+export function producedStub(filepath: string, produced: Produced): string {
+  return [
+    `<path>${filepath}</path>`,
+    `<type>file</type>`,
+    `<produced>`,
+    `This file has not changed since your ${produced.by} call earlier in this session: that call is the last thing that touched it.`,
+    `You produced its current content yourself, so you already hold it — scroll back to what you sent rather than fetching it again.`,
+    `The bytes are deliberately not repeated here: re-sending content you already hold is the single largest source of wasted context in this harness.`,
+    `If you need the file's exact current text, read it a second time: a produced file is withheld at most once per compaction epoch.`,
+    `</produced>`,
+  ].join("\n")
+}
+
 /** Force the snapshot of one session, or of every loaded session. */
 export function flush(sessionID?: string): void {
   if (sessionID === undefined) {
@@ -338,6 +460,7 @@ export function reset(sessionID?: string): void {
   const state = ledger(sessionID)
   state.entries.clear()
   state.content.clear()
+  state.produced.clear()
   state.epoch += 1
   state.dirty = true
   persist(sessionID, state)

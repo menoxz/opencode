@@ -380,8 +380,26 @@ export const ReadTool = Tool.define(
         },
       })
 
+      // The model itself produced this file earlier in the session with write,
+      // edit or apply_patch, so its bytes already reached the context as the
+      // tool-call arguments. Withheld at most once per produced version and per
+      // epoch, so the request following a withhold is served the bytes in full.
+      const selfProduced = (entry: ReadLedger.Produced) => ({
+        title,
+        output: ReadLedger.producedStub(filepath, entry) + reminder,
+        metadata: {
+          preview: `unchanged since produced by ${entry.by}`,
+          truncated: false,
+          loaded: loaded.map((item) => item.filepath),
+          unchanged: true,
+        },
+      })
+
       // Unchanged mtime+size is proof: answer without touching the disk.
       if (seen && ReadLedger.provenUnchanged(seen, mtime, size)) return unchanged(seen)
+
+      const produced = ReadLedger.takeProduced(ctx.sessionID, filepath, mtime, size)
+      if (produced) return selfProduced(produced)
 
       const cacheKey = `read:${filepath}:${offset}:${limit}`
       const cached = yield* cache.get(cacheKey)

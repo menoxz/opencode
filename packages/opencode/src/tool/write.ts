@@ -18,6 +18,7 @@ import { Service as ToolCacheService } from "./cache"
 import { Service as SearchIndexService } from "./search-index"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { requiresMutationCause } from "./lean-output-policy"
+import { ReadLedger } from "./read-ledger"
 
 const MAX_PROJECT_DIAGNOSTICS_FILES = 5
 
@@ -89,6 +90,24 @@ export const WriteTool = Tool.define(
           }
           const searchIndex = yield* Effect.serviceOption(SearchIndexService).pipe(Effect.map(Option.getOrUndefined))
           if (searchIndex) yield* searchIndex.updateFile(filepath, contentNew)
+
+          // The bytes just written already reached the model as the arguments it
+          // sent, so a read of this untouched file must not re-send them. A single
+          // stat is the whole cost of recording that.
+          const written = yield* fs.stat(filepath).pipe(Effect.catch(() => Effect.void))
+          if (written) {
+            ReadLedger.recordProduced(
+              ctx.sessionID,
+              filepath,
+              contentNew,
+              written.mtime.pipe(
+                Option.map((date) => date.getTime()),
+                Option.getOrElse(() => 0),
+              ),
+              Number(written.size),
+              "write",
+            )
+          }
 
           let output = "Wrote file successfully."
           yield* lsp.touchFile(filepath, "document")
