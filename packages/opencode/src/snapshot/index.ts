@@ -35,6 +35,16 @@ const staleLock = 60_000
 const core = ["-c", "core.longpaths=true", "-c", "core.symlinks=true"]
 const cfg = ["-c", "core.autocrlf=false", ...core]
 const quote = [...cfg, "-c", "core.quotepath=false"]
+
+// Windows intermittently refuses to create the git process (`EPERM`/`EACCES`,
+// "Accès refusé"). That is a launch failure, not a git failure: the process
+// never started, so retrying cannot duplicate or corrupt repository state.
+export function isTransientLaunchFailure(error: unknown): boolean {
+  return /EPERM|EACCES|EBUSY|Access is denied|Accès refusé|error launching/i.test(
+    error instanceof Error ? error.message : String(error),
+  )
+}
+
 interface GitResult {
   readonly code: ChildProcessSpawner.ExitCode
   readonly text: string
@@ -92,6 +102,12 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
               const result = yield* appProcess.run(
                 ChildProcess.make("git", cmd, { cwd: opts?.cwd, env: opts?.env, extendEnv: true }),
                 { stdin: opts?.stdin },
+              ).pipe(
+                Effect.retry({
+                  schedule: Schedule.exponential(Duration.millis(50)).pipe(Schedule.jittered),
+                  times: 4,
+                  while: isTransientLaunchFailure,
+                }),
               )
               return {
                 code: ChildProcessSpawner.ExitCode(result.exitCode),
