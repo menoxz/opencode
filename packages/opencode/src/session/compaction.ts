@@ -2,7 +2,7 @@ import { BusEvent } from "@/bus/bus-event"
 import { ReadLedger } from "@/tool/read-ledger"
 import { Bus } from "@/bus"
 import * as Session from "./session"
-import type { GoalState } from "./goal-state"
+import { compressGoalState, type GoalState } from "./goal-state"
 import { SessionID, MessageID, PartID } from "./schema"
 import { Provider } from "@/provider/provider"
 import { MessageV2 } from "./message-v2"
@@ -81,30 +81,9 @@ Rules:
 
 // ── GoalState compression utilities ──────────────────────────────────────────
 
-/** Compress a GoalState into an ultra-compact string for prompt injection. */
-export function compressGoalState(state: GoalState): string {
-  const goal = state.goal
-    .split(/[.!?]\s/)[0]!
-    .replace(/\n/g, " ")
-    .trim()
-    .slice(0, 200)
-
-  const dod = state.dod
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .join("|")
-
-  const oos = state.outOfScope
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .join("|")
-
-  const lines: string[] = [`GOAL: ${goal}`]
-  if (dod) lines.push(`DOD: ${dod}`)
-  if (oos) lines.push(`OOS: ${oos}`)
-
-  return lines.join("\n") + "\n"
-}
+// Owned by the GoalState domain module so the session layer can regenerate the
+// derived block without importing this module (which imports session).
+export { compressGoalState }
 
 function stickyGoalContext(state: GoalState): string {
   const findings = (state.findings ?? [])

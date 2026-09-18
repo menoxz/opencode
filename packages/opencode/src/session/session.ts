@@ -31,7 +31,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { Snapshot } from "@/snapshot"
 import { ProjectID } from "../project/schema"
 import { WorkspaceID } from "../control-plane/schema"
-import { GoalState } from "./goal-state"
+import { compressGoalState, GoalState } from "./goal-state"
 import { SessionID, MessageID, PartID } from "./schema"
 import { ModelID, ProviderID } from "@/provider/schema"
 
@@ -776,7 +776,12 @@ export const layer: Layer.Layer<
       goalState: GoalState | null
     }) {
       yield* patch(input.sessionID, {
-        goalState: input.goalState,
+        // `compressed` is a derived field: regenerate it here so no client (TUI
+        // dialog, web/desktop dialog, tool) can persist a stale contract body.
+        goalState:
+          input.goalState && input.goalState.status !== "skipped"
+            ? { ...input.goalState, compressed: compressGoalState(input.goalState) }
+            : input.goalState,
         time: { updated: Date.now() },
       })
     })

@@ -9,12 +9,22 @@ export const MAX_BYTES = 8192
 export const MARKER = "<working-state>"
 
 // These are structured application records, never extracted from replay/tool text.
-export const current = Effect.fn("WorkingState.current")(function* (sessionID: string, userID: string) {
+export const current = Effect.fn("WorkingState.current")(function* (
+  sessionID: string,
+  userID: string,
+  // `context_rollout.goal_dod = off` disables the Goal/DoD feature wholesale, so the
+  // card must not surface the persisted contract either. Callers resolve the rollout.
+  goalDodEnabled = true,
+) {
   const sessions = yield* Session.Service
   const todos = yield* Todo.Service
   const session = yield* sessions.get(SessionID.make(sessionID)).pipe(Effect.option)
   if (Option.isNone(session)) return undefined
-  return render({ userID, goal: session.value.goalState, todos: yield* todos.get(SessionID.make(sessionID)) })
+  return render({
+    userID,
+    goal: goalDodEnabled ? session.value.goalState : undefined,
+    todos: yield* todos.get(SessionID.make(sessionID)),
+  })
 })
 
 export function render(input: { userID: string; goal?: GoalState; todos: readonly Todo.Info[] }) {

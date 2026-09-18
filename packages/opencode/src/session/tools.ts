@@ -27,7 +27,7 @@ import { derivePhaseCapsule } from "./phase-capsule"
 import * as Environment from "./environment"
 import { environmentStateEnabled } from "./environment"
 import * as Progress from "./progress"
-import { isActiveGoal } from "./goal-state"
+import { isActiveGoal, type GoalState } from "./goal-state"
 
 const log = Log.create({ service: "session.tools" })
 const TOOL_SEARCH_ID = "tool_search"
@@ -127,6 +127,10 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   agent: Agent.Info
   model: Provider.Model
   session: Session.Info
+  // The session snapshot is read before the turn's Goal/DoD state is ensured, so
+  // the caller passes the freshly resolved contract to pin the lifecycle tools on
+  // the very turn the contract is created.
+  goalState?: GoalState | null
   processor: Pick<SessionProcessor.Handle, "message" | "updateToolCall" | "completeToolCall">
   bypassAgentCheck: boolean
   messages: MessageV2.WithParts[]
@@ -236,7 +240,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   // complete_objective even when tool_search finds nothing, so they are pinned
   // into the core set (and counted in requiredCount) whenever a goal is active,
   // independent of dynamic selection and eviction.
-  const core = leanCoreTools({ phase, environmentState, goalActive: isActiveGoal(input.session.goalState) })
+  const core = leanCoreTools({ phase, environmentState, goalActive: isActiveGoal(input.goalState ?? input.session.goalState) })
   const configuredMax = hotPath?.max_tools ?? 14
   const sticky = activations.get(input.session.id)
   const requiredCount = new Set([...core, ...(hotPath?.always_tools ?? [])].filter((id) => visibleCatalog.tools.some((item) => item.id === id))).size + 1

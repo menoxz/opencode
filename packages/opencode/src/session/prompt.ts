@@ -91,7 +91,7 @@ import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
 import { LLMEvent } from "@opencode-ai/llm"
 import { Question } from "@/question"
-import type { GoalState } from "./goal-state"
+import { skippedGoalState, type GoalState } from "./goal-state"
 import { hasObjective, inferDeliverable, isTerminalStatus } from "./goal-state"
 import { Todo } from "./todo"
 import { compressGoalState, formatGoalContext } from "./compaction"
@@ -2042,6 +2042,7 @@ export const layer = Layer.effect(
             const tools = yield* SessionTools.resolve({
               agent,
               session,
+              goalState,
               model,
               processor: handle,
               bypassAgentCheck,
@@ -2463,6 +2464,11 @@ export const layer = Layer.effect(
       const currentSession = yield* sessions.get(input.sessionID).pipe(Effect.option)
       const existing = Option.isSome(currentSession) ? currentSession.value.goalState : undefined
       const previousVersion = Option.isSome(currentSession) ? (currentSession.value.goalState?.version ?? 0) : 0
+
+      // Rollout gate: with Goal/DoD off the feature is fully dormant — no auto-draft
+      // and no injection. The persisted contract stays untouched so re-enabling the
+      // flag restores the user's objective instead of silently discarding it.
+      if (SessionContextRollout.resolve(yield* config.get()).goalDod === "off") return skippedGoalState()
 
       const currentUserMsg = input.msgs.findLast(
         (candidate) => candidate.info.role === "user" && candidate.info.id === input.lastUserID,

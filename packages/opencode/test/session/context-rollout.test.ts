@@ -105,6 +105,20 @@ describe("session.context-rollout.resolve", () => {
       injectionInstructions: "summary",
     })
   })
+
+  test("goal_dod defaults to on and accepts an explicit off", () => {
+    const off = ConfigParse.schema(
+      Config.Info,
+      { experimental: { context_rollout: { goal_dod: "off" } } },
+      "test:config",
+    )
+    const unset = ConfigParse.schema(Config.Info, {}, "test:config")
+
+    expect(SessionContextRollout.DEFAULTS.goalDod).toBe("on")
+    expect(SessionContextRollout.resolve(off).goalDod).toBe("off")
+    expect(SessionContextRollout.resolve(unset).goalDod).toBe("on")
+    expect(SessionContextRollout.resolve(off, undefined).goalDod).toBe("off")
+  })
 })
 
 const it = testEffect(

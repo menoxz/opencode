@@ -61,6 +61,46 @@ export const isInjectableGoal = (gs: GoalState | null | undefined): gs is GoalSt
 export const isActiveGoal = (gs: GoalState | null | undefined): gs is GoalState =>
   isInjectableGoal(gs) && !isTerminalStatus(gs.status)
 
+/**
+ * Ultra-compact single-block representation used for prompt injection.
+ * Lives in the GoalState domain module so the session layer can regenerate the
+ * derived block without importing the compaction module (which imports session).
+ */
+export function compressGoalState(state: GoalState): string {
+  const goal = state.goal
+    .split(/[.!?]\s/)[0]!
+    .replace(/\n/g, " ")
+    .trim()
+    .slice(0, 200)
+
+  const dod = state.dod
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .join("|")
+
+  const oos = state.outOfScope
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .join("|")
+
+  const lines: string[] = [`GOAL: ${goal}`]
+  if (dod) lines.push(`DOD: ${dod}`)
+  if (oos) lines.push(`OOS: ${oos}`)
+
+  return lines.join("\n") + "\n"
+}
+
+/** Inert contract returned when the Goal/DoD rollout is disabled: never injected, never persisted. */
+export const skippedGoalState = (): GoalState => ({
+  status: "skipped",
+  source: "auto",
+  goal: "",
+  dod: [],
+  outOfScope: [],
+  version: 0,
+  updatedAt: Date.now(),
+})
+
 /** Bump version + timestamp monotonically; guards against clock-skew regressions. */
 export const touchGoalState = (gs: GoalState): GoalState => ({
   ...gs,

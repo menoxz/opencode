@@ -10,6 +10,7 @@ import type { LLMClientService } from "@opencode-ai/llm/route"
 import { GitLabWorkflowLanguageModel } from "gitlab-ai-provider"
 import { ProviderTransform } from "@/provider/transform"
 import { Config } from "@/config/config"
+import { SessionContextRollout } from "./context-rollout"
 import type { Agent } from "@/agent/agent"
 import type { MessageV2 } from "./message-v2"
 import { Plugin } from "@/plugin"
@@ -156,7 +157,11 @@ const live: Layer.Layer<
       const prepStarted = Date.now()
       const prepared = yield* LLMRequestPrep.prepare({
         ...input,
-        workingState: yield* WorkingState.current(input.sessionID, input.workingStateUserID ?? input.user.id).pipe(
+        workingState: yield* WorkingState.current(
+          input.sessionID,
+          input.workingStateUserID ?? input.user.id,
+          SessionContextRollout.resolve(yield* config.get()).goalDod !== "off",
+        ).pipe(
           Effect.provideService(Session.Service, sessions),
           Effect.provideService(Todo.Service, todos),
         ),
