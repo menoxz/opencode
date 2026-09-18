@@ -7,6 +7,18 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.2.17] - 2026-09-18
+
+### Added
+- Auto-démarrage du démon `opencodev2` : toute commande **active** (`tui`, `attach`, `run`, `serve`, `web`) garantit désormais un démon unique en arrière-plan, lancé par une vraie voie de spawn détaché (`spawnDaemonDetached`) et non plus par un simple `daemon start`. Les commandes non actives (`models`, `tasks list`, …) ne démarrent aucun démon. Le démarrage est idempotent — un second appel constate le démon vivant et n'en crée pas un second —, non bloquant, et ne peut jamais faire échouer la commande appelante : `ensureDaemonStarted()` est enveloppé d'un try/catch. L'opt-out `OPENCODE_NO_DAEMON_AUTOSTART=1` est documenté dans `opencodev2 daemon --help`.
+
+### Fixed
+- Course au démarrage à froid entre commandes concurrentes : deux commandes actives lancées simultanément pouvaient créer **deux** démons, le contrôle par PID ne voyant rien pendant les plusieurs secondes que prend l'amorçage d'un processus froid. Le démarrage est désormais sérialisé par un verrou fichier (`acquireSpawnLock` : création exclusive `wx`, TTL 30 s, vol du verrou périmé, relâchement par l'enfant après l'écriture du PID) ; deux `serve` simultanés aboutissent à un démon unique, prouvé en exécution réelle.
+- `opencodev2 daemon start --detach` est désormais réellement non bloquant (retour ~5 s) et **signale** l'échec de lancement par un code de sortie `1` lorsqu'aucun PID vivant n'apparaît dans les 20 s, au lieu de se terminer silencieusement avec succès.
+
+### Tests
+- Nouvelle suite `test/daemon/autostart.test.ts` (8 tests) : prédicat d'auto-démarrage, écriture/lecture du fichier PID, acquisition, expiration et relâchement du verrou de spawn.
+
 ## [v2.2.15] - 2026-09-18
 
 ### Fixed
