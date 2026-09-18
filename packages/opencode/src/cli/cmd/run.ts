@@ -18,6 +18,7 @@ import { Effect } from "effect"
 import { UI } from "../ui"
 import { effectCmd } from "../effect-cmd"
 import { ServerAuth } from "@/server/auth"
+import { ensureDaemonStarted } from "@/daemon/autostart"
 import { EOL } from "os"
 import { Filesystem } from "@/util/filesystem"
 import { createOpencodeClient, type OpencodeClient, type ToolPart } from "@opencode-ai/sdk/v2"
@@ -249,6 +250,7 @@ export const RunCommand = effectCmd({
         describe: "run in headless mode: reject permission prompts and output structured JSON result with diff",
       }),
   handler: Effect.fn("Cli.run")(function* (args) {
+    ensureDaemonStarted()
     const agentSvc = yield* Agent.Service
     const flags = yield* RuntimeFlags.Service
     const localInstance = yield* InstanceRef

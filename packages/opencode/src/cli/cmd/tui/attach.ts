@@ -6,6 +6,7 @@ import { TuiConfig } from "@/cli/cmd/tui/config/tui"
 import { errorMessage } from "@/util/error"
 import { validateSession } from "./validate-session"
 import { ServerAuth } from "@/server/auth"
+import { ensureDaemonStarted } from "@/daemon/autostart"
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"])
 
@@ -102,6 +103,9 @@ export const AttachCommand = cmd({
     const unguard = win32InstallCtrlCGuard()
     try {
       win32DisableProcessedInput()
+
+      // Ensure the single background daemon is up (fire-and-forget, never fails).
+      ensureDaemonStarted()
 
       if (args.fork && !args.continue && !args.session) {
         UI.error("--fork requires --continue or --session")

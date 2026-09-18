@@ -22,6 +22,7 @@ import {
 } from "@opencode-ai/core/util/opencode-process"
 import { validateSession } from "./validate-session"
 import { waitForWorkerReady } from "./worker-ready"
+import { ensureDaemonStarted } from "@/daemon/autostart"
 
 declare global {
   const OPENCODE_WORKER_PATH: string
@@ -121,6 +122,9 @@ export const TuiThreadCommand = cmd({
       // Must be the very first thing — disables CTRL_C_EVENT before any Worker
       // spawn or async work so the OS cannot kill the process group.
       win32DisableProcessedInput()
+
+      // Ensure the single background daemon is up (fire-and-forget, never fails).
+      ensureDaemonStarted()
 
       if (args.fork && !args.continue && !args.session) {
         UI.error("--fork requires --continue or --session")

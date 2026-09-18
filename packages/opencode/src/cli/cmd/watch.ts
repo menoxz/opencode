@@ -10,24 +10,11 @@ import { listenForTriggers } from "../../daemon/ws-push"
 import * as Log from "@opencode-ai/core/util/log"
 import * as fs from "node:fs"
 import * as path from "node:path"
+import { daemonDir, pidFilePath, serviceDir } from "@/daemon/paths"
 
 const log = Log.create({ service: "daemon.cli" })
 
-/**
- * Get the daemon data directory (platform-appropriate).
- */
-export function daemonDir(): string {
-  const base = process.env.LOCALAPPDATA || path.join(process.env.HOME || "C:\\", ".opencode")
-  return path.join(base, "opencodev2")
-}
-
-/**
- * Get the service data directory (system-wide, for Windows service mode).
- */
-export function serviceDir(): string {
-  const base = process.env.ProgramData || "C:\\ProgramData"
-  return path.join(base, "opencodev2", "daemon")
-}
+export { daemonDir, serviceDir }
 
 /**
  * Write a PID file so the wrapper script (or system monitoring) can track us.
@@ -35,7 +22,7 @@ export function serviceDir(): string {
 export function writePidFile(dir: string): void {
   try {
     fs.mkdirSync(dir, { recursive: true })
-    fs.writeFileSync(path.join(dir, "daemon.pid"), String(process.pid), "utf-8")
+    fs.writeFileSync(pidFilePath(dir), String(process.pid), "utf-8")
   } catch (e) {
     console.error(`Failed to write PID file: ${e}`)
   }
@@ -46,8 +33,8 @@ export function writePidFile(dir: string): void {
  */
 export function removePidFile(dir: string): void {
   try {
-    const pidFile = path.join(dir, "daemon.pid")
-    if (fs.existsSync(pidFile)) fs.unlinkSync(pidFile)
+    const file = pidFilePath(dir)
+    if (fs.existsSync(file)) fs.unlinkSync(file)
   } catch { /* best-effort */ }
 }
 

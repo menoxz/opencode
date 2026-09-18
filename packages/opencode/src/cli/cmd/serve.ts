@@ -1,6 +1,7 @@
 import { Effect } from "effect"
 import { Server } from "../../server/server"
 import { effectCmd } from "../effect-cmd"
+import { ensureDaemonStarted } from "@/daemon/autostart"
 import { withNetworkOptions, resolveNetworkOptions, validateNetworkAuthentication } from "../network"
 import { Flag } from "@opencode-ai/core/flag/flag"
 
@@ -12,6 +13,7 @@ export const ServeCommand = effectCmd({
   // need for an ambient project InstanceContext at startup.
   instance: false,
   handler: Effect.fn("Cli.serve")(function* (args) {
+    ensureDaemonStarted()
     const opts = yield* resolveNetworkOptions(args)
     validateNetworkAuthentication(opts.hostname, Flag.OPENCODE_SERVER_PASSWORD)
     const server = yield* Effect.promise(() => Server.listen(opts))

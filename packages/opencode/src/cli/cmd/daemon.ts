@@ -3,50 +3,31 @@ import * as path from "node:path"
 import { EOL } from "node:os"
 import { spawn, execSync } from "node:child_process"
 import { cmd } from "./cmd"
-import { daemonDir, daemonHandler } from "./watch"
+import { daemonHandler } from "./watch"
+import { dataDir, isProcessRunning, logFilePath, pidFilePath, readPidFile } from "@/daemon/paths"
+import { spawnDaemonDetached } from "@/daemon/autostart"
 import { AppRuntime } from "@/effect/app-runtime"
 import * as Log from "@opencode-ai/core/util/log"
 import { readLatestReport } from "../../daemon/idle"
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
-/**
- * Resolve the daemon data directory.
- * - Normal mode: %LOCALAPPDATA%\opencodev2 (per-user)
- * - Service mode: %ProgramData%\opencodev2\daemon (system-wide)
- */
-function resolveDir(serviceMode: boolean): string {
-  if (serviceMode) {
-    const base = process.env.ProgramData || "C:\\ProgramData"
-    return path.join(base, "opencodev2", "daemon")
-  }
-  return daemonDir()
-}
+const resolveDir = dataDir
+const pidFile = (serviceMode = false) => pidFilePath(dataDir(serviceMode))
+const logFile = (serviceMode = false) => logFilePath(dataDir(serviceMode))
+const readPid = (serviceMode = false) => readPidFile(dataDir(serviceMode))
 
-function pidFile(serviceMode = false): string {
-  return path.join(resolveDir(serviceMode), "daemon.pid")
-}
+/** How long `daemon start --detach` waits for the child to publish its PID file. */
+const DAEMON_START_TIMEOUT_MS = 5000
 
-function logFile(serviceMode = false): string {
-  return path.join(resolveDir(serviceMode), "daemon.log")
-}
-
-function readPid(serviceMode = false): number | null {
-  try {
-    const raw = fs.readFileSync(pidFile(serviceMode), "utf-8").trim()
-    const pid = Number(raw)
-    return Number.isFinite(pid) ? pid : null
-  } catch {
-    return null
-  }
-}
-
-function isProcessRunning(pid: number): boolean {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch {
-    return false
+/** Poll until the detached child has written a PID whose process is alive. */
+async function waitForDaemon(timeoutMs = DAEMON_START_TIMEOUT_MS): Promise<number | null> {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    const pid = readPid()
+    if (pid && isProcessRunning(pid)) return pid
+    if (Date.now() >= deadline) return null
+    await new Promise((r) => setTimeout(r, 100))
   }
 }
 
@@ -132,7 +113,11 @@ export const DaemonCommand = cmd({
       .command(LogsCommand)
       .command(InstallCommand)
       .command(UninstallCommand)
-      .demandCommand(1, "Specify a subcommand: start, stop, status, logs, install, uninstall"),
+      .demandCommand(1, "Specify a subcommand: start, stop, status, logs, install, uninstall")
+      .epilog(
+        "A single background daemon is started automatically whenever an active command runs\n" +
+          "(tui, run, serve, web, attach). Set OPENCODE_NO_DAEMON_AUTOSTART=1 to disable it.",
+      ),
   async handler() {},
 })
 
@@ -152,11 +137,14 @@ const StartCommand = cmd({
         type: "boolean",
         describe: "Run as Windows service (SCM integration, system-wide dirs)",
         default: false,
+      })
+      .option("detach", {
+        type: "boolean",
+        describe: "Start in the background and return immediately (prints the daemon PID)",
+        default: false,
       }),
   async handler(args) {
     const isService = args.service ?? false
-
-    process.stdout.write(`🧠 Starting opencodev2-daemon...${isService ? " (service mode)" : ""}${EOL}`)
 
     // PID file: only check in non-service mode (SCM manages service PID)
     if (!isService) {
@@ -167,6 +155,25 @@ const StartCommand = cmd({
         return
       }
     }
+
+    if (args.detach && !isService) {
+      process.stdout.write(`🧠 Starting opencodev2-daemon in background...${EOL}`)
+      spawnDaemonDetached()
+      const pid = await waitForDaemon()
+      if (!pid) {
+        process.stdout.write(`❌ Failed to start the daemon in the background${EOL}`)
+        process.stdout.write(
+          `   No live PID appeared within ${DAEMON_START_TIMEOUT_MS / 1000}s — check ${logFile()}${EOL}`,
+        )
+        process.exitCode = 1
+        return
+      }
+      process.stdout.write(`✅ Daemon started in background (PID ${pid})${EOL}`)
+      process.stdout.write(`   PID file: ${pidFile()}${EOL}`)
+      return
+    }
+
+    process.stdout.write(`🧠 Starting opencodev2-daemon...${isService ? " (service mode)" : ""}${EOL}`)
 
     // Run the daemon handler (Effect-based, runs until interrupted)
     const handler = daemonHandler({ daemon: true, service: isService }) as any
