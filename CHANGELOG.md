@@ -7,6 +7,11 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.2.15] - 2026-09-18
+
+### Fixed
+- Le retry des lancements `git` refusés par le système (`EPERM`/`EACCES`) livré en v2.2.13 ne se déclenchait **jamais** en production : `AppProcessError` porte un `message` vide, si bien qu'un prédicat qui ne lisait que `error.message` ne reconnaissait jamais un refus réel — le refus ne survit que dans `cause`/`stderr`. Le prédicat (`isTransientLaunchFailure`) est désormais conscient de `cause`/`stderr`, et le retry (`retryTransientLaunch`) est centralisé dans `packages/core/src/process.ts` puis appliqué à **chaque** site de lancement git : snapshot (`git` et `cat-file --batch`), git, worktree, project et core git. Le retry reste limité à l'échec d'AMORÇAGE (processus jamais créé) : il ne peut ni dupliquer une opération ni masquer un code de sortie rendu par git.
+
 ## [v2.2.14] - 2026-09-18
 
 ### Fixed
