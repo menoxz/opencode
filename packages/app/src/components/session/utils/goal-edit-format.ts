@@ -1,3 +1,5 @@
+import type { GoalState } from "@opencode-ai/sdk/v2"
+
 /**
  * Build a text template for editing a goal contract.
  * Produces the format:
@@ -71,4 +73,27 @@ export function parseGoalEditInput(
   }
 
   return { goal, dod, outOfScope }
+}
+
+/**
+ * Build the next contract from an edit-dialog submission.
+ * Preserves every runtime field the dialog does not edit (anchorUserID, findings,
+ * completion, deliverable) and bumps the version so the next turn sees the change.
+ * `compressed` is derived and dropped here: the server regenerates it on save.
+ */
+export function nextGoalStateFromEdit(
+  previous: GoalState | undefined,
+  parsed: { goal: string; dod: string[]; outOfScope: string[] },
+): GoalState {
+  return {
+    ...previous,
+    status: "edited",
+    source: "user",
+    goal: parsed.goal,
+    dod: parsed.dod,
+    outOfScope: parsed.outOfScope,
+    compressed: undefined,
+    version: (previous?.version ?? 0) + 1,
+    updatedAt: Date.now(),
+  }
 }

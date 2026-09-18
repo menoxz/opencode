@@ -7,7 +7,8 @@ import { useSync } from "@/context/sync"
 import { useSDK } from "@/context/sdk"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { showToast } from "@opencode-ai/ui/toast"
-import { buildGoalEditTemplate, parseGoalEditInput } from "./session/utils/goal-edit-format"
+import type { GoalState } from "@opencode-ai/sdk/v2"
+import { buildGoalEditTemplate, nextGoalStateFromEdit, parseGoalEditInput } from "./session/utils/goal-edit-format"
 
 export function DialogGoalEdit() {
   const dialog = useDialog()
@@ -16,19 +17,7 @@ export function DialogGoalEdit() {
   const { params } = useSessionLayout()
 
   const session = params.id ? sync.session.get(params.id) : undefined
-  const goalState = (
-    session as
-      | {
-          goalState?: {
-            status?: string
-            goal?: string
-            dod?: string[]
-            outOfScope?: string[]
-            version?: number
-          }
-        }
-      | undefined
-  )?.goalState
+  const goalState = (session as { goalState?: GoalState } | undefined)?.goalState
 
   const [text, setText] = createSignal(buildGoalEditTemplate(goalState ?? {}))
   const [saving, setSaving] = createSignal(false)
@@ -47,15 +36,7 @@ export function DialogGoalEdit() {
       await sdk.client.session.update({
         sessionID: params.id,
         directory: sdk.directory,
-        goalState: {
-          status: "edited",
-          source: "user",
-          goal: parsed.goal,
-          dod: parsed.dod,
-          outOfScope: parsed.outOfScope,
-          version: goalState?.version ?? 1,
-          updatedAt: Date.now(),
-        },
+        goalState: nextGoalStateFromEdit(goalState, parsed),
       })
       dialog.close()
     } catch (err: unknown) {
