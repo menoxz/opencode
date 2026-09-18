@@ -197,9 +197,12 @@ for (const native of [false, true]) {
               expect(JSON.stringify(payload.input.at(-1))).toContain(constraint)
           }
           if (step === 4) {
-            expect(wire).not.toContain("live-goal-4")
-            expect(wire).not.toContain("live-task-4")
-            expect(wire).toContain("unavailable/unanchored")
+            // A newer user message must not hide an active (nonterminal) contract: the
+            // card agrees with the injected `<task-contract>` (F1). The previous step's
+            // stale values stay absent (asserted above).
+            expect(wire).toContain("live-goal-4")
+            expect(wire).toContain("live-task-4")
+            expect(wire).not.toContain("unavailable/unanchored")
           }
           expect(JSON.stringify(messages)).toBe(before)
           expect((yield* sessions.messages({ sessionID: session.id })).map((message) => message.info.id)).toEqual([

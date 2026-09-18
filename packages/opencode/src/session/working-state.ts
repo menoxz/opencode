@@ -1,6 +1,6 @@
 import type { ModelMessage } from "ai"
 import { Effect, Option } from "effect"
-import type { GoalState } from "./goal-state"
+import { isTerminalStatus, type GoalState } from "./goal-state"
 import { Session } from "./session"
 import { SessionID } from "./schema"
 import { Todo } from "./todo"
@@ -28,7 +28,18 @@ export const current = Effect.fn("WorkingState.current")(function* (
 })
 
 export function render(input: { userID: string; goal?: GoalState; todos: readonly Todo.Info[] }) {
-  const goal = input.goal?.anchorUserID === input.userID && input.goal.status !== "skipped" ? input.goal : undefined
+  // The card must agree with the injected `<task-contract>` (prompt.ts): an active
+  // (nonterminal) contract spans turns, so it stays surfaced even when it was anchored
+  // to an earlier user message — a new_topic turn keeps the contract without
+  // re-anchoring it (see ensureGoalState). The anchor still gates terminal states,
+  // which must not be resurrected on a later turn; a just-finished objective stays
+  // visible within its own turn. `skipped` is always hidden (goal_dod off / user skip).
+  const goal =
+    input.goal &&
+    input.goal.status !== "skipped" &&
+    (input.goal.anchorUserID === input.userID || !isTerminalStatus(input.goal.status))
+      ? input.goal
+      : undefined
   const todoAnchored = goal !== undefined && goal.status !== "completed"
   const active = todoAnchored
     ? (input.todos.find((todo) => todo.status === "in_progress") ??
