@@ -7,10 +7,20 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.2.12] - 2026-09-18
+
+### Added
+- Déduplication des lectures par digest de contenu : un `read` qui redemande exactement les octets d'une lecture précédente de la session reçoit un stub `<duplicate>` au lieu du contenu. L'état est tenu par un ledger persistant par session (`src/tool/read-ledger.ts`), appliqué au moment de l'ÉCRITURE du résultat : aucun message passé n'est réécrit, le préfixe du prompt reste identique octet pour octet et le cache fournisseur n'est donc pas invalidé. Un même digest n'est retenu qu'une fois par époque de compaction — la demande suivante reçoit les octets — et le ledger est borné (512 lectures, 512 contenus, 64 sessions) avec écriture atomique (fichier temporaire puis renommage, `OPENCODE_READ_LEDGER_DIR` pour l'isolation).
+- Troisième axe de déduplication, « produced » : un fichier qu'un `write`, `edit` ou `apply_patch` de la session vient d'écrire n'est pas renvoyé en entier par le `read` suivant, le modèle détenant déjà ces octets pour les avoir envoyés comme arguments de son propre appel d'outil. Un stub `<produced>` les remplace ; la preuve est la paire `(mtime, taille)` relevée après l'écriture. La retenue a lieu au plus une fois par version produite et par époque, elle est annulée dès que le fichier bouge ou que la session change, et un horodatage inexploitable (mtime nul) ne sert jamais de preuve.
+
 ### Changed
 - Le versionnement devient obligatoire : tout changement de code cohérent et vérifié doit être commité, sans attendre une demande explicite de l'utilisateur. La nouvelle formulation est portée par les descriptions d'outils `src/tool/shell/shell.txt` et `src/tool/todowrite.txt`, ainsi que par le texte du todo `[CLOSE]` injecté dans `src/tool/todo.ts`. `push`, `amend` d'un commit déjà poussé, `rebase`, `force-push` et la création de PR restent subordonnés à une demande explicite, car ils engagent l'historique partagé.
+- Enregistrer une écriture ajoute un `stat` au chemin de succès : coût mesuré à 0,08 ms en moyenne, contre une médiane de 4,65 ms pour l'exécution d'un `write`, soit environ 1,7 %.
 
 > **Conséquence opérationnelle** — ces descriptions sont importées statiquement au build (`import DESCRIPTION from "./shell.txt"` dans `shell/prompt.ts`, `import DESCRIPTION_WRITE from "./todowrite.txt"` dans `todo.ts`) : elles sont donc **figées dans le binaire**. Après édition, la règle n'atteint le canal embarqué qu'après reconstruction et redéploiement du binaire. Le canal effectif immédiat, sans rebuild, reste `AGENTS.md` (global et projet) et les skills, relus à chaud. Un binaire installé portant encore l'ancienne règle doit être reconstruit avant d'être considéré à jour.
+
+### Tests
+- 40 tests unitaires du ledger (suites `produced` et `producedStub` incluses) et 5 tests de bout en bout `tool.read produced-content dedup` : stub après `write`, `edit` et `apply_patch`, octets rendus lorsque le fichier a changé depuis l'écriture, octets rendus après une compaction, et retenue non répétée à la demande suivante (anti-livelock).
 
 ## [v2.2.11] - 2026-09-16
 
