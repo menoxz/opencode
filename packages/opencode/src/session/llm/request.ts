@@ -113,10 +113,12 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
       log.info("jev route decision", { sessionID: input.sessionID, ...decision })
     }
   }
-  // The plan is drawn once per user request, not once per step: every later step
-  // of the same turn reuses it, so a long turn pays one round-trip, not one per
-  // request preparation.
-  if (jevHttp && jev?.plan?.enabled === true && lastUser) {
+  // The plan is drawn once per user turn, not once per step, and never for a
+  // utility call: the title agent goes through this same preparation with
+  // `small: true`, and drawing a plan there would both spend a round-trip on a
+  // prompt the model never sees as a task and leave the session holding a plan
+  // drawn for the wrong request.
+  if (jevHttp && jev?.plan?.enabled === true && lastUser && input.small !== true) {
     const fingerprint = JevState.fingerprint(lastUser)
     if (JevState.currentPlan(input.sessionID)?.fingerprint !== fingerprint) {
       const decision = yield* JevPlan.plan(jevHttp, jev, { prompt: lastUser, fingerprint }).pipe(
