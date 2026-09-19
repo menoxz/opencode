@@ -7,6 +7,29 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.2.26] - 2026-09-19
+
+### Changed
+- Un verdict de garde-fou mémoïsé dont la décision est `allow` est désormais tracé (`jev guard memoised`) : le gain du cache était invisible en production, la décision `allow` — le cas majoritaire — n'émettant aucun log. Le log est additif ; la voie de refus est inchangée.
+
+## [v2.2.25] - 2026-09-19
+
+### Fixed
+- Le plan JEV n'est plus tiré pour les requêtes utilitaires : l'agent de génération de titre (`small: true`) traversait le même chemin de préparation et écrasait le plan de la session, gaspillant un aller-retour JEV et injectant un plan calculé pour un prompt que le modèle ne reçoit jamais comme tâche. Mesuré en direct : deux décisions de plan par tour en 2.2.24, une seule en 2.2.25.
+
+## [v2.2.24] - 2026-09-19
+
+### Added
+- Trois leviers JEV de réduction du contexte et du nombre de tours, tous additifs et fail-open : (1) compaction — les paires d'appels d'outil les plus lourdes de la tête de compaction sont soumises à JEV, un résultat réfuté est remplacé par un marqueur et un appel réfuté est retiré du transcript, et un échec de JEV renvoie la tête inchangée ; (2) garde-fou — le verdict d'un appel (outil + arguments) est mémoïsé par session et réutilisé sans nouvel appel JEV, invalidé par tout changement d'arguments, de tour, de seuil ou par un nouveau marqueur d'injection ; (3) plan — JEV rend une checklist typée (forme de la réponse attendue + phases requises) injectée dans le contexte de session.
+
+### Tests
+- `test/jev/` : 112 tests au vert (compaction, mémoïsation, plan, garde-fou, client, routage, revue).
+
+## [v2.2.23] - 2026-09-19
+
+### Fixed
+- Un appel d'outil explicitement demandé par l'utilisateur n'est plus refusé sans recours : la branche `deny` du garde-fou se déclenchait sur le seul niveau de risque, sans consulter la demande utilisateur, contrairement à la branche `ask`. `deny` reste réservé aux appels non demandés ; un refus fondé sur une provenance non fiable reste absolu.
+
 ## [v2.2.19] - 2026-09-19
 
 ### Fixed
