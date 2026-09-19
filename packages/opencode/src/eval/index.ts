@@ -127,15 +127,51 @@ export interface ValidationResult {
   exitCode: number | null
 }
 
+/** Attempts made while a validation command keeps failing on an execution refusal. */
+const VALIDATION_ATTEMPTS = 3
+/** Backoff before a retry; a refused child start usually clears immediately. */
+const VALIDATION_BACKOFF_MS = 50
+/**
+ * `cmd.exe` exits 5 (Windows ERROR_ACCESS_DENIED) when it cannot launch the child,
+ * so a 5 is a refusal to execute rather than the command's own verdict.
+ */
+const SHELL_ACCESS_DENIED = 5
+
 /**
  * Run a validation command synchronously and return pass/fail.
  * Uses `child_process.execSync` under the hood.
+ *
+ * On Windows a child start is occasionally refused (`uv_spawn` EPERM, a killed
+ * `cmd.exe` that leaves no status, or a bare ACCESS_DENIED exit 5). That is an
+ * execution error, not a verdict on the artifact: it is retried so a flaky child
+ * start cannot grade a correct artifact as failed. A command that actually ran and
+ * exited with its own non-zero code is a real failure and is returned as-is.
  *
  * @param command - Shell command to execute
  * @param cwd - Working directory to run the command in
  * @returns ValidationResult with exit code and output
  */
 export function validate(command: string, cwd?: string): ValidationResult {
+  let best = execValidationCommand(command, cwd)
+  for (let attempt = 1; attempt < VALIDATION_ATTEMPTS && !best.passed && isExecutionRefusal(best); attempt++) {
+    blockSync(VALIDATION_BACKOFF_MS * attempt)
+    const retry = execValidationCommand(command, cwd)
+    if (retry.passed || !isExecutionRefusal(retry)) best = retry
+  }
+  return best
+}
+
+/** True when an attempt produced no verdict of its own: the child never ran or was killed. */
+function isExecutionRefusal(result: ValidationResult): boolean {
+  return result.exitCode === null || (process.platform === "win32" && result.exitCode === SHELL_ACCESS_DENIED)
+}
+
+/** `/bin/sh` semantics do not apply here: a synchronous sleep keeps `validate` sync. */
+function blockSync(ms: number) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+}
+
+function execValidationCommand(command: string, cwd?: string): ValidationResult {
   const result: ValidationResult = { passed: false, stdout: "", stderr: "", exitCode: null }
   try {
     const out = execSync(command, {
