@@ -31,6 +31,7 @@ import { TestConfig } from "../fixture/config"
 import { SyncEvent } from "@/sync"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
+import { FetchHttpClient } from "effect/unstable/http"
 import { LLMEvent, Usage } from "@opencode-ai/llm"
 
 void Log.init({ print: false })
@@ -241,7 +242,11 @@ const deps = Layer.mergeAll(
 const env = Layer.mergeAll(
   SessionNs.defaultLayer,
   CrossSpawnSpawner.defaultLayer,
-  SessionCompaction.layer.pipe(Layer.provide(SessionNs.defaultLayer), Layer.provideMerge(deps)),
+  SessionCompaction.layer.pipe(
+    Layer.provide(SessionNs.defaultLayer),
+    Layer.provide(FetchHttpClient.layer),
+    Layer.provideMerge(deps),
+  ),
 )
 
 const it = testEffect(env)
@@ -286,6 +291,7 @@ function compactionProcessLayer(options?: CompactionProcessOptions) {
     Layer.provide(SyncEvent.defaultLayer),
     Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
     Layer.provide(EventV2Bridge.defaultLayer),
+    Layer.provide(FetchHttpClient.layer),
   )
 }
 

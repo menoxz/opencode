@@ -23,6 +23,9 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { SessionEvent } from "@opencode-ai/core/session-event"
 import { SessionContextRollout } from "./context-rollout"
+import { JevCompaction } from "@/jev/compaction"
+import { JevClient } from "@/jev/client"
+import { FetchHttpClient, HttpClient } from "effect/unstable/http"
 
 const log = Log.create({ service: "session.compaction" })
 
@@ -279,6 +282,7 @@ export const layer = Layer.effect(
     const plugin = yield* Plugin.Service
     const processors = yield* SessionProcessor.Service
     const provider = yield* Provider.Service
+    const http = yield* HttpClient.HttpClient
     const events = yield* EventV2Bridge.Service
     const flags = yield* RuntimeFlags.Service
 
@@ -475,8 +479,52 @@ export const layer = Layer.effect(
         { sessionID: input.sessionID },
         { context: [], prompt: undefined },
       )
+      // Jev's pre-summary pass: it reads a digest of the head and answers one
+      // typed batch naming the anchors the summary must not drop (paths,
+      // commands, identifiers, error strings). The result is one extra context
+      // block — never a prompt replacement — and any Jev failure (absent key,
+      // network, unparsable answer) leaves the context untouched so compaction
+      // always proceeds. Cost is bounded by `max_questions`.
+      const jevCfg = cfg.jev?.compaction
+      const jevDigest =
+        jevCfg?.enabled === true
+          ? JevCompaction.clampState(
+              selected.head.flatMap((message) =>
+                message.parts.flatMap((part) => {
+                  if (part.type === "text" && !part.synthetic) return [`${message.info.role}: ${part.text}`]
+                  if (part.type === "tool") return [`${message.info.role} ran tool ${part.tool}`]
+                  return []
+                }),
+              ),
+            )
+          : ""
+      const jevCandidates = jevDigest
+        ? JevCompaction.candidatesFromText(jevDigest, jevCfg?.max_questions ?? JevCompaction.MAX_QUESTIONS)
+        : []
+      const jevChecklist =
+        jevCandidates.length === 0
+          ? undefined
+          : yield* JevClient.decide(
+              http,
+              { state: jevDigest, questions: JevCompaction.checklistQuestions(jevCandidates) },
+              cfg.jev,
+            ).pipe(
+              Effect.map((response) =>
+                JevCompaction.renderChecklist({
+                  candidates: jevCandidates,
+                  answers: response.answers,
+                  threshold: jevCfg?.threshold,
+                }),
+              ),
+              Effect.catch(() => Effect.succeed(undefined)),
+            )
       // The LLM boundary supplies escaped live state, not a raw/stale goal hint.
-      const nextPrompt = compacting.prompt ?? buildPrompt({ previousSummary, context: compacting.context })
+      const nextPrompt =
+        compacting.prompt ??
+        buildPrompt({
+          previousSummary,
+          context: jevChecklist ? [...compacting.context, jevChecklist] : compacting.context,
+        })
       const msgs = structuredClone(selected.head)
       yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
       const modelMessages = yield* MessageV2.toModelMessagesEffect(msgs, model, {
@@ -665,6 +713,31 @@ export const layer = Layer.effect(
             parts: [],
           },
         )
+        // Jev's post-summary pass is verification, not enforcement: one typed
+        // batch reports which load-bearing anchors the summary dropped, and the
+        // verdict is logged so the loss is observable. It never blocks or
+        // rewrites the summary, and any Jev failure is silent.
+        const jevAudit =
+          jevCfg?.enabled === true && summary && jevCandidates.length > 0
+            ? yield* JevClient.decide(
+                http,
+                {
+                  state: JevCompaction.clampState([jevDigest, `SUMMARY:\n${summary}`]),
+                  questions: JevCompaction.auditQuestions(jevCandidates),
+                },
+                cfg.jev,
+              ).pipe(Effect.catch(() => Effect.succeed(undefined)))
+            : undefined
+        if (jevAudit)
+          log.info("jev compaction audit", {
+            model: jevAudit.model,
+            anchors: jevCandidates.length,
+            missing: JevCompaction.missingFromSummary({
+              candidates: jevCandidates,
+              answers: jevAudit.answers,
+              threshold: jevCfg?.threshold,
+            }),
+          })
         if (flags.experimentalEventSystem) {
           yield* events.publish(SessionEvent.Compaction.Ended, {
             sessionID: input.sessionID,
@@ -735,6 +808,7 @@ export const defaultLayer = Layer.suspend(() =>
     Layer.provide(Config.defaultLayer),
     Layer.provide(RuntimeFlags.defaultLayer),
     Layer.provide(EventV2Bridge.defaultLayer),
+    Layer.provide(FetchHttpClient.layer),
   ),
 )
 
