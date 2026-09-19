@@ -25,6 +25,8 @@ import {
   executeScenarioInSandbox,
   verifiedPassRate,
   compareReportToBaseline,
+  verdictFromValidation,
+  isExecutionRefusal,
   type EvalBaseline,
 } from "./index"
 import type { EvalRunReport } from "./metrics"
@@ -188,6 +190,70 @@ describe("functional validation", () => {
     const cmd = `node -e "try { require('./broken_code.js') } catch(e) { process.exit(1) }"`
     const result = validate(cmd, tmpDir)
     expect(result.passed).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Validation refusal — an unrunnable command is no verdict on the artifact
+// ---------------------------------------------------------------------------
+
+describe("a refused validation command is unverified, never a failure", () => {
+  it("reports an unrunnable command as unverified", () => {
+    // Reproduces the 2026-09-19 sanity incident: a Windows child-start refusal
+    // (uv_spawn EPERM / ACCESS_DENIED) left a validation command unrunnable, and
+    // the refusal was scored as a failed behavior, forging a regression.
+    expect(
+      verdictFromValidation({ passed: false, stdout: "", stderr: "", exitCode: null, executed: false }),
+    ).toBe("unverified")
+    expect(
+      verdictFromValidation({ passed: false, stdout: "", stderr: "", exitCode: 5, executed: false }),
+    ).toBe("unverified")
+  })
+
+  it("still fails a command that actually ran and exited non-zero", () => {
+    expect(
+      verdictFromValidation({ passed: false, stdout: "", stderr: "boom", exitCode: 1, executed: true }),
+    ).toBe("fail")
+    expect(
+      verdictFromValidation({ passed: true, stdout: "ok", stderr: "", exitCode: 0, executed: true }),
+    ).toBe("pass")
+  })
+
+  it("marks a real exit code as an executed verdict", () => {
+    expect(validate(`node -e "process.exit(0)"`).executed).toBe(true)
+    expect(validate(`node -e "process.exit(1)"`).executed).toBe(true)
+  })
+
+  it("treats the Windows shell 'access denied' errorlevel as a refusal, not a failure", () => {
+    // Observed on 2026-09-19: `cmd.exe` returns errorlevel 1 with its own localized
+    // "Accès refusé." text when the OS denies the child start; the target never ran.
+    expect(
+      isExecutionRefusal({ passed: false, stdout: "", stderr: "Accès refusé.\r\n", exitCode: 1, executed: false }),
+    ).toBe(true)
+    expect(
+      isExecutionRefusal({ passed: false, stdout: "", stderr: "Access is denied.\r\n", exitCode: 1, executed: false }),
+    ).toBe(true)
+  })
+
+  it("keeps a program's own non-zero verdict when it produced output", () => {
+    expect(
+      isExecutionRefusal({
+        passed: false,
+        stdout: "some output",
+        stderr: "Access is denied.",
+        exitCode: 1,
+        executed: true,
+      }),
+    ).toBe(false)
+    expect(
+      isExecutionRefusal({
+        passed: false,
+        stdout: "",
+        stderr: "SyntaxError: Unexpected token",
+        exitCode: 1,
+        executed: true,
+      }),
+    ).toBe(false)
   })
 })
 
@@ -554,6 +620,36 @@ describe("real runner", () => {
     const result = await Effect.runPromise(runScenarioReal(getScenario("refactor-to-arrow")!, executor))
     expect(result.success).toBe(false)
     expect(result.behaviorsMatched).toBe(1)
+  })
+
+  test("grades fix-syntax-error from the artifact when the headless diff summary is empty (regression)", async () => {
+    // 2026-09-19 sanity incident: the headless_result carried
+    // { files: 0, diffs: [] } for a write that did happen, so the write-action
+    // behavior failed and the scenario read as a regression even though
+    // fixed_calculate.js was a valid fix on disk. The scenario now grades both
+    // behaviors against the real file, so an unrecorded diff cannot forge one.
+    const fixed = [
+      "function calculateTotal(items) {",
+      "  let sum = 0",
+      "  for (let i = 0; i < items.length; i++) {",
+      "    sum += items[i].price",
+      "  }",
+      "  return sum",
+      "}",
+      "module.exports = { calculateTotal }",
+      "",
+    ].join("\n")
+    const executor: RealScenarioExecutor = ({ cwd }) =>
+      Effect.sync(() => {
+        writeFileSync(join(cwd, "fixed_calculate.js"), fixed)
+        // The diff summary reported nothing even though the file was written.
+        return { output: "fixed and saved to fixed_calculate.js", toolCalls: [], errors: [] }
+      })
+
+    const result = await Effect.runPromise(runScenarioReal(getScenario("fix-syntax-error")!, executor))
+
+    expect(result.verdict).toBe("pass")
+    expect(result.behaviorsMatched).toBe(2)
   })
 
   test("runs a scenario in a sandbox and evaluates validation commands against real files", async () => {

@@ -125,15 +125,24 @@ export interface ValidationResult {
   stdout: string
   stderr: string
   exitCode: number | null
+  /**
+   * True when the command produced a verdict of its own (it ran to a real exit
+   * code). False when the child could never be started (a spawn refusal), so the
+   * artifact was never actually judged and the result must not be read as a
+   * failure of the agent's work.
+   */
+  executed: boolean
 }
 
 /** Attempts made while a validation command keeps failing on an execution refusal. */
-const VALIDATION_ATTEMPTS = 3
-/** Backoff before a retry; a refused child start usually clears immediately. */
+const VALIDATION_ATTEMPTS = 5
+/** Exponential backoff before a retry; a refused child start clears within a few hundred ms. */
 const VALIDATION_BACKOFF_MS = 50
+const VALIDATION_BACKOFF_MAX_MS = 400
 /**
- * `cmd.exe` exits 5 (Windows ERROR_ACCESS_DENIED) when it cannot launch the child,
- * so a 5 is a refusal to execute rather than the command's own verdict.
+ * Exit code 5 (`ERROR_ACCESS_DENIED`) that a Windows shell can return when it cannot
+ * launch the child; observed here as errorlevel 1 plus a localized "access denied"
+ * message, both treated as a refusal rather than the command's own verdict.
  */
 const SHELL_ACCESS_DENIED = 5
 
@@ -154,16 +163,41 @@ const SHELL_ACCESS_DENIED = 5
 export function validate(command: string, cwd?: string): ValidationResult {
   let best = execValidationCommand(command, cwd)
   for (let attempt = 1; attempt < VALIDATION_ATTEMPTS && !best.passed && isExecutionRefusal(best); attempt++) {
-    blockSync(VALIDATION_BACKOFF_MS * attempt)
+    blockSync(Math.min(VALIDATION_BACKOFF_MS * 2 ** (attempt - 1), VALIDATION_BACKOFF_MAX_MS))
     const retry = execValidationCommand(command, cwd)
     if (retry.passed || !isExecutionRefusal(retry)) best = retry
   }
   return best
 }
 
+/**
+ * Localized "access denied" texts the Windows shell prints when the OS refuses to
+ * create the child process (EPERM, typically an EDR/AV race). The target program
+ * never runs, so this is a refusal, not the command's own verdict.
+ */
+const SHELL_DENIED_PATTERNS = [
+  /acc[eè]s refus[eé]/i, // fr
+  /access is denied/i, // en
+  /zugriff verweigert/i, // de
+  /acceso denegado/i, // es
+  /accesso negato/i, // it
+  /acesso negado/i, // pt
+]
+
 /** True when an attempt produced no verdict of its own: the child never ran or was killed. */
-function isExecutionRefusal(result: ValidationResult): boolean {
-  return result.exitCode === null || (process.platform === "win32" && result.exitCode === SHELL_ACCESS_DENIED)
+export function isExecutionRefusal(result: ValidationResult): boolean {
+  // `execSync` leaves `status` null (or undefined) when it could not start the child,
+  // e.g. EPERM from the OS or ENOENT for a missing cwd: the command produced no verdict.
+  if (typeof result.exitCode !== "number") return true
+  // The shell reports a denied child start with its own localized text and no output
+  // of its own; the command produced no verdict, so it must be retried, not graded.
+  if (result.exitCode === 1 && result.stdout.trim().length === 0 && isShellDeniedMessage(result.stderr)) return true
+  return process.platform === "win32" && result.exitCode === SHELL_ACCESS_DENIED
+}
+
+function isShellDeniedMessage(stderr: string): boolean {
+  const text = stderr.trim()
+  return text.length > 0 && SHELL_DENIED_PATTERNS.some((re) => re.test(text))
 }
 
 /** `/bin/sh` semantics do not apply here: a synchronous sleep keeps `validate` sync. */
@@ -172,7 +206,7 @@ function blockSync(ms: number) {
 }
 
 function execValidationCommand(command: string, cwd?: string): ValidationResult {
-  const result: ValidationResult = { passed: false, stdout: "", stderr: "", exitCode: null }
+  const result: ValidationResult = { passed: false, stdout: "", stderr: "", exitCode: null, executed: false }
   try {
     const out = execSync(command, {
       cwd,
@@ -183,9 +217,11 @@ function execValidationCommand(command: string, cwd?: string): ValidationResult 
     result.passed = true
     result.stdout = (out ?? "").toString()
     result.exitCode = 0
+    result.executed = true
   } catch (err: unknown) {
-    if (err && typeof err === "object" && "status" in err) {
-      result.exitCode = (err as { status: number }).status
+    if (err && typeof err === "object") {
+      const status = (err as { status?: unknown }).status
+      if (typeof status === "number") result.exitCode = status
     }
     if (err && typeof err === "object" && "stdout" in err) {
       result.stdout = ((err as { stdout: string }).stdout ?? "").toString()
@@ -194,18 +230,36 @@ function execValidationCommand(command: string, cwd?: string): ValidationResult 
       result.stderr = ((err as { stderr: string }).stderr ?? "").toString()
     }
     result.passed = false
+    // A refusal (no status, or Windows ERROR_ACCESS_DENIED) means the command
+    // never ran; only a real non-zero exit code is a verdict on the artifact.
+    result.executed = !isExecutionRefusal(result)
   }
   return result
+}
+
+/**
+ * Reduce a validation result to a verdict.
+ *
+ * A command that ran and exited non-zero is a real failure. A command that was
+ * refused before it could start (`executed === false`) produced no verdict at
+ * all: grading that as a failure turns a Windows spawn flake, or a missing
+ * shell, into a phantom capability regression. It is reported as `unverified`
+ * so the scenario is excluded from the pass rate instead of counted as a loss.
+ */
+export function verdictFromValidation(result: ValidationResult): Verdict {
+  if (result.passed) return "pass"
+  return result.executed ? "fail" : "unverified"
 }
 
 /**
  * Grade a single expected behavior.
  *
  * A behavior that declares a `validationCommand` is graded ONLY by running that
- * command. When it cannot be run — no working directory — the behavior is
- * `unverified`. It is never silently downgraded to keyword matching, which would
- * grade the agent on its prose instead of on the artifact it had to produce, and
- * let a scenario claim success while its functional contract was never executed.
+ * command. When it cannot be run — no working directory, or a refused child
+ * start — the behavior is `unverified`. It is never silently downgraded to
+ * keyword matching, which would grade the agent on its prose instead of on the
+ * artifact it had to produce, and let a scenario claim success while its
+ * functional contract was never executed.
  */
 export function gradeBehavior(
   behavior: ExpectedBehavior,
@@ -215,7 +269,7 @@ export function gradeBehavior(
 ): Verdict {
   if (behavior.validationCommand) {
     if (!cwd) return "unverified"
-    return validate(behavior.validationCommand, cwd).passed ? "pass" : "fail"
+    return verdictFromValidation(validate(behavior.validationCommand, cwd))
   }
   return heuristicMatch(behavior, output, toolCalls) ? "pass" : "fail"
 }

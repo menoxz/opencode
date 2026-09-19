@@ -171,7 +171,12 @@ const fixSyntaxError: EvalScenario = {
     },
     {
       description: "Produces valid JavaScript",
-      requiredActions: ["write"],
+      // Graded on the artifact, not on the headless git-diff summary: that
+      // summary has intermittently come back empty for a write that did happen,
+      // scoring this behavior as a failure while the file was on disk (incident
+      // eval-regression-sanity, 2026-09-19). `node --check` reads the real file,
+      // so an unrecorded diff can no longer forge a regression.
+      validationCommand: `node --check fixed_calculate.js`,
     },
   ],
   category: "bug-fixing",
