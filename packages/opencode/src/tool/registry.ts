@@ -18,6 +18,7 @@ import {
 } from "./goal-contract"
 import { Session } from "@/session/session"
 import { QuestionTool } from "./question"
+import { JevTool } from "./jev"
 import { ShellTool } from "./shell"
 import { EditTool } from "./edit"
 import { GlobTool } from "./glob"
@@ -163,6 +164,7 @@ export const layer: Layer.Layer<
     const read = yield* ReadTool
     const inspectBatch = yield* InspectBatchTool
     const question = yield* QuestionTool
+    const jev = yield* JevTool
     const todo = yield* TodoWriteTool
     const lsptool = yield* LspTool
     const plan = yield* PlanExitTool
@@ -333,6 +335,7 @@ export const layer: Layer.Layer<
           tasks: Tool.init(tasks),
           workspace_handoff: Tool.init(workspaceHandoff),
           fetch: Tool.init(webfetch),
+          jev: Tool.init(jev),
           todo: Tool.init(todo),
           search: Tool.init(websearch),
           repo_clone: Tool.init(repoClone),
@@ -379,6 +382,7 @@ export const layer: Layer.Layer<
             tool.tasks,
             tool.workspace_handoff,
             tool.fetch,
+            tool.jev,
             tool.todo,
             tool.search,
             ...(flags.experimentalScout ? [tool.repo_clone, tool.repo_overview] : []),

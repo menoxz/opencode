@@ -29,6 +29,7 @@ import { ConfigCommand } from "./command"
 import { ConfigContextRollout } from "./context-rollout"
 import { ConfigFormatter } from "./formatter"
 import { ConfigInstructionInjection } from "./instruction-injection"
+import { ConfigJev } from "./jev"
 import { ConfigLayout } from "./layout"
 import { ConfigLSP } from "./lsp"
 import { ConfigManaged } from "./managed"
@@ -266,6 +267,9 @@ export const Info = Schema.Struct({
   }),
   layout: Schema.optional(ConfigLayout.Layout).annotate({ description: "@deprecated Always uses stretch layout." }),
   permission: Schema.optional(ConfigPermission.Info),
+  jev: Schema.optional(ConfigJev.Info).annotate({
+    description: "TypeSafe Jev (System One) decision model integration: endpoint, key, guard thresholds.",
+  }),
   tools: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)),
   attachment: Schema.optional(ConfigAttachment.Info).annotate({
     description: "Attachment processing configuration, including image size limits and resizing behavior",

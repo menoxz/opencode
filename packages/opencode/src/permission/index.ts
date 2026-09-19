@@ -12,6 +12,11 @@ import { Wildcard } from "@opencode-ai/core/util/wildcard"
 import { Deferred, Effect, Layer, Schema, Context } from "effect"
 import os from "os"
 import { PermissionV2 } from "@opencode-ai/core/permission"
+import { Config } from "@/config/config"
+import { JevClient } from "@/jev/client"
+import { JevGuard } from "@/jev/guard"
+import { Option } from "effect"
+import { HttpClient } from "effect/unstable/http"
 import { PermissionID } from "./schema"
 
 const log = Log.create({ service: "permission" })
@@ -139,6 +144,60 @@ export function evaluate(permission: string, pattern: string, ...rulesets: Rules
   return PermissionV2.evaluate(permission, pattern, ...rulesets)
 }
 
+/**
+ * Opt-in calibrated-confidence guard. Returns whether an action the ruleset
+ * would have auto-allowed must still be escalated to the user. `false` keeps
+ * the action silent, so every path that cannot decide (guard off, unguarded
+ * permission, missing HttpClient, missing API key, network error, unparsable
+ * answer) is decided explicitly below rather than defaulting to a prompt.
+ */
+const guardEscalates = Effect.fnUntraced(function* (request: Omit<Request, "id">) {
+  const configSvc = yield* Effect.serviceOption(Config.Service)
+  if (Option.isNone(configSvc)) return false
+  const cfg = yield* configSvc.value.get().pipe(Effect.catch(() => Effect.succeed(undefined)))
+  const guard = cfg?.jev?.guard
+  if (guard?.enabled !== true) return false
+  if (!(guard.permissions ?? JevGuard.DEFAULT_PERMISSIONS).includes(request.permission)) return false
+  const http = yield* Effect.serviceOption(HttpClient.HttpClient)
+  if (Option.isNone(http)) return true
+
+  const answer = yield* JevClient.decide(
+    http.value,
+    {
+      state: JSON.stringify(
+        {
+          permission: request.permission,
+          patterns: request.patterns,
+          tool: request.tool,
+          metadata: request.metadata,
+        },
+        null,
+        2,
+      ),
+      questions: [
+        {
+          id: "unsafe_to_auto_approve",
+          kind: "noul",
+          prompt:
+            "Does the permission request in the JSON above have destructive, irreversible or security-sensitive effects, or is it too ambiguous to judge without a human? Answer yes when a human should decide instead of approving automatically.",
+        },
+      ],
+    },
+    cfg?.jev,
+  ).pipe(
+    Effect.map((response) => response.answers.find((item) => item.id === "unsafe_to_auto_approve")),
+    Effect.catch(() => Effect.succeed(undefined)),
+  )
+  if (!answer) return true
+
+  return (
+    JevGuard.assess(
+      { confidence: answer.confidence, noul: answer.noul === true ? true : undefined },
+      guard.threshold ?? JevGuard.DEFAULT_THRESHOLD,
+    ).verdict === "escalate"
+  )
+})
+
 export class Service extends Context.Service<Service, Interface>()("@opencode/Permission") {}
 
 export const layer = Layer.effect(
@@ -185,7 +244,7 @@ export const layer = Layer.effect(
         needsAsk = true
       }
 
-      if (!needsAsk) return
+      if (!needsAsk && !(yield* guardEscalates(request))) return
 
       const id = request.id ?? PermissionID.ascending()
       const info: Request = {
