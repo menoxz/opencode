@@ -41,6 +41,17 @@ export TYPESAFE_API_KEY=...
 export TYPESAFE_BASE_URL=https://api.codiv.ai
 ```
 
+### Getting an OpenJev key (free)
+
+OpenJev is Codiv's open System One model and is free to evaluate. Sign up at
+<https://codiv.ai/signup> (Google, GitHub or email, no card), then create a key in the
+dashboard at <https://codiv.ai/dashboard> — it is shown once, prefixed `sk-codiv-`.
+Every account starts with 100M System One input tokens and 10M text-generation tokens,
+1,200 requests/minute per key and 8 MB request bodies. `openjev-latest` tracks the
+newest release; pin `openjev-0.1` when answers must not change under you. Self-hosting
+the same model is possible (Apache-2.0, <https://github.com/razorback16/openjev>) but
+needs a 24 GB+ NVIDIA GPU, so the hosted free tier is the practical default.
+
 `base_url` and `model` are resolved together, so pointing `base_url` at the
 OpenJev host selects `openjev-latest` without leaving a TypeSafe-only model id
 pointed at the OpenJev host. `TYPESAFE_MODEL` overrides the model explicitly.
