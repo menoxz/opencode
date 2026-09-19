@@ -7,6 +7,14 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.2.19] - 2026-09-19
+
+### Fixed
+- Harnais d'évaluation : une commande de validation dont l'enfant n'a pas pu démarrer (refus de création de processus Windows — `uv_spawn` EPERM, `cmd.exe` tué sans statut, ou sortie `5` = `ERROR_ACCESS_DENIED`) était comptée comme un **échec de l'artefact**, transformant un démarrage d'enfant intermittent en régression fantôme. `validate()` ne retente désormais qu'une tentative qui n'a produit **aucun verdict** ; un code de sortie réellement émis par la commande est renvoyé tel quel et n'est jamais masqué.
+
+### Tests
+- `src/eval` : 86 tests au vert, aucune régression introduite ; les cas auparavant intermittents passent en isolation. Le refus de spawn résiduel qui remonte via `cmd.exe` (sortie `1`) reste hors du prédicat sûr et est documenté comme limite connue.
+
 ## [v2.2.18] - 2026-09-19
 
 ### Fixed
