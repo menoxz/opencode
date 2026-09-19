@@ -2,33 +2,27 @@ import { describe, expect, test } from "bun:test"
 import { JevGuard } from "@/jev/guard"
 
 describe("jev.guard", () => {
-  test("allows a confident, unflagged answer", () => {
-    const assessment = JevGuard.assess({ confidence: 0.97 })
+  test("allows an action the model finds unlikely to be risky", () => {
+    const assessment = JevGuard.assess(0.02)
     expect(assessment.verdict).toBe("allow")
-    expect(assessment.confidence).toBe(0.97)
-    expect(assessment.reason).toContain("confident and not flagged")
+    expect(assessment.probability).toBe(0.02)
+    expect(assessment.reason).toContain("2.0%")
   })
 
-  test("escalates an answer below the default threshold", () => {
-    const assessment = JevGuard.assess({ confidence: 0.42 })
+  test("escalates an action the model finds likely to be risky", () => {
+    const assessment = JevGuard.assess(0.93)
     expect(assessment.verdict).toBe("escalate")
-    expect(assessment.reason).toContain("0.42")
-    expect(assessment.reason).toContain("0.80")
+    expect(assessment.reason).toContain("93.0%")
+    expect(assessment.reason).toContain("0.50")
   })
 
-  test("escalates an answer flagged as destructive even when confident", () => {
-    const assessment = JevGuard.assess({ confidence: 0.99, noul: true })
-    expect(assessment.verdict).toBe("escalate")
-    expect(assessment.reason).toContain("destructive")
-  })
-
-  test("treats a confidence equal to the threshold as sufficient", () => {
-    expect(JevGuard.assess({ confidence: JevGuard.DEFAULT_THRESHOLD }).verdict).toBe("allow")
+  test("treats a probability at the threshold as risky", () => {
+    expect(JevGuard.assess(JevGuard.DEFAULT_THRESHOLD).verdict).toBe("escalate")
   })
 
   test("honours a caller supplied threshold", () => {
-    expect(JevGuard.assess({ confidence: 0.6 }, 0.5).verdict).toBe("allow")
-    expect(JevGuard.assess({ confidence: 0.6 }, 0.9).verdict).toBe("escalate")
+    expect(JevGuard.assess(0.6, 0.7).verdict).toBe("allow")
+    expect(JevGuard.assess(0.6, 0.5).verdict).toBe("escalate")
   })
 
   test("screens risky permissions by default", () => {

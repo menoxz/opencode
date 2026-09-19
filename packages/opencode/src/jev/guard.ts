@@ -1,13 +1,13 @@
 import { Schema } from "effect"
 
 /**
- * Calibrated-confidence gate. Jev reports a calibrated confidence with every
- * answer; this turns that number into a decision about whether an otherwise
- * automatic action still deserves a human. It is deliberately pure so the
- * policy can be unit-tested without a network call.
+ * Probability gate. A `noul` answer is a single probability that the risky
+ * outcome is true, so the guard escalates exactly when that probability is at
+ * or above the threshold. It is deliberately pure so the policy can be
+ * unit-tested without a network call.
  */
 
-export const DEFAULT_THRESHOLD = 0.8
+export const DEFAULT_THRESHOLD = 0.5
 
 /** Permissions whose auto-allow is worth re-checking against the guard. */
 export const DEFAULT_PERMISSIONS: ReadonlyArray<string> = ["write", "shell", "workspace_handoff"]
@@ -17,28 +17,24 @@ export type Verdict = Schema.Schema.Type<typeof Verdict>
 
 export const Assessment = Schema.Struct({
   verdict: Verdict,
-  confidence: Schema.Number,
+  probability: Schema.Number,
   reason: Schema.String,
 }).annotate({ identifier: "JevAssessment" })
 export type Assessment = Schema.Schema.Type<typeof Assessment>
 
-export function assess(
-  answer: { confidence: number; noul?: boolean },
-  threshold: number = DEFAULT_THRESHOLD,
-): Assessment {
-  if (answer.confidence < threshold)
-    return {
-      verdict: "escalate",
-      confidence: answer.confidence,
-      reason: `calibrated confidence ${answer.confidence.toFixed(2)} is below the ${threshold.toFixed(2)} threshold`,
-    }
-  if (answer.noul === true)
-    return {
-      verdict: "escalate",
-      confidence: answer.confidence,
-      reason: "flagged as destructive, irreversible or security-sensitive",
-    }
-  return { verdict: "allow", confidence: answer.confidence, reason: "confident and not flagged" }
+export function assess(probability: number, threshold: number = DEFAULT_THRESHOLD): Assessment {
+  const percent = `${(probability * 100).toFixed(1)}%`
+  return probability >= threshold
+    ? {
+        verdict: "escalate",
+        probability,
+        reason: `the model put ${percent} probability on the risky outcome, at or above the ${threshold.toFixed(2)} threshold`,
+      }
+    : {
+        verdict: "allow",
+        probability,
+        reason: `the model put only ${percent} probability on the risky outcome, below the ${threshold.toFixed(2)} threshold`,
+      }
 }
 
 export * as JevGuard from "./guard"

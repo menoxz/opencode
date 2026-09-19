@@ -9,7 +9,13 @@ const it = testEffect(Layer.mergeAll(FetchHttpClient.layer))
 
 const request: JevSchema.Request = {
   state: "The host is up and the user asked to delete old build artifacts.",
-  questions: [{ id: "destructive", kind: "noul", prompt: "Is the action destructive?" }],
+  questions: {
+    destructive: {
+      type: "noul",
+      instructions: "Is the action destructive?",
+      criteria: { true: "It deletes unrecoverable data.", false: "It only removes regenerable output." },
+    },
+  },
 }
 
 type Capture = { url: string; method: string; authorization?: string; body: unknown }
@@ -38,21 +44,31 @@ const withServer = <A, E, R>(
     ({ server }) => Effect.sync(() => server.stop(true)),
   )
 
-const withoutKeys = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+const ENV_NAMES = ["JEV_API_KEY", "TYPESAFE_API_KEY", "TYPESAFE_BASE_URL", "TYPESAFE_MODEL"] as const
+
+/** Runs `effect` with the Jev environment variables set to the given values. */
+const withEnv = <A, E, R>(vars: Record<string, string | undefined>, effect: Effect.Effect<A, E, R>) =>
   Effect.acquireUseRelease(
     Effect.sync(() => {
-      const saved = { jev: process.env.JEV_API_KEY, typesafe: process.env.TYPESAFE_API_KEY }
-      delete process.env.JEV_API_KEY
-      delete process.env.TYPESAFE_API_KEY
+      const saved = Object.fromEntries(ENV_NAMES.map((name) => [name, process.env[name]]))
+      for (const [name, value] of Object.entries(vars)) {
+        if (value === undefined) delete process.env[name]
+        else process.env[name] = value
+      }
       return saved
     }),
     () => effect,
     (saved) =>
       Effect.sync(() => {
-        if (saved.jev !== undefined) process.env.JEV_API_KEY = saved.jev
-        if (saved.typesafe !== undefined) process.env.TYPESAFE_API_KEY = saved.typesafe
+        for (const [name, value] of Object.entries(saved)) {
+          if (value === undefined) delete process.env[name]
+          else process.env[name] = value
+        }
       }),
   )
+
+const cleanEnv = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  withEnv(Object.fromEntries(ENV_NAMES.map((name) => [name, undefined])), effect)
 
 const failure = <A, E, R>(self: Effect.Effect<A, E, R>) =>
   Effect.gen(function* () {
@@ -63,49 +79,92 @@ const failure = <A, E, R>(self: Effect.Effect<A, E, R>) =>
 
 describe("jev.client", () => {
   test("prefers the environment key over the configured one", () => {
-    expect(JevClient.apiKey({ api_key: "from-config" }, { JEV_API_KEY: "from-env" })).toBe("from-env")
-    expect(JevClient.apiKey({ api_key: "from-config" }, { TYPESAFE_API_KEY: "typesafe" })).toBe("typesafe")
+    expect(JevClient.apiKey({ api_key: "from-config" }, { TYPESAFE_API_KEY: "from-env" })).toBe("from-env")
+    expect(JevClient.apiKey({ api_key: "from-config" }, { JEV_API_KEY: "typesafe" })).toBe("typesafe")
     expect(JevClient.apiKey({ api_key: "from-config" }, {})).toBe("from-config")
     expect(JevClient.apiKey(undefined, {})).toBeUndefined()
   })
 
-  it.instance("posts typed questions with the bearer key and the default model", () =>
-    withServer(
-      () =>
-        Response.json({
-          model: "jev-latest",
-          answers: [{ id: "destructive", kind: "noul", noul: false, confidence: 0.93 }],
-        }),
-      (capture, base) =>
-        Effect.gen(function* () {
-          const http = yield* HttpClient.HttpClient
-          const response = yield* JevClient.decide(http, request, {
-            api_key: "test-key",
-            endpoint: `${base}/v1/systemone`,
-          })
+  test("resolves the base URL, endpoint and model from config and environment", () => {
+    expect(JevClient.baseUrl({}, {})).toBe(JevClient.DEFAULT_BASE_URL)
+    expect(JevClient.baseUrl({}, { TYPESAFE_BASE_URL: "https://api.codiv.ai" })).toBe("https://api.codiv.ai")
+    expect(JevClient.baseUrl({ base_url: "https://custom.test" }, { TYPESAFE_BASE_URL: "https://api.codiv.ai" })).toBe(
+      "https://custom.test",
+    )
+    expect(JevClient.resolveEndpoint({}, {})).toBe(`${JevClient.DEFAULT_BASE_URL}/v1/systemone`)
+    expect(JevClient.resolveEndpoint({}, { TYPESAFE_BASE_URL: "https://api.codiv.ai/" })).toBe(
+      "https://api.codiv.ai/v1/systemone",
+    )
+    expect(JevClient.resolveEndpoint({ endpoint: "https://custom.test/systemone" }, {})).toBe(
+      "https://custom.test/systemone",
+    )
+    expect(JevClient.resolveModel({}, {})).toBe(JevClient.DEFAULT_MODEL)
+    expect(JevClient.resolveModel({}, { TYPESAFE_BASE_URL: JevClient.OPENJEV_BASE_URL })).toBe(JevClient.OPENJEV_MODEL)
+    expect(JevClient.resolveModel({}, { TYPESAFE_BASE_URL: "https://api.codiv.ai/" })).toBe(JevClient.OPENJEV_MODEL)
+    expect(JevClient.resolveModel({}, { TYPESAFE_MODEL: "openjev-latest" })).toBe("openjev-latest")
+    expect(JevClient.resolveModel({ model: "custom-model" }, { TYPESAFE_MODEL: "ignored" })).toBe("custom-model")
+  })
 
-          expect(capture.method).toBe("POST")
-          expect(capture.url).toBe(`${base}/v1/systemone`)
-          expect(capture.authorization).toBe("Bearer test-key")
-          expect(capture.body).toEqual({ ...request, model: JevClient.DEFAULT_MODEL })
-          expect(response.answers[0]).toEqual({ id: "destructive", kind: "noul", noul: false, confidence: 0.93 })
-        }),
+  it.instance("posts map questions with the bearer key and the default model", () =>
+    cleanEnv(
+      withServer(
+        () =>
+          Response.json({
+            model: "jev-latest",
+            answers: { destructive: { type: "noul", noul: 0.07 } },
+            usage: { input_tokens: 42, output_tokens: 4 },
+          }),
+        (capture, base) =>
+          Effect.gen(function* () {
+            const http = yield* HttpClient.HttpClient
+            const response = yield* JevClient.decide(http, request, {
+              api_key: "test-key",
+              endpoint: `${base}/v1/systemone`,
+            })
+
+            expect(capture.method).toBe("POST")
+            expect(capture.url).toBe(`${base}/v1/systemone`)
+            expect(capture.authorization).toBe("Bearer test-key")
+            expect(capture.body).toEqual({ ...request, model: JevClient.DEFAULT_MODEL })
+            expect(response.answers.destructive).toEqual({ type: "noul", noul: 0.07 })
+            expect(response.usage).toEqual({ input_tokens: 42, output_tokens: 4 })
+          }),
+      ),
+    ),
+  )
+
+  it.instance("takes the base URL, key and model from the environment", () =>
+    withServer(
+      () => Response.json({ model: "openjev-latest", answers: { destructive: { type: "noul", noul: 0.4 } } }),
+      (capture, base) =>
+        withEnv(
+          { TYPESAFE_API_KEY: "env-key", TYPESAFE_BASE_URL: base, TYPESAFE_MODEL: "openjev-latest" },
+          Effect.gen(function* () {
+            const http = yield* HttpClient.HttpClient
+            const response = yield* JevClient.decide(http, request, {})
+
+            expect(capture.url).toBe(`${base}/v1/systemone`)
+            expect(capture.authorization).toBe("Bearer env-key")
+            expect(capture.body).toMatchObject({ model: "openjev-latest" })
+            expect(response.model).toBe("openjev-latest")
+          }),
+        ),
     ),
   )
 
   it.instance("fails with NotConfiguredError when no key is available", () =>
-    withoutKeys(
+    cleanEnv(
       Effect.gen(function* () {
         const http = yield* HttpClient.HttpClient
         const error = yield* failure(JevClient.decide(http, request, {}))
         expect(error).toBeInstanceOf(JevClient.NotConfiguredError)
-        expect(error.message).toContain("JEV_API_KEY")
+        expect(error.message).toContain("TYPESAFE_API_KEY")
       }),
     ),
   )
 
   it.instance("fails with NotConfiguredError when the configured key is empty", () =>
-    withoutKeys(
+    cleanEnv(
       Effect.gen(function* () {
         const http = yield* HttpClient.HttpClient
         const error = yield* failure(JevClient.decide(http, request, { api_key: "" }))
@@ -145,7 +204,7 @@ describe("jev.client", () => {
 
   it.instance("honours an explicit model override", () =>
     withServer(
-      () => Response.json({ model: "jev-1.13.0", answers: [] }),
+      () => Response.json({ model: "jev-1.13.0", answers: {} }),
       (capture, base) =>
         Effect.gen(function* () {
           const http = yield* HttpClient.HttpClient

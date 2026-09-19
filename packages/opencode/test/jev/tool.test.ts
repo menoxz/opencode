@@ -36,24 +36,33 @@ const withServer = <A, E, R>(handler: () => Response, fn: (base: string) => Effe
     (server) => Effect.sync(() => server.stop(true)),
   )
 
-const withConfig = <A, E, R>(info: Config.Info, effect: Effect.Effect<A, E, R>) =>
-  effect.pipe(Effect.provideService(Config.Service, TestConfig.make({ get: () => Effect.succeed(info) })))
+const ENV_NAMES = ["JEV_API_KEY", "TYPESAFE_API_KEY", "TYPESAFE_BASE_URL", "TYPESAFE_MODEL"] as const
 
-const withoutKeys = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+const withEnv = <A, E, R>(vars: Record<string, string | undefined>, effect: Effect.Effect<A, E, R>) =>
   Effect.acquireUseRelease(
     Effect.sync(() => {
-      const saved = { jev: process.env.JEV_API_KEY, typesafe: process.env.TYPESAFE_API_KEY }
-      delete process.env.JEV_API_KEY
-      delete process.env.TYPESAFE_API_KEY
+      const saved = Object.fromEntries(ENV_NAMES.map((name) => [name, process.env[name]]))
+      for (const [name, value] of Object.entries(vars)) {
+        if (value === undefined) delete process.env[name]
+        else process.env[name] = value
+      }
       return saved
     }),
     () => effect,
     (saved) =>
       Effect.sync(() => {
-        if (saved.jev !== undefined) process.env.JEV_API_KEY = saved.jev
-        if (saved.typesafe !== undefined) process.env.TYPESAFE_API_KEY = saved.typesafe
+        for (const [name, value] of Object.entries(saved)) {
+          if (value === undefined) delete process.env[name]
+          else process.env[name] = value
+        }
       }),
   )
+
+const cleanEnv = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  withEnv(Object.fromEntries(ENV_NAMES.map((name) => [name, undefined])), effect)
+
+const withConfig = <A, E, R>(info: Config.Info, effect: Effect.Effect<A, E, R>) =>
+  effect.pipe(Effect.provideService(Config.Service, TestConfig.make({ get: () => Effect.succeed(info) })))
 
 const exec = Effect.fn("JevToolTest.exec")(function* (args: Tool.InferParameters<typeof JevTool>) {
   const info = yield* JevTool
@@ -61,24 +70,32 @@ const exec = Effect.fn("JevToolTest.exec")(function* (args: Tool.InferParameters
   return yield* tool.execute(args, ctx)
 })
 
-const args = {
+const args: Tool.InferParameters<typeof JevTool> = {
   state: "The host is up. The user asked to remove old build artifacts from dist/.",
-  questions: [
-    { id: "cleanup", kind: "choice" as const, prompt: "Which directory should be removed?", options: ["dist", "src"] },
-    { id: "risk", kind: "score" as const, prompt: "How risky is this action?" },
-  ],
+  questions: {
+    cleanup: {
+      type: "choice",
+      instructions: "Which directory should be removed?",
+      criteria: { dist: "Build output that can be regenerated.", src: "Hand written sources." },
+    },
+    risk: {
+      type: "score",
+      instructions: "How risky is this action?",
+      criteria: ["Safe and reversible.", "Destructive and irreversible."],
+    },
+  },
 }
 
 describe("tool.jev", () => {
-  it.instance("renders typed answers with their calibrated confidence", () =>
+  it.instance("renders typed answers with their probabilities and confidence", () =>
     withServer(
       () =>
         Response.json({
           model: "jev-latest",
-          answers: [
-            { id: "cleanup", kind: "choice", choice: "dist", probabilities: { dist: 0.91, none: 0.09 }, confidence: 0.982 },
-            { id: "risk", kind: "score", score: 0.31, confidence: 0.77 },
-          ],
+          answers: {
+            cleanup: { type: "choice", choice: "dist", probabilities: { dist: 0.91, none: 0.09 }, confidence: 0.982 },
+            risk: { type: "score", score: 0.31, confidence: 0.77 },
+          },
         }),
       (base) =>
         Effect.gen(function* () {
@@ -90,13 +107,45 @@ describe("tool.jev", () => {
     ),
   )
 
+  it.instance("renders a noul answer as a probability with no confidence", () =>
+    withServer(
+      () => Response.json({ model: "jev-latest", answers: { destructive: { type: "noul", noul: 0.93 } } }),
+      (base) =>
+        Effect.gen(function* () {
+          const result = yield* withConfig(
+            { jev: { api_key: "test-key", endpoint: `${base}/v1/systemone` } },
+            exec({
+              state: args.state,
+              questions: { destructive: { type: "noul", instructions: "Is the action destructive?" } },
+            }),
+          )
+          expect(result.output).toContain("[destructive] noul=0.930 (probability yes)")
+        }),
+    ),
+  )
+
+  it.instance("uses the environment base URL and model when config has none", () =>
+    withServer(
+      () => Response.json({ model: "openjev-latest", answers: { cleanup: { type: "choice", choice: "dist", confidence: 0.9 } } }),
+      (base) =>
+        withEnv(
+          { TYPESAFE_API_KEY: "env-key", TYPESAFE_BASE_URL: base, TYPESAFE_MODEL: "openjev-latest" },
+          Effect.gen(function* () {
+            const result = yield* withConfig({}, exec(args))
+            expect(result.title).toBe("Jev decision (openjev-latest)")
+            expect(result.output).toContain("[cleanup] choice=dist")
+          }),
+        ),
+    ),
+  )
+
   it.instance("reports a missing API key without throwing", () =>
-    withoutKeys(
+    cleanEnv(
       Effect.gen(function* () {
         const result = yield* withConfig({}, exec(args))
         expect(result.title).toBe("Jev decision unavailable")
         expect(result.metadata).toMatchObject({ error: "JevNotConfiguredError" })
-        expect(result.output).toContain("JEV_API_KEY")
+        expect(result.output).toContain("TYPESAFE_API_KEY")
       }),
     ),
   )

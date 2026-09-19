@@ -75,7 +75,10 @@ const askEscalated = (input: Parameters<Permission.Interface["ask"]>[0]) =>
     return items
   })
 
-type Decision = { noul?: boolean; confidence?: number; status?: number }
+// The guard sends exactly one `noul` question keyed `unsafe_to_auto_approve`,
+// whose answer is the probability that a human should decide. The stub echoes
+// one noul answer per question, so the response shape matches System One.
+type Decision = { probability?: number; status?: number }
 
 const withJev = <A, E, R>(decision: Decision, fn: (base: string, requests: unknown[]) => Effect.Effect<A, E, R>) =>
   Effect.acquireUseRelease(
@@ -85,17 +88,14 @@ const withJev = <A, E, R>(decision: Decision, fn: (base: string, requests: unkno
         port: 0,
         hostname: "127.0.0.1",
         fetch: async (inbound) => {
-          const payload = (await inbound.json()) as { state: string; questions: Array<{ id: string; kind: string }> }
+          const payload = (await inbound.json()) as { state: string; questions: Record<string, { type: string }> }
           requests.push(payload)
           if (decision.status && decision.status >= 400) return new Response("upstream failure", { status: decision.status })
           return Response.json({
             model: "jev-latest",
-            answers: payload.questions.map((question) => ({
-              id: question.id,
-              kind: question.kind,
-              noul: decision.noul,
-              confidence: decision.confidence ?? 0.95,
-            })),
+            answers: Object.fromEntries(
+              Object.keys(payload.questions).map((id) => [id, { type: "noul", noul: decision.probability ?? 0 }]),
+            ),
           })
         },
       })
@@ -128,12 +128,12 @@ describe("permission.jev-guard", () => {
   it.instance(
     "keeps an auto-allowed action silent when Jev confidently endorses it",
     () =>
-      withJev({ noul: false, confidence: 0.97 }, (base, requests) =>
+      withJev({ probability: 0.03 }, (base, requests) =>
         Effect.gen(function* () {
           config = { jev: { api_key: "test-key", endpoint: `${base}/v1/systemone`, guard: { enabled: true } } }
           expect(yield* askSilently(write)).toBeUndefined()
           expect(requests).toHaveLength(1)
-          expect(requests[0]).toMatchObject({ questions: [{ id: "unsafe_to_auto_approve", kind: "noul" }] })
+          expect(requests[0]).toMatchObject({ questions: { unsafe_to_auto_approve: { type: "noul" } } })
         }),
       ),
     { git: true },
@@ -142,7 +142,7 @@ describe("permission.jev-guard", () => {
   it.instance(
     "escalates an auto-allowed action Jev flags as unsafe",
     () =>
-      withJev({ noul: true, confidence: 0.99 }, (base) =>
+      withJev({ probability: 0.99 }, (base) =>
         Effect.gen(function* () {
           config = { jev: { api_key: "test-key", endpoint: `${base}/v1/systemone`, guard: { enabled: true } } }
           const items = yield* askEscalated(write)
@@ -153,9 +153,9 @@ describe("permission.jev-guard", () => {
   )
 
   it.instance(
-    "escalates an auto-allowed action below the confidence threshold",
+    "escalates an auto-allowed action once the risk probability reaches the threshold",
     () =>
-      withJev({ noul: false, confidence: 0.4 }, (base) =>
+      withJev({ probability: 0.5 }, (base) =>
         Effect.gen(function* () {
           config = { jev: { api_key: "test-key", endpoint: `${base}/v1/systemone`, guard: { enabled: true } } }
           const items = yield* askEscalated(write)
@@ -168,10 +168,10 @@ describe("permission.jev-guard", () => {
   it.instance(
     "respects a caller supplied threshold",
     () =>
-      withJev({ noul: false, confidence: 0.4 }, (base) =>
+      withJev({ probability: 0.6 }, (base) =>
         Effect.gen(function* () {
           config = {
-            jev: { api_key: "test-key", endpoint: `${base}/v1/systemone`, guard: { enabled: true, threshold: 0.3 } },
+            jev: { api_key: "test-key", endpoint: `${base}/v1/systemone`, guard: { enabled: true, threshold: 0.8 } },
           }
           expect(yield* askSilently(write)).toBeUndefined()
         }),

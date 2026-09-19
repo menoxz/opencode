@@ -5,44 +5,47 @@ import { Config } from "@/config/config"
 import { JevClient } from "@/jev/client"
 import { JevSchema } from "@/jev/schema"
 
-const DESCRIPTION = `Ask the TypeSafe Jev (System One) decision model typed questions and get calibrated typed answers back.
+const DESCRIPTION = `Ask the Jev (System One) decision model typed questions and get calibrated typed answers back.
 
-Use it for short, bounded decisions over facts you supply: routing, risk flags, multiple-choice selection, scoring, yes/no checks. Jev evaluates typed questions instead of generating text, so it never parses your prompt and returns a calibrated confidence with every answer. Do not use it for open-ended writing, arithmetic or date reasoning — it is known to be brittle there.
+Use it for short, bounded decisions over facts you supply: routing, risk flags, multiple-choice selection, scoring, yes/no checks. Jev evaluates typed questions instead of generating text, so it never parses your prompt and returns the answers with probabilities and a calibrated confidence. Do not use it for open-ended writing, arithmetic or date reasoning — it is known to be brittle there.
 
-Jev is stateless and text-only: put every fact a question depends on in \`state\`. Questions are typed — \`choice\` (supply \`options\`), \`score\` (0..1) or \`noul\` (yes/no). Requires a TypeSafe API key via JEV_API_KEY/TYPESAFE_API_KEY or \`jev.api_key\`.` 
+Jev is stateless and text-only: put every fact a question depends on in \`state\`. Questions are a map keyed by a stable id, each typed \`noul\` (yes/no), \`choice\` (map of option name to description) or \`score\` (ordered list of level descriptions, lowest first). Requires an API key via TYPESAFE_API_KEY/JEV_API_KEY or \`jev.api_key\`.`
 
 export const Parameters = Schema.Struct({
-  state: Schema.String.annotate({
-    description: "All facts the questions depend on, as plain text. Nothing outside this string is visible to Jev.",
+  state: JevSchema.Payload.annotate({
+    description: "All facts the questions depend on. Nothing outside `state` is visible to Jev.",
   }),
-  questions: Schema.Array(JevSchema.Question).annotate({
-    description: "Typed questions asked against `state`, each with a stable `id` echoed back on its answer.",
+  questions: Schema.Record(Schema.String, JevSchema.Question).annotate({
+    description: "Typed questions keyed by a stable id. The matching answer comes back under the same id.",
   }),
   model: Schema.optional(JevSchema.Model).annotate({
-    description: "Override the configured model, for example jev-latest or jev-1.13.0.",
+    description: "Override the configured model, for example jev-latest or openjev-latest.",
   }),
 })
 
-function renderAnswer(answer: JevSchema.Answer): string {
+function renderProbabilities(probabilities: { readonly [option: string]: number } | undefined): string {
+  if (!probabilities || Object.keys(probabilities).length === 0) return ""
+  return ` probabilities={${Object.entries(probabilities)
+    .map(([option, probability]) => `${option}: ${probability.toFixed(3)}`)
+    .join(", ")}}`
+}
+
+function renderAnswer(id: string, answer: JevSchema.Answer): string {
   const value =
-    answer.noul !== undefined
-      ? String(answer.noul)
-      : answer.choice !== undefined
-        ? answer.choice
-        : answer.score !== undefined
-          ? answer.score.toFixed(3)
-          : "unspecified"
-  const probabilities =
-    answer.probabilities && Object.keys(answer.probabilities).length > 0
-      ? ` probabilities={${Object.entries(answer.probabilities)
-          .map(([option, probability]) => `${option}: ${probability.toFixed(3)}`)
-          .join(", ")}}`
-      : ""
-  return `[${answer.id}] ${answer.kind ?? "answer"}=${value} confidence=${answer.confidence.toFixed(3)}${probabilities}`
+    answer.type === "noul"
+      ? `noul=${answer.noul.toFixed(3)} (probability yes)`
+      : answer.type === "choice"
+        ? `choice=${answer.choice} confidence=${answer.confidence.toFixed(3)}`
+        : `score=${answer.score.toFixed(3)} confidence=${answer.confidence.toFixed(3)}`
+  const probabilities = answer.type === "noul" ? "" : renderProbabilities(answer.probabilities)
+  return `[${id}] ${value}${probabilities}`
 }
 
 function render(response: JevSchema.Response): string {
-  return [`model: ${response.model}`, ...response.answers.map(renderAnswer)].join("\n")
+  return [
+    `model: ${response.model}`,
+    ...Object.entries(response.answers).map(([id, answer]) => renderAnswer(id, answer)),
+  ].join("\n")
 }
 
 export const JevTool = Tool.define(

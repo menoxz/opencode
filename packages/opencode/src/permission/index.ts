@@ -174,28 +174,26 @@ const guardEscalates = Effect.fnUntraced(function* (request: Omit<Request, "id">
         null,
         2,
       ),
-      questions: [
-        {
-          id: "unsafe_to_auto_approve",
-          kind: "noul",
-          prompt:
+      questions: {
+        unsafe_to_auto_approve: {
+          type: "noul",
+          instructions:
             "Does the permission request in the JSON above have destructive, irreversible or security-sensitive effects, or is it too ambiguous to judge without a human? Answer yes when a human should decide instead of approving automatically.",
+          criteria: {
+            true: "The action can destroy data, escape the workspace, or is too ambiguous to approve without a human.",
+            false: "The action is reversible and confined to the workspace, so approving it automatically is safe.",
+          },
         },
-      ],
+      },
     },
     cfg?.jev,
   ).pipe(
-    Effect.map((response) => response.answers.find((item) => item.id === "unsafe_to_auto_approve")),
+    Effect.map((response) => response.answers["unsafe_to_auto_approve"]),
     Effect.catch(() => Effect.succeed(undefined)),
   )
-  if (!answer) return true
+  if (answer?.type !== "noul") return true
 
-  return (
-    JevGuard.assess(
-      { confidence: answer.confidence, noul: answer.noul === true ? true : undefined },
-      guard.threshold ?? JevGuard.DEFAULT_THRESHOLD,
-    ).verdict === "escalate"
-  )
+  return JevGuard.assess(answer.noul, guard.threshold ?? JevGuard.DEFAULT_THRESHOLD).verdict === "escalate"
 })
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Permission") {}

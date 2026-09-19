@@ -2,17 +2,26 @@ import { Effect, Schema, SchemaIssue } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 import { JevSchema } from "./schema"
 
-export const DEFAULT_ENDPOINT = "https://api.typesafe.ai/v1/systemone"
+/** TypeSafe production host. */
+export const DEFAULT_BASE_URL = "https://api.typesafe.ai"
 export const DEFAULT_MODEL = "jev-latest"
+
+/** Codiv serves an open System One model (OpenJev) behind the same wire API. */
+export const OPENJEV_BASE_URL = "https://api.codiv.ai"
+export const OPENJEV_MODEL = "openjev-latest"
+
+export const BASE_URL_ENV = "TYPESAFE_BASE_URL"
+export const MODEL_ENV = "TYPESAFE_MODEL"
 
 /**
  * Environment variables checked before `config.jev.api_key`. Keeping the
  * secret in the environment is the documented default: opencode validates
  * config strictly and config files are routinely committed.
  */
-export const ENV_KEYS = ["JEV_API_KEY", "TYPESAFE_API_KEY"] as const
+export const ENV_KEYS = ["TYPESAFE_API_KEY", "JEV_API_KEY"] as const
 
 export type Settings = {
+  base_url?: string
   endpoint?: string
   api_key?: string
   model?: string
@@ -24,6 +33,30 @@ export function apiKey(settings?: Settings, env: NodeJS.ProcessEnv = process.env
     if (value) return value
   }
   return settings?.api_key
+}
+
+function host(value: string): string | undefined {
+  if (!URL.canParse(value)) return undefined
+  return new URL(value).host
+}
+
+export function baseUrl(settings?: Settings, env: NodeJS.ProcessEnv = process.env): string {
+  return settings?.base_url ?? env[BASE_URL_ENV] ?? DEFAULT_BASE_URL
+}
+
+/**
+ * A base URL and the model that belongs to it are resolved together, so
+ * switching to OpenJev for a test run is one environment variable and never
+ * leaves a TypeSafe-only model id pointed at the OpenJev host.
+ */
+export function resolveModel(settings?: Settings, env: NodeJS.ProcessEnv = process.env): string {
+  return (
+    settings?.model ?? env[MODEL_ENV] ?? (host(baseUrl(settings, env)) === host(OPENJEV_BASE_URL) ? OPENJEV_MODEL : DEFAULT_MODEL)
+  )
+}
+
+export function resolveEndpoint(settings?: Settings, env: NodeJS.ProcessEnv = process.env): string {
+  return settings?.endpoint ?? `${baseUrl(settings, env).replace(/\/+$/, "")}/v1/systemone`
 }
 
 export class NotConfiguredError extends Schema.TaggedErrorClass<NotConfiguredError>()("JevNotConfiguredError", {}) {
@@ -73,12 +106,12 @@ export const decide = Effect.fn("Jev.decide")(function* (
   const key = apiKey(settings)
   if (!key) return yield* new NotConfiguredError()
 
-  const outbound = yield* HttpClientRequest.post(settings?.endpoint ?? DEFAULT_ENDPOINT).pipe(
+  const outbound = yield* HttpClientRequest.post(resolveEndpoint(settings)).pipe(
     HttpClientRequest.accept("application/json"),
     HttpClientRequest.setHeaders({ authorization: `Bearer ${key}` }),
     HttpClientRequest.schemaBodyJson(JevSchema.Request)({
       ...request,
-      model: request.model ?? settings?.model ?? DEFAULT_MODEL,
+      model: request.model ?? resolveModel(settings),
     }),
     Effect.mapError((error) => new DecodeError({ detail: describeIssue(error) })),
   )
