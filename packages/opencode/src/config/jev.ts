@@ -29,6 +29,14 @@ export const Route = Schema.Struct({
 }).annotate({ identifier: "JevRouteConfig" })
 export type Route = Schema.Schema.Type<typeof Route>
 
+export const Plan = Schema.Struct({
+  enabled: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "Enable the pre-turn plan. Before the first model call, Jev reads the user's request and names the phases the turn needs (read, edit, verify, build, deploy, commit), injected into the system prompt as a checklist so the model batches its calls instead of discovering the work one turn at a time. Costs one Jev round-trip per user turn, kept while the request is unchanged. Fail-open: any error leaves the prompt untouched.",
+  }),
+}).annotate({ identifier: "JevPlanConfig" })
+export type Plan = Schema.Schema.Type<typeof Plan>
+
 export const Review = Schema.Struct({
   enabled: Schema.optional(Schema.Boolean).annotate({
     description:
@@ -90,6 +98,7 @@ export const Info = Schema.Struct({
   }),
   guard: Schema.optional(Guard),
   route: Schema.optional(Route),
+  plan: Schema.optional(Plan),
   review: Schema.optional(Review),
   untrusted: Schema.optional(Untrusted),
   compaction: Schema.optional(Compaction),

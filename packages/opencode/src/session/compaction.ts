@@ -268,6 +268,94 @@ export interface Interface {
   }) => Effect.Effect<void>
 }
 
+/** Pairs Jev is asked about; each pair costs two questions. */
+export const MAX_PRUNABLE_PAIRS = Math.floor(JevCompaction.MAX_QUESTIONS / 2)
+
+/** Longest call rendering sent to Jev; arguments name the target, the rest is noise. */
+const PRUNE_CALL_MAX_CHARS = 500
+
+/** What a refuted result is replaced by; the summary keeps the fact, not the payload. */
+export const PRUNED_MARKER = "[pruned by jev: not load-bearing for later work]"
+
+function renderPruneCall(part: MessageV2.ToolPart): string {
+  const input = (part.state as { input?: unknown }).input
+  return `${part.tool} ${JSON.stringify(input ?? {})}`.slice(0, PRUNE_CALL_MAX_CHARS)
+}
+
+function renderPruneResult(part: MessageV2.ToolPart): string | undefined {
+  return part.state.status === "completed" ? String(part.state.output ?? "") : undefined
+}
+
+/** Tool calls in the head, in transcript order, in the shape Jev pairs. */
+export function pruneEvents(messages: readonly MessageV2.WithParts[]): JevCompaction.ToolEvent[] {
+  return messages.flatMap((message) =>
+    message.info.role !== "assistant"
+      ? []
+      : message.parts.flatMap((part) =>
+          part.type !== "tool"
+            ? []
+            : [
+                {
+                  callId: part.callID,
+                  tool: part.tool,
+                  call: renderPruneCall(part),
+                  result: renderPruneResult(part),
+                  batch: message.info.id,
+                },
+              ],
+        ),
+  )
+}
+
+/**
+ * The heaviest pairs, since those are what the transcript spends its context on,
+ * returned in transcript order so the questions read naturally. Bounded by
+ * `MAX_PRUNABLE_PAIRS`, which is all Jev's question budget allows.
+ */
+export function heaviestPairs(pairs: readonly JevCompaction.ToolPair[]): JevCompaction.ToolPair[] {
+  return pairs
+    .map((pair, index) => ({ pair, index, size: pair.call.length + (pair.result?.length ?? 0) }))
+    .toSorted((left, right) => right.size - left.size)
+    .slice(0, MAX_PRUNABLE_PAIRS)
+    .toSorted((left, right) => left.index - right.index)
+    .map((entry) => entry.pair)
+}
+
+/**
+ * Apply what Jev refuted to the transcript handed to the summarizer. A pair gone
+ * entirely takes its tool part with it; a pair whose result alone was refuted
+ * keeps the call but not the payload. Retained parts are the original objects,
+ * so retained bytes are unchanged. Returns how many results were replaced.
+ */
+export function rewriteRefuted(
+  messages: MessageV2.WithParts[],
+  asked: readonly JevCompaction.ToolPair[],
+  kept: readonly JevCompaction.ToolPair[],
+): number {
+  const after = new Map(kept.map((pair) => [pair.callId, pair]))
+  const decisions = new Map(asked.map((pair) => [pair.callId, after.get(pair.callId)]))
+  let marked = 0
+  for (const message of messages) {
+    const parts: MessageV2.Part[] = []
+    for (const part of message.parts) {
+      if (part.type !== "tool" || !decisions.has(part.callID)) {
+        parts.push(part)
+        continue
+      }
+      const outcome = decisions.get(part.callID)
+      if (!outcome) continue
+      if (outcome.result === undefined && part.state.status === "completed") {
+        marked += 1
+        parts.push({ ...part, state: { ...part.state, output: PRUNED_MARKER } })
+        continue
+      }
+      parts.push(part)
+    }
+    message.parts = parts
+  }
+  return marked
+}
+
 export class Service extends Context.Service<Service, Interface>()("@opencode/SessionCompaction") {}
 
 export const use = serviceUse(Service)
@@ -518,6 +606,32 @@ export const layer = Layer.effect(
               ),
               Effect.catch(() => Effect.succeed(undefined)),
             )
+      // Jev's pruning pass. The checklist above decides what the summary must
+      // keep; this one decides what never has to enter it. Jev reads the tool
+      // calls in the head — heaviest first, since those are the payloads the
+      // transcript actually spends its context on — and refutes the calls and
+      // results later work would not miss. A refuted result is replaced by a
+      // short marker and a fully refuted call is dropped, so the summarizer reads
+      // a smaller transcript and the summary shrinks with it. Retained parts are
+      // the original objects, and any Jev failure leaves the head untouched.
+      const jevAsked =
+        jevCfg?.enabled === true ? heaviestPairs(JevCompaction.pairTurns(pruneEvents(selected.head))) : []
+      const jevKept =
+        jevAsked.length === 0
+          ? undefined
+          : yield* JevClient.decide(
+              http,
+              {
+                state: jevDigest || "Tool calls from a coding session about to be compacted.",
+                questions: JevCompaction.keepQuestions(jevAsked),
+              },
+              cfg.jev,
+            ).pipe(
+              Effect.map((response) =>
+                JevCompaction.prune(jevAsked, response.answers, jevCfg?.threshold ?? JevCompaction.DEFAULT_THRESHOLD),
+              ),
+              Effect.catch(() => Effect.succeed(undefined)),
+            )
       // The LLM boundary supplies escaped live state, not a raw/stale goal hint.
       const nextPrompt =
         compacting.prompt ??
@@ -526,6 +640,14 @@ export const layer = Layer.effect(
           context: jevChecklist ? [...compacting.context, jevChecklist] : compacting.context,
         })
       const msgs = structuredClone(selected.head)
+      if (jevKept) {
+        log.info("jev compaction prune", {
+          sessionID: input.sessionID,
+          asked: jevAsked.length,
+          kept: jevKept.length,
+          marked: rewriteRefuted(msgs, jevAsked, jevKept),
+        })
+      }
       yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
       const modelMessages = yield* MessageV2.toModelMessagesEffect(msgs, model, {
         stripMedia: true,

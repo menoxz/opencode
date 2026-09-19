@@ -18,6 +18,7 @@ import { Config } from "@/config/config"
 import { HttpClient } from "effect/unstable/http"
 import { JevContext } from "@/jev/context"
 import { JevGuard } from "@/jev/guard"
+import { JevPlan } from "@/jev/plan"
 import { JevRoute } from "@/jev/route"
 import * as JevState from "@/jev/state"
 import * as Log from "@opencode-ai/core/util/log"
@@ -98,19 +99,36 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
   const jevService = Option.getOrUndefined(yield* Effect.serviceOption(Config.Service))
   const jevHttp = Option.getOrUndefined(yield* Effect.serviceOption(HttpClient.HttpClient))
   const jev = jevService ? (yield* jevService.get()).jev : undefined
-  if (jevHttp && jev?.route?.enabled === true) {
-    const prompt = input.messages
-      .toReversed()
-      .flatMap((message) => (message.role === "user" && typeof message.content === "string" ? [message.content] : []))
-      .find((text) => text.trim().length > 0)
-    if (prompt) {
-      const decision = yield* JevRoute.route(jevHttp, jev, {
-        prompt,
-        baseThreshold: jev.guard?.threshold ?? JevGuard.DEFAULT_THRESHOLD,
-      }).pipe(Effect.catch(() => Effect.succeed(undefined)))
+  const lastUser = input.messages
+    .toReversed()
+    .flatMap((message) => (message.role === "user" && typeof message.content === "string" ? [message.content] : []))
+    .find((text) => text.trim().length > 0)
+  if (jevHttp && jev?.route?.enabled === true && lastUser) {
+    const decision = yield* JevRoute.route(jevHttp, jev, {
+      prompt: lastUser,
+      baseThreshold: jev.guard?.threshold ?? JevGuard.DEFAULT_THRESHOLD,
+    }).pipe(Effect.catch(() => Effect.succeed(undefined)))
+    if (decision) {
+      JevState.setRoute(input.sessionID, decision)
+      log.info("jev route decision", { sessionID: input.sessionID, ...decision })
+    }
+  }
+  // The plan is drawn once per user request, not once per step: every later step
+  // of the same turn reuses it, so a long turn pays one round-trip, not one per
+  // request preparation.
+  if (jevHttp && jev?.plan?.enabled === true && lastUser) {
+    const fingerprint = JevState.fingerprint(lastUser)
+    if (JevState.currentPlan(input.sessionID)?.fingerprint !== fingerprint) {
+      const decision = yield* JevPlan.plan(jevHttp, jev, { prompt: lastUser, fingerprint }).pipe(
+        Effect.catch(() => Effect.succeed(undefined)),
+      )
       if (decision) {
-        JevState.setRoute(input.sessionID, decision)
-        log.info("jev route decision", { sessionID: input.sessionID, ...decision })
+        JevState.setPlan(input.sessionID, decision)
+        log.info("jev plan decision", {
+          sessionID: input.sessionID,
+          shape: decision.shape,
+          steps: decision.steps.join(","),
+        })
       }
     }
   }

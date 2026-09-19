@@ -42,6 +42,14 @@ function renderArgs(args: unknown) {
  * Pre-tool guard. Returns `undefined` when the guard is off, unconfigured or
  * unreachable — the caller then proceeds. Returns an outcome otherwise, even
  * when the outcome is `allow`, so the caller can log the decision.
+ *
+ * The verdict is memoised per (tool, args, user turn, threshold, untrusted
+ * version). The ReAct loop replays the same call constantly — the same file
+ * read, the same `git status`, the same failing command retried — and each
+ * replay used to pay a full Jev round-trip to reach the same answer. A replay
+ * now reuses the stored outcome. Any input the decision actually depends on is
+ * in the key, so the only thing the cache can hide is a deliberation that would
+ * have returned the same bytes.
  */
 export const guard = Effect.fn("JevHooks.guard")(function* (
   http: HttpClient.HttpClient,
@@ -50,13 +58,27 @@ export const guard = Effect.fn("JevHooks.guard")(function* (
 ) {
   const section = settings?.guard
   if (section?.enabled !== true) return undefined
-  return yield* JevGuard.screen(http, settings, {
+  const threshold = section.threshold ?? JevGuard.DEFAULT_THRESHOLD
+  const args = renderArgs(input.args)
+  const key = [
+    input.tool,
+    args,
+    input.lastUser.slice(0, MAX_ARG_CHARS),
+    String(threshold),
+    String(State.untrustedVersion(input.sessionID)),
+  ].join("\u0000")
+  const cached = State.cachedVerdict<JevGuard.Outcome>(input.sessionID, key)
+  if (cached) return { ...cached, cached: true }
+  const outcome = yield* JevGuard.screen(http, settings, {
     tool: input.tool,
-    args: renderArgs(input.args),
+    args,
     lastUser: input.lastUser.slice(0, MAX_ARG_CHARS),
     untrusted: State.untrusted(input.sessionID),
-    threshold: section.threshold ?? JevGuard.DEFAULT_THRESHOLD,
+    threshold,
   }).pipe(Effect.catch(() => Effect.succeed(undefined)))
+  if (!outcome) return undefined
+  State.cacheVerdict(input.sessionID, key, outcome)
+  return { ...outcome, cached: false }
 })
 
 /**

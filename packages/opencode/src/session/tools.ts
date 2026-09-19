@@ -366,6 +366,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
                 decision: guarded.decision,
                 reason: guarded.reason,
                 shadow: jevShadow,
+                cached: guarded.cached,
               })
               if (!jevShadow) {
                 if (guarded.decision === "deny")
