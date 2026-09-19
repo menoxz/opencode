@@ -695,6 +695,43 @@ describe("real runner", () => {
     expect(isTransientExecutionError([])).toBe(false)
   })
 
+  test("classifies an OS spawn refusal as transient, never a capability failure", () => {
+    // Observed on this host during the 2026-09-19 eval windows: the OS refused to
+    // create children (`EPERM: operation not permitted, uv_spawn '…\\cmd.exe'`,
+    // `cannot spawn git: Permission denied`, `error launching git: Accès refusé`).
+    // The child never ran, so it carries no verdict on the agent.
+    expect(isTransientExecutionError(["spawnSync C:\\WINDOWS\\system32\\cmd.exe EPERM"])).toBe(true)
+    expect(isTransientExecutionError(["spawnSync C:\\Users\\x\\opencodev2.exe EACCES"])).toBe(true)
+    expect(isTransientExecutionError(["error launching git: Accès refusé."])).toBe(true)
+    expect(isTransientExecutionError(["cannot spawn git: Permission denied"])).toBe(true)
+    // The deliberate bare-null exclusion still holds when no refusal signature is present.
+    expect(isTransientExecutionError(["headless exited null (no headless_result)"])).toBe(false)
+  })
+
+  test("reports a harness-level spawn refusal as unverified so it cannot raise a regression", async () => {
+    // The OS refused to create the headless child itself, not merely a validation
+    // command: 0 tool calls, no agent verdict. Scored as a failure this manufactures
+    // a phantom 1.0 -> 0.333 regression instead of leaving the run unverified.
+    const executor: RealScenarioExecutor = () =>
+      Effect.succeed({
+        output: "",
+        toolCalls: [],
+        errors: [
+          "spawnSync C:\\WINDOWS\\system32\\cmd.exe EPERM",
+          "headless exited null (no headless_result)",
+        ],
+      })
+
+    const result = await Effect.runPromise(
+      runScenarioReal(getScenario("hello-world")!, executor, { retries: 0 }),
+    )
+
+    expect(result.success).toBe(false)
+    expect(result.verdict).toBe("unverified")
+    expect(result.toolCalls).toBe(0)
+    expect(result.errors.some((e) => e.startsWith(UNVERIFIED_PREFIX))).toBe(true)
+  })
+
   test("retries a transient headless timeout once, in a fresh sandbox", async () => {
     const sandboxes: string[] = []
     let calls = 0

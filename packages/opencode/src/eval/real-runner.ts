@@ -133,9 +133,25 @@ export function nativeEvalEnvironment(base: NodeJS.ProcessEnv = process.env): No
 const TRANSIENT_EXECUTION_PATTERN =
   /\bETIMEDOUT\b|\bESOCKETTIMEDOUT\b|\bECONNRESET\b|\bECONNREFUSED\b|\bECONNABORTED\b|\bEAI_AGAIN\b|\bEPIPE\b|socket hang up|timed?\s*out|timeout/i
 
-/** True when at least one recorded error is a transient spawn/socket failure. */
+/**
+ * OS refusals to CREATE the child at all: the process never ran, so it produced no
+ * verdict on the agent. Windows/EDR denies a spawn with `EPERM`/`EACCES`
+ * (`spawn … EPERM`, observed on this host during eval windows as
+ * `uv_spawn … EPERM`), and the shell reports the same condition with localized
+ * "access denied" text (`cannot spawn git: Permission denied`,
+ * `error launching git: Accès refusé`). These are not slow like a timeout, but
+ * they are equally environmental: scoring them as a scenario failure fabricates a
+ * capability regression out of an OS refusal, which is exactly what the
+ * never-executed guard below exists to prevent.
+ */
+const SPAWN_REFUSAL_PATTERN =
+  /\bEPERM\b|\bEACCES\b|operation not permitted|cannot spawn|permission denied|acc[eè]s refus[eé]|access is denied|zugriff verweigert|acceso denegado/i
+
+/** True when at least one recorded error is a transient spawn/socket failure or an OS spawn refusal. */
 export function isTransientExecutionError(errors: readonly string[]): boolean {
-  return errors.some((error) => TRANSIENT_EXECUTION_PATTERN.test(error))
+  return errors.some(
+    (error) => TRANSIENT_EXECUTION_PATTERN.test(error) || SPAWN_REFUSAL_PATTERN.test(error),
+  )
 }
 
 export function headlessSessionExecutor(
