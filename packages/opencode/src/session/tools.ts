@@ -359,6 +359,12 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
                       .slice(0, 4_000),
                   })
                 : undefined
+            // A memoised verdict costs no round-trip, and that saving is only
+            // measurable if the hit is visible — including when it allows the call.
+            // It gets its own log because the block below enacts the denial path and
+            // must never be entered for an `allow`.
+            if (guarded?.decision === "allow" && guarded.cached)
+              log.info("jev guard memoised", { sessionID: ctx.sessionID, tool: item.id })
             if (guarded && guarded.decision !== "allow") {
               log.info("jev guard decision", {
                 sessionID: ctx.sessionID,
