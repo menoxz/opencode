@@ -26,8 +26,13 @@ describe("jev guard policy", () => {
     expect(outcome.decision).toBe("allow")
   })
 
-  test("denies a call at or above the deny threshold", () => {
+  test("asks before a call at or above the deny threshold that the user explicitly requested", () => {
     const outcome = JevGuard.decide({ risk: 0.9, userRequested: 1, fromUntrusted: 0 })
+    expect(outcome.decision).toBe("ask")
+  })
+
+  test("denies a call at or above the deny threshold that nobody asked for", () => {
+    const outcome = JevGuard.decide({ risk: 0.9, userRequested: 0.1, fromUntrusted: 0 })
     expect(outcome.decision).toBe("deny")
   })
 

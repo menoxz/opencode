@@ -47,9 +47,10 @@ export function assess(probability: number, threshold: number = DEFAULT_THRESHOL
 /**
  * Systematic pre-tool guard. Three typed probabilities are enough to separate
  * the cases that matter: a risky call the user asked for may proceed, a risky
- * call nobody asked for is put to the user, and a call whose instruction comes
- * from untrusted content is refused. The policy is pure so it can be tested
- * without a network round-trip.
+ * call nobody asked for is put to the user or refused at the deny threshold,
+ * and a call whose instruction comes from untrusted content is refused. A call
+ * above the deny threshold that the user did ask for is confirmed, never
+ * refused. The policy is pure so it can be tested without a network round-trip.
  */
 
 export type Signal = {
@@ -72,8 +73,17 @@ export type Outcome = {
 const percent = (value: number) => `${(value * 100).toFixed(1)}%`
 
 export function decide(signal: Signal, askAt: number = DEFAULT_THRESHOLD, denyAt: number = DEFAULT_DENY_THRESHOLD): Outcome {
+  // A call the user asked for is never refused outright, however risky: it is put
+  // back to the user. Refusing without recourse is reserved for a call nobody
+  // asked for, so an explicit request can always be confirmed.
+  if (signal.risk >= denyAt && signal.userRequested >= askAt)
+    return {
+      decision: "ask",
+      signal,
+      reason: `risk ${percent(signal.risk)} is at or above the deny threshold ${denyAt.toFixed(2)} but the user asked for it with ${percent(signal.userRequested)} probability, so it is confirmed rather than refused`,
+    }
   if (signal.risk >= denyAt)
-    return { decision: "deny", signal, reason: `risk ${percent(signal.risk)} is at or above the deny threshold ${denyAt.toFixed(2)}` }
+    return { decision: "deny", signal, reason: `risk ${percent(signal.risk)} is at or above the deny threshold ${denyAt.toFixed(2)} and the user did not ask for this call` }
   if (signal.fromUntrusted >= denyAt)
     return {
       decision: "deny",
