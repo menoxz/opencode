@@ -21,6 +21,9 @@ function run(cmd: string, cwd: string, options?: ExecSyncOptions): string {
       encoding: "utf-8",
       stdio: "pipe",
       timeout: 30000,
+      // The daemon runs detached (no console): without this every command
+      // allocates its own visible console window.
+      windowsHide: true,
       ...options,
     })
     return String(out).trim()
@@ -36,7 +39,14 @@ function run(cmd: string, cwd: string, options?: ExecSyncOptions): string {
  */
 export function isGhAvailable(): boolean {
   try {
-    const out = execSync("gh auth status", { encoding: "utf-8", stdio: "pipe", timeout: 5000 })
+    const out = execSync("gh auth status", {
+      encoding: "utf-8",
+      stdio: "pipe",
+      timeout: 5000,
+      // The daemon runs detached (no console): without this every command
+      // allocates its own visible console window.
+      windowsHide: true,
+    })
     return out.includes("Logged in")
   } catch {
     return false

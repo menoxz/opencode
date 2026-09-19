@@ -7,6 +7,14 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.2.18] - 2026-09-19
+
+### Fixed
+- Régression de l'auto-démarrage du démon : le démon étant lancé **détaché** (`detached: true` ⇒ `DETACHED_PROCESS`), il n'a plus de console ; ses enfants console (`git`, `bun typecheck`, `cmd`) allouaient donc chacun une **nouvelle fenêtre de terminal visible**, ouverte puis fermée en boucle par la patrouille d'inactivité — l'ordinateur devenait inutilisable. Les 6 sites de spawn non gardés passent désormais `windowsHide: true` (`idle.ts` ×2, `auto-commit.ts` ×2, `auto-pr.ts` ×2) ; les 4 sites déjà gardés (`autostart.ts`, `auto-executor.ts` ×3) le restent.
+
+### Tests
+- Nouvelle suite `test/daemon/console-visibility.test.ts` : échoue si un site de spawn de `src/daemon` cesse de déclarer `windowsHide: true` (garde-fou vérifié par mutation : le retrait d'un `windowsHide` fait échouer le test avec le fichier et la ligne fautifs).
+
 ## [v2.2.17] - 2026-09-18
 
 ### Added

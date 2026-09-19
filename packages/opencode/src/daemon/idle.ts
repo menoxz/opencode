@@ -52,6 +52,9 @@ function runGit(...args: string[]): string | null {
       encoding: "utf-8",
       timeout: 5000,
       stdio: ["ignore", "pipe", "pipe"],
+      // The daemon runs detached (no console): without this every git call
+      // allocates its own visible console window.
+      windowsHide: true,
     }).trim()
   } catch {
     return null
@@ -180,6 +183,9 @@ function getTypecheckSnapshot(): TypecheckSnapshot | null {
         timeout: 30000,
         cwd: path.join(process.cwd(), dir),
         stdio: ["ignore", "pipe", "pipe"],
+        // The daemon runs detached (no console): without this every typecheck
+        // allocates its own visible console window.
+        windowsHide: true,
       })
       const snapshot: TypecheckSnapshot = {
         exitCode: 0, errorCount: 0, output: result.trim(), ranAt,

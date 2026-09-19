@@ -28,6 +28,9 @@ function git(args: string[], cwd: string, options?: ExecSyncOptions): string {
       encoding: "utf-8",
       stdio: "pipe",
       timeout: 15000,
+      // The daemon runs detached (no console): without this every git call
+      // allocates its own visible console window.
+      windowsHide: true,
       ...options,
     })
     return String(out).trim()
@@ -56,6 +59,9 @@ export function getRepoRoot(cwd: string): string | null {
       encoding: "utf-8",
       stdio: "pipe",
       timeout: 5000,
+      // The daemon runs detached (no console): without this every git call
+      // allocates its own visible console window.
+      windowsHide: true,
     }).trim()
   } catch {
     return null
