@@ -13,7 +13,9 @@ import { Plugin } from "@/plugin"
 import type { TaskPromptOps } from "@/tool/task"
 import type { SecurityMode } from "@/tool/security"
 import { type Tool as AITool, tool, jsonSchema, type ToolExecutionOptions, asSchema } from "ai"
-import { Cause, Effect, Exit } from "effect"
+import { Cause, Effect, Exit, Option } from "effect"
+import { HttpClient } from "effect/unstable/http"
+import { JevHooks } from "@/jev/hooks"
 import { MessageV2 } from "./message-v2"
 import * as Session from "./session"
 import { SessionProcessor } from "./processor"
@@ -322,15 +324,80 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
                   `Arguments for ${item.id} are truncated: they end with a context-elision marker instead of the real value. Resend the call with the complete arguments.`,
                 ),
               )
+            const before: { args: Record<string, unknown>; block?: { reason: string } } = { args: inputArgs }
             yield* plugin.trigger(
               "tool.execute.before",
               { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID },
-              { args: inputArgs },
+              before,
             )
+            if (before.block)
+              return yield* Effect.fail(
+                new Error(
+                  `Blocked by plugin before ${item.id}: ${before.block.reason}. Do not retry without addressing the reason.`,
+                ),
+              )
+            // The hook above can only rewrite args — it cannot refuse a call. The
+            // systematic Jev guard therefore runs here, after the trigger, on every
+            // local tool call, and is the only place a denial is enacted.
+            const http = Option.getOrUndefined(yield* Effect.serviceOption(HttpClient.HttpClient))
+            const jev = cfg.jev
+            const jevShadow = jev?.shadow === true
+            const guarded =
+              http && jev?.guard?.enabled === true
+                ? yield* JevHooks.guard(http, jev, {
+                    sessionID: ctx.sessionID,
+                    tool: item.id,
+                    args: inputArgs,
+                    lastUser: input.messages
+                      .toReversed()
+                      .flatMap((message) =>
+                        message.info.role === "user"
+                          ? message.parts.flatMap((part) => (part.type === "text" ? [part.text] : []))
+                          : [],
+                      )
+                      .join("\n")
+                      .slice(0, 4_000),
+                  })
+                : undefined
+            if (guarded && guarded.decision !== "allow") {
+              log.info("jev guard decision", {
+                sessionID: ctx.sessionID,
+                tool: item.id,
+                decision: guarded.decision,
+                reason: guarded.reason,
+                shadow: jevShadow,
+              })
+              if (!jevShadow) {
+                if (guarded.decision === "deny")
+                  return yield* Effect.fail(
+                    new Error(
+                      `JEV refused ${item.id}: ${guarded.reason}. Do not retry this call; tell the user what was refused and why.`,
+                    ),
+                  )
+                // `ask` is not a silent block: it routes through the real permission
+                // channel, so the user sees the call, Jev's reason, and can allow it.
+                yield* ctx.ask({
+                  permission: item.id,
+                  patterns: [JSON.stringify(inputArgs).slice(0, 512)],
+                  metadata: { jev: guarded.reason },
+                  always: [],
+                })
+              }
+            }
             const result = yield* item.execute(inputArgs, ctx)
             activations.promote(input.session.id, item.id)
+            const screening =
+              http && jev !== undefined && (jev.guard?.enabled === true || jev.review?.enabled === true || jev.untrusted?.enabled === true)
+                ? yield* JevHooks.post(http, jev, {
+                    sessionID: ctx.sessionID,
+                    tool: item.id,
+                    args: inputArgs,
+                    output: result.output,
+                  })
+                : undefined
             const output = {
               ...result,
+              output: screening?.annotation && !jevShadow ? `${result.output}\n\n${screening.annotation}` : result.output,
               attachments: result.attachments?.map((attachment) => ({
                 ...attachment,
                 id: PartID.ascending(),

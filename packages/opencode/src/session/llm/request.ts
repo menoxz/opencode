@@ -14,6 +14,15 @@ import type { Plugin } from "@/plugin"
 import { mergeDeep } from "remeda"
 import { SelfImprove } from "@/self-improve"
 import { WorkingState } from "../working-state"
+import { Config } from "@/config/config"
+import { HttpClient } from "effect/unstable/http"
+import { JevContext } from "@/jev/context"
+import { JevGuard } from "@/jev/guard"
+import { JevRoute } from "@/jev/route"
+import * as JevState from "@/jev/state"
+import * as Log from "@opencode-ai/core/util/log"
+
+const log = Log.create({ service: "session.llm.request" })
 
 const USER_AGENT = `opencode/${InstallationVersion}`
 
@@ -83,6 +92,32 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
     { sessionID: input.sessionID, model: input.model },
     { system },
   )
+  // Jev context injection happens after the plugin transform so a plugin always
+  // sees the base prompt, and the block the model reads is the final word. It is
+  // absent unless Jev produced state this turn, so a disabled run is unchanged.
+  const jevService = Option.getOrUndefined(yield* Effect.serviceOption(Config.Service))
+  const jevHttp = Option.getOrUndefined(yield* Effect.serviceOption(HttpClient.HttpClient))
+  const jev = jevService ? (yield* jevService.get()).jev : undefined
+  if (jevHttp && jev?.route?.enabled === true) {
+    const prompt = input.messages
+      .toReversed()
+      .flatMap((message) => (message.role === "user" && typeof message.content === "string" ? [message.content] : []))
+      .find((text) => text.trim().length > 0)
+    if (prompt) {
+      const decision = yield* JevRoute.route(jevHttp, jev, {
+        prompt,
+        baseThreshold: jev.guard?.threshold ?? JevGuard.DEFAULT_THRESHOLD,
+      }).pipe(Effect.catch(() => Effect.succeed(undefined)))
+      if (decision) {
+        JevState.setRoute(input.sessionID, decision)
+        log.info("jev route decision", { sessionID: input.sessionID, ...decision })
+      }
+    }
+  }
+  if (jev) {
+    const block = JevContext.block({ sessionID: input.sessionID, rules: jev.rules, threshold: jev.guard?.threshold })
+    if (block) system.push(block)
+  }
   const variant =
     !input.small && input.model.variants && input.user.model.variant
       ? input.model.variants[input.user.model.variant]

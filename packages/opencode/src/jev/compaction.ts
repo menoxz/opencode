@@ -133,4 +133,97 @@ export function repairPrompt(missing: readonly Candidate[]) {
   ].join("\n")
 }
 
+/**
+ * Decision pruning.
+ *
+ * A compaction summary loses the arguments and results of individual tool
+ * calls. Some of them are load-bearing and some are noise; a model call can
+ * tell them apart, and the decision is cheaper and more reliable than asking
+ * for a rewrite of every call. A pair is one tool call joined to its result;
+ * pairs from the same assistant turn form a parallel batch and are asked about
+ * in a single Jev request (the questions map is the batch). Pruning is
+ * deterministic — it only removes what Jev refuted — and anything kept is
+ * carried through verbatim, never paraphrased.
+ */
+
+export type ToolPair = {
+  /** Assistant turn the call belongs to; calls sharing it ran in parallel. */
+  batch: string
+  callId: string
+  tool: string
+  /** Verbatim call rendering (tool name and arguments). */
+  call: string
+  /** Verbatim result rendering, absent when the call never completed. */
+  result?: string
+}
+
+export type ToolEvent = {
+  callId: string
+  tool: string
+  call: string
+  result?: string
+  batch?: string
+}
+
+/** Join calls and results into pairs, preserving order. */
+export function pairTurns(events: readonly ToolEvent[]): ToolPair[] {
+  return events.map((event, index) => ({
+    batch: event.batch ?? `b${index + 1}`,
+    callId: event.callId,
+    tool: event.tool,
+    call: event.call,
+    result: event.result,
+  }))
+}
+
+/** Pair ids whose question was answered yes are kept; both axes are asked at once. */
+export function keepQuestions(pairs: readonly ToolPair[]): Record<string, JevSchema.Question> {
+  return Object.fromEntries(
+    pairs.flatMap((pair) => [
+      [
+        `call:${pair.callId}`,
+        {
+          type: "noul" as const,
+          instructions: `Below is a tool call from a coding session that is about to be compacted. Are its arguments load-bearing — would losing them misdirect later work? (An argument that names a path, a target, a flag or a value the next step needs is load-bearing.)\n\nCALL: ${pair.call}`,
+          criteria: {
+            true: "The arguments must survive compaction to avoid misdirecting later work",
+            false: "The arguments are incidental and may be dropped",
+          },
+        },
+      ],
+      [
+        `result:${pair.callId}`,
+        {
+          type: "noul" as const,
+          instructions: `Below is the result of a tool call from a coding session that is about to be compacted. Is the result load-bearing — would losing it misdirect later work? (A result carrying an outcome, an error, a path or a value the next step needs is load-bearing.)\n\nCALL: ${pair.call}\nRESULT: ${(pair.result ?? "(no result)").slice(0, 2_000)}`,
+          criteria: {
+            true: "The result must survive compaction to avoid misdirecting later work",
+            false: "The result is incidental and may be dropped",
+          },
+        },
+      ],
+    ]),
+  )
+}
+
+/**
+ * Drop what Jev refuted, keep the rest byte-for-byte. When Jev answered none of
+ * the questions the input is returned unchanged, so a failed call falls back to
+ * the default compaction instead of silently emptying the transcript.
+ */
+export function prune(pairs: readonly ToolPair[], answers: Record<string, JevSchema.Answer>, threshold = DEFAULT_THRESHOLD): ToolPair[] {
+  const keep = (id: string) => {
+    const answer = answers[id]
+    return answer?.type === "noul" ? answer.noul >= threshold : undefined
+  }
+  const answered = pairs.some((pair) => keep(`call:${pair.callId}`) !== undefined || keep(`result:${pair.callId}`) !== undefined)
+  if (!answered) return [...pairs]
+  return pairs.flatMap((pair) => {
+    const call = keep(`call:${pair.callId}`) !== false
+    const result = keep(`result:${pair.callId}`) !== false
+    if (!call && !result) return []
+    return [{ ...pair, call: call ? pair.call : "", result: result ? pair.result : undefined }]
+  })
+}
+
 export * as JevCompaction from "./compaction"
