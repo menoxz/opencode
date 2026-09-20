@@ -430,3 +430,125 @@ export const formatDuration = (ms: number) => {
   const seconds = Math.round((ms % 60_000) / 1000)
   return `${minutes}m${seconds.toString().padStart(2, "0")}s`
 }
+
+/** Compact offset label for the timeline ruler ("0s", "12s", "1m05s"). */
+export const formatOffset = (ms: number) => {
+  if (ms < 1000) return "0s"
+  if (ms < 60_000) return `${Math.round(ms / 1000)}s`
+  const minutes = Math.floor(ms / 60_000)
+  const seconds = Math.round((ms % 60_000) / 1000)
+  return `${minutes}m${seconds.toString().padStart(2, "0")}s`
+}
+
+export type TrajectoryTick = { label: string; ratio: number }
+
+export type TrajectoryTurnWindow = {
+  turn: number
+  start: number
+  end: number
+  duration: number
+  records: TrajectoryRecord[]
+  calls: number
+  errors: number
+}
+
+export type TrajectoryPositioned = { span: TrajectorySpan; left: number; width: number }
+
+const isCall = (record: TrajectoryRecord) => record.kind === "tool" || record.kind === "subtool"
+
+const isError = (record: TrajectoryRecord) => record.status === "error"
+
+/** Per-turn time window and counts, shared by the turn headers and the ruler. */
+export function turnWindows(model: TrajectoryModel): TrajectoryTurnWindow[] {
+  return model.turns.map((turn, index) => {
+    const starts = turn.records.flatMap((record) => (record.start === undefined ? [] : [record.start]))
+    const ends = turn.records.flatMap((record) => (record.end === undefined ? [] : [record.end]))
+    const start = starts.length > 0 ? Math.min(...starts) : (turn.start ?? model.bounds.start)
+    const end = Math.max(
+      model.turns[index + 1]?.start ?? model.bounds.end,
+      ends.length > 0 ? Math.max(...ends) : start,
+      start,
+    )
+    return {
+      turn: turn.turn,
+      start,
+      end,
+      duration: end - start,
+      records: turn.records,
+      calls: turn.records.filter(isCall).length,
+      errors: turn.records.filter(isError).length,
+    }
+  })
+}
+
+/**
+ * Ruler ticks as a percentage of the track, aligned with `timelineLayout`:
+ * equal-width bands for turns/calls, real elapsed time for duration.
+ */
+export function timelineTicks(model: TrajectoryModel, mode: TrajectoryMode, count = 4): TrajectoryTick[] {
+  if (mode === "turns") {
+    const total = Math.max(1, model.turns.length)
+    return model.turns.map((turn, index) => ({ label: `T${turn.turn}`, ratio: (index / total) * 100 }))
+  }
+  if (mode === "calls") {
+    const calls = model.spans.filter((span) => span.kind === "tool" || span.kind === "subtool")
+    return calls.map((_, index) => ({ label: `#${index + 1}`, ratio: (index / Math.max(1, calls.length)) * 100 }))
+  }
+  const total = Math.max(1, model.bounds.end - model.bounds.start)
+  return Array.from({ length: count + 1 }, (_, index) => ({
+    label: formatOffset((total * index) / count),
+    ratio: (index / count) * 100,
+  }))
+}
+
+/** Map timeline spans to horizontal percentages for the selected ruler mode. */
+export function timelineLayout(model: TrajectoryModel, mode: TrajectoryMode): TrajectoryPositioned[] {
+  const place = (span: TrajectorySpan, base: number, span100: number, scale: number) => ({
+    span,
+    left: base + ((span.start - scale) / span100) * 100,
+    width: Math.max(0.5, ((span.end - span.start) / span100) * 100),
+  })
+  if (mode === "calls") {
+    const calls = model.spans.filter((span) => span.kind === "tool" || span.kind === "subtool")
+    const step = 100 / Math.max(1, calls.length)
+    return calls.map((span, index) => ({ span, left: index * step, width: Math.max(0.6, step * 0.85) }))
+  }
+  if (mode === "turns") {
+    const width = 100 / Math.max(1, model.turns.length)
+    return model.spans.flatMap((span) => {
+      const turn = model.records[span.index]?.turn
+      const index = model.turns.findIndex((item) => item.turn === turn)
+      if (index < 0) return []
+      const start = model.turns[index]?.start ?? model.bounds.start
+      const next = model.turns[index + 1]?.start ?? model.bounds.end
+      const item = place(span, index * width, Math.max(1, next - start), start)
+      return [{ ...item, left: index * width + (item.left / 100) * width, width: Math.max(0.5, (item.width / 100) * width) }]
+    })
+  }
+  const total = Math.max(1, model.bounds.end - model.bounds.start)
+  return model.spans.map((span) => place(span, 0, total, model.bounds.start))
+}
+
+/** Record indexes whose searchable text contains `query`; empty for a blank query. */
+export function matchRecords(records: TrajectoryRecord[], query: string): number[] {
+  const needle = query.trim().toLowerCase()
+  if (needle.length === 0) return []
+  return records
+    .filter((record) =>
+      [record.label, record.details, record.args, record.result, record.error]
+        .filter((value): value is string => typeof value === "string")
+        .join(" ")
+        .toLowerCase()
+        .includes(needle),
+    )
+    .map((record) => record.index)
+}
+
+/** Legend entries: the kinds actually present, in canonical order, with counts. */
+export function kindCounts(records: TrajectoryRecord[]): { kind: TrajectoryKind; count: number }[] {
+  const order: TrajectoryKind[] = ["user", "context", "compacted", "assistant", "tool", "subtool"]
+  return order.flatMap((kind) => {
+    const count = records.filter((record) => record.kind === kind).length
+    return count === 0 ? [] : [{ kind, count }]
+  })
+}

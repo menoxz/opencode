@@ -9,7 +9,7 @@ import type {
   ToolPart,
   UserMessage,
 } from "@opencode-ai/sdk/v2/client"
-import { buildTrajectory } from "./trajectory"
+import { buildTrajectory, formatOffset, kindCounts, matchRecords, timelineLayout, timelineTicks, turnWindows } from "./trajectory"
 
 const user = (over: Partial<UserMessage>): UserMessage => ({
   id: "u1",
@@ -184,6 +184,117 @@ describe("buildTrajectory", () => {
     const model = buildTrajectory({ messages: [], parts: () => [], childOf: () => undefined })
     expect(model.records).toEqual([])
     expect(model.stats.turns).toBe(0)
+  })
+})
+
+describe("trajectory view helpers", () => {
+  const build = (messages: Message[], parts: Record<string, Part[]>) =>
+    buildTrajectory({ messages, parts: (id) => parts[id] ?? [], childOf: () => undefined })
+
+  test("turnWindows derives per-turn windows, calls and errors", () => {
+    const parts: Record<string, Part[]> = {
+      u1: [text("ut", "u1", "first")],
+      a1: [stepStart("ss1", "a1"), tool({ id: "t1", tool: "read" }), tool({ id: "t2", tool: "bash" })],
+      u2: [text("ut2", "u2", "second")],
+      a2: [
+        stepStart("ss2", "a2"),
+        tool({
+          id: "t3",
+          tool: "glob",
+          state: { status: "error", input: {}, error: "boom", time: { start: 3100, end: 3200 } },
+        }),
+      ],
+    }
+    const model = build(
+      [
+        user({}),
+        assistant({}),
+        user({ id: "u2", time: { created: 3000 } }),
+        assistant({ id: "a2", parentID: "u2", time: { created: 3100, completed: 4000 } }),
+      ],
+      parts,
+    )
+
+    const windows = turnWindows(model)
+    expect(windows.map((window) => window.turn)).toEqual([1, 2])
+    expect(windows[0]?.start).toBe(1000)
+    expect(windows[0]?.end).toBe(3000)
+    expect(windows[0]?.duration).toBe(2000)
+    expect(windows[0]?.calls).toBe(2)
+    expect(windows[0]?.errors).toBe(0)
+    expect(windows[1]?.calls).toBe(1)
+    expect(windows[1]?.errors).toBe(1)
+  })
+
+  test("timelineTicks and timelineLayout stay aligned in every mode", () => {
+    const parts: Record<string, Part[]> = {
+      u1: [text("ut", "u1", "hello")],
+      a1: [stepStart("ss", "a1"), tool({ id: "t1", tool: "read" }), tool({ id: "t2", tool: "bash" })],
+    }
+    const model = build([user({}), assistant({})], parts)
+
+    expect(timelineTicks(model, "duration").map((tick) => tick.ratio)).toEqual([0, 25, 50, 75, 100])
+    expect(timelineTicks(model, "turns").map((tick) => tick.label)).toEqual(["T1"])
+    expect(timelineTicks(model, "calls").map((tick) => tick.label)).toEqual(["#1", "#2"])
+
+    expect(timelineLayout(model, "calls").map((item) => item.left)).toEqual([0, 50])
+
+    const duration = timelineLayout(model, "duration")
+    expect(duration.every((item) => item.left >= 0 && item.left + item.width <= 100.01)).toBe(true)
+    const read = duration.find((item) => item.span.label === "read")
+    expect(read?.left).toBe(0)
+    expect(read?.width).toBe(20)
+  })
+
+  test("matchRecords searches labels, args, results and errors, case-insensitively", () => {
+    const parts: Record<string, Part[]> = {
+      u1: [text("ut", "u1", "Investigate the layout")],
+      a1: [
+        stepStart("ss", "a1"),
+        tool({
+          id: "t1",
+          tool: "read",
+          state: {
+            status: "completed",
+            input: { filePath: "src/app.tsx" },
+            output: "export const app = 1",
+            title: "read src/app.tsx",
+            metadata: {},
+            time: { start: 1000, end: 1200 },
+          },
+        }),
+        tool({
+          id: "t2",
+          tool: "bash",
+          state: { status: "error", input: { command: "bun test" }, error: "EXIT 7", time: { start: 1300, end: 1400 } },
+        }),
+      ],
+    }
+    const model = build([user({}), assistant({})], parts)
+
+    expect(matchRecords(model.records, "layout")).toEqual([0])
+    expect(matchRecords(model.records, "APP.TSX")).toEqual([2])
+    expect(matchRecords(model.records, "exit 7")).toEqual([3])
+    expect(matchRecords(model.records, "   ")).toEqual([])
+    expect(matchRecords(model.records, "nothing-here")).toEqual([])
+  })
+
+  test("kindCounts lists only the kinds present, in canonical order", () => {
+    const parts: Record<string, Part[]> = {
+      u1: [text("ut", "u1", "hi")],
+      a1: [stepStart("ss", "a1"), tool({ id: "t1", tool: "read" }), file("f1", "a1")],
+    }
+    const model = build([user({}), assistant({})], parts)
+
+    expect(kindCounts(model.records)).toEqual([
+      { kind: "user", count: 1 },
+      { kind: "context", count: 1 },
+      { kind: "assistant", count: 1 },
+      { kind: "tool", count: 1 },
+    ])
+    expect(formatOffset(0)).toBe("0s")
+    expect(formatOffset(1200)).toBe("1s")
+    expect(formatOffset(65_000)).toBe("1m05s")
   })
 })
 
