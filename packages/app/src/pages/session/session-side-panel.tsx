@@ -19,6 +19,7 @@ import { GoalTab } from "@/components/session/goal-tab"
 import { TodoTab } from "@/components/session/todo-tab"
 import { MCPTab } from "@/components/session/mcp-tab"
 import { LSPTab } from "@/components/session/lsp-tab"
+import { TrajectoryTab } from "@/components/session/trajectory-tab"
 import { SessionDetailWidget } from "@/components/session/session-detail-widget"
 import { SessionIconSidebar, type SessionSidePanelView } from "@/components/session/session-icon-sidebar"
 import { SearchFiles } from "@/components/search-files"
@@ -316,6 +317,9 @@ export function SessionSidePanel(props: {
                         <Tabs.Trigger value="git">
                           <div class="flex items-center gap-1.5">Git</div>
                         </Tabs.Trigger>
+                        <Tabs.Trigger value="trajectory">
+                          <div class="flex items-center gap-1.5">Trajectory</div>
+                        </Tabs.Trigger>
                         <SortableProvider ids={openedTabs()}>
                           <For each={openedTabs()}>{(tab) => <SortableTab tab={tab} onTabClose={tabs().close} />}</For>
                         </SortableProvider>
@@ -425,6 +429,14 @@ export function SessionSidePanel(props: {
                               openTab(file.tab(path))
                             }}
                           />
+                        </div>
+                      </Show>
+                    </Tabs.Content>
+
+                    <Tabs.Content value="trajectory" class="flex flex-col h-full overflow-hidden contain-strict">
+                      <Show when={activeTab() === "trajectory"}>
+                        <div class="relative flex-1 min-h-0 overflow-hidden">
+                          <TrajectoryTab />
                         </div>
                       </Show>
                     </Tabs.Content>

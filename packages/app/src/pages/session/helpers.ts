@@ -7,7 +7,7 @@ const emptyTabs: string[] = []
 
 // Fixed utility tabs that aren't file tabs and don't have a path — must pass
 // through `activeTab` unchanged, same as "context"/"review".
-const staticTabs = new Set(["goal", "todo", "mcp", "lsp", "search", "git"])
+const staticTabs = new Set(["goal", "todo", "mcp", "lsp", "search", "git", "trajectory"])
 
 
 type Tabs = {
