@@ -2194,7 +2194,9 @@ export const layer = Layer.effect(
             system.push([...instructions, env.stable, preloadedSkills, toolList].filter((entry) => entry).join("\n"))
             system.push(env.runtime)
             if (plan) volatile.push(plan)
-            if (skills) volatile.push(skills)
+            // The skills list is stable for the whole turn and can be large: unlike the
+            // per-step progress blocks below, it belongs to the cached prefix.
+            if (skills) system.push(skills)
             contextSummary.add("skills", skills ? "inject relevant skill summary" : "no relevant skill summary", skills, Date.now() - skillsStart, { cached: cachedSkills.cached })
 
             // Inject task contract (Goal/DoD) once per turn if available

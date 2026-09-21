@@ -158,6 +158,9 @@ function makePrompt() {
     SyncEvent.defaultLayer,
     EventV2Bridge.defaultLayer,
     ToolCacheService.defaultLayer,
+    // SessionCompaction.layer requires HttpClient; without it the whole suite
+    // failed at layer construction ("Service not found: effect/HttpClient").
+    FetchHttpClient.layer,
   ).pipe(Layer.provideMerge(infra))
   const question = Question.layer.pipe(Layer.provideMerge(deps))
   const todo = Todo.layer.pipe(Layer.provideMerge(deps))
