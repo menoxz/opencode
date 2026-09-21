@@ -109,11 +109,26 @@ type Tracked = Duplicate & {
   withheld: boolean
 }
 
+/**
+ * An inspection output the model already received this session from a tool
+ * other than `read`: a shell dump, grep hits, a glob listing, a batch DAG.
+ * `read` is excluded because it carries an mtime/size proof and a precise
+ * file+range stub; these tools only offer "the same bytes came back".
+ */
+export type Inspection = {
+  /** The tool that produced it: "bash", "grep", "glob", "inspect_batch", "repo_overview". */
+  tool: string
+  chars: number
+  /** First line of the output, so the model can locate the earlier block. */
+  preview: string
+}
+
 type Book = {
   epoch: number
   entries: Map<string, Seen>
   content: Map<string, Tracked>
   produced: Map<string, Produced>
+  inspections: Map<string, Inspection>
   /** Reads answered from the ledger instead of re-sending bytes (diagnostic). */
   withheld: number
   /** Nothing is written while clean, so a session that never changed is silent. */
@@ -185,6 +200,13 @@ function parse(text: string): Book | undefined {
         isProduced(v) ? [[k, v] as [string, Produced]] : [],
       ),
     ),
+    inspections: new Map(
+      Object.entries(isRecord(raw.inspections) ? raw.inspections : {}).flatMap(([k, v]) =>
+        isRecord(v) && typeof v.tool === "string" && typeof v.chars === "number" && typeof v.preview === "string"
+          ? [[k, v as Inspection] as [string, Inspection]]
+          : [],
+      ),
+    ),
     withheld: typeof raw.withheld === "number" ? raw.withheld : 0,
     dirty: false,
   }
@@ -207,6 +229,7 @@ function persist(sessionID: string, state: Book): void {
     entries: Object.fromEntries(state.entries),
     content: Object.fromEntries(state.content),
     produced: Object.fromEntries(state.produced),
+    inspections: Object.fromEntries(state.inspections),
     withheld: state.withheld,
   })
   Effect.runSync(
@@ -237,6 +260,7 @@ function ledger(sessionID: string): Book {
     entries: new Map(),
     content: new Map(),
     produced: new Map(),
+    inspections: new Map(),
     withheld: 0,
     dirty: false,
   }
@@ -460,6 +484,7 @@ export function reset(sessionID?: string): void {
   state.entries.clear()
   state.content.clear()
   state.produced.clear()
+  state.inspections.clear()
   state.epoch += 1
   state.dirty = true
   persist(sessionID, state)
@@ -509,6 +534,56 @@ export function noteWithheld(sessionID: string): void {
 export function stats(sessionID: string): { entries: number; held: number; withheld: number; epoch: number } {
   const state = ledger(sessionID)
   return { entries: state.entries.size, held: state.content.size, withheld: state.withheld, epoch: state.epoch }
+}
+
+/** Inspection tools whose repeated output is worth withholding. */
+export const INSPECTION_DEDUPE_TOOLS: ReadonlySet<string> = new Set([
+  "bash",
+  "grep",
+  "glob",
+  "inspect_batch",
+  "repo_overview",
+])
+
+/** Below this, the stub would cost more context than the bytes it replaces. */
+const MIN_INSPECTION_CHARS = 800
+
+function firstLine(output: string): string {
+  const line = (output.split("\n", 1)[0] ?? "").trim()
+  return line.length > 160 ? `${line.slice(0, 157)}…` : line
+}
+
+function inspectionStub(previous: Inspection): string {
+  return [
+    "<duplicate>",
+    `Identical output to your earlier ${previous.tool} call this session (${previous.chars} chars) — it is already in your context above.`,
+    `First line then: ${previous.preview}`,
+    `Use it from there instead of re-running the same command.`,
+    "</duplicate>",
+  ].join("\n")
+}
+
+/**
+ * Answer a repeated inspection output from the ledger. The tool has still
+ * *run*: only the rendering is withheld, so side effects (a build, a mutation)
+ * are never skipped. Returns `undefined` the first time — recording the output
+ * and rendering it in full — and the stub afterwards. Outputs below
+ * MIN_INSPECTION_CHARS are always rendered: the stub would cost more than it
+ * saves, and a short output means something by itself.
+ */
+export function withholdInspection(sessionID: string, tool: string, output: string): string | undefined {
+  if (output.length < MIN_INSPECTION_CHARS) return undefined
+  const state = ledger(sessionID)
+  const digestKey = digest(output)
+  const previous = state.inspections.get(digestKey)
+  if (!previous) {
+    state.inspections.set(digestKey, { tool, chars: output.length, preview: firstLine(output) })
+    state.dirty = true
+    return undefined
+  }
+  state.withheld += 1
+  state.dirty = true
+  return inspectionStub(previous)
 }
 
 export * as ReadLedger from "./read-ledger"

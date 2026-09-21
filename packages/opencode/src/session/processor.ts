@@ -30,6 +30,7 @@ import * as DateTime from "effect/DateTime"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Usage, type LLMEvent } from "@opencode-ai/llm"
 import { Truncate } from "@/tool/truncate"
+import { INSPECTION_DEDUPE_TOOLS, ReadLedger } from "@/tool/read-ledger"
 import { isLeanTerminalTool, leanToolOutputBudget } from "@/tool/lean-output-policy"
 import { compactTerminalOutput, createTerminalPollState } from "@/tool/terminal-output"
 import { InstanceState } from "@/effect/instance-state"
@@ -233,14 +234,21 @@ export const layer = Layer.effect(
         const match = yield* readToolCall(toolCallID)
         if (!match || match.part.state.status !== "running") return
         const normalized = yield* normalizeTerminalOutput(match.part, output)
+        // An inspection repeated verbatim is already in context: withhold the
+        // duplicated bytes instead of paying for them twice. The tool has still
+        // run, so a build or a mutation is never skipped — only the rendering is.
+        const duplicate = INSPECTION_DEDUPE_TOOLS.has(match.part.tool)
+          ? ReadLedger.withholdInspection(ctx.sessionID, match.part.tool, normalized.output)
+          : undefined
+        const stored = duplicate === undefined ? normalized : { ...normalized, output: duplicate }
         const end = Date.now()
         yield* session.updatePart({
           ...match.part,
           state: {
             status: "completed",
             input: match.part.state.input,
-            output: normalized.output,
-            metadata: normalized.metadata,
+            output: stored.output,
+            metadata: stored.metadata,
             title: output.title,
             time: { start: match.part.state.time.start, end },
             attachments: output.attachments,
@@ -250,7 +258,7 @@ export const layer = Layer.effect(
           toolCallID,
           tool: match.part.tool,
           duration: duration(match.part.state.time.start, end),
-          outputLength: normalized.output.length,
+          outputLength: stored.output.length,
           attachments: output.attachments?.length ?? 0,
           providerExecuted: match.part.metadata?.providerExecuted === true,
         })

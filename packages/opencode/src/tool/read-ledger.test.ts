@@ -397,3 +397,63 @@ describe("withheld counter", () => {
     expect(ReadLedger.stats(SESSION)).toEqual({ entries: 0, held: 0, withheld: 0, epoch: 0 })
   })
 })
+
+describe("withholdInspection", () => {
+  // Must exceed MIN_INSPECTION_CHARS (800) to be eligible at all.
+  const big = (marker: string) => `${marker}\n${"x".repeat(1_000)}`
+
+  test("renders the first occurrence in full", () => {
+    expect(ReadLedger.withholdInspection(SESSION, "bash", big("a"))).toBeUndefined()
+  })
+
+  test("withholds an identical repeat, naming the tool, size and first line", () => {
+    ReadLedger.withholdInspection(SESSION, "bash", big("a"))
+    const stub = ReadLedger.withholdInspection(SESSION, "bash", big("a"))
+    expect(stub).toContain("<duplicate>")
+    expect(stub).toContain("bash")
+    expect(stub).toContain("1002 chars")
+    expect(stub).toContain("First line then: a")
+    expect(stub!.length).toBeLessThan(big("a").length)
+  })
+
+  test("treats each distinct output independently", () => {
+    ReadLedger.withholdInspection(SESSION, "bash", big("a"))
+    expect(ReadLedger.withholdInspection(SESSION, "bash", big("b"))).toBeUndefined()
+  })
+
+  test("never withholds a short output, where the stub would cost more", () => {
+    expect(ReadLedger.withholdInspection(SESSION, "grep", "no matches")).toBeUndefined()
+    expect(ReadLedger.withholdInspection(SESSION, "grep", "no matches")).toBeUndefined()
+  })
+
+  test("counts a withheld repeat", () => {
+    ReadLedger.withholdInspection(SESSION, "grep", big("a"))
+    ReadLedger.withholdInspection(SESSION, "grep", big("a"))
+    expect(ReadLedger.stats(SESSION).withheld).toBe(1)
+  })
+
+  test("is per session", () => {
+    ReadLedger.withholdInspection(SESSION, "bash", big("a"))
+    expect(ReadLedger.withholdInspection("ses_other", "bash", big("a"))).toBeUndefined()
+  })
+
+  test("a compaction forgets, so the bytes are served in full again", () => {
+    ReadLedger.withholdInspection(SESSION, "bash", big("a"))
+    ReadLedger.reset(SESSION)
+    expect(ReadLedger.withholdInspection(SESSION, "bash", big("a"))).toBeUndefined()
+  })
+
+  test("survives a restart, like every other ledger decision", () => {
+    ReadLedger.withholdInspection(SESSION, "bash", big("a"))
+    ReadLedger.flush()
+    ReadLedger.unload()
+    expect(ReadLedger.withholdInspection(SESSION, "bash", big("a"))).toContain("<duplicate>")
+  })
+
+  test("covers exactly the inspection tools, and never read", () => {
+    for (const tool of ["bash", "grep", "glob", "inspect_batch", "repo_overview"]) {
+      expect(ReadLedger.INSPECTION_DEDUPE_TOOLS.has(tool)).toBe(true)
+    }
+    expect(ReadLedger.INSPECTION_DEDUPE_TOOLS.has("read")).toBe(false)
+  })
+})
