@@ -24,7 +24,7 @@ function threshold(cfg: Config.Info) {
   return Math.min(1, Math.max(0.1, configured))
 }
 
-function limits(input: { cfg: Config.Info; model: Provider.Model; outputTokenMax?: number }) {
+export function limits(input: { cfg: Config.Info; model: Provider.Model; outputTokenMax?: number }) {
   const context = input.model.limit.context
   const maxOutput = ProviderTransform.maxOutputTokens(input.model, input.outputTokenMax)
   const reserved = input.cfg.compaction?.reserved ?? Math.min(COMPACTION_BUFFER, maxOutput)
@@ -71,6 +71,46 @@ export function usable(input: { cfg: Config.Info; model: Provider.Model; outputT
   return limits(input).usable
 }
 
+// A provider that bills cached input far below fresh input (Anthropic-style
+// `cache_read`) rewards a long, stable prefix: compacting rewrites that prefix
+// and every following turn pays the full price again until the cache is rebuilt,
+// which costs more than the tokens it saves. Without a cache there is nothing to
+// lose, so the early read-heavy trigger stays armed.
+function cacheAware(model: Provider.Model) {
+  return model.cost.cache.read > 0
+}
+
+// Single source of truth for the compaction pivot, so what session_info reports
+// is exactly what isOverflow enforces.
+export function trigger(input: {
+  cfg: Config.Info
+  model: Provider.Model
+  outputTokenMax?: number
+  inspected?: number
+}) {
+  const limit = limits(input)
+  const proportional = Math.floor(limit.usable * threshold(input.cfg))
+  const absolute = input.cfg.compaction?.absolute_trigger ?? proportional
+  const cached = cacheAware(input.model)
+  // An explicit `read_heavy_trigger` wins: the operator asked for it.
+  const early =
+    input.cfg.compaction?.read_heavy_trigger ??
+    (cached ? undefined : Math.floor(proportional * READ_HEAVY_FRACTION))
+  const readHeavy =
+    early !== undefined &&
+    (input.inspected ?? 0) >= (input.cfg.compaction?.read_heavy_min_tokens ?? READ_HEAVY_MIN_TOKENS)
+  const arm = readHeavy ? early : undefined
+  return {
+    value: arm === undefined ? Math.min(proportional, absolute) : Math.min(proportional, absolute, arm),
+    proportional,
+    absolute,
+    cacheAware: cached,
+    readHeavy,
+    early,
+    limit,
+  }
+}
+
 export function isOverflow(input: {
   cfg: Config.Info
   tokens: MessageV2.Assistant["tokens"]
@@ -100,13 +140,13 @@ export function isOverflow(input: {
 
   const count = tokenCount(input.tokens)
   const inspected = input.messages ? inspectionTokens(input.messages) : 0
-  const readHeavy = inspected >= (input.cfg.compaction?.read_heavy_min_tokens ?? READ_HEAVY_MIN_TOKENS)
-  const proportional = Math.floor(limit.usable * threshold(input.cfg))
-  const absolute = input.cfg.compaction?.absolute_trigger ?? proportional
-  const readHeavyTrigger =
-    input.cfg.compaction?.read_heavy_trigger ?? Math.floor(proportional * READ_HEAVY_FRACTION)
-  const trigger = Math.min(proportional, absolute, readHeavy ? readHeavyTrigger : Number.POSITIVE_INFINITY)
-  const result = count >= trigger
+  const computed = trigger({
+    cfg: input.cfg,
+    model: input.model,
+    outputTokenMax: input.outputTokenMax,
+    inspected,
+  })
+  const result = count >= computed.value
   log.debug("context overflow evaluated", {
     result,
     reason: result ? "token count reached usable context threshold" : "token count below usable context threshold",
@@ -114,13 +154,15 @@ export function isOverflow(input: {
     session: input.sessionID,
     tokens: count,
     inspected,
-    readHeavy,
-    trigger,
-    usable: limit.usable,
-    context: limit.context,
-    input: limit.input,
-    maxOutput: limit.maxOutput,
-    reserved: limit.reserved,
+    readHeavy: computed.readHeavy,
+    cacheAware: computed.cacheAware,
+    earlyReadHeavy: computed.early,
+    trigger: computed.value,
+    usable: computed.limit.usable,
+    context: computed.limit.context,
+    input: computed.limit.input,
+    maxOutput: computed.limit.maxOutput,
+    reserved: computed.limit.reserved,
   })
   return result
 }

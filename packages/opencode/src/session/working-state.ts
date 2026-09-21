@@ -1,6 +1,7 @@
 import type { ModelMessage } from "ai"
 import { Effect, Option } from "effect"
 import { isTerminalStatus, type GoalState } from "./goal-state"
+import { wrapInjectedGuidance } from "./prompt-methodology"
 import { Session } from "./session"
 import { SessionID } from "./schema"
 import { Todo } from "./todo"
@@ -96,46 +97,15 @@ function list(values: readonly string[], budget: number) {
   return `[${parts.join(",")}]`
 }
 
-// Copy only the tail container. Never mutate stored replay, insert between tool
-// calls/results, or add a synthetic user message that could become user intent.
+// Append the card as its own injected tail message. Every replayed message must
+// stay byte-identical to the request that cached it — mutating the tail container
+// of turn N makes that message differ in turn N+1, which invalidates the cached
+// prefix up to and including it. The appended message is rebuilt per request,
+// never persisted, and marked as injected guidance so it is not read as user
+// intent. Returns the input untouched when there is no card.
 export function attach(messages: ModelMessage[], card: string | undefined): ModelMessage[] {
-  if (!card || !messages.length) return messages
-  const tail = messages.at(-1)!
-  if (tail.role === "system") return messages
-  if (tail.role === "tool") {
-    const last = tail.content.at(-1)
-    if (!last || last.type !== "tool-result") return messages
-    const output = last.output
-    const next =
-      output.type === "text" || output.type === "error-text"
-        ? { ...output, value: output.value + card }
-        : output.type === "content"
-          ? { ...output, value: [...output.value, { type: "text" as const, text: card }] }
-          : undefined
-    if (!next) return messages
-    return [...messages.slice(0, -1), { ...tail, content: [...tail.content.slice(0, -1), { ...last, output: next }] }]
-  }
-  if (tail.role === "user")
-    return [
-      ...messages.slice(0, -1),
-      {
-        ...tail,
-        content:
-          typeof tail.content === "string"
-            ? tail.content + card
-            : [...tail.content, { type: "text" as const, text: card }],
-      },
-    ]
-  return [
-    ...messages.slice(0, -1),
-    {
-      ...tail,
-      content:
-        typeof tail.content === "string"
-          ? tail.content + card
-          : [...tail.content, { type: "text" as const, text: card }],
-    },
-  ]
+  if (!card || !card.trim()) return messages
+  return [...messages, { role: "user", content: wrapInjectedGuidance(card)! }]
 }
 
 export * as WorkingState from "./working-state"

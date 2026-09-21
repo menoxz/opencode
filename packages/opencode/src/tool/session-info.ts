@@ -1,8 +1,10 @@
 import { Effect, Schema } from "effect"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { generationTokensPerSecond, type TokenSpeedPart } from "@opencode-ai/core/util/token-speed"
+import { Config } from "@/config/config"
 import { Provider } from "@/provider/provider"
 import { Session } from "@/session/session"
+import * as Overflow from "@/session/overflow"
 import type { MessageV2 } from "@/session/message-v2"
 import * as Tool from "./tool"
 
@@ -175,19 +177,32 @@ type InfoMetadata = {
   subAgentCount: number
 }
 
-export const SessionInfoTool = Tool.define<typeof Parameters, InfoMetadata, Session.Service | Provider.Service>(
+export const SessionInfoTool = Tool.define<
+  typeof Parameters,
+  InfoMetadata,
+  Session.Service | Provider.Service | Config.Service
+>(
   "session_info",
   Effect.gen(function* () {
     const sessions = yield* Session.Service
     const providers = yield* Provider.Service
+    const config = yield* Config.Service
     return {
       description:
-        "Show real-time session information on demand: session id/title/model, context metrics, cumulative session tokens, sub-agents, opencode version, PID, uptime, and memory.",
+        "Show real-time session information on demand: session id/title/model, context metrics, compaction limits (context, usable, reserved, trigger), cumulative session tokens, sub-agents, opencode version, PID, uptime, and memory.",
       parameters: Parameters,
       execute: (_params, ctx) =>
         Effect.gen(function* () {
           const resolved = yield* resolveContext({ sessions, providers, sessionID: ctx.sessionID })
           const children = yield* sessions.children(ctx.sessionID)
+          const cfg = yield* config.get().pipe(Effect.catch(() => Effect.succeed(undefined)))
+          const limits =
+            resolved.model && cfg
+              ? {
+                  ...Overflow.limits({ cfg, model: resolved.model }),
+                  trigger: Overflow.trigger({ cfg, model: resolved.model }).value,
+                }
+              : undefined
           const cumulative = resolved.session.tokens
             ? {
                 input: resolved.session.tokens.input,
@@ -222,6 +237,7 @@ export const SessionInfoTool = Tool.define<typeof Parameters, InfoMetadata, Sess
                 }
               : undefined,
             context: resolved.context ?? null,
+            limits,
             tokens: {
               latestTurn: resolved.context?.tokens,
               sessionCumulative: cumulative,

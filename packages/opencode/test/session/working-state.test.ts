@@ -81,7 +81,7 @@ test("long history remains immutable; live card replaces state across compaction
             { role: "user" as const, content: "Continue" },
           ]
     const result = WorkingState.attach(messages, card)
-    expect(result).toHaveLength(messages.length)
+    expect(result).toHaveLength(messages.length + 1)
     expect(JSON.stringify(result.at(-1))).toContain(`goal-${version}`)
     expect(JSON.stringify(result.at(-1))).toContain(`task-${version}`)
     expect(result.filter((message) => message.role === "system")).toHaveLength(0)
@@ -132,13 +132,13 @@ test("all tail encodings preserve tool adjacency, metadata and input objects", (
     const result = WorkingState.attach(messages, "CARD")
     expect(result[0]).toBe(messages[0])
     expect(result[1]).toBe(messages[1])
-    expect(result.map((message) => message.role)).toEqual(["system", "assistant", "tool"])
+    expect(result.map((message) => message.role)).toEqual(["system", "assistant", "tool", "user"])
     expect(JSON.stringify(result.at(-1))).toContain("CARD")
     expect(messages).toEqual(before)
   }
 })
 
-test("JSON and error-JSON results retain exact values, schema and classification without a card", () => {
+test("JSON and error-JSON results retain exact values and an untouched tool result", () => {
   for (const type of ["json", "error-json"] as const) {
     for (const value of [null, false, 42, "scalar", [1, "two", null], { count: 1, nested: [true] }]) {
       const output = { type, value }
@@ -147,10 +147,12 @@ test("JSON and error-JSON results retain exact values, schema and classification
       ]
       const before = structuredClone(messages)
       const result = WorkingState.attach(messages, "CARD")
-      expect(result).toBe(messages)
-      expect(result).toEqual(before)
+      expect(result).toHaveLength(messages.length + 1)
+      expect(result.slice(0, -1)).toEqual(before)
+      expect(messages).toEqual(before)
       expect(result[0]).toMatchObject({ content: [{ output: { type, value } }] })
-      expect(JSON.stringify(result)).not.toContain("CARD")
+      expect(JSON.stringify(result.slice(0, -1))).not.toContain("CARD")
+      expect(JSON.stringify(result.at(-1))).toContain("CARD")
     }
   }
 })

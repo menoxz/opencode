@@ -315,6 +315,8 @@ class Ledger {
   #slots = new Map<string, Slot>()
   #epoch = 0
   #step = 0
+  #claimStep = ""
+  #claimed = new Set<string>()
 
   epoch() {
     return this.#epoch
@@ -325,6 +327,25 @@ class Ledger {
     this.#step += 1
     if (classify(input.tool, input.args).mutating) this.#epoch += 1
     return this.#step
+  }
+
+  /**
+   * Coalesces the read-only calls of a single step: the first call on a target
+   * claims it, and every later call of the same step is answered from that claim
+   * instead of running again. Parallel calls of one assistant message otherwise
+   * each pay a full round-trip and each add their own copy of the same bytes.
+   */
+  coalesces(step: string, input: ObservedCall): boolean {
+    const shape = classify(input.tool, input.args)
+    if (!shape.readOnly) return false
+    if (this.#claimStep !== step) {
+      this.#claimStep = step
+      this.#claimed.clear()
+    }
+    const key = keyOf(input.tool, shape.target)
+    if (this.#claimed.has(key)) return true
+    this.#claimed.add(key)
+    return false
   }
 
   /**
@@ -394,6 +415,8 @@ class Ledger {
     this.#slots.clear()
     this.#epoch = 0
     this.#step = 0
+    this.#claimStep = ""
+    this.#claimed.clear()
   }
 }
 
@@ -421,6 +444,20 @@ export function presenceFor(
   options: { now?: number; ttlMs?: number } = {},
 ): Presence | undefined {
   return ledgerFor(sessionID).presence(input, options.now ?? Date.now(), options.ttlMs ?? DEFAULT_TTL_MS)
+}
+
+/** True when this step already claimed the same read-only target. */
+export function coalesces(sessionID: string, step: string, input: ObservedCall): boolean {
+  return ledgerFor(sessionID).coalesces(step, input)
+}
+
+/** What replaces a read-only call coalesced into another call of the same step. */
+export function coalescedNotice(input: ObservedCall): string {
+  const shape = classify(input.tool, input.args)
+  return [
+    `[coalesced] ${input.tool} ${shape.target} — this step already observes that target.`,
+    "Its result arrives with the other call of this step; do not repeat it.",
+  ].join(" ")
 }
 
 export function observe(sessionID: string, input: Observation): Slot {

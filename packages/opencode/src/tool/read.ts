@@ -418,10 +418,14 @@ export const ReadTool = Tool.define(
       const last = file.offset + file.raw.length - 1
       const next = last + 1
       const truncated = file.more || file.cut
+      // A bounded read is only useful if it says how to continue: the pointer hands
+      // back the next window and offers grep first, because walking a long file
+      // sequentially is the expensive way to reach a single symbol.
+      const pointer = `Use offset=${next} to continue, or grep for the exact symbol instead of reading sequentially`
       if (file.cut) {
-        output += `\n\n(Output capped at ${MAX_BYTES_LABEL}. Showing lines ${file.offset}-${last}. Use offset=${next} to continue.)`
+        output += `\n\n(Output capped at ${MAX_BYTES_LABEL}. Showing lines ${file.offset}-${last}. ${pointer}.)`
       } else if (file.more) {
-        output += `\n\n(Showing lines ${file.offset}-${last} of ${file.count}. Use offset=${next} to continue.)`
+        output += `\n\n(Showing lines ${file.offset}-${last} of ${file.count}. ${pointer}.)`
       } else {
         output += `\n\n(End of file - total ${file.count} lines)`
       }

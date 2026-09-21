@@ -462,6 +462,21 @@ describe("tool.read truncation", () => {
     }),
   )
 
+  it.instance("bounds a long file by default and points to offset and grep", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const lines = Array.from({ length: 2500 }, (_, i) => `line${i}`).join("\n")
+      yield* put(path.join(test.directory, "long.txt"), lines)
+
+      const result = yield* run({ filePath: path.join(test.directory, "long.txt") })
+      expect(result.metadata.truncated).toBe(true)
+      expect(result.output).toContain("Showing lines 1-2000 of 2500")
+      expect(result.output).toContain("Use offset=2001 to continue")
+      expect(result.output).toContain("grep for the exact symbol")
+      expect(result.output).not.toContain("line2500")
+    }),
+  )
+
   it.instance("does not truncate small file", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance

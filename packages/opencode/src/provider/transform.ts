@@ -3,6 +3,7 @@ import { mergeDeep, unique } from "remeda"
 import type { JSONSchema7 } from "@ai-sdk/provider"
 import type * as Provider from "./provider"
 import type * as ModelsDev from "@opencode-ai/core/models-dev"
+import { INJECTED_GUIDANCE_MARKER } from "@/session/prompt-methodology"
 import { iife } from "@/util/iife"
 
 type Modality = NonNullable<ModelsDev.Model["modalities"]>["input"][number]
@@ -342,9 +343,35 @@ function normalizeMessages(
   return msgs
 }
 
+// Providers order the request as tools → system → messages, so a single byte that
+// varies inside the system segment re-bills the whole conversation. Volatile
+// harness blocks (environment/progress capsules, plan, slots, reminders, working
+// state, Jev context) are injected after the history instead, as guidance-marked
+// tail messages, and never stored. Their markers must therefore not be read as
+// part of the conversation when the cache anchor is computed.
+function injectedGuidance(msg: ModelMessage) {
+  if (msg.role !== "user") return false
+  return typeof msg.content === "string"
+    ? msg.content.startsWith(INJECTED_GUIDANCE_MARKER)
+    : msg.content.some((part) => part.type === "text" && part.text.startsWith(INJECTED_GUIDANCE_MARKER))
+}
+
+// The breakpoint budget is four per request. Injected guidance is rebuilt every
+// step and never replayed, so it is trimmed once: one breakpoint closes the stable
+// head (tools and the whole system segment), one is an anchored high-water mark at
+// the end of the previous turn, and two cover the newest reusable messages so a
+// multi-step turn reuses the step it just produced. The anchor only moves when a
+// new turn starts; a pair of sliding breakpoints alone never serves the same prefix
+// twice, which is why the body of the conversation was paid for at full price at
+// every step.
 function applyCaching(msgs: ModelMessage[], model: Provider.Model): ModelMessage[] {
-  const system = msgs.filter((msg) => msg.role === "system").slice(0, 2)
-  const final = msgs.filter((msg) => msg.role !== "system").slice(-2)
+  let end = msgs.length
+  while (end > 0 && injectedGuidance(msgs[end - 1]!)) end--
+  const cached = msgs.slice(0, end)
+  const system = cached.filter((msg) => msg.role === "system").slice(-1)
+  const lastUser = cached.findLastIndex((msg) => msg.role === "user")
+  const body = lastUser > 0 ? [cached[lastUser - 1]!] : []
+  const final = cached.filter((msg) => msg.role !== "system").slice(-2)
 
   const providerOptions = {
     anthropic: {
@@ -367,7 +394,7 @@ function applyCaching(msgs: ModelMessage[], model: Provider.Model): ModelMessage
     },
   }
 
-  for (const msg of unique([...system, ...final])) {
+  for (const msg of unique([...system, ...body, ...final])) {
     const useMessageLevelOptions =
       model.providerID === "anthropic" ||
       model.providerID.includes("bedrock") ||

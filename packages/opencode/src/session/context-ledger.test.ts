@@ -53,6 +53,42 @@ describe("context ledger classification", () => {
   })
 })
 
+describe("context ledger step coalescence", () => {
+  beforeEach(() => ContextLedger.reset())
+
+  test("coalesces a read-only target repeated inside one step", () => {
+    expect(ContextLedger.coalesces(session, "msg_step_1", call("bash", { command: "git status" }))).toBe(false)
+    expect(ContextLedger.coalesces(session, "msg_step_1", call("bash", { command: "git status" }))).toBe(true)
+    expect(ContextLedger.coalesces(session, "msg_step_1", call("read", { filePath: "a.ts" }))).toBe(false)
+    expect(ContextLedger.coalesces(session, "msg_step_1", call("read", { filePath: "a.ts" }))).toBe(true)
+  })
+
+  test("leaves a distinct target of the same step alone", () => {
+    expect(ContextLedger.coalesces(session, "msg_step_1", call("read", { filePath: "a.ts" }))).toBe(false)
+    expect(ContextLedger.coalesces(session, "msg_step_1", call("read", { filePath: "b.ts" }))).toBe(false)
+    expect(ContextLedger.coalesces(session, "msg_step_1", call("grep", { pattern: "foo" }))).toBe(false)
+  })
+
+  test("never carries a claim into the next step, so a later step can re-observe", () => {
+    expect(ContextLedger.coalesces(session, "msg_step_1", call("bash", { command: "git status" }))).toBe(false)
+    expect(ContextLedger.coalesces(session, "msg_step_2", call("bash", { command: "git status" }))).toBe(false)
+  })
+
+  test("never coalesces a call that can change the world", () => {
+    expect(ContextLedger.coalesces(session, "msg_step_1", call("edit", { filePath: "a.ts" }))).toBe(false)
+    expect(ContextLedger.coalesces(session, "msg_step_1", call("edit", { filePath: "a.ts" }))).toBe(false)
+    expect(ContextLedger.coalesces(session, "msg_step_1", call("bash", { command: "rm -rf build" }))).toBe(false)
+    expect(ContextLedger.coalesces(session, "msg_step_1", call("bash", { command: "rm -rf build" }))).toBe(false)
+  })
+
+  test("explains the coalesced call without quoting the bytes again", () => {
+    const notice = ContextLedger.coalescedNotice(call("read", { filePath: "src/a.ts" }))
+    expect(notice).toContain("[coalesced] read")
+    expect(notice).toContain("src/a.ts")
+    expect(notice).toContain("do not repeat it")
+  })
+})
+
 describe("context ledger coverage", () => {
   test("reads the line range implied by the read arguments", () => {
     expect(ContextLedger.coverageOf("read", { offset: 10, limit: 5 })).toEqual([{ start: 10, end: 15 }])

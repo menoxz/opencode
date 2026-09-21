@@ -2143,6 +2143,13 @@ export const layer = Layer.effect(
               Date.now() - modelMessageConversionStart,
             )
             const system: string[] = []
+            // Rebuilt from live harness state on every step: the runtime capsule, the
+            // work plan, the relevant skills, the task contract, the environment and
+            // allocation capsules, and the objective reminder. They must not enter the
+            // system segment, which providers cache in front of the whole history — one
+            // byte of variation there re-bills the conversation. They are appended
+            // after the history instead (see provider/transform.ts for the anchor).
+            const volatile: string[] = []
 
             // Extract the last user message for skill relevance filtering (every turn)
             const lastUserText = getCurrentTaskText(msgs) || undefined
@@ -2186,8 +2193,8 @@ export const layer = Layer.effect(
 
             system.push([...instructions, env.stable, preloadedSkills, toolList].filter((entry) => entry).join("\n"))
             system.push(env.runtime)
-            if (plan) system.push(plan)
-            if (skills) system.push(skills)
+            if (plan) volatile.push(plan)
+            if (skills) volatile.push(skills)
             contextSummary.add("skills", skills ? "inject relevant skill summary" : "no relevant skill summary", skills, Date.now() - skillsStart, { cached: cachedSkills.cached })
 
             // Inject task contract (Goal/DoD) once per turn if available
@@ -2196,7 +2203,7 @@ export const layer = Layer.effect(
               const goalKey = `goal:${createHash("sha1").update(JSON.stringify(goalState)).digest("hex")}`
               const cachedGoal = injectionCache.get(goalKey)
               const goalCtx = cachedGoal.cached ? cachedGoal.value : injectionCache.set(goalKey, formatGoalContext(goalState))
-              if (goalCtx) system.push(goalCtx)
+              if (goalCtx) volatile.push(goalCtx)
               contextSummary.add(
                 "goal",
                 goalCtx ? "inject task contract context" : "task contract produced no context",
@@ -2232,7 +2239,7 @@ export const layer = Layer.effect(
                 .filter(Boolean)
                 .join("\n\n")
               if (capsule) {
-                system.push(capsule)
+                volatile.push(capsule)
                 contextSummary.add(
                   "environment",
                   "inject normalized environment state",
@@ -2254,7 +2261,7 @@ export const layer = Layer.effect(
               const contextStart = Date.now()
               const slots = contextCapsule(sessionID)
               if (slots) {
-                system.push(slots)
+                volatile.push(slots)
                 contextSummary.add("environment", "inject context allocation slots", slots, Date.now() - contextStart)
               }
             }
@@ -2286,7 +2293,7 @@ export const layer = Layer.effect(
               const goalReminder = cachedGoalReminder.cached && cachedGoalReminder.value !== undefined
                 ? cachedGoalReminder.value
                 : (injectionCache.set(reminderKey, goalReminderText) ?? goalReminderText)
-              system.push(goalReminder)
+              volatile.push(goalReminder)
               contextSummary.add("goal", "inject active objective lifecycle reminder", goalReminder, Date.now() - goalReminderStart, { cached: cachedGoalReminder.cached })
             }
 
@@ -2335,7 +2342,8 @@ export const layer = Layer.effect(
               contextSummary.add("daemon", "inject first-step adaptive/personality/daemon/plan context", stepOneTail, Date.now() - daemonStart)
             }
 
-            const stepOneMessage = stepOneTail.length ? stepOneTail.join("\n\n") : undefined
+            const injected = [...volatile, ...stepOneTail].filter((entry) => entry.trim())
+            const injectedMessage = injected.length ? injected.join("\n\n") : undefined
 
             const format = lastUser.format ?? { type: "text" as const }
             if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
@@ -2349,7 +2357,7 @@ export const layer = Layer.effect(
               system,
               messages: [
                 ...modelMsgs,
-                ...(stepOneMessage ? [{ role: "user" as const, content: PromptMethodology.wrapInjectedGuidance(stepOneMessage)! }] : []),
+                ...(injectedMessage ? [{ role: "user" as const, content: PromptMethodology.wrapInjectedGuidance(injectedMessage)! }] : []),
                 ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS }] : []),
                 ...(autoContinueInstruction ? [{ role: "assistant" as const, content: autoContinueInstruction }] : []),
               ],

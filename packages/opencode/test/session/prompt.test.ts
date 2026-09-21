@@ -1167,6 +1167,51 @@ it.instance("answers a repeated read-only call from the context slot", () =>
   }),
 )
 
+it.instance("keeps volatile harness blocks out of the cached system segment", () =>
+  Effect.gen(function* () {
+    const { dir, llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const session = yield* sessions.create({
+      title: "Cache prefix",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+    yield* writeText(path.join(dir, "cached.txt"), "cached")
+
+    yield* prompt.prompt({
+      sessionID: session.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "list the text files" }],
+    })
+    yield* llm.tool("glob", { pattern: "**/*.txt" })
+    yield* llm.text("done")
+    yield* prompt.loop({ sessionID: session.id })
+
+    const volatile = [
+      "<working-state",
+      "<task-contract",
+      "<goal_reminder",
+      "<context_slots",
+      "<environment_state",
+      "<progress_state",
+    ]
+    const hits = yield* llm.hits
+    expect(hits.length).toBeGreaterThanOrEqual(2)
+    for (const hit of hits) {
+      const messages = (hit.body as { messages?: Array<{ role?: string; content?: unknown }> }).messages ?? []
+      const system = JSON.stringify(messages.filter((message) => message.role === "system"))
+      // Positive control: the stable head is really in the cached segment.
+      expect(system.length).toBeGreaterThan(1000)
+      for (const marker of volatile) expect(system).not.toContain(marker)
+      // The working-state card is appended per request and never replayed, so it
+      // cannot ride inside a message that the next request will cache.
+      expect(JSON.stringify(messages.slice(0, -1))).not.toContain("<working-state")
+    }
+    expect(JSON.stringify((hits.at(-1)!.body as { messages?: unknown[] }).messages?.at(-1))).toContain("<working-state")
+  }),
+)
+
 it.instance("loop continues when finish is stop but assistant has tool parts", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig(providerCfg)

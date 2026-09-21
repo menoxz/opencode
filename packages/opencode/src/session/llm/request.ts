@@ -134,10 +134,11 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
       }
     }
   }
-  if (jev) {
-    const block = JevContext.block({ sessionID: input.sessionID, rules: jev.rules, threshold: jev.guard?.threshold })
-    if (block) system.push(block)
-  }
+  // Rebuilt from this turn's state, so it travels with the injected tail instead
+  // of the cached system segment (see provider/transform.ts for the cache anchor).
+  const jevBlock = jev
+    ? JevContext.block({ sessionID: input.sessionID, rules: jev.rules, threshold: jev.guard?.threshold })
+    : undefined
   const variant =
     !input.small && input.model.variants && input.user.model.variant
       ? input.model.variants[input.user.model.variant]
@@ -289,9 +290,12 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
   }
   yield* Effect.logDebug("prepared LLM request payload").pipe(Effect.annotateLogs({ "llm.request": diagnostics }))
 
+  const injectedTail = [input.workingState, jevBlock]
+    .filter((entry): entry is string => entry !== undefined)
+    .join("\n\n")
   return {
     system,
-    messages: input.isWorkflow ? messages : WorkingState.attach(messages, input.workingState),
+    messages: input.isWorkflow ? messages : WorkingState.attach(messages, injectedTail),
     tools: sortedTools,
     params,
     messageTransformOptions: options,
