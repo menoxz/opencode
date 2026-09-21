@@ -18,7 +18,7 @@ import { ModelID, ProviderID } from "@/provider/schema"
 import { Effect, Layer, Context, Schema, Option } from "effect"
 import * as DateTime from "effect/DateTime"
 import { InstanceState } from "@/effect/instance-state"
-import { isOverflow as overflow, usable } from "./overflow"
+import { isOverflow as overflow, isReadHeavy, usable } from "./overflow"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -46,6 +46,12 @@ const PRUNE_PROTECTED_TOOLS = ["skill"]
 const DEFAULT_TAIL_TURNS = 2
 const MIN_PRESERVE_RECENT_TOKENS = 2_000
 const MAX_PRESERVE_RECENT_TOKENS = 8_000
+// A read-heavy window is mostly the file bytes the model just loaded. Keeping
+// only MAX_PRESERVE_RECENT_TOKENS of them makes compaction summarise those bytes
+// away, and the model pays for them a second time by re-reading the same files —
+// the most expensive way to save context. A read-heavy session therefore keeps a
+// larger verbatim tail, still bounded so the summary has room to work.
+const MAX_READ_HEAVY_PRESERVE_RECENT_TOKENS = 24_000
 const SUMMARY_TEMPLATE = `Output exactly the Markdown structure shown inside <template> and keep the section order unchanged. Do not include the <template> tags in your response.
 <template>
 ## Goal
@@ -190,11 +196,13 @@ function buildPrompt(input: { previousSummary?: string; context: string[] }) {
   return [anchor, SUMMARY_TEMPLATE, ...input.context].join("\n\n")
 }
 
-function preserveRecentBudget(input: { cfg: Config.Info; model: Provider.Model }) {
-  return (
-    input.cfg.compaction?.preserve_recent_tokens ??
-    Math.min(MAX_PRESERVE_RECENT_TOKENS, Math.max(MIN_PRESERVE_RECENT_TOKENS, Math.floor(usable(input) * 0.25)))
-  )
+function preserveRecentBudget(input: { cfg: Config.Info; model: Provider.Model; readHeavy: boolean }) {
+  const configured = input.cfg.compaction?.preserve_recent_tokens
+  if (configured !== undefined) return configured
+  const max = input.readHeavy
+    ? (input.cfg.compaction?.read_heavy_preserve_recent_tokens ?? MAX_READ_HEAVY_PRESERVE_RECENT_TOKENS)
+    : MAX_PRESERVE_RECENT_TOKENS
+  return Math.min(max, Math.max(MIN_PRESERVE_RECENT_TOKENS, Math.floor(usable(input) * 0.25)))
 }
 
 function turns(messages: MessageV2.WithParts[]) {
@@ -410,7 +418,7 @@ export const layer = Layer.effect(
     }) {
       const limit = input.cfg.compaction?.tail_turns ?? DEFAULT_TAIL_TURNS
       if (limit <= 0) return { head: input.messages, tail_start_id: undefined }
-      const budget = preserveRecentBudget({ cfg: input.cfg, model: input.model })
+      const budget = preserveRecentBudget({ cfg: input.cfg, model: input.model, readHeavy: isReadHeavy(input.messages, input.cfg) })
       const all = turns(input.messages)
       if (!all.length) return { head: input.messages, tail_start_id: undefined }
       const recent = all.slice(-limit)
@@ -501,6 +509,13 @@ export const layer = Layer.effect(
           }
         }
         log.info("pruned", { count: toPrune.length })
+        // Pruning erased `read` output from the context, so the ledgers that
+        // claim the model still holds those bytes must forget them — otherwise a
+        // later read answers "unchanged, scroll back" pointing at bytes that no
+        // longer exist, and the model is left without them. Compaction resets the
+        // same state for the same reason.
+        ContextLedger.invalidate(input.sessionID)
+        ReadLedger.reset(input.sessionID)
       }
     })
 

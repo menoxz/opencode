@@ -10,6 +10,7 @@ import { PromptQueue } from "./prompt-queue"
 import { AUTO_CONTINUE_INSTRUCTION, decideRunDecision } from "./continuation"
 import { SessionWorkPlan } from "./work-plan"
 import { capsuleFor, environmentStateEnabled, ledgerFor } from "./environment"
+import { contextHoldingsCapsule } from "./holdings-capsule"
 import { progressCapsule } from "./progress"
 import { contextCapsule } from "./context-ledger"
 import { matchedRecipeCapsule } from "./recipes"
@@ -2194,6 +2195,19 @@ export const layer = Layer.effect(
             system.push([...instructions, env.stable, preloadedSkills, toolList].filter((entry) => entry).join("\n"))
             system.push(env.runtime)
             if (plan) volatile.push(plan)
+            // What the model already holds, stated before it acts. A repeated
+            // read is answered from the ledger, but only after costing a turn;
+            // this capsule lets the model skip the read instead of discovering
+            // it was unnecessary.
+            const holdingsStart = Date.now()
+            const holdings = contextHoldingsCapsule(sessionID)
+            if (holdings) volatile.push(holdings)
+            contextSummary.add(
+              "holdings",
+              holdings ? "inject file ranges already held in context" : "no file range held in context yet",
+              holdings,
+              Date.now() - holdingsStart,
+            )
             // The skills list is stable for the whole turn and can be large: unlike the
             // per-step progress blocks below, it belongs to the cached prefix.
             if (skills) system.push(skills)

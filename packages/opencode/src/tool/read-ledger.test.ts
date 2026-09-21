@@ -320,3 +320,80 @@ describe("producedStub", () => {
     expect(ReadLedger.producedStub(FILE, entry)).toBe(before)
   })
 })
+
+describe("holdings", () => {
+  test("is empty before any read", () => {
+    expect(ReadLedger.holdings(SESSION)).toEqual([])
+  })
+
+  test("names the file and the range, most recently read first", () => {
+    ReadLedger.put(SESSION, ReadLedger.key(FILE, 1, 2000), seen())
+    ReadLedger.put(SESSION, ReadLedger.key("/repo/other.dart", 303, 50), seen({ range: "lines 303-352 of 400" }))
+    expect(ReadLedger.holdings(SESSION)).toEqual([
+      { filepath: "/repo/other.dart", range: "lines 303-352 of 400" },
+      { filepath: FILE, range: "lines 1-120 of 120" },
+    ])
+  })
+
+  test("re-reading a file moves it back to the front", () => {
+    ReadLedger.put(SESSION, ReadLedger.key(FILE, 1, 2000), seen())
+    ReadLedger.put(SESSION, ReadLedger.key("/repo/other.dart", 1, 2000), seen())
+    ReadLedger.put(SESSION, ReadLedger.key(FILE, 1, 2000), seen({ size: 6_000 }))
+    expect(ReadLedger.holdings(SESSION)[0]?.filepath).toBe(FILE)
+  })
+
+  test("respects its bound", () => {
+    for (let i = 0; i < 20; i++) ReadLedger.put(SESSION, ReadLedger.key(`/f${i}.ts`, 1, 2000), seen())
+    expect(ReadLedger.holdings(SESSION, 5)).toHaveLength(5)
+  })
+
+  test("reports the file path without the range key", () => {
+    ReadLedger.put(SESSION, ReadLedger.key(FILE, 303, 50), seen({ range: "lines 303-352 of 400" }))
+    expect(ReadLedger.holdings(SESSION)[0]?.filepath).toBe(FILE)
+  })
+
+  test("a compaction drops every holding, so nothing stale is advertised", () => {
+    ReadLedger.put(SESSION, ReadLedger.key(FILE, 1, 2000), seen())
+    ReadLedger.reset(SESSION)
+    expect(ReadLedger.holdings(SESSION)).toEqual([])
+  })
+
+  test("survives a restart, exactly like the entries it projects", () => {
+    ReadLedger.put(SESSION, ReadLedger.key(FILE, 1, 2000), seen())
+    ReadLedger.flush()
+    ReadLedger.unload()
+    expect(ReadLedger.holdings(SESSION)[0]?.filepath).toBe(FILE)
+  })
+})
+
+describe("withheld counter", () => {
+  test("counts the reads answered from the ledger", () => {
+    expect(ReadLedger.stats(SESSION).withheld).toBe(0)
+    ReadLedger.noteWithheld(SESSION)
+    ReadLedger.noteWithheld(SESSION)
+    expect(ReadLedger.stats(SESSION).withheld).toBe(2)
+  })
+
+  test("is per session", () => {
+    ReadLedger.noteWithheld(SESSION)
+    expect(ReadLedger.stats("ses_other").withheld).toBe(0)
+  })
+
+  test("survives a compaction, unlike the entries it saved", () => {
+    ReadLedger.put(SESSION, ReadLedger.key(FILE, 1, 2000), seen())
+    ReadLedger.noteWithheld(SESSION)
+    ReadLedger.reset(SESSION)
+    expect(ReadLedger.stats(SESSION)).toMatchObject({ entries: 0, withheld: 1, epoch: 1 })
+  })
+
+  test("survives a restart", () => {
+    ReadLedger.noteWithheld(SESSION)
+    ReadLedger.flush()
+    ReadLedger.unload()
+    expect(ReadLedger.stats(SESSION).withheld).toBe(1)
+  })
+
+  test("an untouched session reports empty stats", () => {
+    expect(ReadLedger.stats(SESSION)).toEqual({ entries: 0, held: 0, withheld: 0, epoch: 0 })
+  })
+})

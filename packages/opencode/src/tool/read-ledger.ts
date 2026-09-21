@@ -114,6 +114,8 @@ type Book = {
   entries: Map<string, Seen>
   content: Map<string, Tracked>
   produced: Map<string, Produced>
+  /** Reads answered from the ledger instead of re-sending bytes (diagnostic). */
+  withheld: number
   /** Nothing is written while clean, so a session that never changed is silent. */
   dirty: boolean
 }
@@ -183,6 +185,7 @@ function parse(text: string): Book | undefined {
         isProduced(v) ? [[k, v] as [string, Produced]] : [],
       ),
     ),
+    withheld: typeof raw.withheld === "number" ? raw.withheld : 0,
     dirty: false,
   }
 }
@@ -204,6 +207,7 @@ function persist(sessionID: string, state: Book): void {
     entries: Object.fromEntries(state.entries),
     content: Object.fromEntries(state.content),
     produced: Object.fromEntries(state.produced),
+    withheld: state.withheld,
   })
   Effect.runSync(
     Effect.try({
@@ -233,6 +237,7 @@ function ledger(sessionID: string): Book {
     entries: new Map(),
     content: new Map(),
     produced: new Map(),
+    withheld: 0,
     dirty: false,
   }
   if (sessions.size >= MAX_SESSIONS) {
@@ -395,11 +400,8 @@ export function stub(filepath: string, seen: Seen): string {
     `<path>${filepath}</path>`,
     `<type>file</type>`,
     `<unchanged>`,
-    `This file is byte-for-byte unchanged since you read it earlier in this session (${seen.range}).`,
-    `Its content is already in your context above — scroll back and use it.`,
-    `The bytes are deliberately not repeated here: re-sending an unchanged file is the single largest source of wasted context in this harness.`,
-    `If you believe it changed, it did not: this check compares the file's modification time, size and a digest of its content.`,
-    `If you genuinely cannot see it any more, re-read the exact range you need with offset and limit — do not fetch the whole file again through the shell.`,
+    `Unchanged since your earlier read this session (${seen.range}); its content is already in your context above.`,
+    `Use it from there — do not re-read it, here or through the shell.`,
     `</unchanged>`,
   ].join("\n")
 }
@@ -410,9 +412,8 @@ export function duplicateStub(filepath: string, where: Duplicate): string {
     `<path>${filepath}</path>`,
     `<type>file</type>`,
     `<duplicate>`,
-    `These bytes are already in your context: the identical content was returned earlier in this session as ${where.range} of ${where.filepath}.`,
-    `The bytes are deliberately not repeated here: re-sending content you already hold is the single largest source of wasted context in this harness.`,
-    `Requesting these bytes again returns them in full: a copy is withheld at most once per compaction epoch.`,
+    `Already in your context: identical content returned earlier this session as ${where.range} of ${where.filepath}.`,
+    `Use it from there — do not re-read.`,
     `</duplicate>`,
   ].join("\n")
 }
@@ -423,10 +424,8 @@ export function producedStub(filepath: string, produced: Produced): string {
     `<path>${filepath}</path>`,
     `<type>file</type>`,
     `<produced>`,
-    `This file has not changed since your ${produced.by} call earlier in this session: that call is the last thing that touched it.`,
-    `You produced its current content yourself, so you already hold it — scroll back to what you sent rather than fetching it again.`,
-    `The bytes are deliberately not repeated here: re-sending content you already hold is the single largest source of wasted context in this harness.`,
-    `If you need the file's exact current text, read it a second time: a produced file is withheld at most once per compaction epoch.`,
+    `Unchanged since your ${produced.by} call earlier this session — that call is the last thing that touched it.`,
+    `You already hold its current content from what you sent; use it from there and do not re-read.`,
     `</produced>`,
   ].join("\n")
 }
@@ -473,6 +472,43 @@ export function reset(sessionID?: string): void {
 export function unload(sessionID?: string): void {
   if (sessionID === undefined) sessions.clear()
   else sessions.delete(sessionID)
+}
+
+/** One file whose bytes the model already holds in this session. */
+export type Holding = {
+  filepath: string
+  /** Human-readable range, e.g. "lines 303-352 of 1200". */
+  range: string
+}
+
+/**
+ * What the model already holds, most recently read first. The prompt renders
+ * this *before* the model acts, so it can skip a read instead of learning the
+ * saving only from the post-hoc stub that answers it.
+ */
+export function holdings(sessionID: string, max = 64): Holding[] {
+  const result: Holding[] = []
+  // Map insertion order is oldest-first; the reverse gives the freshest reads.
+  for (const [entryKey, seen] of [...ledger(sessionID).entries].reverse()) {
+    const filepath = entryKey.split("\u0000")[0]
+    if (!filepath) continue
+    result.push({ filepath, range: seen.range })
+    if (result.length >= max) break
+  }
+  return result
+}
+
+/** Record that a read was answered from the ledger instead of re-sending bytes. */
+export function noteWithheld(sessionID: string): void {
+  const state = ledger(sessionID)
+  state.withheld += 1
+  state.dirty = true
+}
+
+/** Bounded diagnostic view: what is held, and how many reads it spared. */
+export function stats(sessionID: string): { entries: number; held: number; withheld: number; epoch: number } {
+  const state = ledger(sessionID)
+  return { entries: state.entries.size, held: state.content.size, withheld: state.withheld, epoch: state.epoch }
 }
 
 export * as ReadLedger from "./read-ledger"

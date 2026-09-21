@@ -16,7 +16,7 @@ Delegate when work is independent, materially benefits from specialist expertise
 </delegation>
 
 <runtime_awareness>
-`session_context` when context/cost/speed affects strategy. `session_info` for debug. Not routine. Prefer live state over static assumptions.
+`session_context` when context/cost/speed affects strategy. `session_info` for debug. Not routine. Prefer live state over static assumptions for external systems; for files, reuse what is already in context unless it changed.
 </runtime_awareness>
 
 <memory_and_skills>

@@ -8,6 +8,7 @@ export type PromptContextSection =
   | "toolResolution"
   | "skills"
   | "toolList"
+  | "holdings"
   | "goal"
   | "methodology"
   | "daemon"

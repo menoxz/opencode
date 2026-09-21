@@ -325,6 +325,10 @@ export const Info = Schema.Struct({
         description:
           "Minimum estimated tokens from read, grep, glob, inspect_batch, or repo_overview output that classify the current context as read-heavy (default: 20000).",
       }),
+      read_heavy_preserve_recent_tokens: Schema.optional(PositiveInt).annotate({
+        description:
+          "Verbatim recent-turn budget for a read-heavy context, where compaction would otherwise summarise away the file bytes the model just read and force it to re-read them (default: 24000). Ignored when preserve_recent_tokens is set.",
+      }),
     }).check(validCompactionThresholds),
   ),
   experimental: Schema.optional(

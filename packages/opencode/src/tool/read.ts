@@ -355,45 +355,54 @@ export const ReadTool = Tool.define(
       const size = Number(stat.size)
       const seen = ReadLedger.get(ctx.sessionID, ledgerKey)
       const reminder = loaded.length > 0 ? `\n\n<system-reminder>\n${loaded.map((item) => item.content).join("\n\n")}\n</system-reminder>` : ""
-      const unchanged = (entry: ReadLedger.Seen) => ({
-        title,
-        output: ReadLedger.stub(filepath, entry) + reminder,
-        metadata: {
-          preview: `unchanged since last read (${entry.range})`,
-          truncated: false,
-          loaded: loaded.map((item) => item.filepath),
-          unchanged: true,
-        },
-      })
+      const unchanged = (entry: ReadLedger.Seen) => {
+        ReadLedger.noteWithheld(ctx.sessionID)
+        return {
+          title,
+          output: ReadLedger.stub(filepath, entry) + reminder,
+          metadata: {
+            preview: `unchanged since last read (${entry.range})`,
+            truncated: false,
+            loaded: loaded.map((item) => item.filepath),
+            unchanged: true,
+          },
+        }
+      }
 
       // Identical bytes reached through a different key — another path to this
       // file, or a different limit rendering the same lines — are already in
       // context and must not be re-sent under the new name either.
-      const duplicate = (where: ReadLedger.Duplicate) => ({
-        title,
-        output: ReadLedger.duplicateStub(filepath, where) + reminder,
-        metadata: {
-          preview: `identical to content already sent (${where.range} of ${where.filepath})`,
-          truncated: false,
-          loaded: loaded.map((item) => item.filepath),
-          unchanged: true,
-        },
-      })
+      const duplicate = (where: ReadLedger.Duplicate) => {
+        ReadLedger.noteWithheld(ctx.sessionID)
+        return {
+          title,
+          output: ReadLedger.duplicateStub(filepath, where) + reminder,
+          metadata: {
+            preview: `identical to content already sent (${where.range} of ${where.filepath})`,
+            truncated: false,
+            loaded: loaded.map((item) => item.filepath),
+            unchanged: true,
+          },
+        }
+      }
 
       // The model itself produced this file earlier in the session with write,
       // edit or apply_patch, so its bytes already reached the context as the
       // tool-call arguments. Withheld at most once per produced version and per
       // epoch, so the request following a withhold is served the bytes in full.
-      const selfProduced = (entry: ReadLedger.Produced) => ({
-        title,
-        output: ReadLedger.producedStub(filepath, entry) + reminder,
-        metadata: {
-          preview: `unchanged since produced by ${entry.by}`,
-          truncated: false,
-          loaded: loaded.map((item) => item.filepath),
-          unchanged: true,
-        },
-      })
+      const selfProduced = (entry: ReadLedger.Produced) => {
+        ReadLedger.noteWithheld(ctx.sessionID)
+        return {
+          title,
+          output: ReadLedger.producedStub(filepath, entry) + reminder,
+          metadata: {
+            preview: `unchanged since produced by ${entry.by}`,
+            truncated: false,
+            loaded: loaded.map((item) => item.filepath),
+            unchanged: true,
+          },
+        }
+      }
 
       // Unchanged mtime+size is proof: answer without touching the disk.
       if (seen && ReadLedger.provenUnchanged(seen, mtime, size)) return unchanged(seen)

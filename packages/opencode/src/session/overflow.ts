@@ -67,6 +67,16 @@ function modelLabel(model: Provider.Model) {
   return `${model.providerID}/${model.id}`
 }
 
+/**
+ * Read-heavy classification shared with compaction. A window dominated by
+ * inspection output is exactly the one that must not lose its recent bytes:
+ * compaction would summarise away the files the model just read and force it to
+ * fetch them again.
+ */
+export function isReadHeavy(messages: MessageV2.WithParts[], cfg: Config.Info) {
+  return inspectionTokens(messages) >= (cfg.compaction?.read_heavy_min_tokens ?? READ_HEAVY_MIN_TOKENS)
+}
+
 export function usable(input: { cfg: Config.Info; model: Provider.Model; outputTokenMax?: number }) {
   return limits(input).usable
 }
