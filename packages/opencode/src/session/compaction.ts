@@ -1,5 +1,6 @@
 import { BusEvent } from "@/bus/bus-event"
 import { ReadLedger } from "@/tool/read-ledger"
+import * as ContextLedger from "./context-ledger"
 import { Bus } from "@/bus"
 import * as Session from "./session"
 import { compressGoalState, type GoalState } from "./goal-state"
@@ -872,6 +873,12 @@ export const layer = Layer.effect(
         // session read ledger must forget what it believes the model still
         // holds — otherwise a later read would answer "unchanged, scroll back"
         // pointing at bytes that no longer exist. See tool/read-ledger.ts.
+        // The same reasoning applies to the context allocation. A slot tells the
+        // model its target is still in the window, and only the harness can know
+        // whether the summary kept it: every slot is marked elided, so a claimed
+        // presence has to be re-earned by a fresh observation. See
+        // session/context-ledger.ts.
+        ContextLedger.invalidate(input.sessionID)
         ReadLedger.reset(input.sessionID)
         yield* bus.publish(Event.Compacted, { sessionID: input.sessionID })
       }

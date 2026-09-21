@@ -2,7 +2,10 @@ import { Effect } from "effect"
 import { HttpClient } from "effect/unstable/http"
 import { JevClient } from "./client"
 import { JevGuard } from "./guard"
+import { JevNextAction } from "./next-action"
+import { JevRelevance } from "./relevance"
 import { JevReview } from "./review"
+import { JevSchema } from "./schema"
 import { JevUntrusted } from "./untrusted"
 import * as State from "./state"
 
@@ -28,6 +31,8 @@ export type JevSettings = JevClient.Settings & {
   route?: { enabled?: boolean; threshold?: number }
   review?: { enabled?: boolean }
   untrusted?: { enabled?: boolean; threshold?: number }
+  relevance?: { enabled?: boolean; threshold?: number; ambiguous_threshold?: number }
+  next_action?: { enabled?: boolean }
 }
 
 const MAX_ARG_CHARS = 4_000
@@ -82,15 +87,74 @@ export const guard = Effect.fn("JevHooks.guard")(function* (
 })
 
 /**
+ * Pre-tool relevance judge. Answers whether a call still adds information,
+ * given what the loop has already observed. It is a *separate* question from
+ * the guard: relevance never refuses a call and never asks the user — the
+ * caller may answer a redundant read-only call from the context ledger, and
+ * anything else simply runs.
+ *
+ * Memoised on (tool, args, observed surface, thresholds) for the same reason as
+ * the guard: the loop replays near-identical calls, and a replay must not pay a
+ * second round-trip to reach the same verdict.
+ */
+export const relevance = Effect.fn("JevHooks.relevance")(function* (
+  http: HttpClient.HttpClient,
+  settings: JevSettings | undefined,
+  input: {
+    sessionID: string
+    tool: string
+    args: unknown
+    observed: readonly JevRelevance.Surface[]
+    request?: string
+  },
+) {
+  const section = settings?.relevance
+  if (section?.enabled !== true) return undefined
+  const redundantAt = section.threshold ?? JevRelevance.DEFAULT_REDUNDANT_AT
+  const ambiguousAt = section.ambiguous_threshold ?? JevRelevance.DEFAULT_AMBIGUOUS_AT
+  const args = renderArgs(input.args)
+  const surface = JevRelevance.observedSurface(input.observed)
+  const key = ["relevance", input.tool, args, surface, String(redundantAt), String(ambiguousAt)].join("\u0000")
+  const cached = State.cachedVerdict<JevRelevance.Assessment>(input.sessionID, key)
+  if (cached) return { ...cached, cached: true }
+  const assessment = yield* JevRelevance.judge(http, settings, {
+    tool: input.tool,
+    args,
+    observed: input.observed,
+    request: input.request,
+  }).pipe(Effect.catch(() => Effect.succeed(undefined)))
+  if (!assessment) return undefined
+  const decided = JevRelevance.assess(assessment.probability, { redundantAt, ambiguousAt })
+  State.cacheVerdict(input.sessionID, key, decided)
+  return { ...decided, cached: false }
+})
+
+/**
  * Post-tool screening. Injection markers are always recorded (deterministic,
- * no round-trip); the review scores are recorded and rendered only when
- * enabled. The annotation is returned rather than applied so the caller keeps
- * control of the tool output it completes.
+ * no round-trip); the review scores and the next-action guidance are recorded
+ * and rendered only when enabled. The annotation is returned rather than
+ * applied so the caller keeps control of the tool output it completes.
+ *
+ * Both optional questions travel in a single request, so a step costs at most
+ * one Jev round-trip whichever hooks are on and never two.
  */
 export const post = Effect.fn("JevHooks.post")(function* (
   http: HttpClient.HttpClient,
   settings: JevSettings | undefined,
-  input: { sessionID: string; tool: string; args: unknown; output: string },
+  input: {
+    sessionID: string
+    tool: string
+    args: unknown
+    output: string
+    nextAction?: {
+      verdict?: string
+      stagnant?: number
+      phase?: string
+      steps?: readonly string[]
+      goal?: string
+      observed?: string
+    }
+  },
 ) {
   const untrusted = yield* JevUntrusted.scan(http, settings, {
     tool: input.tool,
@@ -100,15 +164,47 @@ export const post = Effect.fn("JevHooks.post")(function* (
   }).pipe(Effect.catch(() => Effect.succeed([] as State.UntrustedHit[])))
   State.markUntrusted(input.sessionID, untrusted)
 
-  if (settings?.review?.enabled !== true) return { untrusted, annotation: undefined }
-  const scores = yield* JevReview.review(http, settings, {
-    tool: input.tool,
-    args: renderArgs(input.args),
-    output: input.output,
-  }).pipe(Effect.catch(() => Effect.succeed(undefined)))
-  if (!scores) return { untrusted, annotation: undefined }
-  State.recordScores(input.sessionID, input.tool, scores)
-  return { untrusted, annotation: JevReview.render(scores, settings.guard?.threshold ?? JevGuard.DEFAULT_THRESHOLD) }
+  const wantsReview = settings?.review?.enabled === true
+  const wantsNextAction = settings?.next_action?.enabled === true
+  if (!wantsReview && !wantsNextAction) return { untrusted, annotation: undefined }
+  const args = renderArgs(input.args)
+  const questions: Record<string, JevSchema.Question> = {
+    ...(wantsReview ? JevReview.reviewQuestions({ tool: input.tool, args, output: input.output }) : {}),
+    ...(wantsNextAction
+      ? JevNextAction.nextActionQuestions({
+          tool: input.tool,
+          verdict: input.nextAction?.verdict ?? "observed",
+          stagnant: input.nextAction?.stagnant ?? 0,
+          summary: input.output,
+          phase: input.nextAction?.phase,
+          steps: input.nextAction?.steps,
+          goal: input.nextAction?.goal,
+          observed: input.nextAction?.observed,
+        })
+      : {}),
+  }
+  const response = yield* JevClient.decide(
+    http,
+    { state: `Post-execution screening of the ${input.tool} call.`, questions },
+    settings,
+  ).pipe(Effect.catch(() => Effect.succeed(undefined)))
+  if (!response) return { untrusted, annotation: undefined }
+  const lines: string[] = []
+  if (wantsReview) {
+    const scores = JevReview.interpret(response)
+    if (scores) {
+      State.recordScores(input.sessionID, input.tool, scores)
+      lines.push(JevReview.render(scores, settings?.guard?.threshold ?? JevGuard.DEFAULT_THRESHOLD))
+    }
+  }
+  if (wantsNextAction) {
+    const guidance = JevNextAction.interpret(response)
+    if (guidance) {
+      State.setNextAction(input.sessionID, input.tool, guidance)
+      lines.push(JevNextAction.render(guidance))
+    }
+  }
+  return { untrusted, annotation: lines.length > 0 ? lines.join("\n") : undefined }
 })
 
 export * as JevHooks from "./hooks"

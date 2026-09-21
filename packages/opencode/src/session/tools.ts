@@ -16,6 +16,8 @@ import { type Tool as AITool, tool, jsonSchema, type ToolExecutionOptions, asSch
 import { Cause, Effect, Exit, Option } from "effect"
 import { HttpClient } from "effect/unstable/http"
 import { JevHooks } from "@/jev/hooks"
+import { JevRelevance } from "@/jev/relevance"
+import * as JevState from "@/jev/state"
 import { MessageV2 } from "./message-v2"
 import * as Session from "./session"
 import { SessionProcessor } from "./processor"
@@ -29,6 +31,7 @@ import { derivePhaseCapsule } from "./phase-capsule"
 import * as Environment from "./environment"
 import { environmentStateEnabled } from "./environment"
 import * as Progress from "./progress"
+import * as ContextLedger from "./context-ledger"
 import { isActiveGoal, type GoalState } from "./goal-state"
 
 const log = Log.create({ service: "session.tools" })
@@ -336,6 +339,13 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
                   `Blocked by plugin before ${item.id}: ${before.block.reason}. Do not retry without addressing the reason.`,
                 ),
               )
+            const lastUser = input.messages
+              .toReversed()
+              .flatMap((message) =>
+                message.info.role === "user" ? message.parts.flatMap((part) => (part.type === "text" ? [part.text] : [])) : [],
+              )
+              .join("\n")
+              .slice(0, 4_000)
             // The hook above can only rewrite args — it cannot refuse a call. The
             // systematic Jev guard therefore runs here, after the trigger, on every
             // local tool call, and is the only place a denial is enacted.
@@ -348,15 +358,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
                     sessionID: ctx.sessionID,
                     tool: item.id,
                     args: inputArgs,
-                    lastUser: input.messages
-                      .toReversed()
-                      .flatMap((message) =>
-                        message.info.role === "user"
-                          ? message.parts.flatMap((part) => (part.type === "text" ? [part.text] : []))
-                          : [],
-                      )
-                      .join("\n")
-                      .slice(0, 4_000),
+                    lastUser,
                   })
                 : undefined
             // A memoised verdict costs no round-trip, and that saving is only
@@ -391,20 +393,105 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
                 })
               }
             }
+            // Context allocation runs before the call. A target whose slot is still
+            // provably valid is answered from the ledger, so the repeat costs no tool
+            // round-trip and adds no second copy to the context. The gate is
+            // deterministic: it fires only for a read-only target, never suppresses a
+            // call that can mutate, and leaves `read` to its own digest-level ledger.
+            const step = ContextLedger.note(ctx.sessionID, { tool: item.id, args: inputArgs })
+            const presence = ContextLedger.presenceFor(ctx.sessionID, { tool: item.id, args: inputArgs })
+            if (presence && !jevShadow) {
+              log.info("context presence", {
+                sessionID: ctx.sessionID,
+                tool: item.id,
+                target: presence.slot.target,
+                step: presence.slot.step,
+                calls: presence.slot.calls,
+              })
+              return {
+                title: `${item.id} (already in context)`,
+                metadata: { presence: true, target: presence.slot.target, step: presence.slot.step },
+                output: presence.notice,
+                attachments: [],
+                content: [],
+              }
+            }
+            // Jev is consulted only for what bytes cannot settle: a read-only call
+            // that looks like a near repeat of something already held.
+            const related = ContextLedger.related(ctx.sessionID, { tool: item.id, args: inputArgs })
+            const judged =
+              http && jev?.relevance?.enabled === true && related.length > 0 && ContextLedger.classify(item.id, inputArgs).readOnly
+                ? yield* JevHooks.relevance(http, jev, {
+                    sessionID: ctx.sessionID,
+                    tool: item.id,
+                    args: inputArgs,
+                    observed: ContextLedger.surface(ctx.sessionID),
+                    request: lastUser,
+                  })
+                : undefined
+            const anchor = related[0]
+            if (judged) {
+              log.info("jev relevance decision", {
+                sessionID: ctx.sessionID,
+                tool: item.id,
+                verdict: judged.verdict,
+                probability: judged.probability,
+                cached: judged.cached,
+                shadow: jevShadow,
+              })
+              if (judged.verdict === "redundant" && anchor && !jevShadow)
+                return {
+                  title: `${item.id} (already in context)`,
+                  metadata: { presence: true, target: anchor.target, probability: judged.probability },
+                  output: ContextLedger.redundantNotice(anchor, judged.reason),
+                  attachments: [],
+                  content: [],
+                }
+            }
             const result = yield* item.execute(inputArgs, ctx)
+            // The slot is refreshed in place, never appended: one canonical entry per
+            // target is what the prompt capsule renders back to the model.
+            ContextLedger.observe(ctx.sessionID, {
+              tool: item.id,
+              args: inputArgs,
+              step,
+              at: Date.now(),
+              truth: "observed",
+              output: result.output,
+            })
             activations.promote(input.session.id, item.id)
+            const progress = Progress.progressFor(ctx.sessionID).status()
+            const plan = JevState.currentPlan(ctx.sessionID)
             const screening =
-              http && jev !== undefined && (jev.guard?.enabled === true || jev.review?.enabled === true || jev.untrusted?.enabled === true)
+              http &&
+              jev !== undefined &&
+              (jev.guard?.enabled === true ||
+                jev.review?.enabled === true ||
+                jev.untrusted?.enabled === true ||
+                jev.next_action?.enabled === true)
                 ? yield* JevHooks.post(http, jev, {
                     sessionID: ctx.sessionID,
                     tool: item.id,
                     args: inputArgs,
                     output: result.output,
+                    nextAction: {
+                      verdict: progress.last?.verdict,
+                      stagnant: progress.stagnant,
+                      steps: plan?.steps,
+                      goal: input.goalState?.goal,
+                      observed: ContextLedger.surface(ctx.sessionID)
+                        .map((entry) => `- ${entry.tool} ${entry.target} (step ${entry.step})`)
+                        .join("\n"),
+                    },
                   })
                 : undefined
+            const annotations = [
+              judged && judged.verdict !== "useful" ? JevRelevance.render(judged) : undefined,
+              screening?.annotation,
+            ].filter((line): line is string => line !== undefined)
             const output = {
               ...result,
-              output: screening?.annotation && !jevShadow ? `${result.output}\n\n${screening.annotation}` : result.output,
+              output: annotations.length > 0 && !jevShadow ? `${result.output}\n\n${annotations.join("\n")}` : result.output,
               attachments: result.attachments?.map((attachment) => ({
                 ...attachment,
                 id: PartID.ascending(),

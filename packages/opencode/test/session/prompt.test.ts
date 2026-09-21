@@ -242,6 +242,7 @@ function makePrompt(input?: {
     Layer.provideMerge(trunc),
     Layer.provide(Instruction.defaultLayer),
     Layer.provide(SystemPrompt.defaultLayer),
+    Layer.provide(FetchHttpClient.layer),
     Layer.provide(RuntimeFlags.layer(runtimeFlags)),
     Layer.provideMerge(deps),
     Layer.provide(summary),
@@ -1124,6 +1125,45 @@ it.instance("glob tool keeps instance context during prompt runs", () =>
     expect(tool.state.output).toContain(file)
     expect(tool.state.output).not.toContain("No context found for instance")
     expect(result.parts.some((part) => part.type === "text" && part.text === "done")).toBe(true)
+  }),
+)
+
+it.instance("answers a repeated read-only call from the context slot", () =>
+  Effect.gen(function* () {
+    const { dir, llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const session = yield* sessions.create({
+      title: "Context slots",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+    const file = path.join(dir, "allocated.txt")
+    yield* writeText(file, "allocated")
+
+    yield* prompt.prompt({
+      sessionID: session.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "list the text files twice" }],
+    })
+    yield* llm.tool("glob", { pattern: "**/*.txt" })
+    yield* llm.tool("glob", { pattern: "**/*.txt" })
+    yield* llm.text("done")
+
+    yield* prompt.loop({ sessionID: session.id })
+
+    const msgs = yield* MessageV2.filterCompactedEffect(session.id)
+    const calls = msgs
+      .flatMap((msg) => msg.parts)
+      .filter(
+        (part): part is CompletedToolPart =>
+          part.type === "tool" && part.tool === "glob" && part.state.status === "completed",
+      )
+    expect(calls.length).toBe(2)
+    // The first call really ran; the second was answered from the allocation.
+    expect(calls[0]?.state.output).toContain(file)
+    expect(calls[1]?.state.output).toContain("[present] glob **/*.txt")
+    expect(calls[1]?.state.output).toContain("Reuse it")
   }),
 )
 

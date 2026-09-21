@@ -48,6 +48,8 @@ export type SessionState = {
   scores?: { tool: string; scores: Scores }
   route?: Route
   plan?: Plan
+  /** Last next-action guidance, kept so the prompt capsule can repeat it without a round-trip. */
+  nextAction?: { tool: string; action: string; reason: string }
 }
 
 /** Bounded so a hostile tool result cannot grow session state without limit. */
@@ -91,14 +93,20 @@ export function lastScores(sessionID: string): { tool: string; scores: Scores } 
 
 export function setRoute(sessionID: string, route: Route) {
   state(sessionID).route = route
-}
-
-export function currentRoute(sessionID: string): Route | undefined {
+}export function currentRoute(sessionID: string): Route | undefined {
   return state(sessionID).route
 }
 
 export function untrustedVersion(sessionID: string): number {
   return state(sessionID).untrustedVersion
+}
+
+export function setNextAction(sessionID: string, tool: string, guidance: { action: string; reason: string }) {
+  state(sessionID).nextAction = { tool, action: guidance.action, reason: guidance.reason }
+}
+
+export function currentNextAction(sessionID: string): { tool: string; action: string; reason: string } | undefined {
+  return state(sessionID).nextAction
 }
 
 /**

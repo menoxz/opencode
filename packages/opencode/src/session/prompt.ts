@@ -11,6 +11,7 @@ import { AUTO_CONTINUE_INSTRUCTION, decideRunDecision } from "./continuation"
 import { SessionWorkPlan } from "./work-plan"
 import { capsuleFor, environmentStateEnabled, ledgerFor } from "./environment"
 import { progressCapsule } from "./progress"
+import { contextCapsule } from "./context-ledger"
 import { matchedRecipeCapsule } from "./recipes"
 import { isLeanAgent } from "@/tool/lean-output-policy"
 import { isContinuationPrompt, classifyUserMessage } from "./turn-intent"
@@ -2238,6 +2239,23 @@ export const layer = Layer.effect(
                   capsule,
                   Date.now() - environmentStart,
                 )
+              }
+            }
+
+            // Inject the context allocation: one canonical line per file, URL or
+            // command the session has already observed, so a long session reuses
+            // what it holds instead of paying for another copy. Rebuilt from the
+            // ledger every turn and never accumulated, so a refreshed target
+            // replaces its own entry rather than adding a second one.
+            if (
+              cfg.experimental?.hot_path?.context_slots !== false &&
+              !system.some((entry) => entry.includes("<context_slots>"))
+            ) {
+              const contextStart = Date.now()
+              const slots = contextCapsule(sessionID)
+              if (slots) {
+                system.push(slots)
+                contextSummary.add("environment", "inject context allocation slots", slots, Date.now() - contextStart)
               }
             }
 

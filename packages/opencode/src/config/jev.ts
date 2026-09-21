@@ -3,6 +3,7 @@ import { JevClient } from "@/jev/client"
 import { JevSchema } from "@/jev/schema"
 import { JevGuard } from "@/jev/guard"
 import { JevCompaction } from "@/jev/compaction"
+import { JevRelevance } from "@/jev/relevance"
 
 export const Guard = Schema.Struct({
   enabled: Schema.optional(Schema.Boolean).annotate({
@@ -74,6 +75,28 @@ export const Compaction = Schema.Struct({
 }).annotate({ identifier: "JevCompactionConfig" })
 export type Compaction = Schema.Schema.Type<typeof Compaction>
 
+export const Relevance = Schema.Struct({
+  enabled: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "Enable the relevance judge. The deterministic context ledger already answers a call whose target provably did not change; this adds a Jev verdict for the near repeat the ledger cannot decide on bytes alone — the same information reached through different arguments (a shorter form of the same command, the same page through another tool). Jev estimates the probability that the call still adds information. Only read-only calls are ever affected: it never blocks, asks or suppresses a mutating call, and the same call is never judged twice. Fail-open, and default off. Requires an API key.",
+  }),
+  threshold: Schema.optional(Schema.Number).annotate({
+    description: `Probability of new information (0..1) at or below which the call is answered from the context ledger instead of being executed. Defaults to ${JevRelevance.DEFAULT_REDUNDANT_AT}.`,
+  }),
+  ambiguous_threshold: Schema.optional(Schema.Number).annotate({
+    description: `Probability of new information (0..1) below which the call still runs but its result is flagged as possibly redundant. Defaults to ${JevRelevance.DEFAULT_AMBIGUOUS_AT}.`,
+  }),
+}).annotate({ identifier: "JevRelevanceConfig" })
+export type Relevance = Schema.Schema.Type<typeof Relevance>
+
+export const NextAction = Schema.Struct({
+  enabled: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "Enable the next-action selector. After a tool call, Jev picks one closed option — continue, reobserve, switch_strategy, verify, answer, blocked — from the result, the progress status and the planned phases, rendered as one line of guidance next to the tool result. The question is merged into the review request when the review is also enabled, so a step still costs at most one Jev round-trip and never two. Advisory only: the model stays the planner. Fail-open, default off.",
+  }),
+}).annotate({ identifier: "JevNextActionConfig" })
+export type NextAction = Schema.Schema.Type<typeof NextAction>
+
 export const Info = Schema.Struct({
   api_key: Schema.optional(Schema.String).annotate({
     description:
@@ -102,6 +125,8 @@ export const Info = Schema.Struct({
   review: Schema.optional(Review),
   untrusted: Schema.optional(Untrusted),
   compaction: Schema.optional(Compaction),
+  relevance: Schema.optional(Relevance),
+  next_action: Schema.optional(NextAction),
 }).annotate({ identifier: "JevConfig" })
 export type Info = Schema.Schema.Type<typeof Info>
 

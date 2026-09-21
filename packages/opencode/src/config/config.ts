@@ -376,6 +376,10 @@ export const Info = Schema.Struct({
             description:
               "Expose the normalized environment observation ledger for computer-use tasks: an `environment` tool plus a compact state capsule injected into the prompt. Default: false.",
           }),
+          context_slots: Schema.optional(Schema.Boolean).annotate({
+            description:
+              "Allocate one context slot per observation target (file, URL, command, query) instead of repeating what the session already holds: a read-only call whose target provably did not change is answered from the ledger with a presence notice, and the canonical state of every allocated target is injected as a `<context_slots>` capsule. Deterministic and fail-open; it never suppresses a call that can mutate. Set to false to disable both the capsule and the pre-call gate. Default: true.",
+          }),
         }),
       ).annotate({
         description: "Hot Path Fabric controls for prepared tool catalogs and just-in-time tool selection.",

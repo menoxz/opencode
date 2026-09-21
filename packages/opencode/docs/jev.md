@@ -126,15 +126,106 @@ shipped code follows the documented behaviour instead:
    `src/session/compaction.ts`; a plugin may return a replacement `prompt` or
    `context`.
 
+## Jev at both ends of the ReAct step
+
+A tool call is an observation. The loop pays for the same observation twice in
+two different shapes: the *exact* repeat (`git status`, twice) and the *near*
+repeat (`git status --short` after `git status`), where the arguments differ but
+the information does not. `ToolRepetition` already refuses the exact repeat once
+it is proven unproductive, and `ReadLedger` already answers a re-read of the same
+file range from its own persisted ledger. The layers below cover what is left.
+
+### Context allocation — `src/session/context-ledger.ts`
+
+One slot per observation target: a file, a URL, a command, a query. The slot is
+canonical and refreshed in place, so a long session carries one bounded line per
+target instead of a growing series of copies.
+
+- **Freshness is decided, never guessed.** Every call classified as mutating
+  advances a session epoch; an observation stays valid only while the epoch has
+  not moved **and** its time-to-live (default 120 s) has not expired. The
+  classifier is conservative: anything outside the read-only allowlist counts as
+  mutating, and `|`, `;`, `&`, backticks, `$(...)` and redirection all
+  disqualify a command. A false "mutating" costs a missed optimisation; a false
+  "read-only" would suppress a call that was needed. A bare runner name proves
+  nothing either — `bun --version` observes, `bun add` installs.
+- **A presence notice replaces execution.** When a read-only target is provably
+  unchanged, the call is answered from the slot with `[present]`, quoting the
+  target, the step it was observed at and a bounded summary, plus an explicit
+  escape: repeat the call if you know the world changed.
+- **File coverage.** A `read` slot records the union of the line ranges already
+  held (`lines 1-200,303-352`), merged across overlapping reads, so the
+  allocation says precisely which part of a file is in context.
+- **The capsule.** `contextCapsule()` renders `<context_slots>`:
+  one canonical line per current target, and a *named* — never quoted — list of
+  superseded targets, because the repair is a re-read the model still has to
+  make. It is injected once, next to the progress capsule, and rebuilt every
+  turn rather than accumulated.
+- **Compaction invalidates every claim.** A summary may have dropped an
+  observation the notice still promises, and only the harness can know: slots are
+  marked elided in `src/session/compaction.ts`, so presence has to be re-earned.
+- **Wiring.** The gate runs in `src/session/tools.ts`, on the same path as the
+  guard, immediately around `item.execute`. `read` and `inspect_batch` are
+  exempt: they keep their own reporting.
+- **Config.** `experimental.hot_path.context_slots` (default `true`) disables the
+  capsule and the gate together.
+
+### Relevance judge — `src/jev/relevance.ts`
+
+Asked only when the deterministic gate cannot settle the call: a read-only call
+whose target looks like a near repeat of something already held. It answers one
+`noul` question — will this call return information absent from what is already
+observed? — with the bounded observed surface and the candidate call as state.
+
+- Banding: at or below `jev.relevance.threshold` (default 0.25) the call is
+  answered from the ledger; below `jev.relevance.ambiguous_threshold` (default
+  0.6) it runs and its result is flagged; above, it runs silently.
+- Advisory by construction: it never refuses a call, never asks the user and
+  never touches a call that can mutate. Under `jev.shadow` every verdict is
+  logged and annotated instead of acted on.
+- Memoised on `(tool, args, observed surface, thresholds)` in `src/jev/state.ts`,
+  so a replayed step never pays a second round-trip for the same verdict.
+- Fail-open: an unreachable or unreadable answer abstains and the call runs.
+
+### Next-action selector — `src/jev/next-action.ts`
+
+After a call, one closed `choice` — `continue`, `reobserve`, `switch_strategy`,
+`verify`, `answer`, `blocked` — judged against the result, the progress status
+(`stagnant`, last verdict), the current plan phase and the objective, rendered as
+a single `[jev next action]` guidance line beside the tool result.
+
+It is **not** an extra round-trip. `JevHooks.post` merges these questions into
+the request it already makes for the review, so a step costs at most one Jev call
+whichever hooks are on, and none when both are off. The question is closed rather
+than free-form so it can be tested, logged and counted, and the model stays the
+planner: the guidance competes with nothing.
+
+### What Jev is not allowed to own
+
+Jev is stateless and text-only, so it sees only the state the caller passes and
+cannot know what survived compaction or elision. Presence is therefore the
+harness's business — the notice is built from the ledger, never from a Jev
+answer — and every Jev verdict is advisory: suppression is a harness policy
+limited to provably unchanged read-only targets.
+
+### Metrics
+
+Every decision logs, next to the existing `jev guard` lines:
+`context presence` (tool, target, step, calls), `jev relevance decision`
+(verdict, probability, cached, shadow) and `jev guard memoised`.
+
 ## Verify
 
 From `packages/opencode`:
 
 ```sh
 bun typecheck
-bun test test/jev test/permission/jev-guard.test.ts
+bun test test/jev test/permission/jev-guard.test.ts src/session src/tool
 ```
 
 The suite covers the schema round-trip, the environment/base-url/model
-resolution, the pure probability guard, the tool rendering and error paths,
-and the permission guard escalation with a stub System One server.
+resolution, the pure probability guard, the tool rendering and error paths, the
+permission guard escalation with a stub System One server, and — for the layers
+above — the read-only classifier, epoch and TTL freshness, range-coverage
+merging, presence notices, capsule rendering, compaction invalidation, the
+relevance bands and memoisation, and the merged single-round-trip post hook.

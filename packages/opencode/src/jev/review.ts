@@ -66,6 +66,23 @@ export function reviewQuestions(input: { tool: string; args: string; output: str
 
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value))
 
+/**
+ * Reads the three axes out of a response. Separated from `review` so a caller
+ * that already holds a response — because it merged these questions with
+ * another hook's into one round-trip — can decode it without asking again.
+ */
+export function interpret(response: JevSchema.Response): Scores | undefined {
+  const axis = (id: string) => {
+    const answer = response.answers[id]
+    return answer?.type === "score" ? clamp01(answer.score) : undefined
+  }
+  const correctness = axis("correctness")
+  const complexity = axis("complexity")
+  const security = axis("security")
+  if (correctness === undefined && complexity === undefined && security === undefined) return undefined
+  return { correctness: correctness ?? 0, complexity: complexity ?? 0, security: security ?? 0 } satisfies Scores
+}
+
 /** Returns `undefined` when Jev answered none of the three axes, so the caller can abstain. */
 export const review = Effect.fn("JevReview.review")(function* (
   http: HttpClient.HttpClient,
@@ -77,15 +94,7 @@ export const review = Effect.fn("JevReview.review")(function* (
     { state: `Review of the ${input.tool} call.`, questions: reviewQuestions(input) },
     settings,
   )
-  const axis = (id: string) => {
-    const answer = response.answers[id]
-    return answer?.type === "score" ? clamp01(answer.score) : undefined
-  }
-  const correctness = axis("correctness")
-  const complexity = axis("complexity")
-  const security = axis("security")
-  if (correctness === undefined && complexity === undefined && security === undefined) return undefined
-  return { correctness: correctness ?? 0, complexity: complexity ?? 0, security: security ?? 0 } satisfies Scores
+  return interpret(response)
 })
 
 /** One compact block the model reads next to the tool result. */
