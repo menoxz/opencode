@@ -35,6 +35,12 @@ const staleLock = 60_000
 const core = ["-c", "core.longpaths=true", "-c", "core.symlinks=true"]
 const cfg = ["-c", "core.autocrlf=false", ...core]
 const quote = [...cfg, "-c", "core.quotepath=false"]
+// Snapshot git calls are auxiliary: they run inside turn cleanup, after the last
+// assistant step is persisted. A child that never exits (a killed parent leaves
+// the pipe write end to an orphan, or the host never delivers stdin EOF) must
+// degrade the snapshot instead of parking the turn forever with no error, no log
+// past step-finish and no watchdog to fire.
+const gitTimeout = Duration.seconds(60)
 
 interface GitResult {
   readonly code: ChildProcessSpawner.ExitCode

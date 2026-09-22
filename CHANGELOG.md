@@ -7,6 +7,19 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.2.31] - 2026-09-22
+
+### Fixed
+- Une attente auxiliaire non bornée ne peut plus parquer un tour. Le helper `git()` du snapshot (`src/snapshot/index.ts`) appelait `appProcess.run` **sans délai** : un enfant qui ne se termine jamais — observé sur cet hôte, un `git check-ignore --no-index --stdin -z` resté vivant 17 minutes après la mort de son parent — laissait l'appel en attente indéfiniment, après le `step-finish`, sans erreur, sans ligne de log et sans watchdog pour le libérer. Toutes les commandes git du snapshot passent désormais un `timeout` de 60 s (option déjà honorée par `RunOptions.timeout`, `packages/core/src/process.ts`) : un enfant qui ne sort pas fait échouer l'appel dans le chemin d'erreur déjà en place (résultat `code 1`), donc la capture dégrade et se journalise au lieu de bloquer le tour.
+- Preuve du défaut : session `ses_f3fcaddb3ffeNxfk9iqKZxqeN6`, dernier message `msg_0c86aab5d001H6ZSmyrWH1Qm0X` (09:20:29) resté coincé entre son `step-finish` (09:20:41) et l'itération suivante — aucune ligne `step=21 loop`, aucun part, aucun log pendant 16 minutes — et libéré **uniquement** par l'annulation manuelle de l'utilisateur à 09:36:25 (`service=session.prompt … cancel`, puis `error=Aborted process`, puis `cleanup` en 1,2 s avec `patchFiles=0`).
+
+### Tests
+- `packages/core/test/process/run-timeout.test.ts` : un enfant qui démarre et ne se termine jamais (spawner injecté, aucun processus réel) fait échouer `AppProcess.run` **et** est tué, pour qu'il ne s'accumule pas en orphelin ; sans le délai, bun tue le test sur son propre timeout, ce qui est le discriminant. Le test est déterministe (attente bornée du kill), contrairement à une assertion synchrone sur le finalizer.
+- `bun test test/process` : **30 pass / 0 fail** (deux exécutions consécutives) ; `bun typecheck` (tsgo) `packages/core` et `packages/opencode` **exit 0**.
+
+### Mesure
+- Portée honnête : la correction borne l'attente **auxiliaire** prouvée (git de snapshot). L'évidence ne permet **pas** de trancher, pour le park observé, entre cette attente et celle du flux du modèle : la durée `duration=954338` du flux mesure la portée du `Stream.scoped` tenue ouverte par le consommateur (`src/session/llm.ts:442-501`), pas une attente du fournisseur. La cause amont du non-EOF du git n'est pas établie non plus. Binaire `2.2.31` installé (`%APPDATA%\npm\opencodev2.exe`, `--version` → 2.2.31, SHA-256 identique au build, écrit 09:36:22) ; l'hôte `PID 33408` exécute encore 2.2.30 jusqu'à son redémarrage.
+
 ## [v2.2.30] - 2026-09-22
 
 ### Fixed
