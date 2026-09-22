@@ -63,7 +63,12 @@ export function fingerprint(name: string, args: unknown): string {
   return `${name}:${stable(args)}`
 }
 
-function matches(summary: string, expectation: string): boolean {
+/**
+ * The single authority for "did an observation match a declared expectation".
+ * Exported so every consumer of that question — progress classification and the
+ * per-turn engagement — shares one definition instead of growing a second one.
+ */
+export function expectationMatches(summary: string, expectation: string): boolean {
   const normalize = (value: string) => value.toLowerCase().replace(/\s+/g, " ").trim()
   const haystack = normalize(summary)
   const needle = normalize(expectation)
@@ -138,7 +143,7 @@ export class ProgressLedger {
     if (input.truth === "error") return "failed"
     if (input.truth === "unknown") return "unknown"
     if (previous && previous.summary === input.summary) return "no-progress"
-    if (expectation) return matches(input.summary, expectation.summary) ? "expected" : "different"
+    if (expectation) return expectationMatches(input.summary, expectation.summary) ? "expected" : "different"
     return "progress"
   }
 

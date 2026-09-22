@@ -56,6 +56,8 @@ export class Service extends ConfigService.Service<Service>()("@opencode/Runtime
   experimentalRiskPlannerAdvisory: bool("OPENCODE_EXPERIMENTAL_RISK_PLANNER_ADVISORY"),
   experimentalDagReadOnly: bool("OPENCODE_EXPERIMENTAL_DAG_READ_ONLY"),
   experimentalLeanOutputBudget: bool("OPENCODE_EXPERIMENTAL_LEAN_OUTPUT_BUDGET"),
+  experimentalTurnPlan: bool("OPENCODE_EXPERIMENTAL_TURN_PLAN"),
+  experimentalSkillSlots: bool("OPENCODE_EXPERIMENTAL_SKILL_SLOTS"),
   experimentalSwarm: enabledByExperimental("OPENCODE_EXPERIMENTAL_SWARM"),
   experimentalEventSystem: enabledByExperimental("OPENCODE_EXPERIMENTAL_EVENT_SYSTEM"),
   experimentalWorkspaces: enabledByExperimental("OPENCODE_EXPERIMENTAL_WORKSPACES"),

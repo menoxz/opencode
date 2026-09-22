@@ -335,6 +335,14 @@ export const Info = Schema.Struct({
     Schema.Struct({
       disable_paste_summary: Schema.optional(Schema.Boolean),
       batch_tool: Schema.optional(Schema.Boolean).annotate({ description: "Enable the batch tool" }),
+      turn_plan: Schema.optional(Schema.Boolean).annotate({
+        description:
+          "Let a turn declare a bounded engagement (intent, expected observation, fallback, stop condition) through the `turn_plan` tool. The plan is a prediction held in run state, never in the message history: it is reconciled against the real observation at the head of the next turn, replaces any previous declaration, and may only refine the ambiguous \"no executable action\" case. Default: false.",
+      }),
+      skill_slots: Schema.optional(Schema.Boolean).annotate({
+        description:
+          "Give every skill and instruction file one canonical context slot, so a repeated load is answered from the slot as a presence notice instead of pushing a second copy of the same bytes. Held slots are invalidated when the skill revision moves, never across an unrelated observation. Default: false.",
+      }),
       planning: Schema.optional(
         Schema.Struct({
           enabled: Schema.optional(Schema.Boolean),

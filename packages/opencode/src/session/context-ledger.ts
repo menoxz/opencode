@@ -258,7 +258,7 @@ export function commandReadOnly(command: string): boolean {
 /** Read-only, mutating or neutral, plus the target a slot would be allocated to. */
 export function classify(tool: string, args: unknown): CallClass {
   const record = recordOf(args)
-  const target = TARGETS[tool]?.(record) ?? tool
+  const target = TARGETS[tool]?.(record) ?? skillTarget(tool, record) ?? tool
   if (tool === "bash" || tool === "shell")
     return { readOnly: commandReadOnly(String(record.command ?? "")), mutating: !commandReadOnly(String(record.command ?? "")), target }
   if (EXEMPT_TOOLS.has(tool)) return { readOnly: true, mutating: false, target }
@@ -269,8 +269,32 @@ export function classify(tool: string, args: unknown): CallClass {
 }
 
 /** True when the tool may be answered from a slot instead of being executed. */
+const SKILL_TOOLS = new Set(["skill", "skill_search"])
+
+let skillSlots = false
+
+/** The per-skill canonical target: one slot per skill, never one slot for the whole tool. */
+function skillTarget(tool: string, args: Record<string, unknown>): string | undefined {
+  if (!SKILL_TOOLS.has(tool)) return undefined
+  const name = args.name ?? args.skill
+  return typeof name === "string" && name.trim() ? name.trim() : undefined
+}
+
+/** Opt-in gate: a repeated skill load is answered from its slot only when the caller turns this on. */
+export function setSkillSlots(enabled: boolean): void {
+  skillSlots = enabled
+}
+
+/**
+ * Freshness by revision: a reloaded SKILL.md invalidates the slots that promised
+ * its body, so the next load really re-reads instead of trusting a stale promise.
+ */
+export function noteSkillRevision(sessionID: string, revision: string | number): void {
+  ledgerFor(sessionID).invalidateSkills(String(revision))
+}
+
 export function suppressible(tool: string): boolean {
-  return READ_ONLY_TOOLS.has(tool) || tool === "bash" || tool === "shell"
+  return READ_ONLY_TOOLS.has(tool) || tool === "bash" || tool === "shell" || (skillSlots && SKILL_TOOLS.has(tool))
 }
 
 export function keyOf(tool: string, target: string): string {
@@ -317,6 +341,7 @@ class Ledger {
   #step = 0
   #claimStep = ""
   #claimed = new Set<string>()
+  #skillRevision = ""
 
   epoch() {
     return this.#epoch
@@ -405,6 +430,19 @@ class Ledger {
   invalidate() {
     for (const [key, slot] of this.#slots) this.#slots.set(key, { ...slot, elided: true })
     this.#epoch += 1
+  }
+
+  /**
+   * A skill revision moved: only the slots that promised a skill body must
+   * re-read. The epoch deliberately stays put, because a reloaded skill says
+   * nothing about an unrelated file observation.
+   */
+  invalidateSkills(revision: string) {
+    if (this.#skillRevision === revision) return
+    this.#skillRevision = revision
+    for (const [key, slot] of this.#slots) {
+      if (SKILL_TOOLS.has(slot.tool)) this.#slots.set(key, { ...slot, elided: true })
+    }
   }
 
   slots(): Slot[] {

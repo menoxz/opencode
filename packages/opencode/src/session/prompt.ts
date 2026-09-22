@@ -7,13 +7,14 @@ import { createHash } from "node:crypto"
 import { SessionID, MessageID, PartID } from "./schema"
 import { MessageV2 } from "./message-v2"
 import { PromptQueue } from "./prompt-queue"
-import { AUTO_CONTINUE_INSTRUCTION, decideRunDecision } from "./continuation"
+import { AUTO_CONTINUE_INSTRUCTION, decideRunDecision, type DeclaredIntent } from "./continuation"
 import { SessionWorkPlan } from "./work-plan"
 import { StallWatch } from "./stall-watch"
 import { capsuleFor, environmentStateEnabled, ledgerFor } from "./environment"
 import { contextHoldingsCapsule } from "./holdings-capsule"
 import { progressCapsule } from "./progress"
-import { contextCapsule } from "./context-ledger"
+import { contextCapsule, noteSkillRevision, setSkillSlots } from "./context-ledger"
+import * as TurnPlan from "./turn-plan"
 import { matchedRecipeCapsule } from "./recipes"
 import { isLeanAgent } from "@/tool/lean-output-policy"
 import { isContinuationPrompt, classifyUserMessage } from "./turn-intent"
@@ -1742,6 +1743,8 @@ export const layer = Layer.effect(
         const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
         const injectionCache = createPromptInjectionCache()
         yield* reconcileStaleAssistants(sessionID)
+        // A declared engagement is turn-scoped: a fresh run starts without one.
+        if (flags.experimentalTurnPlan) TurnPlan.clear(sessionID)
 
         // Anchor this run to the oldest user prompt whose turn is not closed.
         // Prompts queued while this run is active are never absorbed: they are
@@ -1845,6 +1848,37 @@ export const layer = Layer.effect(
             ) ?? false
           if (hasToolCalls) idleContinues = 0
 
+          // Brique 1: resolve the turn's declared engagement into bounded tail
+          // guidance plus the single decision signal it may influence. The plan
+          // lives in run state, never in the message history, and both capsules go
+          // to the tail so the cached system segment stays byte-identical.
+          const turnPlanCapsules: string[] = []
+          let declaredIntent: DeclaredIntent | undefined
+          if (flags.experimentalTurnPlan) {
+            const commitment = TurnPlan.reminder(sessionID)
+            if (commitment) {
+              // First sighting: the plan predicted this step, so restate it as the
+              // standing commitment instead of judging an observation that does not
+              // exist yet.
+              turnPlanCapsules.push(TurnPlan.renderCommitment(commitment))
+              declaredIntent = "execute"
+            } else {
+              // The observation an action produced is only readable once its tool
+              // parts carry output. With none, the plan stays reminded and settles on
+              // the next step rather than being judged against nothing.
+              const observation = (lastAssistantMsg?.parts ?? [])
+                .flatMap((part) => (part.type === "tool" && "output" in part.state ? [part.state.output] : []))
+                .join("\n")
+              const outcome = observation.trim() ? TurnPlan.settle(sessionID, observation) : undefined
+              if (outcome?.plan && outcome.verdict !== "no-plan")
+                turnPlanCapsules.push(
+                  TurnPlan.render({ plan: outcome.plan, verdict: outcome.verdict, missed: outcome.missed }),
+                )
+              declaredIntent = TurnPlan.declaredIntent(outcome?.verdict ?? "no-plan", outcome?.plan)
+            }
+            turnPlanCapsules.push(TurnPlan.instruction())
+          }
+
           // A turn stays open while tool calls are pending, and — when it
           // carries no error — while the provider cut it short (`length`) or
           // returned a reason the adapter could not map (`unknown`).
@@ -1876,6 +1910,7 @@ export const layer = Layer.effect(
                 (continuationAgent?.autocontinue ?? isLeanAgent(continuationAgent)),
               stepLimitReached: reachedStepLimit(step, continuationAgent?.steps),
               pendingTools: hasToolCalls,
+              declaredIntent,
             })
             if (decision.action === "continue" || decision.action === "wait") {
               idleContinues++
@@ -2179,6 +2214,10 @@ export const layer = Layer.effect(
             // Include the skill revision so a mid-run skill reload is not masked by
             // the run-scoped injection cache.
             const skillRev = yield* sys.skillRevision()
+            // Brique 2: one canonical slot per skill, kept fresh by revision. Both calls
+            // live here because `cfg` is only in scope from this block on.
+            noteSkillRevision(sessionID, skillRev)
+            setSkillSlots(flags.experimentalSkillSlots || cfg.experimental?.skill_slots === true)
             const preloadKey = `preloadedSkills:${skillRev}:${agent.name}:${JSON.stringify(agent.preloadSkills ?? [])}`
             const cachedPreload = injectionCache.get(preloadKey)
             const preloadedSkills = cachedPreload.cached
@@ -2375,6 +2414,7 @@ export const layer = Layer.effect(
               contextSummary.add("daemon", "inject first-step adaptive/personality/daemon/plan context", stepOneTail, Date.now() - daemonStart)
             }
 
+            volatile.push(...turnPlanCapsules)
             const injected = [...volatile, ...stepOneTail].filter((entry) => entry.trim())
             const injectedMessage = injected.length ? injected.join("\n\n") : undefined
 

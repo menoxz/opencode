@@ -33,3 +33,53 @@ describe("hasOpenTodos", () => {
     expect(hasOpenTodos([{ status: "completed" }, { status: "cancelled" }])).toBe(false)
   })
 })
+
+describe("declared turn intent refines only the ambiguous case", () => {
+  const base = { pendingTools: false, stepLimitReached: false, autocontinueEnabled: true, idleContinues: 0 }
+
+  test("promotes a declared executable intent to a continue", () => {
+    expect(decideRunDecision({ ...base, nextAction: { kind: "none" }, declaredIntent: "execute" })).toEqual({
+      action: "continue",
+      reason: "declared-intent",
+    })
+  })
+
+  test("keeps the idle budget as the ceiling", () => {
+    expect(
+      decideRunDecision({
+        ...base,
+        idleContinues: AUTO_CONTINUE_LIMIT,
+        nextAction: { kind: "none" },
+        declaredIntent: "execute",
+      }),
+    ).toEqual({ action: "stop", reason: "idle-budget" })
+  })
+
+  test("leaves a confirmed declaration inert", () => {
+    expect(decideRunDecision({ ...base, nextAction: { kind: "none" }, declaredIntent: "none" })).toEqual({
+      action: "stop",
+      reason: "no-executable-action",
+    })
+  })
+
+  test("never overrides a wait, a user question, a report, the step limit or a disabled autocontinue", () => {
+    expect(decideRunDecision({ ...base, nextAction: { kind: "await_tool" }, declaredIntent: "execute" })).toEqual({
+      action: "wait",
+      reason: "pending-tools",
+    })
+    expect(decideRunDecision({ ...base, nextAction: { kind: "ask_user" }, declaredIntent: "execute" })).toEqual({
+      action: "stop",
+      reason: "awaiting-user",
+    })
+    expect(decideRunDecision({ ...base, nextAction: { kind: "report" }, declaredIntent: "execute" })).toEqual({
+      action: "stop",
+      reason: "report-delivered",
+    })
+    expect(
+      decideRunDecision({ ...base, stepLimitReached: true, nextAction: { kind: "none" }, declaredIntent: "execute" }),
+    ).toEqual({ action: "stop", reason: "step-limit" })
+    expect(
+      decideRunDecision({ ...base, autocontinueEnabled: false, nextAction: { kind: "none" }, declaredIntent: "execute" }),
+    ).toEqual({ action: "stop", reason: "autocontinue-disabled" })
+  })
+})

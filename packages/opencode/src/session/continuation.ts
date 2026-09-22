@@ -45,9 +45,17 @@ export type RunDecisionStopReason = "awaiting-user" | "report-delivered" | "no-e
   | "autocontinue-disabled"
 
 export type RunDecision =
-  | { action: "continue"; reason: "executable-action" | "retry" }
+  | { action: "continue"; reason: "executable-action" | "retry" | "declared-intent" }
   | { action: "wait"; reason: "pending-tools" }
   | { action: "stop"; reason: RunDecisionStopReason }
+
+// The lowest-authority signal of the loop: what the turn itself declared it
+// would do next, after reconciliation against the real observation. It refines
+// only the ambiguous "no executable action" case and can never relax a wait, a
+// user question, the step limit or the idle budget. A confirmed declaration
+// ("none") is deliberately inert — letting the turn stop is already the default,
+// so the harness keeps owning every non-ambiguous outcome.
+export type DeclaredIntent = "execute" | "none"
 
 /** Decide whether a settled (text-only or waiting) run must continue, wait or stop. */
 export function decideRunDecision(input: {
@@ -56,6 +64,7 @@ export function decideRunDecision(input: {
   autocontinueEnabled: boolean
   stepLimitReached: boolean
   pendingTools: boolean
+  declaredIntent?: DeclaredIntent
   limit?: number
 }): RunDecision {
   if (input.pendingTools) return { action: "wait", reason: "pending-tools" }
@@ -65,7 +74,11 @@ export function decideRunDecision(input: {
   if (input.nextAction.kind === "await_tool") return { action: "wait", reason: "pending-tools" }
   if (input.nextAction.kind === "ask_user") return { action: "stop", reason: "awaiting-user" }
   if (input.nextAction.kind === "report") return { action: "stop", reason: "report-delivered" }
-  if (input.nextAction.kind === "none") return { action: "stop", reason: "no-executable-action" }
+  if (input.nextAction.kind === "none") {
+    if (input.declaredIntent !== "execute") return { action: "stop", reason: "no-executable-action" }
+    if (input.idleContinues >= (input.limit ?? AUTO_CONTINUE_LIMIT)) return { action: "stop", reason: "idle-budget" }
+    return { action: "continue", reason: "declared-intent" }
+  }
   if (input.idleContinues >= (input.limit ?? AUTO_CONTINUE_LIMIT)) return { action: "stop", reason: "idle-budget" }
   return { action: "continue", reason: input.nextAction.kind === "retry" ? "retry" : "executable-action" }
 }
