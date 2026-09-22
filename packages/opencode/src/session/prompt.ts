@@ -9,6 +9,7 @@ import { MessageV2 } from "./message-v2"
 import { PromptQueue } from "./prompt-queue"
 import { AUTO_CONTINUE_INSTRUCTION, decideRunDecision } from "./continuation"
 import { SessionWorkPlan } from "./work-plan"
+import { StallWatch } from "./stall-watch"
 import { capsuleFor, environmentStateEnabled, ledgerFor } from "./environment"
 import { contextHoldingsCapsule } from "./holdings-capsule"
 import { progressCapsule } from "./progress"
@@ -1762,6 +1763,21 @@ export const layer = Layer.effect(
           yield* status.set(sessionID, { type: "busy" })
           yield* slog.info("loop", { step })
 
+          // The assembly phase before the provider has no progress signal, so a
+          // single await that never resolves there parked the session `busy`
+          // forever (orphan assistant message, no part, no warning). Unarming at
+          // the provider call bounds that window; `onStall` releases the session
+          // and leaves the orphan to reconcileStaleAssistants on the next run.
+          const reachedProvider = yield* StallWatch.arm({
+            sessionID,
+            timeout: StallWatch.PRE_PROVIDER_TIMEOUT,
+            onStall: Effect.gen(function* () {
+              yield* slog.warn("step stalled before provider; releasing session", { step })
+              yield* status.set(sessionID, { type: "idle" })
+              yield* Effect.forkDetach(state.cancel(sessionID))
+            }),
+          })
+
           const messageFilteringStart = Date.now()
           let msgs = yield* MessageV2.filterCompactedEffect(sessionID)
           // Keep only the anchored turn (plus run-internal compaction users). A
@@ -2364,6 +2380,7 @@ export const layer = Layer.effect(
             const format = lastUser.format ?? { type: "text" as const }
             if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
             const handleProcessStart = Date.now()
+            yield* reachedProvider
             const result = yield* handle.process({
               user: lastUser,
               agent,
