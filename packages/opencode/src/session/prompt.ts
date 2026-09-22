@@ -18,6 +18,7 @@ import { matchedRecipeCapsule } from "./recipes"
 import { isLeanAgent } from "@/tool/lean-output-policy"
 import { isContinuationPrompt, classifyUserMessage } from "./turn-intent"
 import * as Log from "@opencode-ai/core/util/log"
+import { retryTransientLaunch } from "@opencode-ai/core/process"
 import { SessionRevert } from "./revert"
 import { TriggerHandler } from "../daemon/trigger-handler"
 import { readUnacknowledged, acknowledgeAll } from "../daemon/notifications"
@@ -1026,7 +1027,7 @@ export const layer = Layer.effect(
                 stdin: "ignore",
                 forceKillAfter: "3 seconds",
               })
-              const handle = yield* spawner.spawn(cmd)
+              const handle = yield* retryTransientLaunch(spawner.spawn(cmd))
               yield* Stream.runForEach(Stream.decodeText(handle.all), (chunk) =>
                 Effect.gen(function* () {
                   output += chunk

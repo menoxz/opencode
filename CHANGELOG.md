@@ -7,6 +7,19 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.2.29] - 2026-09-22
+
+### Fixed
+- La création de processus refusée par intermittence sur l'hôte (`EPERM: operation not permitted, uv_spawn 'git'` / `'pwsh.EXE'`, `error launching git: Accès refusé.`) n'atteint plus l'agent : la politique de reprise des lancements transitoires, déjà appliquée aux spawns git du snapshot/worktree/project, est branchée sur les chemins qui font face à l'utilisateur — le shell de l'agent (`src/tool/shell.ts`), la recherche ripgrep (`src/file/ripgrep.ts`) et le spawn du provider (`src/session/prompt.ts`) — et une variante synchrone (`retryTransientLaunchSync`) couvre les helpers `execSync` du démon (`src/daemon/auto-commit.ts`). Le classifieur (`isTransientLaunchFailure`, `packages/core/src/process.ts`) reconnaît le refus sous toutes ses formes observées : `EPERM|EACCES|EBUSY` sur `code`, tag `PermissionDenied`/`Busy` sur `_tag`, texte du wrapper git, et `reason`/`cause` d'un `PlatformError` même lorsque son propre message est vide. Une reprise consommée sans succès restitue l'échec réel, jamais un succès fabriqué.
+- L'interruption « Sending the prompt failed. Open console for more details. » de la session « Intégration Pstudio authentification de société » (`ses_f3fcaddb3ffeNxfk9iqKZxqeN6`) est la face TUI du blocage pré-provider déjà corrigé (watchdog `6b0050546`) : cause commune = lancement de processus refusé/cassé, traitée par le même correctif.
+
+### Tests
+- `packages/core/test/process/git-launch-retry.test.ts` (6 verts) : classement des refus mesurés sur ce poste, y compris à travers `AppProcessError` (dont le message est vide) et un `PlatformError` de tag `Unknown` dont la cause porte `EPERM` ; reprise d'un effet refusé puis arrêt sur le premier échec réel ; reprise synchrone. Le test à spawn réel a été retiré : sur cet hôte il échoue de façon non déterministe (`Received: 5`).
+- `packages/opencode/test/tool/shell-launch-retry.test.ts` (1 vert) : discrimination prouvée par mutation — le spawner injecté refuse le lancement et `starts.count` doit atteindre le budget de reprise ; sans le câblage de `shell.ts`, le test échoue (`Expected: >= 5, Received: 1`), avec lui il passe. Aucun processus réel n'est lancé, donc le test reste déterministe.
+
+### Mesure
+- Avant/après sur le spawner réel (`git` 40 itérations, `pwsh` 10) : aucun refus de lancement en boucle serrée (0/40, 0/10) — le refus est **en rafales** : `git checkout` refusé 6 fois de suite pendant la session, `pwsh.EXE` refusé via l'exécuteur, `node → git` refusé (`EPERM`, errno `-4048`). Le discriminant déterministe est donc le test de mutation ci-dessus, pas un comptage de spawns (impossible à garantir sur cet hôte).
+
 ## [v2.2.27] - 2026-09-21
 
 ### Added

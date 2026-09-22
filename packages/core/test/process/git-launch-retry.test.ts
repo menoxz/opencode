@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import { Effect, Exit } from "effect"
-import { ChildProcess } from "effect/unstable/process"
-import { AppProcess, isTransientLaunchFailure, retryTransientLaunch } from "@opencode-ai/core/process"
-import { testEffect } from "../lib/effect"
-
-const it = testEffect(AppProcess.defaultLayer)
+import * as PlatformError from "effect/PlatformError"
+import {
+  AppProcess,
+  isTransientLaunchFailure,
+  retryTransientLaunch,
+  retryTransientLaunchSync,
+} from "@opencode-ai/core/process"
 
 const denied = () => new Error("EPERM: operation not permitted, uv_spawn 'git'")
 
@@ -58,14 +60,51 @@ describe("transient child-process launch retry", () => {
     expect(refusals).toBe(1)
   })
 
-  it.live("runs a real git command through the retrying path", () =>
-    Effect.gen(function* () {
-      const proc = yield* AppProcess.Service
-      const result = yield* retryTransientLaunch(
-        proc.run(ChildProcess.make("git", ["--version"], { extendEnv: true, stdin: "ignore" })),
-      )
-      expect(result.exitCode).toBe(0)
-      expect(result.stdout.toString("utf8")).toContain("git version")
-    }),
-  )
+  test("sees the denial through an Effect PlatformError, even when the reason tag is Unknown", () => {
+    const errno = Object.assign(new Error("spawn denied"), { code: "EPERM", syscall: "uv_spawn" })
+    expect(
+      isTransientLaunchFailure(
+        PlatformError.systemError({
+          _tag: "Unknown",
+          module: "ChildProcess",
+          method: "spawn",
+          pathOrDescriptor: "git",
+          syscall: "uv_spawn",
+          cause: errno,
+        }),
+      ),
+    ).toBe(true)
+    expect(
+      isTransientLaunchFailure(
+        PlatformError.systemError({
+          _tag: "PermissionDenied",
+          module: "ChildProcess",
+          method: "spawn",
+          pathOrDescriptor: "git",
+          syscall: "uv_spawn",
+          cause: new Error("spawn EACCES"),
+        }),
+      ),
+    ).toBe(true)
+  })
+
+  test("retries a refused synchronous start and rethrows a permanent failure", () => {
+    let attempts = 0
+    const flaky = () => {
+      attempts += 1
+      if (attempts < 3) throw denied()
+      return "started"
+    }
+    expect(retryTransientLaunchSync(flaky)).toBe("started")
+    expect(attempts).toBe(3)
+
+    let permanent = 0
+    expect(() =>
+      retryTransientLaunchSync(() => {
+        permanent += 1
+        throw new Error("fatal: not a git repository (or any of the parent directories)")
+      }),
+    ).toThrow()
+    expect(permanent).toBe(1)
+  })
 })

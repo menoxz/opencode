@@ -15,7 +15,9 @@ export class AppProcessError extends Schema.TaggedErrorClass<AppProcessError>()(
 // "Accès refusé"). The process never started, so retrying cannot duplicate or
 // corrupt repository state. `AppProcessError` carries an empty `message`: the
 // denial only survives in `cause`/`stderr`, so those must be inspected too.
-const transientLaunch = /EPERM|EACCES|EBUSY|Access is denied|Accès refusé|error launching/i
+const transientLaunch = /EPERM|EACCES|EBUSY|operation not permitted|uv_spawn|Access is denied|Accès refusé|error launching/i
+const transientTag = /^(PermissionDenied|Busy)$/
+const transientCode = /^(EPERM|EACCES|EBUSY)$/
 
 export function isTransientLaunchFailure(error: unknown): boolean {
   const inspect = (value: unknown, seen: Set<unknown>): boolean => {
@@ -23,8 +25,21 @@ export function isTransientLaunchFailure(error: unknown): boolean {
     if (typeof value === "string") return transientLaunch.test(value)
     if (value instanceof Error && transientLaunch.test(value.message)) return true
     seen.add(value)
-    const fields = value as { cause?: unknown; stderr?: unknown }
-    return inspect(fields.cause, seen) || inspect(fields.stderr, seen)
+    // Effect wraps a refused start in `PlatformError`, whose own message may
+    // carry neither the errno text nor the code: the denial then only survives
+    // as the inner errno (code/message) or as the reason tag.
+    const fields = value as {
+      cause?: unknown
+      stderr?: unknown
+      reason?: unknown
+      description?: unknown
+      _tag?: unknown
+      code?: unknown
+    }
+    if (typeof fields._tag === "string" && transientTag.test(fields._tag)) return true
+    if (typeof fields.code === "string" && transientCode.test(fields.code)) return true
+    if (typeof fields.description === "string" && transientLaunch.test(fields.description)) return true
+    return inspect(fields.cause, seen) || inspect(fields.stderr, seen) || inspect(fields.reason, seen)
   }
   return inspect(error, new Set())
 }
@@ -37,6 +52,29 @@ export const retryTransientLaunch = <A, E, R>(self: Effect.Effect<A, E, R>): Eff
       while: isTransientLaunchFailure,
     }),
   )
+
+const LAUNCH_RETRY_DELAYS_MS = [50, 100, 200, 400]
+
+const sleepSync = (ms: number) => {
+  const bun = (globalThis as { Bun?: { sleepSync?: (ms: number) => void } }).Bun
+  if (bun?.sleepSync) return bun.sleepSync(ms)
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+}
+
+// The blocking `execSync` call sites (daemon git helpers) need the same policy
+// as `retryTransientLaunch`: a refused start must not be mistaken for a real
+// command failure, because a swallowed denial loses the command's effect.
+export function retryTransientLaunchSync<A>(launch: () => A): A {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return launch()
+    } catch (error) {
+      const delay = LAUNCH_RETRY_DELAYS_MS[attempt]
+      if (delay === undefined || !isTransientLaunchFailure(error)) throw error
+      sleepSync(delay)
+    }
+  }
+}
 
 export interface RunOptions {
   readonly maxOutputBytes?: number

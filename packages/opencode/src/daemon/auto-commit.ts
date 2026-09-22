@@ -2,6 +2,7 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import { execSync, type ExecSyncOptions } from "node:child_process"
 import * as Log from "@opencode-ai/core/util/log"
+import { retryTransientLaunchSync } from "@opencode-ai/core/process"
 
 const log = Log.create({ service: "daemon.auto-commit" })
 
@@ -23,16 +24,20 @@ export interface DiffInfo {
 
 function git(args: string[], cwd: string, options?: ExecSyncOptions): string {
   try {
-    const out = execSync(`git ${args.join(" ")}`, {
-      cwd,
-      encoding: "utf-8",
-      stdio: "pipe",
-      timeout: 15000,
-      // The daemon runs detached (no console): without this every git call
-      // allocates its own visible console window.
-      windowsHide: true,
-      ...options,
-    })
+    // A refused process start (EPERM/EACCES, measured on this host) is not a
+    // git failure: retry it, otherwise a mandatory commit is silently lost.
+    const out = retryTransientLaunchSync(() =>
+      execSync(`git ${args.join(" ")}`, {
+        cwd,
+        encoding: "utf-8",
+        stdio: "pipe",
+        timeout: 15000,
+        // The daemon runs detached (no console): without this every git call
+        // allocates its own visible console window.
+        windowsHide: true,
+        ...options,
+      }),
+    )
     return String(out).trim()
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -54,15 +59,17 @@ export function hasUncommittedChanges(cwd: string): boolean {
  */
 export function getRepoRoot(cwd: string): string | null {
   try {
-    return execSync("git rev-parse --show-toplevel", {
-      cwd,
-      encoding: "utf-8",
-      stdio: "pipe",
-      timeout: 5000,
-      // The daemon runs detached (no console): without this every git call
-      // allocates its own visible console window.
-      windowsHide: true,
-    }).trim()
+    return retryTransientLaunchSync(() =>
+      execSync("git rev-parse --show-toplevel", {
+        cwd,
+        encoding: "utf-8",
+        stdio: "pipe",
+        timeout: 5000,
+        // The daemon runs detached (no console): without this every git call
+        // allocates its own visible console window.
+        windowsHide: true,
+      }),
+    ).trim()
   } catch {
     return null
   }

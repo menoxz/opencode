@@ -3,6 +3,7 @@ import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { Cause, Context, Effect, Fiber, Layer, Queue, Schema, Stream } from "effect"
 import type { PlatformError } from "effect/PlatformError"
+import { retryTransientLaunch } from "@opencode-ai/core/process"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { ChildProcess } from "effect/unstable/process"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
@@ -233,8 +234,8 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | ChildPro
       const spawner = yield* ChildProcessSpawner
 
       const run = Effect.fnUntraced(function* (command: string, args: string[], opts?: { cwd?: string }) {
-        const handle = yield* spawner.spawn(
-          ChildProcess.make(command, args, { cwd: opts?.cwd, extendEnv: true, stdin: "ignore" }),
+        const handle = yield* retryTransientLaunch(
+          spawner.spawn(ChildProcess.make(command, args, { cwd: opts?.cwd, extendEnv: true, stdin: "ignore" })),
         )
         const [stdout, stderr, code] = yield* Effect.all(
           [
@@ -352,7 +353,7 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | ChildPro
             yield* Effect.forkScoped(
               Effect.gen(function* () {
                 yield* check(input.cwd)
-                const handle = yield* spawner.spawn(yield* command(input.cwd, filesArgs(input)))
+                const handle = yield* retryTransientLaunch(spawner.spawn(yield* command(input.cwd, filesArgs(input))))
                 const stderr = yield* Stream.mkString(Stream.decodeText(handle.stderr)).pipe(Effect.forkScoped)
                 const stdout = yield* Stream.decodeText(handle.stdout).pipe(
                   Stream.splitLines,
@@ -383,7 +384,7 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | ChildPro
 
         const program = Effect.scoped(
           Effect.gen(function* () {
-            const handle = yield* spawner.spawn(yield* command(input.cwd, searchArgs(input)))
+            const handle = yield* retryTransientLaunch(spawner.spawn(yield* command(input.cwd, searchArgs(input))))
 
             const [items, stderr, code] = yield* Effect.all(
               [
