@@ -7,6 +7,20 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.2.30] - 2026-09-22
+
+### Fixed
+- Le retour de l'`EPERM` après 2.2.29 n'est pas nié : la reprise par **site d'appel** avait un budget trop court. Mesure : l'ancien budget (`Effect.retry` `times: 4`, `Schedule.exponential(50 ms)`) autorisait **5 tentatives ≈ 750 ms**, alors que les refus arrivent **en rafales** — `git checkout` a été refusé **6 fois de suite** dans la session du constat, et un refus `pwsh` supplémentaire a été capturé pendant la vérification. La reprise vit désormais au **point de passage unique** du spawner (`packages/core/src/cross-spawn-spawner.ts`), traversé par **tout** appelant (`git`, `pwsh`, ripgrep, snapshot, worktree, provider), avec un budget de **8 tentatives ≈ 6,35 s** (`packages/core/src/launch-retry.ts` : 50/100/200/400/800/1600/3200 ms). Le refus n'est rejoué que si **rien n'a démarré** : un échec survenu après un vrai démarrage n'est jamais rejoué, l'enfant ayant pu agir.
+- La capture de snapshot ne peut plus bloquer un tour. Dans `src/session/processor.ts`, `snapshot.track()` (capture initiale, `step-start`, `step-finish`) laissait remonter un refus de lancement git en **erreur de message** (`UnknownError {"message":"EPERM ... uv_spawn 'git'"}`), ce qui avortait le pas — c'est le chemin exact de l'erreur de 08:52:15. La capture est désormais non fatale et journalisée : un hôte qui la refuse perd le diff enregistré, pas la progression du tour.
+
+### Tests
+- `packages/core/test/process/spawner-launch-retry.test.ts` (2 verts) : le spawner reçoit un lanceur injecté qui refuse deux fois puis démarre ; un appelant **sans aucune reprise locale** (`AppProcess.run`) aboutit et compte 3 lancements ; un échec réel (`ENOENT`) n'est **pas** rejoué (1 lancement, échec restitué). Preuve par mutation : sans la reprise du point de passage, le premier refus fait échouer l'appelant. Aucun processus réel n'est lancé, donc le test reste déterministe sur cet hôte.
+- `packages/core/test/process/git-launch-retry.test.ts` (6 verts) inchangé. `bun typecheck` (tsgo) : `packages/core` et `packages/opencode` exit 0.
+
+### Mesure
+- Budgets comparés à l'exécution : ancien **5 tentatives / 750 ms**, `BUDGET_OLD_COVERS_BURST6=False` ; nouveau **8 tentatives / 6350 ms**, couvre la rafale de 6. En direct : `pwsh: RAW launchRefusals=1/10 … RETRIED surfaced=0/10` — le refus capturé est absorbé par la reprise ; `git: RAW 0/40` (le refus est en rafales, pas en boucle serrée).
+- Portée honnête : la cause du refus n'est **pas** identifiée avec certitude (protection temps réel de l'hôte, attribution non prouvée). Ce correctif rend le refus **surmontable et non bloquant**, il ne prétend pas supprimer la cause. Le binaire `2.2.30` est installé (`%APPDATA%\npm\opencodev2.exe`, `--version` → 2.2.30) ; les processus déjà lancés continuent d'exécuter l'ancien code jusqu'à leur redémarrage.
+
 ## [v2.2.29] - 2026-09-22
 
 ### Fixed

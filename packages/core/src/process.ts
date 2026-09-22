@@ -1,4 +1,4 @@
-import { Context, Duration, Effect, Fiber, Layer, Schedule, Schema, Stream } from "effect"
+import { Context, Duration, Effect, Fiber, Layer, Schema, Stream } from "effect"
 import type { PlatformError } from "effect/PlatformError"
 import { ChildProcess } from "effect/unstable/process"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
@@ -11,70 +11,17 @@ export class AppProcessError extends Schema.TaggedErrorClass<AppProcessError>()(
   cause: Schema.optional(Schema.Defect),
 }) {}
 
-// Windows intermittently refuses to create a child process (`EPERM`/`EACCES`,
-// "Accès refusé"). The process never started, so retrying cannot duplicate or
-// corrupt repository state. `AppProcessError` carries an empty `message`: the
-// denial only survives in `cause`/`stderr`, so those must be inspected too.
-const transientLaunch = /EPERM|EACCES|EBUSY|operation not permitted|uv_spawn|Access is denied|Accès refusé|error launching/i
-const transientTag = /^(PermissionDenied|Busy)$/
-const transientCode = /^(EPERM|EACCES|EBUSY)$/
-
-export function isTransientLaunchFailure(error: unknown): boolean {
-  const inspect = (value: unknown, seen: Set<unknown>): boolean => {
-    if (value === null || value === undefined || seen.has(value)) return false
-    if (typeof value === "string") return transientLaunch.test(value)
-    if (value instanceof Error && transientLaunch.test(value.message)) return true
-    seen.add(value)
-    // Effect wraps a refused start in `PlatformError`, whose own message may
-    // carry neither the errno text nor the code: the denial then only survives
-    // as the inner errno (code/message) or as the reason tag.
-    const fields = value as {
-      cause?: unknown
-      stderr?: unknown
-      reason?: unknown
-      description?: unknown
-      _tag?: unknown
-      code?: unknown
-    }
-    if (typeof fields._tag === "string" && transientTag.test(fields._tag)) return true
-    if (typeof fields.code === "string" && transientCode.test(fields.code)) return true
-    if (typeof fields.description === "string" && transientLaunch.test(fields.description)) return true
-    return inspect(fields.cause, seen) || inspect(fields.stderr, seen) || inspect(fields.reason, seen)
-  }
-  return inspect(error, new Set())
-}
-
-export const retryTransientLaunch = <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
-  self.pipe(
-    Effect.retry({
-      schedule: Schedule.exponential(Duration.millis(50)).pipe(Schedule.jittered),
-      times: 4,
-      while: isTransientLaunchFailure,
-    }),
-  )
-
-const LAUNCH_RETRY_DELAYS_MS = [50, 100, 200, 400]
-
-const sleepSync = (ms: number) => {
-  const bun = (globalThis as { Bun?: { sleepSync?: (ms: number) => void } }).Bun
-  if (bun?.sleepSync) return bun.sleepSync(ms)
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
-}
-
-// The blocking `execSync` call sites (daemon git helpers) need the same policy
-// as `retryTransientLaunch`: a refused start must not be mistaken for a real
-// command failure, because a swallowed denial loses the command's effect.
-export function retryTransientLaunchSync<A>(launch: () => A): A {
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return launch()
-    } catch (error) {
-      const delay = LAUNCH_RETRY_DELAYS_MS[attempt]
-      if (delay === undefined || !isTransientLaunchFailure(error)) throw error
-      sleepSync(delay)
-    }
-  }
-}
+// The launch-retry policy lives in `./launch-retry` so the chokepoint spawner
+// can share it without an import cycle (`process.ts` already imports the
+// spawner). Re-exported here because every caller imports it from `process`.
+export {
+  isTransientLaunchFailure,
+  LAUNCH_RETRY_ATTEMPTS,
+  LAUNCH_RETRY_DELAYS_MS,
+  launchRetryDelayMs,
+  retryTransientLaunch,
+  retryTransientLaunchSync,
+} from "./launch-retry"
 
 export interface RunOptions {
   readonly maxOutputBytes?: number

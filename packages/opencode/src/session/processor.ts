@@ -124,11 +124,24 @@ export const layer = Layer.effect(
     const truncate = yield* Effect.serviceOption(Truncate.Service)
     const terminalPolls = yield* InstanceState.make(() => Effect.sync(createTerminalPollState))
 
+    // A refused git launch must never abort the turn: the snapshot is an
+    // auxiliary capture, so a host that denies it degrades the recorded diff
+    // instead of killing the run. This is the path that parked the Pstudio
+    // session at step start (`EPERM ... uv_spawn 'git'` at 08:52).
+    const trackSnapshot = snapshot.track().pipe(
+      Effect.catchCause((cause) =>
+        Effect.sync(() => {
+          log.warn("snapshot capture skipped", { cause })
+          return undefined
+        }),
+      ),
+    )
+
     const create = Effect.fn("SessionProcessor.create")(function* (input: Input) {
       // Pre-capture snapshot before the LLM stream starts. The AI SDK
       // may execute tools internally before emitting start-step events,
       // so capturing inside the event handler can be too late.
-      const initialSnapshot = yield* snapshot.track()
+      const initialSnapshot = yield* trackSnapshot
       const ctx: ProcessorContext = {
         assistantMessage: input.assistantMessage,
         sessionID: input.sessionID,
@@ -664,7 +677,7 @@ export const layer = Layer.effect(
             throw new Error(value.message)
 
           case "step-start":
-            if (!ctx.snapshot) ctx.snapshot = yield* snapshot.track()
+            if (!ctx.snapshot) ctx.snapshot = yield* trackSnapshot
             if (!ctx.assistantMessage.summary) {
               // TODO(v2): Temporary dual-write while migrating session messages to v2 events.
               if (flags.experimentalEventSystem) {
@@ -692,7 +705,7 @@ export const layer = Layer.effect(
 
           case "step-finish": {
             const stepFinishStart = Date.now()
-            const completedSnapshot = yield* snapshot.track()
+            const completedSnapshot = yield* trackSnapshot
             yield* Effect.forEach(Object.keys(ctx.reasoningMap), finishReasoning)
             const usage = Session.getUsage({
               model: ctx.model,

@@ -24,6 +24,7 @@ import {
 import * as NodeChildProcess from "node:child_process"
 import { PassThrough } from "node:stream"
 import launch from "cross-spawn"
+import { isTransientLaunchFailure, LAUNCH_RETRY_ATTEMPTS, launchRetryDelayMs } from "./launch-retry"
 
 const toError = (err: unknown): Error => (err instanceof globalThis.Error ? err : new globalThis.Error(String(err)))
 
@@ -94,7 +95,14 @@ const toPlatformError = (
 
 type ExitSignal = Deferred.Deferred<readonly [code: number | null, signal: NodeJS.Signals | null]>
 
-export const make = Effect.gen(function* () {
+type Launch = (
+  command: string,
+  args: readonly string[],
+  options: NodeChildProcess.SpawnOptions,
+) => NodeChildProcess.ChildProcess
+
+export const makeWith = (launch: Launch) =>
+  Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
 
@@ -265,31 +273,54 @@ export const make = Effect.gen(function* () {
   const spawn = (command: ChildProcess.StandardCommand, opts: NodeChildProcess.SpawnOptions) =>
     Effect.callback<readonly [NodeChildProcess.ChildProcess, ExitSignal], PlatformError.PlatformError>((resume) => {
       const signal = Deferred.makeUnsafe<readonly [code: number | null, signal: NodeJS.Signals | null]>()
-      const proc = launch(command.command, command.args, opts)
-      let end = false
-      proc.on("error", (err) => {
-        resume(Effect.fail(toPlatformError("spawn", err, command)))
-      })
-      // Resolve on "exit", not "close": "close" only fires after the stdio
-      // pipes are fully closed, which can be deferred indefinitely when a
-      // background child inherited the pipe handles (e.g. a PowerShell
-      // Start-Process with -RedirectStandardOutput). "exit" carries the same
-      // code+signal and does not wait on the pipes.
-      proc.on("exit", (...args) => {
-        if (end) return
-        end = true
-        Deferred.doneUnsafe(signal, Exit.succeed(args))
-      })
-      proc.on("close", (...args) => {
-        if (end) return
-        end = true
-        Deferred.doneUnsafe(signal, Exit.succeed(args))
-      })
-      proc.on("spawn", () => {
-        resume(Effect.succeed([proc, signal]))
-      })
+      let current: NodeChildProcess.ChildProcess | undefined
+      let settled = false
+
+      // A refused start (`EPERM`/`EACCES` at `uv_spawn`) means no process ever
+      // ran, so repeating the launch cannot duplicate work. The retry lives
+      // here, at the single chokepoint every caller crosses, because the denial
+      // arrives in bursts that outlast any per-caller budget. An error raised
+      // after the process actually spawned is never retried.
+      const start = (attempt: number) => {
+        const proc = launch(command.command, command.args, opts)
+        current = proc
+        let spawned = false
+        let end = false
+        proc.on("error", (err) => {
+          const failure = toPlatformError("spawn", err, command)
+          if (!spawned && !settled && attempt + 1 < LAUNCH_RETRY_ATTEMPTS && isTransientLaunchFailure(failure)) {
+            setTimeout(() => start(attempt + 1), launchRetryDelayMs(attempt))
+            return
+          }
+          if (settled) return
+          settled = true
+          resume(Effect.fail(failure))
+        })
+        // Resolve on "exit", not "close": "close" only fires after the stdio
+        // pipes are fully closed, which can be deferred indefinitely when a
+        // background child inherited the pipe handles (e.g. a PowerShell
+        // Start-Process with -RedirectStandardOutput). "exit" carries the same
+        // code+signal and does not wait on the pipes.
+        proc.on("exit", (...args) => {
+          if (end) return
+          end = true
+          Deferred.doneUnsafe(signal, Exit.succeed(args))
+        })
+        proc.on("close", (...args) => {
+          if (end) return
+          end = true
+          Deferred.doneUnsafe(signal, Exit.succeed(args))
+        })
+        proc.on("spawn", () => {
+          spawned = true
+          if (settled) return
+          settled = true
+          resume(Effect.succeed([proc, signal]))
+        })
+      }
+      start(0)
       return Effect.sync(() => {
-        proc.kill("SIGTERM")
+        current?.kill("SIGTERM")
       })
     })
 
@@ -499,7 +530,9 @@ export const make = Effect.gen(function* () {
   )
 
   return makeSpawner(spawnCommand)
-})
+  })
+
+export const make = makeWith(launch)
 
 export const layer: Layer.Layer<ChildProcessSpawner, never, FileSystem.FileSystem | Path.Path> = Layer.effect(
   ChildProcessSpawner,
