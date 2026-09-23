@@ -91,6 +91,7 @@ import { useTuiConfig } from "../../context/tui-config"
 import { nextThinkingMode, reasoningSummary, useThinkingMode, type ThinkingMode } from "../../context/thinking"
 import { getScrollAcceleration } from "../../util/scroll"
 import { collapseToolOutput } from "../../util/collapse-tool-output"
+import { isHiddenTool } from "../../util/hidden-tools"
 import { TuiPluginRuntime } from "@/cli/cmd/tui/plugin/runtime"
 import { DialogRetryAction } from "../../component/dialog-retry-action"
 import { SessionRetry } from "@/session/retry"
@@ -1734,7 +1735,7 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
   const messages = createMemo(() => sync.data.message[props.message.sessionID] ?? [])
   const model = createMemo(() => Model.name(ctx.providers(), props.message.providerID, props.message.modelID))
 
-  const hasTools = createMemo(() => props.parts.some((part) => part.type === "tool"))
+  const hasTools = createMemo(() => props.parts.some((part) => part.type === "tool" && !isHiddenTool(part.tool)))
   const final = createMemo(() => {
     return !hasTools() && props.message.finish && !["tool-calls", "unknown"].includes(props.message.finish)
   })
@@ -1984,6 +1985,8 @@ function ToolPart(props: { last: boolean; part: ToolPart; message: AssistantMess
 
   // Hide tool if showDetails is false and tool completed successfully
   const shouldHide = createMemo(() => {
+    // Bookkeeping tools are never part of the transcript, with or without details.
+    if (isHiddenTool(props.part.tool)) return true
     if (ctx.showDetails()) return false
     if (props.part.state.status !== "completed") return false
     return true
@@ -2454,7 +2457,7 @@ function Task(props: ToolProps<typeof TaskTool>) {
   const tools = createMemo(() => {
     return messages().flatMap((msg) =>
       (sync.data.part[msg.id] ?? [])
-        .filter((part): part is ToolPart => part.type === "tool")
+        .filter((part): part is ToolPart => part.type === "tool" && !isHiddenTool(part.tool))
         .map((part) => ({ tool: part.tool, state: part.state })),
     )
   })

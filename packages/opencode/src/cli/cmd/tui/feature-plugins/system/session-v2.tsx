@@ -32,6 +32,7 @@ import type {
 } from "@opencode-ai/sdk/v2"
 import { createEffect, createMemo, createSignal, For, Match, Show, Switch } from "solid-js"
 import { collapseToolOutput } from "../../util/collapse-tool-output"
+import { isHiddenTool } from "../../util/hidden-tools"
 
 const id = "internal:session-v2-debug"
 const route = "session.v2.messages"
@@ -317,7 +318,9 @@ function AssistantMessage(props: {
     const variant = props.message.model.variant ? `/${props.message.model.variant}` : ""
     return `${props.message.model.providerID}/${props.message.model.id}${variant}`
   })
-  const hasTools = createMemo(() => props.message.content.some((part) => part.type === "tool"))
+  const hasTools = createMemo(
+    () => props.message.content.some((part) => part.type === "tool" && !isHiddenTool((part as SessionMessageAssistantTool).name)),
+  )
   const final = createMemo(() => !hasTools() && props.message.finish && !["tool-calls", "unknown"].includes(props.message.finish))
   return (
     <>
@@ -334,7 +337,7 @@ function AssistantMessage(props: {
                 completedAt={() => props.message.time.completed}
               />
             </Match>
-            <Match when={part.type === "tool"}>
+            <Match when={part.type === "tool" && !isHiddenTool((part as SessionMessageAssistantTool).name)}>
               <AssistantTool part={part as SessionMessageAssistantTool} sessionID={props.sessionID} />
             </Match>
           </Switch>

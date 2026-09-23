@@ -174,8 +174,19 @@ describe("turn plan enablement is one shared predicate", () => {
 })
 
 describe("the protocol demands a plan every turn without displaying it", () => {
-  test("asks for the plan on every turn, not only when work is left open", () => {
+  test("still demands the plan on every turn, not only when work is left open", () => {
     expect(instruction()).toContain("On every turn")
+  })
+
+  test("frames the turn as a batch instead of a single action", () => {
+    const protocol = instruction()
+    expect(protocol).toContain("BATCH this turn delivers")
+    expect(protocol).toContain("parallel tool calls")
+    expect(protocol).not.toContain("the ONE action")
+  })
+
+  test("forbids spending a turn on work that was already ready", () => {
+    expect(instruction()).toContain("Declare only what genuinely remains")
   })
 
   test("keeps the plan out of the visible answer", () => {

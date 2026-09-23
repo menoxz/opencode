@@ -201,15 +201,21 @@ export function enabled(input: { flag: boolean; config?: boolean }): boolean {
   return input.flag || input.config === true
 }
 
-/** The protocol the model is asked to follow on every turn. */
+/**
+ * The protocol the model is asked to follow on every turn. It frames the turn as
+ * a batch, not a single action: a one-action frame spends a whole turn on work
+ * that was already ready, which made the tool accountable without ever making it
+ * economical.
+ */
 export function instruction(): string {
   return [
     "<turn_plan_protocol>",
-    "On every turn, declare your next action with the `turn_plan` tool before you act:",
-    "- `intent`: the ONE action you will take next.",
-    "- `expect`: the observation that proves it worked.",
+    "On every turn, declare with the `turn_plan` tool the BATCH this turn delivers, and finish that batch before you stop:",
+    "- `intent`: the bounded OUTCOME this turn delivers, as an imperative. Group every independent action you can complete now and run them together (parallel tool calls) instead of spending the turn on one step.",
+    "- `expect`: the observation that proves the whole batch landed, as a concrete artifact: an exit code, a file path, or a measured value.",
     "- `on_fail`: the bounded fallback if it does not (optional).",
     "- `stop_if`: what ends the turn (optional).",
+    "Finish the batch in this turn. Declare only what genuinely remains: a plan that restates a step you could have completed wastes the turn.",
     "This is a prediction, not a fact: the harness restates it next turn, then shows the real observation against it.",
     "Keep the plan out of your visible answer: declare it here instead of restating it as prose in your reply.",
     "Never declare a plan you will not execute.",

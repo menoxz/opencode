@@ -4,11 +4,12 @@ import * as Tool from "./tool"
 
 const Parameters = Schema.Struct({
   intent: Schema.String.annotate({
-    description: "The ONE action you will take at the start of your next turn, written as an imperative.",
+    description:
+      "The bounded OUTCOME this turn delivers, written as an imperative. Group every independent action you can complete now and run them together (parallel tool calls) rather than spending the turn on a single step.",
   }),
   expect: Schema.String.annotate({
     description:
-      "The observation that proves the action worked, stated as a concrete artifact: an exit code, a file path, or a measured value. It is compared against the real observation at the head of the next turn.",
+      "The observation that proves the whole batch landed, stated as a concrete artifact: an exit code, a file path, or a measured value. It is compared against the real observation at the head of the next turn.",
   }),
   on_fail: Schema.optional(Schema.String).annotate({
     description: "The bounded fallback to run when the expectation is not observed.",
