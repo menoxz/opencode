@@ -191,3 +191,38 @@ export function notFound(message: string) {
     data: { message },
   })
 }
+
+// Handlers collapsed every failure into the built-in `HttpApiError.BadRequest`,
+// whose payload is `{ _tag }` only, so the cause never reached the client or the
+// log. A tool-cap mismatch stayed an unexplained "Sending the prompt failed" for
+// hours because of it. Carry a bounded, non-leaking reason instead.
+const REASON_LIMIT = 300
+const ABSOLUTE_PATH = /(?:[A-Za-z]:\\[^\s"',;]+|\/(?:Users|home|root|var|etc|tmp|opt|mnt)\/[^\s"',;]+)/g
+const SECRET_ASSIGNMENT =
+  /(\b[a-z0-9_.-]*(?:token|secret|password|passwd|api[_-]?key|apikey|authorization|credential|bearer)[a-z0-9_.-]*\s*[=:]\s*)(\S+)/gi
+
+function rawMessage(error: unknown) {
+  if (typeof error === "string") return error
+  if (error instanceof Error) return error.message
+  if (error !== null && typeof error === "object" && "message" in error) {
+    const message = Reflect.get(error, "message")
+    if (typeof message === "string") return message
+  }
+  return ""
+}
+
+export function reasonOf(error: unknown) {
+  const line = rawMessage(error).split(/\r?\n/, 1)[0].trim()
+  if (line.length === 0) return "Request failed"
+  const redacted = line.replace(SECRET_ASSIGNMENT, "$1<redacted>").replace(ABSOLUTE_PATH, "<path>")
+  if (redacted.length <= REASON_LIMIT) return redacted
+  return `${redacted.slice(0, REASON_LIMIT)}â¦ (${redacted.length - REASON_LIMIT} more chars)`
+}
+
+export function badRequest(error: unknown) {
+  return new InvalidRequestError({ message: reasonOf(error) })
+}
+
+export function internalError(error: unknown) {
+  return new UnknownError({ message: reasonOf(error) })
+}

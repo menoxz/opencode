@@ -3,9 +3,9 @@ import { Workspace } from "@/control-plane/workspace"
 import * as InstanceState from "@/effect/instance-state"
 import { Vcs } from "@/project/vcs"
 import { Effect } from "effect"
-import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
+import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
-import { notFound } from "../errors"
+import { badRequest, notFound } from "../errors"
 import { ApiVcsApplyError } from "../groups/instance"
 import { ApiWorkspaceWarpError, CreatePayload, WarpPayload } from "../groups/workspace"
 
@@ -30,7 +30,7 @@ export const workspaceHandlers = HttpApiBuilder.group(InstanceHttpApi, "workspac
           extra: ctx.payload.extra ?? null,
           projectID: instance.project.id,
         })
-        .pipe(Effect.mapError(() => new HttpApiError.BadRequest({})))
+        .pipe(Effect.mapError((error) => badRequest(error)))
     })
 
     const syncList = Effect.fn("WorkspaceHttpApi.syncList")(function* () {

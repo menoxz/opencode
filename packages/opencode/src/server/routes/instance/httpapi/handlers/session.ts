@@ -19,7 +19,7 @@ import { NamedError } from "@opencode-ai/core/util/error"
 import { Cause, Effect, Option, Schema, Scope } from "effect"
 import * as Stream from "effect/Stream"
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
-import { HttpApiBuilder, HttpApiError, HttpApiSchema } from "effect/unstable/httpapi"
+import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
 import {
   CommandPayload,
@@ -35,13 +35,13 @@ import {
   SummarizePayload,
   UpdatePayload,
 } from "../groups/session"
-import { PermissionNotFoundError } from "../errors"
+import { badRequest, internalError, PermissionNotFoundError } from "../errors"
 import * as SessionError from "./session-errors"
 
 const tryParseJson = (text: string) =>
   Effect.try({
     try: () => JSON.parse(text) as unknown,
-    catch: () => new HttpApiError.BadRequest({}),
+    catch: (cause) => badRequest(cause),
   })
 
 export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", (handlers) =>
@@ -105,12 +105,13 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       params: { sessionID: SessionID }
       query: typeof MessagesQuery.Type
     }) {
-      if (ctx.query.before && ctx.query.limit === undefined) return yield* new HttpApiError.BadRequest({})
+      if (ctx.query.before && ctx.query.limit === undefined)
+        return yield* badRequest(new Error('"before" requires "limit"'))
       if (ctx.query.before) {
         const before = ctx.query.before
         yield* Effect.try({
           try: () => MessageV2.cursor.decode(before),
-          catch: () => new HttpApiError.BadRequest({}),
+          catch: (cause) => badRequest(cause),
         })
       }
       yield* requireSession(ctx.params.sessionID)
@@ -162,7 +163,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
 
       const json = yield* tryParseJson(body)
       const decoded = yield* Schema.decodeUnknownEffect(Session.CreateInput)(json).pipe(
-        Effect.mapError(() => new HttpApiError.BadRequest({})),
+        Effect.mapError((error) => badRequest(error)),
       )
       const payload = decoded
         ? {
@@ -253,7 +254,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
 
       const json = yield* tryParseJson(body)
       const payload = yield* Schema.decodeUnknownEffect(ForkPayload)(json).pipe(
-        Effect.mapError(() => new HttpApiError.BadRequest({})),
+        Effect.mapError((error) => badRequest(error)),
       )
       return yield* fork({ params: ctx.params, payload })
     })
@@ -276,7 +277,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
           command: Command.Default.INIT,
           arguments: "",
         })
-        .pipe(Effect.mapError(() => new HttpApiError.BadRequest({})))
+        .pipe(Effect.mapError((error) => badRequest(error)))
       return true
     })
 
@@ -287,7 +288,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     // every failure to a 400 BadRequest.
     const share = Effect.fn("SessionHttpApi.share")(function* (ctx: { params: { sessionID: SessionID } }) {
       yield* requireSession(ctx.params.sessionID)
-      yield* shareSvc.share(ctx.params.sessionID).pipe(Effect.mapError(() => new HttpApiError.InternalServerError({})))
+      yield* shareSvc.share(ctx.params.sessionID).pipe(Effect.mapError((error) => internalError(error)))
       return yield* requireSession(ctx.params.sessionID)
     })
 
@@ -295,7 +296,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       yield* requireSession(ctx.params.sessionID)
       yield* shareSvc
         .unshare(ctx.params.sessionID)
-        .pipe(Effect.mapError(() => new HttpApiError.InternalServerError({})))
+        .pipe(Effect.mapError((error) => internalError(error)))
       return yield* requireSession(ctx.params.sessionID)
     })
 
@@ -331,7 +332,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
           ...ctx.payload,
           sessionID: ctx.params.sessionID,
         })
-        .pipe(Effect.mapError(() => new HttpApiError.BadRequest({})))
+        .pipe(Effect.mapError((error) => badRequest(error)))
       return HttpServerResponse.stream(Stream.make(JSON.stringify(message)).pipe(Stream.encodeText), {
         contentType: "application/json",
       })
@@ -366,7 +367,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       yield* requireSession(ctx.params.sessionID)
       return yield* promptSvc
         .command({ ...ctx.payload, sessionID: ctx.params.sessionID })
-        .pipe(Effect.mapError(() => new HttpApiError.BadRequest({})))
+        .pipe(Effect.mapError((error) => badRequest(error)))
     })
 
     const shell = Effect.fn("SessionHttpApi.shell")(function* (ctx: {
@@ -436,7 +437,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
         payload.messageID !== ctx.params.messageID ||
         payload.sessionID !== ctx.params.sessionID
       ) {
-        return yield* new HttpApiError.BadRequest({})
+        return yield* badRequest(new Error("Part identity does not match path parameters"))
       }
       return yield* session.updatePart(payload)
     })
