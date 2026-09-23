@@ -191,16 +191,27 @@ export function render(input: {
   )
 }
 
-/** The protocol the model is asked to follow before ending a turn. */
+/**
+ * Whether the turn-plan protocol is available. Single source of truth shared by
+ * the tool registry and the prompt assembly: registering the tool on the config
+ * while the prompt sites checked the environment flag alone left the model with
+ * a tool it was never told to use.
+ */
+export function enabled(input: { flag: boolean; config?: boolean }): boolean {
+  return input.flag || input.config === true
+}
+
+/** The protocol the model is asked to follow on every turn. */
 export function instruction(): string {
   return [
     "<turn_plan_protocol>",
-    "Before ending a turn that leaves work open, declare the next action with the `turn_plan` tool:",
+    "On every turn, declare your next action with the `turn_plan` tool before you act:",
     "- `intent`: the ONE action you will take next.",
     "- `expect`: the observation that proves it worked.",
     "- `on_fail`: the bounded fallback if it does not (optional).",
     "- `stop_if`: what ends the turn (optional).",
     "This is a prediction, not a fact: the harness restates it next turn, then shows the real observation against it.",
+    "Keep the plan out of your visible answer: declare it here instead of restating it as prose in your reply.",
     "Never declare a plan you will not execute.",
     "</turn_plan_protocol>",
   ].join("\n")

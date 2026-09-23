@@ -42,6 +42,7 @@ import {
 } from "./mcp"
 import * as Tool from "./tool"
 import { Config } from "@/config/config"
+import * as TurnPlan from "@/session/turn-plan"
 import { type ToolContext as PluginToolContext, type ToolDefinition } from "@opencode-ai/plugin"
 import type { JSONSchema7, JSONSchema7Definition } from "@ai-sdk/provider"
 import { Schema } from "effect"
@@ -395,7 +396,7 @@ export const layer: Layer.Layer<
             tool.session_context,
             tool.session_info,
             ...(cfg.experimental?.hot_path?.environment_state === true ? [tool.environment] : []),
-            ...(flags.experimentalTurnPlan || cfg.experimental?.turn_plan === true ? [tool.turn_plan] : []),
+            ...(TurnPlan.enabled({ flag: flags.experimentalTurnPlan, config: cfg.experimental?.turn_plan }) ? [tool.turn_plan] : []),
             ...(selectVisibleGoalContractTools(flags.experimentalLeanProtocolDedupe, {
               create_objectif: tool.create_objectif,
               create_objective: tool.create_objective,

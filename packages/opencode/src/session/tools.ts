@@ -250,11 +250,29 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   const sticky = activations.get(input.session.id)
   const requiredCount = new Set([...core, ...(hotPath?.always_tools ?? [])].filter((id) => visibleCatalog.tools.some((item) => item.id === id))).size + 1
   const cap = leanDynamicCapVerdict({ configuredMax, requiredCount })
-  if (dynamicMode === "enforce" && !searchDenied && !cap.ok) return yield* Effect.fail(new Error(cap.reason))
+  // A cap below the mandatory core plus dynamic room is a config mismatch, not a
+  // reason to reject the turn. The core is session-dependent (a live objective
+  // pins two lifecycle tools, and the memory policy pins five MCP tools that
+  // disappear when that server is down), so one cap fits one session's catalog
+  // and fails another's. Rejecting here surfaced only as an opaque BadRequest —
+  // the handler maps every failure to `BadRequest({})` — which left the affected
+  // session permanently unable to send a prompt with no retrievable cause. Raise
+  // the effective cap to the minimum and keep the mismatch visible instead.
+  const effectiveMax = cap.ok ? configuredMax : cap.minimum
+  if (!cap.ok)
+    log.warn("lean dynamic tool cap too small; raised to fit the mandatory tools", {
+      configuredMax,
+      requiredCount,
+      minimum: cap.minimum,
+      dynamicMode,
+      phase,
+      core,
+      alwaysTools: hotPath?.always_tools ?? [],
+    })
   const proposed = ToolCatalog.selectTools(visibleCatalog, input.query ?? "", {
     enabled: dynamicMode !== "off",
     threshold: 0,
-    maxTools: Math.max(1, configuredMax - 1),
+    maxTools: Math.max(1, effectiveMax - 1),
     // Most recent activation first: when stickies exceed the free slots the
     // ones the model just asked for must win over stale ones.
     always: [...(hotPath?.always_tools ?? []), ...[...sticky].reverse()],

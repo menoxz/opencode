@@ -9,6 +9,7 @@ import {
   current,
   declare,
   declaredIntent,
+  enabled,
   instruction,
   normalize,
   reminder,
@@ -154,5 +155,30 @@ describe("turn plan schema", () => {
     const decoded = Schema.decodeUnknownSync(TurnPlanSchema)({ intent: "a", expect: "b" })
     expect(decoded.onFail).toBeUndefined()
     expect(decoded.stopIf).toBeUndefined()
+  })
+})
+
+describe("turn plan enablement is one shared predicate", () => {
+  test("enables the protocol from the config alone, exactly like the tool registry", () => {
+    expect(enabled({ flag: false, config: true })).toBe(true)
+  })
+
+  test("enables the protocol from the environment flag alone", () => {
+    expect(enabled({ flag: true, config: undefined })).toBe(true)
+  })
+
+  test("stays disabled when neither the flag nor the config asks for it", () => {
+    expect(enabled({ flag: false, config: undefined })).toBe(false)
+    expect(enabled({ flag: false, config: false })).toBe(false)
+  })
+})
+
+describe("the protocol demands a plan every turn without displaying it", () => {
+  test("asks for the plan on every turn, not only when work is left open", () => {
+    expect(instruction()).toContain("On every turn")
+  })
+
+  test("keeps the plan out of the visible answer", () => {
+    expect(instruction()).toContain("Keep the plan out of your visible answer")
   })
 })

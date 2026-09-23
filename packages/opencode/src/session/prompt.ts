@@ -1743,8 +1743,13 @@ export const layer = Layer.effect(
         const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
         const injectionCache = createPromptInjectionCache()
         yield* reconcileStaleAssistants(sessionID)
+        // The registry and the prompt must agree on enablement: registering the
+        // tool while these sites checked the environment flag alone offered the
+        // model a tool it was never told to use.
+        const cfg = yield* config.get()
+        const turnPlanEnabled = TurnPlan.enabled({ flag: flags.experimentalTurnPlan, config: cfg.experimental?.turn_plan })
         // A declared engagement is turn-scoped: a fresh run starts without one.
-        if (flags.experimentalTurnPlan) TurnPlan.clear(sessionID)
+        if (turnPlanEnabled) TurnPlan.clear(sessionID)
 
         // Anchor this run to the oldest user prompt whose turn is not closed.
         // Prompts queued while this run is active are never absorbed: they are
@@ -1854,7 +1859,7 @@ export const layer = Layer.effect(
           // to the tail so the cached system segment stays byte-identical.
           const turnPlanCapsules: string[] = []
           let declaredIntent: DeclaredIntent | undefined
-          if (flags.experimentalTurnPlan) {
+          if (turnPlanEnabled) {
             const commitment = TurnPlan.reminder(sessionID)
             if (commitment) {
               // First sighting: the plan predicted this step, so restate it as the
@@ -1877,6 +1882,11 @@ export const layer = Layer.effect(
               declaredIntent = TurnPlan.declaredIntent(outcome?.verdict ?? "no-plan", outcome?.plan)
             }
             turnPlanCapsules.push(TurnPlan.instruction())
+            log.debug("turn plan protocol injected", {
+              sessionID,
+              capsules: turnPlanCapsules.length,
+              declaredIntent,
+            })
           }
 
           // A turn stays open while tool calls are pending, and — when it
