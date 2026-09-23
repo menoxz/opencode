@@ -51,6 +51,7 @@ const LEAN_CORE_TOOLS = [
   "read",
   "glob",
   "grep",
+  "repo_overview",
   "apply_patch",
   "edit",
   "write",

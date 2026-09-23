@@ -5,6 +5,8 @@ export const LEAN_TERMINAL_MAX_CHARS = 4_000
 export const LEAN_TERMINAL_MAX_LINES = 120
 export const LEAN_BROWSER_MAX_CHARS = 8_000
 export const LEAN_BROWSER_MAX_LINES = 250
+export const LEAN_OVERVIEW_MAX_CHARS = 6_000
+export const LEAN_OVERVIEW_MAX_LINES = 200
 // Minimum number of dynamic (tool_search) slots the lean cap must leave free
 // on top of the mandatory core tools, so activations stop evicting each other.
 export const LEAN_DYNAMIC_SLOT_MARGIN = 6
@@ -51,6 +53,9 @@ export function leanToolOutputBudget(
     return { maxChars: LEAN_TERMINAL_MAX_CHARS, maxLines: LEAN_TERMINAL_MAX_LINES, direction: "tail" }
   }
   const normalized = tool.replaceAll("__", "_").toLowerCase()
+  if (normalized === "repo_overview") {
+    return { maxChars: LEAN_OVERVIEW_MAX_CHARS, maxLines: LEAN_OVERVIEW_MAX_LINES, direction: "head" }
+  }
   if (normalized.includes("web-browser_")) {
     return { maxChars: LEAN_BROWSER_MAX_CHARS, maxLines: LEAN_BROWSER_MAX_LINES, direction: "head" }
   }

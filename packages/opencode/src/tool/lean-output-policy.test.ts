@@ -6,6 +6,7 @@ import {
   leanToolOutputBudget,
   LEAN_BROWSER_MAX_CHARS,
   LEAN_DYNAMIC_SLOT_MARGIN,
+  LEAN_OVERVIEW_MAX_CHARS,
   requiresMutationCause,
   LEAN_INSPECT_MAX_ACTIONS,
   LEAN_INSPECT_TOTAL_CHARS,
@@ -126,6 +127,11 @@ describe("lean output policy", () => {
     expect(leanToolOutputBudget("bash")).toMatchObject({ maxChars: 4_000, direction: "tail" })
     expect(leanToolOutputBudget("web-browser_git_status")).toMatchObject({ maxChars: 8_000, direction: "head" })
     expect(leanToolOutputBudget("web-browser_browser_navigate")).toMatchObject({ maxChars: 8_000, direction: "head" })
+    expect(leanToolOutputBudget("repo_overview")).toMatchObject({
+      maxChars: LEAN_OVERVIEW_MAX_CHARS,
+      maxLines: 200,
+      direction: "head",
+    })
     expect(leanToolOutputBudget("read")).toBeUndefined()
   })
 })

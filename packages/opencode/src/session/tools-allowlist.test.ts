@@ -15,6 +15,12 @@ describe("Lean dynamic core tools", () => {
     }
   })
 
+  test("pins the workspace orientation tool so it is visible from the first turn", () => {
+    for (const phase of ["discovery", "implementation", "unknown"] as const) {
+      expect(leanPhaseCoreTools(phase)).toContain("repo_overview")
+    }
+  })
+
   test("exposes the full memory lifecycle, not just retrieval", () => {
     const core = leanPhaseCoreTools("implementation")
     for (const tool of [
@@ -66,7 +72,7 @@ describe("Live objective keeps its lifecycle tools reachable", () => {
 
   test("the shipped cap still fits the core once lifecycle tools are pinned", () => {
     const requiredCount = leanCoreTools({ phase: "unknown", environmentState: true, goalActive: true }).length + 1
-    expect(leanDynamicCapVerdict({ configuredMax: 28, requiredCount }).ok).toBe(true)
+    expect(leanDynamicCapVerdict({ configuredMax: 30, requiredCount }).ok).toBe(true)
   })
 })
 

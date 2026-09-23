@@ -16,7 +16,8 @@ export const Parameters = Schema.Struct({
     description: "Directory path to inspect instead of a cached repository",
   }),
   depth: Schema.optional(Schema.Number).annotate({
-    description: "Maximum structure depth to include. Defaults to 3.",
+    description:
+      "Maximum structure depth to include. Start at 1 and escalate to 2 then 3 only when the layout is still unclear. Defaults to 1.",
   }),
 })
 
@@ -45,6 +46,16 @@ const IGNORED_DIRS = new Set([
   "vendor",
 ])
 const STRUCTURE_LIMIT = 200
+const DEFAULT_DEPTH = 1
+const MAX_DEPTH = 6
+
+// Progressive disclosure: depth 1 orients, 2 and 3 are escalated only when the
+// shallow view leaves the architecture ambiguous. An omitted, fractional or
+// out-of-range depth falls back to the shallow default instead of failing.
+export function resolveDepth(depth?: number) {
+  if (!depth || !Number.isInteger(depth) || depth < 1 || depth > MAX_DEPTH) return DEFAULT_DEPTH
+  return depth
+}
 const DEPENDENCY_FILES = [
   "package.json",
   "package-lock.json",
@@ -179,8 +190,7 @@ export const RepoOverviewTool = Tool.define<typeof Parameters, Metadata, AppFile
       execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context<Metadata>) =>
         Effect.gen(function* () {
           const target = yield* resolveTarget(params)
-          const depth =
-            !params.depth || !Number.isInteger(params.depth) || params.depth < 1 || params.depth > 6 ? 3 : params.depth
+          const depth = resolveDepth(params.depth)
 
           yield* assertExternalDirectoryEffect(ctx, target.path, { kind: "directory" })
           yield* ctx.ask({
