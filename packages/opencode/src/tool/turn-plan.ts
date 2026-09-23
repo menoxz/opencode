@@ -8,7 +8,7 @@ const Parameters = Schema.Struct({
   }),
   expect: Schema.String.annotate({
     description:
-      "The observation that proves the action worked. It is compared against the real observation at the head of the next turn.",
+      "The observation that proves the action worked, stated as a concrete artifact: an exit code, a file path, or a measured value. It is compared against the real observation at the head of the next turn.",
   }),
   on_fail: Schema.optional(Schema.String).annotate({
     description: "The bounded fallback to run when the expectation is not observed.",
@@ -25,7 +25,7 @@ export const TurnPlanTool = Tool.define<typeof Parameters, Metadata, never>(
   Effect.gen(function* () {
     return {
       description:
-        "Declare the next action before ending a turn that still leaves work open. The plan is a prediction held in run state, never in the message history: the harness shows the real observation against `expect` at the head of the next turn, and a contradicting observation invalidates it. Each declaration replaces the previous one. Never declare a plan you will not execute.",
+        "Declare the next action before ending a turn that still leaves work open. The plan is a prediction held in run state, never in the message history: the harness shows the real observation against `expect` at the head of the next turn, and a contradicting observation invalidates it. Each declaration replaces the previous one. Never declare a plan you will not execute. Do not narrate the plan in your message; declare it here instead.",
       parameters: Parameters,
       execute: (params, ctx) =>
         Effect.gen(function* () {
