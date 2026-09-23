@@ -7,6 +7,15 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Fixed
+- **Un correctif déclaré mais jamais câblé** : le commit `76779719b` (v2.2.31) a introduit la constante `gitTimeout = Duration.seconds(60)` et son commentaire dans `src/snapshot/index.ts`, et son message affirmait « Every snapshot git call now passes timeout: 60s » — mais son diff n'ajoute **aucun** `timeout:` aux appels `appProcess.run`. Les commandes git du snapshot restaient donc **sans échéance** : le mode d'échec que v2.2.31 prétendait corriger (un enfant qui ne sort jamais parke le tour) était toujours possible.
+- Les deux sites de spawn git du snapshot (le helper `git()` — qui couvre aussi `check-ignore` — et le lot `cat-file --batch`) passent désormais `timeout: gitTimeout`. `RunOptions.timeout` est honoré par `Effect.timeoutOrElse` (`packages/core/src/process.ts:168`), qui **tue** l'enfant ; l'appel échoue alors dans le chemin d'erreur déjà en place (résultat `code 1`) : la capture dégrade et se journalise au lieu de bloquer la phase pré-provider.
+
+### Contexte
+- Symptôme : « Sending the prompt failed. Open console for more details. » sur l'agent Lean, après l'ajout de `turn_plan` à `experimental.hot_path.always_tools`.
+- La config n'est **pas** en cause : à `max_tools=28`, un run headless **avec objectif actif** et `turn_plan` dans `always_tools` aboutit (`dynamicMode=enforce`, `selectedTools=26`, `error=false`) — le cap d'outils n'est pas atteint.
+- Cause réelle : blocage **pré-provider**. Session `ses_f33215a58ffeDPjknlXcYvigus`, log `service=snapshot … error launching git: Accès refusé` puis `service=session.prompt … step stalled before provider; releasing session` à +299355 ms (`src/session/prompt.ts:1779`). `snapshot.track()` est attendu **avant le stream LLM** (`src/session/processor.ts:144`) et un refus de lancement est rejoué par `retryTransientLaunch` (8 tentatives) : sur cet hôte un spawn refusé coûte des dizaines de secondes (`add()` mesuré à 153 s), donc `track()` peut dépasser le budget pré-provider et faire libérer la session.
+
 ## [v2.2.31] - 2026-09-22
 
 ### Fixed

@@ -99,6 +99,7 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
               const result = yield* retryTransientLaunch(
                 appProcess.run(ChildProcess.make("git", cmd, { cwd: opts?.cwd, env: opts?.env, extendEnv: true }), {
                   stdin: opts?.stdin,
+                  timeout: gitTimeout,
                 }),
               )
               return {
@@ -610,7 +611,7 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
                           cwd: state.directory,
                           extendEnv: true,
                         }),
-                        { stdin: refs.map((item) => item.ref).join("\n") + "\n" },
+                        { stdin: refs.map((item) => item.ref).join("\n") + "\n", timeout: gitTimeout },
                       ),
                     )
                     if (batch.exitCode !== 0) {
