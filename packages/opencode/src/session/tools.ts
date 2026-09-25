@@ -485,6 +485,10 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
                 }
             }
             const result = yield* item.execute(inputArgs, ctx)
+            // Retain the raw bytes before the intake filter prunes blocks: the model
+            // sees the filtered text, the ledger keeps what was cut, so a pruned span
+            // is recoverable instead of needing the tool run again.
+            ContextLedger.setRawRetention(jev?.intake?.enabled === true)
             // The slot is refreshed in place, never appended: one canonical entry per
             // target is what the prompt capsule renders back to the model.
             ContextLedger.observe(ctx.sessionID, {
@@ -504,7 +508,8 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               (jev.guard?.enabled === true ||
                 jev.review?.enabled === true ||
                 jev.untrusted?.enabled === true ||
-                jev.next_action?.enabled === true)
+                jev.next_action?.enabled === true ||
+                jev.intake?.enabled === true)
                 ? yield* JevHooks.post(http, jev, {
                     sessionID: ctx.sessionID,
                     tool: item.id,
@@ -525,9 +530,18 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               judged && judged.verdict !== "useful" ? JevRelevance.render(judged) : undefined,
               screening?.annotation,
             ].filter((line): line is string => line !== undefined)
+            const injected = screening?.kept !== undefined && !jevShadow ? screening.kept : result.output
+            if (screening?.kept !== undefined)
+              log.info("jev intake decision", {
+                sessionID: ctx.sessionID,
+                tool: item.id,
+                before: result.output.length,
+                after: injected.length,
+                shadow: jevShadow,
+              })
             const output = {
               ...result,
-              output: annotations.length > 0 && !jevShadow ? `${result.output}\n\n${annotations.join("\n")}` : result.output,
+              output: annotations.length > 0 && !jevShadow ? `${injected}\n\n${annotations.join("\n")}` : injected,
               attachments: result.attachments?.map((attachment) => ({
                 ...attachment,
                 id: PartID.ascending(),

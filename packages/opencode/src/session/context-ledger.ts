@@ -57,6 +57,8 @@ export type Slot = {
   readonly calls: number
   /** Set when a compaction may have summarized the observation out of context. */
   readonly elided: boolean
+  /** Bounded raw output, retained only when raw retention is on (see `setRawRetention`). */
+  readonly raw?: string
 }
 
 export type CallClass = {
@@ -99,6 +101,21 @@ export const DEFAULT_TTL_MS = 120_000
 
 /** Summary length carried by a slot and quoted in a presence notice. */
 const MAX_SUMMARY_CHARS = 240
+
+/**
+ * Bounded raw output retained per slot when raw retention is on. The intake
+ * filter deletes blocks from what the model sees while the ledger keeps the
+ * bytes, so a pruned span can be re-served (via `slotFor(...).raw`) instead of
+ * re-running the tool.
+ */
+export const MAX_RAW_CHARS = 4_000
+
+let rawRetention = false
+
+/** Opt-in gate: retain raw output only when a caller consumes it (extractive intake). */
+export function setRawRetention(enabled: boolean): void {
+  rawRetention = enabled
+}
 
 const MAX_CAPSULE_CHARS = 1_600
 const MAX_CAPSULE_TARGETS = 14
@@ -410,6 +427,7 @@ class Ledger {
       at: input.at,
       truth: input.truth,
       summary: summarize(input.output),
+      raw: rawRetention ? input.output.slice(0, MAX_RAW_CHARS) : undefined,
       epoch: this.#epoch,
       coverage: mergeCoverage([...(existing?.coverage ?? []), ...coverageOf(input.tool, input.args)]),
       calls: (existing?.calls ?? 0) + 1,

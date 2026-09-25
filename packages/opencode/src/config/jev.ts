@@ -3,6 +3,7 @@ import { JevClient } from "@/jev/client"
 import { JevSchema } from "@/jev/schema"
 import { JevGuard } from "@/jev/guard"
 import { JevCompaction } from "@/jev/compaction"
+import { JevIntake } from "@/jev/intake"
 import { JevRelevance } from "@/jev/relevance"
 
 export const Guard = Schema.Struct({
@@ -97,6 +98,33 @@ export const NextAction = Schema.Struct({
 }).annotate({ identifier: "JevNextActionConfig" })
 export type NextAction = Schema.Schema.Type<typeof NextAction>
 
+export const Intake = Schema.Struct({
+  enabled: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "Enable the extractive intake filter. Before a tool result enters the model context, Jev reads the result split into blocks and marks which blocks are NOT load-bearing; the harness deletes exactly those blocks and keeps the rest byte-for-byte, never rewriting anything. A block carrying an anchor (path, command, identifier, error string) is never asked about and never dropped, and an unanswered block is kept, so a wrong Jev answer cannot delete load-bearing bytes. The full raw result stays recoverable from the context ledger. The questions merge into the same round-trip as review/next_action, so it costs no extra call unless `model` selects a different one. Fail-open, shadow-aware, default off. Requires an API key.",
+  }),
+  threshold: Schema.optional(Schema.Number).annotate({
+    description: `Probability (0..1) at or above which a block counts as load-bearing and is kept. Below it, a block is pruned. Defaults to ${JevIntake.DEFAULT_THRESHOLD}.`,
+  }),
+  max_blocks: Schema.optional(Schema.Number).annotate({
+    description: `Maximum blocks a result is split into and asked about. Defaults to ${JevIntake.MAX_BLOCKS}.`,
+  }),
+  min_chars: Schema.optional(Schema.Number).annotate({
+    description: `Results shorter than this many characters are never filtered and cost no round-trip. Defaults to ${JevIntake.MIN_CHARS}.`,
+  }),
+  model: Schema.optional(JevSchema.Model).annotate({
+    description:
+      "System One model id used for the intake questions only, so the filter can run on a cheaper or faster model than the rest of Jev (for example `openjev-latest`). When set (or when `base_url`/`endpoint` is set) the questions travel in their own request; otherwise they merge into the shared post round-trip. Defaults to `jev.model`.",
+  }),
+  base_url: Schema.optional(Schema.String).annotate({
+    description: "System One host used for the intake questions only. Overrides `jev.base_url` for this hook.",
+  }),
+  endpoint: Schema.optional(Schema.String).annotate({
+    description: "Full System One endpoint used for the intake questions only. Overrides `base_url` for this hook.",
+  }),
+}).annotate({ identifier: "JevIntakeConfig" })
+export type Intake = Schema.Schema.Type<typeof Intake>
+
 export const Info = Schema.Struct({
   api_key: Schema.optional(Schema.String).annotate({
     description:
@@ -127,6 +155,7 @@ export const Info = Schema.Struct({
   compaction: Schema.optional(Compaction),
   relevance: Schema.optional(Relevance),
   next_action: Schema.optional(NextAction),
+  intake: Schema.optional(Intake),
 }).annotate({ identifier: "JevConfig" })
 export type Info = Schema.Schema.Type<typeof Info>
 

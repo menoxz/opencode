@@ -2,6 +2,7 @@ import { Effect } from "effect"
 import { HttpClient } from "effect/unstable/http"
 import { JevClient } from "./client"
 import { JevGuard } from "./guard"
+import { JevIntake } from "./intake"
 import { JevNextAction } from "./next-action"
 import { JevRelevance } from "./relevance"
 import { JevReview } from "./review"
@@ -33,6 +34,15 @@ export type JevSettings = JevClient.Settings & {
   untrusted?: { enabled?: boolean; threshold?: number }
   relevance?: { enabled?: boolean; threshold?: number; ambiguous_threshold?: number }
   next_action?: { enabled?: boolean }
+  intake?: {
+    enabled?: boolean
+    threshold?: number
+    max_blocks?: number
+    min_chars?: number
+    model?: string
+    base_url?: string
+    endpoint?: string
+  }
 }
 
 const MAX_ARG_CHARS = 4_000
@@ -166,7 +176,19 @@ export const post = Effect.fn("JevHooks.post")(function* (
 
   const wantsReview = settings?.review?.enabled === true
   const wantsNextAction = settings?.next_action?.enabled === true
-  if (!wantsReview && !wantsNextAction) return { untrusted, annotation: undefined }
+  const intakeSection = settings?.intake
+  const intakeOn =
+    intakeSection?.enabled === true && input.output.length >= (intakeSection.min_chars ?? JevIntake.MIN_CHARS)
+  const blocks = intakeOn ? JevIntake.blocksFromText(input.output, intakeSection?.max_blocks ?? JevIntake.MAX_BLOCKS) : []
+  const wantsIntake = blocks.length > 0
+  const intakeThreshold = intakeSection?.threshold ?? JevIntake.DEFAULT_THRESHOLD
+  // Intake shares the round-trip the other hooks already pay. Pointing it at its
+  // own model forces a separate request, because merging would move every other
+  // question onto that model too.
+  const separateIntake =
+    wantsIntake &&
+    (intakeSection?.model !== undefined || intakeSection?.base_url !== undefined || intakeSection?.endpoint !== undefined)
+  if (!wantsReview && !wantsNextAction && !wantsIntake) return { untrusted, annotation: undefined, kept: undefined }
   const args = renderArgs(input.args)
   const questions: Record<string, JevSchema.Question> = {
     ...(wantsReview ? JevReview.reviewQuestions({ tool: input.tool, args, output: input.output }) : {}),
@@ -182,29 +204,55 @@ export const post = Effect.fn("JevHooks.post")(function* (
           observed: input.nextAction?.observed,
         })
       : {}),
+    ...(wantsIntake && !separateIntake ? JevIntake.intakeQuestions(blocks) : {}),
   }
-  const response = yield* JevClient.decide(
-    http,
-    { state: `Post-execution screening of the ${input.tool} call.`, questions },
-    settings,
-  ).pipe(Effect.catch(() => Effect.succeed(undefined)))
-  if (!response) return { untrusted, annotation: undefined }
+  const shared = wantsReview || wantsNextAction || (wantsIntake && !separateIntake)
+  const response = shared
+    ? yield* JevClient.decide(
+        http,
+        { state: `Post-execution screening of the ${input.tool} call.`, questions },
+        settings,
+      ).pipe(Effect.catch(() => Effect.succeed(undefined)))
+    : undefined
+  const intakeResponse =
+    wantsIntake && separateIntake
+      ? yield* JevClient.decide(
+          http,
+          {
+            state: `Extractive intake of a ${input.tool} result: keep what is load-bearing, drop only boilerplate.`,
+            questions: JevIntake.intakeQuestions(blocks),
+          },
+          { ...settings, model: intakeSection?.model, base_url: intakeSection?.base_url, endpoint: intakeSection?.endpoint },
+        ).pipe(Effect.catch(() => Effect.succeed(undefined)))
+      : response
+  if (!response && !intakeResponse) return { untrusted, annotation: undefined, kept: undefined }
   const lines: string[] = []
-  if (wantsReview) {
+  if (wantsReview && response) {
     const scores = JevReview.interpret(response)
     if (scores) {
       State.recordScores(input.sessionID, input.tool, scores)
       lines.push(JevReview.render(scores, settings?.guard?.threshold ?? JevGuard.DEFAULT_THRESHOLD))
     }
   }
-  if (wantsNextAction) {
+  if (wantsNextAction && response) {
     const guidance = JevNextAction.interpret(response)
     if (guidance) {
       State.setNextAction(input.sessionID, input.tool, guidance)
       lines.push(JevNextAction.render(guidance))
     }
   }
-  return { untrusted, annotation: lines.length > 0 ? lines.join("\n") : undefined }
+  let kept: string | undefined
+  if (wantsIntake && intakeResponse) {
+    const decision = JevIntake.decide(blocks, intakeResponse.answers, intakeThreshold)
+    if (decision.pruned.length > 0) {
+      const filtered = JevIntake.apply(input.output, blocks, decision)
+      if (filtered !== input.output) {
+        kept = filtered
+        lines.push(JevIntake.render(decision, blocks.length))
+      }
+    }
+  }
+  return { untrusted, annotation: lines.length > 0 ? lines.join("\n") : undefined, kept }
 })
 
 export * as JevHooks from "./hooks"
