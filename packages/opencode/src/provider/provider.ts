@@ -852,6 +852,73 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
   }
 }
 
+type DiscoveredModel = {
+  id?: string
+  name?: string
+  context_length?: number
+}
+
+// No output limit is exposed by the OpenAI-compatible /models payload, so
+// discovered models get a conservative default that the config can override.
+const DISCOVERED_OUTPUT_LIMIT = 32_768
+
+// Dynamic discovery for OpenAI-compatible gateways: reads `GET {baseURL}/models`
+// so models added server-side appear without editing the config. Fail-open — a
+// network or shape error yields no models instead of breaking provider startup.
+function openAICompatibleDiscover(providerID: ProviderID, provider: Info): CustomDiscoverModels {
+  const first = Object.values(provider.models)[0]
+  const baseURL = iife(() => {
+    if (typeof provider.options.baseURL === "string" && provider.options.baseURL !== "") return provider.options.baseURL
+    return first?.api.url || undefined
+  })
+  const npm = first?.api.npm ?? "@ai-sdk/openai-compatible"
+  const key = provider.key ?? (typeof provider.options.apiKey === "string" ? provider.options.apiKey : undefined)
+  const headers: Record<string, string> = {
+    ...(provider.options.headers as Record<string, string> | undefined),
+    ...(key ? { Authorization: `Bearer ${key}` } : {}),
+  }
+
+  return async () => {
+    if (!baseURL) return {}
+    const data = await fetch(`${baseURL.replace(/\/+$/, "")}/models`, {
+      headers,
+      signal: AbortSignal.timeout(10_000),
+    })
+      .then((res) => (res.ok ? (res.json() as Promise<{ data?: DiscoveredModel[] }>) : undefined))
+      .catch(() => undefined)
+
+    const discovered: Record<string, Model> = {}
+    for (const item of data?.data ?? []) {
+      if (!item.id || discovered[item.id]) continue
+      discovered[item.id] = {
+        id: ModelID.make(item.id),
+        providerID,
+        api: { id: item.id, url: baseURL, npm },
+        name: item.name ?? item.id,
+        family: "",
+        capabilities: {
+          temperature: false,
+          reasoning: false,
+          attachment: false,
+          toolcall: true,
+          input: { text: true, audio: false, image: false, video: false, pdf: false },
+          output: { text: true, audio: false, image: false, video: false, pdf: false },
+          interleaved: false,
+        },
+        cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
+        limit: { context: item.context_length ?? 0, output: DISCOVERED_OUTPUT_LIMIT },
+        status: "active",
+        options: {},
+        headers: {},
+        release_date: "",
+        variants: {},
+      }
+    }
+    log.info("model discovery complete", { providerID, count: Object.keys(discovered).length })
+    return discovered
+  }
+}
+
 const ProviderApiInfo = Schema.Struct({
   id: Schema.String,
   url: Schema.String,
@@ -1479,18 +1546,31 @@ export const layer = Layer.effect(
           mergeProvider(providerID, partial)
         }
 
-        const gitlab = ProviderID.make("gitlab")
-        if (discoveryLoaders[gitlab] && providers[gitlab] && isProviderAllowed(gitlab)) {
+        // Providers opted into `discover` query their OpenAI-compatible /models
+        // endpoint once at init. Config-declared models win, so only models the
+        // provider added since the last config edit are merged here.
+        for (const [id, provider] of Object.entries(providers)) {
+          const providerID = ProviderID.make(id)
+          if (!isProviderAllowed(providerID)) continue
+          if (cfg.provider?.[providerID]?.discover !== true) continue
+          if (discoveryLoaders[providerID]) continue
+          discoveryLoaders[providerID] = openAICompatibleDiscover(providerID, provider)
+        }
+
+        for (const [id, discoverModels] of Object.entries(discoveryLoaders)) {
+          const providerID = ProviderID.make(id)
+          const provider = providers[providerID]
+          if (!provider || !isProviderAllowed(providerID)) continue
           yield* Effect.promise(async () => {
             try {
-              const discovered = await discoveryLoaders[gitlab]()
+              const discovered = await discoverModels()
               for (const [modelID, model] of Object.entries(discovered)) {
-                if (!providers[gitlab].models[modelID]) {
-                  providers[gitlab].models[modelID] = model
+                if (!provider.models[modelID]) {
+                  provider.models[modelID] = model
                 }
               }
             } catch (e) {
-              log.warn("state discovery error", { id: "gitlab", error: e })
+              log.warn("state discovery error", { id, error: e })
             }
           })
         }

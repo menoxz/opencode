@@ -7,6 +7,9 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Added
+- **Découverte dynamique des modèles d'un provider OpenAI-compatible** : un provider peut déclarer `discover: true` dans `opencode.json` ; au démarrage, opencode interroge `GET {baseURL}/models` et fusionne les modèles absents de `models` (métadonnées dérivées de l'API : `name`, `context_length`, `limit.output` par défaut), les modèles déclarés gardant la priorité et `whitelist`/`blacklist` s'appliquant aussi aux modèles découverts. Résout le cas `command-code` : les nouveaux modèles du provider (ex. `claude-opus-5-5`) apparaissent sans éditer la config. La boucle d'application des *discovery loaders* (auparavant codée en dur pour gitlab) est désormais générique ; toute erreur réseau est *fail-open* (aucun modèle, démarrage préservé).
+
 ## [v2.2.38] - 2026-09-24
 
 ### Added

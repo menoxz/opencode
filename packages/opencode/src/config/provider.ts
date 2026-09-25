@@ -78,6 +78,10 @@ export const Info = Schema.Struct({
   npm: Schema.optional(Schema.String),
   whitelist: Schema.optional(Schema.mutable(Schema.Array(Schema.String))),
   blacklist: Schema.optional(Schema.mutable(Schema.Array(Schema.String))),
+  discover: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "Fetch the provider's model list from its OpenAI-compatible `GET {baseURL}/models` endpoint at startup and merge models that are not declared in `models`. New provider models appear automatically; models declared here keep their metadata, and `whitelist`/`blacklist` still apply to discovered models.",
+  }),
   options: Schema.optional(
     Schema.StructWithRest(
       Schema.Struct({
