@@ -213,7 +213,7 @@ export function mcpUnavailableMessage(server: string, tool: string, autoreconnec
     : `MCP server "${server}" is not connected, so the ${tool} tool is unavailable right now.`
   return autoreconnect
     ? `${state} It reconnects automatically in the background — retry shortly, or use a non-MCP tool for this step.`
-    : `${state} Automatic reconnection is disabled (experimental.mcp_autoreconnect=false), so it will not come back on its own in this process — run "opencode mcp reload", restart opencode, or use a non-MCP tool for this step.`
+    : `${state} Automatic reconnection is disabled (experimental.mcp_autoreconnect=false), so it will not come back on its own in this process — run "opencode mcp connect ${server}", restart opencode, or use a non-MCP tool for this step.`
 }
 
 // Convert MCP tool definition to AI SDK Tool type.

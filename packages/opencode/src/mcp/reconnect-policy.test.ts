@@ -31,7 +31,8 @@ describe("MCP reconnect policy", () => {
     const disabled = mcpUnavailableMessage("llm-memory-tool", "memory_store", false, false)
     expect(disabled).not.toContain("reconnects automatically")
     expect(disabled).toContain("mcp_autoreconnect=false")
-    expect(disabled).toContain("mcp reload")
+    expect(disabled).toContain("opencode mcp connect")
+    expect(disabled).not.toContain("mcp reload")
   })
 
   test("keeps server and tool names in the dropped-mid-call branch", () => {
