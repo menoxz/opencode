@@ -515,6 +515,9 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
                     tool: item.id,
                     args: inputArgs,
                     output: result.output,
+                    intent: [input.goalState?.goal, lastUser]
+                      .filter((value): value is string => value !== undefined && value !== "")
+                      .join("\n"),
                     nextAction: {
                       verdict: progress.last?.verdict,
                       stagnant: progress.stagnant,

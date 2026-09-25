@@ -112,6 +112,14 @@ export const Intake = Schema.Struct({
   min_chars: Schema.optional(Schema.Number).annotate({
     description: `Results shorter than this many characters are never filtered and cost no round-trip. Defaults to ${JevIntake.MIN_CHARS}.`,
   }),
+  intent: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "Scope the intake to the agent's current intent (the active objective). A block is then kept only when reading it advances that intent, so a long file read keeps the few lines the task needs instead of every line. In this mode anchor blocks are asked too and may be dropped when off-task, but only under `anchor_threshold` (stricter), and the raw result stays recoverable from the context ledger. Fail-open, default off.",
+  }),
+  anchor_threshold: Schema.optional(Schema.Number).annotate({
+    description:
+      "In intent mode, probability at or above which an anchor block is kept. Lower than `threshold`, so an anchor is dropped only on a confident refutation. Defaults to half of `threshold`.",
+  }),
   model: Schema.optional(JevSchema.Model).annotate({
     description:
       "System One model id used for the intake questions only, so the filter can run on a cheaper or faster model than the rest of Jev (for example `openjev-latest`). When set (or when `base_url`/`endpoint` is set) the questions travel in their own request; otherwise they merge into the shared post round-trip. Defaults to `jev.model`.",

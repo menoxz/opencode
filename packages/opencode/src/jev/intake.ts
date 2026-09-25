@@ -8,14 +8,15 @@ import { JevSchema } from "./schema"
  * load-bearing and some is noise, and the bytes are what carries the meaning: a
  * rewrite can alter a path, a number or an error string, so this module never
  * rewrites. It splits the result into numbered blocks, asks Jev one typed
- * question per *unprotected* block ("is this load-bearing?"), and the caller
+ * question per block ("is this load-bearing — for the task at hand?"), and the caller
  * deletes exactly the blocks Jev refuted. Everything kept is carried through
  * verbatim, so the model reads the original bytes and a deletion is auditable.
  *
- * Two guarantees make the deletion safe. First, anchor blocks are never asked
- * about and never dropped: a block that contains a path, a command, an
- * identifier or an error string is protected deterministically, so a wrong Jev
- * answer can never delete load-bearing bytes. Second, an absent or unreadable
+ * Two guarantees make the deletion safe. First, in the default mode anchor
+ * blocks are never asked about and never dropped: a block that contains a path,
+ * a command, an identifier or an error string is protected deterministically.
+ * In intent mode they are asked, but dropped only under a stricter threshold,
+ * and the raw always stays in the ledger. Second, an absent or unreadable
  * answer is not a "no": only an explicit refutation prunes, so the default is
  * always to keep. Both are what let the caller trust a model to cut context.
  */
@@ -76,22 +77,36 @@ export function blocksFromText(text: string, max = MAX_BLOCKS): Block[] {
   return blocks
 }
 
+/** Characters of the intent quoted to Jev, so one question stays cheap. */
+export const MAX_INTENT_CHARS = 400
+
 /**
- * One `noul` per unprotected block. Protected blocks carry an anchor and are
- * kept without a question, so they cost nothing and can never be pruned.
+ * One `noul` per block. Without `intent`, protected blocks carry an anchor and
+ * are kept without a question, so they cost nothing and can never be pruned.
+ * With `includeAnchors` the intent scopes every block — a block is dropped for
+ * being off-task even if it carries an anchor, and `decide` guards that drop
+ * with a stricter threshold; the raw stays recoverable from the ledger.
  */
-export function intakeQuestions(blocks: readonly Block[]): Record<string, JevSchema.Question> {
+export function intakeQuestions(
+  blocks: readonly Block[],
+  intent?: string,
+  includeAnchors = false,
+): Record<string, JevSchema.Question> {
+  const task =
+    intent !== undefined && intent.trim() !== ""
+      ? `Judge this block against the agent's CURRENT INTENT below. Keep it only if the agent must read these lines to satisfy that intent; drop every other block, including code that merely looks related or reference-like — the raw result stays retrievable if it turns out to be needed.\n\nCURRENT INTENT:\n${intent.slice(0, MAX_INTENT_CHARS)}`
+      : `Is this block load-bearing — does the next step depend on reading it (a value to act on, a failure to explain, context needed to interpret the rest)?`
   return Object.fromEntries(
     blocks
-      .filter((block) => !block.protected)
+      .filter((block) => includeAnchors || !block.protected)
       .map((block) => [
         block.id,
         {
           type: "noul" as const,
-          instructions: `A tool result was split into numbered blocks before entering a coding agent's context. Is block ${block.id} load-bearing — does the next step depend on reading it (a value to act on, a failure to explain, context needed to interpret the rest)? Say yes to keep it. Say no only for boilerplate, repetition, progress noise or decoration that can be dropped without losing information.\n\nBLOCK ${block.id}:\n${block.text}`,
+          instructions: `A tool result was split into numbered blocks before entering a coding agent's context. ${task} Say yes to keep the block verbatim. Say no only when it can be dropped without losing what the task needs.\n\nBLOCK ${block.id}:\n${block.text}`,
           criteria: {
-            true: "The block carries information the task still needs; keep it, verbatim",
-            false: "The block is boilerplate, redundant or noise; safe to drop verbatim",
+            true: "The block carries information the current task still needs; keep it, verbatim",
+            false: "The block is boilerplate, redundant, noise, or not needed by the task; safe to drop verbatim",
           },
         },
       ]),
@@ -99,25 +114,29 @@ export function intakeQuestions(blocks: readonly Block[]): Record<string, JevSch
 }
 
 /**
- * Only an explicit refutation prunes. An absent answer is unknown, not a "no",
- * and a protected block is kept regardless of what Jev said about its id.
+ * Only an explicit refutation prunes. An absent answer is unknown, not a "no".
+ * Without `anchorThreshold` a protected block is kept regardless of its answer.
+ * With it (intent mode) an anchor block may also be pruned, but only under that
+ * stricter threshold, so an anchor is dropped only on a confident refutation.
  */
 export function decide(
   blocks: readonly Block[],
   answers: Record<string, JevSchema.Answer>,
   threshold = DEFAULT_THRESHOLD,
+  anchorThreshold?: number,
 ): Decision {
   const pruned: Block[] = []
   const kept: Block[] = []
   let protectedKept = 0
   for (const block of blocks) {
-    if (block.protected) {
+    const drop = block.protected
+      ? anchorThreshold !== undefined && JevCompaction.refuted(answers[block.id], anchorThreshold)
+      : JevCompaction.refuted(answers[block.id], threshold)
+    if (drop) pruned.push(block)
+    else {
       kept.push(block)
-      protectedKept += 1
-      continue
+      if (block.protected) protectedKept += 1
     }
-    if (JevCompaction.refuted(answers[block.id], threshold)) pruned.push(block)
-    else kept.push(block)
   }
   return { pruned, kept, protectedKept }
 }

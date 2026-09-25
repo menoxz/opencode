@@ -39,6 +39,8 @@ export type JevSettings = JevClient.Settings & {
     threshold?: number
     max_blocks?: number
     min_chars?: number
+    intent?: boolean
+    anchor_threshold?: number
     model?: string
     base_url?: string
     endpoint?: string
@@ -156,6 +158,8 @@ export const post = Effect.fn("JevHooks.post")(function* (
     tool: string
     args: unknown
     output: string
+    /** What the agent is currently trying to achieve; scopes the intake questions. */
+    intent?: string
     nextAction?: {
       verdict?: string
       stagnant?: number
@@ -182,6 +186,10 @@ export const post = Effect.fn("JevHooks.post")(function* (
   const blocks = intakeOn ? JevIntake.blocksFromText(input.output, intakeSection?.max_blocks ?? JevIntake.MAX_BLOCKS) : []
   const wantsIntake = blocks.length > 0
   const intakeThreshold = intakeSection?.threshold ?? JevIntake.DEFAULT_THRESHOLD
+  // Intent mode asks about anchor blocks too, but prunes them only under a
+  // stricter (lower) threshold, so an anchor is dropped only on a confident no.
+  const intentMode = intakeSection?.intent === true
+  const anchorThreshold = intentMode ? (intakeSection?.anchor_threshold ?? intakeThreshold / 2) : undefined
   // Intake shares the round-trip the other hooks already pay. Pointing it at its
   // own model forces a separate request, because merging would move every other
   // question onto that model too.
@@ -204,13 +212,18 @@ export const post = Effect.fn("JevHooks.post")(function* (
           observed: input.nextAction?.observed,
         })
       : {}),
-    ...(wantsIntake && !separateIntake ? JevIntake.intakeQuestions(blocks) : {}),
+    ...(wantsIntake && !separateIntake ? JevIntake.intakeQuestions(blocks, input.intent, intentMode) : {}),
   }
   const shared = wantsReview || wantsNextAction || (wantsIntake && !separateIntake)
   const response = shared
     ? yield* JevClient.decide(
         http,
-        { state: `Post-execution screening of the ${input.tool} call.`, questions },
+        {
+          state: input.intent
+            ? `Post-execution screening of the ${input.tool} call.\nCURRENT INTENT: ${input.intent.slice(0, JevIntake.MAX_INTENT_CHARS)}`
+            : `Post-execution screening of the ${input.tool} call.`,
+          questions,
+        },
         settings,
       ).pipe(Effect.catch(() => Effect.succeed(undefined)))
     : undefined
@@ -219,8 +232,10 @@ export const post = Effect.fn("JevHooks.post")(function* (
       ? yield* JevClient.decide(
           http,
           {
-            state: `Extractive intake of a ${input.tool} result: keep what is load-bearing, drop only boilerplate.`,
-            questions: JevIntake.intakeQuestions(blocks),
+            state: input.intent
+              ? `Extractive intake of a ${input.tool} result for the current intent: keep what advances it, drop the rest.\nCURRENT INTENT: ${input.intent.slice(0, JevIntake.MAX_INTENT_CHARS)}`
+              : `Extractive intake of a ${input.tool} result: keep what is load-bearing, drop only boilerplate.`,
+            questions: JevIntake.intakeQuestions(blocks, input.intent, intentMode),
           },
           { ...settings, model: intakeSection?.model, base_url: intakeSection?.base_url, endpoint: intakeSection?.endpoint },
         ).pipe(Effect.catch(() => Effect.succeed(undefined)))
@@ -243,7 +258,7 @@ export const post = Effect.fn("JevHooks.post")(function* (
   }
   let kept: string | undefined
   if (wantsIntake && intakeResponse) {
-    const decision = JevIntake.decide(blocks, intakeResponse.answers, intakeThreshold)
+    const decision = JevIntake.decide(blocks, intakeResponse.answers, intakeThreshold, anchorThreshold)
     if (decision.pruned.length > 0) {
       const filtered = JevIntake.apply(input.output, blocks, decision)
       if (filtered !== input.output) {

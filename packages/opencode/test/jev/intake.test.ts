@@ -27,6 +27,21 @@ describe("jev intake segmentation", () => {
     expect(protectedIds.length).toBeGreaterThan(0)
     expect(asked.some((id) => protectedIds.includes(id))).toBe(false)
   })
+
+  test("asks about anchor blocks too when intent mode includes them", () => {
+    const text = `${noise(9)}\nC:\\jeanluc\\opencode-fork\\src\\jev\\intake.ts:12`
+    const blocks = JevIntake.blocksFromText(text, 4)
+    const protectedIds = blocks.filter((block) => block.protected).map((block) => block.id)
+    const asked = Object.keys(JevIntake.intakeQuestions(blocks, undefined, true))
+    expect(protectedIds.length).toBeGreaterThan(0)
+    expect(asked.some((id) => protectedIds.includes(id))).toBe(true)
+  })
+
+  test("carries the intent into the question", () => {
+    const blocks = JevIntake.blocksFromText(noise(12), 3)
+    const question = JevIntake.intakeQuestions(blocks, "add intake to the jev block")["b1"]
+    expect(JSON.stringify(question)).toContain("add intake to the jev block")
+  })
 })
 
 describe("jev intake decision", () => {
@@ -52,6 +67,24 @@ describe("jev intake decision", () => {
     const decision = JevIntake.decide(guarded, answers)
     expect(decision.pruned.map((block) => block.id)).not.toContain(target.id)
     expect(decision.protectedKept).toBeGreaterThan(0)
+  })
+
+  test("drops an anchor only under the stricter anchor threshold", () => {
+    const text = `${noise(9)}\nC:\\jeanluc\\opencode-fork\\src\\jev\\intake.ts:12`
+    const guarded = JevIntake.blocksFromText(text, 4)
+    const target = guarded.find((block) => block.protected)!
+    const answers = { ...Object.fromEntries(guarded.map((block) => [block.id, noul(0.9)])), [target.id]: noul(0.3) }
+    expect(JevIntake.decide(guarded, answers).pruned.map((block) => block.id)).not.toContain(target.id)
+    expect(JevIntake.decide(guarded, answers, 0.5, 0.4).pruned.map((block) => block.id)).toContain(target.id)
+  })
+
+  test("keeps a confident anchor even in intent mode", () => {
+    const text = `${noise(9)}\nC:\\jeanluc\\opencode-fork\\src\\jev\\intake.ts:12`
+    const guarded = JevIntake.blocksFromText(text, 4)
+    const target = guarded.find((block) => block.protected)!
+    const answers = Object.fromEntries(guarded.map((block) => [block.id, noul(0.01)]))
+    answers[target.id] = noul(0.9)
+    expect(JevIntake.decide(guarded, answers, 0.5, 0.25).pruned.map((block) => block.id)).not.toContain(target.id)
   })
 })
 
