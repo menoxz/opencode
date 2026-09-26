@@ -70,15 +70,18 @@ const skipInstall = process.argv.includes("--skip-install")
 const sourcemapsFlag = process.argv.includes("--sourcemaps")
 const plugin = createSolidTransformPlugin()
 const skipEmbedWebUi = process.argv.includes("--skip-embed-web-ui")
+const reuseWebUi = process.argv.includes("--reuse-web-ui")
 
-const createEmbeddedWebUIBundle = async () => {
-  console.log(`Building Web UI to embed in the binary`)
+const createEmbeddedWebUIBundle = async (rebuild: boolean) => {
+  console.log(rebuild ? `Building Web UI to embed in the binary` : `Reusing the existing Web UI bundle`)
   const appDir = path.join(import.meta.dirname, "../../app")
   const dist = path.join(appDir, "dist")
-  process.env.OPENCODE_CHANNEL = Script.channel
-  const vite = await import(pathToFileURL(path.join(appDir, "node_modules/vite/dist/node/index.js")).href)
-  const config = (await import(pathToFileURL(path.join(appDir, "vite.config.ts")).href)).default
-  await vite.build({ ...config, root: appDir, configFile: false })
+  if (rebuild) {
+    process.env.OPENCODE_CHANNEL = Script.channel
+    const vite = await import(pathToFileURL(path.join(appDir, "node_modules/vite/dist/node/index.js")).href)
+    const config = (await import(pathToFileURL(path.join(appDir, "vite.config.ts")).href)).default
+    await vite.build({ ...config, root: appDir, configFile: false, build: { ...config.build, sourcemap: false } })
+  }
   const files = (await Array.fromAsync(new Bun.Glob("**/*").scan({ cwd: dist })))
     .map((file) => file.replaceAll("\\", "/"))
     .filter((file) => !file.endsWith(".map"))
@@ -98,7 +101,7 @@ const createEmbeddedWebUIBundle = async () => {
   ].join("\n")
 }
 
-const embeddedFileMap = skipEmbedWebUi ? null : await createEmbeddedWebUIBundle()
+const embeddedFileMap = skipEmbedWebUi ? null : await createEmbeddedWebUIBundle(!reuseWebUi)
 
 const allTargets: {
   os: string
