@@ -7,6 +7,11 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.3.3] - 2026-09-26
+
+### Fixed
+- **Crash de composition du prompt causé par la forme des diffs d'un learning (`Sending the prompt failed`)** : la tâche d'éval du daemon écrivait une entrée de learning dont les diffs portaient la forme du payload `session.diff` (`status`/`patch`, `Snapshot.FileDiff`) au lieu de celle attendue par `LearningEntry` (`type`/`diff`). `formatLearningsSection` passait alors `type: undefined` à `xmlEscape()`, dont le `TypeError` faisait échouer **chaque** prompt de la session (incident 2026-09-26, refs `err_67cb811f` / `err_a93a94f2`). Correction en trois points : `parseHeadlessResult` mappe désormais le payload sur la forme `DiffInfo` (`toDiffInfo`), `sanitizeLearning` normalise **à la lecture** toute entrée écrite par un autre processus ou une autre version (`status` → `type`, `patch` → `diff`, coercition des champs manquants) et répare donc aussi les fichiers déjà sur disque, et `readUnacknowledgedLearnings` / `readLatestLearning` / `findLearningsByTaskId` passent tous par ce nettoyage. Test de non-régression `test/daemon/learnings-shape.test.ts` (5 cas, dont un learning legacy rendu sans lever).
+
 ## [v2.3.2] - 2026-09-26
 
 ### Added

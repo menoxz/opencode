@@ -195,7 +195,7 @@ function formatNotificationsSection(): string {
 
 // ── Learnings section ───────────────────────────────────────────────────
 
-function formatLearningsSection(): string {
+export function formatLearningsSection(): string {
   const learnings = AutoMemory.readUnacknowledgedLearnings()
   if (learnings.length === 0) return ""
 

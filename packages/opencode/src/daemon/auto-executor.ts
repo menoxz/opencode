@@ -9,6 +9,7 @@ import { autoCommit, hasUncommittedChanges, type CommitResult, type DiffInfo } f
 import { isPRTrigger, createPR, pushBranchOnly } from "./auto-pr"
 import { storeLearning, findLearningsByTaskId } from "./auto-memory"
 import { Process } from "@/util/process"
+import { Snapshot } from "@/snapshot"
 
 const log = Log.create({ service: "daemon.auto-executor" })
 
@@ -500,14 +501,26 @@ function spawnHeadless(
 
 // ── Parse structured JSON from output ────────────────────────────────────
 
-function parseHeadlessResult(output: string): HeadlessResult | null {
+/**
+ * Map a session.diff payload entry (Snapshot.FileDiff: `status`/`patch`) to
+ * the DiffInfo shape (`type`/`diff`) every daemon consumer reads. Without
+ * this, `d.type` was undefined in commit counts, diff summaries and — via a
+ * stored learning rendered by `formatLearningsSection` — in `xmlEscape()`,
+ * whose TypeError aborted the prompt (2026-09-26 incident).
+ */
+function toDiffInfo(d: Snapshot.FileDiff): DiffInfo {
+  return { file: d.file ?? "", type: d.status ?? "modified", diff: d.patch }
+}
+
+export function parseHeadlessResult(output: string): HeadlessResult | null {
   // The headless result is the last JSON line in the output
   const lines = output.trim().split("\n").filter((l) => l.trim())
   for (let i = lines.length - 1; i >= 0; i--) {
     try {
       const parsed = JSON.parse(lines[i])
       if (parsed?.type === "headless_result") {
-        return parsed as HeadlessResult
+        const diffs: Snapshot.FileDiff[] = Array.isArray(parsed.diffs) ? parsed.diffs : []
+        return { ...parsed, diffs: diffs.map(toDiffInfo) } as HeadlessResult
       }
     } catch { /* not JSON, skip */ }
   }

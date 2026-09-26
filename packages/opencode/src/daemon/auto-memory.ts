@@ -22,7 +22,7 @@ export interface LearningEntry {
 
 // ── Path helpers ────────────────────────────────────────────────────────
 
-function learningsDir(): string {
+export function learningsDir(): string {
   const base = process.env.LOCALAPPDATA || path.join(process.env.HOME || "C:\\", ".opencode")
   return path.join(base, "opencodev2", "learnings")
 }
@@ -37,6 +37,48 @@ function archivedLearningPath(id: string): string {
 
 // ── Read ────────────────────────────────────────────────────────────────
 
+const str = (v: unknown): string => (typeof v === "string" ? v : "")
+const optStr = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined)
+
+/**
+ * Coerce a raw on-disk JSON value into a well-formed LearningEntry.
+ *
+ * Entries are written by other processes and other versions: the headless
+ * `session.diff` payload carries `status`/`patch` where LearningEntry expects
+ * `type`/`diff`. An uncoerced `undefined` reached `xmlEscape()` and crashed
+ * every prompt of the session (2026-09-26, "Sending the prompt failed").
+ * Returns null when the value is not an object at all.
+ */
+function sanitizeLearning(raw: unknown): LearningEntry | null {
+  if (typeof raw !== "object" || raw === null) return null
+  const e = raw as Record<string, unknown>
+  const diffs = Array.isArray(e.diffs) ? e.diffs : []
+  return {
+    id: str(e.id),
+    timestamp: str(e.timestamp),
+    source: str(e.source),
+    taskId: str(e.taskId),
+    summary: str(e.summary),
+    filesChanged: typeof e.filesChanged === "number" ? e.filesChanged : 0,
+    diffs: diffs.flatMap((d) => {
+      if (typeof d !== "object" || d === null) return []
+      const diff = d as Record<string, unknown>
+      const body = optStr(diff.diff) ?? optStr(diff.patch)
+      return [
+        {
+          file: str(diff.file),
+          type: str(diff.type) || str(diff.status) || "modified",
+          ...(body !== undefined ? { diff: body } : {}),
+        },
+      ]
+    }),
+    commitHash: optStr(e.commitHash),
+    commitMessage: optStr(e.commitMessage),
+    model: optStr(e.model),
+    tags: Array.isArray(e.tags) ? e.tags.filter((t): t is string => typeof t === "string") : [],
+  }
+}
+
 /**
  * Read all unacknowledged learning entries (most recent first).
  * Used by session prompt to inject context.
@@ -49,7 +91,8 @@ export function readUnacknowledgedLearnings(): LearningEntry[] {
   for (const file of fs.readdirSync(dir)) {
     if (!file.endsWith(".json")) continue
     try {
-      results.push(JSON.parse(fs.readFileSync(path.join(dir, file), "utf-8")) as LearningEntry)
+      const entry = sanitizeLearning(JSON.parse(fs.readFileSync(path.join(dir, file), "utf-8")))
+      if (entry) results.push(entry)
     } catch { /* skip corrupt */ }
   }
 
@@ -63,7 +106,7 @@ export function readUnacknowledgedLearnings(): LearningEntry[] {
 export function readLatestLearning(): LearningEntry | null {
   try {
     if (!fs.existsSync(latestLearningPath())) return null
-    return JSON.parse(fs.readFileSync(latestLearningPath(), "utf-8")) as LearningEntry
+    return sanitizeLearning(JSON.parse(fs.readFileSync(latestLearningPath(), "utf-8")))
   } catch {
     return null
   }
@@ -137,8 +180,8 @@ export function findLearningsByTaskId(taskId: string, maxResults = 5): LearningE
   for (const file of fs.readdirSync(dir)) {
     if (!file.endsWith(".json")) continue
     try {
-      const entry = JSON.parse(fs.readFileSync(path.join(dir, file), "utf-8")) as LearningEntry
-      if (entry.taskId === taskId) results.push(entry)
+      const entry = sanitizeLearning(JSON.parse(fs.readFileSync(path.join(dir, file), "utf-8")))
+      if (entry && entry.taskId === taskId) results.push(entry)
     } catch { /* skip corrupt */ }
   }
 
