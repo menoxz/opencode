@@ -134,6 +134,10 @@ export const Intake = Schema.Struct({
 export type Intake = Schema.Schema.Type<typeof Intake>
 
 export const Info = Schema.Struct({
+  provider: Schema.optional(JevClient.Provider).annotate({
+    description:
+      'Named provider preset setting `base_url` and `model` together: `"typesafe"` (api.typesafe.ai, jev-latest), `"openjev"` (api.codiv.ai, openjev-latest) or `"command-code"` (Command Code GOAT Provider API, typesafe/jev). An explicit `base_url` or `model` still wins.',
+  }),
   api_key: Schema.optional(Schema.String).annotate({
     description:
       "System One API key. Prefer the TYPESAFE_API_KEY or JEV_API_KEY environment variable over storing a secret in a config file.",

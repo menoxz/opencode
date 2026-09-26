@@ -44,7 +44,7 @@ const withServer = <A, E, R>(
     ({ server }) => Effect.sync(() => server.stop(true)),
   )
 
-const ENV_NAMES = ["JEV_API_KEY", "TYPESAFE_API_KEY", "TYPESAFE_BASE_URL", "TYPESAFE_MODEL"] as const
+const ENV_NAMES = ["JEV_API_KEY", "TYPESAFE_API_KEY", "TYPESAFE_BASE_URL", "TYPESAFE_MODEL", "COMMAND_CODE_API_KEY"] as const
 
 /** Runs `effect` with the Jev environment variables set to the given values. */
 const withEnv = <A, E, R>(vars: Record<string, string | undefined>, effect: Effect.Effect<A, E, R>) =>
@@ -83,6 +83,12 @@ describe("jev.client", () => {
     expect(JevClient.apiKey({ api_key: "from-config" }, { JEV_API_KEY: "typesafe" })).toBe("typesafe")
     expect(JevClient.apiKey({ api_key: "from-config" }, {})).toBe("from-config")
     expect(JevClient.apiKey(undefined, {})).toBeUndefined()
+    // a provider preset reads its own secret first, never a foreign host's key
+    expect(JevClient.apiKey({ provider: "command-code" }, { COMMAND_CODE_API_KEY: "cc" })).toBe("cc")
+    expect(JevClient.apiKey({ provider: "command-code" }, { TYPESAFE_API_KEY: "typesafe", COMMAND_CODE_API_KEY: "cc" })).toBe(
+      "cc",
+    )
+    expect(JevClient.apiKey({ provider: "command-code" }, { TYPESAFE_API_KEY: "typesafe" })).toBe("typesafe")
   })
 
   test("resolves the base URL, endpoint and model from config and environment", () => {
@@ -103,6 +109,25 @@ describe("jev.client", () => {
     expect(JevClient.resolveModel({}, { TYPESAFE_BASE_URL: "https://api.codiv.ai/" })).toBe(JevClient.OPENJEV_MODEL)
     expect(JevClient.resolveModel({}, { TYPESAFE_MODEL: "openjev-latest" })).toBe("openjev-latest")
     expect(JevClient.resolveModel({ model: "custom-model" }, { TYPESAFE_MODEL: "ignored" })).toBe("custom-model")
+  })
+
+  test("resolves a named provider preset for base URL, endpoint and model", () => {
+    expect(JevClient.baseUrl({ provider: "command-code" }, {})).toBe(JevClient.COMMAND_CODE_BASE_URL)
+    expect(JevClient.resolveEndpoint({ provider: "command-code" }, {})).toBe(
+      `${JevClient.COMMAND_CODE_BASE_URL}/v1/systemone`,
+    )
+    expect(JevClient.resolveModel({ provider: "command-code" }, {})).toBe(JevClient.COMMAND_CODE_MODEL)
+    expect(JevClient.resolveModel({ provider: "openjev" }, {})).toBe(JevClient.OPENJEV_MODEL)
+    expect(JevClient.resolveModel({ provider: "typesafe" }, {})).toBe(JevClient.DEFAULT_MODEL)
+    // an explicit value still wins over the preset
+    expect(JevClient.baseUrl({ provider: "command-code", base_url: "https://custom.test" }, {})).toBe(
+      "https://custom.test",
+    )
+    expect(JevClient.resolveModel({ provider: "command-code", model: "custom" }, {})).toBe("custom")
+    // the host alone selects the Command Code model id
+    expect(JevClient.resolveModel({}, { TYPESAFE_BASE_URL: JevClient.COMMAND_CODE_BASE_URL })).toBe(
+      JevClient.COMMAND_CODE_MODEL,
+    )
   })
 
   it.instance("posts map questions with the bearer key and the default model", () =>
@@ -147,6 +172,23 @@ describe("jev.client", () => {
             expect(capture.authorization).toBe("Bearer env-key")
             expect(capture.body).toMatchObject({ model: "openjev-latest" })
             expect(response.model).toBe("openjev-latest")
+          }),
+        ),
+    ),
+  )
+
+  it.instance("uses the command-code preset model against a local base URL", () =>
+    withServer(
+      () => Response.json({ model: JevClient.COMMAND_CODE_MODEL, answers: {} }),
+      (capture, base) =>
+        cleanEnv(
+          Effect.gen(function* () {
+            const http = yield* HttpClient.HttpClient
+            yield* JevClient.decide(http, request, { provider: "command-code", api_key: "test-key", base_url: base })
+
+            expect(capture.url).toBe(`${base}/v1/systemone`)
+            expect(capture.authorization).toBe("Bearer test-key")
+            expect(capture.body).toMatchObject({ model: JevClient.COMMAND_CODE_MODEL })
           }),
         ),
     ),

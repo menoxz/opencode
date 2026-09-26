@@ -36,7 +36,7 @@ const withServer = <A, E, R>(handler: () => Response, fn: (base: string) => Effe
     (server) => Effect.sync(() => server.stop(true)),
   )
 
-const ENV_NAMES = ["JEV_API_KEY", "TYPESAFE_API_KEY", "TYPESAFE_BASE_URL", "TYPESAFE_MODEL"] as const
+const ENV_NAMES = ["JEV_API_KEY", "TYPESAFE_API_KEY", "TYPESAFE_BASE_URL", "TYPESAFE_MODEL", "COMMAND_CODE_API_KEY"] as const
 
 const withEnv = <A, E, R>(vars: Record<string, string | undefined>, effect: Effect.Effect<A, E, R>) =>
   Effect.acquireUseRelease(
