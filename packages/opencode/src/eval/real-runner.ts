@@ -125,13 +125,20 @@ export function nativeEvalEnvironment(base: NodeJS.ProcessEnv = process.env): No
  * Execution errors that are environmental rather than a verdict on the agent:
  * the headless child was killed by the OS timeout (`spawnSync … ETIMEDOUT`) or
  * the provider socket dropped mid-session. These are worth one more attempt.
- *
- * Deliberately excludes a bare "headless exited null (no headless_result)": a
- * child that ran and produced no result can be a genuine failure, so it is only
- * retried when it also carries a timeout/socket signature.
  */
 const TRANSIENT_EXECUTION_PATTERN =
   /\bETIMEDOUT\b|\bESOCKETTIMEDOUT\b|\bECONNRESET\b|\bECONNREFUSED\b|\bECONNABORTED\b|\bEAI_AGAIN\b|\bEPIPE\b|socket hang up|timed?\s*out|timeout/i
+
+/**
+ * The child exited without emitting a `headless_result` at all. The CLI only
+ * omits that line when it fails *before* writing the structured result, and
+ * every tool call is parsed out of the result's `diffs` — so "no headless_result"
+ * always implies zero tool calls and nothing was graded. Scoring it as a
+ * scenario failure manufactures a capability regression out of a harness-level
+ * crash: that is the 2026-09-26 incident (`headless exited 5`, 1.5 s, 0 tool
+ * calls, empty output) which raised a phantom 1.0 → 0.667 sanity alarm.
+ */
+const NO_RESULT_PATTERN = /no headless_result/i
 
 /**
  * OS refusals to CREATE the child at all: the process never ran, so it produced no
@@ -147,10 +154,19 @@ const TRANSIENT_EXECUTION_PATTERN =
 const SPAWN_REFUSAL_PATTERN =
   /\bEPERM\b|\bEACCES\b|operation not permitted|cannot spawn|permission denied|acc[eè]s refus[eé]|access is denied|zugriff verweigert|acceso denegado/i
 
-/** True when at least one recorded error is a transient spawn/socket failure or an OS spawn refusal. */
+/**
+ * True when at least one recorded error is a no-verdict execution failure: a
+ * transient spawn/socket failure, an OS spawn refusal, or a child that exited
+ * without producing any `headless_result`. In every case the agent produced no
+ * verdict, so the scenario must be retried and then reported as `unverified`,
+ * never scored as a capability failure.
+ */
 export function isTransientExecutionError(errors: readonly string[]): boolean {
   return errors.some(
-    (error) => TRANSIENT_EXECUTION_PATTERN.test(error) || SPAWN_REFUSAL_PATTERN.test(error),
+    (error) =>
+      TRANSIENT_EXECUTION_PATTERN.test(error) ||
+      SPAWN_REFUSAL_PATTERN.test(error) ||
+      NO_RESULT_PATTERN.test(error),
   )
 }
 
@@ -233,12 +249,12 @@ export function runScenarioReal(
           const grade = autoEvaluate(scenario, execution.output, execution.toolCalls, sandboxDir)
           const completedAt = Date.now()
           const errors = execution.errors ?? []
-          // A child killed by a transient spawn/provider failure before it made a
-          // single tool call produced no agent verdict at all. Scoring that as a
-          // failed scenario turns an environmental outage into a phantom
-          // capability regression, so it is reported as unverified instead; the
-          // daemon's "verified nothing" guard then skips the run rather than
-          // enqueuing a regression investigation.
+          // A child killed by a transient spawn/provider failure, refused by the
+          // OS, or exited before it emitted any headless_result made no tool call
+          // and produced no agent verdict at all. Scoring that as a failed
+          // scenario turns an environmental outage into a phantom capability
+          // regression, so it is reported as unverified instead; the comparison
+          // helpers exclude it rather than enqueuing a regression task.
           const neverExecuted = execution.toolCalls.length === 0 && isTransientExecutionError(errors)
           const verdict = neverExecuted ? "unverified" : scenarioVerdict(grade, errors)
 

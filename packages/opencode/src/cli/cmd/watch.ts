@@ -70,8 +70,14 @@ export const daemonHandler = Effect.fn("Daemon.handler")(function* (
 
   const daemon = yield* createDaemon
 
+  // Autonomous eval loop: the hourly sanity suite and the regression
+  // investigation task it enqueues. A run that keeps failing against the
+  // aggregated baseline would otherwise re-enqueue `eval-regression-sanity`
+  // every hour, so make the whole loop opt-out.
+  const evalOff = process.env.OPENCODE_NO_DAEMON_EVAL === "1"
+
   // FIX: Force real eval mode for continuous improvement loop
-  process.env.OPENCODE_DAEMON_EVAL_REAL = "1"
+  if (!evalOff) process.env.OPENCODE_DAEMON_EVAL_REAL = "1"
 
   // Register periodic tasks
   yield* daemon.register("trigger-check", checkTriggers, every_30s)
@@ -81,7 +87,9 @@ export const daemonHandler = Effect.fn("Daemon.handler")(function* (
   yield* daemon.register("tunnel-health", tunnelHealthCheck, every_1m)
 
   // Periodic eval: run sanity suite and check for regression
-  yield* daemon.register("sanity-eval", runSanityEval as unknown as () => Effect.Effect<void>, every_1h)
+  if (!evalOff) {
+    yield* daemon.register("sanity-eval", runSanityEval as unknown as () => Effect.Effect<void>, every_1h)
+  }
 
   // Candidate generation is part of pattern-detection so both use one report snapshot.
   yield* daemon.register("process-queue", processQueue, every_5m)

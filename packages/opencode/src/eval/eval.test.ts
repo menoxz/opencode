@@ -688,10 +688,14 @@ describe("real runner", () => {
     expect(result.behaviorsMatched).toBe(0)
   })
 
-  test("classifies spawn/socket failures as transient but a grading failure as permanent", () => {
+  test("classifies no-verdict executions as transient but a clean grading failure as permanent", () => {
     expect(isTransientExecutionError(["spawnSync C:\\Users\\x\\opencodev2.exe ETIMEDOUT"])).toBe(true)
     expect(isTransientExecutionError(["socket hang up"])).toBe(true)
-    expect(isTransientExecutionError(["headless exited null (no headless_result)"])).toBe(false)
+    // A child that emitted no headless_result produced no verdict: the tool calls
+    // are parsed from that result's diffs, so there was nothing to grade.
+    expect(isTransientExecutionError(["headless exited null (no headless_result)"])).toBe(true)
+    expect(isTransientExecutionError(["headless exited 5 (no headless_result)"])).toBe(true)
+    // A grading failure carries no execution error, so it is never retried.
     expect(isTransientExecutionError([])).toBe(false)
   })
 
@@ -704,8 +708,8 @@ describe("real runner", () => {
     expect(isTransientExecutionError(["spawnSync C:\\Users\\x\\opencodev2.exe EACCES"])).toBe(true)
     expect(isTransientExecutionError(["error launching git: Accès refusé."])).toBe(true)
     expect(isTransientExecutionError(["cannot spawn git: Permission denied"])).toBe(true)
-    // The deliberate bare-null exclusion still holds when no refusal signature is present.
-    expect(isTransientExecutionError(["headless exited null (no headless_result)"])).toBe(false)
+    // A result-less child is the same no-verdict class, even without a refusal signature.
+    expect(isTransientExecutionError(["headless exited null (no headless_result)"])).toBe(true)
   })
 
   test("reports a harness-level spawn refusal as unverified so it cannot raise a regression", async () => {
@@ -730,6 +734,45 @@ describe("real runner", () => {
     expect(result.verdict).toBe("unverified")
     expect(result.toolCalls).toBe(0)
     expect(result.errors.some((e) => e.startsWith(UNVERIFIED_PREFIX))).toBe(true)
+  })
+
+  test("reports a child that emitted no headless_result as unverified, not a phantom failure", async () => {
+    // Reproduces eval-regression-sanity of 2026-09-26: hello-world scored
+    // "headless exited 5 (no headless_result)" in 1.5 s with 0 tool calls and an
+    // empty output, was graded `fail`, and raised a phantom 1.0 -> 0.667 alarm.
+    // Nothing was ever graded, so the honest verdict is `unverified`.
+    const executor: RealScenarioExecutor = () =>
+      Effect.succeed({ output: "", toolCalls: [], errors: ["headless exited 5 (no headless_result)"] })
+
+    const result = await Effect.runPromise(
+      runScenarioReal(getScenario("hello-world")!, executor, { retries: 0 }),
+    )
+
+    expect(result.success).toBe(false)
+    expect(result.verdict).toBe("unverified")
+    expect(result.toolCalls).toBe(0)
+    expect(result.errors.some((e) => e.startsWith(UNVERIFIED_PREFIX))).toBe(true)
+  })
+
+  test("retries a result-less child once, in a fresh sandbox", async () => {
+    let calls = 0
+    const sandboxes: string[] = []
+    const executor: RealScenarioExecutor = ({ cwd }) => {
+      calls += 1
+      sandboxes.push(cwd)
+      if (calls === 1)
+        return Effect.succeed({ output: "", toolCalls: [], errors: ["headless exited 5 (no headless_result)"] })
+      writeFileSync(join(cwd, "hello_eval.py"), `print("Hello, Eval Framework!")`)
+      return Effect.succeed({ output: "created", toolCalls: ["write:hello_eval.py"], errors: [] })
+    }
+
+    const result = await Effect.runPromise(
+      runScenarioReal(getScenario("hello-world")!, executor, { retries: 1, retryDelayMs: 1 }),
+    )
+
+    expect(calls).toBe(2)
+    expect(new Set(sandboxes).size).toBe(2)
+    expect(result.success).toBe(true)
   })
 
   test("retries a transient headless timeout once, in a fresh sandbox", async () => {
