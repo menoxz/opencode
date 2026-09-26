@@ -492,6 +492,7 @@ export const layer = Layer.effect(
         replayReasoning: input.promptRollout.replayReasoning,
         reasoningMaxChars: input.promptRollout.reasoningMaxChars,
         reasoningKeepRecent: input.promptRollout.reasoningKeepRecent,
+        summaryBoundaryStep: input.promptRollout.summaryBoundaryStep,
       })
       const text = yield* llm
         .stream({
@@ -2202,6 +2203,7 @@ export const layer = Layer.effect(
               replayReasoning: promptRollout.replayReasoning,
               reasoningMaxChars: promptRollout.reasoningMaxChars,
               reasoningKeepRecent: promptRollout.reasoningKeepRecent,
+        summaryBoundaryStep: promptRollout.summaryBoundaryStep,
             })
             contextSummary.add(
               "modelMessageConversion",

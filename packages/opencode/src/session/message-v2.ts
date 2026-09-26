@@ -415,23 +415,34 @@ function pinnedToolCallIDs(input: WithParts[], summarized: Set<string>, enabled:
 // summarizes at all.
 const SUMMARY_BOUNDARY_STEP = 20
 
-function summarizedMessageIDs(input: WithParts[], summarizes: boolean, carries: (msg: WithParts) => boolean) {
+function summarizedMessageIDs(
+  input: WithParts[],
+  summarizes: boolean,
+  carries: (msg: WithParts) => boolean,
+  step: number,
+) {
   if (!summarizes) return new Set<string>()
   const turns = input.filter((msg) => msg.info.role === "assistant" && carries(msg)).map((msg) => msg.info.id)
   const eligible = Math.max(0, turns.length - RECENT_TOOL_TURNS_IN_FULL)
-  const frozen = Math.floor(eligible / SUMMARY_BOUNDARY_STEP) * SUMMARY_BOUNDARY_STEP
+  const frozen = Math.floor(eligible / step) * step
   return new Set(turns.slice(0, frozen))
 }
 
-function summarizedToolOutputMessageIDs(input: WithParts[], replayToolOutputs: ReplayToolOutputsMode) {
-  return summarizedMessageIDs(input, replayToolOutputs !== "full", (msg) =>
-    msg.parts.some((part) => part.type === "tool" && part.state.status === "completed"),
+function summarizedToolOutputMessageIDs(input: WithParts[], replayToolOutputs: ReplayToolOutputsMode, step: number) {
+  return summarizedMessageIDs(
+    input,
+    replayToolOutputs !== "full",
+    (msg) => msg.parts.some((part) => part.type === "tool" && part.state.status === "completed"),
+    step,
   )
 }
 
-function summarizedToolInputMessageIDs(input: WithParts[], replayToolInputs: ReplayToolInputsMode) {
-  return summarizedMessageIDs(input, replayToolInputs !== "full", (msg) =>
-    msg.parts.some((part) => part.type === "tool"),
+function summarizedToolInputMessageIDs(input: WithParts[], replayToolInputs: ReplayToolInputsMode, step: number) {
+  return summarizedMessageIDs(
+    input,
+    replayToolInputs !== "full",
+    (msg) => msg.parts.some((part) => part.type === "tool"),
+    step,
   )
 }
 
@@ -822,6 +833,7 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
     replayReasoning?: ReplayReasoningMode
     reasoningMaxChars?: number
     reasoningKeepRecent?: number
+    summaryBoundaryStep?: number
   },
 ) {
   const result: UIMessage[] = []
@@ -831,6 +843,7 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
   const replayReasoning = requiresReasoningReplay(model) ? "on" : options?.replayReasoning
   const reasoningMaxChars = options?.reasoningMaxChars ?? 0
   const reasoningKeepRecent = options?.reasoningKeepRecent ?? 1
+  const summaryBoundaryStep = options?.summaryBoundaryStep ?? SUMMARY_BOUNDARY_STEP
   // Only the most recent assistant turns keep their chain-of-thought verbatim;
   // older reasoning is capped but never dropped, so the field DeepSeek requires
   // stays present on every prior assistant turn.
@@ -840,9 +853,9 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
       : []
     ).map((entry) => entry.info.id),
   )
-  const summarizedToolTurns = summarizedToolOutputMessageIDs(input, replayToolOutputs)
+  const summarizedToolTurns = summarizedToolOutputMessageIDs(input, replayToolOutputs, summaryBoundaryStep)
   const pinnedToolCalls = pinnedToolCallIDs(input, summarizedToolTurns, replayToolOutputs === "summary")
-  const summarizedToolInputTurns = summarizedToolInputMessageIDs(input, replayToolInputs)
+  const summarizedToolInputTurns = summarizedToolInputMessageIDs(input, replayToolInputs, summaryBoundaryStep)
   // Reuse the existing block boundary: do not rewrite a cached prefix on every
   // TODO update. Only supersede old payloads when a complete newer state remains.
   const latestTodo = new Map<string, ToolPart>()
@@ -1189,6 +1202,7 @@ export function toModelMessages(
     replayReasoning?: ReplayReasoningMode
     reasoningMaxChars?: number
     reasoningKeepRecent?: number
+    summaryBoundaryStep?: number
   },
 ): Promise<ModelMessage[]> {
   return Effect.runPromise(toModelMessagesEffect(input, model, options).pipe(Effect.provide(EffectLogger.layer)))

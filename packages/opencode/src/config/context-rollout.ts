@@ -32,6 +32,10 @@ export const Info = Schema.Struct({
   reasoning_keep_recent: Schema.optional(Schema.Number).annotate({
     description: "Most recent assistant turns whose reasoning is replayed in full before reasoning_max_chars applies.",
   }),
+  summary_boundary_step: Schema.optional(Schema.Number).annotate({
+    description:
+      "Assistant tool turns that close a summarization block: historical tool inputs and outputs are only reduced at multiples of this step, so a smaller value elides more of the distant history (default 20).",
+  }),
   injection_skills: Schema.optional(InjectionSkills).annotate({
     description: "Controls whether available skills are injected in verbose or short form.",
   }),

@@ -20,6 +20,7 @@ export type Info = {
   replayReasoning: ReplayReasoningMode
   reasoningMaxChars: number
   reasoningKeepRecent: number
+  summaryBoundaryStep: number
   injectionSkills: InjectionSkillsMode
   injectionInstructions: InjectionInstructionsMode
   systemBoilerplate: SystemBoilerplateMode
@@ -33,6 +34,7 @@ export const DEFAULTS: Info = {
   replayReasoning: "on",
   reasoningMaxChars: 0,
   reasoningKeepRecent: 1,
+  summaryBoundaryStep: 20,
   injectionSkills: "short",
   injectionInstructions: "summary",
   systemBoilerplate: "full",
@@ -64,6 +66,7 @@ export function resolve(config: Config.Info, _flags?: Pick<RuntimeFlags.Info, ne
     replayReasoning: rollout?.replay_reasoning ?? profile.replayReasoning,
     reasoningMaxChars: rollout?.reasoning_max_chars ?? profile.reasoningMaxChars,
     reasoningKeepRecent: rollout?.reasoning_keep_recent ?? profile.reasoningKeepRecent,
+    summaryBoundaryStep: rollout?.summary_boundary_step ?? profile.summaryBoundaryStep,
     injectionSkills:
       rollout?.injection_skills ??
       (skillInjection === "full" ? "verbose" : skillInjection ? "short" : profile.injectionSkills),

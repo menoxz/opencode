@@ -1724,6 +1724,28 @@ describe("session.message-v2.toModelMessage", () => {
     expect(JSON.stringify(messages)).not.toContain("__elided")
   })
 
+  test("a smaller summary boundary step elides more of the distant history", async () => {
+    const readInput = { filePath: "/tmp/old.ts", pattern: "z".repeat(200) }
+    const input = [
+      ...toolTurn("step-old", "read", readInput, "old"),
+      ...padTurns("step", 8),
+      ...toolTurn("step-recent", "read", { filePath: "/tmp/recent.ts" }, "recent"),
+      ...toolTurn("step-tail", "read", { filePath: "/tmp/tail.ts" }, "tail"),
+    ]
+
+    // Eleven carrying turns, two always kept verbatim: nine are eligible. At the
+    // default step of twenty no block closes, so nothing is elided; at five the
+    // first block closes and the oldest turn drops its input.
+    const wide = inputsByCall(await MessageV2.toModelMessages(input, model, { replayToolInputs: "summary" }))
+    const narrow = inputsByCall(
+      await MessageV2.toModelMessages(input, model, { replayToolInputs: "summary", summaryBoundaryStep: 5 }),
+    )
+
+    expect(wide.get("call-step-old")).toStrictEqual(readInput)
+    expect(narrow.get("call-step-old")).toStrictEqual({ omitted: true, tool_input: "historical" })
+    expect(narrow.get("call-step-tail")).toStrictEqual({ filePath: "/tmp/tail.ts" })
+  })
+
   test("keeps tool inputs intact while the conversation is short of the summary boundary", async () => {
     const userID1 = "m-user-tool-input-summary-1"
     const assistantID1 = "m-assistant-tool-input-summary-1"

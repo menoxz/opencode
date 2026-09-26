@@ -408,6 +408,7 @@ export const layer = Layer.effect(
         replayReasoning: input.rollout.replayReasoning,
         reasoningMaxChars: input.rollout.reasoningMaxChars,
         reasoningKeepRecent: input.rollout.reasoningKeepRecent,
+        summaryBoundaryStep: input.rollout.summaryBoundaryStep,
       })
       return Token.estimate(JSON.stringify(msgs))
     })
@@ -673,8 +674,12 @@ export const layer = Layer.effect(
         replayToolInputs: rollout.replayToolInputs,
         replayToolOutputs: rollout.replayToolOutputs,
         replayReasoning: rollout.replayReasoning,
-        reasoningMaxChars: rollout.reasoningMaxChars,
+        // The summarizer is the one consumer that rewrites the head: it must read
+        // the reasoning in full, because a pre-truncated "why" cannot be summarised
+        // back into something faithful to the work it explains.
+        reasoningMaxChars: 0,
         reasoningKeepRecent: rollout.reasoningKeepRecent,
+        summaryBoundaryStep: rollout.summaryBoundaryStep,
       })
       const ctx = yield* InstanceState.context
       const msg: MessageV2.Assistant = {
