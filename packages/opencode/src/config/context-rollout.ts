@@ -25,6 +25,13 @@ export const Info = Schema.Struct({
   replay_reasoning: Schema.optional(ReplayReasoning).annotate({
     description: "Controls whether historical reasoning blocks are replayed into model context.",
   }),
+  reasoning_max_chars: Schema.optional(Schema.Number).annotate({
+    description:
+      "Caps the characters of reasoning replayed for each historical assistant turn. Keeps the field present (DeepSeek requires it) while shrinking old chain-of-thought. 0 disables.",
+  }),
+  reasoning_keep_recent: Schema.optional(Schema.Number).annotate({
+    description: "Most recent assistant turns whose reasoning is replayed in full before reasoning_max_chars applies.",
+  }),
   injection_skills: Schema.optional(InjectionSkills).annotate({
     description: "Controls whether available skills are injected in verbose or short form.",
   }),

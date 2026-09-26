@@ -85,6 +85,7 @@ describe("session.context-rollout.resolve", () => {
       replayToolInputs: "summary",
       replayToolOutputs: "off",
       replayReasoning: "off",
+      reasoningMaxChars: 1_000,
       systemBoilerplate: "light",
     })
   })
@@ -103,6 +104,27 @@ describe("session.context-rollout.resolve", () => {
     expect(SessionContextRollout.resolve(parsed)).toEqual({
       ...SessionContextRollout.DEFAULTS,
       injectionInstructions: "summary",
+    })
+  })
+
+  test("resolves an explicit reasoning compaction budget and keep window", () => {
+    const parsed = ConfigParse.schema(
+      Config.Info,
+      {
+        experimental: {
+          context_rollout: {
+            reasoning_max_chars: 1_200,
+            reasoning_keep_recent: 2,
+          },
+        },
+      },
+      "test:config",
+    )
+
+    expect(SessionContextRollout.resolve(parsed)).toEqual({
+      ...SessionContextRollout.DEFAULTS,
+      reasoningMaxChars: 1_200,
+      reasoningKeepRecent: 2,
     })
   })
 

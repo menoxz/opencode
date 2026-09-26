@@ -490,6 +490,8 @@ export const layer = Layer.effect(
         replayToolInputs: input.promptRollout.replayToolInputs,
         replayToolOutputs: input.promptRollout.replayToolOutputs,
         replayReasoning: input.promptRollout.replayReasoning,
+        reasoningMaxChars: input.promptRollout.reasoningMaxChars,
+        reasoningKeepRecent: input.promptRollout.reasoningKeepRecent,
       })
       const text = yield* llm
         .stream({
@@ -2198,6 +2200,8 @@ export const layer = Layer.effect(
               replayToolInputs: promptRollout.replayToolInputs,
               replayToolOutputs: promptRollout.replayToolOutputs,
               replayReasoning: promptRollout.replayReasoning,
+              reasoningMaxChars: promptRollout.reasoningMaxChars,
+              reasoningKeepRecent: promptRollout.reasoningKeepRecent,
             })
             contextSummary.add(
               "modelMessageConversion",

@@ -288,6 +288,18 @@ function truncateToolOutput(text: string, maxChars?: number) {
   return `${text.slice(0, maxChars)}\n[Tool output truncated for compaction: omitted ${omitted} chars]`
 }
 
+// Older chain-of-thought bloats every request once a session runs long, but the
+// field itself must stay present: DeepSeek answers 400 when a prior assistant
+// turn carries no `reasoning_content`. Keep a head and a tail (plan and
+// conclusion) and mark the cut, so the reasoning stays non-empty and replayed.
+function truncateReasoning(text: string, maxChars: number) {
+  if (maxChars <= 0 || text.length <= maxChars) return text
+  const half = Math.floor(maxChars / 2)
+  const head = text.slice(0, half)
+  const tail = text.slice(text.length - half)
+  return `${head}\n[Historical reasoning compacted: omitted ${text.length - head.length - tail.length} chars]\n${tail}`
+}
+
 type ReplayToolInputsMode = "full" | "summary" | "off"
 type ReplayToolOutputsMode = "full" | "summary" | "off"
 type ReplayReasoningMode = "on" | "off"
@@ -794,6 +806,8 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
     replayToolInputs?: ReplayToolInputsMode
     replayToolOutputs?: ReplayToolOutputsMode
     replayReasoning?: ReplayReasoningMode
+    reasoningMaxChars?: number
+    reasoningKeepRecent?: number
   },
 ) {
   const result: UIMessage[] = []
@@ -801,6 +815,17 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
   const replayToolInputs = options?.replayToolInputs ?? "full"
   const replayToolOutputs = options?.replayToolOutputs ?? "full"
   const replayReasoning = requiresReasoningReplay(model) ? "on" : options?.replayReasoning
+  const reasoningMaxChars = options?.reasoningMaxChars ?? 0
+  const reasoningKeepRecent = options?.reasoningKeepRecent ?? 1
+  // Only the most recent assistant turns keep their chain-of-thought verbatim;
+  // older reasoning is capped but never dropped, so the field DeepSeek requires
+  // stays present on every prior assistant turn.
+  const fullReasoningIDs = new Set(
+    (reasoningKeepRecent > 0
+      ? input.filter((entry) => entry.info.role === "assistant").slice(-reasoningKeepRecent)
+      : []
+    ).map((entry) => entry.info.id),
+  )
   const summarizedToolTurns = summarizedToolOutputMessageIDs(input, replayToolOutputs)
   const pinnedToolCalls = pinnedToolCallIDs(input, summarizedToolTurns, replayToolOutputs === "summary")
   const summarizedToolInputTurns = summarizedToolInputMessageIDs(input, replayToolInputs)
@@ -1081,17 +1106,21 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
           // metadata (Anthropic signature, OpenAI encrypted id) that must be
           // replayed even when empty.
           if (part.text.length === 0 && (part.metadata == null || Object.keys(part.metadata).length === 0)) continue
+          const text =
+            reasoningMaxChars > 0 && !fullReasoningIDs.has(msg.info.id)
+              ? truncateReasoning(part.text, reasoningMaxChars)
+              : part.text
           if (differentModel) {
-            if (part.text.trim().length > 0)
+            if (text.trim().length > 0)
               assistantMessage.parts.push({
                 type: "text",
-                text: part.text,
+                text,
               })
             continue
           }
           assistantMessage.parts.push({
             type: "reasoning",
-            text: part.text,
+            text,
             providerMetadata: part.metadata,
           })
         }
@@ -1144,6 +1173,8 @@ export function toModelMessages(
     replayToolInputs?: ReplayToolInputsMode
     replayToolOutputs?: ReplayToolOutputsMode
     replayReasoning?: ReplayReasoningMode
+    reasoningMaxChars?: number
+    reasoningKeepRecent?: number
   },
 ): Promise<ModelMessage[]> {
   return Effect.runPromise(toModelMessagesEffect(input, model, options).pipe(Effect.provide(EffectLogger.layer)))

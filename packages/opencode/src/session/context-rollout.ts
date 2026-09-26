@@ -18,6 +18,8 @@ export type Info = {
   replayToolInputs: ReplayToolInputsMode
   replayToolOutputs: ReplayToolOutputsMode
   replayReasoning: ReplayReasoningMode
+  reasoningMaxChars: number
+  reasoningKeepRecent: number
   injectionSkills: InjectionSkillsMode
   injectionInstructions: InjectionInstructionsMode
   systemBoilerplate: SystemBoilerplateMode
@@ -29,6 +31,8 @@ export const DEFAULTS: Info = {
   replayToolInputs: "full",
   replayToolOutputs: "full",
   replayReasoning: "on",
+  reasoningMaxChars: 0,
+  reasoningKeepRecent: 1,
   injectionSkills: "short",
   injectionInstructions: "summary",
   systemBoilerplate: "full",
@@ -43,6 +47,7 @@ const PROFILES: Record<Profile, Info> = {
     replayToolInputs: "summary",
     replayToolOutputs: "summary",
     replayReasoning: "off",
+    reasoningMaxChars: 1_000,
     systemBoilerplate: "light",
   },
 }
@@ -57,6 +62,8 @@ export function resolve(config: Config.Info, _flags?: Pick<RuntimeFlags.Info, ne
     replayToolInputs: rollout?.replay_tool_inputs ?? profile.replayToolInputs,
     replayToolOutputs: rollout?.replay_tool_outputs ?? profile.replayToolOutputs,
     replayReasoning: rollout?.replay_reasoning ?? profile.replayReasoning,
+    reasoningMaxChars: rollout?.reasoning_max_chars ?? profile.reasoningMaxChars,
+    reasoningKeepRecent: rollout?.reasoning_keep_recent ?? profile.reasoningKeepRecent,
     injectionSkills:
       rollout?.injection_skills ??
       (skillInjection === "full" ? "verbose" : skillInjection ? "short" : profile.injectionSkills),

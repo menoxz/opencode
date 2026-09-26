@@ -2010,6 +2010,93 @@ describe("session.message-v2.toModelMessage", () => {
     ])
   })
 
+  test("compacts older reasoning but keeps the most recent turn verbatim", async () => {
+    const deepseekModel: Provider.Model = {
+      ...model,
+      id: ModelID.make("deepseek/deepseek-v4.1-flash"),
+      providerID: ProviderID.make("command-code"),
+      api: {
+        id: "deepseek/deepseek-v4.1-flash",
+        url: "https://api.commandcode.ai/provider/v1",
+        npm: "@ai-sdk/openai-compatible",
+      },
+      capabilities: {
+        ...model.capabilities,
+        reasoning: true,
+        interleaved: { field: "reasoning_content" },
+      },
+    }
+    const long = "O".repeat(5_000)
+    const recent = "N".repeat(5_000)
+    const input: MessageV2.WithParts[] = [
+      {
+        info: assistantInfo("m-old-reasoning", "m-parent", undefined, {
+          providerID: deepseekModel.providerID,
+          modelID: deepseekModel.id,
+        }),
+        parts: [
+          { ...basePart("m-old-reasoning", "r-old"), type: "reasoning", text: long, time: { start: 0 } },
+        ] as MessageV2.Part[],
+      },
+      {
+        info: assistantInfo("m-new-reasoning", "m-parent", undefined, {
+          providerID: deepseekModel.providerID,
+          modelID: deepseekModel.id,
+        }),
+        parts: [
+          { ...basePart("m-new-reasoning", "r-new"), type: "reasoning", text: recent, time: { start: 0 } },
+        ] as MessageV2.Part[],
+      },
+    ]
+
+    const json = JSON.stringify(
+      await MessageV2.toModelMessages(input, deepseekModel, {
+        replayReasoning: "on",
+        reasoningMaxChars: 1_000,
+        reasoningKeepRecent: 1,
+      }),
+    )
+
+    expect(json).toContain("Historical reasoning compacted: omitted 4000 chars")
+    expect(json).not.toContain(long)
+    expect(json).toContain(recent)
+  })
+
+  test("leaves reasoning untouched when no budget is configured", async () => {
+    const deepseekModel: Provider.Model = {
+      ...model,
+      id: ModelID.make("deepseek/deepseek-v4.1-flash"),
+      providerID: ProviderID.make("command-code"),
+      api: {
+        id: "deepseek/deepseek-v4.1-flash",
+        url: "https://api.commandcode.ai/provider/v1",
+        npm: "@ai-sdk/openai-compatible",
+      },
+      capabilities: {
+        ...model.capabilities,
+        reasoning: true,
+        interleaved: { field: "reasoning_content" },
+      },
+    }
+    const long = "O".repeat(5_000)
+    const input: MessageV2.WithParts[] = [
+      {
+        info: assistantInfo("m-old-reasoning-off", "m-parent", undefined, {
+          providerID: deepseekModel.providerID,
+          modelID: deepseekModel.id,
+        }),
+        parts: [
+          { ...basePart("m-old-reasoning-off", "r-off"), type: "reasoning", text: long, time: { start: 0 } },
+        ] as MessageV2.Part[],
+      },
+    ]
+
+    const json = JSON.stringify(await MessageV2.toModelMessages(input, deepseekModel, { replayReasoning: "off" }))
+
+    expect(json).toContain(long)
+    expect(json).not.toContain("Historical reasoning compacted")
+  })
+
   test("drops empty unsigned reasoning parts for providers that round-trip reasoning_content", async () => {
     const assistantID = "m-assistant-empty-reasoning"
     const deepseekModel: Provider.Model = {

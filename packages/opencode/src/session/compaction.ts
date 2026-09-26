@@ -406,6 +406,8 @@ export const layer = Layer.effect(
         replayToolInputs: input.rollout.replayToolInputs,
         replayToolOutputs: input.rollout.replayToolOutputs,
         replayReasoning: input.rollout.replayReasoning,
+        reasoningMaxChars: input.rollout.reasoningMaxChars,
+        reasoningKeepRecent: input.rollout.reasoningKeepRecent,
       })
       return Token.estimate(JSON.stringify(msgs))
     })
@@ -671,6 +673,8 @@ export const layer = Layer.effect(
         replayToolInputs: rollout.replayToolInputs,
         replayToolOutputs: rollout.replayToolOutputs,
         replayReasoning: rollout.replayReasoning,
+        reasoningMaxChars: rollout.reasoningMaxChars,
+        reasoningKeepRecent: rollout.reasoningKeepRecent,
       })
       const ctx = yield* InstanceState.context
       const msg: MessageV2.Assistant = {
