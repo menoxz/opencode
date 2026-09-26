@@ -18,7 +18,10 @@ const DESCRIPTION = [
   "then referenced by name, 'delete' stored task(s), 'run' a task",
   "(background=true for a long-lived process), 'stop' and 'restart' the background",
   "processes this server started. Tasks may declare a shell, cwd, env, timeout,",
-  "and dependsOn (other tasks run first, in order).",
+  "and dependsOn: those prerequisites run first, in order, for both 'run' and a",
+  "background start, and a background process is not started at all when one fails.",
+  "'restart' deliberately does NOT re-run dependsOn, since the prerequisites of an",
+  "already-running process were satisfied by its first start.",
 ].join(" ")
 
 /** Fields accepted by 'upsert'. All optional so one field can be patched without restating the others. */
@@ -60,7 +63,7 @@ export const Parameters = Schema.Struct({
   background: Schema.optional(
     Schema.Boolean.annotate({
       description:
-        "For 'run': start a long-lived process instead of waiting for completion. Tracked by PID with a log file; dependsOn is skipped so a server starts immediately.",
+        "For 'run': start a long-lived process instead of waiting for completion. Tracked by PID with a log file. dependsOn is resolved first and the process is not started when a prerequisite fails.",
     }),
   ),
 })
@@ -294,6 +297,8 @@ export const TasksTool = Tool.define(
               TasksStore.clearRun(directory, item)
               lines.push(`${stopped.stopped ? "✓" : "✗"} ${item}: ${stopped.detail}`)
               if (action !== "restart") continue
+              // Deliberate, not an oversight: a restart does not re-run dependsOn. The
+              // prerequisites of a process that was already running are already satisfied.
               const task = tasks[item]
               if (!task) {
                 lines.push(`    restart skipped: '${item}' has no definition`)
@@ -329,27 +334,9 @@ export const TasksTool = Tool.define(
             }
           }
 
-          if (input.background) {
-            const name = input.name
-            const task = tasks[name]
-            const spawned = yield* Effect.tryPromise(() =>
-              TasksStore.spawnTaskBackground({ directory, name, task, defaultShell }),
-            ).pipe(Effect.orElseSucceed(() => undefined))
-            if (!spawned)
-              return {
-                title: `tasks: ${name} failed to start`,
-                metadata: { error: "spawn_failed", name },
-                output: `Could not start '${name}' in the background.`,
-              }
-            TasksStore.recordRun(directory, spawned)
-            return {
-              title: `tasks: ${name} started (pid ${spawned.pid})`,
-              metadata: { status: "started", name, pid: spawned.pid, log: spawned.logFile },
-              output: `Started '${name}' in the background.\n  pid: ${spawned.pid}\n  log: ${spawned.logFile}\nUse action='get' to read its state, and 'stop' or 'restart' with name='${name}' to manage it.`,
-            }
-          }
-
-          // Resolve execution order: dependsOn first (DFS, cycle-guarded), then the task itself.
+          // Resolve execution order first: dependsOn first (DFS, cycle-guarded), then the
+          // task itself. Both `run` and a background start share this, so a long-lived
+          // process is never spawned against prerequisites that never ran.
           const order: string[] = []
           const visiting = new Set<string>()
           const visited = new Set<string>()
@@ -374,6 +361,82 @@ export const TasksTool = Tool.define(
               title: `tasks: ${input.name} failed`,
               metadata: { error: "dependency_error", name: input.name },
               output: resolveError,
+            }
+          }
+
+          if (input.background) {
+            const name = input.name
+            const task = tasks[name]
+            // Prerequisites run in the foreground and are awaited: a detached process
+            // must not start at all when one fails, matching `run`, which stops at the
+            // first failing step.
+            const prerequisites = order.filter((step) => step !== name)
+            const ran: StepResult[] = []
+            for (const dep of prerequisites) {
+              const depTask = tasks[dep]!
+              const depShell = Shell.acceptable(depTask.shell) ?? defaultShell
+              const depCwd = depTask.cwd ? path.resolve(directory, depTask.cwd) : directory
+              const depEnv = { ...process.env, ...(depTask.env ?? {}) }
+              const start = Date.now()
+              const outcome = yield* Effect.tryPromise(() =>
+                Process.run([depTask.command], {
+                  shell: depShell ?? true,
+                  cwd: depCwd,
+                  env: depEnv,
+                  timeout: depTask.timeout ?? DEFAULT_TIMEOUT_MS,
+                  nothrow: true,
+                }),
+              ).pipe(
+                Effect.catch((e) =>
+                  Effect.succeed({
+                    code: -1,
+                    stdout: Buffer.from(""),
+                    stderr: Buffer.from(String((e as any)?.message ?? e)),
+                  } as Process.Result),
+                ),
+              )
+              const step: StepResult = {
+                name: dep,
+                command: depTask.command,
+                code: outcome.code,
+                durationMs: Date.now() - start,
+                stdout: outcome.stdout.toString().trim(),
+                stderr: outcome.stderr.toString().trim(),
+              }
+              ran.push(step)
+              if (step.code !== 0) {
+                const detail = ran.map(
+                  (r) => `${r.code === 0 ? "✓" : "✗"} ${r.name}  (exit ${r.code}, ${r.durationMs}ms)  $ ${r.command}`,
+                )
+                return {
+                  title: `tasks: ${name} not started`,
+                  metadata: {
+                    error: "dependency_failed",
+                    name,
+                    step: dep,
+                    steps: ran.map((r) => ({ name: r.name, code: r.code })),
+                  },
+                  output: [`Dependency '${dep}' failed (exit ${step.code}), so '${name}' was NOT started.`, "", ...detail].join("\n"),
+                }
+              }
+            }
+            const spawned = yield* Effect.tryPromise(() =>
+              TasksStore.spawnTaskBackground({ directory, name, task, defaultShell }),
+            ).pipe(Effect.orElseSucceed(() => undefined))
+            if (!spawned)
+              return {
+                title: `tasks: ${name} failed to start`,
+                metadata: { error: "spawn_failed", name },
+                output: `Could not start '${name}' in the background.`,
+              }
+            TasksStore.recordRun(directory, spawned)
+            const ranPrerequisites = prerequisites.length
+              ? `\n  prerequisites: ${prerequisites.join(" -> ")} (all succeeded)`
+              : ""
+            return {
+              title: `tasks: ${name} started (pid ${spawned.pid})`,
+              metadata: { status: "started", name, pid: spawned.pid, log: spawned.logFile, prerequisites },
+              output: `Started '${name}' in the background.\n  pid: ${spawned.pid}\n  log: ${spawned.logFile}${ranPrerequisites}\nUse action='get' to read its state, and 'stop' or 'restart' with name='${name}' to manage it.`,
             }
           }
 

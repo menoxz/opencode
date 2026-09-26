@@ -77,6 +77,10 @@ const VscodeTask = Schema.Struct({
       ),
     }),
   ),
+  /** VSCode accepts labels or `{ label }` objects; both forms are honoured. */
+  dependsOn: Schema.optional(
+    Schema.Array(Schema.Union([Schema.String, Schema.Struct({ label: Schema.optional(Schema.String) })])),
+  ),
 })
 
 export const VscodeFile = Schema.Struct({
@@ -105,6 +109,9 @@ export function fromVscode(file: VscodeFile): Map {
         : t.options?.shell && "executable" in t.options.shell
           ? t.options.shell.executable
           : undefined
+    const dependsOn = t.dependsOn
+      ?.map((dep) => (typeof dep === "string" ? dep : dep.label))
+      .filter((dep): dep is string => typeof dep === "string" && dep.length > 0)
     out[t.label] = {
       command,
       description: t.detail,
@@ -112,6 +119,7 @@ export function fromVscode(file: VscodeFile): Map {
       env: t.options?.env,
       shell,
       group,
+      ...(dependsOn && dependsOn.length > 0 ? { dependsOn } : {}),
     }
   }
   return out
