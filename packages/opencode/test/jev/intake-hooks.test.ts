@@ -28,7 +28,7 @@ const host = () => {
 const input = { sessionID: "ses_intake", tool: "bash", args: { command: "bun test" }, output }
 
 describe("jev intake hook", () => {
-  test("merges intake into the existing post round-trip", async () => {
+  test("never prunes a tool result: the output passes through verbatim", async () => {
     const { client, seen } = host()
     const screening = await Effect.runPromise(
       JevHooks.post(
@@ -38,14 +38,12 @@ describe("jev intake hook", () => {
       ),
     )
     expect(seen).toHaveLength(1)
-    expect(screening.kept).toBeDefined()
-    expect(screening.kept!.length).toBeLessThan(output.length)
-    expect(screening.kept!).toContain("intake.ts:1")
+    expect(screening.kept).toBeUndefined()
   })
 
-  test("uses its own request when intake selects another model", async () => {
+  test("keeps one round-trip even when intake names its own model", async () => {
     const { client, seen } = host()
-    await Effect.runPromise(
+    const screening = await Effect.runPromise(
       JevHooks.post(
         client,
         {
@@ -57,7 +55,8 @@ describe("jev intake hook", () => {
         input,
       ),
     )
-    expect(seen).toHaveLength(2)
+    expect(seen).toHaveLength(1)
+    expect(screening.kept).toBeUndefined()
   })
 
   test("changes nothing when intake is disabled", async () => {
