@@ -94,11 +94,20 @@ export const daemonHandler = Effect.fn("Daemon.handler")(function* (
   // Candidate generation is part of pattern-detection so both use one report snapshot.
   yield* daemon.register("process-queue", processQueue, every_5m)
 
+  // File watcher: queues one `fw-*` task per workspace file change, so a busy
+  // workspace floods the autonomous task queue. Give it the same explicit
+  // opt-out as the eval loop.
+  const watchOff = process.env.OPENCODE_NO_DAEMON_WATCH === "1"
+
   // File watcher cleanup (periodic — removes stale cooldown entries)
-  yield* daemon.register("file-watcher-cleanup", subscribeFileChanges, every_30s)
+  if (!watchOff) {
+    yield* daemon.register("file-watcher-cleanup", subscribeFileChanges, every_30s)
+  }
 
   // File watcher subscription (long-lived — event-driven via @parcel/watcher)
-  yield* daemon.forkForever("file-watcher", startFileWatcher)
+  if (!watchOff) {
+    yield* daemon.forkForever("file-watcher", startFileWatcher)
+  }
 
   // Register WebSocket push listener (event-driven, reconnects automatically)
   yield* daemon.forkForever("ws-push", listenForTriggers)
