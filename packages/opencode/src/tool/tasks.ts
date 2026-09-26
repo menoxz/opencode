@@ -6,26 +6,61 @@ import { InstanceState } from "@/effect/instance-state"
 import { Shell } from "@/shell/shell"
 import * as Process from "@/util/process"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
+import { TasksStore } from "./tasks-store"
 import path from "path"
 
 const DESCRIPTION = [
   "Manage and run named, repeatable shell tasks (VSCode tasks.json-style).",
-  "Tasks come from the `tasks` key of opencode config and/or a workspace",
-  "tasks.json file. Use action='list' to see available tasks, or action='run'",
-  "with a task `name` to execute it. Tasks may declare a shell, cwd, env,",
-  "timeout, and dependsOn (other tasks run first, in order). Live status",
-  "(running/done/failed) streams to the TUI.",
+  "Definitions come from the `tasks` key of opencode config, a workspace",
+  "tasks.json, or the agent-owned store (.opencode/tasks.json, lowest authority).",
+  "Actions: 'list' the definitions, 'get' one or many with source and run state,",
+  "'upsert' create or modify a stored task so a command is written once and",
+  "then referenced by name, 'delete' stored task(s), 'run' a task",
+  "(background=true for a long-lived process), 'stop' and 'restart' the background",
+  "processes this server started. Tasks may declare a shell, cwd, env, timeout,",
+  "and dependsOn (other tasks run first, in order).",
 ].join(" ")
+
+/** Fields accepted by 'upsert'. All optional so one field can be patched without restating the others. */
+const Patch = Schema.Struct({
+  command: Schema.optional(Schema.String),
+  description: Schema.optional(Schema.String),
+  cwd: Schema.optional(Schema.String),
+  shell: Schema.optional(Schema.String),
+  env: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  group: Schema.optional(Schema.String),
+  dependsOn: Schema.optional(Schema.Array(Schema.String)),
+  cleanupCommand: Schema.optional(Schema.String),
+  timeout: Schema.optional(Schema.Number),
+})
 
 export const Parameters = Schema.Struct({
   action: Schema.optional(
-    Schema.Literals(["list", "run"]).annotate({
-      description: "What to do: 'list' the defined tasks, or 'run' a task. Defaults to 'list'.",
+    Schema.Literals(["list", "get", "run", "stop", "restart", "upsert", "delete"]).annotate({
+      description:
+        "'list' definitions and run state | 'get' one or many | 'upsert' create/modify a stored task | 'delete' stored task(s) | 'run' execute a task | 'stop' a background run | 'restart' stop then run. Defaults to 'list'.",
     }),
   ),
   name: Schema.optional(
     Schema.String.annotate({
-      description: "Name of the task to run (required when action='run').",
+      description: "Task name, for the single-target actions.",
+    }),
+  ),
+  names: Schema.optional(
+    Schema.Array(Schema.String).annotate({
+      description: "Task names for the bulk actions (get, stop, restart, delete).",
+    }),
+  ),
+  task: Schema.optional(
+    Patch.annotate({
+      description:
+        "Definition for 'upsert': only the fields to set, each omitted field keeps its stored value. 'command' is required when the task does not exist yet.",
+    }),
+  ),
+  background: Schema.optional(
+    Schema.Boolean.annotate({
+      description:
+        "For 'run': start a long-lived process instead of waiting for completion. Tracked by PID with a log file; dependsOn is skipped so a server starts immediately.",
     }),
   ),
 })
@@ -109,6 +144,11 @@ export const TasksTool = Tool.define(
               if (!(k in merged)) merged[k] = v
             }
           }
+          // The agent-owned store has the lowest authority, so it only contributes
+          // names no other source already defines; without this an upserted task
+          // could never be listed or run.
+          const stored = yield* Effect.promise(() => TasksStore.readStore(directory))
+          for (const [k, v] of Object.entries(stored)) if (!(k in merged)) merged[k] = v
           const tasks = merged as TaskMap
 
           const action = input.action ?? "list"
@@ -120,6 +160,156 @@ export const TasksTool = Tool.define(
               metadata: { count: names.length, names },
               output: renderList(tasks),
             }
+          }
+
+          if (action === "get") {
+            const wanted = input.names?.length ? input.names : input.name ? [input.name] : []
+            if (wanted.length === 0)
+              return {
+                title: "tasks: missing name",
+                metadata: { error: "missing_name" },
+                output: "action='get' requires a task `name` or `names`.",
+              }
+            const stored = yield* Effect.promise(() => TasksStore.readStore(directory))
+            const runs = TasksStore.listRuns(directory)
+            const blocks = wanted.map((item) => {
+              if (!(item in tasks))
+                return `Unknown task '${item}'. Available: ${Object.keys(tasks).join(", ") || "(none)"}`
+              const task = tasks[item]!
+              const source = item in (cfg.tasks ?? {}) ? "config" : item in stored ? "store" : "workspace"
+              const lines = [`${item}  (source: ${source})`, `  command: ${task.command}`]
+              for (const [key, value] of Object.entries(task))
+                if (key !== "command" && value !== undefined)
+                  lines.push(`  ${key}: ${typeof value === "object" ? JSON.stringify(value) : String(value)}`)
+              const run = runs.find((candidate) => candidate.name === item)
+              lines.push(
+                run
+                  ? `  run: pid ${run.pid} (${TasksStore.isAlive(run.pid) ? "alive" : "exited"}) since ${new Date(run.startedAt).toISOString()}`
+                  : "  run: none",
+              )
+              return lines.join("\n")
+            })
+            return {
+              title: `tasks: get ${wanted.join(", ")}`,
+              metadata: { names: wanted },
+              output: blocks.join("\n\n"),
+            }
+          }
+
+          if (action === "upsert") {
+            const name = input.name
+            if (!name || !input.task)
+              return {
+                title: "tasks: missing input",
+                metadata: { error: "missing_input" },
+                output: "action='upsert' requires a task `name` and a `task` object.",
+              }
+            const stored = yield* Effect.promise(() => TasksStore.readStore(directory))
+            const existing = tasks[name]
+            const next: ConfigTasks.Info = { ...(existing ?? { command: "" }), ...input.task }
+            if (!next.command)
+              return {
+                title: "tasks: missing command",
+                metadata: { error: "missing_command", name },
+                output: `Task '${name}' has no command yet; pass task.command to create it.`,
+              }
+            const owner = name in (cfg.tasks ?? {}) ? "config" : name in stored ? "store" : existing ? "workspace" : undefined
+            if (owner && owner !== "store")
+              return {
+                title: `tasks: ${name} is ${owner}-owned`,
+                metadata: { error: "read_only_source", name, source: owner },
+                output: `Task '${name}' comes from the ${owner} source and is not modifiable here. Use another name, or edit that source.`,
+              }
+            const wrote = yield* Effect.tryPromise(() =>
+              TasksStore.writeStore(directory, { ...stored, [name]: next }).then(() => true),
+            ).pipe(Effect.orElseSucceed(() => false))
+            if (!wrote)
+              return {
+                title: "tasks: upsert failed",
+                metadata: { error: "write_failed", name },
+                output: `Could not write ${TasksStore.storePath(directory)}.`,
+              }
+            return {
+              title: `tasks: ${name} ${existing ? "updated" : "created"}`,
+              metadata: { status: "stored", name, created: !existing },
+              output: `${existing ? "Updated" : "Created"} task '${name}' in ${TasksStore.storePath(directory)}.\n  command: ${next.command}`,
+            }
+          }
+
+          if (action === "delete") {
+            const wanted = input.names?.length ? input.names : input.name ? [input.name] : []
+            if (wanted.length === 0)
+              return {
+                title: "tasks: missing name",
+                metadata: { error: "missing_name" },
+                output: "action='delete' requires a task `name` or `names`.",
+              }
+            const stored = yield* Effect.promise(() => TasksStore.readStore(directory))
+            const removed = wanted.filter((item) => item in stored)
+            const refused = wanted
+              .filter((item) => !(item in stored))
+              .map((item) => {
+                const where = item in (cfg.tasks ?? {}) ? "config" : item in tasks ? "workspace" : "not found"
+                return `${item} (${where})`
+              })
+            const kept = Object.fromEntries(Object.entries(stored).filter(([key]) => !removed.includes(key)))
+            if (removed.length)
+              yield* Effect.tryPromise(() => TasksStore.writeStore(directory, kept)).pipe(
+                Effect.orElseSucceed(() => undefined),
+              )
+            return {
+              title: `tasks: deleted ${removed.length}`,
+              metadata: { removed, refused },
+              output: [
+                removed.length ? `Deleted: ${removed.join(", ")}` : "Deleted: (none)",
+                refused.length ? `Refused, edit the owning source: ${refused.join(", ")}` : undefined,
+              ]
+                .filter((line): line is string => line !== undefined)
+                .join("\n"),
+            }
+          }
+
+          if (action === "stop" || action === "restart") {
+            const wanted = input.names?.length
+              ? input.names
+              : input.name
+                ? [input.name]
+                : TasksStore.listRuns(directory).map((run) => run.name)
+            if (wanted.length === 0)
+              return {
+                title: "tasks: nothing to stop",
+                metadata: { error: "no_runs" },
+                output: "No background task is tracked by this server. Pass a `name` or `names`.",
+              }
+            const lines: string[] = []
+            for (const item of wanted) {
+              const run = TasksStore.getRun(directory, item)
+              if (!run) {
+                lines.push(`· ${item}: no background run tracked`)
+                continue
+              }
+              const stopped = yield* Effect.tryPromise(() => TasksStore.stopRun(run)).pipe(
+                Effect.orElseSucceed(() => ({ stopped: false, detail: "stop failed" })),
+              )
+              TasksStore.clearRun(directory, item)
+              lines.push(`${stopped.stopped ? "✓" : "✗"} ${item}: ${stopped.detail}`)
+              if (action !== "restart") continue
+              const task = tasks[item]
+              if (!task) {
+                lines.push(`    restart skipped: '${item}' has no definition`)
+                continue
+              }
+              const spawned = yield* Effect.tryPromise(() =>
+                TasksStore.spawnTaskBackground({ directory, name: item, task, defaultShell }),
+              ).pipe(Effect.orElseSucceed(() => undefined))
+              if (!spawned) {
+                lines.push("    restart failed")
+                continue
+              }
+              TasksStore.recordRun(directory, spawned)
+              lines.push(`    restarted: pid ${spawned.pid}, log ${spawned.logFile}`)
+            }
+            return { title: `tasks: ${action} ${wanted.length}`, metadata: { action, names: wanted }, output: lines.join("\n") }
           }
 
           // action === "run"
@@ -136,6 +326,26 @@ export const TasksTool = Tool.define(
               title: `tasks: unknown task ${input.name}`,
               metadata: { error: "unknown_task", name: input.name },
               output: `Unknown task '${input.name}'. Available: ${available}`,
+            }
+          }
+
+          if (input.background) {
+            const name = input.name
+            const task = tasks[name]
+            const spawned = yield* Effect.tryPromise(() =>
+              TasksStore.spawnTaskBackground({ directory, name, task, defaultShell }),
+            ).pipe(Effect.orElseSucceed(() => undefined))
+            if (!spawned)
+              return {
+                title: `tasks: ${name} failed to start`,
+                metadata: { error: "spawn_failed", name },
+                output: `Could not start '${name}' in the background.`,
+              }
+            TasksStore.recordRun(directory, spawned)
+            return {
+              title: `tasks: ${name} started (pid ${spawned.pid})`,
+              metadata: { status: "started", name, pid: spawned.pid, log: spawned.logFile },
+              output: `Started '${name}' in the background.\n  pid: ${spawned.pid}\n  log: ${spawned.logFile}\nUse action='get' to read its state, and 'stop' or 'restart' with name='${name}' to manage it.`,
             }
           }
 
