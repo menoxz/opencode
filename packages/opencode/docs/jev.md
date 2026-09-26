@@ -82,6 +82,21 @@ supported, so a key can also be referenced without being written literally:
   false escalations for fewer missed risks.
 - `guard.permissions` lists the permission names screened.
 
+### Activation profiles
+
+- `profile: "safe"` turns on every hook whose failure mode is advisory —
+  `route`, `plan`, `relevance`, `review`, `next_action` and `intake` — in one
+  setting. None of them refuses a call or ends a run: route and plan scope the
+  turn, review and next_action add signal, relevance is advisory. It is the
+  recommended way to enable Jev.
+- A hook set explicitly still wins: `enabled: false` beside the profile stays
+  off. The preset is a default, not a lock.
+- The high-risk `guard`, the heuristic `untrusted` detector and `compaction` are
+  never implied by a profile; enable them individually. Without `profile`, every
+  hook keeps its own default (off): the integration stays opt-in.
+- Enabling `intake` only sets its flag: a tool result is never pruned (see
+  `intakeApplies`), so that guarantee holds under any profile.
+
 ## The `jev` tool
 
 `parameters`:

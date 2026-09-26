@@ -925,7 +925,7 @@ export const layer = Layer.effect(
         }
 
         return {
-          config: result,
+          config: result.jev ? { ...result, jev: ConfigJev.resolve(result.jev) } : result,
           directories,
           deps,
           consoleState: {

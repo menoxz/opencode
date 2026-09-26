@@ -155,6 +155,10 @@ export const Info = Schema.Struct({
     description:
       "Non-codifiable rules (house conventions, forbidden actions, tone) Jev cannot infer from code. Injected verbatim into the system prompt context block each turn.",
   }),
+  profile: Schema.optional(Schema.Literals(["safe"])).annotate({
+    description:
+      'Activation preset. `"safe"` turns on every hook whose failure mode is advisory — route, plan, relevance, review, next_action and intake — so Jev assists the loop without ever refusing a call or ending a run. A hook set explicitly wins: `enabled: false` beside `profile: "safe"` stays off. Opt-in: without it every hook keeps its default (off).',
+  }),
   guard: Schema.optional(Guard),
   route: Schema.optional(Route),
   plan: Schema.optional(Plan),
@@ -166,5 +170,30 @@ export const Info = Schema.Struct({
   intake: Schema.optional(Intake),
 }).annotate({ identifier: "JevConfig" })
 export type Info = Schema.Schema.Type<typeof Info>
+
+/** Hooks `profile: "safe"` turns on, in the order they run. */
+export const SAFE_HOOKS = ["route", "plan", "relevance", "review", "next_action", "intake"] as const
+
+/**
+ * Expand the activation profile into the hook flags it implies.
+ *
+ * `profile: "safe"` turns on every hook whose failure mode is advisory: it adds
+ * signal, guidance or extractive filtering and never refuses a call or ends a
+ * run. A hook the user set explicitly always wins — `enabled: false` beside the
+ * profile stays off — so the preset is a default, not a lock. Pure and
+ * idempotent; an absent or non-`safe` profile is returned untouched.
+ */
+export function resolve<T extends Info>(info: T | undefined): T | undefined {
+  if (info?.profile !== "safe") return info
+  return {
+    ...info,
+    route: { ...info.route, enabled: info.route?.enabled ?? true },
+    plan: { ...info.plan, enabled: info.plan?.enabled ?? true },
+    relevance: { ...info.relevance, enabled: info.relevance?.enabled ?? true },
+    review: { ...info.review, enabled: info.review?.enabled ?? true },
+    next_action: { ...info.next_action, enabled: info.next_action?.enabled ?? true },
+    intake: { ...info.intake, enabled: info.intake?.enabled ?? true },
+  }
+}
 
 export * as ConfigJev from "./jev"
