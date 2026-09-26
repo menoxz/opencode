@@ -307,7 +307,21 @@ const RECENT_TOOL_TURNS_IN_FULL = 2
 // Only read-only tools have their old inputs dropped from the replayed context.
 // Every other tool carries a literal payload (shell command, patch body, file
 // content, todo list) that the model reproduces verbatim from its own history.
-const SUMMARIZABLE_TOOL_INPUTS = new Set(["read", "glob", "grep", "repo_overview", "session_context", "session_info"])
+// turn_plan and edit_objective carry no payload the model reproduces: the harness
+// re-injects the live plan and the task contract every turn, so their superseded
+// inputs are safe to elide exactly like a read-only tool's. todowrite is NOT
+// listed: its current list still steers the work, and superseded ones are already
+// reduced by the supersededTodo path below.
+const SUMMARIZABLE_TOOL_INPUTS = new Set([
+  "read",
+  "glob",
+  "grep",
+  "repo_overview",
+  "session_context",
+  "session_info",
+  "turn_plan",
+  "edit_objective",
+])
 
 function toolResultReference(part: ToolPart) {
   const candidates = ["filePath", "path", "url", "uri"]

@@ -1698,6 +1698,32 @@ describe("session.message-v2.toModelMessage", () => {
     expect(JSON.stringify(messages)).not.toContain("__elided")
   })
 
+  test("elides harness-state tool inputs past the boundary but keeps the live todo list", async () => {
+    const plan = { intent: "step", expect: "artifact" }
+    const objective = { objective: "do the thing", dod: ["first", "second"] }
+    const todos = Array.from({ length: 8 }, (_, index) => ({ content: `todo ${index}`, status: "pending" }))
+    const input = [
+      ...toolTurn("state-plan", "turn_plan", plan, "planned"),
+      ...toolTurn("state-objective", "edit_objective", objective, "edited"),
+      ...toolTurn("state-todo", "todowrite", { todos }, "written"),
+      ...padTurns("state", SUMMARIZED_TURNS - 3),
+      ...toolTurn("state-recent", "read", { filePath: "/tmp/recent.ts" }, "recent"),
+      ...toolTurn("state-tail", "read", { filePath: "/tmp/tail.ts" }, "tail"),
+    ]
+
+    const messages = await MessageV2.toModelMessages(input, model, { replayToolInputs: "summary" })
+    const inputs = inputsByCall(messages)
+
+    // The harness re-injects the live plan and the task contract every turn, so
+    // their superseded inputs carry nothing the model must reproduce.
+    expect(inputs.get("call-state-plan")).toStrictEqual({ omitted: true, tool_input: "historical" })
+    expect(inputs.get("call-state-objective")).toStrictEqual({ omitted: true, tool_input: "historical" })
+    // The current todo list still steers the work and is never elided here; only
+    // a superseded list is reduced, by the supersededTodo path.
+    expect(inputs.get("call-state-todo")).toStrictEqual({ todos })
+    expect(JSON.stringify(messages)).not.toContain("__elided")
+  })
+
   test("keeps tool inputs intact while the conversation is short of the summary boundary", async () => {
     const userID1 = "m-user-tool-input-summary-1"
     const assistantID1 = "m-assistant-tool-input-summary-1"
