@@ -54,7 +54,22 @@ export type Decision = {
 }
 
 /** Deterministic anchor test, reusing the compaction extractor so they agree. */
-function hasAnchor(text: string): boolean {
+/**
+ * Whether the extractive intake may prune a payload at all.
+ *
+ * Always false, by decision (2026-09-26). The filter decides whole blocks of up to
+ * `MAX_BLOCK_CHARS`, so it cannot keep the few lines a task needs and removes their
+ * surrounding context with them; the model-guided line-range replacement (see
+ * `compact.ts`) was evaluated on real outputs and did not demonstrate reliable line
+ * selection (three real trials returned empty or near-empty plans, including on the
+ * production model and prompt). Exposed as a predicate so the guarantee "a tool
+ * result is never pruned" is testable and cannot silently regress via configuration.
+ */
+export function intakeApplies(_section: { enabled?: boolean } | undefined, _chars: number): boolean {
+  return false
+}
+
+export function hasAnchor(text: string): boolean {
   return JevCompaction.candidatesFromText(text, 1).length > 0
 }
 

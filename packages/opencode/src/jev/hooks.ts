@@ -181,8 +181,9 @@ export const post = Effect.fn("JevHooks.post")(function* (
   const wantsReview = settings?.review?.enabled === true
   const wantsNextAction = settings?.next_action?.enabled === true
   const intakeSection = settings?.intake
-  const intakeOn =
-    intakeSection?.enabled === true && input.output.length >= (intakeSection.min_chars ?? JevIntake.MIN_CHARS)
+  // Tool results are never pruned (see JevIntake.intakeApplies for the measurement
+  // behind this decision). Only reflection keeps a filter.
+  const intakeOn = JevIntake.intakeApplies(intakeSection, input.output.length)
   const blocks = intakeOn ? JevIntake.blocksFromText(input.output, intakeSection?.max_blocks ?? JevIntake.MAX_BLOCKS) : []
   const wantsIntake = blocks.length > 0
   const intakeThreshold = intakeSection?.threshold ?? JevIntake.DEFAULT_THRESHOLD
