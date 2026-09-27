@@ -19,9 +19,14 @@ Options : `--port <n>` (défaut 4096, surchargeable par `OPENCODE_DEV_PORT`), `-
 
 ## Comment ça marche
 
-1. `src/dev/source.ts` résout la **racine du dépôt** (variable `OPENCODE_DEV_SOURCE`, sinon la position
-   du module). Dans un binaire compilé, `import.meta.dir` est un chemin virtuel : la résolution échoue
-   proprement et le runtime retombe sur le binaire installé.
+1. `src/dev/source.ts` résout la **racine du dépôt** : soit `OPENCODE_DEV_SOURCE` (et l'entrée doit
+   exister), soit — cas normal — le processus doit **réellement exécuter**
+   `<racine>/packages/opencode/src/index.ts`, c'est-à-dire que `process.argv[1]` résolu doit être égal
+   à l'entrée candidate. Dans un binaire compilé, `import.meta.dir` est un chemin virtuel et l'entrée
+   ne correspond pas : la résolution échoue proprement et le runtime retombe sur le binaire installé.
+   Exiger la correspondance sur l'entrée *réellement exécutée* — et non la simple présence du dépôt à
+   côté du module — empêche les tests, scripts et outils importés depuis le dépôt de prendre
+   silencieusement le chemin source.
 2. `src/cli/cmd/dev.ts` lance le serveur **`bun --watch --conditions=browser <racine>/packages/opencode/src/index.ts serve --port <port>`**,
    détaché, stdio ignoré, `cwd` = racine du dépôt.
 3. `src/cli/cmd/tui/attach.ts` et `src/daemon/autostart.ts` passent par le même resolveur : en mode
@@ -43,10 +48,30 @@ Options : `--port <n>` (défaut 4096, surchargeable par `OPENCODE_DEV_PORT`), `-
 - **Le port est épinglé** (4096 par défaut) : le port `0` du `serve` par défaut rendrait le serveur
   d'arrière-plan introuvable par les clients.
 
+## Périmètre client : TUI, CLI, puis les GUI
+
+Le TUI et le CLI se rattachent au serveur d'arrière-plan (c'est le chemin couvert par `dev:tui`). Les
+GUI se comportent différemment ; le sachoir avant de conclure à un bug :
+
+- **`packages/desktop` (GUI Electron) ne se rattache pas.** `src/main/server.ts:75-81` fork son
+  **propre sidecar** (`<dirname>/sidecar.js`) via `utilityProcess.fork`, et `src/main/index.ts:287-312`
+  lui choisit son port (`OPENCODE_PORT`, sinon un port éphémère sur `127.0.0.1`). Il ne lance donc
+  jamais `opencodev2.exe`, mais il n'utilise pas non plus le serveur source du 4096.
+  `bun run dev:desktop` (`package.json:14-15`, `predev` puis `electron-vite dev`) reste un cas à part.
+- L'accroche vers un serveur externe existe : `getDefaultServerUrl()` / `setDefaultServerUrl()`
+  (`src/main/server.ts:35-47`), adossés à `DEFAULT_SERVER_URL_KEY = "defaultServerUrl"`
+  (`src/main/constants.ts:8`) dans le store Electron. C'est la voie d'attache — au contraire,
+  `OPENCODE_PORT` ne fait que déplacer le port de son propre sidecar.
+- **`packages/app` (GUI web, `bun run dev:web`)** suit le même modèle client/serveur, mais **n'a pas
+  été vérifié** dans ce travail : à confirmer avant de s'appuyer dessus.
+
 ## Vérifications de référence
 
 - `dev up` → `bun.exe` exécutant `<racine>/packages/opencode/src/index.ts` écoute sur le port, `GET /global/health`
   répond `{"healthy":true,"version":"local"}` (une version numérique signalerait le binaire installé).
+- `dev tui` → la table de process montre **simultanément** `… src/index.ts serve --port 4096` (serveur
+  source) et `… src/index.ts attach http://127.0.0.1:4096` (client TUI), sans aucun processus
+  `opencodev2.exe` supplémentaire.
 - `GET /plugin` renvoie `runtime.source = true`, `runtime.root`, `runtime.pid`, `runtime.upSince` :
   un client peut donc toujours vérifier **à chaud** s'il parle au code en cours d'édition.
 - Modification d'un fichier de source → sans rebuild ni redéploiement, la réponse de l'API change
