@@ -52,6 +52,8 @@ import { PromptStashProvider } from "./component/prompt/stash"
 import { DialogAlert } from "./ui/dialog-alert"
 import { DialogConfirm } from "./ui/dialog-confirm"
 import { ToastProvider, useToast } from "./ui/toast"
+import { openSessionFolder } from "./component/dialog-directory-select"
+import { usedDirectories } from "./routes/session/session-nav"
 import { ExitProvider, useExit } from "./context/exit"
 import { Session as SessionApi } from "@/session/session"
 import { TuiEvent } from "./event"
@@ -487,10 +489,14 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         slashName: "new",
         slashAliases: ["clear"],
         run: () => {
-          route.navigate({
-            type: "home",
+          openSessionFolder({
+            dialog,
+            sdk,
+            local,
+            directories: usedDirectories(sync.data.session),
+            onCreated: (sessionID) => route.navigate({ type: "session", sessionID }),
+            onNoModel: () => route.navigate({ type: "home" }),
           })
-          dialog.clear()
         },
       },
       {

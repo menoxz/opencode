@@ -6,6 +6,9 @@ import {
   NAV_WIDTH,
   SPINNER_FRAMES,
   clampSelection,
+  directoryChoice,
+  directoryProblem,
+  filteredDirectories,
   footerLines,
   initialSelection,
   moveSelection,
@@ -25,12 +28,14 @@ import {
   navVisible,
   navVisibleGroups,
   navWindow,
+  normalizeDirectory,
   selectionDirKey,
   selectionID,
   selectionSessionID,
   spinGlyph,
   toggleCollapsed,
   type NavSession,
+  usedDirectories,
 } from "./session-nav"
 
 const sessions: NavSession[] = [
@@ -261,13 +266,13 @@ describe("TUI session navbar", () => {
       { id: "r2", title: "Older", directory: "C:\\b\\beta", updated: olderYearAt },
       { id: "r3", title: "Middle", directory: "C:\\c\\gamma", updated: sameYearAt },
     ]
-    expect(navGroups(byRecency, undefined).map((group) => group.label)).toEqual(["alpha", "gamma", "beta"])
+    expect(navGroups(byRecency, undefined).map((group) => group.label)).toEqual(["alpha", "beta", "gamma"])
   })
 
   test("breaks ties on the directory label so the order is stable", () => {
     const rows = navRows(grouped, undefined, { collapsed: [], expanded: true })
     const labels = rows.filter((row) => row.kind === "dir").map((row) => (row.kind === "dir" ? row.label : ""))
-    expect(labels).toEqual(["deepseek", "harness", "misc", "opencode-fork", "command-code"])
+    expect(labels).toEqual(["command-code", "deepseek", "harness", "misc", "opencode-fork"])
   })
 
   test("shows at most three directories and tells how many are hidden", () => {
@@ -349,21 +354,66 @@ describe("TUI session navbar", () => {
     expect(row.length).toBeLessThanOrEqual(NAV_WIDTH)
   })
 
-  test("frames the command bar and keeps it exactly the bar's width", () => {
+  test("lays the command shortcuts on one line without any frame", () => {
     const lines = footerLines(NAV_WIDTH, { new: "Alt+n", delete: "ctrl+d", rename: "ctrl+r" })
-    expect(lines).toHaveLength(3)
-    expect(lines[1].startsWith("|")).toBe(true)
-    expect(lines[1].endsWith("|")).toBe(true)
-    expect(lines[1]).toContain("new: Alt+n")
-    expect(lines[1]).toContain("Delete: ctrl+d")
-    expect(lines[1]).toContain("Rename: ctrl+r")
-    expect(lines.every((line) => line.length === NAV_WIDTH)).toBe(true)
+    expect(lines).toHaveLength(1)
+    expect(lines[0]).toBe("new: Alt+n  Delete: ctrl+d  Rename: ctrl+r")
+    expect(lines[0]).not.toContain("|")
+    expect(lines[0]).not.toContain("---")
+    expect(lines[0].length).toBeLessThanOrEqual(NAV_WIDTH)
   })
 
-  test("an over-long shortcut list is truncated inside the frame", () => {
+  test("an over-long shortcut list is truncated to the bar width", () => {
     const lines = footerLines(24, { new: "ctrl+alt+shift+n", delete: "ctrl+alt+d", rename: "ctrl+alt+r" })
-    expect(lines.every((line) => line.length === 24)).toBe(true)
-    expect(lines[1].startsWith("|")).toBe(true)
-    expect(lines[1].endsWith("|")).toBe(true)
+    expect(lines).toHaveLength(1)
+    expect(lines[0].length).toBeLessThanOrEqual(24)
+    expect(lines[0]).toContain("…")
+  })
+
+  test("cleans a pasted directory path before using it", () => {
+    const home = "C:\\Users\\dev"
+    expect(normalizeDirectory("  C:\\work\\repo  ", home)).toBe("C:\\work\\repo")
+    expect(normalizeDirectory('"C:\\work\\repo"', home)).toBe("C:\\work\\repo")
+    expect(normalizeDirectory("~/repo", home)).toBe(`${home}/repo`)
+    expect(normalizeDirectory("~", home)).toBe(home)
+  })
+
+  test("explains why a pasted path cannot be used", () => {
+    expect(directoryProblem("", { exists: false, directory: false })).toBe("Paste a folder path")
+    expect(directoryProblem("C:\\nope", { exists: false, directory: false })).toBe("Folder not found")
+    expect(directoryProblem("C:\\file.txt", { exists: true, directory: false })).toBe("That path is not a folder")
+    expect(directoryProblem("C:\\repo", { exists: true, directory: true })).toBeUndefined()
+  })
+
+  test("lists each used directory once, in alphabetical order", () => {
+    expect(usedDirectories(grouped)).toEqual([
+      "C:\\work\\command-code",
+      "C:\\other\\deepseek",
+      "C:\\other\\harness",
+      "C:\\other\\misc",
+      "C:\\work\\opencode-fork",
+    ])
+  })
+
+  test("filters the used directories by path or by name", () => {
+    const directories = ["C:\\work\\command-code", "C:\\other\\deepseek", "C:\\work\\opencode-fork"]
+    expect(filteredDirectories(directories, "")).toEqual(directories)
+    expect(filteredDirectories(directories, "deepseek")).toEqual(["C:\\other\\deepseek"])
+    expect(filteredDirectories(directories, "C:\\work")).toEqual(["C:\\work\\command-code", "C:\\work\\opencode-fork"])
+    expect(filteredDirectories(directories, "nowhere")).toEqual([])
+  })
+
+  test("accepts a pasted path only when it is a real folder", () => {
+    const folder = () => ({ exists: true, directory: true })
+    expect(directoryChoice("C:\\repo", folder)).toEqual({ kind: "choose", directory: "C:\\repo" })
+    expect(directoryChoice("", folder)).toEqual({ kind: "error", message: "Paste a folder path" })
+    expect(directoryChoice("C:\\nope", () => ({ exists: false, directory: false }))).toEqual({
+      kind: "error",
+      message: "Folder not found",
+    })
+    expect(directoryChoice("C:\\file.txt", () => ({ exists: true, directory: false }))).toEqual({
+      kind: "error",
+      message: "That path is not a folder",
+    })
   })
 })

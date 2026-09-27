@@ -81,7 +81,9 @@ import {
   navSelection,
   selectionSessionID,
   toggleCollapsed,
+  usedDirectories,
 } from "./session-nav"
+import { openSessionFolder } from "../../component/dialog-directory-select"
 import { SubagentBar } from "./subagent-bar.tsx"
 import { SubagentFooter } from "./subagent-footer.tsx"
 import { taskFollowUpLabel } from "./task-followup"
@@ -1566,24 +1568,14 @@ export function Session() {
               onToggleDirectories={() => navToggleDirectories()}
               onNew={() => {
                 setNavFocused(false)
-                const model = local.model.current()
-                const chosen = local.agent.current()
-                if (!model || !chosen) {
-                  navigate({ type: "home" })
-                  return
-                }
-                void sdk.client.session
-                  .create({
-                    agent: chosen.name,
-                    model: {
-                      providerID: model.providerID,
-                      id: model.modelID,
-                      variant: local.model.variant.current(),
-                    },
-                  })
-                  .then((res) =>
-                    navigate(res.error || !res.data ? { type: "home" } : { type: "session", sessionID: res.data.id }),
-                  )
+                openSessionFolder({
+                  dialog,
+                  sdk,
+                  local,
+                  directories: usedDirectories(sync.data.session),
+                  onCreated: (sessionID) => navigate({ type: "session", sessionID }),
+                  onNoModel: () => navigate({ type: "home" }),
+                })
               }}
               onClose={() => setNavFocused(false)}
             />

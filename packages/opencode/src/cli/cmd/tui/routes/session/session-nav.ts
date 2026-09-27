@@ -150,6 +150,55 @@ export function navBasename(directory: string | undefined): string {
 }
 
 /**
+ * Cleans a pasted path before it is checked or used: trims, drops the quotes a copied path often
+ * carries, and expands a leading `~` against the user's home.
+ */
+export function normalizeDirectory(input: string, home: string): string {
+  const trimmed = input.trim().replace(/^["']|["']$/g, "")
+  if (trimmed === "~") return home
+  if (trimmed.startsWith("~/") || trimmed.startsWith("~\\")) return `${home}${trimmed.slice(1)}`
+  return trimmed
+}
+
+/** Why a pasted path cannot be used, or undefined when it is a usable folder. */
+export function directoryProblem(input: string, stat: { exists: boolean; directory: boolean }): string | undefined {
+  if (!input.trim()) return "Paste a folder path"
+  if (!stat.exists) return "Folder not found"
+  if (!stat.directory) return "That path is not a folder"
+  return undefined
+}
+
+/**
+ * Distinct directories already used by the project's sessions, alphabetically, so the modal offers
+ * what the user already works with before any typed path.
+ */
+export function usedDirectories(sessions: readonly { directory?: string }[]): string[] {
+  return [...new Set(sessions.map((session) => session.directory).filter((value): value is string => !!value))].toSorted(
+    (a, b) => navBasename(a).localeCompare(navBasename(b)),
+  )
+}
+
+/** The used directories matching what the user is typing, by full path or by folder name. */
+export function filteredDirectories(directories: readonly string[], query: string): string[] {
+  const needle = query.trim().toLowerCase()
+  if (!needle) return [...directories]
+  return directories.filter(
+    (directory) => directory.toLowerCase().includes(needle) || navBasename(directory).toLowerCase().includes(needle),
+  )
+}
+
+/** What the modal must do when Enter is pressed on a typed path: pick it, or say why it cannot. */
+export type DirectoryChoice = { kind: "choose"; directory: string } | { kind: "error"; message: string }
+
+export function directoryChoice(
+  input: string,
+  stat: (directory: string) => { exists: boolean; directory: boolean },
+): DirectoryChoice {
+  const problem = directoryProblem(input, stat(input))
+  return problem ? { kind: "error", message: problem } : { kind: "choose", directory: input }
+}
+
+/**
  * Sessions folded by directory. The active session's directory is pinned first so the session being
  * worked on is never pushed below the fold, then directories are ordered by their most recent
  * activity. Pure, so grouping is a unit test rather than a claim about the renderer.
@@ -171,9 +220,7 @@ export function navGroups(sessions: readonly NavSession[], activeID: string | un
       updated: list.reduce((latest, session) => Math.max(latest, session.updated ?? 0), 0),
       sessions: navItems(list, activeID),
     }))
-    .toSorted(
-      (a, b) => Number(b.active) - Number(a.active) || b.updated - a.updated || a.label.localeCompare(b.label),
-    )
+    .toSorted((a, b) => a.label.localeCompare(b.label))
 }
 
 /** The directories shown before "Read more", plus how many the reveal is hiding. */
@@ -284,13 +331,12 @@ export function navMoreRow(hidden: number, selected: boolean, width: number): st
 export type NavFooterShortcuts = { new: string; delete: string; rename: string }
 
 /**
- * The three framed lines of the command bar. Framing is computed here so the box always matches the
- * bar's width, and the actions are truncated rather than allowed to spill past the frame.
+ * The command section's line. No frame: the section is set apart by sitting at the bottom, in muted
+ * colour, and separated from the list by spacing.
  */
 export function footerLines(width: number, shortcuts: NavFooterShortcuts): string[] {
-  const inner = Math.max(1, width - 2)
   const text = `new: ${shortcuts.new}  Delete: ${shortcuts.delete}  Rename: ${shortcuts.rename}`
-  return [` ${"-".repeat(inner)} `, `|${navLabel(text, inner).padEnd(inner)}|`, ` ${"-".repeat(inner)} `]
+  return [navLabel(text, Math.max(1, width))]
 }
 
 /** Footer marker telling whether the bar lists every directory or only the working one. */

@@ -203,23 +203,22 @@ test("windows a long group so the last session stays reachable", async () => {
   expect(text).not.toContain("Session 0")
 })
 
-test("the command section is framed and pinned at the bottom", async () => {
+test("the command section is pinned at the bottom without a frame", async () => {
   const app = await renderBar({
     sessions,
     selected: 0,
     focused: false,
     shortcuts: { new: "alt+n", delete: "ctrl+d", rename: "ctrl+r" },
   })
-  const tail = linesOf(app)
-    .filter((line) => line.trim().length > 0)
-    .slice(-3)
-  expect(tail).toHaveLength(3)
-  expect(tail[0]).toContain("-")
-  expect(tail[1]).toContain("new: alt+n")
-  expect(tail[1]).toContain("Delete: ctrl+d")
-  expect(tail[1]).toContain("Rename: ctrl+r")
-  expect(tail[1].trim()).toMatch(/^\|.*\|$/)
-  expect(tail[2]).toContain("-")
+  const nonEmpty = linesOf(app).filter((line) => line.trim().length > 0)
+  const last = nonEmpty.at(-1) ?? ""
+  expect(last).toContain("new: alt+n")
+  expect(last).toContain("Delete: ctrl+d")
+  expect(last).toContain("Rename: ctrl+r")
+  expect(last).not.toContain("|")
+  const text = app.captureCharFrame()
+  expect(text).not.toContain("|new:")
+  expect(text).not.toContain("------")
 })
 
 test("Enter on a session row opens it", async () => {
