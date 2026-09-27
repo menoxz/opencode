@@ -35,14 +35,14 @@ export function SessionNavBar(props: {
   height: number
   allDirectories: boolean
   overrides: string[]
-  expanded: boolean
+  revealed: string[]
   frame: number
   pendingDelete?: string
   shortcuts: { new: string; delete: string; rename: string }
   onMove: (delta: number) => void
   onOpen: (id: string) => void
   onToggleDir: (key: string) => void
-  onToggleMore: () => void
+  onToggleMore: (key: string) => void
   onNew: () => void
   onDelete: (id: string) => void
   onRename: (id: string) => void
@@ -63,7 +63,7 @@ export function SessionNavBar(props: {
   const rows = () =>
     navRows(props.sessions, props.activeID, {
       overrides: props.overrides,
-      expanded: props.expanded,
+      revealed: props.revealed,
       reveal: (props.searchQuery ?? "").length > 0,
     })
   const window = () => navWindow(rows().length, props.selected, props.height)
@@ -100,7 +100,7 @@ export function SessionNavBar(props: {
     if (props.pendingDelete) return props.onClearPending?.()
     if (row.kind === "session") return props.onOpen(row.id)
     if (row.kind === "dir") return props.onToggleDir(row.key)
-    return props.onToggleMore()
+    return props.onToggleMore(row.key.slice("more:".length))
   }
 
   useKeyboard((evt) => {

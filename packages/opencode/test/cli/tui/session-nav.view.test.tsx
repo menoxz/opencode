@@ -68,14 +68,14 @@ async function renderBar(props: {
   height?: number
   allDirectories?: boolean
   overrides?: string[]
-  expanded?: boolean
+  revealed?: string[]
   frame?: number
   pendingDelete?: string
   shortcuts?: { new: string; delete: string; rename: string }
   onMove?: (delta: number) => void
   onOpen?: (id: string) => void
   onToggleDir?: (key: string) => void
-  onToggleMore?: () => void
+  onToggleMore?: (key: string) => void
   onNew?: () => void
   onDelete?: (id: string) => void
   onRename?: (id: string) => void
@@ -95,7 +95,7 @@ async function renderBar(props: {
           height={props.height ?? 20}
           allDirectories={props.allDirectories ?? false}
           overrides={props.overrides ?? []}
-          expanded={props.expanded ?? false}
+          revealed={props.revealed ?? []}
           frame={props.frame ?? 0}
           pendingDelete={props.pendingDelete}
           shortcuts={props.shortcuts ?? { new: "alt+n", delete: "ctrl+d", rename: "ctrl+r" }}
@@ -190,24 +190,31 @@ test("shows each session's last-activity date and time", async () => {
   expect(text).toContain("26/09")
 })
 
-test("caps the folders at three by default and offers Read more for the rest", async () => {
-  const app = await renderBar({ sessions: manyDirs, selected: 0, focused: false })
+test("caps a directory's sessions at three and offers Read more for the rest", async () => {
+  const app = await renderBar({ sessions: oneDirMany, activeID: "ses_0", selected: 0, focused: false })
   const text = app.captureCharFrame()
-  expect(text).toContain("Read more (+2)")
-  expect(text).toContain("alpha")
-  expect(text).not.toContain("epsilon")
+  expect(text).toContain("Read more (+7)")
+  expect(text).toContain("Session 0")
+  expect(text).not.toContain("Session 9")
 })
 
-test("expanding lists every directory and drops the Read more", async () => {
-  const app = await renderBar({ sessions: manyDirs, selected: 0, focused: false, expanded: true })
+test("lists every directory, since the cap applies to sessions and not to folders", async () => {
+  const app = await renderBar({ sessions: manyDirs, selected: 0, focused: false })
   const text = app.captureCharFrame()
-  expect(text).toContain("gamma")
+  expect(text).toContain("alpha")
   expect(text).toContain("epsilon")
   expect(text).not.toContain("Read more")
 })
 
+test("a directory's Read more reveals its extra sessions", async () => {
+  const app = await renderBar({ sessions: oneDirMany, activeID: "ses_0", selected: 0, focused: false, revealed: ["C:\\w\\solo"] })
+  const text = app.captureCharFrame()
+  expect(text).toContain("Session 4")
+  expect(text).not.toContain("Read more")
+})
+
 test("windows a long group so the last session stays reachable", async () => {
-  const app = await renderBar({ sessions: oneDirMany, activeID: "ses_9", selected: 10, focused: false, height: 3 })
+  const app = await renderBar({ sessions: oneDirMany, activeID: "ses_9", selected: 10, focused: false, height: 3, revealed: ["C:\\w\\solo"] })
   const text = app.captureCharFrame()
   expect(text).toContain("Session 9")
   expect(text).not.toContain("Session 0")
@@ -367,7 +374,7 @@ test("takes keys in the search field, narrows the list and leaves on Escape", as
           height={20}
           allDirectories={false}
           overrides={["C:\\w\\alpha"]}
-          expanded={false}
+          revealed={[]}
           frame={0}
           onMove={() => {}}
           onOpen={() => {}}

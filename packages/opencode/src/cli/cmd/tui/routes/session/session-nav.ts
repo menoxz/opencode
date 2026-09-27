@@ -31,19 +31,21 @@ export type NavGroup = {
   sessions: NavItem[]
 }
 
-/** One rendered line: a directory header, a session, or the "Read more" reveal. */
+/** One rendered line: a directory header, a session, or a directory's own "Read more". */
 export type NavRowModel =
   | { kind: "dir"; key: string; label: string; count: number; collapsed: boolean; selected: boolean }
   | { kind: "session"; key: string; id: string; title: string; activity: NavActivity; updated?: number; selected: boolean }
   | { kind: "more"; key: string; hidden: number; selected: boolean }
 
 /**
- * The directories whose fold the user flipped by hand. Every other directory follows the default:
- * open only when it holds the active session. `expanded` lifts the directory cap.
+ * `overrides` records the directories whose fold the user flipped by hand; every other directory
+ * follows the default and opens only when it holds the active session. `revealed` records the
+ * directories whose "Read more" was used, so their extra sessions show. Directories are never
+ * capped: only the sessions inside one directory fold, behind that directory's own "Read more".
  */
 export type NavState = {
   overrides: readonly string[]
-  expanded: boolean
+  revealed: readonly string[]
   /** Set while a search runs: every directory opens so no match stays behind a fold. */
   reveal?: boolean
 }
@@ -68,8 +70,11 @@ export const NAV_ROW_CHROME = 6
  */
 export const NAV_CHROME_ROWS = 7
 
-/** Directories shown before the list folds behind "Read more". */
-export const NAV_DIR_LIMIT = 3
+/**
+ * Sessions shown inside a directory before its own "Read more". Directories are never capped: each
+ * one always contributes its header, so a long list folds per folder instead of hiding folders.
+ */
+export const NAV_SESSION_LIMIT = 3
 
 /** Braille spinner frames, one per animation step, used while a session is working. */
 export const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
@@ -262,30 +267,30 @@ export function navGroups(sessions: readonly NavSession[], activeID: string | un
     .toSorted((a, b) => a.label.localeCompare(b.label))
 }
 
-/** The directories shown before "Read more", plus how many the reveal is hiding. */
-export function navVisibleGroups(groups: readonly NavGroup[], expanded: boolean, limit = NAV_DIR_LIMIT): { shown: NavGroup[]; hidden: number } {
-  const size = expanded ? groups.length : Math.min(Math.max(0, limit), groups.length)
-  return { shown: groups.slice(0, size), hidden: groups.length - size }
+/** The sessions of one directory shown before its "Read more", plus how many that line hides. */
+export function navVisibleSessions(sessions: readonly NavItem[], opened: boolean, limit = NAV_SESSION_LIMIT): { shown: NavItem[]; hidden: number } {
+  const size = opened ? sessions.length : Math.min(Math.max(0, limit), sessions.length)
+  return { shown: sessions.slice(0, size), hidden: sessions.length - size }
 }
 
 /**
  * Flattens the tree into the exact lines the bar draws, so selection, windowing and rendering all
  * share one model. Only the active session's directory starts open; the others start folded and
  * contribute their header only, unless the user opened them, which is what `overrides` records.
- * Hidden directories become a single "Read more" row. The selection is the row's index in this array.
+ * Every directory always keeps its header; the sessions inside one fold behind that directory's own
+ * "Read more". The selection is the row's index in this array.
  */
 export function navRows(sessions: readonly NavSession[], activeID: string | undefined, state: NavState): NavRowModel[] {
-  // Folders stay capped until the user asks for more, and a search lifts the cap so no match hides
-  // behind "Read more".
-  const { shown, hidden } = navVisibleGroups(navGroups(sessions, activeID), state.expanded || state.reveal === true)
   const rows: NavRowModel[] = []
-  for (const group of shown) {
+  for (const group of navGroups(sessions, activeID)) {
     // A directory the user flipped keeps that choice; every other one follows the default, which only
     // the active session's directory opens.
     const collapsed = !state.reveal && (state.overrides.includes(group.key) ? group.active : !group.active)
     rows.push({ kind: "dir", key: `dir:${group.key}`, label: group.label, count: group.count, collapsed, selected: false })
     if (collapsed) continue
-    for (const session of group.sessions) {
+    // A search reveals every session, and so does the directory's own "Read more".
+    const { shown, hidden } = navVisibleSessions(group.sessions, state.reveal === true || state.revealed.includes(group.key))
+    for (const session of shown) {
       rows.push({
         kind: "session",
         key: `ses:${session.id}`,
@@ -296,8 +301,8 @@ export function navRows(sessions: readonly NavSession[], activeID: string | unde
         selected: false,
       })
     }
+    if (hidden > 0) rows.push({ kind: "more", key: `more:${group.key}`, hidden, selected: false })
   }
-  if (hidden > 0) rows.push({ kind: "more", key: "more", hidden, selected: false })
   return rows
 }
 
@@ -322,6 +327,11 @@ export function selectionDirKey(rows: readonly NavRowModel[], index: number): st
 /** Flips one directory's fold and leaves every other entry untouched. */
 export function toggleCollapsed(overrides: readonly string[], key: string): string[] {
   return overrides.includes(key) ? overrides.filter((entry) => entry !== key) : [...overrides, key]
+}
+
+/** Flips one directory's "Read more": its extra sessions show, or fold back. Same shape as the folds. */
+export function toggleRevealed(revealed: readonly string[], key: string): string[] {
+  return revealed.includes(key) ? revealed.filter((entry) => entry !== key) : [...revealed, key]
 }
 
 export type NavDirRowInput = { label: string; count: number; collapsed: boolean; width: number }
@@ -364,7 +374,7 @@ export function navRow(input: NavRowInput): string {
   return `${prefix}${label}${" ".repeat(gap)}${stamp}`
 }
 
-/** The "Read more" line: how many directories the reveal is hiding. */
+/** A directory's "Read more" line: how many of its sessions the line is hiding. */
 export function navMoreRow(hidden: number, width: number): string {
   return navLabel(`Read more (+${hidden})`, Math.max(1, width - 2))
 }

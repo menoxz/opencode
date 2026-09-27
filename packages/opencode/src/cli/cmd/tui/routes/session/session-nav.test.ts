@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test"
 import { Locale } from "@/util/locale"
 import {
   NAV_CHROME_ROWS,
-  NAV_DIR_LIMIT,
   NAV_MIN_TERMINAL_WIDTH,
+  NAV_SESSION_LIMIT,
   NAV_WIDTH,
   SPINNER_FRAMES,
   clampSelection,
@@ -29,7 +29,7 @@ import {
   navSelection,
   navStamp,
   navVisible,
-  navVisibleGroups,
+  navVisibleSessions,
   navWindow,
   normalizeDirectory,
   searchAppend,
@@ -39,6 +39,7 @@ import {
   selectionSessionID,
   spinGlyph,
   toggleCollapsed,
+  toggleRevealed,
   type NavSession,
   usedDirectories,
 } from "./session-nav"
@@ -275,24 +276,30 @@ describe("TUI session navbar", () => {
   })
 
   test("breaks ties on the directory label so the order is stable", () => {
-    const rows = navRows(grouped, undefined, { overrides: [], expanded: true })
+    const rows = navRows(grouped, undefined, { overrides: [], revealed: [] })
     const labels = rows.filter((row) => row.kind === "dir").map((row) => (row.kind === "dir" ? row.label : ""))
     expect(labels).toEqual(["command-code", "deepseek", "harness", "misc", "opencode-fork"])
   })
 
-  test("shows at most three directories and tells how many are hidden", () => {
-    const groups = navGroups(grouped, undefined)
-    const collapsedView = navVisibleGroups(groups, false)
-    expect(collapsedView.shown).toHaveLength(NAV_DIR_LIMIT)
-    expect(collapsedView.hidden).toBe(groups.length - NAV_DIR_LIMIT)
+  test("shows at most three sessions and tells how many are hidden", () => {
+    const items = Array.from({ length: 5 }, (_, index) => ({
+      id: `s${index}`,
+      title: `Session ${index}`,
+      active: false,
+      index,
+      activity: "idle" as const,
+    }))
+    const folded = navVisibleSessions(items, false)
+    expect(folded.shown).toHaveLength(NAV_SESSION_LIMIT)
+    expect(folded.hidden).toBe(items.length - NAV_SESSION_LIMIT)
 
-    const expandedView = navVisibleGroups(groups, true)
-    expect(expandedView.shown).toHaveLength(groups.length)
-    expect(expandedView.hidden).toBe(0)
+    const opened = navVisibleSessions(items, true)
+    expect(opened.shown).toHaveLength(items.length)
+    expect(opened.hidden).toBe(0)
   })
 
   test("flattens the tree into headers and sessions", () => {
-    const rows = navRows(grouped, "a1", { overrides: [], expanded: true })
+    const rows = navRows(grouped, "a1", { overrides: [], revealed: [] })
     const dirs = rows.filter((row) => row.kind === "dir")
     expect(dirs).toHaveLength(5)
     const open = rows.findIndex((row) => row.kind === "dir" && row.label === "opencode-fork")
@@ -300,13 +307,23 @@ describe("TUI session navbar", () => {
     expect(rows.filter((row) => row.kind === "session").length).toBeGreaterThan(0)
   })
 
-  test("caps the folders at three by default and reveals the rest through Read more", () => {
-    const groups = navGroups(grouped, undefined)
-    const rows = navRows(grouped, undefined, { overrides: [], expanded: false })
-    expect(rows.filter((row) => row.kind === "dir")).toHaveLength(NAV_DIR_LIMIT)
+  test("caps a directory's sessions at three and hides the rest behind its Read more", () => {
+    const crowded: NavSession[] = Array.from({ length: 5 }, (_, index) => ({
+      id: `c${index}`,
+      title: `Crowded ${index}`,
+      directory: "C:\\work\\opencode-fork",
+    }))
+    const rows = navRows(crowded, "c0", { overrides: [], revealed: [] })
+    expect(rows.filter((row) => row.kind === "dir")).toHaveLength(1)
+    expect(rows.filter((row) => row.kind === "session")).toHaveLength(NAV_SESSION_LIMIT)
     const more = rows.filter((row) => row.kind === "more")
     expect(more).toHaveLength(1)
-    expect(more[0]).toMatchObject({ kind: "more", hidden: groups.length - NAV_DIR_LIMIT })
+    expect(more[0]).toMatchObject({ kind: "more", hidden: 5 - NAV_SESSION_LIMIT })
+  })
+
+  test("never caps the directories themselves", () => {
+    const rows = navRows(grouped, "a1", { overrides: [], revealed: [] })
+    expect(rows.filter((row) => row.kind === "dir")).toHaveLength(navGroups(grouped, "a1").length)
   })
 
   test("NAV_CHROME_ROWS matches every row the bar draws besides the list", () => {
@@ -315,41 +332,41 @@ describe("TUI session navbar", () => {
   })
 
   test("only the active session's directory starts open", () => {
-    const rows = navRows(grouped, "b1", { overrides: [], expanded: true })
+    const rows = navRows(grouped, "b1", { overrides: [], revealed: [] })
     expect(rows.find((row) => row.kind === "dir" && row.label === "command-code")).toMatchObject({ kind: "dir", collapsed: false })
     expect(rows.some((row) => row.kind === "session" && row.id === "b1")).toBe(true)
     expect(rows.some((row) => row.kind === "session" && row.id === "a1")).toBe(false)
   })
 
   test("a directory the user opened stays open without an active session", () => {
-    const rows = navRows(grouped, undefined, { overrides: ["C:\\work\\opencode-fork"], expanded: true })
+    const rows = navRows(grouped, undefined, { overrides: ["C:\\work\\opencode-fork"], revealed: [] })
     expect(rows.find((row) => row.kind === "dir" && row.label === "opencode-fork")).toMatchObject({ kind: "dir", collapsed: false })
     expect(rows.some((row) => row.kind === "session" && row.id === "a1")).toBe(true)
   })
 
   test("a search reveals sessions in folded directories", () => {
-    const folded = navRows(grouped, "a1", { overrides: [], expanded: true })
+    const folded = navRows(grouped, "a1", { overrides: [], revealed: [] })
     expect(folded.some((row) => row.kind === "session" && row.id === "b1")).toBe(false)
-    const searched = navRows(grouped, "a1", { overrides: [], expanded: false, reveal: true })
+    const searched = navRows(grouped, "a1", { overrides: [], revealed: [], reveal: true })
     expect(searched.some((row) => row.kind === "session" && row.id === "b1")).toBe(true)
     expect(searched.some((row) => row.kind === "more")).toBe(false)
   })
 
   test("expanding removes the reveal and lists every directory", () => {
-    const rows = navRows(grouped, undefined, { overrides: [], expanded: true })
+    const rows = navRows(grouped, undefined, { overrides: [], revealed: [] })
     expect(rows.some((row) => row.kind === "more")).toBe(false)
     expect(rows.filter((row) => row.kind === "dir")).toHaveLength(5)
   })
 
   test("selects the active session's row, otherwise a clamped position", () => {
-    const rows = navRows(grouped, "b1", { overrides: [], expanded: true })
+    const rows = navRows(grouped, "b1", { overrides: [], revealed: [] })
     const index = navSelection(rows, "b1", 0)
     expect(rows[index]).toMatchObject({ kind: "session", id: "b1" })
     expect(navSelection(rows, "gone", 999)).toBe(rows.length - 1)
   })
 
   test("resolves the session and directory under a row", () => {
-    const rows = navRows(grouped, "a1", { overrides: [], expanded: true })
+    const rows = navRows(grouped, "a1", { overrides: [], revealed: [] })
     const dirIndex = rows.findIndex((row) => row.kind === "dir" && row.label === "opencode-fork")
     const sessionIndex = rows.findIndex((row) => row.kind === "session" && row.id === "a1")
     expect(selectionDirKey(rows, dirIndex)).toBe("C:\\work\\opencode-fork")
@@ -362,6 +379,8 @@ describe("TUI session navbar", () => {
     expect(toggleCollapsed([], "x")).toEqual(["x"])
     expect(toggleCollapsed(["x", "y"], "x")).toEqual(["y"])
     expect(toggleCollapsed(["y"], "x")).toEqual(["y", "x"])
+    expect(toggleRevealed([], "x")).toEqual(["x"])
+    expect(toggleRevealed(["x", "y"], "x")).toEqual(["y"])
   })
 
   test("a directory header prefixes the folder with a slash and carries its count", () => {

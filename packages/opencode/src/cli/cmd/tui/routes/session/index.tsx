@@ -82,6 +82,7 @@ import {
   navSelection,
   selectionSessionID,
   toggleCollapsed,
+  toggleRevealed,
   usedDirectories,
 } from "./session-nav"
 import { openSessionFolder } from "../../component/dialog-directory-select"
@@ -355,7 +356,7 @@ export function Session() {
   const [navDirectoryScope, setNavDirectoryScope] = kv.signal<"project" | "directory">("session_directory_scope", "project")
   const [navOverrides, setNavOverrides] = createSignal<string[]>([])
   const [navQuery, setNavQuery] = createSignal("")
-  const [navExpanded, setNavExpanded] = createSignal(false)
+  const [navRevealed, setNavRevealed] = createSignal<string[]>([])
   const [navFrame, setNavFrame] = createSignal(0)
   const [navSearching, setNavSearching] = createSignal(false)
   const navNewShortcut = useCommandShortcut("session.new")
@@ -375,7 +376,7 @@ export function Session() {
   const navList = createMemo(() =>
     navRows(filterNavSessions(navSessions(), navQuery()), route.sessionID, {
       overrides: navOverrides(),
-      expanded: navExpanded(),
+      revealed: navRevealed(),
       reveal: navQuery().length > 0,
     }),
   )
@@ -1531,6 +1532,7 @@ export function Session() {
     navigate({ type: "session", sessionID: id })
   }
   const navToggleDir = (key: string) => setNavOverrides((current) => toggleCollapsed(current, key.slice("dir:".length)))
+  const navToggleMore = (key: string) => setNavRevealed((current) => toggleRevealed(current, key))
 
   return (
     <PathFormatterProvider path={session()?.directory}>
@@ -1562,14 +1564,14 @@ export function Session() {
               height={navListHeight(dimensions().height)}
               allDirectories={navDirectoryScope() === "project"}
               overrides={navOverrides()}
-              expanded={navExpanded()}
+              revealed={navRevealed()}
               frame={navFrame()}
               pendingDelete={navPendingDelete()}
               shortcuts={{ new: navNewShortcut(), delete: navDeleteShortcut(), rename: navRenameShortcut() }}
               onMove={(delta) => setNavSelected(moveSelection(navSelected(), delta, navList().length))}
               onOpen={navOpenSession}
               onToggleDir={navToggleDir}
-              onToggleMore={() => setNavExpanded(true)}
+              onToggleMore={navToggleMore}
               onDelete={(id) => void navDelete(id)}
               onRename={(id) => navRename(id)}
               onClearPending={() => setNavPendingDelete(undefined)}

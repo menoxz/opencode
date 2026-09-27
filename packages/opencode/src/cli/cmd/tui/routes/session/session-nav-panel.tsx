@@ -22,6 +22,7 @@ import {
   navVisible,
   selectionSessionID,
   toggleCollapsed,
+  toggleRevealed,
   usedDirectories,
   type NavSession,
 } from "./session-nav"
@@ -52,7 +53,7 @@ export function SessionNavPanel() {
   const [navDirectoryScope, setNavDirectoryScope] = kv.signal<"project" | "directory">("session_directory_scope", "project")
   const [navOverrides, setNavOverrides] = createSignal<string[]>([])
   const [navQuery, setNavQuery] = createSignal("")
-  const [navExpanded, setNavExpanded] = createSignal(false)
+  const [navRevealed, setNavRevealed] = createSignal<string[]>([])
   const [navFrame, setNavFrame] = createSignal(0)
   const [navSearching, setNavSearching] = createSignal(false)
   const navNewShortcut = useCommandShortcut("session.new")
@@ -77,7 +78,7 @@ export function SessionNavPanel() {
   const navList = createMemo(() =>
     navRows(filterNavSessions(navSessions(), navQuery()), activeID(), {
       overrides: navOverrides(),
-      expanded: navExpanded(),
+      revealed: navRevealed(),
       reveal: navQuery().length > 0,
     }),
   )
@@ -131,6 +132,7 @@ export function SessionNavPanel() {
   }
 
   const navToggleDir = (key: string) => setNavOverrides((current) => toggleCollapsed(current, key.slice("dir:".length)))
+  const navToggleMore = (key: string) => setNavRevealed((current) => toggleRevealed(current, key))
 
   const showNavbar = () => {
     setNav(() => "auto")
@@ -162,14 +164,14 @@ export function SessionNavPanel() {
         height={navListHeight(dimensions().height)}
         allDirectories={navDirectoryScope() === "project"}
         overrides={navOverrides()}
-        expanded={navExpanded()}
+        revealed={navRevealed()}
         frame={navFrame()}
         pendingDelete={navPendingDelete()}
         shortcuts={{ new: navNewShortcut(), delete: navDeleteShortcut(), rename: navRenameShortcut() }}
         onMove={(delta) => setNavSelected(moveSelection(navSelected(), delta, navList().length))}
         onOpen={(id) => route.navigate({ type: "session", sessionID: id })}
         onToggleDir={navToggleDir}
-        onToggleMore={() => setNavExpanded(true)}
+        onToggleMore={navToggleMore}
         onDelete={(id) => void navDelete(id)}
         onRename={(id) => renameSession(id)}
         onClearPending={() => setNavPendingDelete(undefined)}
