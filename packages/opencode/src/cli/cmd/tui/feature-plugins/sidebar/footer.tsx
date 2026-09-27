@@ -5,7 +5,7 @@ import { Global } from "@opencode-ai/core/global"
 
 const id = "internal:sidebar-footer"
 
-function View(props: { api: TuiPluginApi }) {
+function View(props: { api: TuiPluginApi; session_id?: string }) {
   const theme = () => props.api.theme.current
   const has = createMemo(() =>
     props.api.state.provider.some(
@@ -15,7 +15,8 @@ function View(props: { api: TuiPluginApi }) {
   const done = createMemo(() => props.api.kv.get("dismissed_getting_started", false))
   const show = createMemo(() => !has() && !done())
   const path = createMemo(() => {
-    const dir = props.api.state.path.directory || process.cwd()
+    const sessionDir = props.session_id ? props.api.state.session.get(props.session_id)?.directory : undefined
+    const dir = sessionDir || props.api.state.path.directory || process.cwd()
     const out = dir.replace(Global.Path.home, "~")
     const text = props.api.state.vcs?.branch ? out + ":" + props.api.state.vcs.branch : out
     const list = text.split("/")
@@ -76,8 +77,8 @@ const tui: TuiPlugin = async (api) => {
   api.slots.register({
     order: 100,
     slots: {
-      sidebar_footer() {
-        return <View api={api} />
+      sidebar_footer(_ctx, props) {
+        return <View api={api} session_id={props.session_id} />
       },
     },
   })

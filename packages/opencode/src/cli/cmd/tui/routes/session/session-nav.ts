@@ -41,7 +41,7 @@ export type NavRowModel =
 export type NavState = { collapsed: readonly string[]; expanded: boolean }
 
 /** Vertical bar width, in terminal columns. */
-export const NAV_WIDTH = 46
+export const NAV_WIDTH = 36
 
 /** Below this terminal width the bar yields unless it was opened explicitly. */
 export const NAV_MIN_TERMINAL_WIDTH = 80
@@ -308,10 +308,8 @@ export type NavDirRowInput = { label: string; count: number; collapsed: boolean;
 export function navDirRow(input: NavDirRowInput): string {
   const prefix = `${input.selected ? ">" : " "} ${input.collapsed ? "▸" : "▾"} `
   const suffix = ` ${input.count}`
-  const available = Math.max(1, input.width - prefix.length - suffix.length - 1)
-  return `${prefix}${navLabel(input.label, available)}`
-    .padEnd(input.width - suffix.length, " ")
-    .concat(suffix)
+  const available = Math.max(1, input.width - prefix.length - suffix.length)
+  return `${prefix}${navLabel(input.label, available)}${suffix}`
 }
 
 export type NavRowInput = {
@@ -354,7 +352,7 @@ export type NavFooterShortcuts = { new: string; delete: string; rename: string }
  * colour, and separated from the list by spacing.
  */
 export function footerLines(width: number, shortcuts: NavFooterShortcuts): string[] {
-  const text = `new: ${shortcuts.new}  Delete: ${shortcuts.delete}  Rename: ${shortcuts.rename}`
+  const text = `new ${shortcuts.new}  del ${shortcuts.delete}  ren ${shortcuts.rename}`
   return [navLabel(text, Math.max(1, width))]
 }
 

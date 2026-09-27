@@ -215,9 +215,9 @@ test("the command section is pinned at the bottom without a frame", async () => 
   })
   const nonEmpty = linesOf(app).filter((line) => line.trim().length > 0)
   const last = nonEmpty.at(-1) ?? ""
-  expect(last).toContain("new: alt+n")
-  expect(last).toContain("Delete: ctrl+d")
-  expect(last).toContain("Rename: ctrl+r")
+  expect(last).toContain("new alt+n")
+  expect(last).toContain("del ctrl+d")
+  expect(last).toContain("ren ctrl+r")
   expect(last).not.toContain("|")
   const text = app.captureCharFrame()
   expect(text).not.toContain("|new:")

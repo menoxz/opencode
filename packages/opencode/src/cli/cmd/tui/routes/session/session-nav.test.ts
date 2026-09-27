@@ -359,7 +359,7 @@ describe("TUI session navbar", () => {
   test("lays the command shortcuts on one line without any frame", () => {
     const lines = footerLines(NAV_WIDTH, { new: "Alt+n", delete: "ctrl+d", rename: "ctrl+r" })
     expect(lines).toHaveLength(1)
-    expect(lines[0]).toBe("new: Alt+n  Delete: ctrl+d  Rename: ctrl+r")
+    expect(lines[0]).toBe("new Alt+n  del ctrl+d  ren ctrl+r")
     expect(lines[0]).not.toContain("|")
     expect(lines[0]).not.toContain("---")
     expect(lines[0].length).toBeLessThanOrEqual(NAV_WIDTH)
@@ -417,6 +417,15 @@ describe("TUI session navbar", () => {
       kind: "error",
       message: "That path is not a folder",
     })
+  })
+
+  test("keeps the folder badge right against the name", () => {
+    expect(navDirRow({ label: "opencode", count: 5, collapsed: false, selected: false, width: NAV_WIDTH })).toBe(
+      "  ▾ opencode 5",
+    )
+    expect(navDirRow({ label: "opencode", count: 12, collapsed: true, selected: true, width: NAV_WIDTH })).toBe(
+      "> ▸ opencode 12",
+    )
   })
 
   test("narrows the sessions by title, folder name or folder path", () => {
