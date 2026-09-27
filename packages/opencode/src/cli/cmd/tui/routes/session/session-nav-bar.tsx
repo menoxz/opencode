@@ -78,7 +78,10 @@ export function SessionNavBar(props: {
         </text>
         <For each={items()} fallback={<text fg={theme.textMuted}>No sessions yet</text>}>
           {(item) => (
-            <text fg={item.index === props.selected ? theme.text : theme.textMuted}>
+            <text
+              fg={item.index === props.selected ? theme.text : theme.textMuted}
+              onMouseUp={() => props.onSelect(item.id)}
+            >
               {item.index === props.selected ? ">" : " "} {item.active ? "●" : "○"}{" "}
               <Show when={item.index === props.selected} fallback={<span>{navLabel(item.title, width() - 5)}</span>}>
                 <span style={{ fg: theme.text }}>{navLabel(item.title, width() - 5)}</span>
