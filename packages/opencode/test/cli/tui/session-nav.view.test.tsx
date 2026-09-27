@@ -1,0 +1,114 @@
+/** @jsxImportSource @opentui/solid */
+import { afterEach, expect, test } from "bun:test"
+import { testRender } from "@opentui/solid"
+import type { JSX } from "solid-js"
+import { createTuiResolvedConfig } from "../../fixture/tui-runtime"
+import { KVProvider } from "../../../src/cli/cmd/tui/context/kv"
+import { ThemeProvider } from "../../../src/cli/cmd/tui/context/theme"
+import { TuiConfigProvider } from "../../../src/cli/cmd/tui/context/tui-config"
+import { SessionNavBar } from "../../../src/cli/cmd/tui/routes/session/session-nav-bar"
+import type { NavSession } from "../../../src/cli/cmd/tui/routes/session/session-nav"
+
+type App = Awaited<ReturnType<typeof testRender>>
+
+const renderers: App["renderer"][] = []
+afterEach(() => {
+  for (const renderer of renderers.splice(0)) renderer.destroy()
+})
+
+const sessions: NavSession[] = [
+  { id: "ses_a", title: "Add navbar" },
+  { id: "ses_b", title: "Fix flaky test" },
+]
+
+function withTheme(component: () => JSX.Element) {
+  return (
+    <TuiConfigProvider config={createTuiResolvedConfig()}>
+      <KVProvider>
+        <ThemeProvider mode="dark">{component()}</ThemeProvider>
+      </KVProvider>
+    </TuiConfigProvider>
+  )
+}
+
+async function settled(app: App) {
+  await app.renderOnce()
+  await new Promise((resolve) => setTimeout(resolve, 40))
+  await app.renderOnce()
+}
+
+async function renderBar(props: {
+  sessions: NavSession[]
+  activeID?: string
+  selected: number
+  focused: boolean
+  onSelect?: (id: string) => void
+  onNew?: () => void
+  onClose?: () => void
+}) {
+  const app = await testRender(
+    () =>
+      withTheme(() => (
+        <SessionNavBar
+          sessions={props.sessions}
+          activeID={props.activeID}
+          selected={props.selected}
+          focused={props.focused}
+          onMove={() => {}}
+          onSelect={props.onSelect ?? (() => {})}
+          onNew={props.onNew ?? (() => {})}
+          onClose={props.onClose}
+        />
+      )),
+    { width: 40, height: 12 },
+  )
+  renderers.push(app.renderer)
+  await settled(app)
+  return app
+}
+
+test("renders the real project sessions and marks the active one", async () => {
+  const app = await renderBar({ sessions, activeID: "ses_b", selected: 1, focused: false })
+  const text = app.captureCharFrame()
+  expect(text).toContain("Sessions")
+  expect(text).toContain("Add navbar")
+  expect(text).toContain("Fix flaky test")
+  expect(text).toContain("●")
+  expect(text).toContain("○")
+  expect(text).toContain("n new")
+})
+
+test("an empty project shows the fallback instead of invented rows", async () => {
+  const app = await renderBar({ sessions: [], selected: 0, focused: false })
+  const text = app.captureCharFrame()
+  expect(text).toContain("No sessions yet")
+  expect(text).not.toContain("Add navbar")
+})
+
+test("Enter on a focused bar selects the session under the cursor", async () => {
+  let picked: string | undefined
+  const app = await renderBar({
+    sessions,
+    activeID: "ses_a",
+    selected: 1,
+    focused: true,
+    onSelect: (id) => (picked = id),
+  })
+  app.mockInput.pressEnter()
+  await settled(app)
+  expect(picked).toBe("ses_b")
+})
+
+test("Escape on a focused bar asks the route to collapse it", async () => {
+  let closed = false
+  const app = await renderBar({
+    sessions,
+    activeID: "ses_a",
+    selected: 0,
+    focused: true,
+    onClose: () => (closed = true),
+  })
+  app.mockInput.pressEscape()
+  await settled(app)
+  expect(closed).toBe(true)
+})

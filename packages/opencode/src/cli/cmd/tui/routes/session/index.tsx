@@ -67,6 +67,15 @@ import { DialogForkFromTimeline } from "./dialog-fork-from-timeline"
 import { DialogGoalEdit } from "./dialog-goal-edit"
 import { DialogSessionRename } from "../../component/dialog-session-rename"
 import { Sidebar } from "./sidebar"
+import { SessionNavBar } from "./session-nav-bar"
+import {
+  NAV_WIDTH,
+  initialSelection,
+  moveSelection,
+  navVisible,
+  type NavSession,
+  type NavVisibility,
+} from "./session-nav"
 import { SubagentBar } from "./subagent-bar.tsx"
 import { SubagentFooter } from "./subagent-footer.tsx"
 import { taskFollowUpLabel } from "./task-followup"
@@ -328,7 +337,25 @@ export function Session() {
     return false
   })
   const showTimestamps = createMemo(() => timestamps() === "show")
-  const contentWidth = createMemo(() => dimensions().width - (sidebarVisible() ? 42 : 0) - 4)
+  const [nav, setNav] = kv.signal<NavVisibility>("session_nav", "auto")
+  const [navOpen, setNavOpen] = createSignal(false)
+  const [navFocused, setNavFocused] = createSignal(false)
+  const [navSelected, setNavSelected] = createSignal(0)
+  const navSessions = createMemo<NavSession[]>(() =>
+    sync.data.session
+      .filter((item) => item.parentID === undefined)
+      .map((item) => ({ id: item.id, title: item.title })),
+  )
+  // Open on the session being worked on, and follow it when the route changes.
+  createEffect(() => {
+    const id = route.sessionID
+    const total = navSessions().length
+    setNavSelected((current) => (total === 0 ? 0 : initialSelection(id, navSessions(), current)))
+  })
+  const navShown = createMemo(() => !session()?.parentID && navVisible(nav(), dimensions().width, navOpen()))
+  const contentWidth = createMemo(
+    () => dimensions().width - (sidebarVisible() ? 42 : 0) - (navShown() ? NAV_WIDTH : 0) - 4,
+  )
   const providers = createMemo(() => Model.index(sync.data.provider))
 
   const scrollAcceleration = createMemo(() => getScrollAcceleration(tuiConfig))
@@ -966,6 +993,29 @@ export function Session() {
       },
     },
     {
+      title: navShown() ? "Hide session navbar" : "Show session navbar",
+      value: "session.nav.toggle",
+      category: "Session",
+      run: () => {
+        batch(() => {
+          if (navFocused()) {
+            setNav(() => "hide")
+            setNavOpen(false)
+            setNavFocused(false)
+            return
+          }
+          if (navShown()) {
+            setNavFocused(true)
+            return
+          }
+          setNav(() => "auto")
+          setNavOpen(true)
+          setNavFocused(true)
+        })
+        dialog.clear()
+      },
+    },
+    {
       title: sidebarVisible() ? "Hide sidebar" : "Show sidebar",
       value: "session.sidebar.toggle",
       category: "Session",
@@ -1428,6 +1478,24 @@ export function Session() {
         }}
       >
         <box flexDirection="row" flexGrow={1} minHeight={0}>
+          <Show when={navShown()}>
+            <SessionNavBar
+              sessions={navSessions()}
+              activeID={route.sessionID}
+              selected={navSelected()}
+              focused={navFocused()}
+              onMove={(delta) => setNavSelected(moveSelection(navSelected(), delta, navSessions().length))}
+              onSelect={(id) => {
+                setNavFocused(false)
+                navigate({ type: "session", sessionID: id })
+              }}
+              onNew={() => {
+                setNavFocused(false)
+                navigate({ type: "home" })
+              }}
+              onClose={() => setNavFocused(false)}
+            />
+          </Show>
           <box flexGrow={1} minHeight={0} paddingBottom={1} paddingLeft={2} paddingRight={2} gap={1}>
             <Show when={session()}>
               <scrollbox

@@ -78,6 +78,7 @@ export const Definitions = {
   theme_switch_mode: keybind("none", "Switch between light and dark theme mode"),
   theme_mode_lock: keybind("none", "Lock or unlock theme mode"),
   sidebar_toggle: keybind("<leader>b", "Toggle sidebar"),
+  session_nav_toggle: keybind("<leader>v", "Toggle the session navbar"),
   scrollbar_toggle: keybind("none", "Toggle session scrollbar"),
   status_view: keybind("<leader>s", "View status"),
 
@@ -278,6 +279,7 @@ export const CommandMap = {
   theme_switch_mode: "theme.switch_mode",
   theme_mode_lock: "theme.mode.lock",
   sidebar_toggle: "session.sidebar.toggle",
+  session_nav_toggle: "session.nav.toggle",
   scrollbar_toggle: "session.toggle.scrollbar",
   status_view: "opencode.status",
   session_export: "session.export",

@@ -130,7 +130,7 @@ function formatEditorContext(selection: EditorSelection) {
   return `<system-reminder>${ranges.join("\n")} This may or may not be relevant to the current task.</system-reminder>\n`
 }
 
-let stashed: { prompt: PromptInfo; cursor: number } | undefined
+import { drafts } from "./drafts"
 
 export function Prompt(props: PromptProps) {
   let input: TextareaRenderable
@@ -386,6 +386,32 @@ export function Prompt(props: PromptProps) {
       () => props.sessionID,
       () => {
         setStore("placeholder", randomIndex(list().length))
+      },
+      { defer: true },
+    ),
+  )
+
+  // Leaving a session stashes its input; entering one restores the draft kept for it.
+  createEffect(
+    on(
+      () => props.sessionID,
+      (key, previous) => {
+        if (!input || input.isDestroyed) return
+        const current = store.prompt.input
+          ? { prompt: unwrap(store.prompt), cursor: input.cursorOffset }
+          : undefined
+        const restored = drafts.swap(previous, current, key)
+        if (restored) {
+          input.setText(restored.prompt.input)
+          setStore("prompt", restored.prompt)
+          restoreExtmarksFromParts(restored.prompt.parts)
+          input.cursorOffset = restored.cursor
+          return
+        }
+        input.clear()
+        input.extmarks.clear()
+        setStore("prompt", { input: "", parts: [] })
+        setStore("extmarkToPartIndex", new Map())
       },
       { defer: true },
     ),
@@ -689,8 +715,8 @@ export function Prompt(props: PromptProps) {
   }
 
   onMount(() => {
-    const saved = stashed
-    stashed = undefined
+    const saved = drafts.read(props.sessionID)
+    drafts.drop(props.sessionID)
     if (store.prompt.input) return
     if (saved && saved.prompt.input) {
       input.setText(saved.prompt.input)
@@ -702,7 +728,7 @@ export function Prompt(props: PromptProps) {
 
   onCleanup(() => {
     if (store.prompt.input) {
-      stashed = { prompt: unwrap(store.prompt), cursor: input.cursorOffset }
+      drafts.stash(props.sessionID, { prompt: unwrap(store.prompt), cursor: input.cursorOffset })
     }
     setInputTarget(undefined)
     props.ref?.(undefined)
