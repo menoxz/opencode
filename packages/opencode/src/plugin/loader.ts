@@ -10,6 +10,7 @@ import {
 } from "./shared"
 import { ConfigPlugin } from "@/config/plugin"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
+import { PluginArtifact } from "./artifact"
 
 export namespace PluginLoader {
   // A normalized plugin declaration derived from config before any filesystem or npm work happens.
@@ -132,10 +133,15 @@ export namespace PluginLoader {
   }
 
   // Import the resolved module only after all earlier validation has succeeded.
+  //
+  // The import goes through a content-hashed artifact rather than the source path: Bun caches ESM
+  // modules by specifier, so a plugin edited on a running server would keep executing its old code
+  // (and a `?v=` query does not defeat that cache either). See PluginArtifact.
   export async function load(row: Resolved): Promise<{ ok: true; value: Loaded } | { ok: false; error: unknown }> {
     let mod
     try {
-      mod = await import(row.entry)
+      const artifact = await PluginArtifact.materialize(row.entry)
+      mod = await import(artifact.specifier)
     } catch (error) {
       return { ok: false, error }
     }

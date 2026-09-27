@@ -97,6 +97,7 @@ const brokenPluginLayer = Layer.succeed(
   Plugin.Service.of({
     init: () => Effect.void,
     reload: () => Effect.void,
+    version: () => Effect.succeed(1),
     trigger: ((_name: unknown, _input: unknown, output: unknown) =>
       Effect.succeed(output)) as Plugin.Interface["trigger"],
     list: () =>
@@ -114,7 +115,40 @@ const brokenPluginLayer = Layer.succeed(
   }),
 )
 
+// Fake Plugin.Service whose tool set and generation change, the way a real plugin reload does.
+// `expose` bumps the generation and swaps the exposed tools, so a catalogue that ignores the
+// generation keeps serving the stale tool set.
+const mutablePlugin = (() => {
+  let generation = 1
+  const def = (name: string) => ({
+    description: name,
+    args: {} as Record<string, never>,
+    execute: async () => name,
+  })
+  let tools: Record<string, ReturnType<typeof def>> = { plugin_alpha: def("plugin_alpha") }
+  return {
+    layer: Layer.succeed(
+      Plugin.Service,
+      Plugin.Service.of({
+        init: () => Effect.void,
+        reload: () => Effect.void,
+        version: () => Effect.succeed(generation),
+        trigger: ((_name: unknown, _input: unknown, output: unknown) =>
+          Effect.succeed(output)) as Plugin.Interface["trigger"],
+        list: () => Effect.succeed([{ tool: tools }]),
+      }),
+    ),
+    expose(name: string) {
+      generation += 1
+      tools = { [name]: def(name) }
+    },
+  }
+})()
+
 const it = testEffect(Layer.mergeAll(registryLayer(), node, Agent.defaultLayer) as unknown as Layer.Layer<never, never>)
+const withMutablePlugin = testEffect(
+  Layer.mergeAll(registryLayer({ plugin: mutablePlugin.layer }), node, Agent.defaultLayer) as unknown as Layer.Layer<never, never>,
+)
 const scout = testEffect(
   Layer.mergeAll(registryLayer({ flags: { experimentalScout: true } }), node, Agent.defaultLayer) as unknown as Layer.Layer<never, never>,
 )
@@ -153,6 +187,19 @@ describe("tool.registry", () => {
 
       expect(ids).not.toContain("repo_clone")
       expect(ids).not.toContain("repo_overview")
+    }),
+  )
+
+  withMutablePlugin.instance("rebuilds the catalogue when a plugin changes its tools after a reload", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const before = (yield* registry.all()).map((tool) => String(tool.id))
+      expect(before).toContain("plugin_alpha")
+
+      mutablePlugin.expose("plugin_beta")
+      const after = (yield* registry.all()).map((tool) => String(tool.id))
+      expect(after).toContain("plugin_beta")
+      expect(after).not.toContain("plugin_alpha")
     }),
   )
 

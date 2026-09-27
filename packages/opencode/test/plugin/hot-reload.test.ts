@@ -64,18 +64,13 @@ const pluginSource = (marker: string) =>
     "",
   ].join("\n")
 
-// Characterization tests for the plugin hot-reload path.
+// Plugin hot reload: the contract the fix must hold.
 //
-// As of this study the plugin file watcher fires `Plugin.reload()` correctly, but
-// `PluginLoader` re-imports the *same* file URL and Bun returns the cached ESM
-// module, so edited plugin *code* does not take effect without a process restart.
-// The label "hot reload" holds for config/agents/skills/MCP and for plugin
-// *listing* changes, not for plugin code.
-//
-// WHEN THE FIX LANDS (cache-busted import URL on reload) the two assertions
-// marked `expected after fix` must be inverted to `"v2"`.
+// Bun caches ESM modules by specifier, so re-importing the edited path served the stale module
+// (and a `?v=` query did not defeat that cache either). PluginLoader now imports a content-hashed
+// artifact instead, so an edited plugin's code takes effect on reload with no process restart.
 describe("plugin hot reload", () => {
-  it.live("keeps serving the cached module for the same specifier", () =>
+  it.live("re-reads an edited plugin file after reload without restarting the process", () =>
     provideTmpdirInstance((dir) =>
       Effect.gen(function* () {
         const file = path.join(dir, "plugin.ts")
@@ -99,7 +94,7 @@ describe("plugin hot reload", () => {
 
         console.log(`HOTRELOAD_OBSERVATION first=${JSON.stringify(first)} second=${JSON.stringify(second)}`)
         expect(first).toEqual(["v1"])
-        expect(second).toEqual(["v1"]) // expected after fix: ["v2"]
+        expect(second).toEqual(["v2"])
       }),
     ),
   )
@@ -157,7 +152,7 @@ describe("plugin hot reload", () => {
         }
         console.log(`LOADER_OBSERVATION ${JSON.stringify(observed)}`)
         expect(observed.first).toBe("v1")
-        expect(observed.second).toBe("v1") // expected after fix: "v2"
+        expect(observed.second).toBe("v2")
       }),
     ),
   )

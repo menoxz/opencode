@@ -41,6 +41,9 @@ const log = Log.create({ service: "plugin" })
 
 type State = {
   hooks: Hooks[]
+  // Plugin specs that failed to load during this init. A non-empty list means the generation is
+  // incomplete, so the reload keeps serving the previous one instead of swapping.
+  failures: string[]
 }
 
 // Hook names that follow the (input, output) => Promise<void> trigger pattern
@@ -61,6 +64,9 @@ export interface Interface {
   readonly list: () => Effect.Effect<Hooks[]>
   readonly init: () => Effect.Effect<void>
   readonly reload: () => Effect.Effect<void>
+  // Bumped on every successful swap. Callers that cache anything derived from plugins (the tool
+  // catalogue, for instance) compare it to know when to rebuild.
+  readonly version: () => Effect.Effect<number>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Plugin") {}
@@ -127,6 +133,7 @@ export const layer = Layer.effect(
     const state = yield* InstanceState.make<State>(
       Effect.fn("Plugin.state")(function* (ctx) {
         const hooks: Hooks[] = []
+        const failures: string[] = []
         const bridge = yield* EffectBridge.make()
 
         function publishPluginError(message: string) {
@@ -189,6 +196,7 @@ export const layer = Layer.effect(
               },
               error(candidate, _retry, stage, error, resolved) {
                 const spec = candidate.plan.spec
+                failures.push(spec)
                 const cause = error instanceof Error ? (error.cause ?? error) : error
                 const message = stage === "load" ? errorMessage(error) : errorMessage(cause)
 
@@ -264,7 +272,7 @@ export const layer = Layer.effect(
           Effect.forkScoped,
         )
 
-        return { hooks }
+        return { hooks, failures }
       }),
     )
 
@@ -272,11 +280,31 @@ export const layer = Layer.effect(
     let bridge: EffectBridge.Shape | null = null
     let watchingStarted = false
 
+    // Hook generation currently served to sessions. It is swapped only when a full init loads
+    // cleanly, so a broken plugin edit can never strip hooks from a session that is already running.
+    let active: Hooks[] | null = null
+    let generation = 0
+    let quarantined: string[] = []
+
+    const served = Effect.fnUntraced(function* () {
+      const s = yield* InstanceState.get(state)
+      if (active === null) {
+        active = s.hooks
+        generation += 1
+      }
+      return active
+    })
+
     // Lazily arm file watchers on plugin directories (global config/plugin plus
     // the directories of every file:// plugin origin). A debounced change to a
-    // plugin file (.mjs/.js/.cjs/.ts) re-runs the full plugin init, so edits
-    // take effect without restarting the server — same contract as the agent
-    // and skill hot-reload.
+    // plugin file (.mjs/.js/.cjs/.ts) re-runs the full plugin init.
+    //
+    // The reload re-imports the plugin through a content-hashed artifact
+    // (PluginArtifact), because Bun caches ESM modules by specifier: importing the
+    // edited path directly returns the stale module. Plugin *code* is therefore
+    // picked up without a restart, provided materialisation succeeds — when
+    // bundling is unavailable the loader falls back to the original specifier and
+    // only a restart will show the change.
     const ensureWatching = Effect.fnUntraced(function* () {
       if (watchingStarted) return
       watchingStarted = true
@@ -353,8 +381,8 @@ export const layer = Layer.effect(
       Output = Parameters<Required<Hooks>[Name]>[1],
     >(name: Name, input: Input, output: Output) {
       if (!name) return output
-      const s = yield* InstanceState.get(state)
-      for (const hook of s.hooks) {
+      const hooks = yield* served()
+      for (const hook of hooks) {
         const fn = hook[name] as any
         if (!fn) continue
         yield* Effect.promise(async () => fn(input, output))
@@ -363,8 +391,7 @@ export const layer = Layer.effect(
     })
 
     const list = Effect.fn("Plugin.list")(function* () {
-      const s = yield* InstanceState.get(state)
-      return s.hooks
+      return yield* served()
     })
 
     const init = Effect.fn("Plugin.init")(function* () {
@@ -374,12 +401,32 @@ export const layer = Layer.effect(
 
     const reload = Effect.fn("Plugin.reload")(function* () {
       log.info("Reloading plugins...")
+      const previous = active
       // Invalidate the cached state so the next get() re-runs the full init
       yield* InstanceState.invalidate(state)
       // Force re-initialization with fresh config
-      yield* InstanceState.get(state)
+      const s = yield* InstanceState.get(state)
+      if (s.failures.length > 0 && previous !== null) {
+        // Roll back: swapping to a generation that lost a plugin would break sessions mid-flight.
+        log.error("plugin reload rolled back; previous generation kept", { failures: s.failures })
+        active = previous
+        quarantined = [...new Set([...quarantined, ...s.failures])]
+      } else {
+        active = s.hooks
+        quarantined = s.failures.length > 0 ? [...new Set(s.failures)] : []
+        generation += 1
+      }
       yield* ensureWatching()
-      log.info("Plugins reloaded successfully")
+      log.info("Plugins reloaded successfully", {
+        generation,
+        hooks: active?.length ?? 0,
+        quarantined: quarantined.length,
+      })
+    })
+
+    const version = Effect.fn("Plugin.version")(function* () {
+      yield* served()
+      return generation
     })
 
     yield* Effect.addFinalizer(() =>
@@ -391,7 +438,7 @@ export const layer = Layer.effect(
       }),
     )
 
-    return Service.of({ trigger, list, init, reload })
+    return Service.of({ trigger, list, init, reload, version })
   }),
 )
 

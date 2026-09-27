@@ -99,6 +99,9 @@ type ReadDef = Tool.InferDef<typeof ReadTool>
 
 type State = {
   version: number
+  // Plugin generation this catalogue was built from. Plugin-provided tools are part of the
+  // catalogue, so a plugin reload must make it stale.
+  pluginGeneration: number
   custom: Tool.Def[]
   builtin: Tool.Def[]
   task: TaskDef
@@ -107,6 +110,10 @@ type State = {
 
 export interface Interface {
   readonly catalogVersion: () => Effect.Effect<number>
+  // Drops the memoised catalogue so the next access rebuilds it. Plugin-provided tools are part of
+  // this state, so a plugin reload must invalidate it, otherwise a tool added or removed by a plugin
+  // stays invisible until the process restarts.
+  readonly invalidate: () => Effect.Effect<void>
   readonly ids: () => Effect.Effect<string[]>
   readonly all: () => Effect.Effect<Tool.Def[]>
   readonly named: () => Effect.Effect<{ task: TaskDef; read: ReadDef }>
@@ -369,8 +376,10 @@ export const layer: Layer.Layer<
           mcp_reload: Tool.init(mcpReload),
         })
 
+        const pluginGeneration = yield* plugin.version()
         return {
           version: ++catalogSequence,
+          pluginGeneration,
           custom,
           builtin: [
             tool.invalid,
@@ -424,12 +433,24 @@ export const layer: Layer.Layer<
     )
 
     const all: Interface["all"] = Effect.fn("ToolRegistry.all")(function* () {
-      const s = yield* InstanceState.get(state)
+      // Plugin-provided tools are baked into this catalogue, and the plugin generation that produced
+      // them is part of the catalogue's validity: after a plugin reload the catalogue is rebuilt
+      // instead of serving tools from plugins that changed, were added or were removed.
+      const current = yield* plugin.version()
+      let s = yield* InstanceState.get(state)
+      if (s.pluginGeneration !== current) {
+        yield* InstanceState.invalidate(state)
+        s = yield* InstanceState.get(state)
+      }
       return [...s.builtin, ...s.custom] as Tool.Def[]
     })
 
     const catalogVersion: Interface["catalogVersion"] = Effect.fn("ToolRegistry.catalogVersion")(function* () {
       return (yield* InstanceState.get(state)).version
+    })
+
+    const invalidate: Interface["invalidate"] = Effect.fn("ToolRegistry.invalidate")(function* () {
+      yield* InstanceState.invalidate(state)
     })
 
     const ids: Interface["ids"] = Effect.fn("ToolRegistry.ids")(function* () {
@@ -520,7 +541,7 @@ export const layer: Layer.Layer<
       return { task: s.task, read: s.read }
     })
 
-    return Service.of({ catalogVersion, ids, all, named, tools })
+    return Service.of({ catalogVersion, invalidate, ids, all, named, tools })
   }),
 )
 
