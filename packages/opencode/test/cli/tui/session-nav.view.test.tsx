@@ -1,13 +1,13 @@
 /** @jsxImportSource @opentui/solid */
 import { afterEach, expect, test } from "bun:test"
 import { testRender } from "@opentui/solid"
-import type { JSX } from "solid-js"
+import { createSignal, type JSX } from "solid-js"
 import { createTuiResolvedConfig } from "../../fixture/tui-runtime"
 import { KVProvider } from "../../../src/cli/cmd/tui/context/kv"
 import { ThemeProvider } from "../../../src/cli/cmd/tui/context/theme"
 import { TuiConfigProvider } from "../../../src/cli/cmd/tui/context/tui-config"
 import { SessionNavBar } from "../../../src/cli/cmd/tui/routes/session/session-nav-bar"
-import type { NavSession } from "../../../src/cli/cmd/tui/routes/session/session-nav"
+import { filterNavSessions, type NavSession } from "../../../src/cli/cmd/tui/routes/session/session-nav"
 import { Locale } from "../../../src/util/locale"
 
 type App = Awaited<ReturnType<typeof testRender>>
@@ -335,4 +335,60 @@ test("bare n, d and r keys never fire an action from the bar", async () => {
   expect(deleted).toBeUndefined()
   expect(renamed).toBeUndefined()
   expect(created).toBe(false)
+})
+
+test("takes keys in the search field, narrows the list and leaves on Escape", async () => {
+  const typed: string[] = []
+  const app = await testRender(() =>
+    withTheme(() => {
+      const [query, setQuery] = createSignal("")
+      const [searching, setSearching] = createSignal(false)
+      return (
+        <SessionNavBar
+          sessions={filterNavSessions(twoDirs, query())}
+          selected={0}
+          focused={true}
+          height={20}
+          allDirectories={false}
+          collapsed={[]}
+          expanded={false}
+          frame={0}
+          onMove={() => {}}
+          onOpen={() => {}}
+          onToggleDir={() => {}}
+          onToggleMore={() => {}}
+          onNew={() => {}}
+          onDelete={() => {}}
+          onRename={() => {}}
+          onToggleDirectories={() => {}}
+          shortcuts={{ new: "alt+n", delete: "ctrl+d", rename: "ctrl+r" }}
+          searchQuery={query()}
+          searching={searching()}
+          onSearch={(value) => {
+            typed.push(value)
+            setQuery(value)
+          }}
+          onSearchFocus={setSearching}
+        />
+      )
+    }),
+  )
+  renderers.push(app.renderer)
+  await settled(app)
+  expect(app.captureCharFrame()).toContain("/ Search folders")
+
+  app.mockInput.pressKey("/")
+  await settled(app)
+  expect(app.captureCharFrame()).toContain("/▏")
+
+  app.mockInput.pressKey("b")
+  await settled(app)
+  expect(typed.at(-1)).toBe("b")
+  expect(app.captureCharFrame()).toContain("Beta one")
+  expect(app.captureCharFrame()).not.toContain("Alpha one")
+
+  app.mockInput.pressEscape()
+  await settled(app)
+  expect(app.captureCharFrame()).toContain("/ Search folders")
+  expect(app.captureCharFrame()).toContain("Alpha one")
 })

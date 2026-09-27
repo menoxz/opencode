@@ -99,10 +99,14 @@ export function SessionNavBar(props: {
   useKeyboard((evt) => {
     // While searching the bar takes the keystrokes itself: the input element could never be focused.
     if (props.searching) {
-      if (evt.name === "escape") return props.onSearchFocus?.(false)
+      if (evt.name === "escape") {
+        props.onSearch?.("")
+        return props.onSearchFocus?.(false)
+      }
       if (evt.name === "return") {
         const current = rows()[Math.min(Math.max(props.selected, 0), Math.max(0, rows().length - 1))]
         if (current) activate(current)
+        props.onSearch?.("")
         return props.onSearchFocus?.(false)
       }
       if (evt.name === "backspace") return props.onSearch?.(searchBackspace(props.searchQuery ?? ""))
