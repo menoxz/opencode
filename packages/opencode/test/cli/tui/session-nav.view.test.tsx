@@ -33,9 +33,11 @@ function withTheme(component: () => JSX.Element) {
 }
 
 async function settled(app: App) {
-  await app.renderOnce()
-  await new Promise((resolve) => setTimeout(resolve, 40))
-  await app.renderOnce()
+  for (let attempt = 0; attempt < 8; attempt++) {
+    await app.renderOnce()
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    if (app.captureCharFrame().trim().length > 0) return
+  }
 }
 
 async function renderBar(props: {
@@ -163,5 +165,28 @@ test("shows each session's last-activity date and time", async () => {
     focused: false,
   })
   const text = app.captureCharFrame()
-  expect(text).toContain(Locale.todayTimeOrDateTime(updated))
+  expect(text).toContain(Locale.time(updated))
+  expect(text).toContain("26/09")
+})
+
+test("keeps the timestamp when the title has to be truncated", async () => {
+  const now = new Date()
+  const day = now.getMonth() === 0 && now.getDate() === 15 ? 16 : 15
+  const updated = new Date(now.getFullYear(), 0, day, 14, 36).getTime()
+  const app = await renderBar({
+    sessions: [
+      {
+        id: "ses_a",
+        title: "Connexion abonnement Claude à OpenAI et facturation mensuelle détaillée",
+        updated,
+      },
+    ],
+    activeID: "ses_a",
+    selected: 0,
+    focused: false,
+  })
+  const text = app.captureCharFrame()
+  expect(text).toContain("…")
+  expect(text).toContain(Locale.time(updated))
+  expect(text).toMatch(new RegExp(`${String(day).padStart(2, "0")}/01`))
 })

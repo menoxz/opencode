@@ -20,7 +20,7 @@ export type NavItem = {
   updated?: number
 }
 
-/** Vertical bar width, in terminal columns: a readable title and a full last-activity stamp. */
+/** Vertical bar width, in terminal columns. */
 export const NAV_WIDTH = 52
 
 /** Below this terminal width the bar yields unless it was opened explicitly. */
@@ -49,13 +49,21 @@ export function activityGlyph(active: boolean, activity: NavActivity): string {
   return active ? "●" : "○"
 }
 
+const pad = (value: number) => String(value).padStart(2, "0")
+
 /**
- * Last-activity stamp, formatted with the CLI's own helper so the bar and `session list` never
- * disagree: a bare time for today, time and date for anything older.
+ * Last-activity stamp, compact enough to survive a narrow bar while never dropping the information:
+ * today keeps only the time, this year adds day and month, an older session adds the year. The time
+ * itself comes from the CLI's own helper so the bar and `session list` never disagree.
  */
-export function navTime(updated: number | undefined): string | undefined {
+export function navStamp(updated: number | undefined, now: Date = new Date()): string | undefined {
   if (updated === undefined || !Number.isFinite(updated)) return undefined
-  return Locale.todayTimeOrDateTime(updated)
+  const when = new Date(updated)
+  const time = Locale.time(updated)
+  if (when.toDateString() === now.toDateString()) return time
+  const day = `${pad(when.getDate())}/${pad(when.getMonth() + 1)}`
+  if (when.getFullYear() === now.getFullYear()) return `${day} ${time}`
+  return `${day}/${pad(when.getFullYear() % 100)} ${time}`
 }
 
 /**
@@ -112,15 +120,18 @@ export type NavRowInput = {
   selected: boolean
   updated?: number
   width: number
+  now?: Date
 }
 
 /**
- * A whole row as one string, so the timestamp is right-aligned by construction instead of by the
- * renderer's flex rules: cursor, activity glyph, title, padding, stamp — never longer than `width`.
+ * A whole row as one string. The timestamp is reserved first and the title is truncated into what is
+ * left, so a long title can never push the date out of the row — the invariant the bar is judged on.
+ * The stamp is right-aligned by construction rather than by the renderer's flex rules, and the line
+ * never grows past `width`, so it cannot wrap onto a second one.
  */
 export function navRow(input: NavRowInput): string {
   const prefix = `${input.selected ? ">" : " "} ${activityGlyph(input.active, input.activity)} `
-  const stamp = navTime(input.updated)
+  const stamp = navStamp(input.updated, input.now)
   const available = Math.max(1, input.width - prefix.length - 2)
   if (!stamp) return `${prefix}${navLabel(input.title, available)}`
   const label = navLabel(input.title, Math.max(1, available - stamp.length - 1))

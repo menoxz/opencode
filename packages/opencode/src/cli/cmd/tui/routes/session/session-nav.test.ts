@@ -11,7 +11,7 @@ import {
   navItems,
   navLabel,
   navRow,
-  navTime,
+  navStamp,
   navVisible,
   selectionID,
   type NavSession,
@@ -23,7 +23,10 @@ const sessions: NavSession[] = [
   { id: "ses_c", title: "Triage issue" },
 ]
 
-const older = Date.UTC(2026, 8, 26, 14, 36)
+const now = new Date(2026, 8, 27, 13, 54)
+const todayAt = new Date(2026, 8, 27, 16, 36).getTime()
+const sameYearAt = new Date(2026, 8, 15, 22, 35).getTime()
+const olderYearAt = new Date(2025, 8, 15, 22, 35).getTime()
 
 describe("TUI session navbar", () => {
   test("lists the sessions of the project and flags the active one", () => {
@@ -109,42 +112,72 @@ describe("TUI session navbar", () => {
     expect(activityGlyph(true, "busy")).toBe("◐")
   })
 
-  test("formats a session's last activity with the CLI's own helper", () => {
-    expect(navTime(undefined)).toBeUndefined()
-    expect(navTime(Number.NaN)).toBeUndefined()
-    expect(navTime(older)).toBe(Locale.todayTimeOrDateTime(older))
+  test("keeps the time for today, adds day and month this year, and the year before that", () => {
+    expect(navStamp(undefined, now)).toBeUndefined()
+    expect(navStamp(Number.NaN, now)).toBeUndefined()
+    expect(navStamp(todayAt, now)).toBe(Locale.time(todayAt))
+    expect(navStamp(sameYearAt, now)).toBe(`15/09 ${Locale.time(sameYearAt)}`)
+    expect(navStamp(olderYearAt, now)).toBe(`15/09/25 ${Locale.time(olderYearAt)}`)
+  })
+
+  test("a stamp always carries both a date marker and a time", () => {
+    expect(navStamp(todayAt, now)).toMatch(/\d{1,2}:\d{2}/)
+    expect(navStamp(sameYearAt, now)).toMatch(/\d{2}\/\d{2} .*\d{1,2}:\d{2}/)
+    expect(navStamp(olderYearAt, now)).toMatch(/\d{2}\/\d{2}\/\d{2} .*\d{1,2}:\d{2}/)
   })
 
   test("builds one row per session with the timestamp right-aligned and never overflowing", () => {
-    const stamp = Locale.todayTimeOrDateTime(older)
-    const row = navRow({ title: "Add navbar", activity: "idle", active: true, selected: true, updated: older, width: NAV_WIDTH })
+    const stamp = navStamp(sameYearAt, now) ?? ""
+    const row = navRow({
+      title: "Add navbar",
+      activity: "idle",
+      active: true,
+      selected: true,
+      updated: sameYearAt,
+      width: NAV_WIDTH,
+      now,
+    })
     expect(row.startsWith("> ● Add navbar")).toBe(true)
     expect(row.endsWith(stamp)).toBe(true)
     expect(row.length).toBeLessThanOrEqual(NAV_WIDTH)
-
-    const other = navRow({ title: "Short", activity: "busy", active: false, selected: false, updated: older, width: NAV_WIDTH })
-    expect(other.startsWith("  ◐ Short")).toBe(true)
-    expect(other.endsWith(stamp)).toBe(true)
   })
 
-  test("a row without a timestamp still fills the width with the title", () => {
-    const row = navRow({ title: "Old session", activity: "idle", active: false, selected: false, width: NAV_WIDTH })
-    expect(row.startsWith("  ○ Old session")).toBe(true)
-    expect(row.length).toBeLessThanOrEqual(NAV_WIDTH)
-  })
-
-  test("a long title truncates once instead of wrapping", () => {
+  test("a title far too long is truncated while the timestamp stays whole", () => {
+    const long = "Connexion abonnement Claude à OpenAI et facturation mensuelle détaillée"
+    const stamp = navStamp(sameYearAt, now) ?? ""
     const row = navRow({
-      title: "Connexion abonnement Claude et facturation mensuelle",
-      activity: "idle",
+      title: long,
+      activity: "busy",
       active: false,
       selected: false,
-      updated: older,
+      updated: sameYearAt,
       width: NAV_WIDTH,
+      now,
     })
     expect(row).toContain("…")
     expect((row.match(/…/g) ?? []).length).toBe(1)
+    expect(row.endsWith(stamp)).toBe(true)
     expect(row.length).toBeLessThanOrEqual(NAV_WIDTH)
-    expect(row.endsWith(Locale.todayTimeOrDateTime(older))).toBe(true)
+  })
+
+  test("even at a minimal width the row never overflows", () => {
+    const stamp = navStamp(olderYearAt, now) ?? ""
+    const row = navRow({
+      title: "Anything",
+      activity: "idle",
+      active: false,
+      selected: false,
+      updated: olderYearAt,
+      width: 24,
+      now,
+    })
+    expect(row.endsWith(stamp)).toBe(true)
+    expect(row.length).toBeLessThanOrEqual(24)
+  })
+
+  test("a row without a timestamp still fills the width with the title", () => {
+    const row = navRow({ title: "Old session", activity: "idle", active: false, selected: false, width: NAV_WIDTH, now })
+    expect(row.startsWith("  ○ Old session")).toBe(true)
+    expect(row.length).toBeLessThanOrEqual(NAV_WIDTH)
   })
 })
