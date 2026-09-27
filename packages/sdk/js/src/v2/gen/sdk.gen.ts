@@ -120,6 +120,14 @@ import type {
   PermissionRespondErrors,
   PermissionRespondResponses,
   PermissionRuleset,
+  PluginAddErrors,
+  PluginAddResponses,
+  PluginListErrors,
+  PluginListResponses,
+  PluginReloadErrors,
+  PluginReloadResponses,
+  PluginRemoveErrors,
+  PluginRemoveResponses,
   ProjectCurrentErrors,
   ProjectCurrentResponses,
   ProjectInitGitErrors,
@@ -2270,6 +2278,137 @@ export class Mcp extends HeyApiClient {
   private _auth?: Auth2
   get auth(): Auth2 {
     return (this._auth ??= new Auth2({ client: this.client }))
+  }
+}
+
+export class Plugin extends HeyApiClient {
+  /**
+   * List loaded plugins
+   *
+   * List the plugin origins the server is serving, the hooks they registered, and the current plugin generation.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<PluginListResponses, PluginListErrors, ThrowOnError>({
+      url: "/plugin",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Add a plugin origin
+   *
+   * Add a plugin specifier to the global config and reload, without restarting the server.
+   */
+  public add<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      spec?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "spec" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<PluginAddResponses, PluginAddErrors, ThrowOnError>({
+      url: "/plugin",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Reload plugins
+   *
+   * Re-read plugin code from disk. A plugin that fails to load is quarantined and the previous generation keeps serving, so a reload never breaks a running session.
+   */
+  public reload<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<PluginReloadResponses, PluginReloadErrors, ThrowOnError>({
+      url: "/plugin/reload",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Remove a plugin origin
+   *
+   * Remove a plugin specifier from the global config and reload, without restarting the server.
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters: {
+      spec: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "spec" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).delete<PluginRemoveResponses, PluginRemoveErrors, ThrowOnError>({
+      url: "/plugin/{spec}",
+      ...options,
+      ...params,
+    })
   }
 }
 
@@ -5146,6 +5285,11 @@ export class OpencodeClient extends HeyApiClient {
   private _mcp?: Mcp
   get mcp(): Mcp {
     return (this._mcp ??= new Mcp({ client: this.client }))
+  }
+
+  private _plugin?: Plugin
+  get plugin(): Plugin {
+    return (this._plugin ??= new Plugin({ client: this.client }))
   }
 
   private _project?: Project

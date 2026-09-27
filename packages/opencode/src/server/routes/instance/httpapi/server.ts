@@ -70,6 +70,7 @@ import { globalHandlers } from "./handlers/global"
 import { instanceHandlers } from "./handlers/instance"
 import { mcpHandlers } from "./handlers/mcp"
 import { permissionHandlers } from "./handlers/permission"
+import { pluginHandlers } from "./handlers/plugin"
 import { projectHandlers } from "./handlers/project"
 import { providerHandlers } from "./handlers/provider"
 import { ptyConnectRoute, ptyHandlers } from "./handlers/pty"
@@ -132,6 +133,7 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
     ptyHandlers,
     questionHandlers,
     permissionHandlers,
+    pluginHandlers,
     providerHandlers,
     sessionHandlers,
     syncHandlers,

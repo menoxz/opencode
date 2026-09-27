@@ -1111,6 +1111,7 @@ export type ProviderConfig = {
   npm?: string
   whitelist?: Array<string>
   blacklist?: Array<string>
+  discover?: boolean
   options?: {
     apiKey?: string
     baseURL?: string
@@ -1240,6 +1241,116 @@ export type ConfigInstructionInjection = {
  */
 export type LayoutConfig = "auto" | "stretch"
 
+export type JevProvider = "typesafe" | "openjev" | "command-code"
+
+export type JevModel = string
+
+export type JevGuardConfig = {
+  enabled?: boolean
+  /**
+   * Probability (0..1) at or above which the guard asks, and below which it allows. Defaults to 0.5. A routing decision for a harder turn lowers it for that turn.
+   */
+  threshold?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  permissions?: Array<string>
+}
+
+export type JevRouteConfig = {
+  enabled?: boolean
+  /**
+   * Base guard threshold the routing complexity score adjusts. Defaults to the guard threshold (0.5).
+   */
+  threshold?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type JevPlanConfig = {
+  enabled?: boolean
+}
+
+export type JevReviewConfig = {
+  enabled?: boolean
+}
+
+export type JevUntrustedConfig = {
+  enabled?: boolean
+  /**
+   * Probability (0..1) at or above which Jev's confirmation counts. Defaults to 0.5.
+   */
+  threshold?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type JevCompactionConfig = {
+  enabled?: boolean
+  /**
+   * Maximum anchors Jev is asked about per pass (both passes share this bound). Defaults to 12.
+   */
+  max_questions?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  /**
+   * Probability (0..1) at or above which a `noul` answer counts as yes. Defaults to 0.5.
+   */
+  threshold?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  repair?: boolean
+}
+
+export type JevRelevanceConfig = {
+  enabled?: boolean
+  /**
+   * Probability of new information (0..1) at or below which the call is answered from the context ledger instead of being executed. Defaults to 0.25.
+   */
+  threshold?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  /**
+   * Probability of new information (0..1) below which the call still runs but its result is flagged as possibly redundant. Defaults to 0.6.
+   */
+  ambiguous_threshold?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type JevNextActionConfig = {
+  enabled?: boolean
+}
+
+export type JevIntakeConfig = {
+  enabled?: boolean
+  /**
+   * Probability (0..1) at or above which a block counts as load-bearing and is kept. Below it, a block is pruned. Defaults to 0.5.
+   */
+  threshold?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  /**
+   * Maximum blocks a result is split into and asked about. Defaults to 12.
+   */
+  max_blocks?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  /**
+   * Results shorter than this many characters are never filtered and cost no round-trip. Defaults to 1200.
+   */
+  min_chars?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  intent?: boolean
+  /**
+   * In intent mode, probability at or above which an anchor block is kept. Lower than `threshold`, so an anchor is dropped only on a confident refutation. Defaults to half of `threshold`.
+   */
+  anchor_threshold?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  model?: JevModel
+  base_url?: string
+  endpoint?: string
+}
+
+export type JevConfig = {
+  provider?: JevProvider
+  api_key?: string
+  base_url?: string
+  endpoint?: string
+  model?: JevModel
+  shadow?: boolean
+  rules?: Array<string>
+  profile?: "safe"
+  guard?: JevGuardConfig
+  route?: JevRouteConfig
+  plan?: JevPlanConfig
+  review?: JevReviewConfig
+  untrusted?: JevUntrustedConfig
+  compaction?: JevCompactionConfig
+  relevance?: JevRelevanceConfig
+  next_action?: JevNextActionConfig
+  intake?: JevIntakeConfig
+}
+
 export type ImageAttachmentConfig = {
   auto_resize?: boolean
   max_width?: number
@@ -1258,6 +1369,18 @@ export type ConfigContextRollout = {
   replay_tool_inputs?: "full" | "summary" | "off"
   replay_tool_outputs?: "full" | "summary" | "off"
   replay_reasoning?: "on" | "off"
+  /**
+   * Caps the characters of reasoning replayed for each historical assistant turn. Keeps the field present (DeepSeek requires it) while shrinking old chain-of-thought. 0 disables.
+   */
+  reasoning_max_chars?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  /**
+   * Most recent assistant turns whose reasoning is replayed in full before reasoning_max_chars applies.
+   */
+  reasoning_keep_recent?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  /**
+   * Assistant tool turns that close a summarization block: historical tool inputs and outputs are only reduced at multiples of this step, so a smaller value elides more of the distant history (default 20).
+   */
+  summary_boundary_step?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   injection_skills?: "verbose" | "short"
   injection_instructions?: "full" | "summary" | "off"
   system_boilerplate?: "full" | "light" | "minimal"
@@ -1380,6 +1503,7 @@ export type Config = {
   instruction_injection?: ConfigInstructionInjection
   layout?: LayoutConfig
   permission?: PermissionConfig
+  jev?: JevConfig
   tools?: {
     [key: string]: boolean
   }
@@ -1398,10 +1522,16 @@ export type Config = {
     preserve_recent_tokens?: number
     reserved?: number
     threshold?: number
+    absolute_trigger?: number
+    read_heavy_trigger?: number
+    read_heavy_min_tokens?: number
+    read_heavy_preserve_recent_tokens?: number
   }
   experimental?: {
     disable_paste_summary?: boolean
     batch_tool?: boolean
+    turn_plan?: boolean
+    skill_slots?: boolean
     planning?: {
       enabled?: boolean
       maxNodes?: number
@@ -1423,6 +1553,7 @@ export type Config = {
       lean_dynamic_tools?: "off" | "shadow" | "enforce"
       activation_ttl_ms?: number
       environment_state?: boolean
+      context_slots?: boolean
     }
     postmortem?: {
       llm_decisions?: boolean
@@ -1916,6 +2047,12 @@ export type NotFoundError = {
   }
 }
 
+export type UnknownError1 = {
+  _tag: "UnknownError"
+  message: string
+  ref?: string
+}
+
 export type TextPartInput = {
   id?: string
   type: "text"
@@ -1998,12 +2135,6 @@ export type ServiceUnavailableError = {
   _tag: "ServiceUnavailableError"
   message: string
   service?: string
-}
-
-export type UnknownError1 = {
-  _tag: "UnknownError"
-  message: string
-  ref?: string
 }
 
 export type V2SessionMessagesResponse = {
@@ -5497,6 +5628,153 @@ export type McpDisconnectResponses = {
 
 export type McpDisconnectResponse = McpDisconnectResponses[keyof McpDisconnectResponses]
 
+export type PluginListData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/plugin"
+}
+
+export type PluginListErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type PluginListError = PluginListErrors[keyof PluginListErrors]
+
+export type PluginListResponses = {
+  /**
+   * Loaded plugins and their hooks
+   */
+  200: {
+    version: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    origins: Array<{
+      spec: string
+      scope: string
+    }>
+    hooks: Array<string>
+  }
+}
+
+export type PluginListResponse = PluginListResponses[keyof PluginListResponses]
+
+export type PluginAddData = {
+  body?: {
+    /**
+     * Plugin specifier: a local path, a file URL or an npm package name.
+     */
+    spec: string
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/plugin"
+}
+
+export type PluginAddErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type PluginAddError = PluginAddErrors[keyof PluginAddErrors]
+
+export type PluginAddResponses = {
+  /**
+   * Plugin generation after adding the origin
+   */
+  200: {
+    version: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    origins: Array<{
+      spec: string
+      scope: string
+    }>
+    hooks: Array<string>
+  }
+}
+
+export type PluginAddResponse = PluginAddResponses[keyof PluginAddResponses]
+
+export type PluginReloadData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/plugin/reload"
+}
+
+export type PluginReloadErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type PluginReloadError = PluginReloadErrors[keyof PluginReloadErrors]
+
+export type PluginReloadResponses = {
+  /**
+   * Plugin generation after the reload
+   */
+  200: {
+    version: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    origins: Array<{
+      spec: string
+      scope: string
+    }>
+    hooks: Array<string>
+  }
+}
+
+export type PluginReloadResponse = PluginReloadResponses[keyof PluginReloadResponses]
+
+export type PluginRemoveData = {
+  body?: never
+  path: {
+    spec: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/plugin/{spec}"
+}
+
+export type PluginRemoveErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type PluginRemoveError = PluginRemoveErrors[keyof PluginRemoveErrors]
+
+export type PluginRemoveResponses = {
+  /**
+   * Plugin generation after removing the origin
+   */
+  200: {
+    version: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    origins: Array<{
+      spec: string
+      scope: string
+    }>
+    hooks: Array<string>
+  }
+}
+
+export type PluginRemoveResponse = PluginRemoveResponses[keyof PluginRemoveResponses]
+
 export type ProjectListData = {
   body?: never
   path?: never
@@ -6783,9 +7061,9 @@ export type SessionUnshareErrors = {
    */
   404: NotFoundError
   /**
-   * InternalServerError
+   * UnknownError
    */
-  500: EffectHttpApiErrorInternalServerError
+  500: UnknownError1
 }
 
 export type SessionUnshareError = SessionUnshareErrors[keyof SessionUnshareErrors]
@@ -6821,9 +7099,9 @@ export type SessionShareErrors = {
    */
   404: NotFoundError
   /**
-   * InternalServerError
+   * UnknownError
    */
-  500: EffectHttpApiErrorInternalServerError
+  500: UnknownError1
 }
 
 export type SessionShareError = SessionShareErrors[keyof SessionShareErrors]
