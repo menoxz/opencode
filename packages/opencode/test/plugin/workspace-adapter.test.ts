@@ -3,13 +3,11 @@ import { Effect, Layer } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
-import { EffectFlock } from "@opencode-ai/core/util/effect-flock"
 import path from "path"
 import { pathToFileURL } from "url"
 import { Auth } from "../../src/auth"
 import { Bus } from "../../src/bus"
 import { Config } from "../../src/config/config"
-import { Env } from "../../src/env"
 import { RuntimeFlags } from "../../src/effect/runtime-flags"
 import { Workspace } from "../../src/control-plane/workspace"
 import { Plugin } from "../../src/plugin/index"
@@ -21,20 +19,37 @@ import { InstanceState } from "../../src/effect/instance-state"
 import { Session } from "../../src/session/session"
 import { SessionPrompt } from "../../src/session/prompt"
 import { SyncEvent } from "../../src/sync"
+import { emptyConsoleState } from "../../src/config/console-state"
 import { disposeAllInstances, provideTmpdirInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
-import { AccountTest } from "../fake/account"
-import { AuthTest } from "../fake/auth"
-import { NpmTest } from "../fake/npm"
 
-const configLayer = Config.layer.pipe(
-  Layer.provide(EffectFlock.defaultLayer),
-  Layer.provide(AppFileSystem.defaultLayer),
-  Layer.provide(Env.defaultLayer),
-  Layer.provide(AuthTest.empty),
-  Layer.provide(AccountTest.empty),
-  Layer.provide(NpmTest.noop),
-  Layer.provide(FetchHttpClient.layer),
+// The plugin under test is declared as a *global* origin: project-local plugins are deliberately
+// ignored by policy, so a project-scoped declaration would never install the adapter under test.
+const configLayer = Layer.effect(
+  Config.Service,
+  Effect.gen(function* () {
+    return Config.Service.of({
+      get: () =>
+        InstanceState.directory.pipe(
+          Effect.map((dir) => ({
+            plugin_origins: [
+              {
+                spec: pathToFileURL(path.join(dir, "plugin.ts")).href,
+                source: path.join(dir, "opencode.json"),
+                scope: "global" as const,
+              },
+            ],
+          })),
+        ),
+      getGlobal: () => Effect.succeed({}),
+      getConsoleState: () => Effect.succeed(emptyConsoleState),
+      update: () => Effect.void,
+      updateGlobal: (config: Config.Info) => Effect.succeed({ info: config, changed: false }),
+      invalidate: () => Effect.void,
+      directories: () => Effect.succeed([]),
+      waitForDependencies: () => Effect.void,
+    })
+  }),
 )
 const pluginLayer = Plugin.layer.pipe(
   Layer.provide(Bus.layer),
