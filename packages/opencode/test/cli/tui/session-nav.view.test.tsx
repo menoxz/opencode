@@ -45,8 +45,14 @@ async function renderBar(props: {
   activeID?: string
   selected: number
   focused: boolean
+  height?: number
+  allDirectories?: boolean
+  pendingDelete?: string
   onSelect?: (id: string) => void
   onNew?: () => void
+  onDelete?: (id: string) => void
+  onRename?: (id: string) => void
+  onToggleDirectories?: () => void
   onClose?: () => void
 }) {
   const app = await testRender(
@@ -57,9 +63,15 @@ async function renderBar(props: {
           activeID={props.activeID}
           selected={props.selected}
           focused={props.focused}
+          height={props.height ?? 20}
+          allDirectories={props.allDirectories ?? false}
+          pendingDelete={props.pendingDelete}
           onMove={() => {}}
           onSelect={props.onSelect ?? (() => {})}
           onNew={props.onNew ?? (() => {})}
+          onDelete={props.onDelete ?? (() => {})}
+          onRename={props.onRename ?? (() => {})}
+          onToggleDirectories={props.onToggleDirectories ?? (() => {})}
           onClose={props.onClose}
         />
       )),
@@ -189,4 +201,111 @@ test("keeps the timestamp when the title has to be truncated", async () => {
   expect(text).toContain("…")
   expect(text).toContain(Locale.time(updated))
   expect(text).toMatch(new RegExp(`${String(day).padStart(2, "0")}/01`))
+})
+
+const many: NavSession[] = Array.from({ length: 10 }, (_, index) => ({ id: `ses_${index}`, title: `Session ${index}` }))
+
+test("windows a long list so the last session stays reachable, with a hidden-above indicator", async () => {
+  const app = await renderBar({ sessions: many, activeID: "ses_0", selected: 9, focused: false, height: 3 })
+  const text = app.captureCharFrame()
+  expect(text).toContain("Session 9")
+  expect(text).toContain("more")
+  expect(text).not.toContain("Session 6")
+})
+
+test("windows to the top with a hidden-below indicator", async () => {
+  const app = await renderBar({ sessions: many, selected: 0, focused: false, height: 3 })
+  const text = app.captureCharFrame()
+  expect(text).toContain("Session 0")
+  expect(text).toContain("more")
+  expect(text).not.toContain("Session 9")
+})
+
+test("shows a shortcut line with new, delete, rename and the directory mode", async () => {
+  const app = await renderBar({ sessions, selected: 0, focused: false })
+  const text = app.captureCharFrame()
+  expect(text).toContain("n new")
+  expect(text).toContain("d delete")
+  expect(text).toContain("r rename")
+  expect(text).toContain("this dir")
+})
+
+test("clicking the directory hint asks the route to toggle the scope", async () => {
+  let flipped = false
+  const app = await renderBar({
+    sessions,
+    selected: 0,
+    focused: false,
+    allDirectories: true,
+    onToggleDirectories: () => (flipped = true),
+  })
+  const lines = app.captureCharFrame().split("\n")
+  const y = lines.findIndex((line) => line.includes("all dirs"))
+  expect(y).toBeGreaterThanOrEqual(0)
+  await app.mockMouse.click(lines[y].indexOf("all dirs"), y)
+  await settled(app)
+  expect(flipped).toBe(true)
+})
+
+test("clicking the delete hint asks the route to delete the selected session", async () => {
+  let deleted: string | undefined
+  const app = await renderBar({
+    sessions,
+    activeID: "ses_a",
+    selected: 1,
+    focused: false,
+    onDelete: (id) => (deleted = id),
+  })
+  const lines = app.captureCharFrame().split("\n")
+  const y = lines.findIndex((line) => line.includes("d delete"))
+  expect(y).toBeGreaterThanOrEqual(0)
+  await app.mockMouse.click(lines[y].indexOf("d delete"), y)
+  await settled(app)
+  expect(deleted).toBe("ses_b")
+})
+
+test("clicking the rename hint asks the route to rename the selected session", async () => {
+  let renamed: string | undefined
+  const app = await renderBar({
+    sessions,
+    activeID: "ses_a",
+    selected: 1,
+    focused: false,
+    onRename: (id) => (renamed = id),
+  })
+  const lines = app.captureCharFrame().split("\n")
+  const y = lines.findIndex((line) => line.includes("r rename"))
+  expect(y).toBeGreaterThanOrEqual(0)
+  await app.mockMouse.click(lines[y].indexOf("r rename"), y)
+  await settled(app)
+  expect(renamed).toBe("ses_b")
+})
+
+test("marks the row awaiting delete confirmation", async () => {
+  const app = await renderBar({ sessions, selected: 0, focused: false, pendingDelete: "ses_b" })
+  expect(app.captureCharFrame()).toContain("press again")
+})
+
+test("the d key asks the route to delete the selected session", async () => {
+  let deleted: string | undefined
+  const app = await renderBar({ sessions, activeID: "ses_a", selected: 1, focused: true, onDelete: (id) => (deleted = id) })
+  app.mockInput.pressKey("d")
+  await settled(app)
+  expect(deleted).toBe("ses_b")
+})
+
+test("the r key asks the route to rename the selected session", async () => {
+  let renamed: string | undefined
+  const app = await renderBar({ sessions, activeID: "ses_a", selected: 1, focused: true, onRename: (id) => (renamed = id) })
+  app.mockInput.pressKey("r")
+  await settled(app)
+  expect(renamed).toBe("ses_b")
+})
+
+test("the n key still creates a session when the bar is focused", async () => {
+  let created = false
+  const app = await renderBar({ sessions, selected: 0, focused: true, onNew: () => (created = true) })
+  app.mockInput.pressKey("n")
+  await settled(app)
+  expect(created).toBe(true)
 })

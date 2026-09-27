@@ -9,7 +9,7 @@ import { Locale } from "@/util/locale"
 /** Coarse activity of a session, derived from the store's session status. */
 export type NavActivity = "busy" | "retry" | "idle"
 
-export type NavSession = { id: string; title: string; activity?: NavActivity; updated?: number }
+export type NavSession = { id: string; title: string; activity?: NavActivity; updated?: number; directory?: string }
 
 export type NavItem = {
   id: string
@@ -18,6 +18,7 @@ export type NavItem = {
   index: number
   activity: NavActivity
   updated?: number
+  directory?: string
 }
 
 /** Vertical bar width, in terminal columns. */
@@ -32,6 +33,9 @@ export const NAV_MIN_TERMINAL_WIDTH = 80
  * never overflow the bar and wrap on the next one.
  */
 export const NAV_ROW_CHROME = 6
+
+/** Rows the bar keeps for its header, its shortcut line and the scroll indicators. */
+export const NAV_CHROME_ROWS = 4
 
 export type NavVisibility = "auto" | "hide"
 
@@ -101,6 +105,7 @@ export function navItems(sessions: readonly NavSession[], activeID: string | und
     index,
     activity: session.activity ?? "idle",
     updated: session.updated,
+    directory: session.directory,
   }))
 }
 
@@ -113,6 +118,29 @@ export function navLabel(title: string, budget: number): string {
   return label.slice(0, budget - 1) + "…"
 }
 
+export type NavWindow = { start: number; end: number; hiddenAbove: number; hiddenBelow: number }
+
+/**
+ * The slice of the list the bar can actually show, keeping the selection inside it and reporting how
+ * many sessions are hidden on each side. Pure, so "the last session is reachable" is a test rather
+ * than a claim about the renderer: windowing removes the need for a scroll container whose viewport
+ * height the component cannot otherwise know.
+ */
+export function navWindow(total: number, selected: number, height: number): NavWindow {
+  const size = Math.max(1, Math.floor(height))
+  if (total <= 0) return { start: 0, end: 0, hiddenAbove: 0, hiddenBelow: 0 }
+  if (total <= size) return { start: 0, end: total, hiddenAbove: 0, hiddenBelow: 0 }
+  const current = clampSelection(selected, total)
+  const start = Math.min(Math.max(current - Math.floor((size - 1) / 2), 0), total - size)
+  const end = start + size
+  return { start, end, hiddenAbove: start, hiddenBelow: total - end }
+}
+
+/** Rows of session list the terminal can show, once the bar's own header and hints are removed. */
+export function navListHeight(terminalRows: number): number {
+  return Math.max(1, Math.floor(terminalRows) - NAV_CHROME_ROWS)
+}
+
 export type NavRowInput = {
   title: string
   activity: NavActivity
@@ -121,6 +149,7 @@ export type NavRowInput = {
   updated?: number
   width: number
   now?: Date
+  pendingDelete?: boolean
 }
 
 /**
@@ -131,12 +160,17 @@ export type NavRowInput = {
  */
 export function navRow(input: NavRowInput): string {
   const prefix = `${input.selected ? ">" : " "} ${activityGlyph(input.active, input.activity)} `
-  const stamp = navStamp(input.updated, input.now)
+  const stamp = input.pendingDelete ? "press again" : navStamp(input.updated, input.now)
   const available = Math.max(1, input.width - prefix.length - 2)
   if (!stamp) return `${prefix}${navLabel(input.title, available)}`
   const label = navLabel(input.title, Math.max(1, available - stamp.length - 1))
   const gap = Math.max(1, available - label.length - stamp.length)
   return `${prefix}${label}${" ".repeat(gap)}${stamp}`
+}
+
+/** Footer marker telling whether the bar lists every directory or only the working one. */
+export function navDirectoryLabel(allDirectories: boolean): string {
+  return allDirectories ? "all dirs" : "this dir"
 }
 
 /** Mirrors the sidebar's `auto` / `hide` behaviour: narrow terminals hide the bar unless asked. */

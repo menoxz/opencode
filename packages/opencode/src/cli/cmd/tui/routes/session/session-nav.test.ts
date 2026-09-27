@@ -8,11 +8,14 @@ import {
   initialSelection,
   moveSelection,
   navActivity,
+  navDirectoryLabel,
   navItems,
   navLabel,
+  navListHeight,
   navRow,
   navStamp,
   navVisible,
+  navWindow,
   selectionID,
   type NavSession,
 } from "./session-nav"
@@ -34,6 +37,11 @@ describe("TUI session navbar", () => {
     expect(items.map((item) => item.id)).toEqual(["ses_a", "ses_b", "ses_c"])
     expect(items.map((item) => item.active)).toEqual([false, true, false])
     expect(items.map((item) => item.index)).toEqual([0, 1, 2])
+  })
+
+  test("carries each session's directory through to the row", () => {
+    const items = navItems([{ id: "ses_x", title: "In another folder", directory: "/work/other" }], undefined)
+    expect(items[0]?.directory).toBe("/work/other")
   })
 
   test("shows no active row when the route is not a session", () => {
@@ -160,6 +168,22 @@ describe("TUI session navbar", () => {
     expect(row.length).toBeLessThanOrEqual(NAV_WIDTH)
   })
 
+  test("a pending deletion replaces the stamp with the confirm hint", () => {
+    const row = navRow({
+      title: "Delete me",
+      activity: "idle",
+      active: false,
+      selected: true,
+      updated: sameYearAt,
+      width: NAV_WIDTH,
+      now,
+      pendingDelete: true,
+    })
+    expect(row).toContain("press")
+    expect(row.endsWith("again")).toBe(true)
+    expect(row.length).toBeLessThanOrEqual(NAV_WIDTH)
+  })
+
   test("even at a minimal width the row never overflows", () => {
     const stamp = navStamp(olderYearAt, now) ?? ""
     const row = navRow({
@@ -179,5 +203,42 @@ describe("TUI session navbar", () => {
     const row = navRow({ title: "Old session", activity: "idle", active: false, selected: false, width: NAV_WIDTH, now })
     expect(row.startsWith("  ○ Old session")).toBe(true)
     expect(row.length).toBeLessThanOrEqual(NAV_WIDTH)
+  })
+
+  test("labels whether the bar spans every directory", () => {
+    expect(navDirectoryLabel(true)).toBe("all dirs")
+    expect(navDirectoryLabel(false)).toBe("this dir")
+  })
+
+  test("reserves rows for the bar's own chrome", () => {
+    expect(navListHeight(44)).toBeGreaterThan(0)
+    expect(navListHeight(2)).toBe(1)
+  })
+
+  test("windows the list so the selection stays visible and the ends stay reachable", () => {
+    expect(navWindow(0, 0, 5)).toEqual({ start: 0, end: 0, hiddenAbove: 0, hiddenBelow: 0 })
+    expect(navWindow(3, 1, 5)).toEqual({ start: 0, end: 3, hiddenAbove: 0, hiddenBelow: 0 })
+
+    const first = navWindow(20, 0, 5)
+    expect(first.start).toBe(0)
+    expect(first.end).toBe(5)
+    expect(first.hiddenAbove).toBe(0)
+    expect(first.hiddenBelow).toBe(15)
+
+    const last = navWindow(20, 19, 5)
+    expect(last.end).toBe(20)
+    expect(last.hiddenBelow).toBe(0)
+    expect(last.hiddenAbove).toBe(15)
+    expect(last.start).toBeLessThanOrEqual(19)
+    expect(last.end).toBeGreaterThan(19)
+  })
+
+  test("the window always contains the selected index", () => {
+    for (let selected = 0; selected < 20; selected++) {
+      const window = navWindow(20, selected, 6)
+      expect(window.start).toBeLessThanOrEqual(selected)
+      expect(window.end).toBeGreaterThan(selected)
+      expect(window.end - window.start).toBe(6)
+    }
   })
 })

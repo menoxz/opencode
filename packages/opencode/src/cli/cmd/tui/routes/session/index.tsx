@@ -76,6 +76,7 @@ import {
   navVisible,
   type NavSession,
   type NavVisibility,
+  navListHeight,
 } from "./session-nav"
 import { SubagentBar } from "./subagent-bar.tsx"
 import { SubagentFooter } from "./subagent-footer.tsx"
@@ -342,6 +343,8 @@ export function Session() {
   const [navOpen, setNavOpen] = createSignal(false)
   const [navFocused, setNavFocused] = createSignal(false)
   const [navSelected, setNavSelected] = createSignal(0)
+  const [navPendingDelete, setNavPendingDelete] = createSignal<string>()
+  const [navDirectoryFilter, setNavDirectoryFilter] = kv.signal("session_directory_filter_enabled", true)
   const navSessions = createMemo<NavSession[]>(() =>
     sync.data.session
       .filter((item) => item.parentID === undefined)
@@ -350,9 +353,10 @@ export function Session() {
         title: item.title,
         activity: navActivity(sync.data.session_status?.[item.id]),
         updated: item.time.updated,
+        directory: item.directory,
       }))
       .toSorted((a, b) => Number(b.activity !== "idle") - Number(a.activity !== "idle") || b.updated - a.updated)
-      .map(({ id, title, activity, updated }) => ({ id, title, activity, updated })),
+      .map(({ id, title, activity, updated, directory }) => ({ id, title, activity, updated, directory })),
   )
   // Open on the session being worked on, and follow it when the route changes.
   createEffect(() => {
@@ -1465,6 +1469,28 @@ export function Session() {
   // snap to bottom when session changes
   createEffect(on(() => route.sessionID, toBottom))
 
+  const navDelete = async (id: string) => {
+    if (navPendingDelete() !== id) {
+      setNavPendingDelete(id)
+      return
+    }
+    setNavPendingDelete(undefined)
+    const result = await sdk.client.session.delete({ sessionID: id })
+    if (result.error) {
+      toast.show({ message: "Failed to delete session", variant: "error", duration: 5000 })
+      return
+    }
+    if (route.sessionID === id) navigate({ type: "home" })
+  }
+  const navRename = (id: string) => {
+    setNavFocused(false)
+    dialog.replace(() => <DialogSessionRename session={id} />)
+  }
+  const navToggleDirectories = () => {
+    setNavDirectoryFilter((current) => !current)
+    void sync.bootstrap({ fatal: false })
+  }
+
   return (
     <PathFormatterProvider path={session()?.directory}>
       <context.Provider
@@ -1492,7 +1518,13 @@ export function Session() {
               activeID={route.sessionID}
               selected={navSelected()}
               focused={navFocused()}
+              height={navListHeight(dimensions().height)}
+              allDirectories={!navDirectoryFilter()}
+              pendingDelete={navPendingDelete()}
               onMove={(delta) => setNavSelected(moveSelection(navSelected(), delta, navSessions().length))}
+              onDelete={(id) => void navDelete(id)}
+              onRename={(id) => navRename(id)}
+              onToggleDirectories={() => navToggleDirectories()}
               onSelect={(id) => {
                 setNavFocused(false)
                 navigate({ type: "session", sessionID: id })
