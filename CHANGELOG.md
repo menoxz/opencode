@@ -7,6 +7,26 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.3.9] - 2026-09-27
+
+### Added
+- **Barre de sessions de la TUI** : sessions regroupées par dossier (en-tête `/dossier` avec compteur), sélection au clavier, création (`alt+n`), suppression en deux temps (`ctrl+d`), renommage (`ctrl+r`), repli/dépli par dossier et défilement. La barre est également montée sur l'écran d'accueil.
+- **Recherche dans la barre** : le champ filtre les sessions sur le titre, le dossier et le chemin ; `/` ouvre le champ, `↑`/`↓` parcourent les résultats, `Entrée` ouvre la session, `Échap` annule.
+- **Choix du dossier de travail** à la création d'une session, via un modal de sélection de dossier.
+- **Rendu `inspect_batch` en checklist** : une ligne par appel d'outil, précédée d'une puce et d'un glyphe d'état (spinner braille pendant l'exécution, `✓` vert, `✗` rouge, `−` ignoré, `?` indisponible), au lieu d'un arbre indenté.
+
+### Changed
+- **La liste des sessions est de portée projet par défaut** : toutes les sessions du dépôt sont visibles, tous dossiers confondus. La portée est portée par la clé `session_directory_scope` (`project` | `directory`) ; la bascule « filtrer sur ce dossier » reste disponible (raccourci et palette), et le nom de commande existant est conservé.
+- Largeur de la barre réduite (52 → 36 colonnes) et pied de barre compacté ; les horodatages de session restent lisibles sous des titres longs.
+
+### Fixed
+- **Le retour arrière était sans effet dans le champ de recherche** : la barre écoutait le flux brut `keypress`, alors que le composeur focalisé détient la liaison `input.backspace` et qu'une liaison liée arrête la propagation — la frappe (non liée) passait, la suppression non. La recherche prend désormais le clavier (composeur mis en retrait pendant la recherche, restauré à la sortie) et un retour arrière sur requête vide n'est plus une touche morte.
+- **Le pied de la barre affichait le mauvais dossier** : il suit désormais le dossier de la session affichée.
+- La barre n'était pas visible sur l'écran d'accueil.
+
+### Tests
+- `session-nav.test.ts`, `session-nav.view.test.tsx`, `session-nav-keybind.test.tsx`, `inspect-batch-tree.test.tsx`, `sync.test.tsx` : 87 tests verts, dont capture terminal réelle et injection clavier (`pressKey`, `pressBackspace`) prouvant la frappe **et** la suppression. `tsgo --noEmit` : exit 0.
+
 ## [v2.3.4] - 2026-09-27
 
 ### Added
