@@ -7,6 +7,20 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.3.4] - 2026-09-27
+
+### Added
+- **Gestion des plugins à chaud en production (HTTP + SDK + CLI)** : un serveur qui tourne peut désormais dire quels plugins il sert, être relu depuis le disque, et recevoir un ajout ou un retrait d'origine — **sans redémarrage**. Surface : `GET /plugin`, `POST /plugin/reload`, `POST /plugin` (`{spec}`), `DELETE /plugin/:spec`, plus la commande `opencodev2 plugins list|reload|add|remove --url`, adossée au SDK régénéré depuis la spec OpenAPI vivante. Le compteur de génération (`version`) est renvoyé par chaque appel, ce qui rend un swap observable côté client.
+
+### Fixed
+- **Le « hot reload » des plugins ne rechargeait pas le code des plugins** : `PluginLoader` ré-importait la **même** URL de fichier, et le cache ESM de Bun (qui n'est pas non plus contourné par un `?v=<ts>`, mesuré : `queryBusted=v1`) servait l'ancien module. Les entrées de plugin sont maintenant matérialisées en **artefact content-hashé** (`Global.Path.cache/plugin-artifacts/<hash>`) et importées depuis ce chemin, donc une édition du plugin prend effet au rechargement sans redémarrer le process (`HOTRELOAD first=["v1"] second=["v2"]`, `LOADER_OBSERVATION {"first":"v1","second":"v2"}`).
+- **Le catalogue d'outils ne voyait pas un outil ajouté ou retiré par un plugin** : le catalogue (`ToolRegistry`) est construit à partir des plugins mais n'enregistrait pas la génération qui l'a produit, si bien qu'un `all()` servait encore les outils de la génération précédente. La génération plugin fait désormais partie de la validité du catalogue, qui est reconstruit dès qu'elle change.
+- **Un plugin défaillant pouvait casser une session en cours** : `Plugin.reload` remplaçait la liste des hooks par celle d'une génération incomplète. Le rechargement est désormais **atomique** : chaque échec de chargement est enregistré par son spec, et si la génération est incomplète l'ancienne génération **reste servie** et les specs fautifs sont mis en quarantaine (`RELOAD_ROLLBACK_OBSERVATION first=["v1"] afterBreak=["v1"] afterRepair=["v3"]`).
+- **Commentaire trompeur** dans `src/plugin/index.ts` sur `ensureWatching` : il promettait un effet que la mesure démentait.
+
+### Tests
+- `test/plugin/hot-reload.test.ts` : contrat de rechargement du code (assertions inversées en rouge→vert par le correctif), `test/plugin/reload-rollback.test.ts` : atomicité (génération conservée sur plugin cassé, swap après réparation), `test/tool/registry.test.ts` : reconstruction du catalogue sur changement d'outils d'un plugin. `tsgo --noEmit` : exit 0.
+
 ## [v2.3.3] - 2026-09-26
 
 ### Fixed
