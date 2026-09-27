@@ -72,6 +72,11 @@ function isolatedEnv(home: string, configJson: string): Record<string, string> {
     OPENCODE_DISABLE_AUTOCOMPACT: "1",
     OPENCODE_DISABLE_MODELS_FETCH: "1",
     OPENCODE_AUTH_CONTENT: "{}",
+    // `serve` and `attach` autostart the background daemon (src/daemon/autostart.ts).
+    // A daemon spawned from here inherits this fixture's cwd, keeps the temp home
+    // locked after the scope closes (cleanup then fails with EBUSY on Windows) and
+    // outlives the test. The documented opt-out keeps this tier hermetic.
+    OPENCODE_NO_DAEMON_AUTOSTART: "1",
   }
 }
 

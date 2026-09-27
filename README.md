@@ -202,6 +202,46 @@ opencode upgrade          # updates the official opencode (opencode-ai)
 
 ---
 
+## Server mode: run headless, attach with the TUI
+
+`opencodev2` normally runs the TUI and the harness in one process. To keep a
+session alive without a TUI — or to watch a running harness from a second
+terminal — split the two:
+
+```bash
+opencodev2 serve --port 4096      # headless harness; prints the bound URL
+opencodev2 attach http://localhost:4096
+```
+
+`serve` exposes the harness over HTTP (its API and event stream) and owns the
+sessions, so it is independent of any client. `attach` points a full TUI at that
+server instead of spawning its own: the session you see is the one the server
+holds, so it outlives the TUI and can be inspected from anywhere the server is
+reachable.
+
+| Flag (`serve`) | Effect |
+|---|---|
+| `--port` | port to bind (`0` = OS-assigned) |
+| `--hostname` | interface to bind (default `127.0.0.1`) |
+| `--mdns` / `--mdns-domain` | advertise the server on the local network |
+| `--cors` | allowed origins for browser clients |
+
+Serving beyond loopback requires a password (`OPENCODE_SERVER_PASSWORD`), and
+`serve` refuses to start without one.
+
+`attach <url>` accepts `--dir` (working directory; a path on the remote server
+when attaching), `--session` / `--continue` / `--fork`, and
+`--password` / `--username` (Basic auth; default to `OPENCODE_SERVER_PASSWORD`
+and `OPENCODE_SERVER_USERNAME`, or `opencode`). When nothing is listening on a
+local URL, `attach` starts `serve` on that port for you.
+
+Both commands start the background daemon if it is not already running. For
+non-interactive or CI use, `opencodev2 run --headless` drives the same harness as
+a batch subprocess, and `run --attach <url>` is its counterpart when the batch
+client should talk to a server you started yourself.
+
+---
+
 ## Agents
 
 OpenCode includes two built-in agents you can switch between with the `Tab` key.
