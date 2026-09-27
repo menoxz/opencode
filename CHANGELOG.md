@@ -7,6 +7,18 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.3.10] - 2026-09-27
+
+### Changed
+- **Seul le dossier de la session active s'ouvre** dans la barre de sessions : les autres dossiers sont pliés par défaut et ne montrent plus que leur en-tête. La bascule manuelle d'un dossier (action sur son en-tête) reste prioritaire sur ce défaut.
+- Une **recherche déplie tous les dossiers** le temps de la requête, pour qu'aucune session correspondante ne reste cachée derrière un pli.
+
+### Removed
+- Le **séparateur de compaction** (ligne horizontale intitulée « Compaction ») affiché avant chaque compaction dans la vue de session.
+
+### Tests
+- `session-nav.test.ts` et `session-nav.view.test.tsx` migrés au nouveau contrat (repli par défaut, révélation à la recherche) : 54 tests unitaires et 22 tests de rendu verts, `tsgo --noEmit` à 0.
+
 ## [v2.3.9] - 2026-09-27
 
 ### Added
