@@ -67,7 +67,7 @@ async function renderBar(props: {
   focused: boolean
   height?: number
   allDirectories?: boolean
-  collapsed?: string[]
+  overrides?: string[]
   expanded?: boolean
   frame?: number
   pendingDelete?: string
@@ -94,7 +94,7 @@ async function renderBar(props: {
           focused={props.focused}
           height={props.height ?? 20}
           allDirectories={props.allDirectories ?? false}
-          collapsed={props.collapsed ?? []}
+          overrides={props.overrides ?? []}
           expanded={props.expanded ?? false}
           frame={props.frame ?? 0}
           pendingDelete={props.pendingDelete}
@@ -136,14 +136,22 @@ test("groups the sessions under a directory header with its session count", asyn
   expect(header).toMatch(/opencode-fork\s+2$/)
 })
 
-test("a collapsed directory keeps only its single-line header", async () => {
-  const app = await renderBar({ sessions: twoDirs, selected: 0, focused: false, collapsed: ["C:\\w\\alpha"] })
+test("a directory without the active session keeps only its single-line header", async () => {
+  const app = await renderBar({ sessions: twoDirs, selected: 0, focused: false })
   const text = app.captureCharFrame()
   expect(text).toContain("alpha")
-  expect(text).toContain("Beta one")
+  expect(text).toContain("beta")
   expect(text).not.toContain("Alpha one")
+  expect(text).not.toContain("Beta one")
   const header = linesOf(app).find((line) => line.includes("alpha")) ?? ""
   expect(header).toMatch(/alpha\s+2$/)
+})
+
+test("a directory the user opened shows its sessions", async () => {
+  const app = await renderBar({ sessions: twoDirs, selected: 0, focused: false, overrides: ["C:\\w\\alpha"] })
+  const text = app.captureCharFrame()
+  expect(text).toContain("Alpha one")
+  expect(text).not.toContain("Beta one")
 })
 
 test("an empty project shows the fallback instead of invented rows", async () => {
@@ -186,21 +194,21 @@ test("lists every directory that holds sessions, without a Read more", async () 
   const app = await renderBar({ sessions: manyDirs, selected: 0, focused: false })
   const text = app.captureCharFrame()
   expect(text).not.toContain("Read more")
-  expect(text).toContain("In alpha")
-  expect(text).toContain("In gamma")
-  expect(text).toContain("In epsilon")
+  expect(text).toContain("alpha")
+  expect(text).toContain("gamma")
+  expect(text).toContain("epsilon")
 })
 
 test("expanding lists every directory and drops the Read more", async () => {
   const app = await renderBar({ sessions: manyDirs, selected: 0, focused: false, expanded: true })
   const text = app.captureCharFrame()
-  expect(text).toContain("In gamma")
-  expect(text).toContain("In epsilon")
+  expect(text).toContain("gamma")
+  expect(text).toContain("epsilon")
   expect(text).not.toContain("Read more")
 })
 
 test("windows a long group so the last session stays reachable", async () => {
-  const app = await renderBar({ sessions: oneDirMany, selected: 10, focused: false, height: 3 })
+  const app = await renderBar({ sessions: oneDirMany, activeID: "ses_9", selected: 10, focused: false, height: 3 })
   const text = app.captureCharFrame()
   expect(text).toContain("Session 9")
   expect(text).not.toContain("Session 0")
@@ -226,7 +234,7 @@ test("the command section is pinned at the bottom without a frame", async () => 
 
 test("Enter on a session row opens it", async () => {
   let opened: string | undefined
-  const app = await renderBar({ sessions: twoDirs, selected: 1, focused: true, onOpen: (id) => (opened = id) })
+  const app = await renderBar({ sessions: twoDirs, activeID: "a1", selected: 1, focused: true, onOpen: (id) => (opened = id) })
   app.mockInput.pressEnter()
   await settled(app)
   expect(opened).toBe("a1")
@@ -259,7 +267,7 @@ test("the arrow keys move the selection", async () => {
 
 test("clicking a session row opens it", async () => {
   let opened: string | undefined
-  const app = await renderBar({ sessions: twoDirs, selected: 0, focused: false, onOpen: (id) => (opened = id) })
+  const app = await renderBar({ sessions: twoDirs, activeID: "b1", selected: 0, focused: false, onOpen: (id) => (opened = id) })
   const y = linesOf(app).findIndex((line) => line.includes("Beta one"))
   expect(y).toBeGreaterThanOrEqual(0)
   await app.mockMouse.click(1, y)
@@ -282,6 +290,7 @@ test("any click clears the pending delete instead of opening the session", async
   let cleared = false
   const app = await renderBar({
     sessions,
+    activeID: "ses_a",
     selected: 0,
     focused: false,
     pendingDelete: "ses_a",
@@ -312,7 +321,7 @@ test("clicking the directory label asks the route to toggle the scope", async ()
 })
 
 test("marks the row awaiting delete confirmation", async () => {
-  const app = await renderBar({ sessions: twoDirs, selected: 1, focused: false, pendingDelete: "a1" })
+  const app = await renderBar({ sessions: twoDirs, activeID: "a1", selected: 1, focused: false, pendingDelete: "a1" })
   expect(app.captureCharFrame()).toContain("press again")
 })
 
@@ -346,11 +355,12 @@ test("takes keys in the search field, narrows the list and leaves on Escape", as
       return (
         <SessionNavBar
           sessions={filterNavSessions(twoDirs, query())}
+          activeID="b1"
           selected={0}
           focused={true}
           height={20}
           allDirectories={false}
-          collapsed={[]}
+          overrides={["C:\\w\\alpha"]}
           expanded={false}
           frame={0}
           onMove={() => {}}

@@ -353,7 +353,7 @@ export function Session() {
   const [navSelected, setNavSelected] = createSignal(0)
   const [navPendingDelete, setNavPendingDelete] = createSignal<string>()
   const [navDirectoryScope, setNavDirectoryScope] = kv.signal<"project" | "directory">("session_directory_scope", "project")
-  const [navCollapsed, setNavCollapsed] = createSignal<string[]>([])
+  const [navOverrides, setNavOverrides] = createSignal<string[]>([])
   const [navQuery, setNavQuery] = createSignal("")
   const [navExpanded, setNavExpanded] = createSignal(false)
   const [navFrame, setNavFrame] = createSignal(0)
@@ -374,8 +374,9 @@ export function Session() {
   )
   const navList = createMemo(() =>
     navRows(filterNavSessions(navSessions(), navQuery()), route.sessionID, {
-      collapsed: navCollapsed(),
+      overrides: navOverrides(),
       expanded: navExpanded(),
+      reveal: navQuery().length > 0,
     }),
   )
   const navSel = createMemo(() => navSelection(navList(), route.sessionID, navSelected()))
@@ -1529,7 +1530,7 @@ export function Session() {
     setNavFocused(false)
     navigate({ type: "session", sessionID: id })
   }
-  const navToggleDir = (key: string) => setNavCollapsed((current) => toggleCollapsed(current, key.slice("dir:".length)))
+  const navToggleDir = (key: string) => setNavOverrides((current) => toggleCollapsed(current, key.slice("dir:".length)))
 
   return (
     <PathFormatterProvider path={session()?.directory}>
@@ -1560,7 +1561,7 @@ export function Session() {
               focused={navFocused()}
               height={navListHeight(dimensions().height)}
               allDirectories={navDirectoryScope() === "project"}
-              collapsed={navCollapsed()}
+              overrides={navOverrides()}
               expanded={navExpanded()}
               frame={navFrame()}
               pendingDelete={navPendingDelete()}
@@ -1818,8 +1819,6 @@ function UserMessage(props: {
   const queuedFg = createMemo(() => selectedForeground(theme, color()))
   const metadataVisible = createMemo(() => queued() || ctx.showTimestamps())
 
-  const compaction = createMemo(() => props.parts.find((x) => x.type === "compaction"))
-
   return (
     <>
       <Show when={text()}>
@@ -1882,15 +1881,6 @@ function UserMessage(props: {
             </Show>
           </box>
         </box>
-      </Show>
-      <Show when={compaction()}>
-        <box
-          marginTop={1}
-          border={["top"]}
-          title=" Compaction "
-          titleAlignment="center"
-          borderColor={theme.borderActive}
-        />
       </Show>
     </>
   )

@@ -37,8 +37,16 @@ export type NavRowModel =
   | { kind: "session"; key: string; id: string; title: string; activity: NavActivity; updated?: number; selected: boolean }
   | { kind: "more"; key: string; hidden: number; selected: boolean }
 
-/** Which directories the user collapsed, and whether the directory cap was lifted. */
-export type NavState = { collapsed: readonly string[]; expanded: boolean }
+/**
+ * The directories whose fold the user flipped by hand. Every other directory follows the default:
+ * open only when it holds the active session. `expanded` lifts the directory cap.
+ */
+export type NavState = {
+  overrides: readonly string[]
+  expanded: boolean
+  /** Set while a search runs: every directory opens so no match stays behind a fold. */
+  reveal?: boolean
+}
 
 /** Vertical bar width, in terminal columns. */
 export const NAV_WIDTH = 36
@@ -258,15 +266,18 @@ export function navVisibleGroups(groups: readonly NavGroup[], expanded: boolean,
 
 /**
  * Flattens the tree into the exact lines the bar draws, so selection, windowing and rendering all
- * share one model. A collapsed directory contributes its header only; hidden directories become a
- * single "Read more" row. The selection is the row's index in this array.
+ * share one model. Only the active session's directory starts open; the others start folded and
+ * contribute their header only, unless the user opened them, which is what `overrides` records.
+ * Hidden directories become a single "Read more" row. The selection is the row's index in this array.
  */
 export function navRows(sessions: readonly NavSession[], activeID: string | undefined, state: NavState): NavRowModel[] {
   // Every directory that holds sessions is listed: the window keeps them reachable, so no cap is needed.
   const { shown, hidden } = navVisibleGroups(navGroups(sessions, activeID), true)
   const rows: NavRowModel[] = []
   for (const group of shown) {
-    const collapsed = state.collapsed.includes(group.key)
+    // A directory the user flipped keeps that choice; every other one follows the default, which only
+    // the active session's directory opens.
+    const collapsed = !state.reveal && (state.overrides.includes(group.key) ? group.active : !group.active)
     rows.push({ kind: "dir", key: `dir:${group.key}`, label: group.label, count: group.count, collapsed, selected: false })
     if (collapsed) continue
     for (const session of group.sessions) {
@@ -303,9 +314,9 @@ export function selectionDirKey(rows: readonly NavRowModel[], index: number): st
   return row?.kind === "dir" ? row.key.slice("dir:".length) : undefined
 }
 
-/** Adds or removes a directory from the collapsed set, leaving every other entry untouched. */
-export function toggleCollapsed(collapsed: readonly string[], key: string): string[] {
-  return collapsed.includes(key) ? collapsed.filter((entry) => entry !== key) : [...collapsed, key]
+/** Flips one directory's fold and leaves every other entry untouched. */
+export function toggleCollapsed(overrides: readonly string[], key: string): string[] {
+  return overrides.includes(key) ? overrides.filter((entry) => entry !== key) : [...overrides, key]
 }
 
 export type NavDirRowInput = { label: string; count: number; collapsed: boolean; width: number }

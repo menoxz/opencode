@@ -274,7 +274,7 @@ describe("TUI session navbar", () => {
   })
 
   test("breaks ties on the directory label so the order is stable", () => {
-    const rows = navRows(grouped, undefined, { collapsed: [], expanded: true })
+    const rows = navRows(grouped, undefined, { overrides: [], expanded: true })
     const labels = rows.filter((row) => row.kind === "dir").map((row) => (row.kind === "dir" ? row.label : ""))
     expect(labels).toEqual(["command-code", "deepseek", "harness", "misc", "opencode-fork"])
   })
@@ -291,41 +291,55 @@ describe("TUI session navbar", () => {
   })
 
   test("flattens the tree into headers and sessions", () => {
-    const rows = navRows(grouped, undefined, { collapsed: [], expanded: false })
+    const rows = navRows(grouped, "a1", { overrides: [], expanded: false })
     const dirs = rows.filter((row) => row.kind === "dir")
     expect(dirs).toHaveLength(5)
-    expect(rows.at(-1)?.kind).toBe("session")
+    const open = rows.findIndex((row) => row.kind === "dir" && row.label === "opencode-fork")
+    expect(rows[open + 1]?.kind).toBe("session")
     expect(rows.filter((row) => row.kind === "session").length).toBeGreaterThan(0)
   })
 
   test("lists every directory with no hidden group, so the bar never caps the folders", () => {
-    const rows = navRows(grouped, undefined, { collapsed: [], expanded: false })
+    const rows = navRows(grouped, undefined, { overrides: [], expanded: false })
     expect(rows.filter((row) => row.kind === "more")).toHaveLength(0)
     expect(rows.filter((row) => row.kind === "dir")).toHaveLength(navGroups(grouped, undefined).length)
   })
 
-  test("a collapsed directory contributes its header only", () => {
-    const rows = navRows(grouped, undefined, { collapsed: ["C:\\work\\opencode-fork"], expanded: true })
-    expect(rows.find((row) => row.kind === "dir" && row.label === "opencode-fork")).toMatchObject({ kind: "dir", collapsed: true })
-    expect(rows.some((row) => row.kind === "session" && row.id === "a1")).toBe(false)
+  test("only the active session's directory starts open", () => {
+    const rows = navRows(grouped, "b1", { overrides: [], expanded: true })
+    expect(rows.find((row) => row.kind === "dir" && row.label === "command-code")).toMatchObject({ kind: "dir", collapsed: false })
     expect(rows.some((row) => row.kind === "session" && row.id === "b1")).toBe(true)
+    expect(rows.some((row) => row.kind === "session" && row.id === "a1")).toBe(false)
+  })
+
+  test("a directory the user opened stays open without an active session", () => {
+    const rows = navRows(grouped, undefined, { overrides: ["C:\\work\\opencode-fork"], expanded: true })
+    expect(rows.find((row) => row.kind === "dir" && row.label === "opencode-fork")).toMatchObject({ kind: "dir", collapsed: false })
+    expect(rows.some((row) => row.kind === "session" && row.id === "a1")).toBe(true)
+  })
+
+  test("a search reveals sessions in folded directories", () => {
+    const folded = navRows(grouped, "a1", { overrides: [], expanded: true })
+    expect(folded.some((row) => row.kind === "session" && row.id === "b1")).toBe(false)
+    const searched = navRows(grouped, "a1", { overrides: [], expanded: true, reveal: true })
+    expect(searched.some((row) => row.kind === "session" && row.id === "b1")).toBe(true)
   })
 
   test("expanding removes the reveal and lists every directory", () => {
-    const rows = navRows(grouped, undefined, { collapsed: [], expanded: true })
+    const rows = navRows(grouped, undefined, { overrides: [], expanded: true })
     expect(rows.some((row) => row.kind === "more")).toBe(false)
     expect(rows.filter((row) => row.kind === "dir")).toHaveLength(5)
   })
 
   test("selects the active session's row, otherwise a clamped position", () => {
-    const rows = navRows(grouped, "b1", { collapsed: [], expanded: true })
+    const rows = navRows(grouped, "b1", { overrides: [], expanded: true })
     const index = navSelection(rows, "b1", 0)
     expect(rows[index]).toMatchObject({ kind: "session", id: "b1" })
     expect(navSelection(rows, "gone", 999)).toBe(rows.length - 1)
   })
 
   test("resolves the session and directory under a row", () => {
-    const rows = navRows(grouped, undefined, { collapsed: [], expanded: true })
+    const rows = navRows(grouped, "a1", { overrides: [], expanded: true })
     const dirIndex = rows.findIndex((row) => row.kind === "dir" && row.label === "opencode-fork")
     const sessionIndex = rows.findIndex((row) => row.kind === "session" && row.id === "a1")
     expect(selectionDirKey(rows, dirIndex)).toBe("C:\\work\\opencode-fork")

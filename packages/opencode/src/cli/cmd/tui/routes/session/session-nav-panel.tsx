@@ -50,7 +50,7 @@ export function SessionNavPanel() {
   const [navSelected, setNavSelected] = createSignal(0)
   const [navPendingDelete, setNavPendingDelete] = createSignal<string>()
   const [navDirectoryScope, setNavDirectoryScope] = kv.signal<"project" | "directory">("session_directory_scope", "project")
-  const [navCollapsed, setNavCollapsed] = createSignal<string[]>([])
+  const [navOverrides, setNavOverrides] = createSignal<string[]>([])
   const [navQuery, setNavQuery] = createSignal("")
   const [navExpanded, setNavExpanded] = createSignal(false)
   const [navFrame, setNavFrame] = createSignal(0)
@@ -76,8 +76,9 @@ export function SessionNavPanel() {
 
   const navList = createMemo(() =>
     navRows(filterNavSessions(navSessions(), navQuery()), activeID(), {
-      collapsed: navCollapsed(),
+      overrides: navOverrides(),
       expanded: navExpanded(),
+      reveal: navQuery().length > 0,
     }),
   )
 
@@ -129,7 +130,7 @@ export function SessionNavPanel() {
     if (target) renameSession(target)
   }
 
-  const navToggleDir = (key: string) => setNavCollapsed((current) => toggleCollapsed(current, key.slice("dir:".length)))
+  const navToggleDir = (key: string) => setNavOverrides((current) => toggleCollapsed(current, key.slice("dir:".length)))
 
   const showNavbar = () => {
     setNav(() => "auto")
@@ -160,7 +161,7 @@ export function SessionNavPanel() {
         focused={navFocused()}
         height={navListHeight(dimensions().height)}
         allDirectories={navDirectoryScope() === "project"}
-        collapsed={navCollapsed()}
+        overrides={navOverrides()}
         expanded={navExpanded()}
         frame={navFrame()}
         pendingDelete={navPendingDelete()}

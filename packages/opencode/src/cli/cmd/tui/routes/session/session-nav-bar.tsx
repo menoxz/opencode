@@ -34,7 +34,7 @@ export function SessionNavBar(props: {
   focused: boolean
   height: number
   allDirectories: boolean
-  collapsed: string[]
+  overrides: string[]
   expanded: boolean
   frame: number
   pendingDelete?: string
@@ -60,7 +60,12 @@ export function SessionNavBar(props: {
   const { theme } = useTheme()
   const width = () => props.width ?? NAV_WIDTH
   const innerWidth = () => Math.max(1, width() - 2)
-  const rows = () => navRows(props.sessions, props.activeID, { collapsed: props.collapsed, expanded: props.expanded })
+  const rows = () =>
+    navRows(props.sessions, props.activeID, {
+      overrides: props.overrides,
+      expanded: props.expanded,
+      reveal: (props.searchQuery ?? "").length > 0,
+    })
   const window = () => navWindow(rows().length, props.selected, props.height)
   const visible = () => rows().slice(window().start, window().end).map((row, offset) => ({ row, index: window().start + offset }))
   const [hover, setHover] = createSignal<number | null>(null)
