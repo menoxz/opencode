@@ -112,3 +112,40 @@ test("Escape on a focused bar asks the route to collapse it", async () => {
   await settled(app)
   expect(closed).toBe(true)
 })
+
+test("shows a per-session activity glyph and keeps a long title on one line", async () => {
+  const app = await renderBar({
+    sessions: [
+      { id: "ses_a", title: "Connexion abonnement Claude", activity: "busy" },
+      { id: "ses_b", title: "Retry me", activity: "retry" },
+      { id: "ses_c", title: "Idle one", activity: "idle" },
+    ],
+    activeID: "ses_a",
+    selected: 0,
+    focused: false,
+  })
+  const text = app.captureCharFrame()
+  expect(text).toContain("◐")
+  expect(text).toContain("!")
+  expect(text).toContain("Connexion abonnement Claude")
+  expect(text).not.toContain("…")
+})
+
+test("a mouse click on a row selects that session", async () => {
+  let picked: string | undefined
+  const app = await renderBar({
+    sessions,
+    activeID: "ses_a",
+    selected: 0,
+    focused: false,
+    onSelect: (id) => (picked = id),
+  })
+  const y = app
+    .captureCharFrame()
+    .split("\n")
+    .findIndex((line) => line.includes("Fix flaky test"))
+  expect(y).toBeGreaterThanOrEqual(0)
+  await app.mockMouse.click(1, y)
+  await settled(app)
+  expect(picked).toBe("ses_b")
+})

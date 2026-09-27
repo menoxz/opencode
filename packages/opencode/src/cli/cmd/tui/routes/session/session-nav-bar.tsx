@@ -1,7 +1,22 @@
-import { For, Show } from "solid-js"
+import { createSignal, For } from "solid-js"
 import { useKeyboard } from "@opentui/solid"
 import { useTheme } from "../../context/theme"
-import { NAV_WIDTH, navItems, navLabel, type NavSession } from "./session-nav"
+import {
+  NAV_ROW_CHROME,
+  NAV_WIDTH,
+  navItems,
+  navLabel,
+  type NavActivity,
+  type NavItem,
+  type NavSession,
+} from "./session-nav"
+
+/** One glyph per row: it shows activity for every session, and doubles as the active marker. */
+function activityGlyph(active: boolean, activity: NavActivity): string {
+  if (activity === "busy") return "◐"
+  if (activity === "retry") return "!"
+  return active ? "●" : "○"
+}
 
 /**
  * Vertical session navbar.
@@ -24,7 +39,16 @@ export function SessionNavBar(props: {
   const { theme } = useTheme()
   const width = () => props.width ?? NAV_WIDTH
   const items = () => navItems(props.sessions, props.activeID)
+  const budget = () => width() - NAV_ROW_CHROME
+  const [hover, setHover] = createSignal<string | null>(null)
   const cycle = (delta: number) => props.onMove(delta)
+
+  const color = (item: NavItem) => {
+    if (item.index === props.selected) return theme.text
+    if (item.activity === "busy" || item.activity === "retry") return theme.accent
+    if (item.active || hover() === item.id) return theme.text
+    return theme.textMuted
+  }
 
   useKeyboard((evt) => {
     if (!props.focused) return
@@ -79,13 +103,14 @@ export function SessionNavBar(props: {
         <For each={items()} fallback={<text fg={theme.textMuted}>No sessions yet</text>}>
           {(item) => (
             <text
-              fg={item.index === props.selected ? theme.text : theme.textMuted}
+              fg={color(item)}
+              wrapMode="none"
+              onMouseOver={() => setHover(item.id)}
+              onMouseOut={() => setHover((current) => (current === item.id ? null : current))}
               onMouseUp={() => props.onSelect(item.id)}
             >
-              {item.index === props.selected ? ">" : " "} {item.active ? "●" : "○"}{" "}
-              <Show when={item.index === props.selected} fallback={<span>{navLabel(item.title, width() - 5)}</span>}>
-                <span style={{ fg: theme.text }}>{navLabel(item.title, width() - 5)}</span>
-              </Show>
+              {item.index === props.selected ? ">" : " "} {activityGlyph(item.active, item.activity)}{" "}
+              {navLabel(item.title, budget())}
             </text>
           )}
         </For>

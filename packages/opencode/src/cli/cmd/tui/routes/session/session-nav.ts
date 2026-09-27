@@ -5,22 +5,40 @@
  * `pending-turn.ts` is separated from the session route that renders it.
  */
 
-export type NavSession = { id: string; title: string }
+/** Coarse activity of a session, derived from the store's session status. */
+export type NavActivity = "busy" | "retry" | "idle"
+
+export type NavSession = { id: string; title: string; activity?: NavActivity }
 
 export type NavItem = {
   id: string
   title: string
   active: boolean
   index: number
+  activity: NavActivity
 }
 
-/** Vertical bar width, in terminal columns. Kept narrow: it lists sessions, not their contents. */
-export const NAV_WIDTH = 30
+/** Vertical bar width, in terminal columns. Wide enough for a readable session title. */
+export const NAV_WIDTH = 40
 
 /** Below this terminal width the bar yields unless it was opened explicitly. */
 export const NAV_MIN_TERMINAL_WIDTH = 80
 
+/**
+ * Columns a row spends on everything but its title: the cursor, the activity glyph, the two
+ * spaces between them, and the box's own left/right padding. Subtracted from the bar width to
+ * size the label, so a title never overflows its row and wraps on the next line.
+ */
+export const NAV_ROW_CHROME = 6
+
 export type NavVisibility = "auto" | "hide"
+
+/** Maps the store's session status onto the coarse activity the bar shows. */
+export function navActivity(status: { type?: string } | undefined): NavActivity {
+  if (status?.type === "busy") return "busy"
+  if (status?.type === "retry") return "retry"
+  return "idle"
+}
 
 /**
  * Whether the navbar's selection follows the session being worked on, or was left somewhere else.
@@ -43,28 +61,29 @@ export function initialSelection(activeID: string | undefined, sessions: readonl
   return found >= 0 ? found : clampSelection(stored, sessions.length)
 }
 
-/** The rows to draw, in list order, with the active session flagged. */
+/** The id under a row index, clamped so a stale index can never select nothing. */
+export function selectionID(sessions: readonly NavSession[], index: number): string | undefined {
+  return sessions[clampSelection(index, sessions.length)]?.id
+}
+
+/** Rows in list order: the bar renders them 1:1 and the route feeds the same order for the cursor. */
 export function navItems(sessions: readonly NavSession[], activeID: string | undefined): NavItem[] {
   return sessions.map((session, index) => ({
     id: session.id,
     title: session.title,
     active: session.id === activeID,
     index,
+    activity: session.activity ?? "idle",
   }))
 }
 
-/** Session id at an index, or `undefined` when the list is empty. */
-export function selectionID(sessions: readonly NavSession[], index: number): string | undefined {
-  return sessions[clampSelection(index, sessions.length)]?.id
-}
-
-/** Single-line label that fits `width` columns, with an ellipsis when the title is too long. */
-export function navLabel(title: string, width: number): string {
-  const text = title.trim() || "untitled"
-  if (width <= 0) return ""
-  if (text.length <= width) return text
-  if (width === 1) return "…"
-  return text.slice(0, width - 1) + "…"
+/** Truncates a title to the columns a row can spare, keeping a single unambiguous ellipsis. */
+export function navLabel(title: string, budget: number): string {
+  if (budget <= 0) return ""
+  const label = title.trim() || "untitled"
+  if (label.length <= budget) return label
+  if (budget <= 1) return "…"
+  return label.slice(0, budget - 1) + "…"
 }
 
 /** Mirrors the sidebar's `auto` / `hide` behaviour: narrow terminals hide the bar unless asked. */

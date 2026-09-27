@@ -6,6 +6,8 @@ import {
   moveSelection,
   navItems,
   navLabel,
+  navActivity,
+  NAV_ROW_CHROME,
   navVisible,
   selectionID,
   type NavSession,
@@ -83,5 +85,19 @@ describe("TUI session navbar", () => {
     expect(navVisible("hide", 200, false)).toBe(false)
     expect(navVisible("hide", 200, true)).toBe(true)
     expect(navVisible("auto", 40, true)).toBe(true)
+  })
+
+  test("maps the store session status onto the bar activity", () => {
+    expect(navActivity(undefined)).toBe("idle")
+    expect(navActivity({})).toBe("idle")
+    expect(navActivity({ type: "idle" })).toBe("idle")
+    expect(navActivity({ type: "busy" })).toBe("busy")
+    expect(navActivity({ type: "retry" })).toBe("retry")
+  })
+
+  test("the row budget leaves room for a readable title", () => {
+    const budget = 40 - NAV_ROW_CHROME
+    expect(budget).toBeGreaterThanOrEqual(30)
+    expect(navLabel("Connexion abonnement Claude", budget).endsWith("…")).toBe(false)
   })
 })

@@ -72,6 +72,7 @@ import {
   NAV_WIDTH,
   initialSelection,
   moveSelection,
+  navActivity,
   navVisible,
   type NavSession,
   type NavVisibility,
@@ -344,7 +345,14 @@ export function Session() {
   const navSessions = createMemo<NavSession[]>(() =>
     sync.data.session
       .filter((item) => item.parentID === undefined)
-      .map((item) => ({ id: item.id, title: item.title })),
+      .map((item) => ({
+        id: item.id,
+        title: item.title,
+        activity: navActivity(sync.data.session_status?.[item.id]),
+        updated: item.time.updated,
+      }))
+      .toSorted((a, b) => Number(b.activity !== "idle") - Number(a.activity !== "idle") || b.updated - a.updated)
+      .map(({ id, title, activity }) => ({ id, title, activity })),
   )
   // Open on the session being worked on, and follow it when the route changes.
   createEffect(() => {
