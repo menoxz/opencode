@@ -7,6 +7,15 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.3.11] - 2026-09-27
+
+### Fixed
+- **La barre de sessions ne déborde plus** quand la liste dépasse la hauteur disponible : la fenêtre de lignes réserve désormais tout le chrome réellement dessiné (padding du cadre, en-tête « Sessions », champ de recherche, indicateurs de défilement, ligne de raccourcis), donc le calcul ne peut plus excéder d'une ligne. Le `gap` inter-lignes du cadre — qui poussait les dernières lignes hors du cadre sans être compté — a été retiré.
+- **La limite de trois dossiers par défaut et le bouton « Read more » sont de nouveau effectifs** : `navRows` honore à nouveau son drapeau `expanded` (il recevait `true` en dur, ce qui levait toujours le plafond) ; une recherche continue de tout déplier.
+
+### Tests
+- Deux tests de rendu ajoutés (liste bornée par la hauteur réellement disponible ; plafond à trois dossiers + « Read more ») et un test d'invariant liant `NAV_CHROME_ROWS` aux lignes réellement dessinées par la barre : `session-nav.test.ts` + `session-nav.view.test.tsx` verts (78 tests), `tsgo --noEmit` à 0.
+
 ## [v2.3.10] - 2026-09-27
 
 ### Changed
