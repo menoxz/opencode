@@ -190,13 +190,12 @@ test("shows each session's last-activity date and time", async () => {
   expect(text).toContain("26/09")
 })
 
-test("lists every directory that holds sessions, without a Read more", async () => {
+test("caps the folders at three by default and offers Read more for the rest", async () => {
   const app = await renderBar({ sessions: manyDirs, selected: 0, focused: false })
   const text = app.captureCharFrame()
-  expect(text).not.toContain("Read more")
+  expect(text).toContain("Read more (+2)")
   expect(text).toContain("alpha")
-  expect(text).toContain("gamma")
-  expect(text).toContain("epsilon")
+  expect(text).not.toContain("epsilon")
 })
 
 test("expanding lists every directory and drops the Read more", async () => {
@@ -212,6 +211,13 @@ test("windows a long group so the last session stays reachable", async () => {
   const text = app.captureCharFrame()
   expect(text).toContain("Session 9")
   expect(text).not.toContain("Session 0")
+})
+
+test("draws no more session rows than the height allows and hints the hidden ones", async () => {
+  const app = await renderBar({ sessions: oneDirMany, activeID: "ses_9", selected: 10, focused: false, height: 3 })
+  const drawn = linesOf(app).filter((line) => /Session \d/.test(line))
+  expect(drawn.length).toBeLessThanOrEqual(3)
+  expect(app.captureCharFrame()).toContain("more")
 })
 
 test("the command section is pinned at the bottom without a frame", async () => {

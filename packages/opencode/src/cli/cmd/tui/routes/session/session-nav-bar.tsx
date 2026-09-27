@@ -167,7 +167,8 @@ export function SessionNavBar(props: {
       paddingRight={1}
       onMouseUp={() => props.pendingDelete && props.onClearPending?.()}
     >
-      <box flexShrink={0} gap={1} flexGrow={1}>
+      {/* No `gap`: an inter-row margin would push the last rows out of the box, which the height arithmetic cannot see. */}
+      <box flexShrink={0} flexGrow={1}>
         <box
           flexDirection="row"
           gap={1}

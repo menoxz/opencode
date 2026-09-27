@@ -61,8 +61,12 @@ export const NAV_MIN_TERMINAL_WIDTH = 80
  */
 export const NAV_ROW_CHROME = 6
 
-/** Rows the bar keeps for its header, its shortcut line and the scroll indicators. */
-export const NAV_CHROME_ROWS = 4
+/**
+ * Rows the bar spends besides the list: the box's top and bottom padding, the "Sessions" header,
+ * the search line, the shortcut footer, and the two scroll indicators. Reserved up front even when
+ * no indicator shows, so the list can never draw one row past the space the box actually has.
+ */
+export const NAV_CHROME_ROWS = 7
 
 /** Directories shown before the list folds behind "Read more". */
 export const NAV_DIR_LIMIT = 3
@@ -271,8 +275,9 @@ export function navVisibleGroups(groups: readonly NavGroup[], expanded: boolean,
  * Hidden directories become a single "Read more" row. The selection is the row's index in this array.
  */
 export function navRows(sessions: readonly NavSession[], activeID: string | undefined, state: NavState): NavRowModel[] {
-  // Every directory that holds sessions is listed: the window keeps them reachable, so no cap is needed.
-  const { shown, hidden } = navVisibleGroups(navGroups(sessions, activeID), true)
+  // Folders stay capped until the user asks for more, and a search lifts the cap so no match hides
+  // behind "Read more".
+  const { shown, hidden } = navVisibleGroups(navGroups(sessions, activeID), state.expanded || state.reveal === true)
   const rows: NavRowModel[] = []
   for (const group of shown) {
     // A directory the user flipped keeps that choice; every other one follows the default, which only

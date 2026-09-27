@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { Locale } from "@/util/locale"
 import {
+  NAV_CHROME_ROWS,
   NAV_DIR_LIMIT,
   NAV_MIN_TERMINAL_WIDTH,
   NAV_WIDTH,
@@ -291,7 +292,7 @@ describe("TUI session navbar", () => {
   })
 
   test("flattens the tree into headers and sessions", () => {
-    const rows = navRows(grouped, "a1", { overrides: [], expanded: false })
+    const rows = navRows(grouped, "a1", { overrides: [], expanded: true })
     const dirs = rows.filter((row) => row.kind === "dir")
     expect(dirs).toHaveLength(5)
     const open = rows.findIndex((row) => row.kind === "dir" && row.label === "opencode-fork")
@@ -299,10 +300,18 @@ describe("TUI session navbar", () => {
     expect(rows.filter((row) => row.kind === "session").length).toBeGreaterThan(0)
   })
 
-  test("lists every directory with no hidden group, so the bar never caps the folders", () => {
+  test("caps the folders at three by default and reveals the rest through Read more", () => {
+    const groups = navGroups(grouped, undefined)
     const rows = navRows(grouped, undefined, { overrides: [], expanded: false })
-    expect(rows.filter((row) => row.kind === "more")).toHaveLength(0)
-    expect(rows.filter((row) => row.kind === "dir")).toHaveLength(navGroups(grouped, undefined).length)
+    expect(rows.filter((row) => row.kind === "dir")).toHaveLength(NAV_DIR_LIMIT)
+    const more = rows.filter((row) => row.kind === "more")
+    expect(more).toHaveLength(1)
+    expect(more[0]).toMatchObject({ kind: "more", hidden: groups.length - NAV_DIR_LIMIT })
+  })
+
+  test("NAV_CHROME_ROWS matches every row the bar draws besides the list", () => {
+    // box padding top+bottom, the "Sessions" header, the search field, both scroll hints, the shortcut footer
+    expect(NAV_CHROME_ROWS).toBe(2 + 1 + 1 + 2 + 1)
   })
 
   test("only the active session's directory starts open", () => {
@@ -321,8 +330,9 @@ describe("TUI session navbar", () => {
   test("a search reveals sessions in folded directories", () => {
     const folded = navRows(grouped, "a1", { overrides: [], expanded: true })
     expect(folded.some((row) => row.kind === "session" && row.id === "b1")).toBe(false)
-    const searched = navRows(grouped, "a1", { overrides: [], expanded: true, reveal: true })
+    const searched = navRows(grouped, "a1", { overrides: [], expanded: false, reveal: true })
     expect(searched.some((row) => row.kind === "session" && row.id === "b1")).toBe(true)
+    expect(searched.some((row) => row.kind === "more")).toBe(false)
   })
 
   test("expanding removes the reveal and lists every directory", () => {
