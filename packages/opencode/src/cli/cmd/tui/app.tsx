@@ -824,12 +824,14 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       },
       {
         name: "app.toggle.session_directory_filter",
-        title: kv.get("session_directory_filter_enabled", true)
-          ? "Disable session directory filtering"
-          : "Enable session directory filtering",
+        title:
+          kv.get("session_directory_scope", "project") === "directory"
+            ? "Show sessions of every directory"
+            : "Filter sessions to this directory",
         category: "System",
         run: async () => {
-          kv.set("session_directory_filter_enabled", !kv.get("session_directory_filter_enabled", true))
+          const scope = kv.get("session_directory_scope", "project")
+          kv.set("session_directory_scope", scope === "directory" ? "project" : "directory")
           await sync.session.refresh()
           dialog.clear()
         },

@@ -298,6 +298,12 @@ describe("TUI session navbar", () => {
     expect(rows.filter((row) => row.kind === "session").length).toBeGreaterThan(0)
   })
 
+  test("lists every directory with no hidden group, so the bar never caps the folders", () => {
+    const rows = navRows(grouped, undefined, { collapsed: [], expanded: false })
+    expect(rows.filter((row) => row.kind === "more")).toHaveLength(0)
+    expect(rows.filter((row) => row.kind === "dir")).toHaveLength(navGroups(grouped, undefined).length)
+  })
+
   test("a collapsed directory contributes its header only", () => {
     const rows = navRows(grouped, undefined, { collapsed: ["C:\\work\\opencode-fork"], expanded: true })
     expect(rows.find((row) => row.kind === "dir" && row.label === "opencode-fork")).toMatchObject({ kind: "dir", collapsed: true })

@@ -352,7 +352,7 @@ export function Session() {
   const [navFocused, setNavFocused] = createSignal(false)
   const [navSelected, setNavSelected] = createSignal(0)
   const [navPendingDelete, setNavPendingDelete] = createSignal<string>()
-  const [navDirectoryFilter, setNavDirectoryFilter] = kv.signal("session_directory_filter_enabled", true)
+  const [navDirectoryScope, setNavDirectoryScope] = kv.signal<"project" | "directory">("session_directory_scope", "project")
   const [navCollapsed, setNavCollapsed] = createSignal<string[]>([])
   const [navQuery, setNavQuery] = createSignal("")
   const [navExpanded, setNavExpanded] = createSignal(false)
@@ -1522,7 +1522,7 @@ export function Session() {
     dialog.replace(() => <DialogSessionRename session={id} />)
   }
   const navToggleDirectories = () => {
-    setNavDirectoryFilter((current) => !current)
+    setNavDirectoryScope((current) => (current === "project" ? "directory" : "project"))
     void sync.bootstrap({ fatal: false })
   }
   const navOpenSession = (id: string) => {
@@ -1559,7 +1559,7 @@ export function Session() {
               selected={navSel()}
               focused={navFocused()}
               height={navListHeight(dimensions().height)}
-              allDirectories={!navDirectoryFilter()}
+              allDirectories={navDirectoryScope() === "project"}
               collapsed={navCollapsed()}
               expanded={navExpanded()}
               frame={navFrame()}

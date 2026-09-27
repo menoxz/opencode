@@ -47,7 +47,7 @@ export function SessionNavPanel() {
   const [navFocused, setNavFocused] = createSignal(false)
   const [navSelected, setNavSelected] = createSignal(0)
   const [navPendingDelete, setNavPendingDelete] = createSignal<string>()
-  const [navDirectoryFilter, setNavDirectoryFilter] = kv.signal("session_directory_filter_enabled", true)
+  const [navDirectoryScope, setNavDirectoryScope] = kv.signal<"project" | "directory">("session_directory_scope", "project")
   const [navCollapsed, setNavCollapsed] = createSignal<string[]>([])
   const [navQuery, setNavQuery] = createSignal("")
   const [navExpanded, setNavExpanded] = createSignal(false)
@@ -157,7 +157,7 @@ export function SessionNavPanel() {
         selected={navSel()}
         focused={navFocused()}
         height={navListHeight(dimensions().height)}
-        allDirectories={!navDirectoryFilter()}
+        allDirectories={navDirectoryScope() === "project"}
         collapsed={navCollapsed()}
         expanded={navExpanded()}
         frame={navFrame()}
@@ -174,7 +174,7 @@ export function SessionNavPanel() {
         searching={navSearching()}
         onSearch={setNavQuery}
         onSearchFocus={setNavSearching}
-        onToggleDirectories={() => setNavDirectoryFilter((current) => !current)}
+        onToggleDirectories={() => setNavDirectoryScope((current) => (current === "project" ? "directory" : "project"))}
         onNew={newSession}
         onClose={() => setNavFocused(false)}
       />

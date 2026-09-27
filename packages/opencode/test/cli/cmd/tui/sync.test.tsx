@@ -19,7 +19,7 @@ function branchEvent(branch: string, workspace?: string): GlobalEvent {
 }
 
 describe("tui sync", () => {
-  test("refresh scopes sessions by default and lists project sessions when disabled", async () => {
+  test("refresh lists every project session by default and narrows to the current folder on demand", async () => {
     const previous = Global.Path.state
     await using tmp = await tmpdir()
     Global.Path.state = tmp.path
@@ -27,15 +27,15 @@ describe("tui sync", () => {
     const { app, kv, sync, session } = await mount()
 
     try {
-      expect(kv.get("session_directory_filter_enabled", true)).toBe(true)
-      expect(session.at(-1)?.searchParams.get("scope")).toBeNull()
-      expect(session.at(-1)?.searchParams.get("path")).toBe("packages/opencode")
-
-      kv.set("session_directory_filter_enabled", false)
-      await sync.session.refresh()
-
+      expect(kv.get("session_directory_scope", "project")).toBe("project")
       expect(session.at(-1)?.searchParams.get("scope")).toBe("project")
       expect(session.at(-1)?.searchParams.get("path")).toBeNull()
+
+      kv.set("session_directory_scope", "directory")
+      await sync.session.refresh()
+
+      expect(session.at(-1)?.searchParams.get("scope")).toBeNull()
+      expect(session.at(-1)?.searchParams.get("path")).toBe("packages/opencode")
     } finally {
       app.renderer.destroy()
       Global.Path.state = previous
