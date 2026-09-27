@@ -7,9 +7,12 @@ import {
   navDirRow,
   navDirectoryLabel,
   navMoreRow,
+  navQueryRow,
   navRow,
   navRows,
   navWindow,
+  searchAppend,
+  searchBackspace,
   type NavRowModel,
   type NavSession,
 } from "./session-nav"
@@ -45,7 +48,10 @@ export function SessionNavBar(props: {
   onRename: (id: string) => void
   onToggleDirectories: () => void
   onClearPending?: () => void
+  searchQuery?: string
+  searching?: boolean
   onSearch?: (query: string) => void
+  onSearchFocus?: (focused: boolean) => void
   onClose?: () => void
   width?: number
 }) {
@@ -56,23 +62,21 @@ export function SessionNavBar(props: {
   const window = () => navWindow(rows().length, props.selected, props.height)
   const visible = () => rows().slice(window().start, window().end).map((row, offset) => ({ row, index: window().start + offset }))
   const [hover, setHover] = createSignal<number | null>(null)
-  const [searchRef, setSearchRef] = createSignal<{ focus: () => void }>()
 
-  const line = (row: NavRowModel, index: number) => {
-    const selected = index === props.selected
-    if (row.kind === "dir") return navDirRow({ label: row.label, count: row.count, collapsed: row.collapsed, selected, width: innerWidth() })
+  const line = (row: NavRowModel, _index: number) => {
+    if (row.kind === "dir")
+      return navDirRow({ label: row.label, count: row.count, collapsed: row.collapsed, width: innerWidth() })
     if (row.kind === "session")
       return navRow({
         title: row.title,
         activity: row.activity,
-        selected,
         updated: row.updated,
         width: innerWidth(),
         indent: 2,
         frame: props.frame,
         pendingDelete: props.pendingDelete === row.id,
       })
-    return navMoreRow(row.hidden, selected, innerWidth())
+    return navMoreRow(row.hidden, innerWidth())
   }
 
   const color = (row: NavRowModel, index: number) => {
@@ -93,7 +97,23 @@ export function SessionNavBar(props: {
   }
 
   useKeyboard((evt) => {
+    // While searching the bar takes the keystrokes itself: the input element could never be focused.
+    if (props.searching) {
+      if (evt.name === "escape") return props.onSearchFocus?.(false)
+      if (evt.name === "return") {
+        const current = rows()[Math.min(Math.max(props.selected, 0), Math.max(0, rows().length - 1))]
+        if (current) activate(current)
+        return props.onSearchFocus?.(false)
+      }
+      if (evt.name === "backspace") return props.onSearch?.(searchBackspace(props.searchQuery ?? ""))
+      if (evt.name === "up") return props.onMove(-1)
+      if (evt.name === "down") return props.onMove(1)
+      if (evt.name === "space" || evt.name.length === 1)
+        return props.onSearch?.(searchAppend(props.searchQuery ?? "", evt.name))
+      return
+    }
     if (!props.focused) return
+    if (evt.name === "/") return props.onSearchFocus?.(true)
     if (evt.name === "up") {
       evt.preventDefault()
       evt.stopPropagation()
@@ -145,17 +165,10 @@ export function SessionNavBar(props: {
           </text>
           <text fg={theme.textMuted}>{navDirectoryLabel(props.allDirectories)}</text>
         </box>
-        <box flexDirection="row" gap={1} flexShrink={0} onMouseUp={() => searchRef()?.focus()}>
-          <text fg={theme.textMuted}>/</text>
-          <input
-            ref={(renderable) => setSearchRef(renderable)}
-            placeholder="Search folders"
-            placeholderColor={theme.textMuted}
-            focusedBackgroundColor={theme.backgroundPanel}
-            cursorColor={theme.primary}
-            focusedTextColor={theme.text}
-            onInput={(value) => props.onSearch?.(value)}
-          />
+        <box flexShrink={0} onMouseUp={() => props.onSearchFocus?.(true)}>
+          <text fg={theme.textMuted} wrapMode="none">
+            {navQueryRow(props.searchQuery ?? "", props.searching === true, innerWidth())}
+          </text>
         </box>
         <Show when={window().hiddenAbove > 0}>
           <text fg={theme.textMuted}>↑ {window().hiddenAbove} more</text>

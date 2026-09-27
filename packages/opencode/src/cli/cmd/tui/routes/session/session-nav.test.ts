@@ -31,6 +31,8 @@ import {
   navVisibleGroups,
   navWindow,
   normalizeDirectory,
+  searchAppend,
+  searchBackspace,
   selectionDirKey,
   selectionID,
   selectionSessionID,
@@ -166,41 +168,41 @@ describe("TUI session navbar", () => {
 
   test("builds a session line with the glyph and the timestamp reserved", () => {
     const stamp = navStamp(sameYearAt, now) ?? ""
-    const row = navRow({ title: "Add navbar", activity: "idle", selected: true, updated: sameYearAt, width: NAV_WIDTH, now })
-    expect(row.startsWith("> ○ Add navbar")).toBe(true)
+    const row = navRow({ title: "Add navbar", activity: "idle", updated: sameYearAt, width: NAV_WIDTH, now })
+    expect(row.startsWith("  ○ Add navbar")).toBe(true)
     expect(row.endsWith(stamp)).toBe(true)
     expect(row.length).toBeLessThanOrEqual(NAV_WIDTH)
   })
 
   test("a working session shows a spinner on its line", () => {
-    const row = navRow({ title: "Working", activity: "busy", selected: false, width: NAV_WIDTH, frame: 2, now })
+    const row = navRow({ title: "Working", activity: "busy", width: NAV_WIDTH, frame: 2, now })
     expect(row.startsWith(`  ${SPINNER_FRAMES[2]} Working`)).toBe(true)
   })
 
   test("a title far too long is truncated while the timestamp stays whole", () => {
     const long = "Connexion abonnement Claude à OpenAI et facturation mensuelle détaillée"
     const stamp = navStamp(sameYearAt, now) ?? ""
-    const row = navRow({ title: long, activity: "busy", selected: false, updated: sameYearAt, width: NAV_WIDTH, now })
+    const row = navRow({ title: long, activity: "busy", updated: sameYearAt, width: NAV_WIDTH, now })
     expect((row.match(/…/g) ?? []).length).toBe(1)
     expect(row.endsWith(stamp)).toBe(true)
     expect(row.length).toBeLessThanOrEqual(NAV_WIDTH)
   })
 
   test("a pending deletion replaces the stamp with the confirm hint", () => {
-    const row = navRow({ title: "Delete me", activity: "idle", selected: true, updated: sameYearAt, width: NAV_WIDTH, now, pendingDelete: true })
+    const row = navRow({ title: "Delete me", activity: "idle", updated: sameYearAt, width: NAV_WIDTH, now, pendingDelete: true })
     expect(row).toContain("press again")
     expect(row.length).toBeLessThanOrEqual(NAV_WIDTH)
   })
 
   test("even at a minimal width the row never overflows", () => {
     const stamp = navStamp(olderYearAt, now) ?? ""
-    const row = navRow({ title: "Anything", activity: "idle", selected: false, updated: olderYearAt, width: 24, now })
+    const row = navRow({ title: "Anything", activity: "idle", updated: olderYearAt, width: 24, now })
     expect(row.endsWith(stamp)).toBe(true)
     expect(row.length).toBeLessThanOrEqual(24)
   })
 
   test("a row without a timestamp still fills the width with the title", () => {
-    const row = navRow({ title: "Old session", activity: "idle", selected: false, width: NAV_WIDTH, now })
+    const row = navRow({ title: "Old session", activity: "idle", width: NAV_WIDTH, now })
     expect(row.startsWith("  ○ Old session")).toBe(true)
     expect(row.length).toBeLessThanOrEqual(NAV_WIDTH)
   })
@@ -332,25 +334,25 @@ describe("TUI session navbar", () => {
     expect(toggleCollapsed(["y"], "x")).toEqual(["y", "x"])
   })
 
-  test("a directory header right-aligns its session count and never overflows", () => {
-    const row = navDirRow({ label: "opencode-fork", count: 7, collapsed: false, selected: true, width: NAV_WIDTH })
-    expect(row.startsWith("> ▾ opencode-fork")).toBe(true)
+  test("a directory header prefixes the folder with a slash and carries its count", () => {
+    const row = navDirRow({ label: "opencode-fork", count: 7, collapsed: false, width: NAV_WIDTH })
+    expect(row.startsWith("  ▾ /opencode-fork")).toBe(true)
     expect(row.endsWith(" 7")).toBe(true)
     expect(row.length).toBeLessThanOrEqual(NAV_WIDTH)
 
-    const collapsedRow = navDirRow({ label: "opencode-fork", count: 7, collapsed: true, selected: false, width: NAV_WIDTH })
-    expect(collapsedRow.startsWith("  ▸ opencode-fork")).toBe(true)
+    const collapsedRow = navDirRow({ label: "opencode-fork", count: 7, collapsed: true, width: NAV_WIDTH })
+    expect(collapsedRow.startsWith("  ▸ /opencode-fork")).toBe(true)
   })
 
   test("a long directory name is truncated while the count stays whole", () => {
-    const row = navDirRow({ label: "a-very-long-directory-name-that-would-overflow-the-bar", count: 12, collapsed: false, selected: false, width: NAV_WIDTH })
+    const row = navDirRow({ label: "a-very-long-directory-name-that-would-overflow-the-bar", count: 12, collapsed: false, width: NAV_WIDTH })
     expect((row.match(/…/g) ?? []).length).toBe(1)
     expect(row.endsWith(" 12")).toBe(true)
     expect(row.length).toBeLessThanOrEqual(NAV_WIDTH)
   })
 
   test("the reveal line states how many directories are hidden", () => {
-    const row = navMoreRow(4, true, NAV_WIDTH)
+    const row = navMoreRow(4, NAV_WIDTH)
     expect(row).toContain("Read more")
     expect(row).toContain("4")
     expect(row.length).toBeLessThanOrEqual(NAV_WIDTH)
@@ -420,11 +422,11 @@ describe("TUI session navbar", () => {
   })
 
   test("keeps the folder badge right against the name", () => {
-    expect(navDirRow({ label: "opencode", count: 5, collapsed: false, selected: false, width: NAV_WIDTH })).toBe(
-      "  ▾ opencode 5",
+    expect(navDirRow({ label: "opencode", count: 5, collapsed: false, width: NAV_WIDTH })).toBe(
+      "  ▾ /opencode 5",
     )
-    expect(navDirRow({ label: "opencode", count: 12, collapsed: true, selected: true, width: NAV_WIDTH })).toBe(
-      "> ▸ opencode 12",
+    expect(navDirRow({ label: "opencode", count: 12, collapsed: true, width: NAV_WIDTH })).toBe(
+      "  ▸ /opencode 12",
     )
   })
 
@@ -441,7 +443,15 @@ describe("TUI session navbar", () => {
   })
 
   test("the search line shows a hint until the user searches", () => {
-    expect(navQueryRow("", false, NAV_WIDTH)).toContain("Search: press /")
-    expect(navQueryRow("alpha", true, NAV_WIDTH)).toContain("Search: alpha")
+    expect(navQueryRow("", false, NAV_WIDTH)).toContain("/ Search folders")
+    expect(navQueryRow("alpha", true, NAV_WIDTH)).toContain("/alpha")
+  })
+
+  test("types and erases the query one character at a time", () => {
+    expect(searchAppend("", "a")).toBe("a")
+    expect(searchAppend("al", "space")).toBe("al ")
+    expect(searchAppend("al", "p")).toBe("alp")
+    expect(searchBackspace("alp")).toBe("al")
+    expect(searchBackspace("")).toBe("")
   })
 })

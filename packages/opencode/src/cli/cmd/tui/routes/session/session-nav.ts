@@ -201,8 +201,17 @@ export function filterNavSessions(sessions: readonly NavSession[], query: string
 
 /** The navbar's search line: a hint while idle, the live query with a caret while searching. */
 export function navQueryRow(query: string, searching: boolean, width: number): string {
-  if (!searching) return navLabel("Search: press /", width)
-  return navLabel(`Search: ${query}${query ? "\u258f" : "\u258f"}`, width)
+  return navLabel(searching ? `/${query}\u258f` : "/ Search folders", Math.max(1, width))
+}
+
+/** The query after a printable key is typed into the focused navbar. */
+export function searchAppend(query: string, key: string): string {
+  return key === "space" ? `${query} ` : `${query}${key}`
+}
+
+/** The query after backspace, never going below empty. */
+export function searchBackspace(query: string): string {
+  return query.slice(0, -1)
 }
 
 /** What the modal must do when Enter is pressed on a typed path: pick it, or say why it cannot. */
@@ -299,23 +308,23 @@ export function toggleCollapsed(collapsed: readonly string[], key: string): stri
   return collapsed.includes(key) ? collapsed.filter((entry) => entry !== key) : [...collapsed, key]
 }
 
-export type NavDirRowInput = { label: string; count: number; collapsed: boolean; selected: boolean; width: number }
+export type NavDirRowInput = { label: string; count: number; collapsed: boolean; width: number }
 
 /**
- * A directory header: the disclosure glyph, the folder's name, and its session count pushed to the
- * right edge by construction. The count is reserved first so a long name can never hide it.
+ * A directory header: the disclosure glyph, the folder name prefixed with "/" so it reads as a path,
+ * and its session count right against the name. Selection is shown by the row's background, not by a
+ * chevron.
  */
 export function navDirRow(input: NavDirRowInput): string {
-  const prefix = `${input.selected ? ">" : " "} ${input.collapsed ? "▸" : "▾"} `
+  const prefix = `  ${input.collapsed ? "▸" : "▾"} `
   const suffix = ` ${input.count}`
   const available = Math.max(1, input.width - prefix.length - suffix.length)
-  return `${prefix}${navLabel(input.label, available)}${suffix}`
+  return `${prefix}${navLabel(`/${input.label}`, available)}${suffix}`
 }
 
 export type NavRowInput = {
   title: string
   activity: NavActivity
-  selected: boolean
   updated?: number
   width: number
   now?: Date
@@ -330,7 +339,7 @@ export type NavRowInput = {
  * than by the renderer's flex rules, and the line never grows past `width`, so it cannot wrap.
  */
 export function navRow(input: NavRowInput): string {
-  const prefix = `${" ".repeat(Math.max(0, input.indent ?? 0))}${input.selected ? ">" : " "} ${spinGlyph(input.activity, input.frame ?? 0)} `
+  const prefix = `${" ".repeat(Math.max(0, input.indent ?? 0))}  ${spinGlyph(input.activity, input.frame ?? 0)} `
   const stamp = input.pendingDelete ? "press again" : navStamp(input.updated, input.now)
   const available = Math.max(1, input.width - prefix.length - 2)
   if (!stamp) return `${prefix}${navLabel(input.title, available)}`
@@ -340,9 +349,8 @@ export function navRow(input: NavRowInput): string {
 }
 
 /** The "Read more" line: how many directories the reveal is hiding. */
-export function navMoreRow(hidden: number, selected: boolean, width: number): string {
-  const prefix = `${selected ? ">" : " "} `
-  return `${prefix}${navLabel(`Read more (+${hidden})`, Math.max(1, width - prefix.length - 2))}`
+export function navMoreRow(hidden: number, width: number): string {
+  return navLabel(`Read more (+${hidden})`, Math.max(1, width - 2))
 }
 
 export type NavFooterShortcuts = { new: string; delete: string; rename: string }

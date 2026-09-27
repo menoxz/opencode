@@ -52,6 +52,7 @@ export function SessionNavPanel() {
   const [navQuery, setNavQuery] = createSignal("")
   const [navExpanded, setNavExpanded] = createSignal(false)
   const [navFrame, setNavFrame] = createSignal(0)
+  const [navSearching, setNavSearching] = createSignal(false)
   const navNewShortcut = useCommandShortcut("session.new")
   const navDeleteShortcut = useCommandShortcut("session.delete")
   const navRenameShortcut = useCommandShortcut("session.rename")
@@ -169,7 +170,10 @@ export function SessionNavPanel() {
         onDelete={(id) => void navDelete(id)}
         onRename={(id) => renameSession(id)}
         onClearPending={() => setNavPendingDelete(undefined)}
+        searchQuery={navQuery()}
+        searching={navSearching()}
         onSearch={setNavQuery}
+        onSearchFocus={setNavSearching}
         onToggleDirectories={() => setNavDirectoryFilter((current) => !current)}
         onNew={newSession}
         onClose={() => setNavFocused(false)}
