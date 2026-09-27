@@ -2,6 +2,7 @@ import { spawn } from "node:child_process"
 import * as fs from "node:fs"
 import * as Log from "@opencode-ai/core/util/log"
 import { daemonDir, isProcessRunning, pidFilePath, readPidFile, spawnLockPath } from "@/daemon/paths"
+import { DevSource } from "@/dev/source"
 
 const log = Log.create({ service: "daemon.autostart" })
 
@@ -77,7 +78,10 @@ export function releaseSpawnLock(dir = daemonDir()): void {
  * writes its own PID file, releases the spawn lock and outlives this process.
  */
 export function spawnDaemonDetached(exe = daemonBinary()): number | undefined {
-  const child = spawn(exe, ["daemon", "start"], {
+  // From sources the daemon must be the source entrypoint, not the installed binary.
+  const root = DevSource.root()
+  const [command, ...prefix] = root ? DevSource.runner(root) : [exe]
+  const child = spawn(command, [...prefix, "daemon", "start"], {
     detached: true,
     stdio: "ignore",
     windowsHide: true,

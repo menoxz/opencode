@@ -7,17 +7,21 @@ import { errorMessage } from "@/util/error"
 import { validateSession } from "./validate-session"
 import { ServerAuth } from "@/server/auth"
 import { ensureDaemonStarted } from "@/daemon/autostart"
+import { DevSource } from "@/dev/source"
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"])
 
-function serverBinary(): string {
+function serverCommand(): string[] {
+  // In development the background server must be the source entrypoint: spawning `opencodev2` here
+  // would silently serve the last deployed build instead of the working tree.
+  const root = DevSource.root()
+  if (root) return DevSource.runner(root)
   const exe = process.execPath
-  return exe.endsWith("opencodev2.exe") ||
-    exe.endsWith("opencodev2") ||
-    exe.endsWith("opencode.exe") ||
-    exe.endsWith("opencode")
-    ? exe
-    : "opencodev2"
+  const binary =
+    exe.endsWith("opencodev2.exe") || exe.endsWith("opencodev2") || exe.endsWith("opencode.exe") || exe.endsWith("opencode")
+      ? exe
+      : "opencodev2"
+  return [binary]
 }
 
 function serverReachable(url: string, headers?: RequestInit["headers"]): Promise<boolean> {
@@ -42,7 +46,8 @@ async function ensureServer(url: string, headers?: RequestInit["headers"]): Prom
   }
 
   UI.println(`No server at ${parsed.origin} — starting opencodev2 serve on port ${port}…`)
-  spawn(serverBinary(), ["serve", "--port", String(port)], {
+  const [command, ...prefix] = serverCommand()
+  spawn(command, [...prefix, "serve", "--port", String(port)], {
     detached: true,
     stdio: "ignore",
     windowsHide: true,

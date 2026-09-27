@@ -1333,6 +1333,38 @@ const scenarios: Scenario[] = [
     .probe({ path: "/global/upgrade", body: { target: 1 } })
     .at(() => ({ path: "/global/upgrade", body: { target: 1 } }))
     .status(400),
+  // Plugin management surface: the status call, a reload, and the two origin mutations.
+  http.protected
+    .get("/plugin", "plugin.list")
+    .at((ctx) => ({ path: "/plugin", headers: ctx.headers() }))
+    .json(200, (body) => {
+      object(body)
+      check(typeof body.version === "number", "plugin list should report a generation")
+      check(Array.isArray(body.hooks), "plugin list should report hooks")
+    }),
+  http.protected
+    .post("/plugin/reload", "plugin.reload")
+    .mutating()
+    .at((ctx) => ({ path: "/plugin/reload", headers: ctx.headers() }))
+    .json(200, (body) => {
+      object(body)
+      check(typeof body.version === "number", "reload should report a generation")
+    }),
+  // An invalid payload is rejected by the schema, so the route is exercised without writing the
+  // user's global config.
+  http.protected
+    .post("/plugin", "plugin.add")
+    .mutating()
+    .at((ctx) => ({ path: "/plugin", headers: ctx.headers(), body: {} }))
+    .status(400),
+  http.protected
+    .delete("/plugin/{spec}", "plugin.remove")
+    .mutating()
+    .at((ctx) => ({ path: route("/plugin/{spec}", { spec: "coverage-plugin-absent" }), headers: ctx.headers() }))
+    .json(200, (body) => {
+      object(body)
+      check(Array.isArray(body.origins), "remove should report the remaining origins")
+    }),
 ]
 
 const llmScenarios = new Set([

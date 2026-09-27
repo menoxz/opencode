@@ -39,3 +39,6 @@ packages/opencode/.bun-cache/
 
 # Agent Swarm scratch space (manifests, worker results, reports)
 .swarm/
+
+# dev runtime (pid/health bookkeeping + server log)
+.opencode/dev/

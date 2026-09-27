@@ -1,4 +1,5 @@
 import { Config } from "@/config/config"
+import { DevSource } from "@/dev/source"
 import { Plugin } from "@/plugin/index"
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
@@ -15,6 +16,16 @@ export const pluginHandlers = HttpApiBuilder.group(InstanceHttpApi, "plugin", (h
       const info = yield* config.get()
       return {
         version: yield* plugin.version(),
+        runtime: (() => {
+          const root = DevSource.root()
+          return {
+            source: root !== undefined,
+            root,
+            entry: root ? DevSource.entry(root) : process.execPath,
+            pid: process.pid,
+            upSince: new Date().toISOString(),
+          }
+        })(),
         origins: (info.plugin_origins ?? []).map((origin) => ({
           // An origin may be declared as [spec, options]; only the specifier is meaningful here.
           spec: Array.isArray(origin.spec) ? String(origin.spec[0]) : String(origin.spec),

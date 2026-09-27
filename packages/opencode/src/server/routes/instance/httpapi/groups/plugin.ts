@@ -21,8 +21,20 @@ export const PluginOrigin = Schema.Struct({
 
 // What the running server actually serves: the generation counter that consumers use to detect a
 // swap, the configured plugin origins, and the union of hooks the loaded plugins register.
+// Whether the process serving this API was started from the repository or from a built binary. It
+// makes the development runtime observable: `source: false` while editing sources means the running
+// process is not the one being edited.
+export const PluginRuntime = Schema.Struct({
+  source: Schema.Boolean,
+  root: Schema.optional(Schema.String),
+  entry: Schema.String,
+  pid: Schema.Number,
+  upSince: Schema.String,
+})
+
 export const PluginStatus = Schema.Struct({
   version: Schema.Number,
+  runtime: PluginRuntime,
   origins: Schema.Array(PluginOrigin),
   hooks: Schema.Array(Schema.String),
 })
