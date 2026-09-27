@@ -13,7 +13,7 @@ import path from "node:path"
  */
 export const SOURCE_ENV = "OPENCODE_DEV_SOURCE"
 
-/** Default port of the development background server. Pinned so clients can find it. */
+/** Default port of the development background server. Pinned so every client can find it. */
 export const DEFAULT_PORT = 4096
 
 /** The repository root this process is actually running from, if any. */
