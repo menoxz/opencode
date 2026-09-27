@@ -18,9 +18,29 @@ afterEach(() => {
 })
 
 const sessions: NavSession[] = [
-  { id: "ses_a", title: "Add navbar" },
-  { id: "ses_b", title: "Fix flaky test" },
+  { id: "ses_a", title: "Add navbar", directory: "C:\\work\\opencode-fork" },
+  { id: "ses_b", title: "Fix flaky test", directory: "C:\\work\\opencode-fork" },
 ]
+
+const twoDirs: NavSession[] = [
+  { id: "a1", title: "Alpha one", directory: "C:\\w\\alpha" },
+  { id: "a2", title: "Alpha two", directory: "C:\\w\\alpha" },
+  { id: "b1", title: "Beta one", directory: "C:\\w\\beta" },
+]
+
+const manyDirs: NavSession[] = [
+  { id: "n1", title: "In alpha", directory: "C:\\w\\alpha" },
+  { id: "n2", title: "In beta", directory: "C:\\w\\beta" },
+  { id: "n3", title: "In gamma", directory: "C:\\w\\gamma" },
+  { id: "n4", title: "In delta", directory: "C:\\w\\delta" },
+  { id: "n5", title: "In epsilon", directory: "C:\\w\\epsilon" },
+]
+
+const oneDirMany: NavSession[] = Array.from({ length: 10 }, (_, index) => ({
+  id: `ses_${index}`,
+  title: `Session ${index}`,
+  directory: "C:\\w\\solo",
+}))
 
 function withTheme(component: () => JSX.Element) {
   return (
@@ -47,8 +67,15 @@ async function renderBar(props: {
   focused: boolean
   height?: number
   allDirectories?: boolean
+  collapsed?: string[]
+  expanded?: boolean
+  frame?: number
   pendingDelete?: string
-  onSelect?: (id: string) => void
+  shortcuts?: { new: string; delete: string; rename: string }
+  onMove?: (delta: number) => void
+  onOpen?: (id: string) => void
+  onToggleDir?: (key: string) => void
+  onToggleMore?: () => void
   onNew?: () => void
   onDelete?: (id: string) => void
   onRename?: (id: string) => void
@@ -65,9 +92,15 @@ async function renderBar(props: {
           focused={props.focused}
           height={props.height ?? 20}
           allDirectories={props.allDirectories ?? false}
+          collapsed={props.collapsed ?? []}
+          expanded={props.expanded ?? false}
+          frame={props.frame ?? 0}
           pendingDelete={props.pendingDelete}
-          onMove={() => {}}
-          onSelect={props.onSelect ?? (() => {})}
+          shortcuts={props.shortcuts ?? { new: "alt+n", delete: "ctrl+d", rename: "ctrl+r" }}
+          onMove={props.onMove ?? (() => {})}
+          onOpen={props.onOpen ?? (() => {})}
+          onToggleDir={props.onToggleDir ?? (() => {})}
+          onToggleMore={props.onToggleMore ?? (() => {})}
           onNew={props.onNew ?? (() => {})}
           onDelete={props.onDelete ?? (() => {})}
           onRename={props.onRename ?? (() => {})}
@@ -75,105 +108,69 @@ async function renderBar(props: {
           onClose={props.onClose}
         />
       )),
-    { width: 60, height: 14 },
+    { width: 60, height: 24 },
   )
   renderers.push(app.renderer)
   await settled(app)
   return app
 }
 
-test("renders the real project sessions and marks the active one", async () => {
-  const app = await renderBar({ sessions, activeID: "ses_b", selected: 1, focused: false })
+const linesOf = (app: App) =>
+  app
+    .captureCharFrame()
+    .split("\n")
+    .map((line) => line.replace(/\s+$/, ""))
+
+test("groups the sessions under a directory header with its session count", async () => {
+  const app = await renderBar({ sessions, activeID: "ses_b", selected: 0, focused: false })
   const text = app.captureCharFrame()
   expect(text).toContain("Sessions")
+  expect(text).toContain("opencode-fork")
   expect(text).toContain("Add navbar")
   expect(text).toContain("Fix flaky test")
-  expect(text).toContain("●")
-  expect(text).toContain("○")
-  expect(text).toContain("n new")
+  const header = linesOf(app).find((line) => line.includes("opencode-fork")) ?? ""
+  expect(header).toMatch(/opencode-fork\s+2$/)
+})
+
+test("a collapsed directory keeps only its single-line header", async () => {
+  const app = await renderBar({ sessions: twoDirs, selected: 0, focused: false, collapsed: ["C:\\w\\alpha"] })
+  const text = app.captureCharFrame()
+  expect(text).toContain("alpha")
+  expect(text).toContain("Beta one")
+  expect(text).not.toContain("Alpha one")
+  const header = linesOf(app).find((line) => line.includes("alpha")) ?? ""
+  expect(header).toMatch(/alpha\s+2$/)
 })
 
 test("an empty project shows the fallback instead of invented rows", async () => {
   const app = await renderBar({ sessions: [], selected: 0, focused: false })
   const text = app.captureCharFrame()
   expect(text).toContain("No sessions yet")
-  expect(text).not.toContain("Add navbar")
+  expect(text).not.toContain("opencode-fork")
 })
 
-test("Enter on a focused bar selects the session under the cursor", async () => {
-  let picked: string | undefined
-  const app = await renderBar({
-    sessions,
-    activeID: "ses_a",
-    selected: 1,
-    focused: true,
-    onSelect: (id) => (picked = id),
-  })
-  app.mockInput.pressEnter()
-  await settled(app)
-  expect(picked).toBe("ses_b")
-})
-
-test("Escape on a focused bar asks the route to collapse it", async () => {
-  let closed = false
-  const app = await renderBar({
-    sessions,
-    activeID: "ses_a",
-    selected: 0,
-    focused: true,
-    onClose: () => (closed = true),
-  })
-  app.mockInput.pressEscape()
-  await settled(app)
-  expect(closed).toBe(true)
-})
-
-test("shows a per-session activity glyph and keeps a long title on one line", async () => {
+test("a working session spins and a resting one shows the rest glyph", async () => {
   const app = await renderBar({
     sessions: [
-      { id: "ses_a", title: "Connexion abonnement Claude", activity: "busy" },
-      { id: "ses_b", title: "Retry me", activity: "retry" },
-      { id: "ses_c", title: "Idle one", activity: "idle" },
+      { id: "ses_a", title: "Busy one", activity: "busy", directory: "C:\\w\\alpha" },
+      { id: "ses_b", title: "Idle one", activity: "idle", directory: "C:\\w\\alpha" },
     ],
     activeID: "ses_a",
-    selected: 0,
+    selected: 1,
     focused: false,
+    frame: 0,
   })
   const text = app.captureCharFrame()
-  expect(text).toContain("◐")
-  expect(text).toContain("!")
-  expect(text).toContain("Connexion abonnement Claude")
-  expect((text.match(/…/g) ?? []).length).toBe(0)
-})
-
-test("a mouse click on a row selects that session", async () => {
-  let picked: string | undefined
-  const app = await renderBar({
-    sessions,
-    activeID: "ses_a",
-    selected: 0,
-    focused: false,
-    onSelect: (id) => (picked = id),
-  })
-  const y = app
-    .captureCharFrame()
-    .split("\n")
-    .findIndex((line) => line.includes("Fix flaky test"))
-  expect(y).toBeGreaterThanOrEqual(0)
-  await app.mockMouse.click(1, y)
-  await settled(app)
-  expect(picked).toBe("ses_b")
+  expect(text).toContain("⠋")
+  expect(text).toContain("○")
 })
 
 test("shows each session's last-activity date and time", async () => {
   const updated = Date.UTC(2026, 8, 26, 14, 36)
   const app = await renderBar({
-    sessions: [
-      { id: "ses_a", title: "Add navbar", updated },
-      { id: "ses_b", title: "Fix flaky test", updated },
-    ],
+    sessions: [{ id: "ses_a", title: "Add navbar", updated, directory: "C:\\w\\alpha" }],
     activeID: "ses_a",
-    selected: 0,
+    selected: 1,
     focused: false,
   })
   const text = app.captureCharFrame()
@@ -181,131 +178,145 @@ test("shows each session's last-activity date and time", async () => {
   expect(text).toContain("26/09")
 })
 
-test("keeps the timestamp when the title has to be truncated", async () => {
-  const now = new Date()
-  const day = now.getMonth() === 0 && now.getDate() === 15 ? 16 : 15
-  const updated = new Date(now.getFullYear(), 0, day, 14, 36).getTime()
-  const app = await renderBar({
-    sessions: [
-      {
-        id: "ses_a",
-        title: "Connexion abonnement Claude à OpenAI et facturation mensuelle détaillée",
-        updated,
-      },
-    ],
-    activeID: "ses_a",
-    selected: 0,
-    focused: false,
-  })
+test("shows at most three directories and a Read more for the rest", async () => {
+  const app = await renderBar({ sessions: manyDirs, selected: 0, focused: false })
   const text = app.captureCharFrame()
-  expect(text).toContain("…")
-  expect(text).toContain(Locale.time(updated))
-  expect(text).toMatch(new RegExp(`${String(day).padStart(2, "0")}/01`))
+  expect(text).toContain("Read more")
+  expect(text).toContain("(+2)")
+  expect(text).toContain("In alpha")
+  expect(text).not.toContain("In epsilon")
+  expect(text).not.toContain("In gamma")
 })
 
-const many: NavSession[] = Array.from({ length: 10 }, (_, index) => ({ id: `ses_${index}`, title: `Session ${index}` }))
+test("expanding lists every directory and drops the Read more", async () => {
+  const app = await renderBar({ sessions: manyDirs, selected: 0, focused: false, expanded: true })
+  const text = app.captureCharFrame()
+  expect(text).toContain("In gamma")
+  expect(text).toContain("In epsilon")
+  expect(text).not.toContain("Read more")
+})
 
-test("windows a long list so the last session stays reachable, with a hidden-above indicator", async () => {
-  const app = await renderBar({ sessions: many, activeID: "ses_0", selected: 9, focused: false, height: 3 })
+test("windows a long group so the last session stays reachable", async () => {
+  const app = await renderBar({ sessions: oneDirMany, selected: 10, focused: false, height: 3 })
   const text = app.captureCharFrame()
   expect(text).toContain("Session 9")
-  expect(text).toContain("more")
-  expect(text).not.toContain("Session 6")
+  expect(text).not.toContain("Session 0")
 })
 
-test("windows to the top with a hidden-below indicator", async () => {
-  const app = await renderBar({ sessions: many, selected: 0, focused: false, height: 3 })
-  const text = app.captureCharFrame()
-  expect(text).toContain("Session 0")
-  expect(text).toContain("more")
-  expect(text).not.toContain("Session 9")
-})
-
-test("shows a shortcut line with new, delete, rename and the directory mode", async () => {
-  const app = await renderBar({ sessions, selected: 0, focused: false })
-  const text = app.captureCharFrame()
-  expect(text).toContain("n new")
-  expect(text).toContain("d delete")
-  expect(text).toContain("r rename")
-  expect(text).toContain("this dir")
-})
-
-test("clicking the directory hint asks the route to toggle the scope", async () => {
-  let flipped = false
+test("the command section is framed and pinned at the bottom", async () => {
   const app = await renderBar({
     sessions,
     selected: 0,
     focused: false,
-    allDirectories: true,
-    onToggleDirectories: () => (flipped = true),
+    shortcuts: { new: "alt+n", delete: "ctrl+d", rename: "ctrl+r" },
   })
-  const lines = app.captureCharFrame().split("\n")
-  const y = lines.findIndex((line) => line.includes("all dirs"))
+  const tail = linesOf(app)
+    .filter((line) => line.trim().length > 0)
+    .slice(-3)
+  expect(tail).toHaveLength(3)
+  expect(tail[0]).toContain("-")
+  expect(tail[1]).toContain("new: alt+n")
+  expect(tail[1]).toContain("Delete: ctrl+d")
+  expect(tail[1]).toContain("Rename: ctrl+r")
+  expect(tail[1].trim()).toMatch(/^\|.*\|$/)
+  expect(tail[2]).toContain("-")
+})
+
+test("Enter on a session row opens it", async () => {
+  let opened: string | undefined
+  const app = await renderBar({ sessions: twoDirs, selected: 1, focused: true, onOpen: (id) => (opened = id) })
+  app.mockInput.pressEnter()
+  await settled(app)
+  expect(opened).toBe("a1")
+})
+
+test("Enter on a directory header toggles it", async () => {
+  let toggled: string | undefined
+  const app = await renderBar({ sessions: twoDirs, selected: 0, focused: true, onToggleDir: (key) => (toggled = key) })
+  app.mockInput.pressEnter()
+  await settled(app)
+  expect(toggled).toBe("dir:C:\\w\\alpha")
+})
+
+test("Escape on a focused bar asks the route to collapse it", async () => {
+  let closed = false
+  const app = await renderBar({ sessions: twoDirs, selected: 0, focused: true, onClose: () => (closed = true) })
+  app.mockInput.pressEscape()
+  await settled(app)
+  expect(closed).toBe(true)
+})
+
+test("the arrow keys move the selection", async () => {
+  const moves: number[] = []
+  const app = await renderBar({ sessions: twoDirs, selected: 0, focused: true, onMove: (delta) => moves.push(delta) })
+  app.mockInput.pressArrow("up")
+  app.mockInput.pressArrow("down")
+  await settled(app)
+  expect(moves).toEqual([-1, 1])
+})
+
+test("clicking a session row opens it", async () => {
+  let opened: string | undefined
+  const app = await renderBar({ sessions: twoDirs, selected: 0, focused: false, onOpen: (id) => (opened = id) })
+  const y = linesOf(app).findIndex((line) => line.includes("Beta one"))
   expect(y).toBeGreaterThanOrEqual(0)
-  await app.mockMouse.click(lines[y].indexOf("all dirs"), y)
+  await app.mockMouse.click(1, y)
+  await settled(app)
+  expect(opened).toBe("b1")
+})
+
+test("clicking a directory header toggles it", async () => {
+  let toggled: string | undefined
+  const app = await renderBar({ sessions: twoDirs, selected: 0, focused: false, onToggleDir: (key) => (toggled = key) })
+  const y = linesOf(app).findIndex((line) => line.includes("alpha"))
+  expect(y).toBeGreaterThanOrEqual(0)
+  await app.mockMouse.click(1, y)
+  await settled(app)
+  expect(toggled).toBe("dir:C:\\w\\alpha")
+})
+
+test("clicking Read more asks the route to reveal the rest", async () => {
+  let revealed = false
+  const app = await renderBar({ sessions: manyDirs, selected: 0, focused: false, onToggleMore: () => (revealed = true) })
+  const y = linesOf(app).findIndex((line) => line.includes("Read more"))
+  expect(y).toBeGreaterThanOrEqual(0)
+  await app.mockMouse.click(linesOf(app)[y].indexOf("Read more"), y)
+  await settled(app)
+  expect(revealed).toBe(true)
+})
+
+test("clicking the directory label asks the route to toggle the scope", async () => {
+  let flipped = false
+  const app = await renderBar({ sessions, selected: 0, focused: false, allDirectories: true, onToggleDirectories: () => (flipped = true) })
+  const y = linesOf(app).findIndex((line) => line.includes("all dirs"))
+  expect(y).toBeGreaterThanOrEqual(0)
+  await app.mockMouse.click(linesOf(app)[y].indexOf("all dirs"), y)
   await settled(app)
   expect(flipped).toBe(true)
 })
 
-test("clicking the delete hint asks the route to delete the selected session", async () => {
-  let deleted: string | undefined
-  const app = await renderBar({
-    sessions,
-    activeID: "ses_a",
-    selected: 1,
-    focused: false,
-    onDelete: (id) => (deleted = id),
-  })
-  const lines = app.captureCharFrame().split("\n")
-  const y = lines.findIndex((line) => line.includes("d delete"))
-  expect(y).toBeGreaterThanOrEqual(0)
-  await app.mockMouse.click(lines[y].indexOf("d delete"), y)
-  await settled(app)
-  expect(deleted).toBe("ses_b")
-})
-
-test("clicking the rename hint asks the route to rename the selected session", async () => {
-  let renamed: string | undefined
-  const app = await renderBar({
-    sessions,
-    activeID: "ses_a",
-    selected: 1,
-    focused: false,
-    onRename: (id) => (renamed = id),
-  })
-  const lines = app.captureCharFrame().split("\n")
-  const y = lines.findIndex((line) => line.includes("r rename"))
-  expect(y).toBeGreaterThanOrEqual(0)
-  await app.mockMouse.click(lines[y].indexOf("r rename"), y)
-  await settled(app)
-  expect(renamed).toBe("ses_b")
-})
-
 test("marks the row awaiting delete confirmation", async () => {
-  const app = await renderBar({ sessions, selected: 0, focused: false, pendingDelete: "ses_b" })
+  const app = await renderBar({ sessions: twoDirs, selected: 1, focused: false, pendingDelete: "a1" })
   expect(app.captureCharFrame()).toContain("press again")
 })
 
-test("the d key asks the route to delete the selected session", async () => {
+test("bare n, d and r keys never fire an action from the bar", async () => {
   let deleted: string | undefined
-  const app = await renderBar({ sessions, activeID: "ses_a", selected: 1, focused: true, onDelete: (id) => (deleted = id) })
-  app.mockInput.pressKey("d")
-  await settled(app)
-  expect(deleted).toBe("ses_b")
-})
-
-test("the r key asks the route to rename the selected session", async () => {
   let renamed: string | undefined
-  const app = await renderBar({ sessions, activeID: "ses_a", selected: 1, focused: true, onRename: (id) => (renamed = id) })
-  app.mockInput.pressKey("r")
-  await settled(app)
-  expect(renamed).toBe("ses_b")
-})
-
-test("the n key still creates a session when the bar is focused", async () => {
   let created = false
-  const app = await renderBar({ sessions, selected: 0, focused: true, onNew: () => (created = true) })
+  const app = await renderBar({
+    sessions: twoDirs,
+    selected: 1,
+    focused: true,
+    onDelete: (id) => (deleted = id),
+    onRename: (id) => (renamed = id),
+    onNew: () => (created = true),
+  })
+  app.mockInput.pressKey("d")
+  app.mockInput.pressKey("r")
   app.mockInput.pressKey("n")
   await settled(app)
-  expect(created).toBe(true)
+  expect(deleted).toBeUndefined()
+  expect(renamed).toBeUndefined()
+  expect(created).toBe(false)
 })

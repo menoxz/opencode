@@ -3,22 +3,26 @@ import { useKeyboard } from "@opentui/solid"
 import { useTheme } from "../../context/theme"
 import {
   NAV_WIDTH,
+  footerLines,
+  navDirRow,
   navDirectoryLabel,
-  navItems,
+  navMoreRow,
   navRow,
+  navRows,
   navWindow,
-  selectionID,
-  type NavItem,
+  type NavRowModel,
   type NavSession,
 } from "./session-nav"
 
 /**
- * Vertical session navbar.
+ * Vertical session navbar, grouped by directory.
  *
- * Prop-driven on purpose: the session route owns the list, the cursor and the actions, so this
- * component can be rendered in isolation by a test (and so switching sessions keeps using the
- * route's own `navigate`, exactly like the session list dialog does). Rows are windowed rather than
- * put in a scroll container so "the last session is reachable" is arithmetic the unit tests own.
+ * Prop-driven on purpose: the session route owns the list, the cursor, the collapse state and the
+ * actions, so this component can be rendered in isolation by a test (and so switching sessions keeps
+ * using the route's own `navigate`). Rows are windowed rather than put in a scroll container so "the
+ * ends stay reachable" is arithmetic the unit tests own. Only up/down/return/escape are handled here:
+ * every command (create, delete, rename) goes through the global keymap so no keystroke is swallowed
+ * from the prompt while the user types.
  */
 export function SessionNavBar(props: {
   sessions: NavSession[]
@@ -27,9 +31,15 @@ export function SessionNavBar(props: {
   focused: boolean
   height: number
   allDirectories: boolean
+  collapsed: string[]
+  expanded: boolean
+  frame: number
   pendingDelete?: string
+  shortcuts: { new: string; delete: string; rename: string }
   onMove: (delta: number) => void
-  onSelect: (id: string) => void
+  onOpen: (id: string) => void
+  onToggleDir: (key: string) => void
+  onToggleMore: () => void
   onNew: () => void
   onDelete: (id: string) => void
   onRename: (id: string) => void
@@ -39,30 +49,42 @@ export function SessionNavBar(props: {
 }) {
   const { theme } = useTheme()
   const width = () => props.width ?? NAV_WIDTH
-  const items = () => navItems(props.sessions, props.activeID)
-  const window = () => navWindow(items().length, props.selected, props.height)
-  const visible = () => items().slice(window().start, window().end)
-  const [hover, setHover] = createSignal<string | null>(null)
-  const cycle = (delta: number) => props.onMove(delta)
-  const current = () => selectionID(props.sessions, props.selected)
+  const innerWidth = () => Math.max(1, width() - 2)
+  const rows = () => navRows(props.sessions, props.activeID, { collapsed: props.collapsed, expanded: props.expanded })
+  const window = () => navWindow(rows().length, props.selected, props.height)
+  const visible = () => rows().slice(window().start, window().end).map((row, offset) => ({ row, index: window().start + offset }))
+  const [hover, setHover] = createSignal<number | null>(null)
 
-  const line = (item: NavItem) =>
-    navRow({
-      title: item.title,
-      activity: item.activity,
-      active: item.active,
-      selected: item.index === props.selected,
-      updated: item.updated,
-      width: width(),
-      pendingDelete: props.pendingDelete === item.id,
-    })
+  const line = (row: NavRowModel, index: number) => {
+    const selected = index === props.selected
+    if (row.kind === "dir") return navDirRow({ label: row.label, count: row.count, collapsed: row.collapsed, selected, width: innerWidth() })
+    if (row.kind === "session")
+      return navRow({
+        title: row.title,
+        activity: row.activity,
+        selected,
+        updated: row.updated,
+        width: innerWidth(),
+        indent: 2,
+        frame: props.frame,
+        pendingDelete: props.pendingDelete === row.id,
+      })
+    return navMoreRow(row.hidden, selected, innerWidth())
+  }
 
-  const color = (item: NavItem) => {
-    if (props.pendingDelete === item.id) return theme.error
-    if (item.index === props.selected) return theme.text
-    if (item.activity === "busy" || item.activity === "retry") return theme.accent
-    if (item.active || hover() === item.id) return theme.text
+  const color = (row: NavRowModel, index: number) => {
+    if (row.kind === "session" && props.pendingDelete === row.id) return theme.error
+    if (index === props.selected) return theme.text
+    if (row.kind === "session" && (row.activity === "busy" || row.activity === "retry")) return theme.accent
+    if (row.kind === "dir") return theme.text
+    if (hover() === index) return theme.text
     return theme.textMuted
+  }
+
+  const activate = (row: NavRowModel) => {
+    if (row.kind === "session") return props.onOpen(row.id)
+    if (row.kind === "dir") return props.onToggleDir(row.key)
+    return props.onToggleMore()
   }
 
   useKeyboard((evt) => {
@@ -70,46 +92,26 @@ export function SessionNavBar(props: {
     if (evt.name === "up") {
       evt.preventDefault()
       evt.stopPropagation()
-      cycle(-1)
+      props.onMove(-1)
       return
     }
     if (evt.name === "down") {
       evt.preventDefault()
       evt.stopPropagation()
-      cycle(1)
+      props.onMove(1)
       return
     }
     if (evt.name === "return") {
       evt.preventDefault()
       evt.stopPropagation()
-      const id = current()
-      if (id) props.onSelect(id)
+      const current = rows()[Math.min(Math.max(props.selected, 0), Math.max(0, rows().length - 1))]
+      if (current) activate(current)
       return
     }
     if (evt.name === "escape") {
       evt.preventDefault()
       evt.stopPropagation()
       props.onClose?.()
-      return
-    }
-    if (evt.name === "n") {
-      evt.preventDefault()
-      evt.stopPropagation()
-      props.onNew()
-      return
-    }
-    if (evt.name === "d") {
-      evt.preventDefault()
-      evt.stopPropagation()
-      const id = current()
-      if (id) props.onDelete(id)
-      return
-    }
-    if (evt.name === "r") {
-      evt.preventDefault()
-      evt.stopPropagation()
-      const id = current()
-      if (id) props.onRename(id)
     }
   })
 
@@ -125,23 +127,26 @@ export function SessionNavBar(props: {
       paddingLeft={1}
       paddingRight={1}
     >
-      <box flexShrink={0} gap={1}>
-        <text fg={theme.text}>
-          <b>Sessions</b>
-        </text>
+      <box flexShrink={0} gap={1} flexGrow={1}>
+        <box flexDirection="row" gap={1} flexShrink={0} onMouseUp={() => props.onToggleDirectories()}>
+          <text fg={theme.text}>
+            <b>Sessions</b>
+          </text>
+          <text fg={theme.textMuted}>{navDirectoryLabel(props.allDirectories)}</text>
+        </box>
         <Show when={window().hiddenAbove > 0}>
           <text fg={theme.textMuted}>↑ {window().hiddenAbove} more</text>
         </Show>
         <For each={visible()} fallback={<text fg={theme.textMuted}>No sessions yet</text>}>
-          {(item) => (
+          {(entry) => (
             <box
               width="100%"
-              onMouseOver={() => setHover(item.id)}
-              onMouseOut={() => setHover((current) => (current === item.id ? null : current))}
-              onMouseUp={() => props.onSelect(item.id)}
+              onMouseOver={() => setHover(entry.index)}
+              onMouseOut={() => setHover((current) => (current === entry.index ? null : current))}
+              onMouseUp={() => activate(entry.row)}
             >
-              <text fg={color(item)} wrapMode="none">
-                {line(item)}
+              <text fg={color(entry.row, entry.index)} wrapMode="none">
+                {line(entry.row, entry.index)}
               </text>
             </box>
           )}
@@ -149,30 +154,15 @@ export function SessionNavBar(props: {
         <Show when={window().hiddenBelow > 0}>
           <text fg={theme.textMuted}>↓ {window().hiddenBelow} more</text>
         </Show>
-        <box flexDirection="row" gap={1}>
-          <box onMouseUp={() => props.onNew()}>
-            <text fg={theme.textMuted}>n new</text>
-          </box>
-          <box
-            onMouseUp={() => {
-              const id = current()
-              if (id) props.onDelete(id)
-            }}
-          >
-            <text fg={theme.textMuted}>d delete</text>
-          </box>
-          <box
-            onMouseUp={() => {
-              const id = current()
-              if (id) props.onRename(id)
-            }}
-          >
-            <text fg={theme.textMuted}>r rename</text>
-          </box>
-          <box onMouseUp={() => props.onToggleDirectories()}>
-            <text fg={theme.textMuted}>a {navDirectoryLabel(props.allDirectories)}</text>
-          </box>
-        </box>
+      </box>
+      <box flexShrink={0} flexDirection="column">
+        <For each={footerLines(innerWidth(), props.shortcuts)}>
+          {(footer) => (
+            <text fg={theme.textMuted} wrapMode="none">
+              {footer}
+            </text>
+          )}
+        </For>
       </box>
     </box>
   )

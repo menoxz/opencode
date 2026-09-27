@@ -1,22 +1,35 @@
 import { describe, expect, test } from "bun:test"
 import { Locale } from "@/util/locale"
 import {
+  NAV_DIR_LIMIT,
   NAV_MIN_TERMINAL_WIDTH,
   NAV_WIDTH,
-  activityGlyph,
+  SPINNER_FRAMES,
   clampSelection,
+  footerLines,
   initialSelection,
   moveSelection,
   navActivity,
+  navBasename,
+  navDirRow,
   navDirectoryLabel,
+  navGroups,
   navItems,
   navLabel,
   navListHeight,
+  navMoreRow,
   navRow,
+  navRows,
+  navSelection,
   navStamp,
   navVisible,
+  navVisibleGroups,
   navWindow,
+  selectionDirKey,
   selectionID,
+  selectionSessionID,
+  spinGlyph,
+  toggleCollapsed,
   type NavSession,
 } from "./session-nav"
 
@@ -30,6 +43,15 @@ const now = new Date(2026, 8, 27, 13, 54)
 const todayAt = new Date(2026, 8, 27, 16, 36).getTime()
 const sameYearAt = new Date(2026, 8, 15, 22, 35).getTime()
 const olderYearAt = new Date(2025, 8, 15, 22, 35).getTime()
+
+const grouped: NavSession[] = [
+  { id: "a1", title: "Alpha one", directory: "C:\\work\\opencode-fork", updated: todayAt },
+  { id: "a2", title: "Alpha two", directory: "C:\\work\\opencode-fork", updated: sameYearAt },
+  { id: "b1", title: "Beta one", directory: "C:\\work\\command-code", updated: olderYearAt },
+  { id: "c1", title: "Gamma one", directory: "C:\\other\\deepseek", updated: todayAt },
+  { id: "d1", title: "Delta one", directory: "C:\\other\\harness", updated: todayAt },
+  { id: "e1", title: "Epsilon one", directory: "C:\\other\\misc", updated: todayAt },
+]
 
 describe("TUI session navbar", () => {
   test("lists the sessions of the project and flags the active one", () => {
@@ -112,12 +134,13 @@ describe("TUI session navbar", () => {
     expect(navActivity({ type: "retry" })).toBe("retry")
   })
 
-  test("shows activity for every row, not only the active one", () => {
-    expect(activityGlyph(true, "idle")).toBe("●")
-    expect(activityGlyph(false, "idle")).toBe("○")
-    expect(activityGlyph(false, "busy")).toBe("◐")
-    expect(activityGlyph(false, "retry")).toBe("!")
-    expect(activityGlyph(true, "busy")).toBe("◐")
+  test("spins while working and rests otherwise", () => {
+    expect(spinGlyph("idle", 0)).toBe("○")
+    expect(spinGlyph("retry", 5)).toBe("○")
+    expect(spinGlyph("busy", 0)).toBe(SPINNER_FRAMES[0])
+    expect(spinGlyph("busy", 3)).toBe(SPINNER_FRAMES[3])
+    expect(spinGlyph("busy", SPINNER_FRAMES.length + 2)).toBe(SPINNER_FRAMES[2])
+    expect(spinGlyph("busy", -1)).toBe(SPINNER_FRAMES[SPINNER_FRAMES.length - 1])
   })
 
   test("keeps the time for today, adds day and month this year, and the year before that", () => {
@@ -134,73 +157,43 @@ describe("TUI session navbar", () => {
     expect(navStamp(olderYearAt, now)).toMatch(/\d{2}\/\d{2}\/\d{2} .*\d{1,2}:\d{2}/)
   })
 
-  test("builds one row per session with the timestamp right-aligned and never overflowing", () => {
+  test("builds a session line with the glyph and the timestamp reserved", () => {
     const stamp = navStamp(sameYearAt, now) ?? ""
-    const row = navRow({
-      title: "Add navbar",
-      activity: "idle",
-      active: true,
-      selected: true,
-      updated: sameYearAt,
-      width: NAV_WIDTH,
-      now,
-    })
-    expect(row.startsWith("> ● Add navbar")).toBe(true)
+    const row = navRow({ title: "Add navbar", activity: "idle", selected: true, updated: sameYearAt, width: NAV_WIDTH, now })
+    expect(row.startsWith("> ○ Add navbar")).toBe(true)
     expect(row.endsWith(stamp)).toBe(true)
     expect(row.length).toBeLessThanOrEqual(NAV_WIDTH)
+  })
+
+  test("a working session shows a spinner on its line", () => {
+    const row = navRow({ title: "Working", activity: "busy", selected: false, width: NAV_WIDTH, frame: 2, now })
+    expect(row.startsWith(`  ${SPINNER_FRAMES[2]} Working`)).toBe(true)
   })
 
   test("a title far too long is truncated while the timestamp stays whole", () => {
     const long = "Connexion abonnement Claude à OpenAI et facturation mensuelle détaillée"
     const stamp = navStamp(sameYearAt, now) ?? ""
-    const row = navRow({
-      title: long,
-      activity: "busy",
-      active: false,
-      selected: false,
-      updated: sameYearAt,
-      width: NAV_WIDTH,
-      now,
-    })
-    expect(row).toContain("…")
+    const row = navRow({ title: long, activity: "busy", selected: false, updated: sameYearAt, width: NAV_WIDTH, now })
     expect((row.match(/…/g) ?? []).length).toBe(1)
     expect(row.endsWith(stamp)).toBe(true)
     expect(row.length).toBeLessThanOrEqual(NAV_WIDTH)
   })
 
   test("a pending deletion replaces the stamp with the confirm hint", () => {
-    const row = navRow({
-      title: "Delete me",
-      activity: "idle",
-      active: false,
-      selected: true,
-      updated: sameYearAt,
-      width: NAV_WIDTH,
-      now,
-      pendingDelete: true,
-    })
-    expect(row).toContain("press")
-    expect(row.endsWith("again")).toBe(true)
+    const row = navRow({ title: "Delete me", activity: "idle", selected: true, updated: sameYearAt, width: NAV_WIDTH, now, pendingDelete: true })
+    expect(row).toContain("press again")
     expect(row.length).toBeLessThanOrEqual(NAV_WIDTH)
   })
 
   test("even at a minimal width the row never overflows", () => {
     const stamp = navStamp(olderYearAt, now) ?? ""
-    const row = navRow({
-      title: "Anything",
-      activity: "idle",
-      active: false,
-      selected: false,
-      updated: olderYearAt,
-      width: 24,
-      now,
-    })
+    const row = navRow({ title: "Anything", activity: "idle", selected: false, updated: olderYearAt, width: 24, now })
     expect(row.endsWith(stamp)).toBe(true)
     expect(row.length).toBeLessThanOrEqual(24)
   })
 
   test("a row without a timestamp still fills the width with the title", () => {
-    const row = navRow({ title: "Old session", activity: "idle", active: false, selected: false, width: NAV_WIDTH, now })
+    const row = navRow({ title: "Old session", activity: "idle", selected: false, width: NAV_WIDTH, now })
     expect(row.startsWith("  ○ Old session")).toBe(true)
     expect(row.length).toBeLessThanOrEqual(NAV_WIDTH)
   })
@@ -229,8 +222,6 @@ describe("TUI session navbar", () => {
     expect(last.end).toBe(20)
     expect(last.hiddenBelow).toBe(0)
     expect(last.hiddenAbove).toBe(15)
-    expect(last.start).toBeLessThanOrEqual(19)
-    expect(last.end).toBeGreaterThan(19)
   })
 
   test("the window always contains the selected index", () => {
@@ -240,5 +231,139 @@ describe("TUI session navbar", () => {
       expect(window.end).toBeGreaterThan(selected)
       expect(window.end - window.start).toBe(6)
     }
+  })
+
+  test("derives a directory's own name from a full path", () => {
+    expect(navBasename("C:\\jeanluc\\opencode-fork")).toBe("opencode-fork")
+    expect(navBasename("/home/me/command-code/")).toBe("command-code")
+    expect(navBasename(undefined)).toBe("unknown")
+    expect(navBasename("")).toBe("unknown")
+  })
+
+  test("groups sessions by directory and counts each group", () => {
+    const groups = navGroups(grouped, undefined)
+    expect(groups).toHaveLength(5)
+    const fork = groups.find((group) => group.key === "C:\\work\\opencode-fork")
+    expect(fork?.label).toBe("opencode-fork")
+    expect(fork?.count).toBe(2)
+    expect(fork?.sessions.map((session) => session.id)).toEqual(["a1", "a2"])
+  })
+
+  test("pins the active session's directory first", () => {
+    const groups = navGroups(grouped, "b1")
+    expect(groups[0].key).toBe("C:\\work\\command-code")
+    expect(groups[0].active).toBe(true)
+  })
+
+  test("orders the rest by most recent activity", () => {
+    const byRecency: NavSession[] = [
+      { id: "r1", title: "Recent", directory: "C:\\a\\alpha", updated: todayAt },
+      { id: "r2", title: "Older", directory: "C:\\b\\beta", updated: olderYearAt },
+      { id: "r3", title: "Middle", directory: "C:\\c\\gamma", updated: sameYearAt },
+    ]
+    expect(navGroups(byRecency, undefined).map((group) => group.label)).toEqual(["alpha", "gamma", "beta"])
+  })
+
+  test("breaks ties on the directory label so the order is stable", () => {
+    const rows = navRows(grouped, undefined, { collapsed: [], expanded: true })
+    const labels = rows.filter((row) => row.kind === "dir").map((row) => (row.kind === "dir" ? row.label : ""))
+    expect(labels).toEqual(["deepseek", "harness", "misc", "opencode-fork", "command-code"])
+  })
+
+  test("shows at most three directories and tells how many are hidden", () => {
+    const groups = navGroups(grouped, undefined)
+    const collapsedView = navVisibleGroups(groups, false)
+    expect(collapsedView.shown).toHaveLength(NAV_DIR_LIMIT)
+    expect(collapsedView.hidden).toBe(groups.length - NAV_DIR_LIMIT)
+
+    const expandedView = navVisibleGroups(groups, true)
+    expect(expandedView.shown).toHaveLength(groups.length)
+    expect(expandedView.hidden).toBe(0)
+  })
+
+  test("flattens the tree into headers, sessions and a single reveal", () => {
+    const rows = navRows(grouped, undefined, { collapsed: [], expanded: false })
+    const dirs = rows.filter((row) => row.kind === "dir")
+    expect(dirs).toHaveLength(NAV_DIR_LIMIT)
+    expect(rows.at(-1)?.kind).toBe("more")
+    expect(rows.filter((row) => row.kind === "session").length).toBeGreaterThan(0)
+  })
+
+  test("a collapsed directory contributes its header only", () => {
+    const rows = navRows(grouped, undefined, { collapsed: ["C:\\work\\opencode-fork"], expanded: true })
+    expect(rows.find((row) => row.kind === "dir" && row.label === "opencode-fork")).toMatchObject({ kind: "dir", collapsed: true })
+    expect(rows.some((row) => row.kind === "session" && row.id === "a1")).toBe(false)
+    expect(rows.some((row) => row.kind === "session" && row.id === "b1")).toBe(true)
+  })
+
+  test("expanding removes the reveal and lists every directory", () => {
+    const rows = navRows(grouped, undefined, { collapsed: [], expanded: true })
+    expect(rows.some((row) => row.kind === "more")).toBe(false)
+    expect(rows.filter((row) => row.kind === "dir")).toHaveLength(5)
+  })
+
+  test("selects the active session's row, otherwise a clamped position", () => {
+    const rows = navRows(grouped, "b1", { collapsed: [], expanded: true })
+    const index = navSelection(rows, "b1", 0)
+    expect(rows[index]).toMatchObject({ kind: "session", id: "b1" })
+    expect(navSelection(rows, "gone", 999)).toBe(rows.length - 1)
+  })
+
+  test("resolves the session and directory under a row", () => {
+    const rows = navRows(grouped, undefined, { collapsed: [], expanded: true })
+    const dirIndex = rows.findIndex((row) => row.kind === "dir" && row.label === "opencode-fork")
+    const sessionIndex = rows.findIndex((row) => row.kind === "session" && row.id === "a1")
+    expect(selectionDirKey(rows, dirIndex)).toBe("C:\\work\\opencode-fork")
+    expect(selectionSessionID(rows, dirIndex)).toBeUndefined()
+    expect(selectionSessionID(rows, sessionIndex)).toBe("a1")
+    expect(selectionDirKey(rows, sessionIndex)).toBeUndefined()
+  })
+
+  test("toggles a directory's collapsed state without touching the others", () => {
+    expect(toggleCollapsed([], "x")).toEqual(["x"])
+    expect(toggleCollapsed(["x", "y"], "x")).toEqual(["y"])
+    expect(toggleCollapsed(["y"], "x")).toEqual(["y", "x"])
+  })
+
+  test("a directory header right-aligns its session count and never overflows", () => {
+    const row = navDirRow({ label: "opencode-fork", count: 7, collapsed: false, selected: true, width: NAV_WIDTH })
+    expect(row.startsWith("> ▾ opencode-fork")).toBe(true)
+    expect(row.endsWith(" 7")).toBe(true)
+    expect(row.length).toBeLessThanOrEqual(NAV_WIDTH)
+
+    const collapsedRow = navDirRow({ label: "opencode-fork", count: 7, collapsed: true, selected: false, width: NAV_WIDTH })
+    expect(collapsedRow.startsWith("  ▸ opencode-fork")).toBe(true)
+  })
+
+  test("a long directory name is truncated while the count stays whole", () => {
+    const row = navDirRow({ label: "a-very-long-directory-name-that-would-overflow-the-bar", count: 12, collapsed: false, selected: false, width: NAV_WIDTH })
+    expect((row.match(/…/g) ?? []).length).toBe(1)
+    expect(row.endsWith(" 12")).toBe(true)
+    expect(row.length).toBeLessThanOrEqual(NAV_WIDTH)
+  })
+
+  test("the reveal line states how many directories are hidden", () => {
+    const row = navMoreRow(4, true, NAV_WIDTH)
+    expect(row).toContain("Read more")
+    expect(row).toContain("4")
+    expect(row.length).toBeLessThanOrEqual(NAV_WIDTH)
+  })
+
+  test("frames the command bar and keeps it exactly the bar's width", () => {
+    const lines = footerLines(NAV_WIDTH, { new: "Alt+n", delete: "ctrl+d", rename: "ctrl+r" })
+    expect(lines).toHaveLength(3)
+    expect(lines[1].startsWith("|")).toBe(true)
+    expect(lines[1].endsWith("|")).toBe(true)
+    expect(lines[1]).toContain("new: Alt+n")
+    expect(lines[1]).toContain("Delete: ctrl+d")
+    expect(lines[1]).toContain("Rename: ctrl+r")
+    expect(lines.every((line) => line.length === NAV_WIDTH)).toBe(true)
+  })
+
+  test("an over-long shortcut list is truncated inside the frame", () => {
+    const lines = footerLines(24, { new: "ctrl+alt+shift+n", delete: "ctrl+alt+d", rename: "ctrl+alt+r" })
+    expect(lines.every((line) => line.length === 24)).toBe(true)
+    expect(lines[1].startsWith("|")).toBe(true)
+    expect(lines[1].endsWith("|")).toBe(true)
   })
 })

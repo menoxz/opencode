@@ -77,6 +77,10 @@ import {
   type NavSession,
   type NavVisibility,
   navListHeight,
+  navRows,
+  navSelection,
+  selectionSessionID,
+  toggleCollapsed,
 } from "./session-nav"
 import { SubagentBar } from "./subagent-bar.tsx"
 import { SubagentFooter } from "./subagent-footer.tsx"
@@ -146,6 +150,7 @@ function goUpsellKeys(action: SessionRetry.Retryable["action"]) {
 const sessionBindingCommands = [
   "session.share",
   "session.rename",
+  "session.delete",
   "session.timeline",
   "session.fork",
   "session.compact",
@@ -345,6 +350,12 @@ export function Session() {
   const [navSelected, setNavSelected] = createSignal(0)
   const [navPendingDelete, setNavPendingDelete] = createSignal<string>()
   const [navDirectoryFilter, setNavDirectoryFilter] = kv.signal("session_directory_filter_enabled", true)
+  const [navCollapsed, setNavCollapsed] = createSignal<string[]>([])
+  const [navExpanded, setNavExpanded] = createSignal(false)
+  const [navFrame, setNavFrame] = createSignal(0)
+  const navNewShortcut = useCommandShortcut("session.new")
+  const navDeleteShortcut = useCommandShortcut("session.delete")
+  const navRenameShortcut = useCommandShortcut("session.rename")
   const navSessions = createMemo<NavSession[]>(() =>
     sync.data.session
       .filter((item) => item.parentID === undefined)
@@ -354,17 +365,24 @@ export function Session() {
         activity: navActivity(sync.data.session_status?.[item.id]),
         updated: item.time.updated,
         directory: item.directory,
-      }))
-      .toSorted((a, b) => Number(b.activity !== "idle") - Number(a.activity !== "idle") || b.updated - a.updated)
-      .map(({ id, title, activity, updated, directory }) => ({ id, title, activity, updated, directory })),
+      })),
   )
+  const navList = createMemo(() =>
+    navRows(navSessions(), route.sessionID, { collapsed: navCollapsed(), expanded: navExpanded() }),
+  )
+  const navSel = createMemo(() => navSelection(navList(), route.sessionID, navSelected()))
   // Open on the session being worked on, and follow it when the route changes.
   createEffect(() => {
-    const id = route.sessionID
-    const total = navSessions().length
-    setNavSelected((current) => (total === 0 ? 0 : initialSelection(id, navSessions(), current)))
+    const total = navList().length
+    setNavSelected(total === 0 ? 0 : navSelection(navList(), route.sessionID, untrack(navSelected)))
   })
   const navShown = createMemo(() => !session()?.parentID && navVisible(nav(), dimensions().width, navOpen()))
+  const navWorking = createMemo(() => navSessions().some((item) => item.activity === "busy"))
+  createEffect(() => {
+    if (!navShown() || !navWorking()) return
+    const timer = setInterval(() => setNavFrame((frame) => frame + 1), 120)
+    onCleanup(() => clearInterval(timer))
+  })
   const contentWidth = createMemo(
     () => dimensions().width - (sidebarVisible() ? 42 : 0) - (navShown() ? NAV_WIDTH : 0) - 4,
   )
@@ -684,6 +702,15 @@ export function Session() {
       },
       run: () => {
         dialog.replace(() => <DialogSessionRename session={route.sessionID} />)
+      },
+    },
+    {
+      title: "Delete session",
+      value: "session.delete",
+      category: "Session",
+      run: () => {
+        const target = selectionSessionID(navList(), navSel()) ?? route.sessionID
+        if (target) void navDelete(target)
       },
     },
     {
@@ -1490,6 +1517,11 @@ export function Session() {
     setNavDirectoryFilter((current) => !current)
     void sync.bootstrap({ fatal: false })
   }
+  const navOpenSession = (id: string) => {
+    setNavFocused(false)
+    navigate({ type: "session", sessionID: id })
+  }
+  const navToggleDir = (key: string) => setNavCollapsed((current) => toggleCollapsed(current, key.slice("dir:".length)))
 
   return (
     <PathFormatterProvider path={session()?.directory}>
@@ -1516,19 +1548,22 @@ export function Session() {
             <SessionNavBar
               sessions={navSessions()}
               activeID={route.sessionID}
-              selected={navSelected()}
+              selected={navSel()}
               focused={navFocused()}
               height={navListHeight(dimensions().height)}
               allDirectories={!navDirectoryFilter()}
+              collapsed={navCollapsed()}
+              expanded={navExpanded()}
+              frame={navFrame()}
               pendingDelete={navPendingDelete()}
-              onMove={(delta) => setNavSelected(moveSelection(navSelected(), delta, navSessions().length))}
+              shortcuts={{ new: navNewShortcut(), delete: navDeleteShortcut(), rename: navRenameShortcut() }}
+              onMove={(delta) => setNavSelected(moveSelection(navSelected(), delta, navList().length))}
+              onOpen={navOpenSession}
+              onToggleDir={navToggleDir}
+              onToggleMore={() => setNavExpanded(true)}
               onDelete={(id) => void navDelete(id)}
               onRename={(id) => navRename(id)}
               onToggleDirectories={() => navToggleDirectories()}
-              onSelect={(id) => {
-                setNavFocused(false)
-                navigate({ type: "session", sessionID: id })
-              }}
               onNew={() => {
                 setNavFocused(false)
                 const model = local.model.current()

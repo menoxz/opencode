@@ -21,6 +21,25 @@ export type NavItem = {
   directory?: string
 }
 
+/** A directory and the sessions it holds, in the order the bar shows them. */
+export type NavGroup = {
+  key: string
+  label: string
+  count: number
+  active: boolean
+  updated: number
+  sessions: NavItem[]
+}
+
+/** One rendered line: a directory header, a session, or the "Read more" reveal. */
+export type NavRowModel =
+  | { kind: "dir"; key: string; label: string; count: number; collapsed: boolean; selected: boolean }
+  | { kind: "session"; key: string; id: string; title: string; activity: NavActivity; updated?: number; selected: boolean }
+  | { kind: "more"; key: string; hidden: number; selected: boolean }
+
+/** Which directories the user collapsed, and whether the directory cap was lifted. */
+export type NavState = { collapsed: readonly string[]; expanded: boolean }
+
 /** Vertical bar width, in terminal columns. */
 export const NAV_WIDTH = 52
 
@@ -37,6 +56,12 @@ export const NAV_ROW_CHROME = 6
 /** Rows the bar keeps for its header, its shortcut line and the scroll indicators. */
 export const NAV_CHROME_ROWS = 4
 
+/** Directories shown before the list folds behind "Read more". */
+export const NAV_DIR_LIMIT = 3
+
+/** Braille spinner frames, one per animation step, used while a session is working. */
+export const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+
 export type NavVisibility = "auto" | "hide"
 
 /** Maps the store's session status onto the coarse activity the bar shows. */
@@ -46,11 +71,11 @@ export function navActivity(status: { type?: string } | undefined): NavActivity 
   return "idle"
 }
 
-/** One glyph per row: it shows activity for every session, and doubles as the active marker. */
-export function activityGlyph(active: boolean, activity: NavActivity): string {
-  if (activity === "busy") return "◐"
-  if (activity === "retry") return "!"
-  return active ? "●" : "○"
+/** A working session spins; a stopped one rests. The frame is driven by the caller's clock. */
+export function spinGlyph(activity: NavActivity, frame: number): string {
+  if (activity !== "busy") return "○"
+  const size = SPINNER_FRAMES.length
+  return SPINNER_FRAMES[((frame % size) + size) % size]
 }
 
 const pad = (value: number) => String(value).padStart(2, "0")
@@ -118,13 +143,166 @@ export function navLabel(title: string, budget: number): string {
   return label.slice(0, budget - 1) + "…"
 }
 
+/** The directory's own name, so a full path still fits the bar; sessions without one share "unknown". */
+export function navBasename(directory: string | undefined): string {
+  const parts = (directory ?? "").split(/[\\/]/).filter(Boolean)
+  return parts.at(-1) ?? "unknown"
+}
+
+/**
+ * Sessions folded by directory. The active session's directory is pinned first so the session being
+ * worked on is never pushed below the fold, then directories are ordered by their most recent
+ * activity. Pure, so grouping is a unit test rather than a claim about the renderer.
+ */
+export function navGroups(sessions: readonly NavSession[], activeID: string | undefined): NavGroup[] {
+  const buckets = new Map<string, NavSession[]>()
+  for (const session of sessions) {
+    const key = session.directory ?? ""
+    const bucket = buckets.get(key)
+    if (bucket) bucket.push(session)
+    else buckets.set(key, [session])
+  }
+  return [...buckets.entries()]
+    .map(([key, list]) => ({
+      key,
+      label: navBasename(key),
+      count: list.length,
+      active: list.some((session) => session.id === activeID),
+      updated: list.reduce((latest, session) => Math.max(latest, session.updated ?? 0), 0),
+      sessions: navItems(list, activeID),
+    }))
+    .toSorted(
+      (a, b) => Number(b.active) - Number(a.active) || b.updated - a.updated || a.label.localeCompare(b.label),
+    )
+}
+
+/** The directories shown before "Read more", plus how many the reveal is hiding. */
+export function navVisibleGroups(groups: readonly NavGroup[], expanded: boolean, limit = NAV_DIR_LIMIT): { shown: NavGroup[]; hidden: number } {
+  const size = expanded ? groups.length : Math.min(Math.max(0, limit), groups.length)
+  return { shown: groups.slice(0, size), hidden: groups.length - size }
+}
+
+/**
+ * Flattens the tree into the exact lines the bar draws, so selection, windowing and rendering all
+ * share one model. A collapsed directory contributes its header only; hidden directories become a
+ * single "Read more" row. The selection is the row's index in this array.
+ */
+export function navRows(sessions: readonly NavSession[], activeID: string | undefined, state: NavState): NavRowModel[] {
+  const { shown, hidden } = navVisibleGroups(navGroups(sessions, activeID), state.expanded)
+  const rows: NavRowModel[] = []
+  for (const group of shown) {
+    const collapsed = state.collapsed.includes(group.key)
+    rows.push({ kind: "dir", key: `dir:${group.key}`, label: group.label, count: group.count, collapsed, selected: false })
+    if (collapsed) continue
+    for (const session of group.sessions) {
+      rows.push({
+        kind: "session",
+        key: `ses:${session.id}`,
+        id: session.id,
+        title: session.title,
+        activity: session.activity,
+        updated: session.updated,
+        selected: false,
+      })
+    }
+  }
+  if (hidden > 0) rows.push({ kind: "more", key: "more", hidden, selected: false })
+  return rows
+}
+
+/** Index to show as selected: the active session's row when present, otherwise a clamped index. */
+export function navSelection(rows: readonly NavRowModel[], activeID: string | undefined, stored: number): number {
+  const found = rows.findIndex((row) => row.kind === "session" && row.id === activeID)
+  return found >= 0 ? found : clampSelection(stored, rows.length)
+}
+
+/** The session id under a row, or undefined when the row is a directory or the reveal. */
+export function selectionSessionID(rows: readonly NavRowModel[], index: number): string | undefined {
+  const row = rows[clampSelection(index, rows.length)]
+  return row?.kind === "session" ? row.id : undefined
+}
+
+/** The directory key under a row, so the header action can toggle the right folder. */
+export function selectionDirKey(rows: readonly NavRowModel[], index: number): string | undefined {
+  const row = rows[clampSelection(index, rows.length)]
+  return row?.kind === "dir" ? row.key.slice("dir:".length) : undefined
+}
+
+/** Adds or removes a directory from the collapsed set, leaving every other entry untouched. */
+export function toggleCollapsed(collapsed: readonly string[], key: string): string[] {
+  return collapsed.includes(key) ? collapsed.filter((entry) => entry !== key) : [...collapsed, key]
+}
+
+export type NavDirRowInput = { label: string; count: number; collapsed: boolean; selected: boolean; width: number }
+
+/**
+ * A directory header: the disclosure glyph, the folder's name, and its session count pushed to the
+ * right edge by construction. The count is reserved first so a long name can never hide it.
+ */
+export function navDirRow(input: NavDirRowInput): string {
+  const prefix = `${input.selected ? ">" : " "} ${input.collapsed ? "▸" : "▾"} `
+  const suffix = ` ${input.count}`
+  const available = Math.max(1, input.width - prefix.length - suffix.length - 1)
+  return `${prefix}${navLabel(input.label, available)}`
+    .padEnd(input.width - suffix.length, " ")
+    .concat(suffix)
+}
+
+export type NavRowInput = {
+  title: string
+  activity: NavActivity
+  selected: boolean
+  updated?: number
+  width: number
+  now?: Date
+  frame?: number
+  indent?: number
+  pendingDelete?: boolean
+}
+
+/**
+ * A session line: the spinner or rest glyph, the title, and the timestamp reserved first so a long
+ * title can never push the date out of the row. The stamp is right-aligned by construction rather
+ * than by the renderer's flex rules, and the line never grows past `width`, so it cannot wrap.
+ */
+export function navRow(input: NavRowInput): string {
+  const prefix = `${" ".repeat(Math.max(0, input.indent ?? 0))}${input.selected ? ">" : " "} ${spinGlyph(input.activity, input.frame ?? 0)} `
+  const stamp = input.pendingDelete ? "press again" : navStamp(input.updated, input.now)
+  const available = Math.max(1, input.width - prefix.length - 2)
+  if (!stamp) return `${prefix}${navLabel(input.title, available)}`
+  const label = navLabel(input.title, Math.max(1, available - stamp.length - 1))
+  const gap = Math.max(1, available - label.length - stamp.length)
+  return `${prefix}${label}${" ".repeat(gap)}${stamp}`
+}
+
+/** The "Read more" line: how many directories the reveal is hiding. */
+export function navMoreRow(hidden: number, selected: boolean, width: number): string {
+  const prefix = `${selected ? ">" : " "} `
+  return `${prefix}${navLabel(`Read more (+${hidden})`, Math.max(1, width - prefix.length - 2))}`
+}
+
+export type NavFooterShortcuts = { new: string; delete: string; rename: string }
+
+/**
+ * The three framed lines of the command bar. Framing is computed here so the box always matches the
+ * bar's width, and the actions are truncated rather than allowed to spill past the frame.
+ */
+export function footerLines(width: number, shortcuts: NavFooterShortcuts): string[] {
+  const inner = Math.max(1, width - 2)
+  const text = `new: ${shortcuts.new}  Delete: ${shortcuts.delete}  Rename: ${shortcuts.rename}`
+  return [` ${"-".repeat(inner)} `, `|${navLabel(text, inner).padEnd(inner)}|`, ` ${"-".repeat(inner)} `]
+}
+
+/** Footer marker telling whether the bar lists every directory or only the working one. */
+export function navDirectoryLabel(allDirectories: boolean): string {
+  return allDirectories ? "all dirs" : "this dir"
+}
+
 export type NavWindow = { start: number; end: number; hiddenAbove: number; hiddenBelow: number }
 
 /**
- * The slice of the list the bar can actually show, keeping the selection inside it and reporting how
- * many sessions are hidden on each side. Pure, so "the last session is reachable" is a test rather
- * than a claim about the renderer: windowing removes the need for a scroll container whose viewport
- * height the component cannot otherwise know.
+ * The slice of the flattened rows the bar can actually show, keeping the selection inside it and
+ * reporting how many lines are hidden on each side, so the ends of a long list stay reachable.
  */
 export function navWindow(total: number, selected: number, height: number): NavWindow {
   const size = Math.max(1, Math.floor(height))
@@ -136,41 +314,9 @@ export function navWindow(total: number, selected: number, height: number): NavW
   return { start, end, hiddenAbove: start, hiddenBelow: total - end }
 }
 
-/** Rows of session list the terminal can show, once the bar's own header and hints are removed. */
+/** Rows of session list the terminal can show, once the bar's own chrome and footer are removed. */
 export function navListHeight(terminalRows: number): number {
   return Math.max(1, Math.floor(terminalRows) - NAV_CHROME_ROWS)
-}
-
-export type NavRowInput = {
-  title: string
-  activity: NavActivity
-  active: boolean
-  selected: boolean
-  updated?: number
-  width: number
-  now?: Date
-  pendingDelete?: boolean
-}
-
-/**
- * A whole row as one string. The timestamp is reserved first and the title is truncated into what is
- * left, so a long title can never push the date out of the row — the invariant the bar is judged on.
- * The stamp is right-aligned by construction rather than by the renderer's flex rules, and the line
- * never grows past `width`, so it cannot wrap onto a second one.
- */
-export function navRow(input: NavRowInput): string {
-  const prefix = `${input.selected ? ">" : " "} ${activityGlyph(input.active, input.activity)} `
-  const stamp = input.pendingDelete ? "press again" : navStamp(input.updated, input.now)
-  const available = Math.max(1, input.width - prefix.length - 2)
-  if (!stamp) return `${prefix}${navLabel(input.title, available)}`
-  const label = navLabel(input.title, Math.max(1, available - stamp.length - 1))
-  const gap = Math.max(1, available - label.length - stamp.length)
-  return `${prefix}${label}${" ".repeat(gap)}${stamp}`
-}
-
-/** Footer marker telling whether the bar lists every directory or only the working one. */
-export function navDirectoryLabel(allDirectories: boolean): string {
-  return allDirectories ? "all dirs" : "this dir"
 }
 
 /** Mirrors the sidebar's `auto` / `hide` behaviour: narrow terminals hide the bar unless asked. */
