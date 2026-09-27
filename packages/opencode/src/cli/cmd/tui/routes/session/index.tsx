@@ -1491,7 +1491,24 @@ export function Session() {
               }}
               onNew={() => {
                 setNavFocused(false)
-                navigate({ type: "home" })
+                const model = local.model.current()
+                const chosen = local.agent.current()
+                if (!model || !chosen) {
+                  navigate({ type: "home" })
+                  return
+                }
+                void sdk.client.session
+                  .create({
+                    agent: chosen.name,
+                    model: {
+                      providerID: model.providerID,
+                      id: model.modelID,
+                      variant: local.model.variant.current(),
+                    },
+                  })
+                  .then((res) =>
+                    navigate(res.error || !res.data ? { type: "home" } : { type: "session", sessionID: res.data.id }),
+                  )
               }}
               onClose={() => setNavFocused(false)}
             />
