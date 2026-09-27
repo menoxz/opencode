@@ -126,8 +126,10 @@ async function toolError(part: ToolPart) {
 }
 
 export const RunCommand = effectCmd({
-  command: "run [message..]",
-  describe: "run opencodev2 with a message",
+  command: "cli [message..]",
+  // `run` stays as an alias so existing scripts keep working.
+  aliases: ["run"],
+  describe: "run opencodev2 cli with a message",
   // --attach connects to a remote server (no local instance needed); the
   // default path runs an in-process server and needs the project instance.
   instance: (args) => !args.attach,

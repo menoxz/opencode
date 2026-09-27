@@ -46,7 +46,6 @@ import { Migration } from "./cli/migrate"
 import { errorMessage } from "./util/error"
 import { PluginCommand } from "./cli/cmd/plug"
 import { PluginsCommand } from "./cli/cmd/plugins"
-import { DevCommand } from "./cli/cmd/dev"
 import { Heap } from "./cli/heap"
 import { drizzle } from "drizzle-orm/bun-sqlite"
 import { ensureProcessMetadata } from "@opencode-ai/core/util/opencode-process"
@@ -189,7 +188,6 @@ const cli = yargs(args)
   .command(UninstallCommand)
   .command(ServeCommand)
   .command(PluginsCommand)
-  .command(DevCommand)
   .command(WebCommand)
   .command(ModelsCommand)
   .command(StatsCommand)

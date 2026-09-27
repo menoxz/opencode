@@ -1,6 +1,4 @@
-import { createHash } from "node:crypto"
 import fs from "node:fs"
-import os from "node:os"
 import path from "node:path"
 
 /**
@@ -42,56 +40,9 @@ export function root(): string | undefined {
   return runningRoot()
 }
 
-/** Root of the fork's own runtime state, kept outside the repository. */
-function base(): string {
-  const fallback = path.join(os.homedir(), ".local", "share")
-  return process.env.OPENCODE_DEV_HOME ?? path.join(process.env.LOCALAPPDATA ?? fallback, "opencodev2")
-}
-
-/**
- * Per-root bookkeeping for the background server.
- *
- * It must live outside the repository: the server is started with `bun --watch` rooted on the repo,
- * so a file written inside it would be observed as a source change and restart the server that wrote
- * it — an endless self-restart loop.
- */
-export function state(root: string) {
-  const key = createHash("sha1").update(root).digest("hex").slice(0, 8)
-  return { dir: path.join(base(), "dev"), pidFile: path.join(base(), "dev", `${key}.json`) }
-}
-
-function mtime(file: string) {
-  try {
-    return fs.statSync(file).mtimeMs
-  } catch {
-    return 0
-  }
-}
-
-/** Newest log file the CLI writes, wherever the logger resolved its directory. */
-export function newestLog(): string {
-  const dirs = [process.env.OPENCODE_LOG_DIR, path.join(base(), "log"), path.join(process.env.LOCALAPPDATA ?? "", "opencode", "log")]
-  const files = dirs
-    .filter((dir): dir is string => Boolean(dir))
-    .flatMap((dir) => {
-      try {
-        return fs.readdirSync(dir).map((name) => path.join(dir, name))
-      } catch {
-        return []
-      }
-    })
-    .filter((file) => file.endsWith(".log"))
-  return files.sort((a, b) => mtime(b) - mtime(a))[0] ?? ""
-}
-
 /** Command prefix that runs the CLI from sources. Mirrors the repo's own `dev:serve:watch` invocation. */
 export function runner(root: string, watch = false): string[] {
   return [process.execPath, ...(watch ? ["--watch"] : []), "--conditions=browser", entry(root)]
 }
 
-/** True when the CLI itself is running from the repository rather than from the installed binary. */
-export function isSourceRun(): boolean {
-  return root() !== undefined
-}
-
-export const DevSource = { SOURCE_ENV, DEFAULT_PORT, entry, root, state, newestLog, runner, isSourceRun }
+export const DevSource = { SOURCE_ENV, DEFAULT_PORT, entry, root, runner }
