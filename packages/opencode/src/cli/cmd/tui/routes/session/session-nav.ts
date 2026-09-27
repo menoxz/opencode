@@ -18,7 +18,7 @@ export type NavItem = {
 export const NAV_WIDTH = 30
 
 /** Below this terminal width the bar yields unless it was opened explicitly. */
-export const NAV_MIN_TERMINAL_WIDTH = 100
+export const NAV_MIN_TERMINAL_WIDTH = 80
 
 export type NavVisibility = "auto" | "hide"
 
