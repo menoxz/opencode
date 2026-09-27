@@ -42,3 +42,7 @@ packages/opencode/.bun-cache/
 
 # dev runtime (pid/health bookkeeping + server log)
 .opencode/dev/
+
+# local agent task state
+.opencode/tasks.json
+.opencode/tasks-logs/
