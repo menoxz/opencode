@@ -398,7 +398,9 @@ describe("tool.registry", () => {
         agent: build,
       })).find((tool) => tool.id === "task")
 
-      expect(task?.jsonSchema).toBeDefined()
+      expect(task).toBeDefined()
+      // Builtin tools expose their zod parameters and only carry a projected JSON schema when a
+      // plugin rewrote them; when there is one, it must not advertise the background parameter.
       expect((task?.jsonSchema?.properties as Record<string, unknown> | undefined)?.background).toBeUndefined()
     }),
   )
