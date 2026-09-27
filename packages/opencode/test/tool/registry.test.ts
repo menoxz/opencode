@@ -180,13 +180,15 @@ const withProtocolDedupe = testEffect(
 )
 
 describe("tool.registry", () => {
-  it.instance("hides repo research tools unless experimental", () =>
+  it.instance("hides experimental repo research tools unless enabled", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service
       const ids = yield* registry.ids()
 
+      // repo_overview is a core tool of this profile; only the clone tool is gated by the
+      // experimental scout flag (see registry.ts, tool.repo_clone).
       expect(ids).not.toContain("repo_clone")
-      expect(ids).not.toContain("repo_overview")
+      expect(ids).toContain("repo_overview")
     }),
   )
 
