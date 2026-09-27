@@ -9,6 +9,13 @@ export type InspectBatchViewInput = {
   error?: unknown
 }
 
+export type InspectBatchRow = {
+  label: string
+  state: string
+  icon: string
+  spinning: boolean
+}
+
 const decodeJSON = Schema.decodeUnknownOption(Schema.UnknownFromJsonString)
 
 export function inspectBatchTree(props: InspectBatchViewInput) {
@@ -19,7 +26,7 @@ export function inspectBatchTree(props: InspectBatchViewInput) {
   const results = Array.isArray(parsed.results) ? parsed.results.slice(0, 16).map(record) : []
   const truncated = Array.isArray(metadata.truncated) ? metadata.truncated.slice(0, 16) : []
   const status = ["pending", "running", "completed", "error"].includes(props.status) ? props.status : "unknown"
-  const rows = actions.slice(0, 16).map((value, index) => {
+  const rows = actions.slice(0, 16).map((value): InspectBatchRow => {
     const action = record(value)
     const valid =
       typeof action.type === "string" && ["read", "grep", "glob"].includes(action.type) && typeof action.id === "string"
@@ -28,34 +35,23 @@ export function inspectBatchTree(props: InspectBatchViewInput) {
         ? results.filter((item) => item.id === action.id && item.type === action.type)
         : []
     const result = matches.length === 1 ? matches[0] : {}
-    const available =
+    const childStatus =
       typeof result.status === "string" && ["success", "empty", "error", "skipped"].includes(result.status)
-    const state = available
-      ? result.status
-      : status === "pending"
-        ? "pending"
-        : status === "running"
-          ? "awaiting result"
-          : "result unavailable"
+        ? result.status
+        : undefined
+    const state =
+      childStatus ??
+      (status === "pending" ? "pending" : status === "running" ? "awaiting result" : "result unavailable")
     const cut = result.truncated === true || truncated.includes(action.id)
-    const dependencies = Array.isArray(action.dependsOn)
-      ? action.dependsOn.length === 0
-        ? ""
-        : `after ${action.dependsOn
-            .slice(0, 4)
-            .map((id) => {
-              const position = actions.findIndex((value) => record(value).id === id)
-              const dependency = record(actions[position])
-              return position < 0 ? "?" : `${concise(dependency.type, 12)} #${position + 1}`
-            })
-            .join(", ")}${action.dependsOn.length > 4 ? ` (+${action.dependsOn.length - 4})` : ""}`
-      : action.dependsOn === undefined
-        ? ""
-        : "dependencies unavailable"
+    // Same reading as the plain tools: `Read <path>`, `Glob "<pattern>" in <path>`,
+    // `Grep "<pattern>" in <path>`, with the scope only when the action carries one.
+    const scope = typeof action.path === "string" && action.path ? ` in ${concise(action.path, 40)}` : ""
     const target =
       action.type === "read"
-        ? concise(action.filePath, 80)
-        : `"${concise(action.pattern, 40)}" @ ${concise(action.path ?? ".", 40)}`
+        ? `Read ${concise(action.filePath, 80)}`
+        : action.type === "grep"
+          ? `Grep "${concise(action.pattern, 40)}"${scope}`
+          : `Glob "${concise(action.pattern, 40)}"${scope}`
     const extra =
       action.type === "read"
         ? ["offset", "limit"]
@@ -65,7 +61,7 @@ export function inspectBatchTree(props: InspectBatchViewInput) {
           ? `include=${concise(action.include, 30)}`
           : ""
     return {
-      label: `${index === Math.min(actions.length, 16) - 1 ? "└─" : "├─"} ${valid ? action.type : "invalid action"} ${valid ? target : ""}${extra ? ` [${extra}]` : ""}${dependencies ? ` · ${dependencies}` : ""}${cut ? " · truncated" : ""}${state === "empty" ? " · empty" : ""}`,
+      label: `${valid ? target : "invalid action"}${extra ? ` [${extra}]` : ""}${cut ? " · truncated" : ""}${state === "empty" ? " · empty" : ""}`,
       state,
       icon:
         state === "success" || state === "empty"
@@ -77,6 +73,7 @@ export function inspectBatchTree(props: InspectBatchViewInput) {
               : state === "pending" || state === "awaiting result"
                 ? "…"
                 : "?",
+      spinning: state === "pending" || state === "awaiting result",
     }
   })
   return {

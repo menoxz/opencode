@@ -1,7 +1,11 @@
 /** @jsxImportSource @opentui/solid */
 import { afterEach, expect, test } from "bun:test"
 import { testRender } from "@opentui/solid"
-import { createSignal } from "solid-js"
+import { createSignal, type JSX } from "solid-js"
+import { createTuiResolvedConfig } from "../../fixture/tui-runtime"
+import { KVProvider } from "@/cli/cmd/tui/context/kv"
+import { ThemeProvider } from "@/cli/cmd/tui/context/theme"
+import { TuiConfigProvider } from "@/cli/cmd/tui/context/tui-config"
 import { InspectBatchTree } from "@/cli/cmd/tui/component/inspect-batch-tree"
 import { inspectBatchTree, type InspectBatchViewInput } from "@/cli/cmd/tui/util/inspect-batch-tree"
 
@@ -21,48 +25,67 @@ const output = JSON.stringify({
   ],
 })
 
+function withProviders(component: () => JSX.Element) {
+  return (
+    <TuiConfigProvider config={createTuiResolvedConfig()}>
+      <KVProvider>
+        <ThemeProvider mode="dark">{component()}</ThemeProvider>
+      </KVProvider>
+    </TuiConfigProvider>
+  )
+}
+
+async function settled(app: { renderOnce(): Promise<void>; captureCharFrame(): string }) {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    await app.renderOnce()
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    if (app.captureCharFrame().trim().length > 0) return
+  }
+}
+
 test("pending and running preserve targets without inventing child execution", () => {
   const pending = inspectBatchTree({ input: JSON.stringify(input), status: "pending" })
-  expect(pending.rows[0].label).toBe("├─ read src/main.ts [offset=10, limit=20]")
+  expect(pending.rows[0].label).toBe("Read src/main.ts [offset=10, limit=20]")
   expect(pending.rows[0].icon).toBe("…")
+  expect(pending.rows[0].spinning).toBe(true)
   const running = inspectBatchTree({ input, status: "running" })
-  expect(running.rows[1].label).toContain('├─ grep "export" @ src [include=*.ts] · after read #1')
+  expect(running.rows[1].label).toContain('Grep "export" in src [include=*.ts]')
   expect(running.rows[1].icon).toBe("…")
-  expect(running.rows[2].label).toContain("after read #1, grep #2")
+  expect(running.rows.every((row) => row.spinning)).toBe(true)
   expect(JSON.stringify(running)).not.toContain("parallel")
 })
 
-test("read parameters and dependencies share exactly one rendered line", async () => {
+test("each action takes exactly one row, with its parameters inline and no tree glyph", async () => {
   const actions = [
     { id: "lookup", type: "grep", pattern: "export", path: "src" },
     { id: "file", type: "read", filePath: "src/main.ts", offset: "10", limit: 20, dependsOn: ["lookup"] },
   ]
   const app = await testRender(
-    () => (
-      <InspectBatchTree
-        input={{ actions }}
-        status="completed"
-        output={JSON.stringify({ results: actions.map(({ id, type }) => ({ id, type, status: "success" })) })}
-        color="#ffffff"
-        muted="#888888"
-      />
-    ),
+    () =>
+      withProviders(() => (
+        <InspectBatchTree
+          input={{ actions }}
+          status="completed"
+          output={JSON.stringify({ results: actions.map(({ id, type }) => ({ id, type, status: "success" })) })}
+          color="#ffffff"
+          muted="#888888"
+        />
+      )),
     { width: 100, height: 8 },
   )
   renderers.push(app.renderer)
-  await app.renderOnce()
+  await settled(app)
   const lines = app
     .captureCharFrame()
     .split("\n")
     .filter((line) => line.trim())
   expect(lines).toHaveLength(3)
-  expect(lines[2]).toContain("└─ read src/main.ts [offset=10, limit=20] · after grep #1")
-  expect(lines[2].trimEnd()).toEndWith("✓")
-  // The status icon must sit right after the argument rather than float in a
-  // far-right column across the whole width, so the gap stays a single space.
-  const row = lines.find((line) => line.includes("· after grep #1"))!
-  expect(row).toContain("· after grep #1 ✓")
-  expect(/· after grep #1 {2,}✓/.test(row)).toBe(false)
+  expect(lines[1]).toContain('Grep "export" in src')
+  expect(lines[2]).toContain("Read src/main.ts [offset=10, limit=20]")
+  const frame = lines.join("\n")
+  expect(frame).not.toContain("├─")
+  expect(frame).not.toContain("└─")
+  expect(frame).not.toContain("after")
 })
 
 test("results join by id and type, mark errors/skips without exposing their text", () => {
@@ -70,6 +93,7 @@ test("results join by id and type, mark errors/skips without exposing their text
   expect(tree.title).toBe("inspect_batch · 3 actions")
   expect(tree.rows[0].label).toContain("· truncated")
   expect(tree.rows.map((row) => row.icon)).toEqual(["✓", "✗", "−"])
+  expect(tree.rows.map((row) => row.spinning)).toEqual([false, false, false])
   expect(JSON.stringify(tree)).not.toContain("File missing")
   expect(JSON.stringify(tree)).not.toContain("RAW")
 })
@@ -145,7 +169,7 @@ test("ambiguous duplicate ids, duplicate results and unknown statuses stay unava
     expect(inspectBatchTree({ input, output: JSON.stringify({ results }), status: "completed" }).rows[0].icon).toBe("?")
 })
 
-test("large actions, fields, dependencies and output are bounded and sanitized", () => {
+test("large actions, fields and output are bounded and sanitized", () => {
   const tree = inspectBatchTree({
     status: "completed",
     output: "x".repeat(2_000_001),
@@ -160,9 +184,9 @@ test("large actions, fields, dependencies and output are bounded and sanitized",
   })
   expect(tree.rows).toHaveLength(16)
   expect(tree.note).toContain("+14 actions hidden")
-  expect(tree.rows[15].label).toStartWith("└─")
+  expect(tree.rows[0].label).toStartWith("Read ")
   expect(tree.rows[0].label).toContain("important.ts")
-  expect(tree.rows[0].label).toContain("(+46)")
+  expect(tree.rows.every((row) => !row.label.includes("├") && !row.label.includes("└"))).toBe(true)
   expect(tree.rows.every((row) => row.label.length < 180)).toBe(true)
   expect(JSON.stringify(tree)).not.toContain("\\u001b")
 })
@@ -174,26 +198,36 @@ afterEach(() => {
 
 test("real terminal component updates from pending to completed then batch error", async () => {
   const [state, setState] = createSignal<InspectBatchViewInput>({ input, status: "pending" })
-  const app = await testRender(() => <InspectBatchTree {...state()} color="#ffffff" muted="#888888" />, {
+  const app = await testRender(() => withProviders(() => <InspectBatchTree {...state()} color="#ffffff" muted="#888888" />), {
     width: 120,
     height: 14,
   })
   renderers.push(app.renderer)
-  await app.renderOnce()
-  expect(app.captureCharFrame()).toContain("├─ read src/main.ts")
-  expect(app.captureCharFrame()).not.toContain("no dependencies")
+  await settled(app)
+  const pendingFrame = app.captureCharFrame()
+  expect(pendingFrame).toContain("inspect_batch")
+  expect(pendingFrame).toContain("Read src/main.ts")
+  const pendingRow = pendingFrame.split("\n").find((line) => line.includes("Read src/main.ts"))!
+  expect(pendingRow).toMatch(/•\s+\S/)
+  expect(pendingRow).not.toContain("•  Read")
+  expect(pendingFrame).not.toContain("├─")
+  expect(pendingFrame).not.toContain("└─")
   setState({ input, status: "completed", output })
-  await app.renderOnce()
+  await settled(app)
   const frame = app.captureCharFrame()
   expect(frame).toContain("· truncated")
-  expect(frame).toContain("after read #1, grep #2")
-  expect(frame).toContain('└─ glob "**/*.ts" @ .')
+  expect(frame).toContain('Glob "**/*.ts"')
+  expect(frame).not.toContain("after")
   expect(frame).not.toContain("File missing")
-  const rows = frame.split("\n").filter((line) => /[├└]─/.test(line))
-  expect(rows.map((line) => line.trimEnd().slice(-1))).toEqual(["✓", "✗", "−"])
+  const rows = frame.split("\n").filter((line) => line.includes("• "))
+  expect(rows).toHaveLength(3)
+  // The state glyph now leads the argument, so its column comes first.
+  expect(rows[0].indexOf("✓")).toBeLessThan(rows[0].indexOf("Read src/main.ts"))
+  expect(rows[1].indexOf("✗")).toBeLessThan(rows[1].indexOf('Grep "export" in src'))
+  expect(rows[2].indexOf("−")).toBeLessThan(rows[2].indexOf('Glob "**/*.ts"'))
   expect(frame).not.toContain("RAW")
   setState({ input, status: "error", error: "Denied" })
-  await app.renderOnce()
+  await settled(app)
   const errorFrame = app.captureCharFrame()
   expect(errorFrame).toContain("Batch failed")
   expect(errorFrame).not.toContain("Denied")
@@ -201,33 +235,34 @@ test("real terminal component updates from pending to completed then batch error
 
 test("real narrow terminal keeps long child rows from wrapping into unbounded output", async () => {
   const app = await testRender(
-    () => (
-      <InspectBatchTree
-        input={{
-          actions: Array.from({ length: 16 }, (_, id) => ({
-            id: String(id),
-            type: "read",
-            filePath: "界📂/".repeat(100),
-          })),
-        }}
-        status="completed"
-        output={JSON.stringify({
-          results: Array.from({ length: 16 }, (_, id) => ({ id: String(id), type: "read", status: "success" })),
-        })}
-        color="#ffffff"
-        muted="#888888"
-      />
-    ),
+    () =>
+      withProviders(() => (
+        <InspectBatchTree
+          input={{
+            actions: Array.from({ length: 16 }, (_, id) => ({
+              id: String(id),
+              type: "read",
+              filePath: "界📂/".repeat(100),
+            })),
+          }}
+          status="completed"
+          output={JSON.stringify({
+            results: Array.from({ length: 16 }, (_, id) => ({ id: String(id), type: "read", status: "success" })),
+          })}
+          color="#ffffff"
+          muted="#888888"
+        />
+      )),
     { width: 40, height: 40 },
   )
   renderers.push(app.renderer)
-  await app.renderOnce()
+  await settled(app)
   const frame = app.captureCharFrame()
-  expect(frame).toContain("└─ read")
+  expect(frame).toContain("Read ")
   expect(frame.split("\n").filter((line) => line.trim()).length).toBe(17)
-  const rows = frame.split("\n").filter((line) => /[├└]─/.test(line))
+  const rows = frame.split("\n").filter((line) => line.includes("• "))
   expect(rows).toHaveLength(16)
-  expect(rows.every((line) => line.trimEnd().endsWith("✓"))).toBe(true)
+  expect(rows.every((line) => line.includes("✓"))).toBe(true)
 })
 
 test("six successful actions need only a heading and six rows", async () => {
@@ -240,24 +275,27 @@ test("six successful actions need only a heading and six rows", async () => {
     dependsOn: [],
   }))
   const app = await testRender(
-    () => (
-      <InspectBatchTree
-        input={{ actions }}
-        status="completed"
-        output={JSON.stringify({ results: actions.map(({ id, type }) => ({ id, type, status: "success" })) })}
-        color="#ffffff"
-        muted="#888888"
-        success="#00ff00"
-      />
-    ),
+    () =>
+      withProviders(() => (
+        <InspectBatchTree
+          input={{ actions }}
+          status="completed"
+          output={JSON.stringify({ results: actions.map(({ id, type }) => ({ id, type, status: "success" })) })}
+          color="#ffffff"
+          muted="#888888"
+          success="#00ff00"
+        />
+      )),
     { width: 90, height: 12 },
   )
   renderers.push(app.renderer)
-  await app.renderOnce()
+  await settled(app)
   const frame = app.captureCharFrame()
   expect(frame).not.toContain("hidden_id")
   expect(frame).not.toContain("dependencies")
   expect(frame).not.toContain("[success]")
+  expect(frame).not.toContain("├─")
+  expect(frame).not.toContain("└─")
   expect(frame.split("\n").filter((line) => line.trim())).toHaveLength(7)
-  expect(frame.split("\n").filter((line) => line.trimEnd().endsWith("✓"))).toHaveLength(6)
+  expect(frame.split("\n").filter((line) => line.includes("• ✓"))).toHaveLength(6)
 })

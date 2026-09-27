@@ -1,6 +1,7 @@
 import { createMemo, For, Show } from "solid-js"
 import type { RGBA } from "@opentui/core"
-import { inspectBatchTree, type InspectBatchViewInput } from "../util/inspect-batch-tree"
+import { Spinner } from "./spinner"
+import { inspectBatchTree, type InspectBatchRow, type InspectBatchViewInput } from "../util/inspect-batch-tree"
 
 export function InspectBatchTree(
   props: InspectBatchViewInput & {
@@ -11,6 +12,12 @@ export function InspectBatchTree(
   },
 ) {
   const tree = createMemo(() => inspectBatchTree(props))
+  const stateColor = (row: InspectBatchRow) =>
+    row.icon === "✓"
+      ? (props.success ?? props.color)
+      : row.icon === "✗"
+        ? (props.errorColor ?? props.color)
+        : props.muted
   return (
     <box marginTop={1} paddingLeft={2} flexShrink={0}>
       <text fg={props.muted} wrapMode="none">
@@ -18,28 +25,19 @@ export function InspectBatchTree(
       </text>
       <For each={tree().rows}>
         {(row) => (
-          <box flexShrink={0}>
-            <box flexDirection="row" height={1}>
-              <text fg={props.color} wrapMode="none" truncate flexShrink={1} minWidth={0}>
-                {row.label}
-              </text>
-              <text
-                width={2}
-                flexShrink={0}
-                fg={
-                  row.icon === "✓"
-                    ? (props.success ?? props.color)
-                    : row.icon === "✗"
-                      ? (props.errorColor ?? props.color)
-                      : props.muted
-                }
-              >
-                {` ${row.icon}`}
-              </text>
-              {/* Grow after the icon so it hugs the argument instead of floating
-                  in a far-right column; the label still shrinks to truncate. */}
-              <box flexGrow={1} flexShrink={0} />
+          <box flexDirection="row" height={1} flexShrink={0}>
+            <text fg={props.muted} flexShrink={0}>
+              {"• "}
+            </text>
+            {/* A fixed slot keeps the argument aligned whether the row spins or shows its result. */}
+            <box width={2} flexShrink={0}>
+              <Show when={row.spinning} fallback={<text fg={stateColor(row)}>{row.icon}</text>}>
+                <Spinner />
+              </Show>
             </box>
+            <text fg={props.color} wrapMode="none" truncate flexShrink={1} minWidth={0}>
+              {row.label}
+            </text>
           </box>
         )}
       </For>
