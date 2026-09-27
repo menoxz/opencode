@@ -80,6 +80,8 @@ async function renderBar(props: {
   onDelete?: (id: string) => void
   onRename?: (id: string) => void
   onToggleDirectories?: () => void
+  onClearPending?: () => void
+  onSearch?: (query: string) => void
   onClose?: () => void
 }) {
   const app = await testRender(
@@ -105,6 +107,8 @@ async function renderBar(props: {
           onDelete={props.onDelete ?? (() => {})}
           onRename={props.onRename ?? (() => {})}
           onToggleDirectories={props.onToggleDirectories ?? (() => {})}
+          onClearPending={props.onClearPending}
+          onSearch={props.onSearch}
           onClose={props.onClose}
         />
       )),
@@ -178,14 +182,13 @@ test("shows each session's last-activity date and time", async () => {
   expect(text).toContain("26/09")
 })
 
-test("shows at most three directories and a Read more for the rest", async () => {
+test("lists every directory that holds sessions, without a Read more", async () => {
   const app = await renderBar({ sessions: manyDirs, selected: 0, focused: false })
   const text = app.captureCharFrame()
-  expect(text).toContain("Read more")
-  expect(text).toContain("(+2)")
+  expect(text).not.toContain("Read more")
   expect(text).toContain("In alpha")
-  expect(text).not.toContain("In epsilon")
-  expect(text).not.toContain("In gamma")
+  expect(text).toContain("In gamma")
+  expect(text).toContain("In epsilon")
 })
 
 test("expanding lists every directory and drops the Read more", async () => {
@@ -274,14 +277,28 @@ test("clicking a directory header toggles it", async () => {
   expect(toggled).toBe("dir:C:\\w\\alpha")
 })
 
-test("clicking Read more asks the route to reveal the rest", async () => {
-  let revealed = false
-  const app = await renderBar({ sessions: manyDirs, selected: 0, focused: false, onToggleMore: () => (revealed = true) })
-  const y = linesOf(app).findIndex((line) => line.includes("Read more"))
+test("any click clears the pending delete instead of opening the session", async () => {
+  let opened: string | undefined
+  let cleared = false
+  const app = await renderBar({
+    sessions,
+    selected: 0,
+    focused: false,
+    pendingDelete: "ses_a",
+    onOpen: (id) => (opened = id),
+    onClearPending: () => (cleared = true),
+  })
+  const y = linesOf(app).findIndex((line) => line.includes("Add navbar"))
   expect(y).toBeGreaterThanOrEqual(0)
-  await app.mockMouse.click(linesOf(app)[y].indexOf("Read more"), y)
+  await app.mockMouse.click(linesOf(app)[y].indexOf("Add navbar"), y)
   await settled(app)
-  expect(revealed).toBe(true)
+  expect(cleared).toBe(true)
+  expect(opened).toBeUndefined()
+})
+
+test("offers a folder search field in the bar", async () => {
+  const app = await renderBar({ sessions, selected: 0, focused: false })
+  expect(app.captureCharFrame()).toContain("Search folders")
 })
 
 test("clicking the directory label asks the route to toggle the scope", async () => {

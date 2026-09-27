@@ -41,7 +41,7 @@ export type NavRowModel =
 export type NavState = { collapsed: readonly string[]; expanded: boolean }
 
 /** Vertical bar width, in terminal columns. */
-export const NAV_WIDTH = 52
+export const NAV_WIDTH = 46
 
 /** Below this terminal width the bar yields unless it was opened explicitly. */
 export const NAV_MIN_TERMINAL_WIDTH = 80
@@ -187,6 +187,24 @@ export function filteredDirectories(directories: readonly string[], query: strin
   )
 }
 
+/** Sessions whose title, folder name or folder path matches the navbar search, so typing narrows the list. */
+export function filterNavSessions(sessions: readonly NavSession[], query: string): NavSession[] {
+  const needle = query.trim().toLowerCase()
+  if (!needle) return [...sessions]
+  return sessions.filter(
+    (session) =>
+      session.title.toLowerCase().includes(needle) ||
+      navBasename(session.directory).toLowerCase().includes(needle) ||
+      (session.directory ?? "").toLowerCase().includes(needle),
+  )
+}
+
+/** The navbar's search line: a hint while idle, the live query with a caret while searching. */
+export function navQueryRow(query: string, searching: boolean, width: number): string {
+  if (!searching) return navLabel("Search: press /", width)
+  return navLabel(`Search: ${query}${query ? "\u258f" : "\u258f"}`, width)
+}
+
 /** What the modal must do when Enter is pressed on a typed path: pick it, or say why it cannot. */
 export type DirectoryChoice = { kind: "choose"; directory: string } | { kind: "error"; message: string }
 
@@ -235,7 +253,8 @@ export function navVisibleGroups(groups: readonly NavGroup[], expanded: boolean,
  * single "Read more" row. The selection is the row's index in this array.
  */
 export function navRows(sessions: readonly NavSession[], activeID: string | undefined, state: NavState): NavRowModel[] {
-  const { shown, hidden } = navVisibleGroups(navGroups(sessions, activeID), state.expanded)
+  // Every directory that holds sessions is listed: the window keeps them reachable, so no cap is needed.
+  const { shown, hidden } = navVisibleGroups(navGroups(sessions, activeID), true)
   const rows: NavRowModel[] = []
   for (const group of shown) {
     const collapsed = state.collapsed.includes(group.key)

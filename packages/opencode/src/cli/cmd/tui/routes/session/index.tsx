@@ -76,6 +76,7 @@ import {
   navVisible,
   type NavSession,
   type NavVisibility,
+  filterNavSessions,
   navListHeight,
   navRows,
   navSelection,
@@ -353,6 +354,7 @@ export function Session() {
   const [navPendingDelete, setNavPendingDelete] = createSignal<string>()
   const [navDirectoryFilter, setNavDirectoryFilter] = kv.signal("session_directory_filter_enabled", true)
   const [navCollapsed, setNavCollapsed] = createSignal<string[]>([])
+  const [navQuery, setNavQuery] = createSignal("")
   const [navExpanded, setNavExpanded] = createSignal(false)
   const [navFrame, setNavFrame] = createSignal(0)
   const navNewShortcut = useCommandShortcut("session.new")
@@ -370,7 +372,10 @@ export function Session() {
       })),
   )
   const navList = createMemo(() =>
-    navRows(navSessions(), route.sessionID, { collapsed: navCollapsed(), expanded: navExpanded() }),
+    navRows(filterNavSessions(navSessions(), navQuery()), route.sessionID, {
+      collapsed: navCollapsed(),
+      expanded: navExpanded(),
+    }),
   )
   const navSel = createMemo(() => navSelection(navList(), route.sessionID, navSelected()))
   // Open on the session being worked on, and follow it when the route changes.
@@ -1545,7 +1550,7 @@ export function Session() {
           tui: tuiConfig,
         }}
       >
-        <box flexDirection="row" flexGrow={1} minHeight={0}>
+        <box flexDirection="row" flexGrow={1} minHeight={0} onMouseUp={() => setNavPendingDelete(undefined)}>
           <Show when={navShown()}>
             <SessionNavBar
               sessions={navSessions()}
@@ -1565,6 +1570,8 @@ export function Session() {
               onToggleMore={() => setNavExpanded(true)}
               onDelete={(id) => void navDelete(id)}
               onRename={(id) => navRename(id)}
+              onClearPending={() => setNavPendingDelete(undefined)}
+              onSearch={setNavQuery}
               onToggleDirectories={() => navToggleDirectories()}
               onNew={() => {
                 setNavFocused(false)

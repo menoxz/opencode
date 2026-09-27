@@ -44,6 +44,8 @@ export function SessionNavBar(props: {
   onDelete: (id: string) => void
   onRename: (id: string) => void
   onToggleDirectories: () => void
+  onClearPending?: () => void
+  onSearch?: (query: string) => void
   onClose?: () => void
   width?: number
 }) {
@@ -54,6 +56,7 @@ export function SessionNavBar(props: {
   const window = () => navWindow(rows().length, props.selected, props.height)
   const visible = () => rows().slice(window().start, window().end).map((row, offset) => ({ row, index: window().start + offset }))
   const [hover, setHover] = createSignal<number | null>(null)
+  const [searchRef, setSearchRef] = createSignal<{ focus: () => void }>()
 
   const line = (row: NavRowModel, index: number) => {
     const selected = index === props.selected
@@ -82,6 +85,8 @@ export function SessionNavBar(props: {
   }
 
   const activate = (row: NavRowModel) => {
+    // A click anywhere after a first ctrl+d cancels the pending delete instead of acting on the row.
+    if (props.pendingDelete) return props.onClearPending?.()
     if (row.kind === "session") return props.onOpen(row.id)
     if (row.kind === "dir") return props.onToggleDir(row.key)
     return props.onToggleMore()
@@ -126,13 +131,31 @@ export function SessionNavBar(props: {
       paddingBottom={1}
       paddingLeft={1}
       paddingRight={1}
+      onMouseUp={() => props.pendingDelete && props.onClearPending?.()}
     >
       <box flexShrink={0} gap={1} flexGrow={1}>
-        <box flexDirection="row" gap={1} flexShrink={0} onMouseUp={() => props.onToggleDirectories()}>
+        <box
+          flexDirection="row"
+          gap={1}
+          flexShrink={0}
+          onMouseUp={() => (props.pendingDelete ? props.onClearPending?.() : props.onToggleDirectories())}
+        >
           <text fg={theme.text}>
             <b>Sessions</b>
           </text>
           <text fg={theme.textMuted}>{navDirectoryLabel(props.allDirectories)}</text>
+        </box>
+        <box flexDirection="row" gap={1} flexShrink={0} onMouseUp={() => searchRef()?.focus()}>
+          <text fg={theme.textMuted}>/</text>
+          <input
+            ref={(renderable) => setSearchRef(renderable)}
+            placeholder="Search folders"
+            placeholderColor={theme.textMuted}
+            focusedBackgroundColor={theme.backgroundPanel}
+            cursorColor={theme.primary}
+            focusedTextColor={theme.text}
+            onInput={(value) => props.onSearch?.(value)}
+          />
         </box>
         <Show when={window().hiddenAbove > 0}>
           <text fg={theme.textMuted}>↑ {window().hiddenAbove} more</text>

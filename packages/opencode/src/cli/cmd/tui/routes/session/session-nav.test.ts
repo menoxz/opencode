@@ -9,6 +9,7 @@ import {
   directoryChoice,
   directoryProblem,
   filteredDirectories,
+  filterNavSessions,
   footerLines,
   initialSelection,
   moveSelection,
@@ -21,6 +22,7 @@ import {
   navLabel,
   navListHeight,
   navMoreRow,
+  navQueryRow,
   navRow,
   navRows,
   navSelection,
@@ -286,11 +288,11 @@ describe("TUI session navbar", () => {
     expect(expandedView.hidden).toBe(0)
   })
 
-  test("flattens the tree into headers, sessions and a single reveal", () => {
+  test("flattens the tree into headers and sessions", () => {
     const rows = navRows(grouped, undefined, { collapsed: [], expanded: false })
     const dirs = rows.filter((row) => row.kind === "dir")
-    expect(dirs).toHaveLength(NAV_DIR_LIMIT)
-    expect(rows.at(-1)?.kind).toBe("more")
+    expect(dirs).toHaveLength(5)
+    expect(rows.at(-1)?.kind).toBe("session")
     expect(rows.filter((row) => row.kind === "session").length).toBeGreaterThan(0)
   })
 
@@ -415,5 +417,22 @@ describe("TUI session navbar", () => {
       kind: "error",
       message: "That path is not a folder",
     })
+  })
+
+  test("narrows the sessions by title, folder name or folder path", () => {
+    const rows: NavSession[] = [
+      { id: "s1", title: "Add navbar", directory: "C:\\work\\alpha" },
+      { id: "s2", title: "Fix parser", directory: "C:\\other\\beta" },
+    ]
+    expect(filterNavSessions(rows, "")).toEqual(rows)
+    expect(filterNavSessions(rows, "parser")).toEqual([rows[1]])
+    expect(filterNavSessions(rows, "alpha")).toEqual([rows[0]])
+    expect(filterNavSessions(rows, "C:\\other")).toEqual([rows[1]])
+    expect(filterNavSessions(rows, "nowhere")).toEqual([])
+  })
+
+  test("the search line shows a hint until the user searches", () => {
+    expect(navQueryRow("", false, NAV_WIDTH)).toContain("Search: press /")
+    expect(navQueryRow("alpha", true, NAV_WIDTH)).toContain("Search: alpha")
   })
 })
