@@ -51,6 +51,8 @@ export function SessionNavBar(props: {
   searchQuery?: string
   searching?: boolean
   onSearch?: (query: string) => void
+  /** Called on Backspace when the query is already empty, so the key never does nothing. */
+  onPrepend?: () => void
   onSearchFocus?: (focused: boolean) => void
   onClose?: () => void
   width?: number
@@ -109,7 +111,10 @@ export function SessionNavBar(props: {
         props.onSearch?.("")
         return props.onSearchFocus?.(false)
       }
-      if (evt.name === "backspace") return props.onSearch?.(searchBackspace(props.searchQuery ?? ""))
+      if (evt.name === "backspace") {
+        const next = searchBackspace(props.searchQuery ?? "")
+        return next === undefined ? props.onPrepend?.() : props.onSearch?.(next)
+      }
       if (evt.name === "up") return props.onMove(-1)
       if (evt.name === "down") return props.onMove(1)
       if (evt.name === "space" || evt.name.length === 1)

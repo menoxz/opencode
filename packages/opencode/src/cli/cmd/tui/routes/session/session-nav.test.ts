@@ -458,6 +458,6 @@ describe("TUI session navbar", () => {
     expect(searchAppend("al", "space")).toBe("al ")
     expect(searchAppend("al", "p")).toBe("alp")
     expect(searchBackspace("alp")).toBe("al")
-    expect(searchBackspace("")).toBe("")
+    expect(searchBackspace("")).toBeUndefined()
   })
 })

@@ -6,6 +6,7 @@ import { useSDK } from "@tui/context/sdk"
 import { useLocal } from "@tui/context/local"
 import { useSync } from "@tui/context/sync"
 import { useKV } from "../../context/kv.tsx"
+import { usePromptRef } from "../../context/prompt"
 import { useTuiConfig } from "@tui/context/tui-config"
 import { OPENCODE_BASE_MODE, useBindings, useCommandShortcut } from "../../keymap"
 import { openSessionFolder } from "@tui/component/dialog-directory-select"
@@ -41,6 +42,7 @@ export function SessionNavPanel() {
   const dimensions = useTerminalDimensions()
   const tuiConfig = useTuiConfig()
   const kv = useKV()
+  const promptRef = usePromptRef()
 
   const [nav, setNav] = kv.signal<"auto" | "hide">("session_nav", "auto")
   const [navOpen, setNavOpen] = createSignal(false)
@@ -173,7 +175,11 @@ export function SessionNavPanel() {
         searchQuery={navQuery()}
         searching={navSearching()}
         onSearch={setNavQuery}
-        onSearchFocus={setNavSearching}
+        onSearchFocus={(focused) => {
+          setNavSearching(focused)
+          if (focused) promptRef.current?.blur()
+          else promptRef.current?.focus()
+        }}
         onToggleDirectories={() => setNavDirectoryScope((current) => (current === "project" ? "directory" : "project"))}
         onNew={newSession}
         onClose={() => setNavFocused(false)}

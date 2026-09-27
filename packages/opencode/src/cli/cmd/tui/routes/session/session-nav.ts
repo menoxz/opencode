@@ -209,9 +209,9 @@ export function searchAppend(query: string, key: string): string {
   return key === "space" ? `${query} ` : `${query}${key}`
 }
 
-/** The query after backspace, never going below empty. */
-export function searchBackspace(query: string): string {
-  return query.slice(0, -1)
+/** The query after backspace: undefined once it is already empty, so the caller can fall back. */
+export function searchBackspace(query: string): string | undefined {
+  return query.length > 0 ? query.slice(0, -1) : undefined
 }
 
 /** What the modal must do when Enter is pressed on a typed path: pick it, or say why it cannot. */

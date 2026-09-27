@@ -1575,7 +1575,13 @@ export function Session() {
               searchQuery={navQuery()}
               searching={navSearching()}
               onSearch={setNavQuery}
-              onSearchFocus={setNavSearching}
+              onSearchFocus={(focused) => {
+                setNavSearching(focused)
+                // A focused editor owns `input.backspace`, and a handled binding stops the raw
+                // keypress this bar listens to, so hand the keyboard over while searching.
+                if (focused) promptRef.current?.blur()
+                else promptRef.current?.focus()
+              }}
               onToggleDirectories={() => navToggleDirectories()}
               onNew={() => {
                 setNavFocused(false)

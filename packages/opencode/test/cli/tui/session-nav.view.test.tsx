@@ -387,6 +387,23 @@ test("takes keys in the search field, narrows the list and leaves on Escape", as
   expect(app.captureCharFrame()).toContain("Beta one")
   expect(app.captureCharFrame()).not.toContain("Alpha one")
 
+  app.mockInput.pressKey("e")
+  await settled(app)
+  expect(typed.at(-1)).toBe("be")
+
+  // Backspace is destructive one character at a time, still inside the field.
+  app.mockInput.pressBackspace()
+  await settled(app)
+  expect(typed.at(-1)).toBe("b")
+  app.mockInput.pressBackspace()
+  await settled(app)
+  expect(typed.at(-1)).toBe("")
+
+  app.mockInput.pressBackspace()
+  await settled(app)
+  expect(typed.at(-1)).toBe("")
+  expect(app.captureCharFrame()).toContain("Alpha one")
+
   app.mockInput.pressEscape()
   await settled(app)
   expect(app.captureCharFrame()).toContain("/ Search folders")
