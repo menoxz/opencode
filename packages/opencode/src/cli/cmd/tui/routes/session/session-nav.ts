@@ -4,11 +4,12 @@
  * Kept free of Solid and OpenTUI imports so it can be unit-tested directly, the same way
  * `pending-turn.ts` is separated from the session route that renders it.
  */
+import { Locale } from "@/util/locale"
 
 /** Coarse activity of a session, derived from the store's session status. */
 export type NavActivity = "busy" | "retry" | "idle"
 
-export type NavSession = { id: string; title: string; activity?: NavActivity }
+export type NavSession = { id: string; title: string; activity?: NavActivity; updated?: number }
 
 export type NavItem = {
   id: string
@@ -16,18 +17,19 @@ export type NavItem = {
   active: boolean
   index: number
   activity: NavActivity
+  updated?: number
 }
 
-/** Vertical bar width, in terminal columns. Wide enough for a readable session title. */
-export const NAV_WIDTH = 40
+/** Vertical bar width, in terminal columns: a readable title and a full last-activity stamp. */
+export const NAV_WIDTH = 52
 
 /** Below this terminal width the bar yields unless it was opened explicitly. */
 export const NAV_MIN_TERMINAL_WIDTH = 80
 
 /**
- * Columns a row spends on everything but its title: the cursor, the activity glyph, the two
- * spaces between them, and the box's own left/right padding. Subtracted from the bar width to
- * size the label, so a title never overflows its row and wraps on the next line.
+ * Columns a row spends besides its title and its timestamp: the box's left/right padding, the
+ * cursor, the activity glyph and the two separating spaces. Kept in the row builder so a line can
+ * never overflow the bar and wrap on the next one.
  */
 export const NAV_ROW_CHROME = 6
 
@@ -38,6 +40,22 @@ export function navActivity(status: { type?: string } | undefined): NavActivity 
   if (status?.type === "busy") return "busy"
   if (status?.type === "retry") return "retry"
   return "idle"
+}
+
+/** One glyph per row: it shows activity for every session, and doubles as the active marker. */
+export function activityGlyph(active: boolean, activity: NavActivity): string {
+  if (activity === "busy") return "◐"
+  if (activity === "retry") return "!"
+  return active ? "●" : "○"
+}
+
+/**
+ * Last-activity stamp, formatted with the CLI's own helper so the bar and `session list` never
+ * disagree: a bare time for today, time and date for anything older.
+ */
+export function navTime(updated: number | undefined): string | undefined {
+  if (updated === undefined || !Number.isFinite(updated)) return undefined
+  return Locale.todayTimeOrDateTime(updated)
 }
 
 /**
@@ -74,6 +92,7 @@ export function navItems(sessions: readonly NavSession[], activeID: string | und
     active: session.id === activeID,
     index,
     activity: session.activity ?? "idle",
+    updated: session.updated,
   }))
 }
 
@@ -84,6 +103,29 @@ export function navLabel(title: string, budget: number): string {
   if (label.length <= budget) return label
   if (budget <= 1) return "…"
   return label.slice(0, budget - 1) + "…"
+}
+
+export type NavRowInput = {
+  title: string
+  activity: NavActivity
+  active: boolean
+  selected: boolean
+  updated?: number
+  width: number
+}
+
+/**
+ * A whole row as one string, so the timestamp is right-aligned by construction instead of by the
+ * renderer's flex rules: cursor, activity glyph, title, padding, stamp — never longer than `width`.
+ */
+export function navRow(input: NavRowInput): string {
+  const prefix = `${input.selected ? ">" : " "} ${activityGlyph(input.active, input.activity)} `
+  const stamp = navTime(input.updated)
+  const available = Math.max(1, input.width - prefix.length - 2)
+  if (!stamp) return `${prefix}${navLabel(input.title, available)}`
+  const label = navLabel(input.title, Math.max(1, available - stamp.length - 1))
+  const gap = Math.max(1, available - label.length - stamp.length)
+  return `${prefix}${label}${" ".repeat(gap)}${stamp}`
 }
 
 /** Mirrors the sidebar's `auto` / `hide` behaviour: narrow terminals hide the bar unless asked. */

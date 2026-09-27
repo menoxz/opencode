@@ -1,13 +1,17 @@
 import { describe, expect, test } from "bun:test"
+import { Locale } from "@/util/locale"
 import {
   NAV_MIN_TERMINAL_WIDTH,
+  NAV_WIDTH,
+  activityGlyph,
   clampSelection,
   initialSelection,
   moveSelection,
+  navActivity,
   navItems,
   navLabel,
-  navActivity,
-  NAV_ROW_CHROME,
+  navRow,
+  navTime,
   navVisible,
   selectionID,
   type NavSession,
@@ -18,6 +22,8 @@ const sessions: NavSession[] = [
   { id: "ses_b", title: "Fix flaky test" },
   { id: "ses_c", title: "Triage issue" },
 ]
+
+const older = Date.UTC(2026, 8, 26, 14, 36)
 
 describe("TUI session navbar", () => {
   test("lists the sessions of the project and flags the active one", () => {
@@ -95,9 +101,50 @@ describe("TUI session navbar", () => {
     expect(navActivity({ type: "retry" })).toBe("retry")
   })
 
-  test("the row budget leaves room for a readable title", () => {
-    const budget = 40 - NAV_ROW_CHROME
-    expect(budget).toBeGreaterThanOrEqual(30)
-    expect(navLabel("Connexion abonnement Claude", budget).endsWith("…")).toBe(false)
+  test("shows activity for every row, not only the active one", () => {
+    expect(activityGlyph(true, "idle")).toBe("●")
+    expect(activityGlyph(false, "idle")).toBe("○")
+    expect(activityGlyph(false, "busy")).toBe("◐")
+    expect(activityGlyph(false, "retry")).toBe("!")
+    expect(activityGlyph(true, "busy")).toBe("◐")
+  })
+
+  test("formats a session's last activity with the CLI's own helper", () => {
+    expect(navTime(undefined)).toBeUndefined()
+    expect(navTime(Number.NaN)).toBeUndefined()
+    expect(navTime(older)).toBe(Locale.todayTimeOrDateTime(older))
+  })
+
+  test("builds one row per session with the timestamp right-aligned and never overflowing", () => {
+    const stamp = Locale.todayTimeOrDateTime(older)
+    const row = navRow({ title: "Add navbar", activity: "idle", active: true, selected: true, updated: older, width: NAV_WIDTH })
+    expect(row.startsWith("> ● Add navbar")).toBe(true)
+    expect(row.endsWith(stamp)).toBe(true)
+    expect(row.length).toBeLessThanOrEqual(NAV_WIDTH)
+
+    const other = navRow({ title: "Short", activity: "busy", active: false, selected: false, updated: older, width: NAV_WIDTH })
+    expect(other.startsWith("  ◐ Short")).toBe(true)
+    expect(other.endsWith(stamp)).toBe(true)
+  })
+
+  test("a row without a timestamp still fills the width with the title", () => {
+    const row = navRow({ title: "Old session", activity: "idle", active: false, selected: false, width: NAV_WIDTH })
+    expect(row.startsWith("  ○ Old session")).toBe(true)
+    expect(row.length).toBeLessThanOrEqual(NAV_WIDTH)
+  })
+
+  test("a long title truncates once instead of wrapping", () => {
+    const row = navRow({
+      title: "Connexion abonnement Claude et facturation mensuelle",
+      activity: "idle",
+      active: false,
+      selected: false,
+      updated: older,
+      width: NAV_WIDTH,
+    })
+    expect(row).toContain("…")
+    expect((row.match(/…/g) ?? []).length).toBe(1)
+    expect(row.length).toBeLessThanOrEqual(NAV_WIDTH)
+    expect(row.endsWith(Locale.todayTimeOrDateTime(older))).toBe(true)
   })
 })

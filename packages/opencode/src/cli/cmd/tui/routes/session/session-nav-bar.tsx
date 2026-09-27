@@ -1,22 +1,7 @@
 import { createSignal, For } from "solid-js"
 import { useKeyboard } from "@opentui/solid"
 import { useTheme } from "../../context/theme"
-import {
-  NAV_ROW_CHROME,
-  NAV_WIDTH,
-  navItems,
-  navLabel,
-  type NavActivity,
-  type NavItem,
-  type NavSession,
-} from "./session-nav"
-
-/** One glyph per row: it shows activity for every session, and doubles as the active marker. */
-function activityGlyph(active: boolean, activity: NavActivity): string {
-  if (activity === "busy") return "◐"
-  if (activity === "retry") return "!"
-  return active ? "●" : "○"
-}
+import { NAV_WIDTH, navItems, navRow, type NavItem, type NavSession } from "./session-nav"
 
 /**
  * Vertical session navbar.
@@ -39,9 +24,18 @@ export function SessionNavBar(props: {
   const { theme } = useTheme()
   const width = () => props.width ?? NAV_WIDTH
   const items = () => navItems(props.sessions, props.activeID)
-  const budget = () => width() - NAV_ROW_CHROME
   const [hover, setHover] = createSignal<string | null>(null)
   const cycle = (delta: number) => props.onMove(delta)
+
+  const line = (item: NavItem) =>
+    navRow({
+      title: item.title,
+      activity: item.activity,
+      active: item.active,
+      selected: item.index === props.selected,
+      updated: item.updated,
+      width: width(),
+    })
 
   const color = (item: NavItem) => {
     if (item.index === props.selected) return theme.text
@@ -102,16 +96,16 @@ export function SessionNavBar(props: {
         </text>
         <For each={items()} fallback={<text fg={theme.textMuted}>No sessions yet</text>}>
           {(item) => (
-            <text
-              fg={color(item)}
-              wrapMode="none"
+            <box
+              width="100%"
               onMouseOver={() => setHover(item.id)}
               onMouseOut={() => setHover((current) => (current === item.id ? null : current))}
               onMouseUp={() => props.onSelect(item.id)}
             >
-              {item.index === props.selected ? ">" : " "} {activityGlyph(item.active, item.activity)}{" "}
-              {navLabel(item.title, budget())}
-            </text>
+              <text fg={color(item)} wrapMode="none">
+                {line(item)}
+              </text>
+            </box>
           )}
         </For>
         <text fg={theme.textMuted}>n new</text>

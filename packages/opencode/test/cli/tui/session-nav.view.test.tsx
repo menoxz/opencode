@@ -8,6 +8,7 @@ import { ThemeProvider } from "../../../src/cli/cmd/tui/context/theme"
 import { TuiConfigProvider } from "../../../src/cli/cmd/tui/context/tui-config"
 import { SessionNavBar } from "../../../src/cli/cmd/tui/routes/session/session-nav-bar"
 import type { NavSession } from "../../../src/cli/cmd/tui/routes/session/session-nav"
+import { Locale } from "../../../src/util/locale"
 
 type App = Awaited<ReturnType<typeof testRender>>
 
@@ -60,7 +61,7 @@ async function renderBar(props: {
           onClose={props.onClose}
         />
       )),
-    { width: 40, height: 12 },
+    { width: 60, height: 14 },
   )
   renderers.push(app.renderer)
   await settled(app)
@@ -128,7 +129,7 @@ test("shows a per-session activity glyph and keeps a long title on one line", as
   expect(text).toContain("◐")
   expect(text).toContain("!")
   expect(text).toContain("Connexion abonnement Claude")
-  expect(text).not.toContain("…")
+  expect((text.match(/…/g) ?? []).length).toBe(0)
 })
 
 test("a mouse click on a row selects that session", async () => {
@@ -148,4 +149,19 @@ test("a mouse click on a row selects that session", async () => {
   await app.mockMouse.click(1, y)
   await settled(app)
   expect(picked).toBe("ses_b")
+})
+
+test("shows each session's last-activity date and time", async () => {
+  const updated = Date.UTC(2026, 8, 26, 14, 36)
+  const app = await renderBar({
+    sessions: [
+      { id: "ses_a", title: "Add navbar", updated },
+      { id: "ses_b", title: "Fix flaky test", updated },
+    ],
+    activeID: "ses_a",
+    selected: 0,
+    focused: false,
+  })
+  const text = app.captureCharFrame()
+  expect(text).toContain(Locale.todayTimeOrDateTime(updated))
 })

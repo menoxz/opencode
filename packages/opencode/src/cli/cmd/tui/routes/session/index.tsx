@@ -352,7 +352,7 @@ export function Session() {
         updated: item.time.updated,
       }))
       .toSorted((a, b) => Number(b.activity !== "idle") - Number(a.activity !== "idle") || b.updated - a.updated)
-      .map(({ id, title, activity }) => ({ id, title, activity })),
+      .map(({ id, title, activity, updated }) => ({ id, title, activity, updated })),
   )
   // Open on the session being worked on, and follow it when the route changes.
   createEffect(() => {
