@@ -30,6 +30,7 @@ import { createStore, produce, unwrap } from "solid-js/store"
 import { usePromptHistory, type PromptInfo } from "./history"
 import { computePromptTraits } from "./traits"
 import { assign, expandPastedTextPlaceholders } from "./part"
+import { steerMetadata } from "./submit-mode"
 import { usePromptStash } from "./stash"
 import { DialogStash } from "../dialog-stash"
 import { type AutocompleteRef, Autocomplete } from "./autocomplete"
@@ -467,6 +468,19 @@ export function Prompt(props: PromptProps) {
         },
       },
       {
+        title: "Steer the running turn with the prompt",
+        name: "prompt.steer",
+        category: "Prompt",
+        hidden: true,
+        run: async () => {
+          if (!input.focused) return
+          const handled = await submit(true)
+          if (!handled) return
+
+          dialog.clear()
+        },
+      },
+      {
         title: "Remove editor context",
         name: "prompt.editor_context.clear",
         category: "Prompt",
@@ -671,6 +685,7 @@ export function Prompt(props: PromptProps) {
     mode: OPENCODE_BASE_MODE,
     bindings: tuiConfig.keybinds.gather("prompt.palette", [
       "prompt.submit",
+      "prompt.steer",
       "prompt.editor",
       "prompt.editor_context.clear",
       "prompt.stash",
@@ -1030,7 +1045,7 @@ export function Prompt(props: PromptProps) {
   })
 
   let submitting = false
-  async function submit() {
+  async function submit(steer = false) {
     // Prevent overlapping invocations (e.g. a double-pressed Enter, or the
     // input's native onSubmit racing another dispatch). Without this guard,
     // a second call slips past the empty-input check before the first call
@@ -1040,13 +1055,13 @@ export function Prompt(props: PromptProps) {
     if (submitting) return false
     submitting = true
     try {
-      return await submitInner()
+      return await submitInner(steer)
     } finally {
       submitting = false
     }
   }
 
-  async function submitInner() {
+  async function submitInner(steer = false) {
     setWarpNotice(undefined)
 
     // IME: double-defer may fire before onContentChange flushes the last
@@ -1231,9 +1246,9 @@ export function Prompt(props: PromptProps) {
               id: PartID.ascending(),
               type: "text",
               text: inputText,
-              // While a run is active, hand this prompt to that run at its next
-              // step (answer + keep working) instead of queueing a fresh turn.
-              ...(status().type !== "idle" ? { metadata: { steer: true } } : {}),
+              // While a run is active, only an explicit steer rides that run at its next step
+              // (answer + keep working); every other submit stays queued for the next turn.
+              ...steerMetadata(steer, status().type !== "idle"),
             },
             ...nonTextParts.map(assign),
           ],
@@ -1765,6 +1780,13 @@ export function Prompt(props: PromptProps) {
                   <span style={{ fg: store.interrupt > 0 ? theme.primary : theme.textMuted }}>
                     {store.interrupt > 0 ? "again to interrupt" : "interrupt"}
                   </span>
+                </text>
+                <text fg={theme.textMuted}>
+                  enter{" "}
+                  <span style={{ fg: theme.text }}>queue</span>
+                  {" · "}
+                  alt+enter{" "}
+                  <span style={{ fg: theme.text }}>steer</span>
                 </text>
               </box>
             </Match>
