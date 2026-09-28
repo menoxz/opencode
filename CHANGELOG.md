@@ -7,6 +7,18 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.3.16] - 2026-09-28
+
+### Fixed
+- **La portée par défaut était ignorée sur toute installation existante** : une version antérieure avait mémorisé `"project"` dans le kv sous `session_directory_scope`, et `kv.get` rend la valeur stockée avant tout défaut — la barre continuait donc de lister les sessions de tout le poste. La portée est désormais lue sous une **clé neuve** (`session_directory_scope_v2`), ce qui rend la valeur héritée inerte : le dossier du workspace courant redevient la portée par défaut, sans rien effacer dans le kv de l'utilisateur.
+- **La liste débordait de la barre de navigation** : les deux hôtes passaient la hauteur du **terminal** comme hauteur de liste, alors que la barre n'occupe qu'une partie de l'écran ; le contenu dépassait la boîte et poussait le pied (« new … del … ren … ») hors de la vue. La liste prend maintenant la place réellement laissée par l'en-tête, la recherche et le pied, et le défilement suit la hauteur mesurée du conteneur.
+
+### Changed
+- **Fenêtre d'affichage ramenée de 30 jours à une semaine** : seules les sessions mises à jour dans les 7 derniers jours sont listées, borne toujours déclarée à un seul endroit.
+
+### Tests
+- Un test de bord épingle la fenêtre d'une semaine (session à la limite conservée, une milliseconde au-delà exclue) et vérifie que la clé de portée n'est pas celle qu'écrivait la version précédente ; le test d'intégration amorce un kv hérité valant `"project"` et prouve que la barre l'ignore (dossier courant demandé, endpoint machine-wide jamais appelé) ; un test de rendu prouve que la liste ne pousse plus le pied hors de la barre, en comptant les lignes dessinées contre la hauteur du conteneur.
+
 ## [v2.3.15] - 2026-09-28
 
 ### Changed
