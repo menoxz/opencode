@@ -7,6 +7,18 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.3.13] - 2026-09-28
+
+### Fixed
+- **Ouvrir une session ne referme plus un dossier de la barre de sessions** : le repli d'un dossier était modélisé comme un basculement relatif au dossier de la session active, si bien qu'un dossier ouvert à la main se refermait dès qu'une session y entrait. L'état est désormais explicite (un dossier est replié ou non, et le choix de l'utilisateur prime), donc stable quelle que soit la session ouverte.
+- **La portée « all dirs » liste réellement toutes les sessions de tous les dossiers** : elle était servie par la liste filtrée sur le projet courant, puis réduite par une fenêtre de 30 jours, la limite serveur de 100 et le filtre « racines ». Elle passe par la liste machine-wide (`/experimental/session`), sans borne temporelle et paginée jusqu'au bout.
+
+### Added
+- **Choix explicite entre Queue et Steer à la soumission** : `enter` met le prompt en file (il part à la fin du tour en cours) et `alt+enter` l'injecte dans le tour en cours ; l'indicateur du composeur affiche les deux options pendant un tour actif.
+
+### Tests
+- Trois tests de portée ajoutés côté sync (machine-wide paginé vs dossier courant), deux tests de non-régression du repli pinné et trois tests du sélecteur Queue/Steer : 128 pass / 0 fail sur les 9 fichiers concernés, `tsgo --noEmit` = 0.
+
 ## [v2.3.12] - 2026-09-28
 
 ### Fixed
