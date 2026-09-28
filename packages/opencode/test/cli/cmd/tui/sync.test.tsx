@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test"
 import { Global } from "@opencode-ai/core/global"
 import { tmpdir } from "../../../fixture/fixture"
 import { directory, json, mount, wait } from "./sync-fixture"
+import { SESSION_DIRECTORY_SCOPE_KEY } from "../../../../src/cli/cmd/tui/context/session-scope"
 import type { GlobalEvent } from "@opencode-ai/sdk/v2"
 
 function branchEvent(branch: string, workspace?: string): GlobalEvent {
@@ -23,7 +24,9 @@ describe("tui sync", () => {
     const previous = Global.Path.state
     await using tmp = await tmpdir()
     Global.Path.state = tmp.path
-    await Bun.write(`${tmp.path}/kv.json`, "{}")
+    // A kv left behind by an earlier version: it holds the old default `"project"` under the legacy
+    // key. The bar must not honour it, or it would keep listing every folder on the machine.
+    await Bun.write(`${tmp.path}/kv.json`, JSON.stringify({ session_directory_scope: "project" }))
 
     const now = Date.now()
     const day = 24 * 60 * 60 * 1000
@@ -59,9 +62,9 @@ describe("tui sync", () => {
     })
 
     try {
-      // Nothing is stored yet, so the assertions below prove the default by behaviour rather than a
-      // stored value: it asks for the current folder and never touches the machine-wide endpoint.
-      expect(kv.get("session_directory_scope")).toBeUndefined()
+      // The legacy value is still in the kv and is deliberately not read; the assertions below prove
+      // the default by behaviour rather than by a stored value.
+      expect(kv.get("session_directory_scope")).toBe("project")
       await wait(() => sync.data.session.length > 0)
 
       // Only the current folder's recent session is listed: the stale one and the other
@@ -92,7 +95,7 @@ describe("tui sync", () => {
       expect(sync.data.session.map((item) => item.id)).toEqual(["ses_here"])
 
       // Widening to the whole machine uses the cross-project endpoint, still bounded by age.
-      kv.set("session_directory_scope", "project")
+      kv.set(SESSION_DIRECTORY_SCOPE_KEY, "project")
       await sync.session.refresh()
       await wait(() => sync.data.session.some((item) => item.id === "ses_machine"))
       expect(machine.length).toBeGreaterThan(0)

@@ -8,7 +8,7 @@
  */
 
 /** Sessions updated before the cut-off are not listed. */
-export const SESSION_MAX_AGE_DAYS = 30
+export const SESSION_MAX_AGE_DAYS = 7
 
 /** Ceiling on sessions fetched per folder, so one busy folder cannot flood the list. */
 export const SESSION_FETCH_LIMIT = 200
@@ -48,8 +48,15 @@ export function watchedDirectories(current: string | undefined, added: readonly 
   })
 }
 
-/** The kv keys and the default the bar's scope is read from, so one change flips every call site. */
-export const SESSION_DIRECTORY_SCOPE_KEY = "session_directory_scope"
+/**
+ * The kv keys and the default the bar's scope is read from, so one change flips every call site.
+ *
+ * The name deliberately differs from the `session_directory_scope` an earlier version wrote: `kv.get`
+ * returns a stored value before any default, so a kv that already holds the old `"project"` would keep
+ * forcing the machine-wide listing no matter what default is passed. A fresh key lets the new default
+ * take effect on every existing install; the stale entry is simply never read again.
+ */
+export const SESSION_DIRECTORY_SCOPE_KEY = "session_directory_scope_v2"
 export const SESSION_EXTRA_DIRECTORIES_KEY = "session_extra_directories"
 /** The default scope is the folder the user works in, not every folder on the machine. */
 export const DEFAULT_DIRECTORY_SCOPE: "project" | "directory" = "directory"

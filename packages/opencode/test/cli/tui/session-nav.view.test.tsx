@@ -499,3 +499,19 @@ test("clicking a directory's Read more reveals its extra sessions", async () => 
   expect(app.captureCharFrame()).not.toContain("Read more")
   expect(app.captureCharFrame()).toContain("Session 9")
 })
+
+test("the list takes the space left over instead of pushing the footer out of the bar", async () => {
+  // The container is 24 rows and the bar fills it, while the list is asked for more rows than that
+  // leaves. A fixed list height would overflow the box and clip the footer away; the list has to take
+  // whatever the header, search and footer leave instead.
+  const app = await renderBar({ sessions: oneDirMany, selected: 0, focused: false, height: 40 })
+  const lines = linesOf(app)
+  const drawn = lines.filter((line) => line.length > 0)
+
+  // Sixty sessions were handed over, yet only what fits is drawn: the content stayed windowed.
+  expect(lines.filter((line) => line.includes("Session ")).length).toBeLessThan(60)
+  // The footer survived as the bottom-most drawn row, inside the bar rather than pushed past it.
+  expect(drawn.at(-1)).toContain("ren ctrl+r")
+  // And nothing was drawn past the container's own 24 rows: the list did not overflow the bar.
+  expect(drawn.length).toBeLessThanOrEqual(24)
+})

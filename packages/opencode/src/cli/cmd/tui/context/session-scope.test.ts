@@ -4,6 +4,7 @@ import {
   addDirectory,
   removeDirectory,
   isRecentSession,
+  SESSION_DIRECTORY_SCOPE_KEY,
   sessionAgeCutoff,
   watchedDirectories,
 } from "./session-scope"
@@ -60,5 +61,24 @@ describe("session scope", () => {
     // A session well inside the window, and one well outside it, behave the same way.
     expect(isRecentSession({ time: { updated: now } }, cutoff)).toBe(true)
     expect(isRecentSession({ time: { updated: cutoff - SESSION_MAX_AGE_DAYS * 24 * 60 * 60 * 1000 } }, cutoff)).toBe(false)
+  })
+
+  test("keeps a week of sessions and no more", () => {
+    const now = 1_700_000_000_000
+    const week = 7 * 24 * 60 * 60 * 1000
+    const cutoff = sessionAgeCutoff(now)
+
+    // The window is a week: a 30-day bound would keep the boundary case below and fail here.
+    expect(now - cutoff).toBe(week)
+
+    // A week exactly: kept; a millisecond older: dropped.
+    expect(isRecentSession({ time: { updated: now - week } }, cutoff)).toBe(true)
+    expect(isRecentSession({ time: { updated: now - week - 1 } }, cutoff)).toBe(false)
+  })
+
+  test("takes its scope from a key the superseded version never wrote to", () => {
+    // That version persisted "project" under `session_directory_scope`, and a stored value wins over
+    // any default, so reusing the name would keep every install on the machine-wide listing.
+    expect(SESSION_DIRECTORY_SCOPE_KEY).not.toBe("session_directory_scope")
   })
 })

@@ -85,7 +85,7 @@ export function SessionNavBar(props: {
     const scroll = scrollbox()
     const total = rows().length
     if (!scroll || scroll.isDestroyed || total === 0) return
-    scroll.scrollTop = navScrollOffset(props.selected, total, props.height)
+    scroll.scrollTop = navScrollOffset(props.selected, total, scroll.height || props.height)
   })
 
   const line = (row: NavRowModel, _index: number) => {
@@ -186,7 +186,7 @@ export function SessionNavBar(props: {
       onMouseUp={() => props.pendingDelete && props.onClearPending?.()}
     >
       {/* No `gap`: an inter-row margin would push the last rows out of the box, which the height arithmetic cannot see. */}
-      <box flexShrink={0} flexGrow={1}>
+      <box flexShrink={1} flexGrow={1} minHeight={0}>
         <box
           flexDirection="row"
           gap={1}
@@ -206,8 +206,9 @@ export function SessionNavBar(props: {
         <scrollbox
           ref={(r: ScrollBoxRenderable) => setScrollbox(r)}
           focusable={false}
-          flexShrink={0}
-          height={props.height}
+          flexGrow={1}
+          flexShrink={1}
+          minHeight={0}
           maxHeight={props.height}
           scrollAcceleration={scrollAcceleration()}
           scrollbarOptions={{ visible: false }}
