@@ -161,7 +161,7 @@ export function SessionNavPanel() {
   return (
     <Show when={navShown()}>
       <SessionNavBar
-        sessions={navSessions()}
+        sessions={filterNavSessions(navSessions(), navQuery())}
         activeID={activeID()}
         selected={navSel()}
         focused={navFocused()}

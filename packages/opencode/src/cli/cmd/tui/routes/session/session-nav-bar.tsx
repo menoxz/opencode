@@ -6,6 +6,7 @@ import { useTuiConfig } from "../../context/tui-config"
 import { getScrollAcceleration } from "../../util/scroll"
 import {
   NAV_WIDTH,
+  filterNavSessions,
   footerLines,
   navDirRow,
   navDirectoryLabel,
@@ -67,7 +68,9 @@ export function SessionNavBar(props: {
   const width = () => props.width ?? NAV_WIDTH
   const innerWidth = () => Math.max(1, width() - 2)
   const rows = () =>
-    navRows(props.sessions, props.activeID, {
+    // Filtered here and not only at the call site: the home screen's panel handed this bar the raw
+    // list, so a query narrowed the panel's own cursor while the bar kept listing every session.
+    navRows(filterNavSessions(props.sessions, props.searchQuery ?? ""), props.activeID, {
       overrides: props.overrides,
       revealed: props.revealed,
       reveal: (props.searchQuery ?? "").length > 0,

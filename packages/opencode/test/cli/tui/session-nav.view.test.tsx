@@ -163,6 +163,16 @@ test("an empty project shows the fallback instead of invented rows", async () =>
   expect(text).not.toContain("opencode-fork")
 })
 
+test("the bar narrows the list itself when handed the raw sessions, so any call site filters", async () => {
+  // Regression: the home screen's panel passed the raw list, so the query narrowed the panel's
+  // cursor while the bar kept rendering every session. `twoDirs` is intentionally unfiltered here.
+  const app = await renderBar({ sessions: twoDirs, selected: 0, focused: false, searchQuery: "beta" })
+  const text = app.captureCharFrame()
+  expect(text).toContain("Beta one")
+  expect(text).not.toContain("Alpha one")
+  expect(text).not.toContain("Alpha two")
+})
+
 test("a search that matches nothing names the query instead of the old fallback", async () => {
   // The route filters before grouping, so a query that matches nothing reaches the bar as an empty list.
   const app = await renderBar({
