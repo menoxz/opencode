@@ -7,6 +7,15 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.3.19] - 2026-09-28
+
+### Fixed
+- **Régression de la 2.3.18 : une session travaillait dans une instance que le TUI n'observait pas.** Router chaque appel vers l'instance du dossier de la session faisait perdre le suivi d'exécution : le TUI n'accepte que les événements de son propre projet (`event.ts:19`), donc une session d'un dossier ajouté s'exécutait sans jamais remonter ni statut ni messages — elle paraissait ne jamais démarrer. Le même routage chargeait une instance étrangère **par requête**, ce qui relançait ses serveurs MCP à chaque fois (fenêtres de terminal en série). Le routage d'exécution est retiré : l'exécution suit de nouveau l'instance du TUI, et les relances disparaissent avec les chargements répétés.
+- **La cohérence affiché/exécuté est obtenue autrement** : la création d'une session est épinglée sur le dossier de travail du TUI (une requête unique, sur l'instance déjà vivante), de sorte que le dossier stocké — celui qui s'affiche — soit celui où l'exécution a lieu. Sans cet épinglage, le serveur retombait sur son propre `cwd` et une session pouvait afficher un dossier tout en travaillant dans un autre.
+
+### Tests
+- Le test de bout en bout qui encodait le routage de la 2.3.18 est remplacé par l'invariant correct : la création épingle le dossier du client, et l'écart entre dossier stocké et dossier de travail est explicitement traité comme la régression à empêcher.
+
 ## [v2.3.18] - 2026-09-28
 
 ### Fixed
