@@ -7,6 +7,18 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.3.14] - 2026-09-28
+
+### Fixed
+- **La ligne « Read more » d'un dossier se lit comme les sessions qu'elle masque** : elle était collée au bord du cadre, sans le retrait des sessions, et se confondait avec un titre de section. Elle porte désormais la même indentation et un glyphe aligné sur leur colonne, et reste cliquable pour révéler les lignes cachées.
+- **La barre de sessions défile au lieu d'être tronquée** : les lignes masquées n'étaient atteignables que par un indicateur « N more » figé, sans molette ni déplacement de vue. La liste vit maintenant dans un conteneur défilable (molette, et défilement automatique qui garde la ligne sélectionnée visible), ce qui rend **toutes** les lignes accessibles : sur un terminal de 24 lignes, 19 lignes étaient atteignables, la totalité l'est désormais.
+
+### Changed
+- **Le raccourci Steer quitte Alt+Entrée** : cette combinaison insère un retour à la ligne (`input.newline`), donc y placer Steer la rendait inopérante. Steer passe sur **Alt+S**, une combinaison Alt+lettre que le terminal transmet telle quelle, sans la consommer ; l'insertion de retour à la ligne reste sur Entrée, Maj+Entrée, Ctrl+Entrée et Ctrl+J.
+
+### Tests
+- Deux tests de rendu ajoutés sur la barre (indentation et clic de la ligne « Read more »), la règle de défilement extraite en fonction pure et testée (maintien de la sélection dans la vue), plus un test de garde qui échoue si un raccourci par défaut entre en collision — c'est exactement la collision Alt+Entrée qui était passée inaperçue. 118 pass / 0 fail sur les suites concernées, `tsgo --noEmit` = 0.
+
 ## [v2.3.13] - 2026-09-28
 
 ### Fixed
