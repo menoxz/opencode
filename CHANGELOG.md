@@ -7,6 +7,14 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.3.20] - 2026-09-28
+
+### Fixed
+- **Plus de fenêtre de console pour les serveurs MCP locaux.** Le SDK MCP ne masque la console Windows que dans Electron (`windowsHide: process.platform === "win32" && isElectron()`) : hors Electron, chaque serveur MCP lancé recevait sa propre console, donc une fenêtre — une par connexion d'instance et une par reconnexion, ce qui produisait des fenêtres répétées pendant l'usage. Le SDK est désormais patché (`patchedDependencies`) pour masquer la console sur Windows quel que soit l'hôte : le correctif est appliqué à l'installation et embarqué dans le binaire au build.
+
+### Tests
+- `src/mcp/sdk-patch.test.ts` lit le SDK effectivement résolu et exige que les deux copies du transport stdio (ESM et CJS) ne gatent plus `windowsHide` sur Electron : le test échoue si le patch est retiré, si le SDK est mis à jour sans lui, ou si l'installation cesse de l'appliquer.
+
 ## [v2.3.19] - 2026-09-28
 
 ### Fixed
