@@ -50,6 +50,7 @@ export function TaskContractSection(props: {
         <box
           id="task-contract-details-toggle"
           flexDirection="row"
+          marginTop={1}
           gap={1}
           focusable
           onMouseDown={(event) => {
@@ -68,15 +69,18 @@ export function TaskContractSection(props: {
         </box>
         <Show when={detailsOpen()}>
           <Show when={props.dod.length > 0}>
-            <box gap={0}>
+            <box gap={0} marginTop={1}>
               <text fg={props.muted}>
                 {TASK_CONTRACT_SIDEBAR_COPY.dodLabel}({props.dod.length})
               </text>
               <For each={props.dod}>
                 {(item) => (
-                  <box flexDirection="row" gap={1}>
-                    <text fg={props.muted}>•</text>
-                    <text fg={props.color} wrapMode="word">
+                  // The bullet lives inside the text, after a space, so a wrapped item hangs under its
+                  // own words instead of restarting under the bullet; the text is bounded by the column
+                  // width so it can never run past the box.
+                  <box flexShrink={0} paddingLeft={2}>
+                    <text fg={props.color} wrapMode="word" width="100%">
+                      <span style={{ fg: props.muted }}>{"• "}</span>
                       {truncateItem(item)}
                     </text>
                   </box>
@@ -85,15 +89,15 @@ export function TaskContractSection(props: {
             </box>
           </Show>
           <Show when={props.outOfScope.length > 0}>
-            <box gap={0}>
+            <box gap={0} marginTop={1}>
               <text fg={props.warning}>
                 {TASK_CONTRACT_SIDEBAR_COPY.outOfScopeLabel}({props.outOfScope.length})
               </text>
               <For each={props.outOfScope}>
                 {(item) => (
-                  <box flexDirection="row" gap={1}>
-                    <text fg={props.warning}>◦</text>
-                    <text fg={props.muted} wrapMode="word">
+                  <box flexShrink={0} paddingLeft={2}>
+                    <text fg={props.muted} wrapMode="word" width="100%">
+                      <span style={{ fg: props.warning }}>{"◦ "}</span>
                       {truncateItem(item)}
                     </text>
                   </box>

@@ -154,18 +154,24 @@ describe("TUI session navbar", () => {
     expect(spinGlyph("busy", -1)).toBe(SPINNER_FRAMES[SPINNER_FRAMES.length - 1])
   })
 
-  test("keeps the time for today, adds day and month this year, and the year before that", () => {
+  test("stamps the date alone, adding the year only when it is not this one", () => {
     expect(navStamp(undefined, now)).toBeUndefined()
     expect(navStamp(Number.NaN, now)).toBeUndefined()
-    expect(navStamp(todayAt, now)).toBe(Locale.time(todayAt))
-    expect(navStamp(sameYearAt, now)).toBe(`15/09 ${Locale.time(sameYearAt)}`)
-    expect(navStamp(olderYearAt, now)).toBe(`15/09/25 ${Locale.time(olderYearAt)}`)
+    const today = new Date(todayAt)
+    const day = [today.getDate(), today.getMonth() + 1].map((value) => String(value).padStart(2, "0")).join("/")
+    expect(navStamp(todayAt, now)).toBe(day)
+    expect(navStamp(sameYearAt, now)).toBe("15/09")
+    expect(navStamp(olderYearAt, now)).toBe("15/09/25")
   })
 
-  test("a stamp always carries both a date marker and a time", () => {
-    expect(navStamp(todayAt, now)).toMatch(/\d{1,2}:\d{2}/)
-    expect(navStamp(sameYearAt, now)).toMatch(/\d{2}\/\d{2} .*\d{1,2}:\d{2}/)
-    expect(navStamp(olderYearAt, now)).toMatch(/\d{2}\/\d{2}\/\d{2} .*\d{1,2}:\d{2}/)
+  test("a stamp is a date and never a clock time", () => {
+    // The previous format always carried `HH:MM`; asserting its absence is what fails if it returns.
+    for (const at of [todayAt, sameYearAt, olderYearAt]) {
+      const stamp = navStamp(at, now) ?? ""
+      expect(stamp).not.toContain(":")
+      expect(stamp).not.toMatch(/\d{1,2}:\d{2}/)
+      expect(stamp).toMatch(/^\d{2}\/\d{2}(\/\d{2})?$/)
+    }
   })
 
   test("builds a session line with the glyph and the timestamp reserved", () => {

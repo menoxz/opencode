@@ -4,7 +4,6 @@
  * Kept free of Solid and OpenTUI imports so it can be unit-tested directly, the same way
  * `pending-turn.ts` is separated from the session route that renders it.
  */
-import { Locale } from "@/util/locale"
 
 /** Coarse activity of a session, derived from the store's session status. */
 export type NavActivity = "busy" | "retry" | "idle"
@@ -100,18 +99,16 @@ export function spinGlyph(activity: NavActivity, frame: number): string {
 const pad = (value: number) => String(value).padStart(2, "0")
 
 /**
- * Last-activity stamp, compact enough to survive a narrow bar while never dropping the information:
- * today keeps only the time, this year adds day and month, an older session adds the year. The time
- * itself comes from the CLI's own helper so the bar and `session list` never disagree.
+ * Last-activity stamp: a date and never a clock time, so the row stays quiet and every column it
+ * frees goes to the title. Day and month always; the year only when it differs from today's, which
+ * keeps the stamp as short as it can be while still telling the two apart.
  */
 export function navStamp(updated: number | undefined, now: Date = new Date()): string | undefined {
   if (updated === undefined || !Number.isFinite(updated)) return undefined
   const when = new Date(updated)
-  const time = Locale.time(updated)
-  if (when.toDateString() === now.toDateString()) return time
   const day = `${pad(when.getDate())}/${pad(when.getMonth() + 1)}`
-  if (when.getFullYear() === now.getFullYear()) return `${day} ${time}`
-  return `${day}/${pad(when.getFullYear() % 100)} ${time}`
+  if (when.getFullYear() === now.getFullYear()) return day
+  return `${day}/${pad(when.getFullYear() % 100)}`
 }
 
 /**

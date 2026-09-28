@@ -77,7 +77,40 @@ test("task contract details toggle with a mouse click", async () => {
   await app.renderOnce()
   expect(app.captureCharFrame()).not.toContain("Mouse-visible detail")
 
-  await app.mockMouse.click(1, 2)
+  await app.mockMouse.click(1, 3)
   await app.renderOnce()
   expect(app.captureCharFrame()).toContain("Mouse-visible detail")
+})
+
+test("a wrapped criterion hangs under its own text and stays inside the column", async () => {
+  const long =
+    "Une contrainte assez longue pour dépasser la largeur de la colonne et devoir se replier sur une seconde ligne"
+  const app = await testRender(
+    () => (
+      <TaskContractSection
+        goal="Objectif court"
+        dod={[long]}
+        outOfScope={[long]}
+        color="#ffffff"
+        muted="#888888"
+        warning="#ffaa00"
+      />
+    ),
+    { width: 40, height: 24 },
+  )
+  renderers.push(app.renderer)
+  focusDetailsControl(app.renderer)
+  app.mockInput.pressEnter()
+  await app.renderOnce()
+
+  const lines = app.captureCharFrame().split("\n")
+  const index = lines.findIndex((line) => line.includes("•"))
+  expect(index).toBeGreaterThan(-1)
+  // The bullet is indented and separated from the first word by a space.
+  expect(lines[index]!.startsWith("  • ")).toBe(true)
+  // The continuation line hangs under the text, indented past the bullet column, and carries no bullet.
+  expect(lines[index + 1]!.startsWith("  ")).toBe(true)
+  expect(lines[index + 1]!.startsWith("  • ")).toBe(false)
+  // No line runs past the column the sidebar gave the section.
+  for (const line of lines) expect(line.length).toBeLessThanOrEqual(40)
 })

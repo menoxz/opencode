@@ -177,7 +177,7 @@ test("a working session spins and a resting one shows the rest glyph", async () 
   expect(text).toContain("○")
 })
 
-test("shows each session's last-activity date and time", async () => {
+test("shows each session's last-activity date without a clock time", async () => {
   const updated = Date.UTC(2026, 8, 26, 14, 36)
   const app = await renderBar({
     sessions: [{ id: "ses_a", title: "Add navbar", updated, directory: "C:\\w\\alpha" }],
@@ -186,7 +186,11 @@ test("shows each session's last-activity date and time", async () => {
     focused: false,
   })
   const text = app.captureCharFrame()
-  expect(text).toContain(Locale.time(updated))
+  const day = new Date(updated)
+  const expected = [day.getDate(), day.getMonth() + 1].map((value) => String(value).padStart(2, "0")).join("/")
+  expect(text).toContain(expected)
+  // The previous format always carried `HH:MM`; asserting its absence is what fails if it comes back.
+  expect(text).not.toContain(Locale.time(updated))
   expect(text).toContain("26/09")
 })
 
