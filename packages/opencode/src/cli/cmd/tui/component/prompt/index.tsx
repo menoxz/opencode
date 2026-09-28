@@ -23,6 +23,7 @@ import { useSDK } from "@tui/context/sdk"
 import { useRoute } from "@tui/context/route"
 import { useProject } from "@tui/context/project"
 import { useSync } from "@tui/context/sync"
+import { directoryRequestOptions } from "@tui/context/session-directory"
 import { useEvent } from "@tui/context/event"
 import { editorSelectionKey, useEditorContext, type EditorSelection } from "@tui/context/editor"
 import { MessageID, PartID } from "@/session/schema"
@@ -535,9 +536,7 @@ export function Prompt(props: PromptProps) {
           }, 5000)
 
           if (store.interrupt >= 2) {
-            void sdk.client.session.abort({
-              sessionID: props.sessionID,
-            })
+            void sdk.client.session.abort({ sessionID: props.sessionID }, sync.session.options(props.sessionID))
             setStore("interrupt", 0)
           }
           dialog.clear()
@@ -1114,6 +1113,9 @@ export function Prompt(props: PromptProps) {
 
     const variant = local.model.variant.current()
     let sessionID = props.sessionID
+    // The directory a session works in is the one it is stored under. Capture it so the very
+    // first prompt already executes where the session says it does.
+    let workingDirectory = props.sessionID ? sync.session.get(props.sessionID)?.directory : undefined
     if (sessionID == null) {
       const workspace = workspaceSelection()
       const workspaceID = iife(() => {
@@ -1123,15 +1125,18 @@ export function Prompt(props: PromptProps) {
         return undefined
       })
 
-      const res = await sdk.client.session.create({
-        workspace: workspaceID,
-        agent: agent.name,
-        model: {
-          providerID: selectedModel.providerID,
-          id: selectedModel.modelID,
-          variant,
+      const res = await sdk.client.session.create(
+        {
+          workspace: workspaceID,
+          agent: agent.name,
+          model: {
+            providerID: selectedModel.providerID,
+            id: selectedModel.modelID,
+            variant,
+          },
         },
-      })
+        directoryRequestOptions(sync.path.directory),
+      )
 
       if (res.error) {
         console.log("Creating a session failed:", res.error)
@@ -1145,6 +1150,7 @@ export function Prompt(props: PromptProps) {
       }
 
       sessionID = res.data.id
+      workingDirectory = res.data.directory
     }
 
     const messageID = MessageID.ascending()
@@ -1191,15 +1197,18 @@ export function Prompt(props: PromptProps) {
         : []
 
     if (store.mode === "shell") {
-      void sdk.client.session.shell({
-        sessionID,
-        agent: agent.name,
-        model: {
-          providerID: selectedModel.providerID,
-          modelID: selectedModel.modelID,
+      void sdk.client.session.shell(
+        {
+          sessionID,
+          agent: agent.name,
+          model: {
+            providerID: selectedModel.providerID,
+            modelID: selectedModel.modelID,
+          },
+          command: inputText,
         },
-        command: inputText,
-      })
+        directoryRequestOptions(workingDirectory ?? sync.path.directory),
+      )
       setStore("mode", "normal")
     } else if (
       inputText.startsWith("/") &&
@@ -1230,7 +1239,9 @@ export function Prompt(props: PromptProps) {
             id: PartID.ascending(),
             ...x,
           })),
-      })
+        },
+        directoryRequestOptions(workingDirectory ?? sync.path.directory),
+      )
     } else {
       sdk.client.session
         .prompt({
@@ -1252,7 +1263,9 @@ export function Prompt(props: PromptProps) {
             },
             ...nonTextParts.map(assign),
           ],
-        })
+        },
+        directoryRequestOptions(workingDirectory ?? sync.path.directory),
+      )
         .then((result) => {
           if (!result.error) return
           console.log("Sending the prompt failed:", result.error)

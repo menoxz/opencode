@@ -33,6 +33,7 @@ import { emptyConsoleState, type ConsoleState } from "@/config/console-state"
 import path from "path"
 import { useKV } from "./kv"
 import { aggregateFailures } from "./aggregate-failures"
+import { directoryRequestOptions, sessionDirectory } from "./session-directory"
 import {
   DEFAULT_DIRECTORY_SCOPE,
   SESSION_DIRECTORY_SCOPE_KEY,
@@ -592,6 +593,12 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           kv.set(SESSION_EXTRA_DIRECTORIES_KEY, removeWatchedDirectory(storedExtraDirectories(), directory))
           await result.session.refresh()
         },
+        directory(sessionID: string) {
+          return sessionDirectory(store.session, sessionID)
+        },
+        options(sessionID: string) {
+          return directoryRequestOptions(result.session.get(sessionID)?.directory)
+        },
         async refresh() {
           const list = await listSessions()
           setStore("session", reconcile(list))
@@ -608,11 +615,15 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         },
         async sync(sessionID: string) {
           if (fullSyncedSessions.has(sessionID)) return
+          // Pin every read to the directory the session is stored under: the server otherwise
+          // resolves the request against its own cwd, and the TUI would show one directory while
+          // the data came from another.
+          const options = result.session.options(sessionID)
           const [session, messages, todo, diff] = await Promise.all([
-            sdk.client.session.get({ sessionID }, { throwOnError: true }),
-            sdk.client.session.messages({ sessionID, limit: 100 }),
-            sdk.client.session.todo({ sessionID }),
-            sdk.client.session.diff({ sessionID }),
+            sdk.client.session.get({ sessionID }, { ...options, throwOnError: true }),
+            sdk.client.session.messages({ sessionID, limit: 100 }, options),
+            sdk.client.session.todo({ sessionID }, options),
+            sdk.client.session.diff({ sessionID }, options),
           ])
           setStore(
             produce((draft) => {
