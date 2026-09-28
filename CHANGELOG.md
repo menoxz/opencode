@@ -7,6 +7,15 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.3.17] - 2026-09-28
+
+### Changed
+- **Les lignes de session n'affichent plus l'heure** : la barre n'y montre qu'une date — `26/09`, et `26/09/25` lorsque l'année n'est pas la courante. L'heure consommait des colonnes utiles au titre sans rien dire au premier coup d'œil, alors que la date suffit à situer une session.
+- **Présentation du bloc task contract reprise** : les critères et le hors-périmètre sont désormais en retrait suspendu — la puce est séparée du texte par une espace et les lignes repliées se poursuivent sous les mots de l'élément, plus en colonne zéro — chaque groupe (objectif, détails, DoD, OOS) étant séparé par une ligne de respiration. Les lignes sont bornées par la largeur de la colonne, sans débordement de la boîte.
+
+### Tests
+- Les tests d'horodatage exigent désormais l'absence de l'heure, dans la fonction (`navStamp`) comme dans la trame rendue : c'est exactement ce qui échoue si l'ancien format revient. Un test de rendu prouve le retrait suspendu (puce en tête de ligne, continuation sans puce, aucune ligne au-delà de la largeur de la colonne).
+
 ## [v2.3.16] - 2026-09-28
 
 ### Fixed
