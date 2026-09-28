@@ -235,6 +235,16 @@ test("shows each session's last-activity date without a clock time", async () =>
   expect(text).toContain("26/09")
 })
 
+test("leaves a blank line between a directory header and its sessions", async () => {
+  const app = await renderBar({ sessions: twoDirs, activeID: "a1", selected: 0, focused: false })
+  const lines = linesOf(app)
+  const header = lines.findIndex((line) => line.includes("alpha"))
+  expect(header).toBeGreaterThanOrEqual(0)
+  // Observed on the real frame: the header line, then an empty separator line, then the first session.
+  expect(lines[header + 1]?.trim()).toBe("")
+  expect(lines[header + 2]).toContain("Alpha one")
+})
+
 test("caps a directory's sessions at three and offers Read more for the rest", async () => {
   const app = await renderBar({ sessions: oneDirMany, activeID: "ses_0", selected: 0, focused: false })
   const text = app.captureCharFrame()
@@ -298,7 +308,8 @@ test("the command section is pinned at the bottom without a frame", async () => 
 
 test("Enter on a session row opens it", async () => {
   let opened: string | undefined
-  const app = await renderBar({ sessions: twoDirs, activeID: "a1", selected: 1, focused: true, onOpen: (id) => (opened = id) })
+  // Header at 0, the spacing separator at 1, the first session at 2: the convention shifts the list.
+  const app = await renderBar({ sessions: twoDirs, activeID: "a1", selected: 2, focused: true, onOpen: (id) => (opened = id) })
   app.mockInput.pressEnter()
   await settled(app)
   expect(opened).toBe("a1")

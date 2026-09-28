@@ -14,6 +14,7 @@ import {
   footerLines,
   initialSelection,
   moveSelection,
+  moveSelectionRows,
   navActivity,
   navBasename,
   navDirRow,
@@ -318,8 +319,42 @@ describe("TUI session navbar", () => {
     const dirs = rows.filter((row) => row.kind === "dir")
     expect(dirs).toHaveLength(5)
     const open = rows.findIndex((row) => row.kind === "dir" && row.label === "opencode-fork")
-    expect(rows[open + 1]?.kind).toBe("session")
+    // The spacing convention: a directory header is followed by a blank separator, then its sessions.
+    expect(rows[open + 1]?.kind).toBe("gap")
+    expect(rows[open + 2]?.kind).toBe("session")
     expect(rows.filter((row) => row.kind === "session").length).toBeGreaterThan(0)
+  })
+
+  test("separates a directory from the previous one and from its sessions", () => {
+    const rows = navRows(grouped, "a1", { overrides: {}, revealed: [] })
+    expect(rows[0]?.kind).toBe("dir")
+    expect(rows.at(-1)?.kind).not.toBe("gap")
+    // One separator opens each group after the first, and one opens every open group's sessions.
+    const separators = rows.filter((row) => row.kind === "gap").length
+    expect(separators).toBeGreaterThanOrEqual(2)
+    expect(rows.filter((row) => row.kind === "dir")).toHaveLength(5)
+    rows.forEach((row, index) => {
+      if (row.kind === "gap") expect(rows[index - 1]?.kind).not.toBe("gap")
+      if (row.kind === "dir" && index > 0) expect(rows[index - 1]?.kind).not.toBe("dir")
+    })
+    // A folded directory keeps its header, shows none of its sessions, and adds no trailing separator.
+    const folded = navRows(grouped, "a1", { overrides: { "C:\\other\\deepseek": true }, revealed: [] })
+    expect(folded.some((row) => row.kind === "session" && row.id === "c1")).toBe(false)
+    expect(folded.at(-1)?.kind).not.toBe("gap")
+    expect(folded.some((row, index) => row.kind === "gap" && folded[index + 1]?.kind === "gap")).toBe(false)
+  })
+
+  test("the selection never rests on a separator", () => {
+    const rows = navRows(grouped, "a1", { overrides: {}, revealed: [] })
+    const firstSeparator = rows.findIndex((row) => row.kind === "gap")
+    expect(firstSeparator).toBeGreaterThan(0)
+    // Asked for a separator, the selection moves off it instead of highlighting a blank line.
+    expect(rows[navSelection(rows, undefined, firstSeparator)]?.kind).not.toBe("gap")
+    expect(rows[moveSelectionRows(rows, firstSeparator, 1)]?.kind).not.toBe("gap")
+    expect(rows[moveSelectionRows(rows, firstSeparator, -1)]?.kind).not.toBe("gap")
+    // Stepping down from the header lands on the first session, past the separator.
+    const open = rows.findIndex((row) => row.kind === "dir" && row.label === "opencode-fork")
+    expect(rows[moveSelectionRows(rows, open, 1)]?.kind).toBe("session")
   })
 
   test("caps a directory's sessions at three and hides the rest behind its Read more", () => {

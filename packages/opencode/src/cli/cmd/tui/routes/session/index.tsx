@@ -71,7 +71,7 @@ import { SessionNavBar } from "./session-nav-bar"
 import {
   NAV_WIDTH,
   initialSelection,
-  moveSelection,
+  moveSelectionRows,
   navActivity,
   navVisible,
   type NavSession,
@@ -1573,7 +1573,7 @@ export function Session() {
               frame={navFrame()}
               pendingDelete={navPendingDelete()}
               shortcuts={{ new: navNewShortcut(), delete: navDeleteShortcut(), rename: navRenameShortcut() }}
-              onMove={(delta) => setNavSelected(moveSelection(navSelected(), delta, navList().length))}
+              onMove={(delta) => setNavSelected(moveSelectionRows(navList(), navSelected(), delta))}
               onOpen={navOpenSession}
               onToggleDir={navToggleDir}
               onToggleMore={navToggleMore}

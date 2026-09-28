@@ -14,7 +14,7 @@ import { DialogSessionRename } from "@tui/component/dialog-session-rename"
 import { SessionNavBar } from "./session-nav-bar"
 import {
   filterNavSessions,
-  moveSelection,
+  moveSelectionRows,
   navActivity,
   navListHeight,
   navRows,
@@ -173,7 +173,7 @@ export function SessionNavPanel() {
         frame={navFrame()}
         pendingDelete={navPendingDelete()}
         shortcuts={{ new: navNewShortcut(), delete: navDeleteShortcut(), rename: navRenameShortcut() }}
-        onMove={(delta) => setNavSelected(moveSelection(navSelected(), delta, navList().length))}
+        onMove={(delta) => setNavSelected(moveSelectionRows(navList(), navSelected(), delta))}
         onOpen={(id) => route.navigate({ type: "session", sessionID: id })}
         onToggleDir={navToggleDir}
         onToggleMore={navToggleMore}

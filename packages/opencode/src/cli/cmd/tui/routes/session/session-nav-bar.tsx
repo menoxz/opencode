@@ -93,6 +93,9 @@ export function SessionNavBar(props: {
   })
 
   const line = (row: NavRowModel, _index: number) => {
+    // A separator is a real row: it keeps the spacing inside the scroll box, where the height
+    // arithmetic still sees it, instead of a margin that would push the last rows out of frame.
+    if (row.kind === "gap") return ""
     if (row.kind === "dir")
       return navDirRow({ label: row.label, count: row.count, collapsed: row.collapsed, width: innerWidth() })
     if (row.kind === "session")
@@ -109,6 +112,7 @@ export function SessionNavBar(props: {
   }
 
   const color = (row: NavRowModel, index: number) => {
+    if (row.kind === "gap") return theme.textMuted
     if (row.kind === "session" && props.pendingDelete === row.id) return theme.error
     if (index === props.selected) return theme.text
     if (row.kind === "session" && (row.activity === "busy" || row.activity === "retry")) return theme.accent
@@ -120,6 +124,8 @@ export function SessionNavBar(props: {
   const activate = (row: NavRowModel) => {
     // A click anywhere after a first ctrl+d cancels the pending delete instead of acting on the row.
     if (props.pendingDelete) return props.onClearPending?.()
+    // A separator is not a target: without this it would fall through and toggle a reveal it has none.
+    if (row.kind === "gap") return
     if (row.kind === "session") return props.onOpen(row.id)
     if (row.kind === "dir") return props.onToggleDir(row.key, row.collapsed)
     return props.onToggleMore(row.key.slice("more:".length))

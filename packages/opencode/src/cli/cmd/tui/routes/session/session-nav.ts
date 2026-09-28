@@ -30,11 +30,17 @@ export type NavGroup = {
   sessions: NavItem[]
 }
 
-/** One rendered line: a directory header, a session, or a directory's own "Read more". */
+/**
+ * One rendered line: a directory header, a session, a directory's own "Read more", or a blank
+ * separator. Separators are first-class rows so the spacing takes part in the selection, the window
+ * offset and the scroll box exactly like any other line, instead of being a margin the height
+ * arithmetic cannot see.
+ */
 export type NavRowModel =
   | { kind: "dir"; key: string; label: string; count: number; collapsed: boolean; selected: boolean }
   | { kind: "session"; key: string; id: string; title: string; activity: NavActivity; updated?: number; selected: boolean }
   | { kind: "more"; key: string; hidden: number; selected: boolean }
+  | { kind: "gap"; key: string; selected: boolean }
 
 /**
  * `overrides` pins a directory's fold explicitly (`true` = collapsed, `false` = open); a directory
@@ -118,6 +124,20 @@ export function navStamp(updated: number | undefined, now: Date = new Date()): s
 export function moveSelection(current: number, delta: number, total: number): number {
   if (total <= 0) return 0
   return ((((current + delta) % total) + total) % total) + 0
+}
+
+/**
+ * Moves the selection over a row model, stepping over the blank separators so the highlight never
+ * rests on one. Any row model has at least one line that is not a separator (its first line is a
+ * directory header), so the walk always terminates.
+ */
+export function moveSelectionRows(rows: readonly NavRowModel[], current: number, delta: number): number {
+  const total = rows.length
+  if (total <= 0) return 0
+  const step = delta === 0 ? 1 : delta
+  let next = moveSelection(current, step, total)
+  for (let guard = 1; guard < total && rows[next]?.kind === "gap"; guard++) next = moveSelection(next, step, total)
+  return rows[next]?.kind === "gap" ? clampSelection(current, total) : next
 }
 
 /** Pulls a stored index back into range, for instance after the selected session was deleted. */
@@ -290,15 +310,21 @@ export function navVisibleSessions(sessions: readonly NavItem[], opened: boolean
  */
 export function navRows(sessions: readonly NavSession[], activeID: string | undefined, state: NavState): NavRowModel[] {
   const rows: NavRowModel[] = []
-  for (const group of navGroups(sessions, activeID)) {
+  navGroups(sessions, activeID).forEach((group, position) => {
+    // One convention, applied here and nowhere else: a blank row separates every directory from the
+    // previous one, and an open directory from its first session. A separator never opens or closes
+    // the list, so the first line is always a header and the last one is always content.
+    if (position > 0) rows.push({ kind: "gap", key: `gap:before:${group.key}`, selected: false })
     // A pinned directory keeps the exact fold the user chose; every other one follows the default,
     // which only the active session's directory opens. Reading the pinned value (instead of flipping
     // the default) is what keeps an opened folder from closing when the active session moves into it.
     const collapsed = !state.reveal && (state.overrides[group.key] ?? !group.active)
     rows.push({ kind: "dir", key: `dir:${group.key}`, label: group.label, count: group.count, collapsed, selected: false })
-    if (collapsed) continue
+    if (collapsed) return
     // A search reveals every session, and so does the directory's own "Read more".
     const { shown, hidden } = navVisibleSessions(group.sessions, state.reveal === true || state.revealed.includes(group.key))
+    // The folder-to-session separation: added only when a session line actually follows the header.
+    if (shown.length > 0) rows.push({ kind: "gap", key: `gap:sessions:${group.key}`, selected: false })
     for (const session of shown) {
       rows.push({
         kind: "session",
@@ -311,14 +337,19 @@ export function navRows(sessions: readonly NavSession[], activeID: string | unde
       })
     }
     if (hidden > 0) rows.push({ kind: "more", key: `more:${group.key}`, hidden, selected: false })
-  }
+  })
   return rows
 }
 
-/** Index to show as selected: the active session's row when present, otherwise a clamped index. */
+/**
+ * Index to show as selected: the active session's row when present, otherwise a clamped index moved
+ * off any separator, so the highlight never rests on a blank line.
+ */
 export function navSelection(rows: readonly NavRowModel[], activeID: string | undefined, stored: number): number {
   const found = rows.findIndex((row) => row.kind === "session" && row.id === activeID)
-  return found >= 0 ? found : clampSelection(stored, rows.length)
+  if (found >= 0) return found
+  const clamped = clampSelection(stored, rows.length)
+  return rows[clamped]?.kind === "gap" ? moveSelectionRows(rows, clamped, 1) : clamped
 }
 
 /** The session id under a row, or undefined when the row is a directory or the reveal. */
