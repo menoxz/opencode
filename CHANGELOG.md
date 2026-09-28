@@ -7,6 +7,15 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.3.21] - 2026-09-28
+
+### Fixed
+- **Le champ de recherche de la barre de navigation filtre désormais réellement la liste des sessions.** La barre recevait la liste complète et se contentait d'ouvrir les dossiers pliés : une recherche ne retirait aucune ligne, et seul le curseur suivait la liste filtrée. Le filtrage est maintenant appliqué au point d'appel, comme le fait déjà le panneau latéral — les sessions affichées sont celles qui correspondent à la requête (titre, nom du dossier ou chemin), et une session trouvée reste sous son propre dossier même si un autre dossier est actif.
+
+### Tests
+- `session-nav.test.ts` : la composition filtre puis groupement garde la session trouvée sous son dossier et écarte les autres.
+- `session-nav.view.test.tsx` : une recherche sans résultat nomme la requête (`No session matches "…"`) au lieu de l'ancien libellé, et une recherche qui trouve une session l'affiche sous son en-tête de dossier sans ses voisines.
+
 ## [v2.3.20] - 2026-09-28
 
 ### Fixed
