@@ -215,6 +215,15 @@ export function filterNavSessions(sessions: readonly NavSession[], query: string
   )
 }
 
+/**
+ * The list's placeholder when it is empty: it names the query that matched nothing, so an empty
+ * navbar always says why it is empty instead of leaving a search that found nothing look broken.
+ */
+export function navEmptyRow(query: string, width: number): string {
+  const needle = query.trim()
+  return navLabel(needle ? `No session matches "${needle}"` : "No sessions yet", Math.max(1, width))
+}
+
 /** The navbar's search line: a hint while idle, the live query with a caret while searching. */
 export function navQueryRow(query: string, searching: boolean, width: number): string {
   return navLabel(searching ? `/${query}\u258f` : "/ Search folders", Math.max(1, width))

@@ -82,6 +82,7 @@ async function renderBar(props: {
   onToggleDirectories?: () => void
   onClearPending?: () => void
   onSearch?: (query: string) => void
+  searchQuery?: string
   onClose?: () => void
 }) {
   const app = await testRender(
@@ -109,6 +110,7 @@ async function renderBar(props: {
           onToggleDirectories={props.onToggleDirectories ?? (() => {})}
           onClearPending={props.onClearPending}
           onSearch={props.onSearch}
+          searchQuery={props.searchQuery}
           onClose={props.onClose}
         />
       )),
@@ -159,6 +161,35 @@ test("an empty project shows the fallback instead of invented rows", async () =>
   const text = app.captureCharFrame()
   expect(text).toContain("No sessions yet")
   expect(text).not.toContain("opencode-fork")
+})
+
+test("a search that matches nothing names the query instead of the old fallback", async () => {
+  // The route filters before grouping, so a query that matches nothing reaches the bar as an empty list.
+  const app = await renderBar({
+    sessions: filterNavSessions(sessions, "zzz"),
+    selected: 0,
+    focused: false,
+    searchQuery: "zzz",
+  })
+  const text = app.captureCharFrame()
+  expect(text).toContain('No session matches "zzz"')
+  expect(text).not.toContain("Add navbar")
+  expect(text).not.toContain("No sessions yet")
+})
+
+test("a search keeps the match under its own directory header", async () => {
+  const app = await renderBar({
+    sessions: filterNavSessions(twoDirs, "beta"),
+    selected: 0,
+    focused: false,
+    searchQuery: "beta",
+    revealed: [],
+  })
+  const text = app.captureCharFrame()
+  expect(text).toContain("beta")
+  expect(text).toContain("Beta one")
+  expect(text).not.toContain("Alpha one")
+  expect(text).not.toContain("Alpha two")
 })
 
 test("a working session spins and a resting one shows the rest glyph", async () => {

@@ -9,6 +9,7 @@ import {
   footerLines,
   navDirRow,
   navDirectoryLabel,
+  navEmptyRow,
   navMoreRow,
   navQueryRow,
   navRow,
@@ -213,7 +214,14 @@ export function SessionNavBar(props: {
           scrollAcceleration={scrollAcceleration()}
           scrollbarOptions={{ visible: false }}
         >
-          <For each={rows()} fallback={<text fg={theme.textMuted}>No sessions yet</text>}>
+          <For
+            each={rows()}
+            fallback={
+              <text fg={theme.textMuted} wrapMode="none">
+                {navEmptyRow(props.searchQuery ?? "", innerWidth())}
+              </text>
+            }
+          >
             {(row, index) => (
               <box
                 width="100%"

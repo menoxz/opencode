@@ -18,6 +18,7 @@ import {
   navBasename,
   navDirRow,
   navDirectoryLabel,
+  navEmptyRow,
   navGroups,
   navItems,
   navLabel,
@@ -515,6 +516,23 @@ describe("TUI session navbar", () => {
     expect(filterNavSessions(rows, "alpha")).toEqual([rows[0]])
     expect(filterNavSessions(rows, "C:\\other")).toEqual([rows[1]])
     expect(filterNavSessions(rows, "nowhere")).toEqual([])
+  })
+
+  test("a search keeps a match under its own directory, even when another one is active", () => {
+    const rows: NavSession[] = [
+      { id: "a1", title: "Add navbar", directory: "C:\\work\\alpha" },
+      { id: "b1", title: "Fix parser", directory: "C:\\work\\beta" },
+    ]
+    // The route filters before grouping, so the bar renders only what the query matched.
+    const rendered = navRows(filterNavSessions(rows, "parser"), "a1", { overrides: {}, revealed: [], reveal: true })
+    expect(rendered.flatMap((row) => (row.kind === "dir" ? [row.label] : []))).toEqual(["beta"])
+    expect(rendered.some((row) => row.kind === "session" && row.id === "b1")).toBe(true)
+    expect(rendered.some((row) => row.kind === "session" && row.id === "a1")).toBe(false)
+  })
+
+  test("the empty list names the query that matched nothing", () => {
+    expect(navEmptyRow("", NAV_WIDTH)).toContain("No sessions yet")
+    expect(navEmptyRow("zzz", NAV_WIDTH)).toContain('No session matches "zzz"')
   })
 
   test("the search line shows a hint until the user searches", () => {

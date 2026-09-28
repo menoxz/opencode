@@ -1561,7 +1561,7 @@ export function Session() {
         <box flexDirection="row" flexGrow={1} minHeight={0} onMouseUp={() => setNavPendingDelete(undefined)}>
           <Show when={navShown()}>
             <SessionNavBar
-              sessions={navSessions()}
+                            sessions={filterNavSessions(navSessions(), navQuery())}
               activeID={route.sessionID}
               selected={navSel()}
               focused={navFocused()}
