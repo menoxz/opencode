@@ -7,6 +7,14 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.3.22] - 2026-09-28
+
+### Fixed
+- **La recherche de la barre filtre désormais la liste sur l'écran d'accueil aussi.** La v2.3.21 n'avait corrigé que le point d'appel de la route session ; or l'écran d'accueil rend la barre par son panneau (`SessionNavPanel`), qui continuait de lui passer la liste brute — la requête réduisait le curseur du panneau sans retirer une seule ligne affichée. La barre filtre maintenant elle-même ses lignes (`rows()` applique `filterNavSessions(props.sessions, props.searchQuery ?? "")`), donc tout point d'appel, présent ou futur, est filtré ; le panneau lui passe en plus la liste filtrée.
+
+### Tests
+- `session-nav.view.test.tsx` : la barre, rendue avec la liste **brute** et une requête, n'affiche plus que la session correspondante — test de régression qui échouait avant ce correctif (le rendu affichait toute la liste).
+
 ## [v2.3.21] - 2026-09-28
 
 ### Fixed
