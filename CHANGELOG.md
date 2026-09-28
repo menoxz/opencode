@@ -7,6 +7,15 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.3.23] - 2026-09-28
+
+### Changed
+- **Espacement conventionnel dans la barre de navigation** : chaque dossier est séparé du précédent, et de sa première session, par une ligne vide, pour que les groupes se lisent d'un coup d'œil. Le séparateur est une **vraie ligne du modèle** (`kind: "gap"`) et non une marge : il reste dans la zone de défilement, donc le décompte de hauteur, l'offset de défilement et la barre de défilement le voient, au lieu d'une marge poussant les dernières lignes hors du cadre. Le curseur le franchit au lieu de s'y arrêter (`moveSelectionRows`) et la sélection initiale y est recadrée. Jamais de séparateur en tête ni en fin de liste, et un dossier replié n'en ajoute aucun.
+
+### Tests
+- `session-nav.test.ts` : adjacence dossier → séparateur → session, absence de double séparateur et de séparateur final, curseur qui saute les séparateurs sans jamais s'y poser.
+- `session-nav.view.test.tsx` : la trame réellement rendue montre l'en-tête de dossier, une ligne vide, puis la première session.
+
 ## [v2.3.22] - 2026-09-28
 
 ### Fixed
