@@ -7,6 +7,16 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.3.18] - 2026-09-28
+
+### Fixed
+- **Une session travaille désormais dans le dossier qu'elle affiche.** Le dossier était résolu deux fois, indépendamment : la session était *stockée* sous le dossier courant du client, tandis que chaque requête était *exécutée* par l'instance que l'en-tête `x-opencode-directory` du client désignait — c'est-à-dire le dossier de lancement, jamais celui de la session. Une session créée dans un dossier ajouté affichait donc ce dossier tout en travaillant dans celui du serveur, journal de messages à l'appui. Chaque appel lié à une session — création, prompt, commande, shell, abandon, synthèse, annulation, rétablissement, suppression — porte maintenant le dossier de la session, qui l'emporte sur celui du client (`mergeHeaders` du SDK applique l'en-tête d'appel après celui du client).
+- **Le chemin transmis n'est pas pré-encodé.** Pour GET/HEAD, le client déplace l'en-tête en paramètre `?directory=` en l'encodant une fois ; pré-encoder produisait un double encodage (`C%253A%255C…`) et le serveur cherchait un dossier littéralement nommé `C%3A\…`.
+
+### Tests
+- `session-directory.test.ts` : le noyau (valeur transmise, options de requête, résolution du dossier d'une session) et une preuve de bout en bout sur un client réel — un appel routé porte le dossier de la session, une lecture le voit réécrit en paramètre de requête, et le même appel **non routé** porte le dossier de lancement, ce qui reproduit le défaut corrigé.
+- Mesure live sur le serveur : une commande `pwd` exécutée avec l'en-tête du dossier de la session journalise ce dossier comme `cwd` ; la même commande sans en-tête journalise le `cwd` du serveur.
+
 ## [v2.3.17] - 2026-09-28
 
 ### Changed
