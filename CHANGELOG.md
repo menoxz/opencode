@@ -7,6 +7,15 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.3.12] - 2026-09-28
+
+### Fixed
+- **La limite de trois entrées avec « Read more » s'applique désormais aux sessions de chaque dossier**, et non aux dossiers eux-mêmes : chaque dossier ouvert plafonne ses propres sessions à trois et porte sa propre ligne « Read more » ; les dossiers ne sont plus plafonnés, chacun contribue toujours son en-tête.
+- L'état de révélation suit la même forme que les replis (`revealed`, liste de dossiers concernés) au lieu d'un booléen global, donc les deux survivent à une frappe.
+
+### Tests
+- Tests unitaires et de rendu mis à jour (sessions plafonnées à trois dans chaque dossier via `navRows`, dossiers non plafonnés, « Read more » par dossier) : 80 pass / 0 fail, `tsgo --noEmit` = 0. Le calcul de hauteur de v2.3.11 est conservé, donc une longue liste défile toujours au lieu de déborder.
+
 ## [v2.3.11] - 2026-09-27
 
 ### Fixed
