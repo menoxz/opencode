@@ -7,6 +7,18 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.3.15] - 2026-09-28
+
+### Changed
+- **La barre de sessions s'ouvre sur le dossier courant, plus sur tout le poste** : le listing machine-wide introduit en v2.3.13 est **abandonné** — divergence assumée. Il listait les sessions de tous les projets du poste, si bien que la barre ne montrait plus le travail en cours. Par défaut, elle couvre donc le dossier de travail, et la bascule « all dirs » reste disponible pour élargir explicitement au poste entier.
+
+### Added
+- **Ajout d'un dossier à la liste affichée** : un dossier choisi rejoint la barre et y reste d'une session à l'autre (persisté dans le kv), et peut en être retiré ; le nombre de dossiers ajoutés s'affiche dans l'en-tête de la barre, et les deux commandes sont accessibles depuis la palette.
+- **Limite d'ancienneté des sessions listées** : seules les sessions mises à jour dans les 30 derniers jours sont listées. La borne est déclarée à un seul endroit, transmise au serveur (`start`) et appliquée aussi au listing machine-wide, qui n'en avait aucune.
+
+### Tests
+- Le test de portée est réécrit pour le nouveau contrat : le défaut est prouvé par le comportement (la barre demande le dossier courant et n'appelle jamais l'endpoint machine-wide), l'ajout puis le retrait d'un dossier sont vérifiés de bout en bout, et une session de 400 jours est exclue. Un test de bord fixe la borne d'ancienneté (session à la borne conservée, une milliseconde au-delà exclue). 94 pass / 0 fail sur les cinq suites concernées, `tsgo --noEmit` = 0.
+
 ## [v2.3.14] - 2026-09-28
 
 ### Fixed
