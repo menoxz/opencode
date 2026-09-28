@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test"
-import { createOpencodeClient } from "@opencode-ai/sdk/v2"
 import {
   SESSION_DIRECTORY_HEADER,
   directoryHeaderValue,
@@ -57,40 +56,21 @@ describe("session directory routing", () => {
   })
 })
 
-describe("a session-scoped call reaches the server under the session's directory", () => {
-  test("the per-call directory overrides the client's launch directory on a write, and becomes a query parameter on a read", async () => {
-    const calls: Array<{ method: string; header: string | null; query: string | null }> = []
-    // Bun's `typeof fetch` also wants `preconnect`; the SDK's own client casts the same way.
-    const customFetch: any = async (request: Request) => {
-      calls.push({
-        method: request.method,
-        header: request.headers.get(SESSION_DIRECTORY_HEADER),
-        query: new URL(request.url).searchParams.get("directory"),
-      })
-      return new Response("{}", { status: 200, headers: { "content-type": "application/json" } })
-    }
-    const client = createOpencodeClient({
-      baseUrl: "http://127.0.0.1:1",
-      directory: "C:\\jeanluc\\opencode-fork",
-      fetch: customFetch,
+describe("a session is displayed under the directory it executes in", () => {
+  test("creation pins the client's own directory, so the stored directory is the one execution uses", () => {
+    // The TUI creates a session under the directory it works in, and later requests are served by
+    // that same instance: the displayed and executed directories are then the same by construction.
+    const clientDirectory = "C:\\jeanluc\\opencode-fork"
+    expect(directoryRequestOptions(clientDirectory)).toEqual({
+      headers: { [SESSION_DIRECTORY_HEADER]: clientDirectory },
     })
+    expect(directoryMatches(clientDirectory, { cwd: clientDirectory, root: "C:\\jeanluc" })).toBe(true)
+  })
 
-    const session = "C:\\jeanluc"
-    // A write keeps the header; a read is rewritten into ?directory= by the client interceptor.
-    await client.session.abort({ sessionID: "ses_x" }, directoryRequestOptions(session))
-    await client.session.get({ sessionID: "ses_x" }, directoryRequestOptions(session))
-    // Without routing, the same write is executed under the client's launch directory: the defect.
-    await client.session.abort({ sessionID: "ses_x" })
-
-    const routed = calls[0]!
-    const read = calls[1]!
-    const unrouted = calls[2]!
-
-    expect(routed.method).toBe("POST")
-    expect(routed.header).toBe(session)
-    expect(read.header).toBeNull()
-    expect(read.query).toBe(session)
-    expect(unrouted.header).toBe(encodeURIComponent("C:\\jeanluc\\opencode-fork"))
-    expect(unrouted.header).not.toBe(routed.header)
+  test("a session stored under a directory other than the working one is the regression this guards", () => {
+    // Routing execution to such a session would emit its events under another project, which the
+    // TUI drops (event.ts) — the session would appear never to start — and would reload that
+    // instance per request, restarting its MCP servers. Execution must follow the TUI.
+    expect(directoryMatches("C:\\jeanluc", { cwd: "C:\\jeanluc\\opencode-fork" })).toBe(false)
   })
 })

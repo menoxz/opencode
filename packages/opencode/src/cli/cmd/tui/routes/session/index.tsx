@@ -411,7 +411,7 @@ export function Session() {
     const sessionID = route.sessionID
     void (async () => {
       const previousWorkspace = untrack(() => project.workspace.current())
-      const result = await sdk.client.session.get({ sessionID }, { ...sync.session.options(sessionID), throwOnError: true })
+      const result = await sdk.client.session.get({ sessionID }, { throwOnError: true })
       if (!result.data) {
         toast.show({
           message: `Session not found: ${sessionID}`,
@@ -789,14 +789,11 @@ export function Session() {
           })
           return
         }
-        void sdk.client.session.summarize(
-          {
-            sessionID: route.sessionID,
-            modelID: selectedModel.modelID,
-            providerID: selectedModel.providerID,
-          },
-          sync.session.options(route.sessionID),
-        )
+        void sdk.client.session.summarize({
+          sessionID: route.sessionID,
+          modelID: selectedModel.modelID,
+          providerID: selectedModel.providerID,
+        })
         dialog.clear()
       },
     },
@@ -994,7 +991,7 @@ export function Session() {
       },
       run: async () => {
         const status = sync.data.session_status?.[route.sessionID]
-        if (status?.type !== "idle") await sdk.client.session.abort({ sessionID: route.sessionID }, sync.session.options(route.sessionID)).catch(() => {})
+        if (status?.type !== "idle") await sdk.client.session.abort({ sessionID: route.sessionID }).catch(() => {})
         const revert = session()?.revert?.messageID
         const message = messages().findLast((x) => (!revert || x.id < revert) && x.role === "user")
         if (!message) return
@@ -1036,17 +1033,16 @@ export function Session() {
         if (!messageID) return
         const message = messages().find((x) => x.role === "user" && x.id > messageID)
         if (!message) {
-          void sdk.client.session.unrevert(
-            { sessionID: route.sessionID },
-            sync.session.options(route.sessionID),
-          )
+          void sdk.client.session.unrevert({
+            sessionID: route.sessionID,
+          })
           prompt?.set({ input: "", parts: [] })
           return
         }
-        void sdk.client.session.revert(
-          { sessionID: route.sessionID, messageID: message.id },
-          sync.session.options(route.sessionID),
-        )
+        void sdk.client.session.revert({
+          sessionID: route.sessionID,
+          messageID: message.id,
+        })
       },
     },
     {
@@ -1520,7 +1516,7 @@ export function Session() {
       return
     }
     setNavPendingDelete(undefined)
-    const result = await sdk.client.session.delete({ sessionID: id }, sync.session.options(id))
+    const result = await sdk.client.session.delete({ sessionID: id })
     if (result.error) {
       toast.show({ message: "Failed to delete session", variant: "error", duration: 5000 })
       return

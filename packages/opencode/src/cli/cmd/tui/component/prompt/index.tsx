@@ -536,7 +536,9 @@ export function Prompt(props: PromptProps) {
           }, 5000)
 
           if (store.interrupt >= 2) {
-            void sdk.client.session.abort({ sessionID: props.sessionID }, sync.session.options(props.sessionID))
+            void sdk.client.session.abort({
+              sessionID: props.sessionID,
+            })
             setStore("interrupt", 0)
           }
           dialog.clear()
@@ -1113,9 +1115,6 @@ export function Prompt(props: PromptProps) {
 
     const variant = local.model.variant.current()
     let sessionID = props.sessionID
-    // The directory a session works in is the one it is stored under. Capture it so the very
-    // first prompt already executes where the session says it does.
-    let workingDirectory = props.sessionID ? sync.session.get(props.sessionID)?.directory : undefined
     if (sessionID == null) {
       const workspace = workspaceSelection()
       const workspaceID = iife(() => {
@@ -1150,7 +1149,6 @@ export function Prompt(props: PromptProps) {
       }
 
       sessionID = res.data.id
-      workingDirectory = res.data.directory
     }
 
     const messageID = MessageID.ascending()
@@ -1197,18 +1195,15 @@ export function Prompt(props: PromptProps) {
         : []
 
     if (store.mode === "shell") {
-      void sdk.client.session.shell(
-        {
-          sessionID,
-          agent: agent.name,
-          model: {
-            providerID: selectedModel.providerID,
-            modelID: selectedModel.modelID,
-          },
-          command: inputText,
+      void sdk.client.session.shell({
+        sessionID,
+        agent: agent.name,
+        model: {
+          providerID: selectedModel.providerID,
+          modelID: selectedModel.modelID,
         },
-        directoryRequestOptions(workingDirectory ?? sync.path.directory),
-      )
+        command: inputText,
+      })
       setStore("mode", "normal")
     } else if (
       inputText.startsWith("/") &&
@@ -1239,9 +1234,7 @@ export function Prompt(props: PromptProps) {
             id: PartID.ascending(),
             ...x,
           })),
-        },
-        directoryRequestOptions(workingDirectory ?? sync.path.directory),
-      )
+      })
     } else {
       sdk.client.session
         .prompt({
@@ -1263,9 +1256,7 @@ export function Prompt(props: PromptProps) {
             },
             ...nonTextParts.map(assign),
           ],
-        },
-        directoryRequestOptions(workingDirectory ?? sync.path.directory),
-      )
+        })
         .then((result) => {
           if (!result.error) return
           console.log("Sending the prompt failed:", result.error)
