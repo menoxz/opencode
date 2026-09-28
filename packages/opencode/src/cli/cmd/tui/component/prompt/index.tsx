@@ -1785,7 +1785,7 @@ export function Prompt(props: PromptProps) {
                   enter{" "}
                   <span style={{ fg: theme.text }}>queue</span>
                   {" · "}
-                  alt+enter{" "}
+                  alt+s{" "}
                   <span style={{ fg: theme.text }}>steer</span>
                 </text>
               </box>
