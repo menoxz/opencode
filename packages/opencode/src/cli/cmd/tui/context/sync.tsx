@@ -114,19 +114,40 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
 
     const fullSyncedSessions = new Set<string>()
 
-    function sessionListQuery(): { scope?: "project"; path?: string } {
-      if (kv.get("session_directory_scope", "project") === "project") return { scope: "project" }
-      if (!project.data.instance.path.worktree || !project.data.instance.path.directory) return { scope: "project" }
-      return {
-        path: path
-          .relative(path.resolve(project.data.instance.path.worktree), project.data.instance.path.directory)
-          .replaceAll("\\", "/"),
-      }
+    function scopedPath(): string | undefined {
+      if (!project.data.instance.path.worktree || !project.data.instance.path.directory) return undefined
+      return path
+        .relative(path.resolve(project.data.instance.path.worktree), project.data.instance.path.directory)
+        .replaceAll("\\", "/")
     }
 
-    function listSessions() {
+    /**
+     * "all dirs" is machine-wide. The server's `scope: "project"` still ANDs the current project, so
+     * every other project's directory stayed hidden behind a fraction of the stored sessions; the
+     * cross-project listing is used instead, with no time bound and paginated to the end through the
+     * `x-next-cursor` response header.
+     */
+    async function listEveryDirectory() {
+      const collected: NonNullable<Awaited<ReturnType<typeof sdk.client.experimental.session.list>>["data"]> = []
+      let cursor: number | undefined
+      for (;;) {
+        const result = await sdk.client.experimental.session.list({ roots: true, cursor, limit: 200 })
+        if (result.error) break
+        collected.push(...(result.data ?? []))
+        const header = result.response?.headers.get("x-next-cursor")
+        const next = header ? Number(header) : undefined
+        if (next === undefined || next === cursor) break
+        cursor = next
+      }
+      return collected
+    }
+
+    async function listSessions() {
+      if (kv.get("session_directory_scope", "project") === "project") {
+        return (await listEveryDirectory()).toSorted((a, b) => a.id.localeCompare(b.id))
+      }
       return sdk.client.session
-        .list({ start: Date.now() - 30 * 24 * 60 * 60 * 1000, ...sessionListQuery() })
+        .list({ start: Date.now() - 30 * 24 * 60 * 60 * 1000, ...(scopedPath() ? { path: scopedPath()! } : {}) })
         .then((x) => (x.data ?? []).toSorted((a, b) => a.id.localeCompare(b.id)))
     }
 
@@ -502,7 +523,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           return undefined
         },
         query() {
-          return sessionListQuery()
+          return kv.get("session_directory_scope", "project") === "project" || !scopedPath() ? {} : { path: scopedPath()! }
         },
         async refresh() {
           const list = await listSessions()
