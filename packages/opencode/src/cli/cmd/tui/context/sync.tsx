@@ -33,6 +33,17 @@ import { emptyConsoleState, type ConsoleState } from "@/config/console-state"
 import path from "path"
 import { useKV } from "./kv"
 import { aggregateFailures } from "./aggregate-failures"
+import {
+  DEFAULT_DIRECTORY_SCOPE,
+  SESSION_DIRECTORY_SCOPE_KEY,
+  SESSION_EXTRA_DIRECTORIES_KEY,
+  SESSION_FETCH_LIMIT,
+  addDirectory as addWatchedDirectory,
+  isRecentSession,
+  removeDirectory as removeWatchedDirectory,
+  sessionAgeCutoff,
+  watchedDirectories,
+} from "./session-scope"
 
 export const { use: useSync, provider: SyncProvider } = createSimpleContext({
   name: "Sync",
@@ -121,17 +132,29 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         .replaceAll("\\", "/")
     }
 
+    /** The folder sessions are created in by default: the instance's current directory, absolute. */
+    function currentDirectory(): string | undefined {
+      return project.data.instance.path.directory || undefined
+    }
+
+    /** The folders the user added to the list, on top of the current one. */
+    function storedExtraDirectories(): string[] {
+      const stored = kv.get(SESSION_EXTRA_DIRECTORIES_KEY, [])
+      if (!Array.isArray(stored)) return []
+      return stored.filter((item): item is string => typeof item === "string")
+    }
+
     /**
      * "all dirs" is machine-wide. The server's `scope: "project"` still ANDs the current project, so
      * every other project's directory stayed hidden behind a fraction of the stored sessions; the
-     * cross-project listing is used instead, with no time bound and paginated to the end through the
+     * cross-project listing is used instead, paginated to the end through the
      * `x-next-cursor` response header.
      */
-    async function listEveryDirectory() {
+    async function listEveryDirectory(cutoff: number) {
       const collected: NonNullable<Awaited<ReturnType<typeof sdk.client.experimental.session.list>>["data"]> = []
       let cursor: number | undefined
       for (;;) {
-        const result = await sdk.client.experimental.session.list({ roots: true, cursor, limit: 200 })
+        const result = await sdk.client.experimental.session.list({ roots: true, cursor, limit: SESSION_FETCH_LIMIT })
         if (result.error) break
         collected.push(...(result.data ?? []))
         const header = result.response?.headers.get("x-next-cursor")
@@ -139,16 +162,45 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         if (next === undefined || next === cursor) break
         cursor = next
       }
-      return collected
+      return collected.filter((session) => isRecentSession(session, cutoff))
     }
 
+    /**
+     * The listing the bar shows: the current folder by default, the folders the user added on top of
+     * it, or every folder of the machine when they widen the scope on purpose. Sessions older than
+     * the bound are dropped, and the result stays sorted by id because the store binary-searches it.
+     */
     async function listSessions() {
-      if (kv.get("session_directory_scope", "project") === "project") {
-        return (await listEveryDirectory()).toSorted((a, b) => a.id.localeCompare(b.id))
+      const cutoff = sessionAgeCutoff(Date.now())
+      if (kv.get(SESSION_DIRECTORY_SCOPE_KEY, DEFAULT_DIRECTORY_SCOPE) === "project") {
+        return (await listEveryDirectory(cutoff)).toSorted((a, b) => a.id.localeCompare(b.id))
       }
-      return sdk.client.session
-        .list({ start: Date.now() - 30 * 24 * 60 * 60 * 1000, ...(scopedPath() ? { path: scopedPath()! } : {}) })
-        .then((x) => (x.data ?? []).toSorted((a, b) => a.id.localeCompare(b.id)))
+
+      const current = currentDirectory()
+      const directories = watchedDirectories(current, storedExtraDirectories())
+      if (directories.length === 0) return []
+
+      const pages = await Promise.all(
+        directories.map((directory) => {
+          // Inside the worktree the server matches the portable `path`, which also covers the
+          // sub-folders; a folder added from outside it can only be named by its absolute directory.
+          const relative = directory === current ? scopedPath() : undefined
+          return sdk.client.session.list({
+            start: cutoff,
+            limit: SESSION_FETCH_LIMIT,
+            ...(relative ? { path: relative } : { directory }),
+          })
+        }),
+      )
+
+      const pages_flat = pages.flatMap((page) => page.data ?? [])
+      const seen = new Set<string>()
+      const merged = pages_flat.filter((session) => {
+        if (seen.has(session.id) || !isRecentSession(session, cutoff)) return false
+        seen.add(session.id)
+        return true
+      })
+      return merged.toSorted((a, b) => a.id.localeCompare(b.id))
     }
 
     event.subscribe((event, { workspace }) => {
@@ -523,7 +575,22 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           return undefined
         },
         query() {
-          return kv.get("session_directory_scope", "project") === "project" || !scopedPath() ? {} : { path: scopedPath()! }
+          if (kv.get(SESSION_DIRECTORY_SCOPE_KEY, DEFAULT_DIRECTORY_SCOPE) === "project") return {}
+          // One server filter cannot express the union of folders the bar shows, so the dialog only
+          // narrows to the current folder when it is the sole one listed.
+          if (storedExtraDirectories().length > 0) return {}
+          return scopedPath() ? { path: scopedPath()! } : {}
+        },
+        extraDirectories() {
+          return storedExtraDirectories()
+        },
+        async addDirectory(directory: string) {
+          kv.set(SESSION_EXTRA_DIRECTORIES_KEY, addWatchedDirectory(storedExtraDirectories(), directory))
+          await result.session.refresh()
+        },
+        async removeDirectory(directory: string) {
+          kv.set(SESSION_EXTRA_DIRECTORIES_KEY, removeWatchedDirectory(storedExtraDirectories(), directory))
+          await result.session.refresh()
         },
         async refresh() {
           const list = await listSessions()

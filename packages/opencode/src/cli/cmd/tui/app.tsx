@@ -52,8 +52,9 @@ import { PromptStashProvider } from "./component/prompt/stash"
 import { DialogAlert } from "./ui/dialog-alert"
 import { DialogConfirm } from "./ui/dialog-confirm"
 import { ToastProvider, useToast } from "./ui/toast"
-import { openSessionFolder } from "./component/dialog-directory-select"
+import { DialogDirectorySelect, openSessionFolder } from "./component/dialog-directory-select"
 import { usedDirectories } from "./routes/session/session-nav"
+import { DEFAULT_DIRECTORY_SCOPE, SESSION_DIRECTORY_SCOPE_KEY } from "@tui/context/session-scope"
 import { ExitProvider, useExit } from "./context/exit"
 import { Session as SessionApi } from "@/session/session"
 import { TuiEvent } from "./event"
@@ -825,14 +826,38 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
       {
         name: "app.toggle.session_directory_filter",
         title:
-          kv.get("session_directory_scope", "project") === "directory"
+          kv.get(SESSION_DIRECTORY_SCOPE_KEY, DEFAULT_DIRECTORY_SCOPE) === "directory"
             ? "Show sessions of every directory"
             : "Filter sessions to this directory",
         category: "System",
         run: async () => {
-          const scope = kv.get("session_directory_scope", "project")
-          kv.set("session_directory_scope", scope === "directory" ? "project" : "directory")
+          const scope = kv.get(SESSION_DIRECTORY_SCOPE_KEY, DEFAULT_DIRECTORY_SCOPE)
+          kv.set(SESSION_DIRECTORY_SCOPE_KEY, scope === "directory" ? "project" : "directory")
           await sync.session.refresh()
+          dialog.clear()
+        },
+      },
+      {
+        name: "app.add.session_directory",
+        title: "Add a folder to the session list",
+        category: "System",
+        run: () => {
+          dialog.replace(() => (
+            <DialogDirectorySelect
+              directories={usedDirectories(sync.data.session)}
+              onPick={(directory) => {
+                void sync.session.addDirectory(directory)
+              }}
+            />
+          ))
+        },
+      },
+      {
+        name: "app.clear.session_directory",
+        title: "Clear the added folders of the session list",
+        category: "System",
+        run: async () => {
+          for (const directory of sync.session.extraDirectories()) await sync.session.removeDirectory(directory)
           dialog.clear()
         },
       },

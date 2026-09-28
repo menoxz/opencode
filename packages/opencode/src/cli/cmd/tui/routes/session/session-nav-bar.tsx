@@ -37,6 +37,8 @@ export function SessionNavBar(props: {
   focused: boolean
   height: number
   allDirectories: boolean
+  /** How many folders the list adds on top of the current one, so the scope stays visible. */
+  addedDirectories?: number
   overrides: Readonly<Record<string, boolean>>
   revealed: string[]
   frame: number
@@ -194,7 +196,7 @@ export function SessionNavBar(props: {
           <text fg={theme.text}>
             <b>Sessions</b>
           </text>
-          <text fg={theme.textMuted}>{navDirectoryLabel(props.allDirectories)}</text>
+          <text fg={theme.textMuted}>{navDirectoryLabel(props.allDirectories, props.addedDirectories ?? 0)}</text>
         </box>
         <box flexShrink={0} onMouseUp={() => props.onSearchFocus?.(true)}>
           <text fg={theme.textMuted} wrapMode="none">

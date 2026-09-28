@@ -399,8 +399,10 @@ export function footerLines(width: number, shortcuts: NavFooterShortcuts): strin
 }
 
 /** Footer marker telling whether the bar lists every directory or only the working one. */
-export function navDirectoryLabel(allDirectories: boolean): string {
-  return allDirectories ? "all dirs" : "this dir"
+/** The scope line of the bar: the whole project, the current folder, or the folder plus extras. */
+export function navDirectoryLabel(allDirectories: boolean, added = 0): string {
+  if (allDirectories) return "all dirs"
+  return added > 0 ? `this dir +${added}` : "this dir"
 }
 
 /**

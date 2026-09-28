@@ -116,6 +116,7 @@ import { DialogRetryAction } from "../../component/dialog-retry-action"
 import { SessionRetry } from "@/session/retry"
 import { getRevertDiffFiles } from "../../util/revert-diff"
 import { OPENCODE_BASE_MODE, useBindings, useCommandShortcut, useOpencodeKeymap } from "../../keymap"
+import { DEFAULT_DIRECTORY_SCOPE, SESSION_DIRECTORY_SCOPE_KEY } from "../../context/session-scope"
 import { PathFormatterProvider, usePathFormatter } from "../../context/path-format"
 import {
   buildGoalEditTemplate,
@@ -353,7 +354,10 @@ export function Session() {
   const [navFocused, setNavFocused] = createSignal(false)
   const [navSelected, setNavSelected] = createSignal(0)
   const [navPendingDelete, setNavPendingDelete] = createSignal<string>()
-  const [navDirectoryScope, setNavDirectoryScope] = kv.signal<"project" | "directory">("session_directory_scope", "project")
+  const [navDirectoryScope, setNavDirectoryScope] = kv.signal<"project" | "directory">(
+    SESSION_DIRECTORY_SCOPE_KEY,
+    DEFAULT_DIRECTORY_SCOPE,
+  )
   const [navOverrides, setNavOverrides] = createSignal<Record<string, boolean>>({})
   const [navQuery, setNavQuery] = createSignal("")
   const [navRevealed, setNavRevealed] = createSignal<string[]>([])
@@ -1563,6 +1567,7 @@ export function Session() {
               focused={navFocused()}
               height={navListHeight(dimensions().height)}
               allDirectories={navDirectoryScope() === "project"}
+              addedDirectories={sync.session.extraDirectories().length}
               overrides={navOverrides()}
               revealed={navRevealed()}
               frame={navFrame()}

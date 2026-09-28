@@ -26,6 +26,7 @@ import {
   usedDirectories,
   type NavSession,
 } from "./session-nav"
+import { DEFAULT_DIRECTORY_SCOPE, SESSION_DIRECTORY_SCOPE_KEY } from "../../context/session-scope"
 
 const NAV_COMMANDS = ["session.new", "session.delete", "session.rename", "session.nav.toggle"]
 
@@ -50,7 +51,10 @@ export function SessionNavPanel() {
   const [navFocused, setNavFocused] = createSignal(false)
   const [navSelected, setNavSelected] = createSignal(0)
   const [navPendingDelete, setNavPendingDelete] = createSignal<string>()
-  const [navDirectoryScope, setNavDirectoryScope] = kv.signal<"project" | "directory">("session_directory_scope", "project")
+  const [navDirectoryScope, setNavDirectoryScope] = kv.signal<"project" | "directory">(
+    SESSION_DIRECTORY_SCOPE_KEY,
+    DEFAULT_DIRECTORY_SCOPE,
+  )
   const [navOverrides, setNavOverrides] = createSignal<Record<string, boolean>>({})
   const [navQuery, setNavQuery] = createSignal("")
   const [navRevealed, setNavRevealed] = createSignal<string[]>([])
@@ -163,6 +167,7 @@ export function SessionNavPanel() {
         focused={navFocused()}
         height={navListHeight(dimensions().height)}
         allDirectories={navDirectoryScope() === "project"}
+        addedDirectories={sync.session.extraDirectories().length}
         overrides={navOverrides()}
         revealed={navRevealed()}
         frame={navFrame()}
