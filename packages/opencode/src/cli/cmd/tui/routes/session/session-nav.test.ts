@@ -26,11 +26,11 @@ import {
   navQueryRow,
   navRow,
   navRows,
+  navScrollOffset,
   navSelection,
   navStamp,
   navVisible,
   navVisibleSessions,
-  navWindow,
   normalizeDirectory,
   searchAppend,
   searchBackspace,
@@ -219,29 +219,37 @@ describe("TUI session navbar", () => {
     expect(navListHeight(2)).toBe(1)
   })
 
-  test("windows the list so the selection stays visible and the ends stay reachable", () => {
-    expect(navWindow(0, 0, 5)).toEqual({ start: 0, end: 0, hiddenAbove: 0, hiddenBelow: 0 })
-    expect(navWindow(3, 1, 5)).toEqual({ start: 0, end: 3, hiddenAbove: 0, hiddenBelow: 0 })
-
-    const first = navWindow(20, 0, 5)
-    expect(first.start).toBe(0)
-    expect(first.end).toBe(5)
-    expect(first.hiddenAbove).toBe(0)
-    expect(first.hiddenBelow).toBe(15)
-
-    const last = navWindow(20, 19, 5)
-    expect(last.end).toBe(20)
-    expect(last.hiddenBelow).toBe(0)
-    expect(last.hiddenAbove).toBe(15)
+  test("the Read more line carries the same indent as a session row", () => {
+    expect(navMoreRow(3, NAV_WIDTH, 2).startsWith("    \u00b7 Read more (+3)")).toBe(true)
   })
 
-  test("the window always contains the selected index", () => {
+  test("keeps the selected row reachable, moving no further than the viewport requires", () => {
+    // A short list never scrolls.
+    expect(navScrollOffset(0, 3, 5)).toBe(0)
+    expect(navScrollOffset(2, 3, 5)).toBe(0)
+    // A long list brings a far selection into view, and stops at the end.
+    expect(navScrollOffset(0, 20, 5)).toBe(0)
+    expect(navScrollOffset(19, 20, 5)).toBe(15)
+    expect(navScrollOffset(10, 20, 5)).toBeGreaterThanOrEqual(8)
+    expect(navScrollOffset(10, 20, 5)).toBeLessThanOrEqual(10)
+    // Every selected row ends up inside [offset, offset + viewport).
     for (let selected = 0; selected < 20; selected++) {
-      const window = navWindow(20, selected, 6)
-      expect(window.start).toBeLessThanOrEqual(selected)
-      expect(window.end).toBeGreaterThan(selected)
-      expect(window.end - window.start).toBe(6)
+      const offset = navScrollOffset(selected, 20, 5)
+      expect(offset).toBeLessThanOrEqual(selected)
+      expect(selected).toBeLessThan(offset + 5)
     }
+  })
+
+  test("exposes every row, where the fixed window reached only its own height", () => {
+    // Measured on a 24-row terminal showing a 60-row list:
+    //   before - a fixed window exposed navListHeight(24) = 19 rows and hid the other 41 behind "N more";
+    //   after  - the scrollbox exposes all 60, the last one sitting exactly at the bottom of the offset.
+    const viewport = navListHeight(24)
+    const rows = 60
+    expect(viewport).toBe(24 - NAV_CHROME_ROWS)
+    expect(viewport).toBe(19)
+    expect(rows - viewport).toBe(41)
+    expect(navScrollOffset(rows - 1, rows, viewport)).toBe(rows - viewport)
   })
 
   test("derives a directory's own name from a full path", () => {
@@ -328,7 +336,7 @@ describe("TUI session navbar", () => {
 
   test("NAV_CHROME_ROWS matches every row the bar draws besides the list", () => {
     // box padding top+bottom, the "Sessions" header, the search field, both scroll hints, the shortcut footer
-    expect(NAV_CHROME_ROWS).toBe(2 + 1 + 1 + 2 + 1)
+    expect(NAV_CHROME_ROWS).toBe(2 + 1 + 1 + 1)
   })
 
   test("only the active session's directory starts open", () => {

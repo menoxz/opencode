@@ -7,7 +7,7 @@ import { KVProvider } from "../../../src/cli/cmd/tui/context/kv"
 import { ThemeProvider } from "../../../src/cli/cmd/tui/context/theme"
 import { TuiConfigProvider } from "../../../src/cli/cmd/tui/context/tui-config"
 import { SessionNavBar } from "../../../src/cli/cmd/tui/routes/session/session-nav-bar"
-import { filterNavSessions, type NavSession } from "../../../src/cli/cmd/tui/routes/session/session-nav"
+import { filterNavSessions, toggleRevealed, type NavSession } from "../../../src/cli/cmd/tui/routes/session/session-nav"
 import { Locale } from "../../../src/util/locale"
 
 type App = Awaited<ReturnType<typeof testRender>>
@@ -213,18 +213,24 @@ test("a directory's Read more reveals its extra sessions", async () => {
   expect(text).not.toContain("Read more")
 })
 
-test("windows a long group so the last session stays reachable", async () => {
+test("replaces the fixed window with a scrollable box, so the height stops bounding what is reachable", async () => {
   const app = await renderBar({ sessions: oneDirMany, activeID: "ses_9", selected: 10, focused: false, height: 3, revealed: ["C:\\w\\solo"] })
-  const text = app.captureCharFrame()
-  expect(text).toContain("Session 9")
-  expect(text).not.toContain("Session 0")
+  const frame = app.captureCharFrame()
+  // The rows live in the bar's scrollbox, so the box only has to fit its height; before, a fixed
+  // window stood in for every hidden row with a static "N more" line, which is what made the rest
+  // unreachable. The frame cannot show the scroll offset (the harness captures one frame, before the
+  // scrollbox measures its content), so reachability is proven by the model-level measurement in
+  // session-nav.test.ts and this asserts the static stand-in is gone.
+  expect(frame).not.toMatch(/[\u2191\u2193] \d+ more/)
+  expect(linesOf(app).filter((line) => /Session \d/.test(line)).length).toBeLessThanOrEqual(3)
 })
 
-test("draws no more session rows than the height allows and hints the hidden ones", async () => {
+test("draws no more session rows than the height allows and scrolls to the rest", async () => {
   const app = await renderBar({ sessions: oneDirMany, activeID: "ses_9", selected: 10, focused: false, height: 3 })
   const drawn = linesOf(app).filter((line) => /Session \d/.test(line))
   expect(drawn.length).toBeLessThanOrEqual(3)
-  expect(app.captureCharFrame()).toContain("more")
+  // No static "N more" line stands in for the hidden rows anymore: the list scrolls instead.
+  expect(app.captureCharFrame()).not.toMatch(/[\u2191\u2193] \d+ more/)
 })
 
 test("the command section is pinned at the bottom without a frame", async () => {
@@ -438,4 +444,58 @@ test("takes keys in the search field, narrows the list and leaves on Escape", as
   await settled(app)
   expect(app.captureCharFrame()).toContain("/ Search folders")
   expect(app.captureCharFrame()).toContain("Alpha one")
+})
+
+const leadingSpaces = (text: string) => text.length - text.trimStart().length
+
+test("the Read more line is indented like the sessions it hides", async () => {
+  const app = await renderBar({ sessions: oneDirMany, activeID: "ses_0", selected: 0, focused: false, height: 20 })
+  const lines = linesOf(app)
+  const more = lines.find((line) => line.includes("Read more")) ?? ""
+  const session = lines.find((line) => line.includes("Session 0")) ?? ""
+  expect(more).not.toBe("")
+  expect(session).not.toBe("")
+  expect(leadingSpaces(more)).toBe(leadingSpaces(session))
+})
+
+test("clicking a directory's Read more reveals its extra sessions", async () => {
+  const app = await testRender(() =>
+    withTheme(() => {
+      const [revealed, setRevealed] = createSignal<string[]>([])
+      return (
+        <SessionNavBar
+          sessions={oneDirMany}
+          activeID="ses_0"
+          selected={0}
+          focused={false}
+          height={20}
+          allDirectories={false}
+          overrides={{}}
+          revealed={revealed()}
+          frame={0}
+          onMove={() => {}}
+          onOpen={() => {}}
+          onToggleDir={() => {}}
+          onToggleMore={(key) => setRevealed((current) => toggleRevealed(current, key))}
+          onNew={() => {}}
+          onDelete={() => {}}
+          onRename={() => {}}
+          onToggleDirectories={() => {}}
+          shortcuts={{ new: "alt+n", delete: "ctrl+d", rename: "ctrl+r" }}
+        />
+      )
+    }),
+  )
+  renderers.push(app.renderer)
+  await settled(app)
+  expect(app.captureCharFrame()).toContain("Read more (+7)")
+  expect(app.captureCharFrame()).not.toContain("Session 3")
+
+  const y = linesOf(app).findIndex((line) => line.includes("Read more"))
+  expect(y).toBeGreaterThanOrEqual(0)
+  await app.mockMouse.click(1, y)
+  await settled(app)
+
+  expect(app.captureCharFrame()).not.toContain("Read more")
+  expect(app.captureCharFrame()).toContain("Session 9")
 })

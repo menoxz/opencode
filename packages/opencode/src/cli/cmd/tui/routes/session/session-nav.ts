@@ -67,10 +67,10 @@ export const NAV_ROW_CHROME = 6
 
 /**
  * Rows the bar spends besides the list: the box's top and bottom padding, the "Sessions" header,
- * the search line, the shortcut footer, and the two scroll indicators. Reserved up front even when
- * no indicator shows, so the list can never draw one row past the space the box actually has.
+ * the search line and the shortcut footer. The list itself scrolls, so no row is reserved for
+ * overflow indicators anymore.
  */
-export const NAV_CHROME_ROWS = 7
+export const NAV_CHROME_ROWS = 5
 
 /**
  * Sessions shown inside a directory before its own "Read more". Directories are never capped: each
@@ -377,9 +377,14 @@ export function navRow(input: NavRowInput): string {
   return `${prefix}${label}${" ".repeat(gap)}${stamp}`
 }
 
-/** A directory's "Read more" line: how many of its sessions the line is hiding. */
-export function navMoreRow(hidden: number, width: number): string {
-  return navLabel(`Read more (+${hidden})`, Math.max(1, width - 2))
+/**
+ * A directory's "Read more" line: how many of its sessions the line is hiding. It stands in for the
+ * hidden sessions, so it carries the same indent as a session row and a glyph in the same column,
+ * instead of reading as another section heading flush against the bar's edge.
+ */
+export function navMoreRow(hidden: number, width: number, indent = 0): string {
+  const prefix = `${" ".repeat(Math.max(0, indent))}  · `
+  return `${prefix}${navLabel(`Read more (+${hidden})`, Math.max(1, width - prefix.length))}`
 }
 
 export type NavFooterShortcuts = { new: string; delete: string; rename: string }
@@ -398,20 +403,15 @@ export function navDirectoryLabel(allDirectories: boolean): string {
   return allDirectories ? "all dirs" : "this dir"
 }
 
-export type NavWindow = { start: number; end: number; hiddenAbove: number; hiddenBelow: number }
-
 /**
- * The slice of the flattened rows the bar can actually show, keeping the selection inside it and
- * reporting how many lines are hidden on each side, so the ends of a long list stay reachable.
+ * The scroll offset that keeps a given row inside a viewport of the given height, moving as little as
+ * possible around the middle. Pure, so the scrolling rule is testable without a live scrollbox.
  */
-export function navWindow(total: number, selected: number, height: number): NavWindow {
-  const size = Math.max(1, Math.floor(height))
-  if (total <= 0) return { start: 0, end: 0, hiddenAbove: 0, hiddenBelow: 0 }
-  if (total <= size) return { start: 0, end: total, hiddenAbove: 0, hiddenBelow: 0 }
-  const current = clampSelection(selected, total)
-  const start = Math.min(Math.max(current - Math.floor((size - 1) / 2), 0), total - size)
-  const end = start + size
-  return { start, end, hiddenAbove: start, hiddenBelow: total - end }
+export function navScrollOffset(index: number, total: number, height: number): number {
+  const viewport = Math.max(1, Math.min(Math.floor(height), Math.max(1, total)))
+  const last = Math.max(0, total - viewport)
+  const centered = clampSelection(index, total) - Math.floor((viewport - 1) / 2)
+  return Math.max(0, Math.min(centered, last))
 }
 
 /** Rows of session list the terminal can show, once the bar's own chrome and footer are removed. */

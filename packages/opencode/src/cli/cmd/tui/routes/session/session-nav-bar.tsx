@@ -1,6 +1,9 @@
-import { createSignal, For, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For } from "solid-js"
 import { useKeyboard } from "@opentui/solid"
+import type { ScrollBoxRenderable } from "@opentui/core"
 import { useTheme } from "../../context/theme"
+import { useTuiConfig } from "../../context/tui-config"
+import { getScrollAcceleration } from "../../util/scroll"
 import {
   NAV_WIDTH,
   footerLines,
@@ -10,7 +13,7 @@ import {
   navQueryRow,
   navRow,
   navRows,
-  navWindow,
+  navScrollOffset,
   searchAppend,
   searchBackspace,
   type NavRowModel,
@@ -66,9 +69,22 @@ export function SessionNavBar(props: {
       revealed: props.revealed,
       reveal: (props.searchQuery ?? "").length > 0,
     })
-  const window = () => navWindow(rows().length, props.selected, props.height)
-  const visible = () => rows().slice(window().start, window().end).map((row, offset) => ({ row, index: window().start + offset }))
   const [hover, setHover] = createSignal<number | null>(null)
+  const tuiConfig = useTuiConfig()
+  const scrollAcceleration = createMemo(() => getScrollAcceleration(tuiConfig))
+  // Held in a signal so the effect below re-runs once the ref binds: a plain variable would leave the
+  // first run (ref still undefined) as the only one, and the list would never scroll.
+  const [scrollbox, setScrollbox] = createSignal<ScrollBoxRenderable>()
+
+  // The list scrolls instead of being cut with a static "N more" line, so every row stays reachable
+  // by wheel or by moving the selection. Like the autocomplete, the offset is written straight onto
+  // scrollTop rather than nudged with scrollBy, which no-ops before the content is measured.
+  createEffect(() => {
+    const scroll = scrollbox()
+    const total = rows().length
+    if (!scroll || scroll.isDestroyed || total === 0) return
+    scroll.scrollTop = navScrollOffset(props.selected, total, props.height)
+  })
 
   const line = (row: NavRowModel, _index: number) => {
     if (row.kind === "dir")
@@ -83,7 +99,7 @@ export function SessionNavBar(props: {
         frame: props.frame,
         pendingDelete: props.pendingDelete === row.id,
       })
-    return navMoreRow(row.hidden, innerWidth())
+    return navMoreRow(row.hidden, innerWidth(), 2)
   }
 
   const color = (row: NavRowModel, index: number) => {
@@ -185,26 +201,31 @@ export function SessionNavBar(props: {
             {navQueryRow(props.searchQuery ?? "", props.searching === true, innerWidth())}
           </text>
         </box>
-        <Show when={window().hiddenAbove > 0}>
-          <text fg={theme.textMuted}>↑ {window().hiddenAbove} more</text>
-        </Show>
-        <For each={visible()} fallback={<text fg={theme.textMuted}>No sessions yet</text>}>
-          {(entry) => (
-            <box
-              width="100%"
-              onMouseOver={() => setHover(entry.index)}
-              onMouseOut={() => setHover((current) => (current === entry.index ? null : current))}
-              onMouseUp={() => activate(entry.row)}
-            >
-              <text fg={color(entry.row, entry.index)} wrapMode="none">
-                {line(entry.row, entry.index)}
-              </text>
-            </box>
-          )}
-        </For>
-        <Show when={window().hiddenBelow > 0}>
-          <text fg={theme.textMuted}>↓ {window().hiddenBelow} more</text>
-        </Show>
+        <scrollbox
+          ref={(r: ScrollBoxRenderable) => setScrollbox(r)}
+          focusable={false}
+          flexShrink={0}
+          height={props.height}
+          maxHeight={props.height}
+          scrollAcceleration={scrollAcceleration()}
+          scrollbarOptions={{ visible: false }}
+        >
+          <For each={rows()} fallback={<text fg={theme.textMuted}>No sessions yet</text>}>
+            {(row, index) => (
+              <box
+                width="100%"
+                flexShrink={0}
+                onMouseOver={() => setHover(index())}
+                onMouseOut={() => setHover((current) => (current === index() ? null : current))}
+                onMouseUp={() => activate(row)}
+              >
+                <text fg={color(row, index())} wrapMode="none">
+                  {line(row, index())}
+                </text>
+              </box>
+            )}
+          </For>
+        </scrollbox>
       </box>
       <box flexShrink={0} flexDirection="column">
         <For each={footerLines(innerWidth(), props.shortcuts)}>
