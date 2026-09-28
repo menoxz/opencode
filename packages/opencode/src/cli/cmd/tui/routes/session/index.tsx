@@ -354,7 +354,7 @@ export function Session() {
   const [navSelected, setNavSelected] = createSignal(0)
   const [navPendingDelete, setNavPendingDelete] = createSignal<string>()
   const [navDirectoryScope, setNavDirectoryScope] = kv.signal<"project" | "directory">("session_directory_scope", "project")
-  const [navOverrides, setNavOverrides] = createSignal<string[]>([])
+  const [navOverrides, setNavOverrides] = createSignal<Record<string, boolean>>({})
   const [navQuery, setNavQuery] = createSignal("")
   const [navRevealed, setNavRevealed] = createSignal<string[]>([])
   const [navFrame, setNavFrame] = createSignal(0)
@@ -1531,7 +1531,7 @@ export function Session() {
     setNavFocused(false)
     navigate({ type: "session", sessionID: id })
   }
-  const navToggleDir = (key: string) => setNavOverrides((current) => toggleCollapsed(current, key.slice("dir:".length)))
+  const navToggleDir = (key: string, collapsed: boolean) => setNavOverrides((current) => toggleCollapsed(current, key.slice("dir:".length), collapsed))
   const navToggleMore = (key: string) => setNavRevealed((current) => toggleRevealed(current, key))
 
   return (

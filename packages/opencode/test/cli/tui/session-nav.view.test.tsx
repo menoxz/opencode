@@ -67,14 +67,14 @@ async function renderBar(props: {
   focused: boolean
   height?: number
   allDirectories?: boolean
-  overrides?: string[]
+  overrides?: Readonly<Record<string, boolean>>
   revealed?: string[]
   frame?: number
   pendingDelete?: string
   shortcuts?: { new: string; delete: string; rename: string }
   onMove?: (delta: number) => void
   onOpen?: (id: string) => void
-  onToggleDir?: (key: string) => void
+  onToggleDir?: (key: string, collapsed: boolean) => void
   onToggleMore?: (key: string) => void
   onNew?: () => void
   onDelete?: (id: string) => void
@@ -94,7 +94,7 @@ async function renderBar(props: {
           focused={props.focused}
           height={props.height ?? 20}
           allDirectories={props.allDirectories ?? false}
-          overrides={props.overrides ?? []}
+          overrides={props.overrides ?? {}}
           revealed={props.revealed ?? []}
           frame={props.frame ?? 0}
           pendingDelete={props.pendingDelete}
@@ -148,7 +148,7 @@ test("a directory without the active session keeps only its single-line header",
 })
 
 test("a directory the user opened shows its sessions", async () => {
-  const app = await renderBar({ sessions: twoDirs, selected: 0, focused: false, overrides: ["C:\\w\\alpha"] })
+  const app = await renderBar({ sessions: twoDirs, selected: 0, focused: false, overrides: { "C:\\w\\alpha": false } })
   const text = app.captureCharFrame()
   expect(text).toContain("Alpha one")
   expect(text).not.toContain("Beta one")
@@ -251,6 +251,13 @@ test("Enter on a session row opens it", async () => {
   app.mockInput.pressEnter()
   await settled(app)
   expect(opened).toBe("a1")
+})
+
+test("a directory pinned open shows its sessions even when it is not the active one", async () => {
+  const app = await renderBar({ sessions: twoDirs, activeID: "a1", selected: 0, focused: false, overrides: { "C:\\w\\beta": false } })
+  const text = app.captureCharFrame()
+  expect(text).toContain("alpha")
+  expect(text).toContain("Beta one")
 })
 
 test("Enter on a directory header toggles it", async () => {
@@ -373,7 +380,7 @@ test("takes keys in the search field, narrows the list and leaves on Escape", as
           focused={true}
           height={20}
           allDirectories={false}
-          overrides={["C:\\w\\alpha"]}
+          overrides={{ "C:\\w\\alpha": false }}
           revealed={[]}
           frame={0}
           onMove={() => {}}

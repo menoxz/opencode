@@ -34,14 +34,14 @@ export function SessionNavBar(props: {
   focused: boolean
   height: number
   allDirectories: boolean
-  overrides: string[]
+  overrides: Readonly<Record<string, boolean>>
   revealed: string[]
   frame: number
   pendingDelete?: string
   shortcuts: { new: string; delete: string; rename: string }
   onMove: (delta: number) => void
   onOpen: (id: string) => void
-  onToggleDir: (key: string) => void
+  onToggleDir: (key: string, collapsed: boolean) => void
   onToggleMore: (key: string) => void
   onNew: () => void
   onDelete: (id: string) => void
@@ -99,7 +99,7 @@ export function SessionNavBar(props: {
     // A click anywhere after a first ctrl+d cancels the pending delete instead of acting on the row.
     if (props.pendingDelete) return props.onClearPending?.()
     if (row.kind === "session") return props.onOpen(row.id)
-    if (row.kind === "dir") return props.onToggleDir(row.key)
+    if (row.kind === "dir") return props.onToggleDir(row.key, row.collapsed)
     return props.onToggleMore(row.key.slice("more:".length))
   }
 

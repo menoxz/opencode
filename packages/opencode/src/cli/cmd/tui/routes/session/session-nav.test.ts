@@ -276,7 +276,7 @@ describe("TUI session navbar", () => {
   })
 
   test("breaks ties on the directory label so the order is stable", () => {
-    const rows = navRows(grouped, undefined, { overrides: [], revealed: [] })
+    const rows = navRows(grouped, undefined, { overrides: {}, revealed: [] })
     const labels = rows.filter((row) => row.kind === "dir").map((row) => (row.kind === "dir" ? row.label : ""))
     expect(labels).toEqual(["command-code", "deepseek", "harness", "misc", "opencode-fork"])
   })
@@ -299,7 +299,7 @@ describe("TUI session navbar", () => {
   })
 
   test("flattens the tree into headers and sessions", () => {
-    const rows = navRows(grouped, "a1", { overrides: [], revealed: [] })
+    const rows = navRows(grouped, "a1", { overrides: {}, revealed: [] })
     const dirs = rows.filter((row) => row.kind === "dir")
     expect(dirs).toHaveLength(5)
     const open = rows.findIndex((row) => row.kind === "dir" && row.label === "opencode-fork")
@@ -313,7 +313,7 @@ describe("TUI session navbar", () => {
       title: `Crowded ${index}`,
       directory: "C:\\work\\opencode-fork",
     }))
-    const rows = navRows(crowded, "c0", { overrides: [], revealed: [] })
+    const rows = navRows(crowded, "c0", { overrides: {}, revealed: [] })
     expect(rows.filter((row) => row.kind === "dir")).toHaveLength(1)
     expect(rows.filter((row) => row.kind === "session")).toHaveLength(NAV_SESSION_LIMIT)
     const more = rows.filter((row) => row.kind === "more")
@@ -322,7 +322,7 @@ describe("TUI session navbar", () => {
   })
 
   test("never caps the directories themselves", () => {
-    const rows = navRows(grouped, "a1", { overrides: [], revealed: [] })
+    const rows = navRows(grouped, "a1", { overrides: {}, revealed: [] })
     expect(rows.filter((row) => row.kind === "dir")).toHaveLength(navGroups(grouped, "a1").length)
   })
 
@@ -332,41 +332,53 @@ describe("TUI session navbar", () => {
   })
 
   test("only the active session's directory starts open", () => {
-    const rows = navRows(grouped, "b1", { overrides: [], revealed: [] })
+    const rows = navRows(grouped, "b1", { overrides: {}, revealed: [] })
     expect(rows.find((row) => row.kind === "dir" && row.label === "command-code")).toMatchObject({ kind: "dir", collapsed: false })
     expect(rows.some((row) => row.kind === "session" && row.id === "b1")).toBe(true)
     expect(rows.some((row) => row.kind === "session" && row.id === "a1")).toBe(false)
   })
 
+  test("pinning a directory open survives the active session moving into it", () => {
+    const sessions: NavSession[] = [
+      { id: "a1", title: "Alpha one", directory: "C:\\work\\alpha" },
+      { id: "b1", title: "Beta one", directory: "C:\\work\\beta" },
+    ]
+    const pinned = { "C:\\work\\beta": false }
+    const findBeta = (rows: ReturnType<typeof navRows>) => rows.find((row) => row.kind === "dir" && row.label === "beta")
+    expect(findBeta(navRows(sessions, "a1", { overrides: pinned, revealed: [] }))).toMatchObject({ collapsed: false })
+    // the active session now lives in the pinned directory: a baseline flip used to close it here
+    expect(findBeta(navRows(sessions, "b1", { overrides: pinned, revealed: [] }))).toMatchObject({ collapsed: false })
+  })
+
   test("a directory the user opened stays open without an active session", () => {
-    const rows = navRows(grouped, undefined, { overrides: ["C:\\work\\opencode-fork"], revealed: [] })
+    const rows = navRows(grouped, undefined, { overrides: { "C:\\work\\opencode-fork": false }, revealed: [] })
     expect(rows.find((row) => row.kind === "dir" && row.label === "opencode-fork")).toMatchObject({ kind: "dir", collapsed: false })
     expect(rows.some((row) => row.kind === "session" && row.id === "a1")).toBe(true)
   })
 
   test("a search reveals sessions in folded directories", () => {
-    const folded = navRows(grouped, "a1", { overrides: [], revealed: [] })
+    const folded = navRows(grouped, "a1", { overrides: {}, revealed: [] })
     expect(folded.some((row) => row.kind === "session" && row.id === "b1")).toBe(false)
-    const searched = navRows(grouped, "a1", { overrides: [], revealed: [], reveal: true })
+    const searched = navRows(grouped, "a1", { overrides: {}, revealed: [], reveal: true })
     expect(searched.some((row) => row.kind === "session" && row.id === "b1")).toBe(true)
     expect(searched.some((row) => row.kind === "more")).toBe(false)
   })
 
   test("expanding removes the reveal and lists every directory", () => {
-    const rows = navRows(grouped, undefined, { overrides: [], revealed: [] })
+    const rows = navRows(grouped, undefined, { overrides: {}, revealed: [] })
     expect(rows.some((row) => row.kind === "more")).toBe(false)
     expect(rows.filter((row) => row.kind === "dir")).toHaveLength(5)
   })
 
   test("selects the active session's row, otherwise a clamped position", () => {
-    const rows = navRows(grouped, "b1", { overrides: [], revealed: [] })
+    const rows = navRows(grouped, "b1", { overrides: {}, revealed: [] })
     const index = navSelection(rows, "b1", 0)
     expect(rows[index]).toMatchObject({ kind: "session", id: "b1" })
     expect(navSelection(rows, "gone", 999)).toBe(rows.length - 1)
   })
 
   test("resolves the session and directory under a row", () => {
-    const rows = navRows(grouped, "a1", { overrides: [], revealed: [] })
+    const rows = navRows(grouped, "a1", { overrides: {}, revealed: [] })
     const dirIndex = rows.findIndex((row) => row.kind === "dir" && row.label === "opencode-fork")
     const sessionIndex = rows.findIndex((row) => row.kind === "session" && row.id === "a1")
     expect(selectionDirKey(rows, dirIndex)).toBe("C:\\work\\opencode-fork")
@@ -376,9 +388,9 @@ describe("TUI session navbar", () => {
   })
 
   test("toggles a directory's collapsed state without touching the others", () => {
-    expect(toggleCollapsed([], "x")).toEqual(["x"])
-    expect(toggleCollapsed(["x", "y"], "x")).toEqual(["y"])
-    expect(toggleCollapsed(["y"], "x")).toEqual(["y", "x"])
+    expect(toggleCollapsed({}, "x", false)).toEqual({ x: true })
+    expect(toggleCollapsed({ x: false, y: true }, "x", false)).toEqual({ x: true, y: true })
+    expect(toggleCollapsed({ y: false }, "x", false)).toEqual({ x: true, y: false })
     expect(toggleRevealed([], "x")).toEqual(["x"])
     expect(toggleRevealed(["x", "y"], "x")).toEqual(["y"])
   })

@@ -38,13 +38,15 @@ export type NavRowModel =
   | { kind: "more"; key: string; hidden: number; selected: boolean }
 
 /**
- * `overrides` records the directories whose fold the user flipped by hand; every other directory
- * follows the default and opens only when it holds the active session. `revealed` records the
- * directories whose "Read more" was used, so their extra sessions show. Directories are never
- * capped: only the sessions inside one directory fold, behind that directory's own "Read more".
+ * `overrides` pins a directory's fold explicitly (`true` = collapsed, `false` = open); a directory
+ * it does not mention follows the default, which only the active session's directory opens. Pinning
+ * the state instead of flipping a baseline keeps a folder the user opened from closing just because
+ * the active session moved into it. `revealed` records the directories whose "Read more" was used,
+ * so their extra sessions show. Directories are never capped: only the sessions inside one
+ * directory fold, behind that directory's own "Read more".
  */
 export type NavState = {
-  overrides: readonly string[]
+  overrides: Readonly<Record<string, boolean>>
   revealed: readonly string[]
   /** Set while a search runs: every directory opens so no match stays behind a fold. */
   reveal?: boolean
@@ -283,9 +285,10 @@ export function navVisibleSessions(sessions: readonly NavItem[], opened: boolean
 export function navRows(sessions: readonly NavSession[], activeID: string | undefined, state: NavState): NavRowModel[] {
   const rows: NavRowModel[] = []
   for (const group of navGroups(sessions, activeID)) {
-    // A directory the user flipped keeps that choice; every other one follows the default, which only
-    // the active session's directory opens.
-    const collapsed = !state.reveal && (state.overrides.includes(group.key) ? group.active : !group.active)
+    // A pinned directory keeps the exact fold the user chose; every other one follows the default,
+    // which only the active session's directory opens. Reading the pinned value (instead of flipping
+    // the default) is what keeps an opened folder from closing when the active session moves into it.
+    const collapsed = !state.reveal && (state.overrides[group.key] ?? !group.active)
     rows.push({ kind: "dir", key: `dir:${group.key}`, label: group.label, count: group.count, collapsed, selected: false })
     if (collapsed) continue
     // A search reveals every session, and so does the directory's own "Read more".
@@ -324,9 +327,9 @@ export function selectionDirKey(rows: readonly NavRowModel[], index: number): st
   return row?.kind === "dir" ? row.key.slice("dir:".length) : undefined
 }
 
-/** Flips one directory's fold and leaves every other entry untouched. */
-export function toggleCollapsed(overrides: readonly string[], key: string): string[] {
-  return overrides.includes(key) ? overrides.filter((entry) => entry !== key) : [...overrides, key]
+/** Pins one directory's fold to the opposite of its current state and leaves every other entry untouched. */
+export function toggleCollapsed(overrides: Readonly<Record<string, boolean>>, key: string, collapsed: boolean): Record<string, boolean> {
+  return { ...overrides, [key]: !collapsed }
 }
 
 /** Flips one directory's "Read more": its extra sessions show, or fold back. Same shape as the folds. */
