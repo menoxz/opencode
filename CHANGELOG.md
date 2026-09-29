@@ -7,6 +7,17 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.3.24] - 2026-09-29
+
+### Changed
+- **Interligne uniforme dans la liste de sessions** : une ligne vide sépare désormais deux lignes de contenu quelconques — deux dossiers, un dossier et ses sessions, deux sessions, ou une session et sa ligne « Read more » ; la v2.3.23 ne séparait que les groupes. Le séparateur reste une vraie ligne du modèle (`kind: "gap"`), produit par une règle unique : `navRows` insère un `gap` entre chaque paire de lignes de contenu, jamais en tête ni en fin de liste. Le curseur le franchit (`moveSelectionRows`) et la sélection y est recadrée.
+
+### Fixed
+- **Un dossier ajouté survit désormais au redémarrage.** Créer une session dans un dossier choisi par le sélecteur ne l'enregistrait nulle part : `listSessions()` ne surveillait que le dossier courant, donc le dossier `/jeanluc` et sa session disparaissaient de la liste à la relance sans `-s`, alors que la session restait en base. Le dossier choisi est maintenant enregistré (`session_extra_directories`) dès que la session est créée, via la décision extraite `pickSessionFolder` : rien n'est enregistré si la création échoue ou si le modèle manque.
+
+### Tests
+- `session-nav.test.ts` : l'invariant complet de l'interligne (contenu, vide, contenu…), l'écart de 2 lignes entre deux sessions voisines, la séparation avant « Read more », et l'absence de vide en tête et en fin de liste.
+- `session-nav.view.test.tsx` : la trame réelle montre un blanc entre deux sessions et avant « Read more » ; `pickSessionFolder` enregistre le dossier quand la session est créée, et rien quand la création échoue ou que le modèle manque.
 ## [v2.3.23] - 2026-09-28
 
 ### Changed
