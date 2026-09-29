@@ -309,24 +309,18 @@ export function navVisibleSessions(sessions: readonly NavItem[], opened: boolean
  * "Read more". The selection is the row's index in this array.
  */
 export function navRows(sessions: readonly NavSession[], activeID: string | undefined, state: NavState): NavRowModel[] {
-  const rows: NavRowModel[] = []
-  navGroups(sessions, activeID).forEach((group, position) => {
-    // One convention, applied here and nowhere else: a blank row separates every directory from the
-    // previous one, and an open directory from its first session. A separator never opens or closes
-    // the list, so the first line is always a header and the last one is always content.
-    if (position > 0) rows.push({ kind: "gap", key: `gap:before:${group.key}`, selected: false })
+  const content: NavRowModel[] = []
+  navGroups(sessions, activeID).forEach((group) => {
     // A pinned directory keeps the exact fold the user chose; every other one follows the default,
     // which only the active session's directory opens. Reading the pinned value (instead of flipping
     // the default) is what keeps an opened folder from closing when the active session moves into it.
     const collapsed = !state.reveal && (state.overrides[group.key] ?? !group.active)
-    rows.push({ kind: "dir", key: `dir:${group.key}`, label: group.label, count: group.count, collapsed, selected: false })
+    content.push({ kind: "dir", key: `dir:${group.key}`, label: group.label, count: group.count, collapsed, selected: false })
     if (collapsed) return
     // A search reveals every session, and so does the directory's own "Read more".
     const { shown, hidden } = navVisibleSessions(group.sessions, state.reveal === true || state.revealed.includes(group.key))
-    // The folder-to-session separation: added only when a session line actually follows the header.
-    if (shown.length > 0) rows.push({ kind: "gap", key: `gap:sessions:${group.key}`, selected: false })
     for (const session of shown) {
-      rows.push({
+      content.push({
         kind: "session",
         key: `ses:${session.id}`,
         id: session.id,
@@ -336,9 +330,15 @@ export function navRows(sessions: readonly NavSession[], activeID: string | unde
         selected: false,
       })
     }
-    if (hidden > 0) rows.push({ kind: "more", key: `more:${group.key}`, hidden, selected: false })
+    if (hidden > 0) content.push({ kind: "more", key: `more:${group.key}`, hidden, selected: false })
   })
-  return rows
+  // One convention, applied here and nowhere else: a blank row separates every pair of neighbouring
+  // content lines, whatever they are — two directories, a directory and its sessions, two sessions,
+  // or a session and its "Read more". A separator never opens or closes the list, so the first line
+  // is always content and so is the last one.
+  return content.flatMap((row, position) =>
+    position === 0 ? [row] : [{ kind: "gap" as const, key: `gap:${row.key}`, selected: false }, row],
+  )
 }
 
 /**

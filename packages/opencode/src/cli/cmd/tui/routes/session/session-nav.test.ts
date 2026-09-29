@@ -344,6 +344,30 @@ describe("TUI session navbar", () => {
     expect(folded.some((row, index) => row.kind === "gap" && folded[index + 1]?.kind === "gap")).toBe(false)
   })
 
+  test("separates every pair of neighbouring content lines, sessions included", () => {
+    const rows = navRows(grouped, "a1", { overrides: {}, revealed: [] })
+    const content = rows.filter((row) => row.kind !== "gap")
+    expect(content.length).toBeGreaterThan(3)
+    // The whole convention: content, blank, content, blank, ... and nothing else.
+    expect(rows).toHaveLength(content.length * 2 - 1)
+    expect(rows[0]?.kind).not.toBe("gap")
+    expect(rows.at(-1)?.kind).not.toBe("gap")
+    rows.forEach((row, index) => {
+      if (row.kind !== "gap") return
+      expect(rows[index - 1]?.kind).not.toBe("gap")
+      expect(rows[index + 1]?.kind).not.toBe("gap")
+    })
+    // Two sessions are two content lines: the pair between them carries a blank, which the
+    // folder-only spacing never did.
+    const sessions = rows.filter((row) => row.kind === "session")
+    for (let index = 1; index < sessions.length; index++) {
+      expect(rows.indexOf(sessions[index]!) - rows.indexOf(sessions[index - 1]!)).toBe(2)
+    }
+    // A "Read more" line is separated from the session above it too.
+    const more = rows.findIndex((row) => row.kind === "more")
+    if (more > 0) expect(rows[more - 1]?.kind).toBe("gap")
+  })
+
   test("the selection never rests on a separator", () => {
     const rows = navRows(grouped, "a1", { overrides: {}, revealed: [] })
     const firstSeparator = rows.findIndex((row) => row.kind === "gap")

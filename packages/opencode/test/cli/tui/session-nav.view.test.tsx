@@ -9,6 +9,7 @@ import { TuiConfigProvider } from "../../../src/cli/cmd/tui/context/tui-config"
 import { SessionNavBar } from "../../../src/cli/cmd/tui/routes/session/session-nav-bar"
 import { filterNavSessions, toggleRevealed, type NavSession } from "../../../src/cli/cmd/tui/routes/session/session-nav"
 import { Locale } from "../../../src/util/locale"
+import { pickSessionFolder } from "../../../src/cli/cmd/tui/component/dialog-directory-select"
 
 type App = Awaited<ReturnType<typeof testRender>>
 
@@ -243,6 +244,22 @@ test("leaves a blank line between a directory header and its sessions", async ()
   // Observed on the real frame: the header line, then an empty separator line, then the first session.
   expect(lines[header + 1]?.trim()).toBe("")
   expect(lines[header + 2]).toContain("Alpha one")
+})
+
+test("separates two sessions and the Read more line with one blank line each", async () => {
+  const app = await renderBar({ sessions: oneDirMany, activeID: "ses_0", selected: 0, focused: false, height: 20 })
+  const lines = linesOf(app)
+  const header = lines.findIndex((line) => line.includes("solo"))
+  expect(header).toBeGreaterThanOrEqual(0)
+  // Read on the real frame: one blank line between any two content lines, whatever they are.
+  expect(lines[header + 1]?.trim()).toBe("")
+  expect(lines[header + 2]).toContain("Session 0")
+  expect(lines[header + 3]?.trim()).toBe("")
+  expect(lines[header + 4]).toContain("Session 1")
+  expect(lines[header + 5]?.trim()).toBe("")
+  expect(lines[header + 6]).toContain("Session 2")
+  expect(lines[header + 7]?.trim()).toBe("")
+  expect(lines[header + 8]).toContain("Read more")
 })
 
 test("caps a directory's sessions at three and offers Read more for the rest", async () => {
@@ -502,6 +519,50 @@ test("takes keys in the search field, narrows the list and leaves on Escape", as
   expect(app.captureCharFrame()).toContain("Alpha one")
 })
 
+test("creating a session in a picked folder registers that folder, and nothing when it fails", async () => {
+  const used: string[] = []
+  const created: string[] = []
+  const deps = {
+    directory: "C:\\jeanluc",
+    model: { providerID: "p", modelID: "m" },
+    variant: undefined,
+    agent: { name: "build" },
+  }
+  await pickSessionFolder({
+    ...deps,
+    create: (async () => ({ data: { id: "ses_new" } })) as never,
+    onDirectoryUsed: (directory) => used.push(directory),
+    onCreated: (id) => created.push(id),
+  })
+  expect(used).toEqual(["C:\\jeanluc"])
+  expect(created).toEqual(["ses_new"])
+
+  // The failure paths must register nothing, or a folder the session never landed in would stick.
+  used.length = 0
+  created.length = 0
+  await pickSessionFolder({
+    ...deps,
+    create: (async () => ({ error: "boom" })) as never,
+    onDirectoryUsed: (directory) => used.push(directory),
+    onCreated: (id) => created.push(id),
+  })
+  expect(used).toEqual([])
+  expect(created).toEqual([])
+
+  let missingModel = 0
+  await pickSessionFolder({
+    ...deps,
+    model: undefined,
+    create: (async () => ({ data: { id: "ses_never" } })) as never,
+    onDirectoryUsed: (directory) => used.push(directory),
+    onCreated: (id) => created.push(id),
+    onNoModel: () => (missingModel += 1),
+  })
+  expect(missingModel).toBe(1)
+  expect(used).toEqual([])
+  expect(created).toEqual([])
+})
+
 const leadingSpaces = (text: string) => text.length - text.trimStart().length
 
 test("the Read more line is indented like the sessions it hides", async () => {
@@ -553,7 +614,10 @@ test("clicking a directory's Read more reveals its extra sessions", async () => 
   await settled(app)
 
   expect(app.captureCharFrame()).not.toContain("Read more")
-  expect(app.captureCharFrame()).toContain("Session 9")
+  // The reveal is proven by what was folded behind "Read more" before the click, not by the last
+  // line of the list fitting the frame: with a blank line between every pair of content lines the
+  // tail is scrolled off, and the assertions below still own the footer and the 24-row bound.
+  expect(app.captureCharFrame()).toContain("Session 3")
 })
 
 test("the list takes the space left over instead of pushing the footer out of the bar", async () => {

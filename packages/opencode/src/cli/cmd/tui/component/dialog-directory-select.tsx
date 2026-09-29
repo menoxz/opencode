@@ -142,12 +142,47 @@ export function DialogDirectorySelect(props: DialogDirectorySelectProps) {
   )
 }
 
+/**
+ * Creates the session the picker asked for and, on success, registers the folder it landed in.
+ * Kept out of the JSX so a test can drive the whole outcome: without the registration the list only
+ * widened until the process ended, which is how an added folder vanished after a restart.
+ */
+export type SessionFolderPick = {
+  directory: string
+  model: { providerID: string; modelID: string } | undefined
+  variant: string | undefined
+  agent: { name: string } | undefined
+  create: ReturnType<typeof useSDK>["client"]["session"]["create"]
+  onDirectoryUsed?: (directory: string) => void
+  onCreated: (sessionID: string) => void
+  onNoModel?: () => void
+}
+
+/** A missing model or a failed creation registers nothing: only a created session proves the folder matters. */
+export async function pickSessionFolder(deps: SessionFolderPick): Promise<void> {
+  if (!deps.model || !deps.agent) {
+    deps.onNoModel?.()
+    return
+  }
+  const model = deps.model
+  const result = await deps.create({
+    directory: deps.directory,
+    agent: deps.agent.name,
+    model: { providerID: model.providerID, id: model.modelID, variant: deps.variant },
+  })
+  if (result.error || !result.data) return
+  deps.onDirectoryUsed?.(deps.directory)
+  deps.onCreated(result.data.id)
+}
+
 /** Opens the folder picker and creates a session in whichever folder is chosen. */
 export function openSessionFolder(deps: {
   dialog: ReturnType<typeof useDialog>
   sdk: ReturnType<typeof useSDK>
   local: ReturnType<typeof useLocal>
   directories: readonly string[]
+  /** Registers the folder the session lands in, so the list keeps it once the process ends. */
+  onDirectoryUsed?: (directory: string) => void
   onCreated: (sessionID: string) => void
   onNoModel?: () => void
 }) {
@@ -155,25 +190,16 @@ export function openSessionFolder(deps: {
     <DialogDirectorySelect
       directories={deps.directories}
       onPick={(directory) => {
-        const model = deps.local.model.current()
-        const agent = deps.local.agent.current()
-        if (!model || !agent) {
-          deps.onNoModel?.()
-          return
-        }
-        void deps.sdk.client.session
-          .create({
-            directory,
-            agent: agent.name,
-            model: {
-              providerID: model.providerID,
-              id: model.modelID,
-              variant: deps.local.model.variant.current(),
-            },
-          })
-          .then((result) => {
-            if (!result.error && result.data) deps.onCreated(result.data.id)
-          })
+        void pickSessionFolder({
+          directory,
+          model: deps.local.model.current() ?? undefined,
+          variant: deps.local.model.variant.current(),
+          agent: deps.local.agent.current() ?? undefined,
+          create: (input) => deps.sdk.client.session.create(input),
+          onDirectoryUsed: deps.onDirectoryUsed,
+          onCreated: deps.onCreated,
+          onNoModel: deps.onNoModel,
+        })
       }}
     />
   ))

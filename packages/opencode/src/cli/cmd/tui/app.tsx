@@ -495,6 +495,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
             sdk,
             local,
             directories: usedDirectories(sync.data.session),
+            onDirectoryUsed: (directory) => void sync.session.addDirectory(directory),
             onCreated: (sessionID) => route.navigate({ type: "session", sessionID }),
             onNoModel: () => route.navigate({ type: "home" }),
           })

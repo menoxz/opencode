@@ -1598,6 +1598,7 @@ export function Session() {
                   sdk,
                   local,
                   directories: usedDirectories(sync.data.session),
+                  onDirectoryUsed: (directory) => void sync.session.addDirectory(directory),
                   onCreated: (sessionID) => navigate({ type: "session", sessionID }),
                   onNoModel: () => navigate({ type: "home" }),
                 })

@@ -110,6 +110,7 @@ export function SessionNavPanel() {
       sdk,
       local,
       directories: usedDirectories(sync.data.session),
+      onDirectoryUsed: (directory) => void sync.session.addDirectory(directory),
       onCreated: (sessionID) => route.navigate({ type: "session", sessionID }),
     })
   }
