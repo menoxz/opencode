@@ -7,6 +7,14 @@ et ce projet adhÃ¨re au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.3.26] - 2026-09-29
+
+### Added
+- **Barre de navigation supérieure avec menus Config et Logs.** Le TUI n'avait aucun slot supérieur persistant : un slot d'hôte pp_top est désormais rendu au-dessus de toutes les routes, et le plugin interne 
+avbar y affiche des entrées cliquables home/config/logs (une entrée active est surlignée). Le menu **config** ouvre un éditeur plein écran (config.editor) : liste des clés triées, portée globale ou projet (bascule Tab, défaut global), édition d'une valeur parsée en JSON, écriture par les endpoints de merge non destructifs existants (config.update / global.config.update) - le JSONC et les commentaires sont préservés, et les clés de type piKey/	oken/secret/password sont masquées à l'affichage. Un overlay local immédiat compense le fait que sync.data.config n'est relu qu'au démarrage. Le menu **logs** ouvre l'historique par tour de la session courante (session.logs) : un bloc par message (rôle, agent, modèle, tokens, coût, erreur, statut en cours) avec ses fragments. Les deux vues sont aussi atteignables par la palette et les commandes slash /config et /logs.
+
+### Tests
+- 	est/cli/tui/navbar.test.ts : la navbar enregistre bien le slot pp_top et les commandes config.editor/session.logs ; les deux menus pointent vers des routes réellement enregistrées par leurs plugins ; ITEMS = [home, config.editor, session.logs] ; masquage des clés sensibles ; troncature de l'aperçu ; classification des valeurs ; résolution du sessionID courant ; résumé des fragments.
 ## [v2.3.25] - 2026-09-29
 
 ### Added
