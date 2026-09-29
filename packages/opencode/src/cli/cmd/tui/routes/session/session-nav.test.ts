@@ -44,6 +44,8 @@ import {
   toggleRevealed,
   type NavSession,
   usedDirectories,
+  removableDirectories,
+  removableDirKey,
 } from "./session-nav"
 
 const sessions: NavSession[] = [
@@ -563,6 +565,48 @@ describe("TUI session navbar", () => {
     expect(navDirRow({ label: "opencode", count: 12, collapsed: true, width: NAV_WIDTH })).toBe(
       "  ▸ /opencode 12",
     )
+    // An added folder carries the mark, so it reads differently from the workspace's own row.
+    expect(navDirRow({ label: "opencode", count: 5, collapsed: false, width: NAV_WIDTH, added: true })).toBe(
+      "  ▾ +/opencode 5",
+    )
+  })
+
+  test("marks only the folders the user added", () => {
+    const groups = navGroups(grouped, undefined, ["C:\\other\\harness"])
+    expect(groups.find((group) => group.key === "C:\\other\\harness")?.added).toBe(true)
+    expect(groups.find((group) => group.key === "C:\\work\\opencode-fork")?.added).toBe(false)
+    expect(groups.find((group) => group.key === "C:\\other\\deepseek")?.added).toBe(false)
+  })
+
+  test("lists an added folder that holds no recent session, so it stays removable", () => {
+    const groups = navGroups(grouped, undefined, ["C:\\empty\\added"])
+    const empty = groups.find((group) => group.key === "C:\\empty\\added")
+    expect(empty?.count).toBe(0)
+    expect(empty?.added).toBe(true)
+  })
+
+  test("never treats the workspace's own folder as added", () => {
+    expect(removableDirectories(["C:\\work\\a"], "C:\\work\\A")).toEqual([])
+    expect(removableDirectories(["C:\\work\\a"], "C:\\work\\b")).toEqual(["C:\\work\\a"])
+    expect(removableDirectories(["", "  ", "C:\\work\\a", "c:\\WORK\\A"], undefined)).toEqual(["C:\\work\\a"])
+  })
+
+  test("the removal guard only ever returns an added folder", () => {
+    const rows = navRows(
+      [{ id: "s_b", title: "Session in the workspace's own folder", directory: "C:\\work\\b" }],
+      undefined,
+      { overrides: {}, revealed: [], added: ["C:\\work\\a"] },
+    )
+    const added = rows.findIndex((row) => row.kind === "dir" && row.key === "dir:C:\\work\\a")
+    const origin = rows.findIndex((row) => row.kind === "dir" && row.key === "dir:C:\\work\\b")
+    expect(added).toBeGreaterThanOrEqual(0)
+    expect(origin).toBeGreaterThanOrEqual(0)
+    expect(removableDirKey(rows, added)).toBe("C:\\work\\a")
+    // A folder that was not added has a row too, but is never removable, however the cursor got there.
+    expect(removableDirKey(rows, origin)).toBeUndefined()
+    // A separator is not a target either: the guard reads the row, not the index.
+    const gap = rows.findIndex((row) => row.kind === "gap")
+    expect(removableDirKey(rows, gap)).toBeUndefined()
   })
 
   test("narrows the sessions by title, folder name or folder path", () => {

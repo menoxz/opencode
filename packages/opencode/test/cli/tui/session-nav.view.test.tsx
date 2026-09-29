@@ -68,6 +68,8 @@ async function renderBar(props: {
   focused: boolean
   height?: number
   allDirectories?: boolean
+  added?: string[]
+  origin?: string
   overrides?: Readonly<Record<string, boolean>>
   revealed?: string[]
   frame?: number
@@ -96,6 +98,8 @@ async function renderBar(props: {
           focused={props.focused}
           height={props.height ?? 20}
           allDirectories={props.allDirectories ?? false}
+          added={props.added}
+          origin={props.origin}
           overrides={props.overrides ?? {}}
           revealed={props.revealed ?? []}
           frame={props.frame ?? 0}
@@ -137,6 +141,25 @@ test("groups the sessions under a directory header with its session count", asyn
   expect(text).toContain("Fix flaky test")
   const header = linesOf(app).find((line) => line.includes("opencode-fork")) ?? ""
   expect(header).toMatch(/opencode-fork\s+2$/)
+})
+
+test("marks an added folder with a plus and leaves the workspace's own unmarked", async () => {
+  const own: NavSession[] = [{ id: "s_own", title: "Own session", directory: "C:\\work\\repo" }]
+  const app = await renderBar({
+    sessions: own,
+    activeID: "s_own",
+    selected: 0,
+    focused: false,
+    added: ["C:\\work\\extra"],
+    origin: "C:\\work\\repo",
+  })
+  const lines = linesOf(app)
+  // Read on the real frame: the added folder carries the "+", the origin's own row never does.
+  const addedRow = lines.find((line) => line.includes("extra")) ?? ""
+  const ownRow = lines.find((line) => line.includes("/repo")) ?? ""
+  expect(addedRow).toContain("+/extra")
+  expect(ownRow).toContain("/repo")
+  expect(ownRow).not.toContain("+/repo")
 })
 
 test("a directory without the active session keeps only its single-line header", async () => {
