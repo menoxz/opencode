@@ -12,6 +12,9 @@ import Notifications from "../feature-plugins/system/notifications"
 import SessionV2Debug from "../feature-plugins/system/session-v2"
 import WhichKey from "../feature-plugins/system/which-key"
 import DiffViewer from "../feature-plugins/system/diff-viewer"
+import Navbar from "../feature-plugins/system/navbar"
+import ConfigEditor from "../feature-plugins/system/config-editor"
+import SessionLogs from "../feature-plugins/system/session-logs"
 import type { TuiPlugin, TuiPluginModule } from "@opencode-ai/plugin/tui"
 import type { RuntimeFlags } from "@/effect/runtime-flags"
 
@@ -36,6 +39,9 @@ export function internalTuiPlugins(flags: Pick<RuntimeFlags.Info, "experimentalE
     PluginManager,
     WhichKey,
     DiffViewer,
+    Navbar,
+    ConfigEditor,
+    SessionLogs,
     ...(flags.experimentalEventSystem ? [SessionV2Debug] : []),
   ]
 }

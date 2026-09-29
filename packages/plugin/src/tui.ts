@@ -453,6 +453,7 @@ export type TuiSidebarFileItem = {
 }
 
 export type TuiHostSlotMap = {
+  app_top: {}
   app: {}
   app_bottom: {}
   home_logo: {}
