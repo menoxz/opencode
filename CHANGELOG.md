@@ -7,6 +7,14 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.3.25] - 2026-09-29
+
+### Added
+- **Un dossier ajouté se distingue du dossier d'origine et peut être retiré.** La ligne de dossier d'un dossier ajouté porte un marqueur `+` (`/dossier` pour l'origine, `+/dossier` pour un dossier ajouté) ; le curseur posé sur une telle ligne la retire avec la touche `del` — geste jusque-là mort sur une ligne de dossier — et la commande `Remove added folder from session list` fait de même depuis la palette. Le dossier d'origine du workspace n'est ni marqué, ni retirable : la garde `removableDirKey` ne rend un dossier que si sa ligne est marquée ajoutée, donc l'origine est refusée quelle que soit la façon dont le curseur l'a atteinte. `removableDirectories` filtre l'origine, les entrées vides et les doublons insensibles à la casse (les chemins viennent d'un système de fichiers insensible à la casse) ; `addDirectory`/`removeDirectory` persistent le changement, et un dossier ajouté sans session récente reste listé, sans quoi il serait invisible et donc irretirable.
+
+### Tests
+- `session-nav.test.ts` : marqueur `+` sur la ligne de dossier, marquage limité aux dossiers ajoutés, dossier ajouté sans session listé, origine jamais comptée comme ajoutée, et garde qui ne rend qu'un dossier ajouté (origine, ligne de session et séparateur refusés).
+- `session-nav.view.test.tsx` : la trame réellement rendue montre `+/extra` et `/repo` côte à côte ; le banc de rendu expose `added`/`origin`.
 ## [v2.3.24] - 2026-09-29
 
 ### Changed
