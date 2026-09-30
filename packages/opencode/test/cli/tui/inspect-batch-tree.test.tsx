@@ -208,8 +208,9 @@ test("real terminal component updates from pending to completed then batch error
   expect(pendingFrame).toContain("inspect_batch")
   expect(pendingFrame).toContain("Read src/main.ts")
   const pendingRow = pendingFrame.split("\n").find((line) => line.includes("Read src/main.ts"))!
-  expect(pendingRow).toMatch(/•\s+\S/)
-  expect(pendingRow).not.toContain("•  Read")
+  // Rows lead with their state slot; no bullet is rendered before the tool call.
+  expect(pendingRow).not.toContain("•")
+  expect(pendingRow).toContain("Read src/main.ts")
   expect(pendingFrame).not.toContain("├─")
   expect(pendingFrame).not.toContain("└─")
   setState({ input, status: "completed", output })
@@ -219,7 +220,9 @@ test("real terminal component updates from pending to completed then batch error
   expect(frame).toContain('Glob "**/*.ts"')
   expect(frame).not.toContain("after")
   expect(frame).not.toContain("File missing")
-  const rows = frame.split("\n").filter((line) => line.includes("• "))
+  const rows = frame
+    .split("\n")
+    .filter((line) => ['Read src/main.ts', 'Grep "export"', 'Glob "**/*.ts"'].some((needle) => line.includes(needle)))
   expect(rows).toHaveLength(3)
   // The state glyph now leads the argument, so its column comes first.
   expect(rows[0].indexOf("✓")).toBeLessThan(rows[0].indexOf("Read src/main.ts"))
@@ -260,7 +263,7 @@ test("real narrow terminal keeps long child rows from wrapping into unbounded ou
   const frame = app.captureCharFrame()
   expect(frame).toContain("Read ")
   expect(frame.split("\n").filter((line) => line.trim()).length).toBe(17)
-  const rows = frame.split("\n").filter((line) => line.includes("• "))
+  const rows = frame.split("\n").filter((line) => line.includes("✓"))
   expect(rows).toHaveLength(16)
   expect(rows.every((line) => line.includes("✓"))).toBe(true)
 })
@@ -297,5 +300,5 @@ test("six successful actions need only a heading and six rows", async () => {
   expect(frame).not.toContain("├─")
   expect(frame).not.toContain("└─")
   expect(frame.split("\n").filter((line) => line.trim())).toHaveLength(7)
-  expect(frame.split("\n").filter((line) => line.includes("• ✓"))).toHaveLength(6)
+  expect(frame.split("\n").filter((line) => line.includes("✓"))).toHaveLength(6)
 })

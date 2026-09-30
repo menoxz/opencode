@@ -26,10 +26,11 @@ export function InspectBatchTree(
       <For each={tree().rows}>
         {(row) => (
           <box flexDirection="row" height={1} flexShrink={0}>
+            {/* Blank spacer: the leading slot keeps child rows stacking instead of
+                merging when the argument is long. No bullet is rendered. */}
             <text fg={props.muted} flexShrink={0}>
-              {"• "}
+              {"  "}
             </text>
-            {/* A fixed slot keeps the argument aligned whether the row spins or shows its result. */}
             <box width={2} flexShrink={0}>
               <Show when={row.spinning} fallback={<text fg={stateColor(row)}>{row.icon}</text>}>
                 <Spinner />
