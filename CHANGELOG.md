@@ -7,6 +7,17 @@ et ce projet adhÃ¨re au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.3.27] - 2026-09-30
+
+### Added
+- **Trajectoire de session (menu Logs).** Le menu « logs » devient une vue plein écran dépendant de la session sélectionnée dans le TUI, permettant de retracer l'intégralité du déroulé sans troncature : prompts utilisateur, texte assistant, raisonnement, appels d'outils avec entrée (JSON) ET sortie/erreur complètes, frontières d'étapes (tokens in/out/reasoning, cache, coût), sous-tâches (agent, description, command, prompt), fichiers, patches, snapshots, retries et compaction. La vue suit la session courante via un signal vivant publié par la navbar (selectedSessionID) et retombe sur la session du routeur, puis sur la dernière observée.
+
+### Changed
+- **Barre de navigation relocalisée dans la colonne des messages.** Elle n'occupe plus toute la largeur du terminal : un slot hôte session_top est rendu uniquement au-dessus de la liste des messages de l'agent. Le logo « opencodev2 », la version et l'entrée « home » ont été retirés ; les entrées restantes (Config, Logs) sont des pastilles à fort contraste, l'entrée active sur fond plein.
+- **Éditeur de configuration agrandi.** Le composant d'édition d'une valeur (DialogPrompt) accepte une taille xlarge et une hauteur calculée d'après le terminal, affichant davantage d'information sans défilement.
+
+### Tests
+- 	est/cli/tui/navbar.test.ts : navbar (slot session_top, commandes config.editor/session.logs, items = Config, Logs) ; liaison de la trajectoire à la session sélectionnée (précédence override > session live > session mémorisée) ; masquage des clés sensibles ; troncature d'aperçu ; classification des valeurs ; résumé des fragments.
 ## [v2.3.26] - 2026-09-29
 
 ### Added
