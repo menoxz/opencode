@@ -7,6 +7,12 @@ et ce projet adhÃ¨re au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.3.29] - 2026-09-30
+
+### Changed
+- **Config et Logs s'affichent dans la zone de sortie de l'agent.** Les vues n'ouvrent plus de route plein écran : elles remplacent uniquement la zone de transcript de la session, qui reste montée avec son prompt et sa sidebar visibles. Un signal core `sessionPanel` sélectionne la vue (\session\ | \config\ | \logs\).
+- **Menu « Session » dans la navbar.** La navbar de session devient `Session | Config | Logs` ; l'entrée active est un bloc plein contrasté. Chaque panneau est servi par un slot hôte dédié (\session_config\, \session_logs\), et aucune route n'est plus enregistrée pour Config/Logs.
+- **Trajectoire liée à la session.** Le panneau Logs capture la session sur laquelle il a été ouvert plutôt que de suivre une navigation ultérieure ; la priorité de résolution reste `override ? session capturée ? route courante ? dernier observé`.
 ## [v2.3.28] - 2026-09-30
 
 ### Fixed
