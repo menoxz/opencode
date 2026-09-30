@@ -7,6 +7,10 @@ et ce projet adhÃ¨re au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.3.28] - 2026-09-30
+
+### Fixed
+- **Puce retirée devant les appels d'outils.** La puce initiale (.) rendue devant chaque ligne d'action d'un inspect_batch dans le transcript a été supprimée. Le noeud texte de tête est conservé mais rendu invisible (espaceur de deux espaces) : sa suppression complète replie toutes les lignes enfants sur une seule ligne aux largeurs étroites, comportement verrouillé par le test de vue. Les assertions du test sélectionnent désormais les lignes par leur contenu et leur glyphe d'état au lieu de la puce.
 ## [v2.3.27] - 2026-09-30
 
 ### Added
