@@ -99,6 +99,7 @@ import { useKV } from "../../context/kv.tsx"
 import * as Editor from "../../util/editor"
 import stripAnsi from "strip-ansi"
 import { usePromptRef } from "../../context/prompt"
+import { sessionPanel } from "../../context/panel"
 import { useExit } from "../../context/exit"
 import { Filesystem } from "@/util/filesystem"
 import { PermissionPrompt } from "./permission"
@@ -1619,6 +1620,7 @@ export function Session() {
           <box flexGrow={1} minHeight={0} paddingBottom={1} paddingLeft={2} paddingRight={2} gap={1}>
             <TuiPluginRuntime.Slot name="session_top" />
             <Show when={session()}>
+              <Show when={sessionPanel() === "session"}>
               <scrollbox
                 ref={(r) => (scroll = r)}
                 viewportOptions={{
@@ -1738,6 +1740,13 @@ export function Session() {
                   )}
                 </For>
               </scrollbox>
+              </Show>
+              <Show when={sessionPanel() === "config"}>
+                <TuiPluginRuntime.Slot name="session_config" />
+              </Show>
+              <Show when={sessionPanel() === "logs"}>
+                <TuiPluginRuntime.Slot name="session_logs" />
+              </Show>
               <box flexShrink={0}>
                 <Show when={permissions().length > 0}>
                   <PermissionPrompt request={permissions()[0]} />

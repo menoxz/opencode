@@ -10,8 +10,9 @@ import type {
   ToolPart,
   UserMessage,
 } from "@opencode-ai/sdk/v2"
-import { createEffect, createMemo, For, Show } from "solid-js"
-import { currentSessionID, ROUTE_CONFIG, ROUTE_LOGS, selectedSessionID } from "./navbar"
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js"
+import { currentSessionID, selectedSessionID } from "./navbar"
+import { setSessionPanel } from "../../context/panel"
 
 const id = "internal:session-logs"
 
@@ -26,8 +27,9 @@ export function resolveSessionID(
   api: TuiPluginApi,
   override?: string,
   remembered?: string,
+  sessionRoute?: string,
 ): string | undefined {
-  return override ?? currentSessionID(api) ?? remembered
+  return override ?? sessionRoute ?? currentSessionID(api) ?? remembered
 }
 
 // Compact one-line label for a part, used as the trajectory section header.
@@ -263,9 +265,14 @@ function Turn(props: { api: TuiPluginApi; message: Message; index: number }) {
   )
 }
 
-function Trajectory(props: { api: TuiPluginApi; sessionID?: string }) {
+function Trajectory(props: { api: TuiPluginApi; sessionID?: string; defaultOverride?: boolean }) {
   const { theme } = useTheme()
-  const sessionID = createMemo(() => resolveSessionID(props.api, props.sessionID, selectedSessionID()))
+  // Capture the session route the panel opened on, so a later navigation cannot
+  // silently re-point the trajectory at another session.
+  const [bound] = createSignal(props.defaultOverride ? currentSessionID(props.api) : props.sessionID)
+  const sessionID = createMemo(() =>
+    resolveSessionID(props.api, props.sessionID, selectedSessionID(), bound()),
+  )
   const session = createMemo(() => {
     const id = sessionID()
     return id ? props.api.state.session.get(id) : undefined
@@ -287,28 +294,29 @@ function Trajectory(props: { api: TuiPluginApi; sessionID?: string }) {
 
   useBindings(() => ({
     commands: [
-      { name: "logs.close", title: "Close trajectory", category: "Session", run: () => props.api.route.navigate("home") },
+      {
+        name: "logs.close",
+        title: "Back to session",
+        category: "Session",
+        run: () => setSessionPanel("session"),
+      },
       {
         name: "logs.config",
         title: "Open config editor",
         category: "Session",
-        run: () => props.api.route.navigate(ROUTE_CONFIG),
+        run: () => setSessionPanel("config"),
       },
       {
-        name: "logs.back",
+        name: "logs.home",
         title: "Back to session",
         category: "Session",
-        run: () => {
-          const id = sessionID()
-          if (id) props.api.route.navigate("session", { sessionID: id })
-          else props.api.route.navigate("home")
-        },
+        run: () => setSessionPanel("session"),
       },
     ],
     bindings: [
-      { key: "escape", cmd: "logs.back", desc: "Back" },
+      { key: "escape", cmd: "logs.home", desc: "Back" },
       { key: "c", cmd: "logs.config", desc: "Config" },
-      { key: "q", cmd: "logs.close", desc: "Home" },
+      { key: "q", cmd: "logs.home", desc: "Session" },
     ],
   }))
 
@@ -346,22 +354,20 @@ function Trajectory(props: { api: TuiPluginApi; sessionID?: string }) {
         </Show>
       </box>
       <box flexShrink={0} paddingLeft={2} paddingRight={2} paddingBottom={1}>
-        <text fg={theme.textMuted}>full session · live · esc back · c config · q home</text>
+        <text fg={theme.textMuted}>          full session · live · esc back · c config · q session</text>
       </box>
     </box>
   )
 }
 
 const tui: TuiPlugin = async (api) => {
-  api.route.register([
-    {
-      name: ROUTE_LOGS,
-      render(input) {
-        const sessionID = input.params?.sessionID
-        return <Trajectory api={api} sessionID={typeof sessionID === "string" ? sessionID : undefined} />
+  api.slots.register({
+    slots: {
+      session_logs() {
+        return <Trajectory api={api} defaultOverride />
       },
     },
-  ])
+  })
 }
 
 const plugin: InternalTuiPlugin = {

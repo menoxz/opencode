@@ -7,7 +7,7 @@ import { globalConfigFile } from "@/config/config"
 import type { Config } from "@opencode-ai/sdk/v2"
 import { useTerminalDimensions } from "@opentui/solid"
 import { createMemo, createSignal, For, Show } from "solid-js"
-import { ROUTE_CONFIG, ROUTE_LOGS } from "./navbar"
+import { setSessionPanel } from "../../context/panel"
 
 const id = "internal:config-editor"
 
@@ -131,12 +131,17 @@ function ConfigEditor(props: { api: TuiPluginApi }) {
         category: "Config",
         run: () => setScope((value) => (value === "global" ? "project" : "global")),
       },
-      { name: "config.editor.close", title: "Close config editor", category: "Config", run: () => props.api.route.navigate("home") },
+      {
+        name: "config.editor.close",
+        title: "Back to session",
+        category: "Config",
+        run: () => setSessionPanel("session"),
+      },
       {
         name: "config.editor.logs",
         title: "Open session logs",
         category: "Config",
-        run: () => props.api.route.navigate(ROUTE_LOGS),
+        run: () => setSessionPanel("logs"),
       },
     ],
     bindings: [
@@ -190,7 +195,7 @@ function ConfigEditor(props: { api: TuiPluginApi }) {
       </box>
       <box flexShrink={0} paddingLeft={2} paddingRight={2} paddingBottom={1}>
         <text fg={theme.textMuted}>
-          j/k move · enter edit · tab scope ({scope()}) · l logs · esc close — writes merge, JSONC preserved
+          j/k move · enter edit · tab scope ({scope()}) · l logs · esc session — writes merge, JSONC preserved
         </text>
       </box>
     </box>
@@ -198,12 +203,13 @@ function ConfigEditor(props: { api: TuiPluginApi }) {
 }
 
 const tui: TuiPlugin = async (api) => {
-  api.route.register([
-    {
-      name: ROUTE_CONFIG,
-      render: () => <ConfigEditor api={api} />,
+  api.slots.register({
+    slots: {
+      session_config() {
+        return <ConfigEditor api={api} />
+      },
     },
-  ])
+  })
 }
 
 const plugin: InternalTuiPlugin = {

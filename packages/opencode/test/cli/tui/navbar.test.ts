@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import type { TuiPluginApi, TuiPluginMeta, TuiRouteDefinition } from "@opencode-ai/plugin/tui"
-import navbarPlugin, { currentSessionID, ITEMS, ROUTE_CONFIG, ROUTE_LOGS } from "../../../src/cli/cmd/tui/feature-plugins/system/navbar"
+import navbarPlugin, { currentSessionID, ITEMS } from "../../../src/cli/cmd/tui/feature-plugins/system/navbar"
 import configEditorPlugin, {
   isSensitive,
   kindOf,
@@ -51,25 +51,28 @@ const meta = {
   state: "same",
 } satisfies TuiPluginMeta
 
-test("navbar registers the session_top slot and exposes config and logs menus", async () => {
+test("navbar offers Session, Config and Logs and registers inline slots, not full screen routes", async () => {
   const captured: Captured = { routes: [], slots: [], commands: [] }
   await navbarPlugin.tui(makeApi(captured), undefined, meta)
 
+  // The three menus live in the session output area, so the navbar only
+  // registers the slot it draws itself and never registers a route.
   expect(captured.slots).toEqual(["session_top"])
-  expect(captured.commands).toEqual([ROUTE_CONFIG, ROUTE_LOGS])
-  expect(ROUTE_CONFIG).toBe("config.editor")
-  expect(ROUTE_LOGS).toBe("session.logs")
-  expect(ITEMS.map((item) => item.route)).toEqual([ROUTE_CONFIG, ROUTE_LOGS])
+  expect(captured.routes).toEqual([])
+  expect(ITEMS.map((item) => item.label)).toEqual(["Session", "Config", "Logs"])
+  expect(ITEMS.map((item) => item.panel)).toEqual(["session", "config", "logs"])
 })
 
-test("the config and logs menus point at routes that are actually registered", async () => {
+test("the config editor and the trajectory register inline session slots, not routes", async () => {
   const configCaptured: Captured = { routes: [], slots: [], commands: [] }
   await configEditorPlugin.tui(makeApi(configCaptured), undefined, meta)
-  expect(configCaptured.routes).toContain(ROUTE_CONFIG)
+  expect(configCaptured.routes).toEqual([])
+  expect(configCaptured.slots).toEqual(["session_config"])
 
   const logsCaptured: Captured = { routes: [], slots: [], commands: [] }
   await sessionLogsPlugin.tui(makeApi(logsCaptured), undefined, meta)
-  expect(logsCaptured.routes).toContain(ROUTE_LOGS)
+  expect(logsCaptured.routes).toEqual([])
+  expect(logsCaptured.slots).toEqual(["session_logs"])
 })
 
 test("currentSessionID resolves only inside a session route", () => {
@@ -80,16 +83,20 @@ test("currentSessionID resolves only inside a session route", () => {
 
 test("the trajectory binds to the selected session with clear precedence", () => {
   const onSession = makeApi({ routes: [], slots: [], commands: [] }, { name: "session", params: { sessionID: "live" } })
-  const offSession = makeApi({ routes: [], slots: [], commands: [] }, { name: "config.editor" })
+  const offSession = makeApi({ routes: [], slots: [], commands: [] }, { name: "session", params: { sessionID: "other" } })
+  const offRoute = makeApi({ routes: [], slots: [], commands: [] }, { name: "home" })
 
   // Explicit navigation param wins.
   expect(resolveSessionID(onSession, "explicit", "remembered")).toBe("explicit")
-  // Otherwise the session currently open on the router.
+  // The session captured when the panel opened wins over the current route:
+  // navigating elsewhere must not re-point the trajectory.
+  expect(resolveSessionID(offSession, undefined, "remembered", "bound")).toBe("bound")
+  // Without a captured session, the session currently open on the router.
   expect(resolveSessionID(onSession, undefined, "remembered")).toBe("live")
   // Outside a session route, the last observed session is used.
-  expect(resolveSessionID(offSession, undefined, "remembered")).toBe("remembered")
+  expect(resolveSessionID(offRoute, undefined, "remembered")).toBe("remembered")
   // Nothing known at all stays undefined rather than a frozen id.
-  expect(resolveSessionID(offSession, undefined, undefined)).toBeUndefined()
+  expect(resolveSessionID(offRoute, undefined, undefined)).toBeUndefined()
 })
 
 test("isSensitive flags credential-shaped config keys", () => {
