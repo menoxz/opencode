@@ -1,15 +1,12 @@
 import { expect, test } from "bun:test"
 import type { TuiPluginApi, TuiPluginMeta, TuiRouteDefinition } from "@opencode-ai/plugin/tui"
-import navbarPlugin, { ITEMS, ROUTE_CONFIG, ROUTE_LOGS } from "../../../src/cli/cmd/tui/feature-plugins/system/navbar"
+import navbarPlugin, { currentSessionID, ITEMS, ROUTE_CONFIG, ROUTE_LOGS } from "../../../src/cli/cmd/tui/feature-plugins/system/navbar"
 import configEditorPlugin, {
   isSensitive,
   kindOf,
   preview,
 } from "../../../src/cli/cmd/tui/feature-plugins/system/config-editor"
-import sessionLogsPlugin, {
-  currentSessionID,
-  partLabel,
-} from "../../../src/cli/cmd/tui/feature-plugins/system/session-logs"
+import sessionLogsPlugin, { partLabel, resolveSessionID } from "../../../src/cli/cmd/tui/feature-plugins/system/session-logs"
 
 type Captured = { routes: string[]; slots: string[]; commands: string[] }
 
@@ -79,6 +76,20 @@ test("currentSessionID resolves only inside a session route", () => {
   expect(currentSessionID(makeApi({ routes: [], slots: [], commands: [] }))).toBeUndefined()
   const api = makeApi({ routes: [], slots: [], commands: [] }, { name: "session", params: { sessionID: "s1" } })
   expect(currentSessionID(api)).toBe("s1")
+})
+
+test("the trajectory binds to the selected session with clear precedence", () => {
+  const onSession = makeApi({ routes: [], slots: [], commands: [] }, { name: "session", params: { sessionID: "live" } })
+  const offSession = makeApi({ routes: [], slots: [], commands: [] }, { name: "config.editor" })
+
+  // Explicit navigation param wins.
+  expect(resolveSessionID(onSession, "explicit", "remembered")).toBe("explicit")
+  // Otherwise the session currently open on the router.
+  expect(resolveSessionID(onSession, undefined, "remembered")).toBe("live")
+  // Outside a session route, the last observed session is used.
+  expect(resolveSessionID(offSession, undefined, "remembered")).toBe("remembered")
+  // Nothing known at all stays undefined rather than a frozen id.
+  expect(resolveSessionID(offSession, undefined, undefined)).toBeUndefined()
 })
 
 test("isSensitive flags credential-shaped config keys", () => {

@@ -1,9 +1,14 @@
 /** @jsxImportSource @opentui/solid */
 import type { TuiPlugin, TuiPluginApi } from "@opencode-ai/plugin/tui"
 import type { InternalTuiPlugin } from "../../plugin/internal"
-import { createMemo, For } from "solid-js"
+import { createEffect, createMemo, createSignal, For } from "solid-js"
 
 const id = "internal:navbar"
+
+// The session the operator is currently working in. The navbar is mounted
+// inside the session route, so it is the only place that observes it; the
+// trajectory view reads this signal to stay bound to the selected session.
+export const [selectedSessionID, setSelectedSessionID] = createSignal<string | undefined>(undefined)
 
 // Route names are shared with the feature plugins that register them. Keeping
 // them here makes the navbar the single source of truth for what it can open.
@@ -22,6 +27,9 @@ export const ITEMS = [
 function Navbar(props: { api: TuiPluginApi }) {
   const theme = () => props.api.theme.current
   const current = createMemo(() => props.api.route.current.name)
+
+  // Keep the published session in sync with whatever session is open.
+  createEffect(() => setSelectedSessionID(currentSessionID(props.api)))
 
   return (
     <box width="100%" flexDirection="row" gap={2} paddingLeft={1} paddingRight={1} flexShrink={0}>
