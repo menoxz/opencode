@@ -7,6 +7,10 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.3.31] - 2026-09-30
+
+### Changed
+- **Sorties pliables dans la vue Logs.** Les sorties volumineuses (entree d'outil, resultat d'outil, raisonnement) sont repliees par defaut derriere une ligne de resume `> label . N lignes . M chars`. `entree`/`espace` deplie ou replie une sortie (souris egalement) ; `e` deplie tout, `z` replie tout via un signal partage. Le contenu deplie est integral, sans troncature ; les sorties courtes restent affichees en ligne.
 ## [v2.3.30] - 2026-09-30
 
 ### Fixed
