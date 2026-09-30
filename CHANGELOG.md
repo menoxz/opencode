@@ -7,6 +7,10 @@ et ce projet adhÃ¨re au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.3.30] - 2026-09-30
+
+### Fixed
+- **Indentation du bloc inspect_batch supprimée.** L'encadrement ne porte plus de `paddingLeft` et l'espaceur de tête de deux espaces a été retiré : le titre et chaque ligne d'action commencent désormais à la première colonne. Le slot d'état (largeur 2) précède toujours l'argument, donc l'alignement icône/texte est conservé et les 16 lignes longues restent empilées à 40 colonnes (vérifié par test de rendu).
 ## [v2.3.29] - 2026-09-30
 
 ### Changed
