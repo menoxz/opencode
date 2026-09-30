@@ -13,6 +13,7 @@ import type {
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js"
 import { currentSessionID, selectedSessionID } from "./navbar"
 import { setSessionPanel } from "../../context/panel"
+import { OutputField, toggleAllOutput } from "../../component/output-disclosure"
 
 const id = "internal:session-logs"
 
@@ -116,8 +117,8 @@ function ToolBlock(props: { part: ToolPart }) {
       <text fg={toolColor(props.part, theme)} wrapMode="word">
         {`tool · ${props.part.tool} · ${status()}`}
       </text>
-      <Field label="input" value={toolInput(props.part)} wrap="char" />
-      <Field
+      <OutputField label="input" value={toolInput(props.part)} wrap="char" />
+      <OutputField
         label={status() === "error" ? "error" : "output"}
         value={toolResult(props.part)}
         color={status() === "error" ? theme.error : theme.text}
@@ -149,12 +150,7 @@ function PartBlock(props: { part: Part }) {
           border={["left"]}
           borderColor={theme.borderSubtle}
         >
-          <text fg={theme.textMuted} wrapMode="none">
-            reasoning
-          </text>
-          <text fg={theme.textMuted} wrapMode="word">
-            {props.part.text}
-          </text>
+          <OutputField label="reasoning" value={props.part.text} color={theme.textMuted} />
         </box>
       )
     case "tool":
@@ -312,10 +308,24 @@ function Trajectory(props: { api: TuiPluginApi; sessionID?: string; defaultOverr
         category: "Session",
         run: () => setSessionPanel("session"),
       },
+      {
+        name: "logs.expandAll",
+        title: "Expand all output",
+        category: "Session",
+        run: () => toggleAllOutput(true),
+      },
+      {
+        name: "logs.collapseAll",
+        title: "Collapse all output",
+        category: "Session",
+        run: () => toggleAllOutput(false),
+      },
     ],
     bindings: [
       { key: "escape", cmd: "logs.home", desc: "Back" },
       { key: "c", cmd: "logs.config", desc: "Config" },
+      { key: "e", cmd: "logs.expandAll", desc: "Expand all" },
+      { key: "z", cmd: "logs.collapseAll", desc: "Collapse all" },
       { key: "q", cmd: "logs.home", desc: "Session" },
     ],
   }))
@@ -354,7 +364,7 @@ function Trajectory(props: { api: TuiPluginApi; sessionID?: string; defaultOverr
         </Show>
       </box>
       <box flexShrink={0} paddingLeft={2} paddingRight={2} paddingBottom={1}>
-        <text fg={theme.textMuted}>          full session · live · esc back · c config · q session</text>
+        <text fg={theme.textMuted}>          full session · live · esc back · e/z fold output · c config · q session</text>
       </box>
     </box>
   )
