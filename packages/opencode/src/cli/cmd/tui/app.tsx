@@ -1005,9 +1005,6 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         <TimeToFirstDraw />
       </Show>
       <Show when={ready()}>
-        <box flexShrink={0}>
-          <TuiPluginRuntime.Slot name="app_top" />
-        </box>
         <box flexGrow={1} minHeight={0} flexDirection="column">
           <Switch>
             <Match when={route.data.type === "home"}>

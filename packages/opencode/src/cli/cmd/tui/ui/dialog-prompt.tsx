@@ -13,6 +13,8 @@ export type DialogPromptProps = {
   value?: string
   busy?: boolean
   busyText?: string
+  size?: "medium" | "large" | "xlarge"
+  height?: number
   onConfirm?: (value: string) => void
   onCancel?: () => void
 }
@@ -47,7 +49,7 @@ export function DialogPrompt(props: DialogPromptProps) {
   }))
 
   onMount(() => {
-    dialog.setSize("medium")
+    dialog.setSize(props.size ?? "medium")
     setTimeout(() => {
       if (!textarea || textarea.isDestroyed) return
       if (props.busy) return
@@ -85,7 +87,7 @@ export function DialogPrompt(props: DialogPromptProps) {
       <box gap={1}>
         {props.description}
         <textarea
-          height={3}
+          height={props.height ?? 3}
           ref={(val: TextareaRenderable) => {
             textarea = val
             setTextareaTarget(val)

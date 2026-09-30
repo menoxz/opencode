@@ -154,6 +154,8 @@ export type TuiDialogPromptProps = {
   value?: string
   busy?: boolean
   busyText?: string
+  size?: "medium" | "large" | "xlarge"
+  height?: number
   onConfirm?: (value: string) => void
   onCancel?: () => void
 }
@@ -453,7 +455,6 @@ export type TuiSidebarFileItem = {
 }
 
 export type TuiHostSlotMap = {
-  app_top: {}
   app: {}
   app_bottom: {}
   home_logo: {}
@@ -471,6 +472,7 @@ export type TuiHostSlotMap = {
   session_prompt_right: {
     session_id: string
   }
+  session_top: {}
   home_bottom: {}
   home_footer: {}
   sidebar_title: {

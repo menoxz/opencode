@@ -54,15 +54,15 @@ const meta = {
   state: "same",
 } satisfies TuiPluginMeta
 
-test("navbar registers the app_top slot and exposes config and logs menus", async () => {
+test("navbar registers the session_top slot and exposes config and logs menus", async () => {
   const captured: Captured = { routes: [], slots: [], commands: [] }
   await navbarPlugin.tui(makeApi(captured), undefined, meta)
 
-  expect(captured.slots).toEqual(["app_top"])
+  expect(captured.slots).toEqual(["session_top"])
   expect(captured.commands).toEqual([ROUTE_CONFIG, ROUTE_LOGS])
   expect(ROUTE_CONFIG).toBe("config.editor")
   expect(ROUTE_LOGS).toBe("session.logs")
-  expect(ITEMS.map((item) => item.route)).toEqual(["home", ROUTE_CONFIG, ROUTE_LOGS])
+  expect(ITEMS.map((item) => item.route)).toEqual([ROUTE_CONFIG, ROUTE_LOGS])
 })
 
 test("the config and logs menus point at routes that are actually registered", async () => {

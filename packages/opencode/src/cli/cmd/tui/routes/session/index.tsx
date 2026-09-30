@@ -1617,6 +1617,7 @@ export function Session() {
             />
           </Show>
           <box flexGrow={1} minHeight={0} paddingBottom={1} paddingLeft={2} paddingRight={2} gap={1}>
+            <TuiPluginRuntime.Slot name="session_top" />
             <Show when={session()}>
               <scrollbox
                 ref={(r) => (scroll = r)}

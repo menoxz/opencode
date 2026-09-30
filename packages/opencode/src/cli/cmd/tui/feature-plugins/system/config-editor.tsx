@@ -5,6 +5,7 @@ import { useTheme } from "@tui/context/theme"
 import { useBindings } from "../../keymap"
 import { globalConfigFile } from "@/config/config"
 import type { Config } from "@opencode-ai/sdk/v2"
+import { useTerminalDimensions } from "@opentui/solid"
 import { createMemo, createSignal, For, Show } from "solid-js"
 import { ROUTE_CONFIG, ROUTE_LOGS } from "./navbar"
 
@@ -46,7 +47,11 @@ function ConfigEditor(props: { api: TuiPluginApi }) {
   // overlay so the editor reflects a save immediately without a restart.
   const [overrides, setOverrides] = createSignal<Record<string, unknown>>({})
 
+  const dimensions = useTerminalDimensions()
   const file = createMemo(() => (scope() === "global" ? globalConfigFile() : props.api.state.path.config))
+  // Keep the value editor as tall as the terminal allows so a config entry is
+  // reviewed without scrolling.
+  const editorHeight = () => Math.max(8, Math.min(22, dimensions().height - 16))
 
   const entries = createMemo(() => {
     const merged = { ...(props.api.state.config as Record<string, unknown>), ...overrides() }
@@ -79,6 +84,8 @@ function ConfigEditor(props: { api: TuiPluginApi }) {
         title={`${key} → ${scope()}`}
         placeholder="JSON value"
         value={JSON.stringify(value, null, 2)}
+        size="xlarge"
+        height={editorHeight()}
         description={() => (
           <text fg={theme.textMuted}>
             {file()} — value is parsed as JSON before writing (merge, non destructive).
@@ -88,7 +95,6 @@ function ConfigEditor(props: { api: TuiPluginApi }) {
         onCancel={() => props.api.ui.dialog.clear()}
       />
     ))
-    props.api.ui.dialog.setSize("large")
   }
 
   async function save(key: string, text: string) {

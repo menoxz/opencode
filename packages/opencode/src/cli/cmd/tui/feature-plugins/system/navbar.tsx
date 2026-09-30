@@ -10,10 +10,13 @@ const id = "internal:navbar"
 export const ROUTE_CONFIG = "config.editor"
 export const ROUTE_LOGS = "session.logs"
 
+// This bar lives inside the session message column, so it is not a general
+// navigation affordance: it lists only the two contextual views. No "home"
+// entry (the user never needs to leave a session for it) and no branding or
+// version — the terminal already gives that context.
 export const ITEMS = [
-  { label: "home", route: "home" },
-  { label: "config", route: ROUTE_CONFIG },
-  { label: "logs", route: ROUTE_LOGS },
+  { label: "Config", route: ROUTE_CONFIG },
+  { label: "Logs", route: ROUTE_LOGS },
 ] as const
 
 function Navbar(props: { api: TuiPluginApi }) {
@@ -21,35 +24,28 @@ function Navbar(props: { api: TuiPluginApi }) {
   const current = createMemo(() => props.api.route.current.name)
 
   return (
-    <box
-      width="100%"
-      flexDirection="row"
-      gap={2}
-      paddingLeft={1}
-      paddingRight={1}
-      backgroundColor={theme().backgroundElement}
-      flexShrink={0}
-    >
-      <text fg={theme().primary}>
-        <b>opencodev2</b>
-      </text>
+    <box width="100%" flexDirection="row" gap={2} paddingLeft={1} paddingRight={1} flexShrink={0}>
       <For each={ITEMS}>
-        {(item) => (
-          <text
-            fg={current() === item.route ? theme().primary : theme().textMuted}
-            onMouseUp={() => props.api.route.navigate(item.route)}
-          >
-            {current() === item.route ? `[${item.label}]` : ` ${item.label} `}
-          </text>
-        )}
+        {(item) => {
+          const active = () => current() === item.route
+          // High-contrast chips: an active view is a filled primary block, an
+          // idle one keeps a lighter plate, so both read at a glance.
+          return (
+            <text
+              fg={active() ? theme().backgroundElement : theme().text}
+              bg={active() ? theme().primary : theme().backgroundMenu}
+              onMouseUp={() => props.api.route.navigate(item.route)}
+            >
+              {` ${item.label} `}
+            </text>
+          )
+        }}
       </For>
-      <box flexGrow={1} />
-      <text fg={theme().textMuted}>{`v${props.api.app.version}`}</text>
     </box>
   )
 }
 
-function currentSessionID(api: TuiPluginApi) {
+export function currentSessionID(api: TuiPluginApi) {
   const current = api.route.current
   if (current.name !== "session") return
   const sessionID = "params" in current ? current.params?.sessionID : undefined
@@ -60,7 +56,7 @@ const tui: TuiPlugin = async (api) => {
   api.slots.register({
     order: 50,
     slots: {
-      app_top() {
+      session_top() {
         return <Navbar api={api} />
       },
     },
