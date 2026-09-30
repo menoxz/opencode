@@ -7,6 +7,11 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.3.32] - 2026-09-30
+
+### Fixed
+- **Panneau de commandes "/" : fond opaque.** La boite externe de l'autocompletion (position absolue, zIndex 100) portait ses bordures gauche/droite sans peindre de fond : la conversation, ou les panneaux Config/Logs affiches derriere, ressortait dans ces colonnes et le panneau se confondait avec son arriere-plan. Elle peint desormais `backgroundMenu`, donc toutes ses cellules (bordures comprises) sont opaques. Couvert par un test de rendu qui superpose le panneau a un fond a fort contraste et refuse toute fuite de couleur.
+
 ## [v2.3.31] - 2026-09-30
 
 ### Changed
