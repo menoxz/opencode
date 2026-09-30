@@ -228,6 +228,11 @@ test("real terminal component updates from pending to completed then batch error
   expect(rows[0].indexOf("✓")).toBeLessThan(rows[0].indexOf("Read src/main.ts"))
   expect(rows[1].indexOf("✗")).toBeLessThan(rows[1].indexOf('Grep "export" in src'))
   expect(rows[2].indexOf("−")).toBeLessThan(rows[2].indexOf('Glob "**/*.ts"'))
+  // The block is flush with the transcript edge: neither the heading nor a row
+  // carries a leading indent, so the first column is already content.
+  const heading = frame.split("\n").find((line) => line.includes("inspect_batch"))!
+  expect(heading.startsWith("inspect_batch")).toBe(true)
+  for (const row of rows) expect(row[0]).not.toBe(" ")
   expect(frame).not.toContain("RAW")
   setState({ input, status: "error", error: "Denied" })
   await settled(app)
@@ -266,6 +271,9 @@ test("real narrow terminal keeps long child rows from wrapping into unbounded ou
   const rows = frame.split("\n").filter((line) => line.includes("✓"))
   expect(rows).toHaveLength(16)
   expect(rows.every((line) => line.includes("✓"))).toBe(true)
+  // De-indenting must not be traded for wrapping: every row still leads with its
+  // state glyph at the first column, at 40 columns wide.
+  for (const row of rows) expect(row[0]).not.toBe(" ")
 })
 
 test("six successful actions need only a heading and six rows", async () => {
