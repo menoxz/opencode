@@ -25,6 +25,7 @@ import {
 const KIND_LABEL: Record<TrajectoryKind, string> = {
   user: "USER",
   context: "CONTEXT",
+  injection: "INJECT",
   compacted: "COMPACTED",
   assistant: "ASSISTANT",
   tool: "TOOL",
@@ -34,6 +35,7 @@ const KIND_LABEL: Record<TrajectoryKind, string> = {
 const KIND_COLOR: Record<TrajectoryKind, string> = {
   user: "var(--icon-success-base)",
   context: "var(--icon-info-base)",
+  injection: "var(--syntax-type)",
   compacted: "var(--icon-weak-base)",
   assistant: "var(--syntax-property)",
   tool: "var(--icon-warning-base)",

@@ -18,7 +18,7 @@ import type { Message, Part, ToolPart, UserMessage } from "@opencode-ai/sdk/v2/c
  * harness equivalent is a tool invoked from inside another tool.
  */
 
-export type TrajectoryKind = "user" | "context" | "assistant" | "tool" | "subtool" | "compacted"
+export type TrajectoryKind = "user" | "context" | "injection" | "assistant" | "tool" | "subtool" | "compacted"
 export type TrajectoryLane = "input" | "model" | "tools"
 export type TrajectoryStatus = "pending" | "running" | "completed" | "error"
 export type TrajectoryMode = "duration" | "turns" | "calls"
@@ -77,6 +77,7 @@ export type TrajectoryInput = {
 const LANE_OF: Record<TrajectoryKind, TrajectoryLane> = {
   user: "input",
   context: "input",
+  injection: "input",
   compacted: "input",
   assistant: "model",
   tool: "tools",
@@ -229,23 +230,49 @@ export function buildTrajectory(input: TrajectoryInput): TrajectoryModel {
     turn += 1
     const active = turn
     const parts = input.parts(message.id)
-    const text = parts
-      .filter((part) => part.type === "text")
-      .map((part) => (part.type === "text" ? part.text : ""))
+    // Count before any record is emitted so an empty message can still fall back
+    // to a single USER record below.
+    const before = records.length
+    // An injected text part (tagged by the prompt loop with `metadata.injection`,
+    // e.g. the instruction-injection carrier) is not user prose: surface it as its
+    // own INJECTION record so the trajectory shows which context was injected
+    // instead of silently merging it into the user message.
+    const isInjection = (part: Part) => part.type === "text" && part.metadata?.injection !== undefined
+    const prose = parts
+      .filter((part): part is Extract<Part, { type: "text" }> => part.type === "text" && !isInjection(part))
+      .map((part) => part.text)
       .join("\n")
       .trim()
-    const before = records.length
-    if (text.length > 0) {
+    const injected = parts
+      .filter((part): part is Extract<Part, { type: "text" }> => part.type === "text" && isInjection(part))
+      .map((part) => ({ text: part.text, kind: String(part.metadata?.injection) }))
+
+    if (prose.length > 0) {
       push({
         index: nextIndex(),
         kind: "user",
         lane: "input",
         label: "user",
-        args: text,
+        args: prose,
         status: "completed",
         turn: active,
         messageID: message.id,
-        partID: parts.find((part) => part.type === "text")?.id,
+        partID: parts.find((part) => part.type === "text" && !isInjection(part))?.id,
+        start: message.time.created,
+        end: message.time.created,
+      })
+    }
+
+    for (const item of injected) {
+      push({
+        index: nextIndex(),
+        kind: "injection",
+        lane: "input",
+        label: `injected · ${item.kind}`,
+        status: "completed",
+        args: item.text,
+        turn: active,
+        messageID: message.id,
         start: message.time.created,
         end: message.time.created,
       })

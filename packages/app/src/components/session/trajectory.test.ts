@@ -180,6 +180,29 @@ describe("buildTrajectory", () => {
     expect(model.records[1]?.details).toBe("pasted.png")
   })
 
+  test("emits an INJECTION record for an injected text part instead of merging it into the user prose", () => {
+    const parts: Record<string, Part[]> = {
+      u1: [
+        text("ut", "u1", "do the thing"),
+        {
+          ...text("inj", "u1", "Instruction injections · 1 source(s)\nInstructions from: /repo/AGENTS.md"),
+          metadata: { injection: "instructions" },
+        },
+      ],
+      a1: [],
+    }
+    const model = buildTrajectory({
+      messages: [user({}), assistant({ id: "a1" })],
+      parts: (id) => parts[id] ?? [],
+      childOf: () => undefined,
+    })
+    expect(model.records.map((record) => record.kind)).toEqual(["user", "injection"])
+    expect(model.records[0]?.args).toBe("do the thing")
+    const injection = model.records.find((record) => record.kind === "injection")
+    expect(injection?.label).toBe("injected · instructions")
+    expect(injection?.args).toContain("Instructions from: /repo/AGENTS.md")
+  })
+
   test("returns an empty model for no messages", () => {
     const model = buildTrajectory({ messages: [], parts: () => [], childOf: () => undefined })
     expect(model.records).toEqual([])
