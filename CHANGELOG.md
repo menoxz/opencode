@@ -7,6 +7,11 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.3.35] - 2026-10-01
+
+### Fixed
+- **Le badge Queue ne colle plus a tous les prompts d'une session compactee.** Le tour servant d'ancre etait cherche dans tout le transcript : un tour interrompu laisse ouvert AVANT une compaction (le run ne le voit plus, donc il ne le sert ni ne l'attend) restait indefiniment "le plus ancien tour ouvert", et tout prompt soumis ensuite etait compare a lui et marque QUEUED. L'ancre est desormais cherchee dans la vue du run, bornee au debut de la queue de compaction retenue la plus recente (`MessageV2.filterCompacted`), comme le fait le backend. Verifie sur une session reelle : le prompt qui ouvre le run passe de QUEUED a aucun badge, un second prompt envoye pendant le run reste QUEUED. Nouveau test de non-regression reconstituant la forme reelle (tour abandonne avant la coupe) et refusant tout badge sur ce tour comme sur le prompt d'ancrage.
+
 ## [v2.3.34] - 2026-10-01
 
 ### Fixed
