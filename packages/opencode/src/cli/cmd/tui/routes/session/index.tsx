@@ -21,6 +21,7 @@ import { useProject } from "@tui/context/project"
 import { useSync } from "@tui/context/sync"
 import { useEvent } from "@tui/context/event"
 import { SplitBorder } from "@tui/component/border"
+import { DeliveryBadge } from "@tui/component/delivery-badge"
 import { Spinner } from "@tui/component/spinner"
 import { InspectBatchTree } from "@tui/component/inspect-batch-tree"
 import { CompactionDisclosure } from "@tui/component/compaction-summary"
@@ -38,7 +39,7 @@ import type {
 } from "@opencode-ai/sdk/v2"
 import { useLocal } from "@tui/context/local"
 import { Locale } from "@/util/locale"
-import { pendingAssistantID } from "./pending-turn"
+import { queuedUserStatus } from "./pending-turn"
 import type { Tool } from "@/tool/tool"
 import type { ReadTool } from "@/tool/read"
 import type { WriteTool } from "@/tool/write"
@@ -320,9 +321,9 @@ export function Session() {
   const visible = createMemo(() => !session()?.parentID && permissions().length === 0 && questions().length === 0)
   const disabled = createMemo(() => permissions().length > 0 || questions().length > 0)
 
-  const pending = createMemo(() =>
-    pendingAssistantID(messages(), sync.data.session_status?.[route.sessionID]?.type === "busy"),
-  )
+  // Whether the running run is active. A queued/steer badge is only meaningful
+  // while the session is busy; an idle session never shows one.
+  const busy = createMemo(() => sync.data.session_status?.[route.sessionID]?.type === "busy")
 
   const lastAssistant = createMemo(() => {
     return messages().findLast((x) => x.role === "assistant")
@@ -1726,7 +1727,12 @@ export function Session() {
                           }}
                           message={message as UserMessage}
                           parts={sync.data.part[message.id] ?? []}
-                          pending={pending()}
+                          status={queuedUserStatus({
+                            message,
+                            parts: sync.data.part[message.id] ?? [],
+                            messages: messages(),
+                            busy: busy(),
+                          })}
                         />
                       </Match>
                       <Match when={message.role === "assistant"}>
@@ -1824,7 +1830,7 @@ function UserMessage(props: {
   parts: Part[]
   onMouseUp: () => void
   index: number
-  pending?: string
+  status?: "queued" | "steer"
 }) {
   const ctx = use()
   const local = useLocal()
@@ -1842,10 +1848,11 @@ function UserMessage(props: {
   const files = createMemo(() => props.parts.flatMap((x) => (x.type === "file" ? [x] : [])))
   const { theme } = useTheme()
   const [hover, setHover] = createSignal(false)
-  const queued = createMemo(() => props.pending && props.message.id > props.pending)
+  const queued = createMemo(() => props.status === "queued")
+  const steer = createMemo(() => props.status === "steer")
   const color = createMemo(() => local.agent.color(props.message.agent))
   const queuedFg = createMemo(() => selectedForeground(theme, color()))
-  const metadataVisible = createMemo(() => queued() || ctx.showTimestamps())
+  const metadataVisible = createMemo(() => queued() || steer() || ctx.showTimestamps())
 
   return (
     <>
@@ -1892,7 +1899,7 @@ function UserMessage(props: {
               </box>
             </Show>
             <Show
-              when={queued()}
+              when={queued() || steer()}
               fallback={
                 <Show when={ctx.showTimestamps()}>
                   <text fg={theme.textMuted}>
@@ -1903,9 +1910,7 @@ function UserMessage(props: {
                 </Show>
               }
             >
-              <text fg={theme.textMuted}>
-                <span style={{ bg: color(), fg: queuedFg(), bold: true }}> QUEUED </span>
-              </text>
+              <DeliveryBadge status={props.status} bg={color()} fg={queuedFg()} />
             </Show>
           </box>
         </box>
