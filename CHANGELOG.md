@@ -7,6 +7,17 @@ et ce projet adhÃ¨re au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.3.33] - 2026-10-01
+
+### Added
+- **Injections d'instructions dans la vue Logs.** Le panneau Logs affiche desormais les injections d'instructions (AGENTS.md, config) avec leur provenance : le prompt persiste un porteur texte ignored+synthetic (metadata.injection) par message utilisateur, et la trajectoire rend le type et les fichiers sources.
+- **Version web de la vue Logs.** L'onglet Trajectory de la Web UI affiche ces injections comme enregistrements dedies (INJECT, injected / instructions) avec leur contenu (Instruction injections - N source(s)) et la liste des fichiers injectes (Instructions from:).
+
+### Fixed
+- **Home/End defilent a nouveau le transcript.** Les bindings de deplacement du buffer ne revendiquent plus home/end nus, donc session.first/session.last redeviennent atteignables.
+- **Historique non borne.** La synchronisation recupere tous les messages (plus de plafond a 100), permettant d'atteindre le premier message.
+- **Alignement du bloc inspect_batch.** La gouttiere paddingLeft est appliquee au niveau de la route (comme le texte simple), au lieu du composant dont le root faisait s'effondrer les lignes.
+
 ## [v2.3.32] - 2026-09-30
 
 ### Fixed
@@ -19,36 +30,36 @@ et ce projet adhÃ¨re au [Semantic Versioning](https://semver.org/lang/fr/).
 ## [v2.3.30] - 2026-09-30
 
 ### Fixed
-- **Indentation du bloc inspect_batch supprimée.** L'encadrement ne porte plus de `paddingLeft` et l'espaceur de tête de deux espaces a été retiré : le titre et chaque ligne d'action commencent désormais à la première colonne. Le slot d'état (largeur 2) précède toujours l'argument, donc l'alignement icône/texte est conservé et les 16 lignes longues restent empilées à 40 colonnes (vérifié par test de rendu).
+- **Indentation du bloc inspect_batch supprimï¿½e.** L'encadrement ne porte plus de `paddingLeft` et l'espaceur de tï¿½te de deux espaces a ï¿½tï¿½ retirï¿½ : le titre et chaque ligne d'action commencent dï¿½sormais ï¿½ la premiï¿½re colonne. Le slot d'ï¿½tat (largeur 2) prï¿½cï¿½de toujours l'argument, donc l'alignement icï¿½ne/texte est conservï¿½ et les 16 lignes longues restent empilï¿½es ï¿½ 40 colonnes (vï¿½rifiï¿½ par test de rendu).
 ## [v2.3.29] - 2026-09-30
 
 ### Changed
-- **Config et Logs s'affichent dans la zone de sortie de l'agent.** Les vues n'ouvrent plus de route plein écran : elles remplacent uniquement la zone de transcript de la session, qui reste montée avec son prompt et sa sidebar visibles. Un signal core `sessionPanel` sélectionne la vue (\session\ | \config\ | \logs\).
-- **Menu « Session » dans la navbar.** La navbar de session devient `Session | Config | Logs` ; l'entrée active est un bloc plein contrasté. Chaque panneau est servi par un slot hôte dédié (\session_config\, \session_logs\), et aucune route n'est plus enregistrée pour Config/Logs.
-- **Trajectoire liée à la session.** Le panneau Logs capture la session sur laquelle il a été ouvert plutôt que de suivre une navigation ultérieure ; la priorité de résolution reste `override ? session capturée ? route courante ? dernier observé`.
+- **Config et Logs s'affichent dans la zone de sortie de l'agent.** Les vues n'ouvrent plus de route plein ï¿½cran : elles remplacent uniquement la zone de transcript de la session, qui reste montï¿½e avec son prompt et sa sidebar visibles. Un signal core `sessionPanel` sï¿½lectionne la vue (\session\ | \config\ | \logs\).
+- **Menu ï¿½ Session ï¿½ dans la navbar.** La navbar de session devient `Session | Config | Logs` ; l'entrï¿½e active est un bloc plein contrastï¿½. Chaque panneau est servi par un slot hï¿½te dï¿½diï¿½ (\session_config\, \session_logs\), et aucune route n'est plus enregistrï¿½e pour Config/Logs.
+- **Trajectoire liï¿½e ï¿½ la session.** Le panneau Logs capture la session sur laquelle il a ï¿½tï¿½ ouvert plutï¿½t que de suivre une navigation ultï¿½rieure ; la prioritï¿½ de rï¿½solution reste `override ? session capturï¿½e ? route courante ? dernier observï¿½`.
 ## [v2.3.28] - 2026-09-30
 
 ### Fixed
-- **Puce retirée devant les appels d'outils.** La puce initiale (.) rendue devant chaque ligne d'action d'un inspect_batch dans le transcript a été supprimée. Le noeud texte de tête est conservé mais rendu invisible (espaceur de deux espaces) : sa suppression complète replie toutes les lignes enfants sur une seule ligne aux largeurs étroites, comportement verrouillé par le test de vue. Les assertions du test sélectionnent désormais les lignes par leur contenu et leur glyphe d'état au lieu de la puce.
+- **Puce retirï¿½e devant les appels d'outils.** La puce initiale (.) rendue devant chaque ligne d'action d'un inspect_batch dans le transcript a ï¿½tï¿½ supprimï¿½e. Le noeud texte de tï¿½te est conservï¿½ mais rendu invisible (espaceur de deux espaces) : sa suppression complï¿½te replie toutes les lignes enfants sur une seule ligne aux largeurs ï¿½troites, comportement verrouillï¿½ par le test de vue. Les assertions du test sï¿½lectionnent dï¿½sormais les lignes par leur contenu et leur glyphe d'ï¿½tat au lieu de la puce.
 ## [v2.3.27] - 2026-09-30
 
 ### Added
-- **Trajectoire de session (menu Logs).** Le menu « logs » devient une vue plein écran dépendant de la session sélectionnée dans le TUI, permettant de retracer l'intégralité du déroulé sans troncature : prompts utilisateur, texte assistant, raisonnement, appels d'outils avec entrée (JSON) ET sortie/erreur complètes, frontières d'étapes (tokens in/out/reasoning, cache, coût), sous-tâches (agent, description, command, prompt), fichiers, patches, snapshots, retries et compaction. La vue suit la session courante via un signal vivant publié par la navbar (selectedSessionID) et retombe sur la session du routeur, puis sur la dernière observée.
+- **Trajectoire de session (menu Logs).** Le menu ï¿½ logs ï¿½ devient une vue plein ï¿½cran dï¿½pendant de la session sï¿½lectionnï¿½e dans le TUI, permettant de retracer l'intï¿½gralitï¿½ du dï¿½roulï¿½ sans troncature : prompts utilisateur, texte assistant, raisonnement, appels d'outils avec entrï¿½e (JSON) ET sortie/erreur complï¿½tes, frontiï¿½res d'ï¿½tapes (tokens in/out/reasoning, cache, coï¿½t), sous-tï¿½ches (agent, description, command, prompt), fichiers, patches, snapshots, retries et compaction. La vue suit la session courante via un signal vivant publiï¿½ par la navbar (selectedSessionID) et retombe sur la session du routeur, puis sur la derniï¿½re observï¿½e.
 
 ### Changed
-- **Barre de navigation relocalisée dans la colonne des messages.** Elle n'occupe plus toute la largeur du terminal : un slot hôte session_top est rendu uniquement au-dessus de la liste des messages de l'agent. Le logo « opencodev2 », la version et l'entrée « home » ont été retirés ; les entrées restantes (Config, Logs) sont des pastilles à fort contraste, l'entrée active sur fond plein.
-- **Éditeur de configuration agrandi.** Le composant d'édition d'une valeur (DialogPrompt) accepte une taille xlarge et une hauteur calculée d'après le terminal, affichant davantage d'information sans défilement.
+- **Barre de navigation relocalisï¿½e dans la colonne des messages.** Elle n'occupe plus toute la largeur du terminal : un slot hï¿½te session_top est rendu uniquement au-dessus de la liste des messages de l'agent. Le logo ï¿½ opencodev2 ï¿½, la version et l'entrï¿½e ï¿½ home ï¿½ ont ï¿½tï¿½ retirï¿½s ; les entrï¿½es restantes (Config, Logs) sont des pastilles ï¿½ fort contraste, l'entrï¿½e active sur fond plein.
+- **ï¿½diteur de configuration agrandi.** Le composant d'ï¿½dition d'une valeur (DialogPrompt) accepte une taille xlarge et une hauteur calculï¿½e d'aprï¿½s le terminal, affichant davantage d'information sans dï¿½filement.
 
 ### Tests
-- 	est/cli/tui/navbar.test.ts : navbar (slot session_top, commandes config.editor/session.logs, items = Config, Logs) ; liaison de la trajectoire à la session sélectionnée (précédence override > session live > session mémorisée) ; masquage des clés sensibles ; troncature d'aperçu ; classification des valeurs ; résumé des fragments.
+- 	est/cli/tui/navbar.test.ts : navbar (slot session_top, commandes config.editor/session.logs, items = Config, Logs) ; liaison de la trajectoire ï¿½ la session sï¿½lectionnï¿½e (prï¿½cï¿½dence override > session live > session mï¿½morisï¿½e) ; masquage des clï¿½s sensibles ; troncature d'aperï¿½u ; classification des valeurs ; rï¿½sumï¿½ des fragments.
 ## [v2.3.26] - 2026-09-29
 
 ### Added
-- **Barre de navigation supérieure avec menus Config et Logs.** Le TUI n'avait aucun slot supérieur persistant : un slot d'hôte pp_top est désormais rendu au-dessus de toutes les routes, et le plugin interne 
-avbar y affiche des entrées cliquables home/config/logs (une entrée active est surlignée). Le menu **config** ouvre un éditeur plein écran (config.editor) : liste des clés triées, portée globale ou projet (bascule Tab, défaut global), édition d'une valeur parsée en JSON, écriture par les endpoints de merge non destructifs existants (config.update / global.config.update) - le JSONC et les commentaires sont préservés, et les clés de type piKey/	oken/secret/password sont masquées à l'affichage. Un overlay local immédiat compense le fait que sync.data.config n'est relu qu'au démarrage. Le menu **logs** ouvre l'historique par tour de la session courante (session.logs) : un bloc par message (rôle, agent, modèle, tokens, coût, erreur, statut en cours) avec ses fragments. Les deux vues sont aussi atteignables par la palette et les commandes slash /config et /logs.
+- **Barre de navigation supï¿½rieure avec menus Config et Logs.** Le TUI n'avait aucun slot supï¿½rieur persistant : un slot d'hï¿½te pp_top est dï¿½sormais rendu au-dessus de toutes les routes, et le plugin interne 
+avbar y affiche des entrï¿½es cliquables home/config/logs (une entrï¿½e active est surlignï¿½e). Le menu **config** ouvre un ï¿½diteur plein ï¿½cran (config.editor) : liste des clï¿½s triï¿½es, portï¿½e globale ou projet (bascule Tab, dï¿½faut global), ï¿½dition d'une valeur parsï¿½e en JSON, ï¿½criture par les endpoints de merge non destructifs existants (config.update / global.config.update) - le JSONC et les commentaires sont prï¿½servï¿½s, et les clï¿½s de type piKey/	oken/secret/password sont masquï¿½es ï¿½ l'affichage. Un overlay local immï¿½diat compense le fait que sync.data.config n'est relu qu'au dï¿½marrage. Le menu **logs** ouvre l'historique par tour de la session courante (session.logs) : un bloc par message (rï¿½le, agent, modï¿½le, tokens, coï¿½t, erreur, statut en cours) avec ses fragments. Les deux vues sont aussi atteignables par la palette et les commandes slash /config et /logs.
 
 ### Tests
-- 	est/cli/tui/navbar.test.ts : la navbar enregistre bien le slot pp_top et les commandes config.editor/session.logs ; les deux menus pointent vers des routes réellement enregistrées par leurs plugins ; ITEMS = [home, config.editor, session.logs] ; masquage des clés sensibles ; troncature de l'aperçu ; classification des valeurs ; résolution du sessionID courant ; résumé des fragments.
+- 	est/cli/tui/navbar.test.ts : la navbar enregistre bien le slot pp_top et les commandes config.editor/session.logs ; les deux menus pointent vers des routes rï¿½ellement enregistrï¿½es par leurs plugins ; ITEMS = [home, config.editor, session.logs] ; masquage des clï¿½s sensibles ; troncature de l'aperï¿½u ; classification des valeurs ; rï¿½solution du sessionID courant ; rï¿½sumï¿½ des fragments.
 ## [v2.3.25] - 2026-09-29
 
 ### Added
