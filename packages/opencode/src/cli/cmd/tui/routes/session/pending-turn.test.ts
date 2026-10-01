@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { queuedUserStatus, type QueuedStatus } from "./pending-turn"
+import { queuedUserStatus, visibleFromID, type QueuedStatus } from "./pending-turn"
 
 // Message ids sort lexicographically in real life (MessageID.ascending); these
 // fixtures preserve that so the `assistant.id > steer.id` comparison is
@@ -23,9 +23,52 @@ const status = (
   parts: readonly { type: string; metadata?: { [key: string]: unknown } }[],
   messages: readonly unknown[],
   busy = true,
-): QueuedStatus => queuedUserStatus({ message, parts, messages, busy } as never)
+  visibleFrom?: string,
+): QueuedStatus => queuedUserStatus({ message, parts, messages, busy, visibleFrom } as never)
 
 describe("TUI user prompt delivery status", () => {
+  test("an interrupted turn from before a compaction cannot hold the anchor (anomaly: every submit showed QUEUED)", () => {
+    // The real shape: one abandoned turn left open at the head of the session
+    // (its steps all finished `tool-calls`, no terminal step ever landed), a
+    // compaction cut much later, and every turn after it properly closed.
+    const abandoned = user("01")
+    const compaction = user("09")
+    const closed = user("11")
+    const running = user("13")
+    const messages = [
+      abandoned,
+      assistant("02", "01", { finish: "tool-calls", time: { created: 1, completed: 2 } }),
+      compaction,
+      assistant("10", "09", { finish: "stop", time: { created: 3, completed: 4 } }),
+      closed,
+      assistant("12", "11", { finish: "stop", time: { created: 5, completed: 6 } }),
+      running,
+      assistant("14", "13", { finish: "tool-calls" }),
+    ]
+    // Without the cut the abandoned turn is "the oldest open turn" forever, so
+    // the prompt actually being served is badged queued.
+    expect(status(running, running.parts, messages, true, undefined)).toBe("queued")
+    // Bounded to the run's view, that prompt is the one being served.
+    expect(status(running, running.parts, messages, true, "09")).toBeUndefined()
+    // A genuine queue behind it is still queued.
+    const queued = user("15")
+    expect(status(queued, queued.parts, [...messages, queued], true, "09")).toBe("queued")
+    // And the abandoned pre-cut turn never shows anything.
+    expect(status(abandoned, abandoned.parts, messages, true, "09")).toBeUndefined()
+  })
+
+  test("the cut is the newest retained compaction tail, whatever order parts come in", () => {
+    const partsOf = (id: string) =>
+      id === "03"
+        ? [{ type: "compaction", tail_start_id: "07" }]
+        : id === "09"
+          ? [{ type: "text" }, { type: "compaction", tail_start_id: "11" }]
+          : []
+    const messages = [user("01"), user("03"), user("09")]
+    expect(visibleFromID(messages, partsOf)).toBe("11")
+    expect(visibleFromID(messages, () => [])).toBeUndefined()
+  })
+
   test("the prompt that opened the running turn is never queued (anomaly: every submit showed QUEUED)", () => {
     // Submitted to an idle session: the run starts on it, it waits for nobody.
     const first = user("01")

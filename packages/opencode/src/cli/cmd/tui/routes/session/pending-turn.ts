@@ -14,6 +14,11 @@
 // every submitted prompt look queued. Excluding the oldest open turn (the prompt
 // the active run is anchored on) is what separates "waiting" from "running".
 //
+// That anchor must be read in the run's own view, not the whole transcript:
+// `visibleFrom` bounds the scan to MessageV2.filterCompacted's cut, so a turn
+// left open by an interrupted run from before a compaction cannot hold the
+// anchor and badge every later submit.
+//
 // `queued`: an older prompt's turn is still open (the run is serving someone
 // ahead of this one) AND this prompt's own turn has not closed.
 //
@@ -27,7 +32,7 @@ type MessageLike = {
   error?: unknown
   parentID?: string
 }
-type PartLike = { type: string; metadata?: { [key: string]: unknown } }
+type PartLike = { type: string; metadata?: { [key: string]: unknown }; tail_start_id?: unknown }
 
 export type QueuedStatus = "queued" | "steer" | undefined
 
@@ -51,14 +56,43 @@ const steerServed = (messages: readonly MessageLike[], steerID: string) =>
 // still open. It is the head of the FIFO the run is anchored on, so it is
 // running — not waiting — and must never carry a delivery badge. Compared by id
 // rather than position so a transcript rendered out of order still agrees.
-const servingUserID = (messages: readonly MessageLike[]) => {
+//
+// The scan is bounded by `visibleFrom`, the newest retained compaction tail.
+// The run anchors on MessageV2.filterCompacted's view, so a turn left open
+// BEFORE that cut — an interrupted run from before a compaction — is invisible
+// to the run and can never be the prompt being served. Counting it as the
+// anchor pinned it forever and badged every later submit QUEUED.
+const servingUserID = (messages: readonly MessageLike[], visibleFrom?: string) => {
   let oldest: string | undefined
   for (const message of messages) {
     if (message.role !== "user") continue
+    if (visibleFrom !== undefined && message.id < visibleFrom) continue
     if (turnClosed(messages, message.id)) continue
     if (oldest === undefined || message.id < oldest) oldest = message.id
   }
   return oldest
+}
+
+// The oldest message the active run can still see: the start of the newest
+// retained compaction tail. MessageV2.filterCompacted drops everything before
+// it, so the run can neither be serving nor waiting behind a turn older than
+// this. Comparing the cut by max id keeps it correct whatever order the
+// compacted transcript is rendered in.
+export function visibleFromID(
+  messages: readonly MessageLike[],
+  partsOf: (messageID: string) => readonly PartLike[],
+): string | undefined {
+  let cut: string | undefined
+  for (const message of messages) {
+    if (message.role !== "user") continue
+    for (const part of partsOf(message.id)) {
+      if (part.type !== "compaction") continue
+      const tail = part.tail_start_id
+      if (typeof tail !== "string") continue
+      if (cut === undefined || tail > cut) cut = tail
+    }
+  }
+  return cut
 }
 
 export function queuedUserStatus(input: {
@@ -66,13 +100,17 @@ export function queuedUserStatus(input: {
   parts: readonly PartLike[]
   messages: readonly MessageLike[]
   busy: boolean
+  // Oldest message the active run can still see — the newest compaction tail
+  // start (MessageV2.filterCompacted). Undefined means no compaction ran, so
+  // the whole transcript is in view.
+  visibleFrom?: string
 }): QueuedStatus {
   if (input.message.role !== "user") return undefined
   // An idle session never shows a delivery badge: a stale marker must not
   // survive a settled or interrupted run.
   if (!input.busy) return undefined
   // Nothing is waiting: no open turn means no run to queue behind.
-  const serving = servingUserID(input.messages)
+  const serving = servingUserID(input.messages, input.visibleFrom)
   if (serving === undefined) return undefined
   // At or before the served prompt this submit is not waiting for anything:
   // either the run is serving it right now, or a later turn already closed it.

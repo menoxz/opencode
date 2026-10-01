@@ -39,7 +39,7 @@ import type {
 } from "@opencode-ai/sdk/v2"
 import { useLocal } from "@tui/context/local"
 import { Locale } from "@/util/locale"
-import { queuedUserStatus } from "./pending-turn"
+import { queuedUserStatus, visibleFromID } from "./pending-turn"
 import type { Tool } from "@/tool/tool"
 import type { ReadTool } from "@/tool/read"
 import type { WriteTool } from "@/tool/write"
@@ -324,6 +324,9 @@ export function Session() {
   // Whether the running run is active. A queued/steer badge is only meaningful
   // while the session is busy; an idle session never shows one.
   const busy = createMemo(() => sync.data.session_status?.[route.sessionID]?.type === "busy")
+  // Oldest message the run can still see, so a turn left open before the latest
+  // compaction cannot be mistaken for the one being served.
+  const visibleFrom = createMemo(() => visibleFromID(messages(), (id) => sync.data.part[id] ?? []))
 
   const lastAssistant = createMemo(() => {
     return messages().findLast((x) => x.role === "assistant")
@@ -1732,6 +1735,7 @@ export function Session() {
                             parts: sync.data.part[message.id] ?? [],
                             messages: messages(),
                             busy: busy(),
+                            visibleFrom: visibleFrom(),
                           })}
                         />
                       </Match>
