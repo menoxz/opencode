@@ -99,3 +99,16 @@ test("a served prompt shows no badge", async () => {
   expect(app.captureCharFrame()).not.toContain("QUEUED")
   expect(app.captureCharFrame()).not.toContain("STEER")
 })
+
+test("the prompt that opened the running turn shows no badge", async () => {
+  const first = user("01")
+  const running = [first, assistant("02", "01", { finish: "tool-calls" })]
+  const app = await testRender(() => providers(() => <DeliveryBadge status={statusOf(first, running)} bg={BG} fg={FG} />), {
+    width: 40,
+    height: 3,
+  })
+  renderers.push(app.renderer)
+  await settled(app)
+  expect(app.captureCharFrame()).not.toContain("QUEUED")
+  expect(app.captureCharFrame()).not.toContain("STEER")
+})

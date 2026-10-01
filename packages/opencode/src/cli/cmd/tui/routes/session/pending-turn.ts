@@ -6,11 +6,16 @@
 // this mirrors those predicates locally — small, pure, and testable without
 // mounting the TUI.
 //
-// `queued`: the prompt's own turn has not closed — no assistant child reached a
-// terminal state. This deliberately does NOT look at the "latest open
-// assistant": between two steps of the running turn that assistant carries
-// `finish: "tool-calls"`, and keying on it dropped the badge mid-run, making a
-// still-queued prompt look already injected.
+// QUEUED means "submitted while a turn was already in flight", nothing else.
+// The prompt that OPENED the active run is being served right now, never queued:
+// it waits for nobody. Its turn stays open for the whole run (its step assistant
+// carries `finish: "tool-calls"` between steps), so `turnClosed` alone would
+// keep badging it QUEUED from submit to completion — the regression that made
+// every submitted prompt look queued. Excluding the oldest open turn (the prompt
+// the active run is anchored on) is what separates "waiting" from "running".
+//
+// `queued`: an older prompt's turn is still open (the run is serving someone
+// ahead of this one) AND this prompt's own turn has not closed.
 //
 // `steer`: the prompt carries the steer flag and no assistant has been written
 // after it yet — the running run serves it at its next step.
@@ -42,6 +47,20 @@ const turnClosed = (messages: readonly MessageLike[], userID: string) =>
 const steerServed = (messages: readonly MessageLike[], steerID: string) =>
   messages.some((m) => m.role === "assistant" && m.id > steerID)
 
+// The prompt the active run is serving: the oldest user prompt whose turn is
+// still open. It is the head of the FIFO the run is anchored on, so it is
+// running — not waiting — and must never carry a delivery badge. Compared by id
+// rather than position so a transcript rendered out of order still agrees.
+const servingUserID = (messages: readonly MessageLike[]) => {
+  let oldest: string | undefined
+  for (const message of messages) {
+    if (message.role !== "user") continue
+    if (turnClosed(messages, message.id)) continue
+    if (oldest === undefined || message.id < oldest) oldest = message.id
+  }
+  return oldest
+}
+
 export function queuedUserStatus(input: {
   message: MessageLike
   parts: readonly PartLike[]
@@ -52,6 +71,12 @@ export function queuedUserStatus(input: {
   // An idle session never shows a delivery badge: a stale marker must not
   // survive a settled or interrupted run.
   if (!input.busy) return undefined
+  // Nothing is waiting: no open turn means no run to queue behind.
+  const serving = servingUserID(input.messages)
+  if (serving === undefined) return undefined
+  // At or before the served prompt this submit is not waiting for anything:
+  // either the run is serving it right now, or a later turn already closed it.
+  if (input.message.id <= serving) return undefined
 
   const steer = input.parts.some(
     (part) => part.type === "text" && (part.metadata as { steer?: unknown } | undefined)?.steer === true,

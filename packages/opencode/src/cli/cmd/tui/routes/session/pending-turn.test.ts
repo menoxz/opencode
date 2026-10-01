@@ -26,6 +26,39 @@ const status = (
 ): QueuedStatus => queuedUserStatus({ message, parts, messages, busy } as never)
 
 describe("TUI user prompt delivery status", () => {
+  test("the prompt that opened the running turn is never queued (anomaly: every submit showed QUEUED)", () => {
+    // Submitted to an idle session: the run starts on it, it waits for nobody.
+    const first = user("01")
+    expect(status(first, first.parts, [first])).toBeUndefined()
+    // Same prompt once its own run is stepping: still not queued.
+    const stepping = [first, assistant("02", "01", { finish: "tool-calls" })]
+    expect(status(first, first.parts, stepping)).toBeUndefined()
+    // And once the run is between two steps.
+    const between = [first, assistant("02", "01", { finish: "tool-calls", time: { created: 1, completed: 2 } })]
+    expect(status(first, first.parts, between)).toBeUndefined()
+  })
+
+  test("only the prompts behind the served one are queued", () => {
+    const first = user("01")
+    const second = user("03")
+    const third = user("05")
+    const running = [first, assistant("02", "01", { finish: "tool-calls" }), second, third]
+    expect(status(first, first.parts, running)).toBeUndefined()
+    expect(status(second, second.parts, running)).toBe("queued")
+    expect(status(third, third.parts, running)).toBe("queued")
+  })
+
+  test("the badge follows the FIFO: a queued prompt stops being queued once the run serves it", () => {
+    const first = user("01")
+    const second = user("03")
+    const running = [first, assistant("02", "01", { finish: "tool-calls" }), second]
+    expect(status(second, second.parts, running)).toBe("queued")
+    // First turn closed: the run now serves the second prompt.
+    const served = [first, assistant("02", "01", { finish: "stop", time: { created: 1, completed: 2 } }), second]
+    expect(status(second, second.parts, served)).toBeUndefined()
+    expect(status(first, first.parts, served)).toBeUndefined()
+  })
+
   test("a default submit stays queued across the running turn's steps (anomaly: badge vanished mid-run)", () => {
     const q = user("03")
     // Running run anchored on "01"; its step assistant keeps tool-calling.
