@@ -7,6 +7,11 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.3.34] - 2026-10-01
+
+### Fixed
+- **Le statut Queue ne s'applique plus au prompt qui ouvre le tour.** Le badge ne marque plus QUEUED le prompt que le run en cours est en train de servir : un prompt soumis a une session au repos ouvre le tour et n'attend personne, donc seuls les prompts envoyes alors qu'un tour est deja en vol restent QUEUED. Le statut compare desormais le message au tour ouvert le plus ancien (celui sur lequel le run est ancre), ce qui separe "en attente" de "en cours" ; STEER est inchange. Couvert par des tests unitaires et par un test de rendu refusant tout badge sur le prompt d'ancrage.
+
 ## [v2.3.33] - 2026-10-01
 
 ### Added
