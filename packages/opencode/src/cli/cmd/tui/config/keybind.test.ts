@@ -30,4 +30,24 @@ describe("keybind defaults", () => {
     expect(steer).toEqual(["alt+s"])
     expect(claimed("prompt_steer")).not.toContain("alt+s")
   })
+
+  test("bare Home/End scroll the transcript instead of the input buffer", () => {
+    // Regression: the buffer-move bindings claimed bare home/end, so while the input
+    // had focus the keymap shadowed session.first/session.last and Home/End stopped
+    // scrolling the component under the cursor.
+    expect(keysOf(Definitions.messages_first.default)).toContain("home")
+    expect(keysOf(Definitions.messages_last.default)).toContain("end")
+    for (const buffer of [
+      Definitions.input_buffer_home.default,
+      Definitions.input_buffer_end.default,
+      Definitions.input_line_home.default,
+      Definitions.input_line_end.default,
+    ]) {
+      expect(keysOf(buffer)).not.toContain("home")
+      expect(keysOf(buffer)).not.toContain("end")
+    }
+    // The buffer start/end stay reachable through an explicit modifier.
+    expect(keysOf(Definitions.input_buffer_home.default)).toContain("ctrl+home")
+    expect(keysOf(Definitions.input_buffer_end.default)).toContain("ctrl+end")
+  })
 })

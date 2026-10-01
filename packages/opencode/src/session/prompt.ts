@@ -2187,6 +2187,36 @@ export const layer = Layer.effect(
               instruction.system().pipe(Effect.orDie),
             ])
             const instructions = process.env.OPENCODE_NATIVE_EVAL === "1" ? [] : loadedInstructions
+            // Record instruction-injection provenance so the TUI Logs panel can show
+            // which sources were injected. The carrier is synthetic AND ignored:
+            // `MessageV2.toModelMessagesEffect` drops ignored text and the transcript
+            // hides synthetic/ignored parts, so it never reaches the model or the
+            // visible conversation. Persisted once per user message.
+            const instructionSources = instructions
+              .map((entry) => entry.split("\n", 1)[0].trim())
+              .filter((line) => line.startsWith("Instructions from:"))
+            const instructionUser = msgs.findLast((m) => m.info.role === "user" && m.info.id === lastUser.id)
+            const instructionRecorded = instructionUser?.parts.some(
+              (part) => part.type === "text" && part.metadata?.injection === "instructions",
+            )
+            if (instructionSources.length > 0 && !instructionRecorded) {
+              const recorded = yield* sessions.updatePart({
+                id: PartID.ascending(),
+                messageID: lastUser.id,
+                sessionID,
+                type: "text",
+                text: [
+                  `Instruction injections · ${instructionSources.length} source(s)`,
+                  ...instructionSources,
+                ].join("\n"),
+                synthetic: true,
+                ignored: true,
+                metadata: { injection: "instructions", sources: instructionSources },
+              })
+              // Keep the in-memory list in sync so later steps of the same turn see
+              // the carrier and skip a second insert.
+              instructionUser?.parts.push(recorded)
+            }
             const planPath = SessionWorkPlan.pathFor(sessionID, ctx)
             const plan = (yield* fsys.existsSafe(planPath))
               ? SessionWorkPlan.reference({ sessionID, planPath, todos: yield* todos.get(sessionID) })

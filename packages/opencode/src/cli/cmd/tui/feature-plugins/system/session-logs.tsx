@@ -36,8 +36,12 @@ export function resolveSessionID(
 // Compact one-line label for a part, used as the trajectory section header.
 export function partLabel(part: Part) {
   switch (part.type) {
-    case "text":
+    case "text": {
+      const injection = part.metadata?.injection
+      if (typeof injection === "string") return `text · injection · ${injection}`
+      if (part.ignored) return "text (ignored)"
       return part.synthetic ? "text (synthetic)" : "text"
+    }
     case "reasoning":
       return "reasoning"
     case "tool":
@@ -128,18 +132,26 @@ function ToolBlock(props: { part: ToolPart }) {
   )
 }
 
-function PartBlock(props: { part: Part }) {
+export function PartBlock(props: { part: Part }) {
   const { theme } = useTheme()
 
   switch (props.part.type) {
-    case "text":
+    case "text": {
+      const injection = props.part.metadata?.injection
+      const sources = props.part.metadata?.sources
       return (
         <box flexDirection="column" flexShrink={0} marginTop={1}>
-          <text fg={theme.text} wrapMode="word">
+          <Show when={typeof injection === "string"}>
+            <text fg={theme.secondary} wrapMode="word">
+              {`injected · ${String(injection)}${Array.isArray(sources) ? ` · ${sources.length} source(s)` : ""}`}
+            </text>
+          </Show>
+          <text fg={props.part.ignored ? theme.textMuted : theme.text} wrapMode="word">
             {props.part.text}
           </text>
         </box>
       )
+    }
     case "reasoning":
       return (
         <box

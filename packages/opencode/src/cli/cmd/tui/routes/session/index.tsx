@@ -2211,17 +2211,21 @@ function ToolPart(props: { last: boolean; part: ToolPart; message: AssistantMess
     <Show when={!shouldHide()}>
       <Switch>
         <Match when={props.part.tool === "inspect_batch"}>
-          <InspectBatchTree
-            input={props.part.state.input}
-            output={toolprops.output}
-            metadata={toolprops.metadata}
-            status={props.part.state.status}
-            error={props.part.state.status === "error" ? props.part.state.error : undefined}
-            color={theme.text}
-            muted={theme.textMuted}
-            success={theme.success}
-            errorColor={theme.error}
-          />
+          {/* Give the batch block the same left gutter as the prose, at the call
+              site: a gutter on the component's own root collapses its rows. */}
+          <box paddingLeft={3} flexShrink={0}>
+            <InspectBatchTree
+              input={props.part.state.input}
+              output={toolprops.output}
+              metadata={toolprops.metadata}
+              status={props.part.state.status}
+              error={props.part.state.status === "error" ? props.part.state.error : undefined}
+              color={theme.text}
+              muted={theme.textMuted}
+              success={theme.success}
+              errorColor={theme.error}
+            />
+          </box>
         </Match>
         <Match when={props.part.tool === ShellID.ToolID}>
           <Shell {...toolprops} />
