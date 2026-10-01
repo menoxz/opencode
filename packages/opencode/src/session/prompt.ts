@@ -2313,7 +2313,69 @@ export const layer = Layer.effect(
             // The skills list is stable for the whole turn and can be large: unlike the
             // per-step progress blocks below, it belongs to the cached prefix.
             if (skills) system.push(skills)
-            contextSummary.add("skills", skills ? "inject relevant skill summary" : "no relevant skill summary", skills, Date.now() - skillsStart, { cached: cachedSkills.cached })
+contextSummary.add("skills", skills ? "inject relevant skill summary" : "no relevant skill summary", skills, Date.now() - skillsStart, { cached: cachedSkills.cached })
+
+            // Record what was ACTUALLY injected into the model's context this turn:
+            // system/agent prompt, environment, AGENTS.md instruction files and skills.
+            // The context summary above only reports sizes, so without this carrier
+            // the web Logs page cannot show the real prompt context or its
+            // provenance. Same contract as the instructions carrier: synthetic AND
+            // ignored, so `MessageV2.toModelMessagesEffect` drops it and the
+            // transcript hides it — it never reaches the model or the visible
+            // conversation. Recorded once per user message.
+            const corePrompt = agent.prompt ?? PROMPT_CORE
+            const contextSections = [
+              {
+                section: "core",
+                label: `${agent.prompt ? "agent prompt" : "system prompt (PROMPT_CORE)"} · agent ${agent.name}`,
+                text: corePrompt,
+              },
+              {
+                section: "env",
+                label: "environment",
+                text: [env.stable, env.runtime].filter(Boolean).join("\n\n"),
+              },
+              {
+                section: "instructions",
+                label: `instruction files · ${instructionSources.length} source(s)`,
+                text: instructions.join("\n\n"),
+              },
+              {
+                section: "skills",
+                label: skills ? "skill summary" : "no relevant skill summary",
+                text: skills ?? "",
+              },
+            ]
+              .filter((entry) => entry.text.length > 0)
+              .map((entry) => ({
+                section: entry.section,
+                label: entry.label,
+                text: truncateForLog(entry.text),
+                size: entry.text.length,
+                truncated: entry.text.length > CONTEXT_CARRIER_SECTION_LIMIT,
+              }))
+            const contextRecorded = instructionUser?.parts.some(
+              (part) => part.type === "text" && part.metadata?.injection === "context",
+            )
+            if (contextSections.length > 0 && !contextRecorded) {
+              const recorded = yield* sessions.updatePart({
+                id: PartID.ascending(),
+                messageID: lastUser.id,
+                sessionID,
+                type: "text",
+                text: [
+                  `Context injections · ${contextSections.length} section(s)`,
+                  ...contextSections.map(
+                    (entry) =>
+                      `- ${entry.section}: ${entry.label} · ${entry.size} chars${entry.truncated ? " (truncated)" : ""}`,
+                  ),
+                ].join("\n"),
+                synthetic: true,
+                ignored: true,
+                metadata: { injection: "context", sections: contextSections },
+              })
+              instructionUser?.parts.push(recorded)
+            }
 
             // Inject task contract (Goal/DoD) once per turn if available
             if (!system.some((entry) => entry.includes("<task-contract")) && goalState.status !== "skipped") {
@@ -3095,6 +3157,21 @@ export function unreadableImages(part: MessageV2.Part): MessageV2.FilePart[] {
   if (part.type === "tool" && part.state.status === "completed")
     return (part.state.attachments ?? []).filter(isImage)
   return []
+}
+
+/**
+ * Log carriers persist the real injected prompt context, which runs to tens of
+ * kilobytes for the system prompt. Keep a bounded head+tail slice so the stored
+ * part stays small while still showing both the opening directives and the
+ * closing instructions. The untruncated length is always reported separately.
+ */
+const CONTEXT_CARRIER_SECTION_LIMIT = 8000
+
+function truncateForLog(text: string, limit: number = CONTEXT_CARRIER_SECTION_LIMIT) {
+  if (text.length <= limit) return text
+  const head = Math.floor(limit * 0.6)
+  const tail = limit - head
+  return `${text.slice(0, head)}\n… [${text.length - limit} chars omitted] …\n${text.slice(-tail)}`
 }
 
 export * as SessionPrompt from "./prompt"

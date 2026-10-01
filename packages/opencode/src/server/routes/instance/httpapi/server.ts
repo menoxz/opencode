@@ -56,6 +56,7 @@ import { Worktree } from "@/worktree"
 import { Workspace } from "@/control-plane/workspace"
 import { CorsConfig, isAllowedCorsOrigin, type CorsOptions } from "@/server/cors"
 import { serveUIEffect } from "@/server/shared/ui"
+import { logsPageHtml } from "@/server/shared/logs-page"
 import { ServerAuth } from "@/server/auth"
 import { InstanceHttpApi, RootHttpApi } from "./api"
 import { PublicApi } from "./public"
@@ -165,6 +166,19 @@ const docRoute = HttpRouter.use((router) => router.add("GET", "/doc", () => Effe
   Layer.provide(authOnlyRouterLayer),
 )
 
+// Standalone Logs page. Registered before the catch-all `uiRoute` so it is not
+// shadowed by the embedded GUI web UI: it is deliberately a separate, autonomous
+// document that reads the public session/message API itself.
+const logsRoute = HttpRouter.use((router) =>
+  router.add("GET", "/logs", () =>
+    Effect.succeed(
+      HttpServerResponse.text(logsPageHtml(), {
+        headers: { "content-type": "text/html; charset=utf-8" },
+      }),
+    ),
+  ),
+).pipe(Layer.provide(authOnlyRouterLayer))
+
 const uiRoute = HttpRouter.use((router) =>
   Effect.gen(function* () {
     const fs = yield* AppFileSystem.Service
@@ -186,7 +200,7 @@ type RouteRequirements =
 export function createRoutes(
   corsOptions?: CorsOptions,
 ): Layer.Layer<never, EffectConfig.ConfigError | Provider.ModelNotFoundError, RouteRequirements> {
-  return Layer.mergeAll(rootApiRoutes, eventApiRoutes, instanceRoutes, docRoute, uiRoute).pipe(
+  return Layer.mergeAll(rootApiRoutes, eventApiRoutes, instanceRoutes, docRoute, logsRoute, uiRoute).pipe(
     Layer.provide([
       errorLayer,
       compressionLayer,
