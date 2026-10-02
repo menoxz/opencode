@@ -6,6 +6,7 @@ import { JevCompaction } from "@/jev/compaction"
 import { JevIntake } from "@/jev/intake"
 import { JevRelevance } from "@/jev/relevance"
 import { JevSkills } from "@/jev/skills"
+import { JevTools } from "@/jev/tools"
 
 export const Guard = Schema.Struct({
   enabled: Schema.optional(Schema.Boolean).annotate({
@@ -145,6 +146,17 @@ export const Skills = Schema.Struct({
 }).annotate({ identifier: "JevSkillsConfig" })
 export type Skills = Schema.Schema.Type<typeof Skills>
 
+export const Tools = Schema.Struct({
+  enabled: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "Enable the Jev tool selector. When a tool is reached through tool_search, the lexical candidate pool is narrowed by one yes/no Jev question per candidate — 'does completing this request require this tool?' — so a semantically weak match cannot ride a shared word in. NO fixed cap: Jev may surface none, a few, or all candidates, exactly as the request justifies. Uses the same Jev provider as every other hook (jev.base_url/model). Fail-open: Jev off, no key, an error, a timeout or an unreadable answer leaves the lexical ranking unchanged. Opt-in, default off. Requires an API key.",
+  }),
+  threshold: Schema.optional(Schema.Number).annotate({
+    description: `Probability (0..1) at or above which a candidate counts as relevant and is surfaced. Defaults to ${JevTools.DEFAULT_THRESHOLD}.`,
+  }),
+}).annotate({ identifier: "JevToolsConfig" })
+export type Tools = Schema.Schema.Type<typeof Tools>
+
 export const Info = Schema.Struct({
   provider: Schema.optional(JevClient.Provider).annotate({
     description:
@@ -185,6 +197,7 @@ export const Info = Schema.Struct({
   next_action: Schema.optional(NextAction),
   intake: Schema.optional(Intake),
   skills: Schema.optional(Skills),
+  tools: Schema.optional(Tools),
 }).annotate({ identifier: "JevConfig" })
 export type Info = Schema.Schema.Type<typeof Info>
 

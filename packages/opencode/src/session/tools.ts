@@ -17,6 +17,7 @@ import { Cause, Effect, Exit, Option } from "effect"
 import { HttpClient } from "effect/unstable/http"
 import { JevHooks } from "@/jev/hooks"
 import { JevRelevance } from "@/jev/relevance"
+import { JevTools } from "@/jev/tools"
 import * as JevState from "@/jev/state"
 import { MessageV2 } from "./message-v2"
 import * as Session from "./session"
@@ -746,7 +747,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       }),
       execute(args) {
         return run.promise(
-          Effect.sync(() => {
+          Effect.gen(function* () {
             const value = args as {
               mode?: "search" | "browse" | "activate"
               query?: string
@@ -827,13 +828,32 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               return reserve(pending, unresolved)
             }
 
-            const matches = ToolCatalog.rankMatches(
+            let matches = ToolCatalog.rankMatches(
               visibleCatalog,
               (value.query ?? "").slice(0, 500),
               Math.min(32, limit + current.size),
             )
               .filter((match) => match.tool.id !== TOOL_SEARCH_ID)
               .slice(0, limit)
+            // Jev decides which candidates tool_search actually surfaces — the
+            // same judgement the skill catalogue uses, through the same provider.
+            // Off, keyless or unreachable, the lexical ranking above stands
+            // unchanged (see JevTools.select). An empty decision is honoured: the
+            // request may genuinely need no extra tool.
+            if (cfg.jev?.tools?.enabled === true && matches.length > 0) {
+              const jevHttp = Option.getOrUndefined(yield* Effect.serviceOption(HttpClient.HttpClient))
+              if (jevHttp) {
+                const choose = yield* JevTools.select(jevHttp, cfg.jev, {
+                  query: (value.query ?? "").slice(0, 500),
+                  tools: matches.map((match) => ({ id: match.tool.id, description: match.tool.description })),
+                  threshold: cfg.jev.tools.threshold,
+                }).pipe(Effect.catch(() => Effect.succeed(undefined)))
+                if (choose) {
+                  const keep = new Set(choose)
+                  matches = matches.filter((match) => keep.has(match.tool.id))
+                }
+              }
+            }
             return reserve(
               matches.flatMap((match) => (current.has(match.tool.id) ? [] : [{ id: match.tool.id, match: match.reason }])),
               matches.flatMap<Record<string, unknown>>((match) =>
