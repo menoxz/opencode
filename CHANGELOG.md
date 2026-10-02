@@ -7,6 +7,11 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.3.39] - 2026-10-02
+
+### Fixed
+- **Navbar : dossiers vides ou dupliqués au démarrage.** La barre regroupait les sessions par leur chaîne de dossier brute ; les deux graphies qu'un même dossier reçoit sous Windows (casse différente, ou séparateur `\` contre `/`) formaient donc deux entrées ne montrant chacune qu'une partie des sessions. Un dossier ajouté dont la graphie différait de celle des sessions n'était pas reconnu non plus et apparaissait en doublon vide. Une identité de dossier unique (`folderKey` : trim, séparateurs unifiés, casse repliée) sert désormais au regroupement et à la dé-duplication, la première graphie vue étant conservée pour le libellé et l'état de pliage.
+
 ## [v2.3.38] - 2026-10-02
 
 ### Fixed
