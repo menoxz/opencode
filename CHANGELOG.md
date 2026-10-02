@@ -7,6 +7,14 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.3.44] - 2026-10-02
+
+### Changed
+- **Le repli de sélection des skills passe du classement lexical BM25 à un appel LLM.** Quand Jev n'est pas activé, la sélection retombait sur BM25 : un appariement de mots, alors que les noms et descriptions de skills sont en anglais et que la requête peut être dans une autre langue. Le filtre manquait donc les skills pertinents (mots différents) et en injectait jusqu'à 30 non pertinents, payés à chaque tour. Un petit modèle gratuit (`resolveFreeLanguageModel`) juge désormais chaque description par le sens et ne retient que les skills réellement nécessaires, quelle que soit la langue ; il peut n'en retenir aucun. BM25 ne subsiste que comme filet déterministe de dernier recours si aucun modèle n'est résolvable, et l'appel échoue toujours en silence vers ce filet sans interrompre le tour.
+
+### Fixed
+- **Échec silencieux du sélecteur Jev de skills désormais journalisé.** Une clé, un `base_url` ou un runtime invalides faisaient tomber Jev sans trace : la sélection retombait sur le tri lexical et le catalogue complet était réinjecté comme si tout allait bien. L'échec est maintenant tracé (cause, URL de base, clé résolue) et chaque tour consigne la décision de sélection (`outcome`), donc une configuration erronée ne peut plus se cacher derrière le repli.
+
 ## [v2.3.40] - 2026-10-02
 
 ### Fixed

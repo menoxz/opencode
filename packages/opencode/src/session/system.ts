@@ -4,6 +4,7 @@ import { createHash } from "node:crypto"
 
 import { InstanceState } from "@/effect/instance-state"
 
+import * as Log from "@opencode-ai/core/util/log"
 import PROMPT_CORE from "./prompt/core.txt"
 import type { Provider } from "@/provider/provider"
 import type { Agent } from "@/agent/agent"
@@ -14,7 +15,9 @@ import { PromptComposer } from "@/prompt-composer"
 import { SelfImprove } from "@/self-improve"
 import type { MessageV2 } from "./message-v2"
 import { rankDocuments } from "@/memory/search"
+import { SkillSelect } from "@/skill/select"
 import { JevSkills } from "@/jev/skills"
+import { JevClient } from "@/jev/client"
 import { Config } from "@/config/config"
 import { SessionContextRollout } from "./context-rollout"
 import { SECURITY_GATED_TOOLS, type SecurityMode } from "@/tool/security"
@@ -29,6 +32,8 @@ export function provider(_model: Provider.Model): string[] {
 }
 
 const MAX_RELEVANT_SKILLS = 30
+
+const log = Log.create({ service: "system-prompt" })
 
 /**
  * Number of characters of a skill body folded into its retrieval text.
@@ -167,18 +172,60 @@ export const layer = Layer.effect(
                 prompt: lastUserMessage,
                 skills: list.map((s) => ({ name: s.name, description: s.description, text: skillSearchText(s) })),
                 threshold: jev?.skills?.threshold,
-              }).pipe(Effect.catch(() => Effect.succeed(undefined)))
+              }).pipe(
+                // The fallback is silent by design, but a selector that never
+                // succeeds is a defect an operator must see: log the reason so a
+                // misconfigured key, endpoint or runtime cannot hide behind the
+                // deterministic ranking.
+                Effect.catch((error) =>
+                  Effect.sync(() => {
+                    const key = JevClient.apiKey(jev)
+                    log.warn("jev skills selector failed; lexical fallback", {
+                      candidates: list.length,
+                      baseUrl: JevClient.baseUrl(jev),
+                      keyLength: key?.length ?? 0,
+                      keyPrefix: key ? key.slice(0, 6) : "",
+                      error: String((error as any)?.message ?? error).slice(0, 300),
+                    })
+                    return undefined
+                  }),
+                ),
+              )
             : undefined
+        log.info("jev skills decision", {
+          candidates: list.length,
+          http: jevHttp !== undefined,
+          outcome: jevSelected === undefined ? (jevHttp ? "abstain" : "skipped") : jevSelected.length,
+        })
 
         if (jevSelected) {
           const kept = new Set(jevSelected)
           list = list.filter((s) => kept.has(s.name))
           if (list.length === 0) return
         } else {
-          // Deterministic lexical fallback: keep the best-scoring skills. This is
-          // BM25 only — a wording match, not a semantic one — so it is the safety
-          // net for a turn Jev could not decide, never the primary filter.
-          if (lastUserMessage && list.length > MAX_RELEVANT_SKILLS) {
+          // The lexical BM25 ranking matches wording, not meaning. Skill names and
+          // descriptions are written in English while the request may not be, so it
+          // both misses relevant skills and over-injects an arbitrary top-N (up to
+          // MAX_RELEVANT_SKILLS) that the model then pays for every turn. A small
+          // free model selects by meaning instead (see SkillSelect); BM25 stays
+          // only as the last resort when no model can be resolved.
+          const llmSelected =
+            lastUserMessage && list.length > 0
+              ? yield* SkillSelect.select({
+                  prompt: lastUserMessage,
+                  skills: list.map((s) => ({ name: s.name, description: s.description ?? "" })),
+                }).pipe(Effect.catch(() => Effect.succeed(undefined)))
+              : undefined
+          log.info("llm skills decision", {
+            candidates: list.length,
+            outcome: llmSelected === undefined ? "unavailable" : llmSelected.length,
+          })
+          if (llmSelected) {
+            const kept = new Set(llmSelected)
+            list = list.filter((s) => kept.has(s.name))
+            if (list.length === 0) return
+          } else if (lastUserMessage && list.length > MAX_RELEVANT_SKILLS) {
+            // No model produced a decision: deterministic BM25 safety net.
             const docs = list.map((s) => ({
               id: s.name,
               content: skillSearchText(s),
@@ -190,10 +237,10 @@ export const layer = Layer.effect(
             list = list.filter((s) => kept.has(s.name))
           }
 
-          // Budget enforcement (D3), fallback path only. Jev sets its own count;
-          // when it abstains, clamp the catalogue by real usage recency so the
-          // whole list (193 skills, 73 % never loaded once in 45 days) is not
-          // emitted when the turn carries no user text.
+          // Budget enforcement (D3), last-resort path only. Jev and the model set
+          // their own count; when neither decided, clamp the catalogue by real
+          // usage recency so the whole list (193 skills, 73 % never loaded once in
+          // 45 days) is not emitted when the turn carries no user text.
           if (list.length > MAX_RELEVANT_SKILLS) {
             yield* Effect.promise(() => SkillUsage.ready())
             list = SkillUsage.prioritize(list, MAX_RELEVANT_SKILLS)
