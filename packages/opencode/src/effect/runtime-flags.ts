@@ -65,6 +65,7 @@ export class Service extends ConfigService.Service<Service>()("@opencode/Runtime
   acpNext: bool("OPENCODE_ACP_NEXT"),
   outputTokenMax: positiveInteger("OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX"),
   bashDefaultTimeoutMs: positiveInteger("OPENCODE_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS"),
+  streamTimeoutMs: positiveInteger("OPENCODE_EXPERIMENTAL_STREAM_TIMEOUT_MS"),
   experimentalNativeLlm: bool("OPENCODE_EXPERIMENTAL_NATIVE_LLM"),
   client: Config.string("OPENCODE_CLIENT").pipe(Config.withDefault("cli")),
 }) {}

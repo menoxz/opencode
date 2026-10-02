@@ -38,6 +38,15 @@ import { InstanceState } from "@/effect/instance-state"
 const log = Log.create({ service: "llm" })
 export const OUTPUT_TOKEN_MAX = ProviderTransform.OUTPUT_TOKEN_MAX
 
+/** Raised when a provider accepts the request but then stalls: the stream watchdog fires. */
+class StreamTimeoutError extends Error {
+  readonly _tag = "StreamTimeoutError"
+  constructor(readonly timeoutMs: number) {
+    super(`stream produced no event within ${timeoutMs}ms`)
+    this.name = "StreamTimeoutError"
+  }
+}
+
 const elapsed = (started: number) => Date.now() - started
 const errorDetails = (error: unknown) => {
   if (error instanceof Error) return { name: error.name, message: error.message }
@@ -477,7 +486,7 @@ const live: Layer.Layer<
               )
             })()
 
-            return llmStream.pipe(
+            const baseStream = llmStream.pipe(
               Stream.tapError((error) =>
                 Effect.sync(() => {
                   l.error("stream lifecycle failed", {
@@ -496,6 +505,18 @@ const live: Layer.Layer<
                 }),
               ),
             )
+
+            // Watchdog (belt-and-suspenders on top of ctrl.abort() above): if no
+            // event arrives within streamTimeoutMs — provider sent a head chunk
+            // then stalled — FAIL the stream so the session turn stops instead of
+            // hanging. Stream.fail (not empty) is required so runDrain fails.
+            const streamTimeoutMs = flags.streamTimeoutMs
+            return streamTimeoutMs === undefined
+              ? baseStream
+              : Stream.timeoutOrElse(baseStream, {
+                  duration: streamTimeoutMs,
+                  orElse: () => Stream.fail(new StreamTimeoutError(streamTimeoutMs)),
+                })
           }),
         ),
       )
