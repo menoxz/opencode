@@ -5,7 +5,7 @@ import { EnvironmentTool } from "./environment"
 import { TurnPlanTool } from "./turn-plan"
 import { PlanExitTool } from "./plan"
 import { PlanningTool } from "./planning"
-import { TasksTool } from "./tasks"
+import { TasksTool, loadTasks, renderTaskCatalog } from "./tasks"
 import { WorkspaceHandoffTool } from "./workspace-handoff"
 import {
   ApplyContractFromPromptTool,
@@ -162,6 +162,7 @@ export const layer: Layer.Layer<
   Service,
   Effect.gen(function* () {
     const config = yield* Config.Service
+    const afs = yield* AppFileSystem.Service
     const plugin = yield* Plugin.Service
     const agents = yield* Agent.Service
     const skill = yield* Skill.Service
@@ -467,6 +468,16 @@ export const layer: Layer.Layer<
       ].join("\n")
     })
 
+    // Task-usage guidance lives with the tool that uses it, not in the session
+    // system prompt: the model sees the concrete task names at call time, and
+    // the guidance disappears with the tool instead of taxing every agent.
+    const describeTasks = Effect.fn("ToolRegistry.describeTasks")(function* () {
+      const directory = yield* InstanceState.directory
+      const cfg = yield* config.get()
+      const tasks = yield* loadTasks(directory, cfg, afs).pipe(Effect.catch(() => Effect.succeed({})))
+      return renderTaskCatalog(tasks)
+    })
+
     const describeTask = Effect.fn("ToolRegistry.describeTask")(function* (agent: Agent.Info) {
       const items = (yield* agents.list()).filter((item) => item.mode !== "primary")
       const filtered = items.filter(
@@ -523,6 +534,7 @@ export const layer: Layer.Layer<
               output.description,
               tool.id === TaskTool.id ? yield* describeTask(input.agent) : undefined,
               tool.id === SkillTool.id ? yield* describeSkill(input.agent) : undefined,
+              tool.id === TasksTool.id ? yield* describeTasks() : undefined,
             ]
               .filter(Boolean)
               .join("\n"),

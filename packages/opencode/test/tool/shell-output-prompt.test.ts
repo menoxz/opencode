@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test"
 import { render } from "../../src/tool/shell/prompt"
-import { tasksAndShellGuidance } from "../../src/session/system"
 
 describe("decision-focused terminal instructions", () => {
   test.each(["bash", "pwsh", "powershell", "cmd"])("%s preserves evidence without default trace dumps", (shell) => {
@@ -15,18 +14,13 @@ describe("decision-focused terminal instructions", () => {
     expect(description).not.toContain("or other truncation commands to limit output")
   })
 
-  test("shared agent prompt also covers MCP terminals", () => {
-    const guidance = tasksAndShellGuidance({})
-    expect(guidance).toContain("Terminal commands: request only the information needed")
-    expect(guidance).toContain("full stack traces by default")
-    expect(guidance).toContain("Preserve the exit code")
-    expect(guidance).toContain("Never hide failures")
-    expect(guidance).toContain("independent read-only inspections")
-    expect(guidance).toContain("Do not batch speculative work")
-    expect(guidance).toContain("read offset/limit")
-    expect(guidance).toContain("instead of repeatedly polling")
-    expect(guidance).toContain("Delegate non-overlapping scopes")
-    expect(guidance).toContain("Verify the returned critical claims")
-    expect(guidance).toContain("Batch size is a ceiling, not a quota")
-  })
+  test.each(["bash", "pwsh", "powershell", "cmd"])(
+    "%s carries the cross-shell portability note",
+    (shell) => {
+      const { description } = render(shell, "win32", { maxLines: 120, maxBytes: 4000 }, 60000)
+      expect(description).toContain("Syntax is NOT portable across shells")
+      expect(description).toContain("Select-Object")
+      expect(description).toContain("Select-String")
+    },
+  )
 })

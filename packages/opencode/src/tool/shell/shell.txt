@@ -2,6 +2,8 @@ ${intro}
 
 Be aware: OS: ${os}, Shell: ${shell}
 
+Syntax is NOT portable across shells: POSIX shells (bash/zsh/sh) and PowerShell (pwsh) differ on quoting, env vars, pipes, path separators and chaining. On Windows pwsh there is no `tail`/`head`/`grep` — use `Select-Object`/`Select-String`.
+
 ${workdirSection}
 
 Use `${tmp}` for temporary work outside the workspace. This directory has already been created, already exists, and is pre-approved for external directory access.

@@ -14,7 +14,6 @@ import { SelfImprove } from "@/self-improve"
 import type { MessageV2 } from "./message-v2"
 import { rankDocuments } from "@/memory/search"
 import { Config } from "@/config/config"
-import { Shell } from "@/shell/shell"
 import { SessionContextRollout } from "./context-rollout"
 import { SECURITY_GATED_TOOLS, type SecurityMode } from "@/tool/security"
 
@@ -59,45 +58,6 @@ function skillSearchText(skill: Skill.Info): string {
   return text
 }
 
-/**
- * Multi-shell + tasks guidance injected into every agent's system prompt.
- * Reminds the model that shells differ across platforms, and surfaces any
- * named tasks defined in config / tasks.json so it can run them via the
- * `tasks` tool instead of hand-rolling fragile shell one-liners.
- */
-export function tasksAndShellGuidance(cfg: Config.Info): string {
-  const shell = Shell.acceptable(cfg.shell)
-  const shellName = shell ? Shell.name(shell) : "the platform default shell"
-  const tasks = cfg.tasks ?? {}
-  const taskNames = Object.keys(tasks)
-
-  const lines: string[] = [
-    `<shell-and-tasks>`,
-    `Shell: commands run through ${shellName} on ${process.platform}.`,
-    `Syntax is NOT portable — POSIX shells (bash/zsh/sh) and PowerShell (pwsh) differ on`,
-    `quoting, env vars, pipes, path separators and chaining. Detect the active shell first;`,
-    `on Windows pwsh there is no \`tail\`/\`head\`/\`grep\` — use \`Select-Object\`/\`Select-String\`.`,
-    `Batch known-independent read-only inspections; keep mutations and their dependent checks ordered.`,
-    `Reuse evidence already in context unless the source changed or it is genuinely insufficient.`,
-    `Keep output bounded, preserve exit codes, failures and the failing location, and avoid verbose/debug logs.`,
-    ``,
-    `Tasks: prefer the \`tasks\` tool for repeatable project commands (build, test,`,
-    `lint, run) over hand-rolled shell one-liners; tasks come from the \`tasks\` key of`,
-    `config or a workspace tasks.json and support dependsOn ordering.`,
-  ]
-  if (taskNames.length > 0) {
-    lines.push(``, `Defined tasks (run with the \`tasks\` tool, action='run'):`)
-    for (const name of taskNames) {
-      const t = tasks[name]!
-      lines.push(`  • ${name}: ${t.description ?? t.command}`)
-    }
-  } else {
-    lines.push(``, `No tasks are defined yet; use action='list' on the \`tasks\` tool to confirm.`)
-  }
-  lines.push(`</shell-and-tasks>`)
-  return lines.join("\n")
-}
-
 export interface Interface {
   readonly environment: (model: Provider.Model) => Effect.Effect<{ stable: string; runtime: string }>
   readonly preloadedSkills: (agent: Agent.Info) => Effect.Effect<string | undefined>
@@ -128,7 +88,6 @@ export const layer = Layer.effect(
     return Service.of({
       environment: Effect.fn("SystemPrompt.environment")(function* (model: Provider.Model) {
         const ctx = yield* InstanceState.context
-        const cfg = yield* config.get()
         return {
           runtime: [
             `You are powered by the model named ${model.api.id}. The exact model ID is ${model.providerID}/${model.api.id}`,
@@ -141,7 +100,9 @@ export const layer = Layer.effect(
             `  Today's date: ${new Date().toDateString()}`,
             `</env>`,
           ].join("\n"),
-          stable: tasksAndShellGuidance(cfg),
+          // Usage guidance now lives in the tool definitions (shell, tasks);
+          // only the runtime environment block stays in the system prompt.
+          stable: "",
         }
       }),
 

@@ -9,7 +9,7 @@ import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { TasksStore } from "./tasks-store"
 import path from "path"
 
-const DESCRIPTION = [
+export const DESCRIPTION = [
   "Manage and run named, repeatable shell tasks (VSCode tasks.json-style).",
   "Definitions come from the `tasks` key of opencode config, a workspace",
   "tasks.json, or the agent-owned store (.opencode/tasks.json, lowest authority).",
@@ -117,6 +117,62 @@ function renderList(tasks: TaskMap): string {
   return lines.join("\n")
 }
 
+/**
+ * Resolve the effective task map: config `tasks` key + workspace tasks.json +
+ * the agent-owned store, in decreasing authority. Shared by the tool executor
+ * and the registry's dynamic description so both see the same catalogue.
+ */
+export function loadTasks(
+  directory: string,
+  cfg: Config.Info,
+  afs: AppFileSystem.Interface,
+): Effect.Effect<TaskMap> {
+  return Effect.gen(function* () {
+    const merged: Record<string, ConfigTasks.Info> = { ...(cfg.tasks ?? {}) }
+    const candidates = [
+      path.join(directory, "tasks.json"),
+      path.join(directory, ".vscode", "tasks.json"),
+    ]
+    for (const file of candidates) {
+      const text = yield* afs.readFileStringSafe(file).pipe(Effect.catch(() => Effect.succeed(undefined)))
+      if (!text) continue
+      const decoded = decodeVscode(text)
+      if (!decoded) continue
+      for (const [k, v] of Object.entries(ConfigTasks.fromVscode(decoded))) {
+        if (!(k in merged)) merged[k] = v
+      }
+    }
+    // The agent-owned store has the lowest authority, so it only contributes
+    // names no other source already defines; without this an upserted task
+    // could never be listed or run.
+    const stored = yield* Effect.promise(() => TasksStore.readStore(directory))
+    for (const [k, v] of Object.entries(stored)) if (!(k in merged)) merged[k] = v
+    return merged as TaskMap
+  })
+}
+
+/**
+ * Dynamic tool-description fragment: the concrete task names a call can run,
+ * plus the usage rule. Kept out of the session system prompt so the guidance
+ * disappears with the tool and grows only where the tasks are callable.
+ */
+export function renderTaskCatalog(tasks: TaskMap): string {
+  const names = Object.keys(tasks)
+  const lines = [
+    "How to use this tool: prefer it for repeatable project commands (build, test, lint, run) over hand-rolled shell one-liners; a task may declare dependsOn prerequisites that run first, in order, for 'run' and background starts.",
+  ]
+  if (names.length === 0) {
+    lines.push("No tasks are defined yet; use action='list' to confirm.")
+    return lines.join("\n")
+  }
+  lines.push("Defined tasks (run with action='run'):")
+  for (const name of names) {
+    const t = tasks[name]!
+    lines.push(`- ${name}: ${t.description ?? t.command}`)
+  }
+  return lines.join("\n")
+}
+
 export const TasksTool = Tool.define(
   "tasks",
   Effect.gen(function* () {
@@ -132,27 +188,8 @@ export const TasksTool = Tool.define(
           const cfg = yield* config.get()
           const defaultShell = Shell.acceptable(cfg.shell)
 
-          // Load tasks: config `tasks` key + workspace tasks.json (config wins on collisions).
-          const merged: Record<string, ConfigTasks.Info> = { ...(cfg.tasks ?? {}) }
-          const candidates = [
-            path.join(directory, "tasks.json"),
-            path.join(directory, ".vscode", "tasks.json"),
-          ]
-          for (const file of candidates) {
-            const text = yield* afs.readFileStringSafe(file).pipe(Effect.catch(() => Effect.succeed(undefined)))
-            if (!text) continue
-            const decoded = decodeVscode(text)
-            if (!decoded) continue
-            for (const [k, v] of Object.entries(ConfigTasks.fromVscode(decoded))) {
-              if (!(k in merged)) merged[k] = v
-            }
-          }
-          // The agent-owned store has the lowest authority, so it only contributes
-          // names no other source already defines; without this an upserted task
-          // could never be listed or run.
-          const stored = yield* Effect.promise(() => TasksStore.readStore(directory))
-          for (const [k, v] of Object.entries(stored)) if (!(k in merged)) merged[k] = v
-          const tasks = merged as TaskMap
+          // Load tasks: config + workspace tasks.json + agent-owned store (config wins).
+          const tasks = yield* loadTasks(directory, cfg, afs)
 
           const action = input.action ?? "list"
 

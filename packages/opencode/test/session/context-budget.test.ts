@@ -410,7 +410,7 @@ it.instance(
       }).pipe(Effect.provide(Global.layerWith({ config: dir, home: dir })))
       const stats = breakdown("bare (no AGENTS.md, no skills)", hit)
       expect(stats.toolCount).toBeGreaterThan(20)
-      // PROMPT_CORE + env + shell/tasks + goal + reminder + step-1 guidance.
+      // PROMPT_CORE + env + goal + reminder + step-1 guidance.
       expect(stats.systemTotal).toBeLessThan(20000)
       expect(stats.requestTotal).toBeLessThan(200000)
     }),
