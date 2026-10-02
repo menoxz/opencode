@@ -112,12 +112,27 @@ export const select = Effect.fn("JevSkills.select")(function* (
   input: { prompt: string; skills: readonly Candidate[]; threshold?: number },
 ) {
   const { questions: asked, ids } = questions(input.prompt, input.skills)
-  const response = yield* JevClient.decide(
-    http,
-    { state: "Select the skills this request needs.", questions: asked },
-    settings,
-  )
-  return decide(response, ids, input.threshold)
+  // A call carries at most MAX_QUESTIONS_PER_CALL questions, so a large
+  // catalogue is split into batches and the verdicts are merged. A batch that
+  // fails aborts the whole selection (the caller falls back); a partial verdict
+  // is never invented.
+  const chosen = new Set<string>()
+  let answered = false
+  for (const batch of JevClient.chunks(ids)) {
+    const response = yield* JevClient.decide(
+      http,
+      {
+        state: "Select the skills this request needs.",
+        questions: Object.fromEntries(batch.map((id) => [id, asked[id]!])),
+      },
+      settings,
+    )
+    const decided = decide(response, batch, input.threshold)
+    if (decided === undefined) continue
+    answered = true
+    for (const id of decided) chosen.add(id)
+  }
+  return answered ? [...chosen] : undefined
 })
 
 export * as JevSkills from "./skills"

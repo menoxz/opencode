@@ -53,6 +53,24 @@ export const PROVIDER_ENV_KEYS: Record<Provider, string> = {
   "command-code": "COMMAND_CODE_API_KEY",
 }
 
+/**
+ * Command Code GOAT rejects a single System One call carrying more than this
+ * many questions ("at most 20 questions per call"). A selector asks one closed
+ * question per candidate, and both the skill catalogue (~200) and the tool
+ * candidate pool exceed it, so every selection must be split into
+ * request-sized batches — otherwise the endpoint answers HTTP 400 and the
+ * caller silently falls back to its lexical ranking.
+ */
+export const MAX_QUESTIONS_PER_CALL = 20
+
+/** Split `items` into batches of at most `size`, so no Jev call exceeds the endpoint's cap. */
+export function chunks<T>(items: readonly T[], size: number = MAX_QUESTIONS_PER_CALL): T[][] {
+  if (size <= 0) return items.length > 0 ? [[...items]] : []
+  const out: T[][] = []
+  for (let index = 0; index < items.length; index += size) out.push(items.slice(index, index + size) as T[])
+  return out
+}
+
 export type Settings = {
   provider?: Provider
   base_url?: string

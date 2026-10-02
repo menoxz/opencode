@@ -120,4 +120,43 @@ describe("jev.skills end to end", () => {
       ),
     ),
   )
+
+  // Regression: Command Code GOAT rejects "at most 20 questions per call". A
+  // ~200-skill catalogue sent as one request always answered HTTP 400, the
+  // caller caught it and fell back to the lexical ranking, so Jev filtering was
+  // inert in production. The selection must be split instead.
+  it.instance("splits a large catalogue into batches of at most 20 questions", () =>
+    cleanEnv(
+      Effect.acquireUseRelease(
+        Effect.sync(() => {
+          const bodies: { questions: Record<string, unknown> }[] = []
+          const server = Bun.serve({
+            port: 0,
+            hostname: "127.0.0.1",
+            fetch: async (request) => {
+              const body = (await request.json()) as { questions: Record<string, unknown> }
+              bodies.push(body)
+              const answers = Object.fromEntries(Object.keys(body.questions).map((id) => [id, { type: "noul", noul: 0.9 }]))
+              return Response.json({ model: "jev-latest", answers })
+            },
+          })
+          return { server, bodies }
+        }),
+        (state) =>
+          Effect.gen(function* () {
+            const http = yield* HttpClient.HttpClient
+            const many = Array.from({ length: 25 }, (_, index) => ({
+              name: `skill-${index}`,
+              description: `Skill ${index}`,
+            }))
+            const chosen = yield* JevSkills.select(http, settings(state.server.url.origin), { prompt: "x", skills: many })
+            expect(chosen).toHaveLength(25)
+            const sizes = state.bodies.map((body) => Object.keys(body.questions).length)
+            expect(Math.max(...sizes)).toBeLessThanOrEqual(20)
+            expect(sizes.reduce((total, size) => total + size, 0)).toBe(25)
+          }),
+        (state) => Effect.sync(() => state.server.stop(true)),
+      ),
+    ),
+  )
 })

@@ -103,12 +103,26 @@ export const select = Effect.fn("JevTools.select")(function* (
   input: { query: string; tools: readonly Candidate[]; threshold?: number },
 ) {
   const { questions: asked, ids } = questions(input.query, input.tools)
-  const response = yield* JevClient.decide(
-    http,
-    { state: "Select the tools this request needs.", questions: asked },
-    settings,
-  )
-  return decide(response, ids, input.threshold)
+  // Same per-call question cap as the skill selector: batch the candidate pool
+  // and merge the verdicts, so a wide pool does not turn into HTTP 400 and a
+  // silent fallback to the lexical ranking.
+  const chosen = new Set<string>()
+  let answered = false
+  for (const batch of JevClient.chunks(ids)) {
+    const response = yield* JevClient.decide(
+      http,
+      {
+        state: "Select the tools this request needs.",
+        questions: Object.fromEntries(batch.map((id) => [id, asked[id]!])),
+      },
+      settings,
+    )
+    const decided = decide(response, batch, input.threshold)
+    if (decided === undefined) continue
+    answered = true
+    for (const id of decided) chosen.add(id)
+  }
+  return answered ? [...chosen] : undefined
 })
 
 export * as JevTools from "./tools"
