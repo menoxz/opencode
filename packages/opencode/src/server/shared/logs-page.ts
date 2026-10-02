@@ -123,7 +123,7 @@ function injectionBlock(part) {
   if (meta.injection === "instructions") {
     var sources = Array.isArray(meta.sources) ? meta.sources : [];
     var items = sources.map(function (s) { return "<li>" + esc(s) + "</li>"; }).join("");
-    return "<details class=\"inj\"><summary>INJECT &middot; instructions &middot; " + sources.length +
+    return "<details class=\"inj\" open><summary>INJECT &middot; instructions &middot; " + sources.length +
       " source(s)</summary><div class=\"body\"><div class=\"tag\">provenance: instruction files injected into context</div>" +
       (items ? "<ul class=\"paths\">" + items + "</ul>" : "") +
       "<pre>" + esc(part.text || "") + "</pre></div></details>";
@@ -138,7 +138,7 @@ function injectionBlock(part) {
         "<pre>" + esc(s.text || "") + "</pre></details>";
     }).join("");
     if (!body) body = "<div class=\"empty\">no sections recorded</div>";
-    return "<details class=\"inj\"><summary>CONTEXT &middot; injected prompt context &middot; " + secs.length +
+    return "<details class=\"inj\" open><summary>CONTEXT &middot; injected prompt context &middot; " + secs.length +
       " section(s)</summary><div class=\"body\">" + body + "</div></details>";
   }
   return "";
