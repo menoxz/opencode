@@ -123,6 +123,18 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
     const sdk = useSDK()
     const kv = useKV()
 
+    // Memory retention. A session's history is unbounded on the server (some run
+    // to thousands of messages and hundreds of megabytes), so the client keeps
+    // only a bounded window of it: the latest messages of the session being
+    // viewed, and at most MAX_SYNCED_SESSIONS sessions hydrated at once. Without
+    // this the store grows without limit as the TUI opens more sessions (the
+    // recall 6 GB RSS regression).
+    // Restored to the pre-regression cap (ca06b3c16 removed both): the TUI keeps
+    // the newest 100 messages per session. Full history is no longer hydrated in
+    // real time; use the /logs page export for the complete session.
+    const MESSAGE_RETENTION = 100
+    const SESSION_MESSAGE_LIMIT = 100
+    const MAX_SYNCED_SESSIONS = 8
     const fullSyncedSessions = new Set<string>()
 
     function scopedPath(): string | undefined {
@@ -341,6 +353,27 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
               draft.splice(result.index, 0, event.properties.info)
             }),
           )
+          // Bound the live turn: an agent step writes two messages per call, and
+          // over a long session the array would otherwise grow without limit.
+          const updated = store.message[event.properties.info.sessionID]
+          if (updated.length > MESSAGE_RETENTION) {
+            const oldest = updated[0]
+            batch(() => {
+              setStore(
+                "message",
+                event.properties.info.sessionID,
+                produce((draft) => {
+                  draft.shift()
+                }),
+              )
+              setStore(
+                "part",
+                produce((draft) => {
+                  delete draft[oldest.id]
+                }),
+              )
+            })
+          }
           break
         }
         case "message.removed": {
@@ -588,12 +621,19 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           return last.time.completed ? "idle" : "working"
         },
         async sync(sessionID: string) {
-          if (fullSyncedSessions.has(sessionID)) return
+          if (fullSyncedSessions.has(sessionID)) {
+            // Refresh recency so the LRU below keeps the sessions actually used.
+            fullSyncedSessions.delete(sessionID)
+            fullSyncedSessions.add(sessionID)
+            return
+          }
           const [session, messages, todo, diff] = await Promise.all([
             sdk.client.session.get({ sessionID }, { throwOnError: true }),
-            // No limit: the server returns every message when it is omitted, so the
-            // TUI can scroll back to the very first one.
-            sdk.client.session.messages({ sessionID }),
+            // Bounded window, not the whole history: a full fetch hydrates every
+            // message and part of the session (some run to hundreds of MB), which
+            // is what drove the client to multi-GB RSS. The newest messages cover
+            // the live turn and recent scroll; older history stays on the server.
+            sdk.client.session.messages({ sessionID, limit: SESSION_MESSAGE_LIMIT }),
             sdk.client.session.todo({ sessionID }),
             sdk.client.session.diff({ sessionID }),
           ])
@@ -613,6 +653,23 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
             }),
           )
           fullSyncedSessions.add(sessionID)
+          // Evict the least recently used session once the cap is exceeded: parts
+          // are keyed by message id, so drop them via the session's message list
+          // before removing the session entry.
+          while (fullSyncedSessions.size > MAX_SYNCED_SESSIONS) {
+            const oldest = fullSyncedSessions.values().next().value as string | undefined
+            if (oldest === undefined || oldest === sessionID) break
+            fullSyncedSessions.delete(oldest)
+            const stale = store.message[oldest] ?? []
+            setStore(
+              produce((draft) => {
+                for (const message of stale) delete draft.part[message.id]
+                delete draft.message[oldest]
+                delete draft.todo[oldest]
+                delete draft.session_diff[oldest]
+              }),
+            )
+          }
         },
       },
       bootstrap,

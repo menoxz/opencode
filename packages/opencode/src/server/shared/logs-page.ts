@@ -199,16 +199,68 @@ function fail(err) {
     "<div class=\"err\">" + esc(String(err && err.message ? err.message : err)) + "</div>";
 }
 
+// Full-session export. The live view deliberately loads only a bounded window
+// (some sessions run to thousands of messages and hundreds of megabytes); the
+// complete history is fetched on demand, page by page, so it is never hydrated
+// until the user asks for it. GET /session/{id}/message returns a page plus an
+// X-Next-Cursor header, so following the before cursor walks the whole session.
+var PAGE_SIZE = 500;
+
+function setExportStatus(text) {
+  var el = document.getElementById("export-status");
+  if (el) el.textContent = text || "";
+}
+
+function download(obj, filename) {
+  var blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function () { URL.revokeObjectURL(url); }, 0);
+}
+
+async function exportSession(id) {
+  var all = [];
+  var before = null;
+  for (var page = 0; page < 100000; page++) {
+    var url = "/session/" + encodeURIComponent(id) + "/message?limit=" + PAGE_SIZE +
+      (before ? "&before=" + encodeURIComponent(before) : "");
+    var r = await fetch(url, { headers: { accept: "application/json" } });
+    if (!r.ok) throw new Error(r.status + " " + url);
+    var items = await r.json();
+    if (!Array.isArray(items)) throw new Error("unexpected payload from " + url);
+    all = all.concat(items);
+    setExportStatus("exporting " + all.length + " messages ...");
+    var next = r.headers.get("X-Next-Cursor");
+    if (!next || items.length === 0) break;
+    before = next;
+  }
+  // Pages are followed cursor by cursor; order the record chronologically by id.
+  all.sort(function (a, b) {
+    var x = a && a.info ? a.info.id : "";
+    var y = b && b.info ? b.info.id : "";
+    return x < y ? -1 : x > y ? 1 : 0;
+  });
+  return { sessionID: id, exportedAt: new Date().toISOString(), count: all.length, messages: all };
+}
+
 function select(id) {
   selected = id;
   var url = new URL(location.href);
   url.searchParams.set("session", id);
   history.replaceState(null, "", url.toString());
+  var exportBtn = document.getElementById("export");
+  if (exportBtn) exportBtn.disabled = false;
+  setExportStatus("");
   Array.prototype.forEach.call(document.querySelectorAll("ul.slist li"), function (li) {
     li.className = li.getAttribute("data-id") === id ? "sel" : "";
   });
   document.getElementById("stream").innerHTML = "<div class=\"empty\">loading " + esc(id) + " ...</div>";
-  get("/session/" + encodeURIComponent(id) + "/message")
+  get("/session/" + encodeURIComponent(id) + "/message?limit=" + PAGE_SIZE)
     .then(function (data) {
       var msgs = Array.isArray(data) ? data : (data && Array.isArray(data.messages) ? data.messages : []);
       var html = "<div class=\"empty\">" + msgs.length + " message(s) &middot; " + esc(id) + "</div>";
@@ -260,6 +312,21 @@ document.addEventListener("DOMContentLoaded", function () {
   document.getElementById("refresh").addEventListener("click", function () {
     loadSessions(f.value.trim());
   });
+  document.getElementById("export").addEventListener("click", function () {
+    if (!selected) return;
+    var btn = this;
+    btn.disabled = true;
+    setExportStatus("exporting ...");
+    exportSession(selected)
+      .then(function (data) {
+        download(data, "opencode-" + selected + "-logs.json");
+        setExportStatus("exported " + data.count + " message(s)");
+      })
+      .catch(function (e) {
+        setExportStatus("export failed: " + (e && e.message ? e.message : e));
+      })
+      .then(function () { btn.disabled = false; });
+  });
   loadSessions("");
   if (selected) select(selected);
 });
@@ -282,6 +349,8 @@ export function logsPageHtml(): string {
   <input id="filter" type="search" placeholder="filter sessions" />
   <label class="meta"><input id="syn" type="checkbox" checked /> synthetic parts</label>
   <button id="refresh" type="button">refresh</button>
+  <button id="export" type="button" disabled>export full</button>
+  <span class="meta" id="export-status"></span>
 </header>
 <main>
   <aside>

@@ -47,6 +47,24 @@ describe("standalone Logs page", () => {
     expect(html).toContain("s.truncated")
   })
 
+  // The live view must not hydrate the whole history (that is what drove the RSS
+  // regression); the complete session is fetched on demand through the export,
+  // which follows the server's cursor pagination instead of loading everything.
+  test("exports the full session on demand, bounded live view", () => {
+    const html = logsPageHtml()
+
+    // A live fetch carries an explicit page bound.
+    expect(html).toContain("/message?limit=")
+    // The export walks the cursor-paginated endpoint and signals progress.
+    expect(html).toContain("X-Next-Cursor")
+    expect(html).toContain("before=")
+    // It downloads the assembled record as a file.
+    expect(html).toContain("download")
+    expect(html).toContain("Blob")
+    // The control is wired to the export routine.
+    expect(html).toContain("exportSession")
+  })
+
   test("escapes untrusted part content instead of injecting raw HTML", () => {
     const html = logsPageHtml()
     // The renderer must ship an escaping helper: part text, labels and
