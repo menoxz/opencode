@@ -14,7 +14,7 @@ import type { TaskPromptOps } from "@/tool/task"
 import type { SecurityMode } from "@/tool/security"
 import { type Tool as AITool, tool, jsonSchema, type ToolExecutionOptions, asSchema } from "ai"
 import { Cause, Effect, Exit, Option } from "effect"
-import { HttpClient } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient } from "effect/unstable/http"
 import { JevHooks } from "@/jev/hooks"
 import { JevRelevance } from "@/jev/relevance"
 import { JevTools } from "@/jev/tools"
@@ -841,8 +841,13 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             // unchanged (see JevTools.select). An empty decision is honoured: the
             // request may genuinely need no extra tool.
             if (cfg.jev?.tools?.enabled === true && matches.length > 0) {
-              const jevHttp = Option.getOrUndefined(yield* Effect.serviceOption(HttpClient.HttpClient))
-              if (jevHttp) {
+              // Same as skills(): the session runtime never exposes
+              // `HttpClient.HttpClient`, so fall back to a transport built from
+              // FetchHttpClient.layer here rather than skipping Jev entirely.
+              const jevHttp =
+                Option.getOrUndefined(yield* Effect.serviceOption(HttpClient.HttpClient)) ??
+                (yield* HttpClient.HttpClient.pipe(Effect.provide(FetchHttpClient.layer)))
+              {
                 const choose = yield* JevTools.select(jevHttp, cfg.jev, {
                   query: (value.query ?? "").slice(0, 500),
                   tools: matches.map((match) => ({ id: match.tool.id, description: match.tool.description })),

@@ -1,5 +1,5 @@
 import { Context, Effect, Layer, Option } from "effect"
-import { HttpClient } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient } from "effect/unstable/http"
 import { createHash } from "node:crypto"
 
 import { InstanceState } from "@/effect/instance-state"
@@ -150,9 +150,16 @@ export const layer = Layer.effect(
         // outcomes. A disabled, keyless or unreachable Jev yields undefined here
         // (see JevSkills.select) and the lexical fallback below runs unchanged.
         const jev = settings.jev
+        // The session runtime never exposes `HttpClient.HttpClient`: every
+        // `FetchHttpClient.layer` in the composition is attached with
+        // `Layer.provide`, whose output hides the client, and
+        // `Effect.serviceOption` adds nothing to `R`, so no layer is forced to
+        // expose it either. Build the JEV transport from that same layer here so
+        // the selector works whatever the surrounding context happens to hold.
         const jevHttp =
           lastUserMessage && sessionID && JevSkills.skillsApplies(jev?.skills, list.length)
-            ? Option.getOrUndefined(yield* Effect.serviceOption(HttpClient.HttpClient))
+            ? (Option.getOrUndefined(yield* Effect.serviceOption(HttpClient.HttpClient)) ??
+               (yield* HttpClient.HttpClient.pipe(Effect.provide(FetchHttpClient.layer))))
             : undefined
         const jevSelected =
           jevHttp && lastUserMessage

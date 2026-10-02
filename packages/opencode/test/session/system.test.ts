@@ -1,5 +1,6 @@
 import { describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
+import { FetchHttpClient } from "effect/unstable/http"
 import type { Agent } from "../../src/agent/agent"
 import { NamedError } from "@opencode-ai/core/util/error"
 import { Skill } from "../../src/skill"
@@ -113,5 +114,98 @@ describe("session.system", () => {
       expect(core).toContain("Do not delegate trivial or tightly sequential work")
       expect(core).toContain("verify critical child claims")
     }),
+  )
+})
+
+// A trivial prompt (".") must not pull the whole catalogue in. This only works
+// when skills() can reach Jev — i.e. when HttpClient is present in the effect
+// context. The regression was exactly that absence: serviceOption returned None
+// on every turn, the Jev branch was skipped, and the lexical fallback injected
+// up to MAX_RELEVANT_SKILLS. This suite pins the wired-up behaviour.
+let jevEndpoint = ""
+
+const jevConfigLayer = TestConfig.layer({
+  get: () =>
+    Effect.succeed({
+      jev: { skills: { enabled: true }, api_key: "test-key", endpoint: `${jevEndpoint}/v1/systemone` },
+    } as never),
+})
+
+const itJev = testEffect(
+  Layer.mergeAll(
+    FetchHttpClient.layer,
+    SystemPrompt.layer.pipe(
+      Layer.provide(PromptComposer.defaultLayer),
+      Layer.provide(jevConfigLayer),
+      Layer.provide(
+        Layer.succeed(
+          Skill.Service,
+          Skill.Service.of({
+            get: (name) => Effect.succeed(skills.find((skill) => skill.name === name)),
+            require: (name) => {
+              const info = skills.find((skill) => skill.name === name)
+              if (info) return Effect.succeed(info)
+              return Effect.fail(new Skill.NotFoundError({ name, available: skills.map((skill) => skill.name) }))
+            },
+            all: () => Effect.succeed(skills),
+            dirs: () => Effect.succeed([]),
+            available: () => Effect.succeed(skills),
+            reload: () => Effect.succeed(0),
+            revision: () => Effect.succeed(0),
+          }),
+        ),
+      ),
+    ),
+  ),
+)
+
+type Answers = Record<string, { type: "noul"; noul: number }>
+
+const withJevServer = <A, E, R>(answers: Answers, fn: (base: string) => Effect.Effect<A, E, R>) =>
+  Effect.acquireUseRelease(
+    Effect.sync(() =>
+      Bun.serve({
+        port: 0,
+        hostname: "127.0.0.1",
+        fetch: async () => Response.json({ model: "jev-latest", answers }),
+      }),
+    ),
+    (server) => fn(server.url.origin),
+    (server) => Effect.sync(() => server.stop(true)),
+  )
+
+describe("session.system Jev skill selection", () => {
+  itJev.live("a trivial prompt selects no skill once Jev is reachable", () =>
+    withJevServer(
+      {
+        "alpha-skill": { type: "noul", noul: 0.01 },
+        "middle-skill": { type: "noul", noul: 0.02 },
+        "zeta-skill": { type: "noul", noul: 0.03 },
+      },
+      (base) =>
+        Effect.gen(function* () {
+          jevEndpoint = base
+          const prompt = yield* SystemPrompt.Service
+          const output = yield* prompt.skills(build, ".", "ses_jev_trivial")
+          // A total rejection by Jev must survive as "no skill injected" — the
+          // regression let the lexical fallback re-fill the catalogue here.
+          expect(output ?? "").not.toContain("- **")
+        }),
+    ),
+  )
+
+  itJev.live("a relevant prompt keeps only the skills Jev affirms", () =>
+    withJevServer(
+      { "middle-skill": { type: "noul", noul: 0.92 } },
+      (base) =>
+        Effect.gen(function* () {
+          jevEndpoint = base
+          const prompt = yield* SystemPrompt.Service
+          const output = yield* prompt.skills(build, "middle-skill work please", "ses_jev_relevant")
+          expect(output).toContain("- **middle-skill**: Middle skill.")
+          expect(output).not.toContain("alpha-skill")
+          expect(output).not.toContain("zeta-skill")
+        }),
+    ),
   )
 })
