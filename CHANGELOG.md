@@ -7,6 +7,11 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.3.40] - 2026-10-02
+
+### Fixed
+- **Badge « Queue » affiché à tort sur le prompt en cours d'exécution.** `servingUserID` ancrait le tour servi sur le plus ancien tour resté ouvert. Un tour laissé ouvert par une exécution interrompue — chaque étape arrêtée à `tool-calls`, aucune étape terminale, aucune compaction — est ouvert exactement comme le tour servi, donc l'ordre seul ne les distinguait pas et chaque envoi ultérieur était badgé « Queue ». Le tour réellement servi est celui dont une étape est en cours (pas encore de `finish`) ; il est désormais préféré quand les deux sont en concurrence.
+
 ## [v2.3.39] - 2026-10-02
 
 ### Fixed
