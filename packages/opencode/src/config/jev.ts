@@ -5,6 +5,7 @@ import { JevGuard } from "@/jev/guard"
 import { JevCompaction } from "@/jev/compaction"
 import { JevIntake } from "@/jev/intake"
 import { JevRelevance } from "@/jev/relevance"
+import { JevSkills } from "@/jev/skills"
 
 export const Guard = Schema.Struct({
   enabled: Schema.optional(Schema.Boolean).annotate({
@@ -133,6 +134,17 @@ export const Intake = Schema.Struct({
 }).annotate({ identifier: "JevIntakeConfig" })
 export type Intake = Schema.Schema.Type<typeof Intake>
 
+export const Skills = Schema.Struct({
+  enabled: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "Enable the Jev skill selector. Before the skill catalogue is injected, Jev answers one yes/no question per candidate — 'does completing this request correctly require this skill?' — and only the skills it affirms are injected. Unlike the lexical filter it replaces, Jev judges meaning rather than wording, and there is NO fixed cap: it may inject none, a few, or all, exactly as the request justifies. Fail-open: with Jev off, no key, an error, a timeout or an unreadable answer, the deterministic ranking is used unchanged. Opt-in, default off. Requires an API key.",
+  }),
+  threshold: Schema.optional(Schema.Number).annotate({
+    description: `Probability (0..1) at or above which a candidate counts as relevant and is injected. Defaults to ${JevSkills.DEFAULT_THRESHOLD}.`,
+  }),
+}).annotate({ identifier: "JevSkillsConfig" })
+export type Skills = Schema.Schema.Type<typeof Skills>
+
 export const Info = Schema.Struct({
   provider: Schema.optional(JevClient.Provider).annotate({
     description:
@@ -172,6 +184,7 @@ export const Info = Schema.Struct({
   relevance: Schema.optional(Relevance),
   next_action: Schema.optional(NextAction),
   intake: Schema.optional(Intake),
+  skills: Schema.optional(Skills),
 }).annotate({ identifier: "JevConfig" })
 export type Info = Schema.Schema.Type<typeof Info>
 

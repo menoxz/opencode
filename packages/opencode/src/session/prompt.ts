@@ -2281,7 +2281,7 @@ export const layer = Layer.effect(
             const skillsStart = Date.now()
             const skillsKey = `skills:${skillRev}:${agent.name}:${createHash("sha1").update(lastUserText ?? "").digest("hex")}`
             const cachedSkills = injectionCache.get(skillsKey)
-            const skills = cachedSkills.cached ? cachedSkills.value : injectionCache.set(skillsKey, yield* sys.skills(agent, lastUserText))
+            const skills = cachedSkills.cached ? cachedSkills.value : injectionCache.set(skillsKey, yield* sys.skills(agent, lastUserText, sessionID))
             // Conditionally advertise write/shell tools based on security mode
             const toolListStart = Date.now()
             const cachedToolList = injectionCache.get(`toolList:${securityMode}`)

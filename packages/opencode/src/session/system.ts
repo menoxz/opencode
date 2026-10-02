@@ -1,4 +1,5 @@
 import { Context, Effect, Layer, Option } from "effect"
+import { HttpClient } from "effect/unstable/http"
 import { createHash } from "node:crypto"
 
 import { InstanceState } from "@/effect/instance-state"
@@ -13,6 +14,7 @@ import { PromptComposer } from "@/prompt-composer"
 import { SelfImprove } from "@/self-improve"
 import type { MessageV2 } from "./message-v2"
 import { rankDocuments } from "@/memory/search"
+import { JevSkills } from "@/jev/skills"
 import { Config } from "@/config/config"
 import { SessionContextRollout } from "./context-rollout"
 import { SECURITY_GATED_TOOLS, type SecurityMode } from "@/tool/security"
@@ -61,7 +63,7 @@ function skillSearchText(skill: Skill.Info): string {
 export interface Interface {
   readonly environment: (model: Provider.Model) => Effect.Effect<{ stable: string; runtime: string }>
   readonly preloadedSkills: (agent: Agent.Info) => Effect.Effect<string | undefined>
-  readonly skills: (agent: Agent.Info, lastUserMessage?: string) => Effect.Effect<string | undefined>
+  readonly skills: (agent: Agent.Info, lastUserMessage?: string, sessionID?: string) => Effect.Effect<string | undefined>
   /** Adaptive system prompt composed by PromptComposer module based on detected task type. */
   readonly adaptivePrompt: (input: {
     messages: MessageV2.WithParts[]
@@ -130,7 +132,7 @@ export const layer = Layer.effect(
         return parts.join("\n")
       }),
 
-      skills: Effect.fn("SystemPrompt.skills")(function* (agent: Agent.Info, lastUserMessage?: string) {
+      skills: Effect.fn("SystemPrompt.skills")(function* (agent: Agent.Info, lastUserMessage?: string, sessionID?: string) {
         if (Permission.disabled(["skill"], agent.permission).has("skill")) return
 
         const settings = yield* config.get()
@@ -141,31 +143,54 @@ export const layer = Layer.effect(
         list = list.filter((info) => !preloaded.has(info.name))
         if (list.length === 0) return
 
-        // BM25 relevance filter: rank skills by semantic + keyword match
-        if (lastUserMessage && list.length > MAX_RELEVANT_SKILLS) {
-          const docs = list.map((s) => ({
-            id: s.name,
-            content: skillSearchText(s),
-            importance: 1.0 as const,
-            confidence: 1.0 as const,
-          }))
-          const ranked = rankDocuments(lastUserMessage, docs, MAX_RELEVANT_SKILLS)
-          // Use the whole budget. Dropping every score==0 skill left slots unused
-          // for no benefit, and the old "fewer than 3 matches" branch fell back to
-          // the alphabetical head of the list, which is strictly worse than score
-          // order. Ranking already put the best candidates first.
-          const kept = new Set(ranked.map((r) => r.id))
-          list = list.filter((s) => kept.has(s.name))
-        }
+        // Jev decides which skills are worth injecting, when enabled and keyed.
+        // One closed "does this task need this skill?" question per candidate,
+        // judged on meaning rather than on wording, and with NO fixed cap: the
+        // count follows the request, so injecting zero or a hundred are both valid
+        // outcomes. A disabled, keyless or unreachable Jev yields undefined here
+        // (see JevSkills.select) and the lexical fallback below runs unchanged.
+        const jev = settings.jev
+        const jevHttp =
+          lastUserMessage && sessionID && JevSkills.skillsApplies(jev?.skills, list.length)
+            ? Option.getOrUndefined(yield* Effect.serviceOption(HttpClient.HttpClient))
+            : undefined
+        const jevSelected =
+          jevHttp && lastUserMessage
+            ? yield* JevSkills.select(jevHttp, jev, {
+                prompt: lastUserMessage,
+                skills: list.map((s) => ({ name: s.name, description: s.description, text: skillSearchText(s) })),
+                threshold: jev?.skills?.threshold,
+              }).pipe(Effect.catch(() => Effect.succeed(undefined)))
+            : undefined
 
-        // Budget enforcement (D3). The BM25 branch above is skipped whenever the
-        // turn carries no user text, and the whole catalog — 193 skills, 73 % of
-        // them never loaded once in 45 days — was being emitted in that case.
-        // Fall back to real usage recency and cap unconditionally; everything
-        // outside the budget remains reachable through the skill_search tool.
-        if (list.length > MAX_RELEVANT_SKILLS) {
-          yield* Effect.promise(() => SkillUsage.ready())
-          list = SkillUsage.prioritize(list, MAX_RELEVANT_SKILLS)
+        if (jevSelected) {
+          const kept = new Set(jevSelected)
+          list = list.filter((s) => kept.has(s.name))
+          if (list.length === 0) return
+        } else {
+          // Deterministic lexical fallback: keep the best-scoring skills. This is
+          // BM25 only — a wording match, not a semantic one — so it is the safety
+          // net for a turn Jev could not decide, never the primary filter.
+          if (lastUserMessage && list.length > MAX_RELEVANT_SKILLS) {
+            const docs = list.map((s) => ({
+              id: s.name,
+              content: skillSearchText(s),
+              importance: 1.0 as const,
+              confidence: 1.0 as const,
+            }))
+            const ranked = rankDocuments(lastUserMessage, docs, MAX_RELEVANT_SKILLS)
+            const kept = new Set(ranked.map((r) => r.id))
+            list = list.filter((s) => kept.has(s.name))
+          }
+
+          // Budget enforcement (D3), fallback path only. Jev sets its own count;
+          // when it abstains, clamp the catalogue by real usage recency so the
+          // whole list (193 skills, 73 % never loaded once in 45 days) is not
+          // emitted when the turn carries no user text.
+          if (list.length > MAX_RELEVANT_SKILLS) {
+            yield* Effect.promise(() => SkillUsage.ready())
+            list = SkillUsage.prioritize(list, MAX_RELEVANT_SKILLS)
+          }
         }
 
         return [
