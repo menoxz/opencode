@@ -7,15 +7,14 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
-## [v2.3.35] - 2026-10-01
+## [v2.3.36] - 2026-10-02
 
 ### Fixed
-- **Le badge Queue ne colle plus a tous les prompts d'une session compactee.** Le tour servant d'ancre etait cherche dans tout le transcript : un tour interrompu laisse ouvert AVANT une compaction (le run ne le voit plus, donc il ne le sert ni ne l'attend) restait indefiniment "le plus ancien tour ouvert", et tout prompt soumis ensuite etait compare a lui et marque QUEUED. L'ancre est desormais cherchee dans la vue du run, bornee au debut de la queue de compaction retenue la plus recente (`MessageV2.filterCompacted`), comme le fait le backend. Verifie sur une session reelle : le prompt qui ouvre le run passe de QUEUED a aucun badge, un second prompt envoye pendant le run reste QUEUED. Nouveau test de non-regression reconstituant la forme reelle (tour abandonne avant la coupe) et refusant tout badge sur ce tour comme sur le prompt d'ancrage.
+- **Badge « Queue » bloqué sur le prompt qui ouvre le run.** L'ancre du run était le plus ancien tour encore ouvert ; un tour de tête laissé ouvert par un run interrompu (toutes ses étapes terminées `tool-calls`, aucune terminale) l'épinglait indéfiniment, si bien que tout prompt soumis ensuite était badgé QUEUED. L'ancre est désormais bornée par la frontière FIFO (le tour fermé le plus récent que le run a déjà dépassé) en plus de la coupe de compaction.
+- **Contexte injecté tronqué dans les logs.** La section `instructions` (jusqu'à ~20 ko) était coupée par une limite de 8000 caractères ; la limite passe à 1 000 000 pour stocker le contenu complet, la taille réelle et l'indicateur de troncature restant reportés séparément.
 
-## [v2.3.34] - 2026-10-01
-
-### Fixed
-- **Le statut Queue ne s'applique plus au prompt qui ouvre le tour.** Le badge ne marque plus QUEUED le prompt que le run en cours est en train de servir : un prompt soumis a une session au repos ouvre le tour et n'attend personne, donc seuls les prompts envoyes alors qu'un tour est deja en vol restent QUEUED. Le statut compare desormais le message au tour ouvert le plus ancien (celui sur lequel le run est ancre), ce qui separe "en attente" de "en cours" ; STEER est inchange. Couvert par des tests unitaires et par un test de rendu refusant tout badge sur le prompt d'ancrage.
+### Added
+- **Page Logs web autonome `GET /logs`.** Document HTML unique, indépendant de l'UI embarquée, qui lit l'API publique (`GET /session`, `GET /session/{id}/message`) et rend la trajectoire brute (toutes les parties, y compris synthétiques masquées par le transcript) et le contexte injecté avec provenance (sources d'instructions, sections core/env/instructions/skills avec taille et troncature). Sections dépliées par défaut ; sélection d'une session via `?session=<id>`.
 
 ## [v2.3.33] - 2026-10-01
 
