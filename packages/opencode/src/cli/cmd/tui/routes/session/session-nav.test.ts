@@ -47,6 +47,7 @@ import {
   removableDirectories,
   removableDirKey,
 } from "./session-nav"
+import { folderKey } from "../../context/session-scope"
 
 const sessions: NavSession[] = [
   { id: "ses_a", title: "Add navbar" },
@@ -276,6 +277,37 @@ describe("TUI session navbar", () => {
     expect(fork?.label).toBe("opencode-fork")
     expect(fork?.count).toBe(2)
     expect(fork?.sessions.map((session) => session.id)).toEqual(["a1", "a2"])
+  })
+
+  // Regression: the navbar listed one folder as two (and an added folder as an extra empty one) when
+  // its sessions stored the same path under a different case or a `/`/`\` separator — the store really
+  // holds both spellings side by side, so startup showed duplicated and empty directory rows.
+  test("groups one folder written with a different case or separator into a single directory", () => {
+    const mixed: NavSession[] = [
+      { id: "x1", title: "Backslash", directory: "C:\\work\\boutikV2", updated: todayAt },
+      { id: "x2", title: "Forward slash", directory: "C:/work/boutikV2", updated: todayAt },
+      { id: "x3", title: "Upper case", directory: "C:/WORK/BOUTIKV2", updated: todayAt },
+    ]
+    const groups = navGroups(mixed, undefined)
+    expect(groups).toHaveLength(1)
+    expect(groups[0].count).toBe(3)
+    // The first spelling seen is kept, so the label and the fold state stay stable.
+    expect(groups[0].key).toBe("C:\\work\\boutikV2")
+    expect(groups[0].label).toBe("boutikV2")
+  })
+
+  test("lists an added folder once even when its spelling differs from the sessions'", () => {
+    const listed: NavSession[] = [{ id: "y1", title: "Session", directory: "C:\\work\\boutikV2", updated: todayAt }]
+    const groups = navGroups(listed, undefined, ["C:/work/boutikV2"])
+    expect(groups).toHaveLength(1)
+    expect(groups[0].count).toBe(1)
+    expect(groups[0].added).toBe(true)
+  })
+
+  test("keeps the folder identity blind to case and separators", () => {
+    expect(folderKey("C:\\Work\\BoutikV2")).toBe(folderKey("c:/work/boutikv2/"))
+    expect(folderKey(undefined)).toBe("")
+    expect(folderKey("")).toBe("")
   })
 
   test("pins the active session's directory first", () => {

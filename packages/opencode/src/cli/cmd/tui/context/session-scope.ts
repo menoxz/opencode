@@ -36,12 +36,23 @@ export function removeDirectory(list: readonly string[], directory: string): str
   return list.filter((item) => item.toLowerCase() !== target)
 }
 
+/**
+ * Identity of a folder, so the two spellings Windows produces for one path — a different case, or a
+ * separator flipped between `\` and `/` — collapse to a single key. A session stores whatever string
+ * it was created with, and both forms already coexist in the store (the DB holds `C:\jeanluc` and
+ * `C:/jeanluc` side by side), so every place that groups or de-duplicates folders must agree on this
+ * key; anything less renders one folder as two, or as an empty duplicate.
+ */
+export function folderKey(directory: string | undefined | null): string {
+  return (directory ?? "").trim().replace(/[\\/]+/g, "/").replace(/\/+$/g, "").toLowerCase()
+}
+
 /** The folders the list watches: the current one, plus the ones the user added, in that order. */
 export function watchedDirectories(current: string | undefined, added: readonly string[]): string[] {
   const all = current ? [current, ...added] : [...added]
   const seen = new Set<string>()
   return all.filter((directory) => {
-    const key = directory.toLowerCase()
+    const key = folderKey(directory)
     if (seen.has(key)) return false
     seen.add(key)
     return true

@@ -5,6 +5,8 @@
  * `pending-turn.ts` is separated from the session route that renders it.
  */
 
+import { folderKey } from "../../context/session-scope"
+
 /** Coarse activity of a session, derived from the store's session status. */
 export type NavActivity = "busy" | "retry" | "idle"
 
@@ -283,29 +285,34 @@ export function directoryChoice(
  * activity. Pure, so grouping is a unit test rather than a claim about the renderer.
  */
 export function navGroups(sessions: readonly NavSession[], activeID: string | undefined, added: readonly string[] = []): NavGroup[] {
-  const buckets = new Map<string, NavSession[]>()
+  // Bucket on the folder's identity, not its stored spelling: two sessions of the same folder written
+  // as `C:\x` and `C:/x` must land in one group, and `key` keeps the first spelling seen so the label
+  // and the fold state stay stable while the list fluctuates at startup.
+  const buckets = new Map<string, { key: string; list: NavSession[] }>()
   for (const session of sessions) {
-    const key = session.directory ?? ""
-    const bucket = buckets.get(key)
-    if (bucket) bucket.push(session)
-    else buckets.set(key, [session])
+    const identity = folderKey(session.directory)
+    const bucket = buckets.get(identity)
+    if (bucket) bucket.list.push(session)
+    else buckets.set(identity, { key: session.directory ?? "", list: [session] })
   }
   // An added folder is listed even when it holds no recent session: otherwise it would be counted in
-  // the scope line yet own no row, and so have no way to leave the list again.
+  // the scope line yet own no row, and so have no way to leave the list again. The identity match is
+  // what keeps that placeholder from appearing beside the very sessions it duplicates.
   for (const directory of added) {
-    if ([...buckets.keys()].some((key) => key.toLowerCase() === directory.toLowerCase())) continue
-    buckets.set(directory, [])
+    const identity = folderKey(directory)
+    if (!identity || buckets.has(identity)) continue
+    buckets.set(identity, { key: directory, list: [] })
   }
-  const isAdded = (key: string) => added.some((directory) => directory.toLowerCase() === key.toLowerCase())
+  const addedKeys = new Set(added.map(folderKey).filter(Boolean))
   return [...buckets.entries()]
-    .map(([key, list]) => ({
-      key,
-      label: navBasename(key),
-      count: list.length,
-      added: isAdded(key),
-      active: list.some((session) => session.id === activeID),
-      updated: list.reduce((latest, session) => Math.max(latest, session.updated ?? 0), 0),
-      sessions: navItems(list, activeID),
+    .map(([identity, bucket]) => ({
+      key: bucket.key,
+      label: navBasename(bucket.key),
+      count: bucket.list.length,
+      added: addedKeys.has(identity),
+      active: bucket.list.some((session) => session.id === activeID),
+      updated: bucket.list.reduce((latest, session) => Math.max(latest, session.updated ?? 0), 0),
+      sessions: navItems(bucket.list, activeID),
     }))
     .toSorted((a, b) => a.label.localeCompare(b.label))
 }
