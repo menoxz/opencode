@@ -7,6 +7,11 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.3.38] - 2026-10-02
+
+### Fixed
+- **Sélecteurs JEV de skills et `tool_search` inertes : le catalogue complet restait injecté.** Le runtime de session n'expose jamais `HttpClient.HttpClient` — chaque `FetchHttpClient.layer` de la composition est attaché via `Layer.provide`, dont la sortie masque le client, et `Effect.serviceOption` n'ajoute rien à `R`, donc aucun layer n'est forcé de l'exposer. Les branches JEV de `skills()` et de `tool_search` voyaient donc toujours `None` et retombaient silencieusement sur leur tri lexical (top 30), qui réinjectait tout le catalogue sur un prompt trivial comme `.`. Le transport JEV est désormais construit sur place depuis `FetchHttpClient.layer`, indépendamment du contexte appelant.
+
 ## [v2.3.37] - 2026-10-02
 
 ### Added
