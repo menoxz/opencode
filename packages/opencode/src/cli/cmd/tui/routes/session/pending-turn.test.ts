@@ -45,10 +45,11 @@ describe("TUI user prompt delivery status", () => {
       running,
       assistant("14", "13", { finish: "tool-calls" }),
     ]
-    // Without the cut the abandoned turn is "the oldest open turn" forever, so
-    // the prompt actually being served is badged queued.
-    expect(status(running, running.parts, messages, true, undefined)).toBe("queued")
-    // Bounded to the run's view, that prompt is the one being served.
+    // The abandoned head is older than the newest closed turn ("11"), so the
+    // FIFO frontier already drops it: the served prompt is never queued, cut or
+    // not. The compaction cut keeps the same guarantee when the client holds
+    // the compaction part.
+    expect(status(running, running.parts, messages, true, undefined)).toBeUndefined()
     expect(status(running, running.parts, messages, true, "09")).toBeUndefined()
     // A genuine queue behind it is still queued.
     const queued = user("15")
@@ -67,6 +68,43 @@ describe("TUI user prompt delivery status", () => {
     const messages = [user("01"), user("03"), user("09")]
     expect(visibleFromID(messages, partsOf)).toBe("11")
     expect(visibleFromID(messages, () => [])).toBeUndefined()
+  })
+
+  test("the compaction cut holds the anchor when no closed turn bounds it", () => {
+    // The only closed turn ("01") is older than the abandoned open turn ("03"),
+    // so the FIFO frontier does not exclude it; only the compaction cut does.
+    const earlyClosed = user("01")
+    const abandoned = user("03")
+    const running = user("13")
+    const messages = [
+      earlyClosed,
+      assistant("02", "01", { finish: "stop", time: { created: 1, completed: 2 } }),
+      abandoned,
+      assistant("04", "03", { finish: "tool-calls", time: { created: 3, completed: 4 } }),
+      running,
+      assistant("14", "13", { finish: "tool-calls" }),
+    ]
+    expect(status(running, running.parts, messages, true, undefined)).toBe("queued")
+    expect(status(running, running.parts, messages, true, "09")).toBeUndefined()
+  })
+
+  test("an abandoned head after the last compaction is dropped by the FIFO frontier (anomaly: badge stuck QUEUED)", () => {
+    // The head is past the cut, so only a later closed turn can prove the run
+    // moved on — the real shape of the live regression.
+    const stale = user("11")
+    const closedTurn = user("13")
+    const served = user("15")
+    const messages = [
+      stale,
+      assistant("12", "11", { finish: "tool-calls", time: { created: 1, completed: 2 } }),
+      closedTurn,
+      assistant("14", "13", { finish: "stop", time: { created: 3, completed: 4 } }),
+      served,
+      assistant("16", "15", { finish: "tool-calls" }),
+    ]
+    expect(status(served, served.parts, messages, true, "09")).toBeUndefined()
+    const queued = user("17")
+    expect(status(queued, queued.parts, [...messages, queued], true, "09")).toBe("queued")
   })
 
   test("the prompt that opened the running turn is never queued (anomaly: every submit showed QUEUED)", () => {

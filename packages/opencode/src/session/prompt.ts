@@ -3160,12 +3160,14 @@ export function unreadableImages(part: MessageV2.Part): MessageV2.FilePart[] {
 }
 
 /**
- * Log carriers persist the real injected prompt context, which runs to tens of
- * kilobytes for the system prompt. Keep a bounded head+tail slice so the stored
- * part stays small while still showing both the opening directives and the
- * closing instructions. The untruncated length is always reported separately.
+ * Log carriers persist the real injected prompt context so the Logs surfaces can
+ * show the actual instructions/core/skills content, not just a header. Real
+ * content tops out around tens of kilobytes, so the limit is set high enough that
+ * realistic sections are stored whole; the head+tail slice remains only as a
+ * guard against a pathological multi-megabyte section. The true length and a
+ * truncation flag are always reported separately.
  */
-const CONTEXT_CARRIER_SECTION_LIMIT = 8000
+const CONTEXT_CARRIER_SECTION_LIMIT = 1_000_000
 
 function truncateForLog(text: string, limit: number = CONTEXT_CARRIER_SECTION_LIMIT) {
   if (text.length <= limit) return text

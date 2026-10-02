@@ -139,16 +139,34 @@ export function PartBlock(props: { part: Part }) {
     case "text": {
       const injection = props.part.metadata?.injection
       const sources = props.part.metadata?.sources
+      const injectedSections = Array.isArray(props.part.metadata?.sections)
+        ? (props.part.metadata?.sections as Array<{
+            section?: string
+            label?: string
+            text?: string
+            size?: number
+          }>)
+        : []
       return (
         <box flexDirection="column" flexShrink={0} marginTop={1}>
           <Show when={typeof injection === "string"}>
             <text fg={theme.secondary} wrapMode="word">
-              {`injected · ${String(injection)}${Array.isArray(sources) ? ` · ${sources.length} source(s)` : ""}`}
+              {`injected · ${String(injection)}${Array.isArray(sources) ? ` · ${sources.length} source(s)` : ""}${injectedSections.length ? ` · ${injectedSections.length} section(s)` : ""}`}
             </text>
           </Show>
           <text fg={props.part.ignored ? theme.textMuted : theme.text} wrapMode="word">
             {props.part.text}
           </text>
+          <For each={injectedSections}>
+            {(section) => (
+              <OutputField
+                label={section.label ?? section.section ?? "section"}
+                value={section.text ?? ""}
+                color={theme.textMuted}
+                wrap="word"
+              />
+            )}
+          </For>
         </box>
       )
     }

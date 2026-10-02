@@ -14,10 +14,14 @@
 // every submitted prompt look queued. Excluding the oldest open turn (the prompt
 // the active run is anchored on) is what separates "waiting" from "running".
 //
-// That anchor must be read in the run's own view, not the whole transcript:
-// `visibleFrom` bounds the scan to MessageV2.filterCompacted's cut, so a turn
-// left open by an interrupted run from before a compaction cannot hold the
-// anchor and badge every later submit.
+// That anchor must be read in the run's own view, not the whole transcript, and
+// it must never be a turn the run already passed. Two bounds enforce that:
+// `visibleFrom` (MessageV2.filterCompacted's compaction cut) drops everything
+// before the run's retained tail, and the FIFO frontier — the newest turn the
+// run already closed — drops an abandoned head left open even after the last
+// compaction (its steps all stopped at `tool-calls`, no terminal step landed).
+// Either bound alone leaves a stale head able to pin the anchor and badge every
+// later submit QUEUED.
 //
 // `queued`: an older prompt's turn is still open (the run is serving someone
 // ahead of this one) AND this prompt's own turn has not closed.
@@ -63,10 +67,23 @@ const steerServed = (messages: readonly MessageLike[], steerID: string) =>
 // to the run and can never be the prompt being served. Counting it as the
 // anchor pinned it forever and badged every later submit QUEUED.
 const servingUserID = (messages: readonly MessageLike[], visibleFrom?: string) => {
+  // The newest turn the run already finished. Prompts are served in FIFO order,
+  // so the run never walks back behind a turn it closed: an open turn older than
+  // this frontier was passed — an abandoned head (every step stopped at
+  // `tool-calls`, no terminal step ever landed) — never the prompt in flight.
+  // This bounds the anchor without depending on the client holding the
+  // compaction part, which an older/oddly-synced session may not.
+  let frontier: string | undefined
+  for (const message of messages) {
+    if (message.role !== "user") continue
+    if (!turnClosed(messages, message.id)) continue
+    if (frontier === undefined || message.id > frontier) frontier = message.id
+  }
   let oldest: string | undefined
   for (const message of messages) {
     if (message.role !== "user") continue
     if (visibleFrom !== undefined && message.id < visibleFrom) continue
+    if (frontier !== undefined && message.id < frontier) continue
     if (turnClosed(messages, message.id)) continue
     if (oldest === undefined || message.id < oldest) oldest = message.id
   }

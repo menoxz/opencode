@@ -131,7 +131,7 @@ function injectionBlock(part) {
   if (meta.injection === "context") {
     var secs = Array.isArray(meta.sections) ? meta.sections : [];
     var body = secs.map(function (s) {
-      return "<details class=\"sec\"><summary><span class=\"lbl\">" + esc(s.section) + "</span>" +
+      return "<details class=\"sec\" open><summary><span class=\"lbl\">" + esc(s.section) + "</span>" +
         "<span>" + esc(s.label || "") + "</span>" +
         (s.truncated ? "<span class=\"tag trunc\">truncated</span>" : "") +
         "<span class=\"sz\">" + chars(s.size !== undefined ? s.size : (s.text || "").length) + "</span></summary>" +
