@@ -79,15 +79,28 @@ const servingUserID = (messages: readonly MessageLike[], visibleFrom?: string) =
     if (!turnClosed(messages, message.id)) continue
     if (frontier === undefined || message.id > frontier) frontier = message.id
   }
+  // The turn the run is writing right now has a step with no terminal finish.
+  // An abandoned head cannot be told from the served prompt by order alone — it
+  // is open exactly like the served one — but its step stopped at `tool-calls`,
+  // so it is NOT in flight, while the served turn's step is. Preferring the
+  // in-flight turn keeps a stale open head from badging every later submit
+  // QUEUED, the residual case the compaction tail and FIFO frontier do not cover
+  // when neither a compaction nor a closed turn exists.
+  const inFlight = (userID: string) =>
+    messages.some(
+      (m) => m.role === "assistant" && m.parentID === userID && m.finish === undefined && m.error === undefined,
+    )
   let oldest: string | undefined
+  let oldestInFlight: string | undefined
   for (const message of messages) {
     if (message.role !== "user") continue
     if (visibleFrom !== undefined && message.id < visibleFrom) continue
     if (frontier !== undefined && message.id < frontier) continue
     if (turnClosed(messages, message.id)) continue
+    if (inFlight(message.id) && (oldestInFlight === undefined || message.id < oldestInFlight)) oldestInFlight = message.id
     if (oldest === undefined || message.id < oldest) oldest = message.id
   }
-  return oldest
+  return oldestInFlight ?? oldest
 }
 
 // The oldest message the active run can still see: the start of the newest

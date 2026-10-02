@@ -27,6 +27,19 @@ const status = (
 ): QueuedStatus => queuedUserStatus({ message, parts, messages, busy, visibleFrom } as never)
 
 describe("TUI user prompt delivery status", () => {
+  test("an abandoned open head does not badge the in-flight prompt (anomaly: badge stuck QUEUED)", () => {
+    // u1's run was interrupted: its step stopped at `tool-calls`, no terminal
+    // step landed and no compaction ran, so order alone cannot separate it from
+    // the served turn. u2's step is streaming, which is the distinguisher.
+    const u1 = user("1")
+    const a1 = assistant("2", "1", { finish: "tool-calls" })
+    const u2 = user("3")
+    const a2 = assistant("4", "3") // no finish: in flight
+    expect(status(u2, [], [u1, a1, u2, a2], true, undefined)).toBeUndefined()
+    // The stale head itself is still the anchor when nothing is in flight.
+    expect(status(u1, [], [u1, a1], true, undefined)).toBeUndefined()
+  })
+
   test("an interrupted turn from before a compaction cannot hold the anchor (anomaly: every submit showed QUEUED)", () => {
     // The real shape: one abandoned turn left open at the head of the session
     // (its steps all finished `tool-calls`, no terminal step ever landed), a
