@@ -7,6 +7,19 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.3.37] - 2026-10-02
+
+### Added
+- **Jev décide des skills injectés.** Le filtre lexical (BM25, top 30 fixe) est remplacé par une question fermée `noul` par skill candidat — « cette requête nécessite-t-elle ce skill ? » — quand Jev est activé et joignable. Aucun plafond : Jev peut n'injecter aucun skill, quelques-uns, ou tous, selon la requête. Fail-open : Jev désactivé, sans clé, en erreur, en délai ou en réponse illisible conserve le classement déterministe. Opt-in via `jev.skills.enabled` ; seuil `jev.skills.threshold` (défaut 0.5).
+- **Jev décide des outils remontés par `tool_search`.** Le pendant outil du sélecteur de skills : le pool lexical de `tool_search` est filtré par une question fermée par candidat — « cette requête nécessite-t-elle cet outil ? » — pour qu'un outil sémantiquement faible ne remonte pas sur un simple mot partagé. Même provider que les autres hooks ; aucun plafond. Opt-in via `jev.tools.enabled` ; seuil `jev.tools.threshold`.
+- **Provider Jev `command-code`** (Command Code GOAT Provider API, `typesafe/jev`), aux côtés de `typesafe` et `openjev`, avec sa propre clé `COMMAND_CODE_API_KEY`. Un preset `provider` fixe `base_url` et `model` ensemble.
+
+### Changed
+- **Guidage d'usage des outils déplacé du prompt système vers les définitions d'outils.** La règle de portabilité inter-shells vit désormais dans la description de l'outil shell et la liste des tâches dans la description dynamique de l'outil `tasks` (patron `describeTask`/`describeSkill`), au lieu d'être injectée à chaque agent.
+
+### Fixed
+- **Watchdog de flux LLM compilable.** `streamTimeoutMs` référençait `StreamTimeoutError`, non défini : le paquet ne typait pas. Le type est ajouté et le flag capturé dans une variable locale pour le narrowing.
+
 ## [v2.3.36] - 2026-10-02
 
 ### Fixed
