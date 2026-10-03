@@ -1,11 +1,12 @@
 /** @jsxImportSource @opentui/solid */
-import { describe, expect, test } from "bun:test"
+import { beforeEach, describe, expect, test } from "bun:test"
 import { testRender } from "@opentui/solid"
 import type { Event, GlobalEvent } from "@opencode-ai/sdk/v2"
 import { onMount } from "solid-js"
 import { ProjectProvider, useProject } from "../../../src/cli/cmd/tui/context/project"
 import { SDKProvider } from "../../../src/cli/cmd/tui/context/sdk"
 import { useEvent } from "../../../src/cli/cmd/tui/context/event"
+import { setExtraDirectories } from "../../../src/cli/cmd/tui/context/session-scope"
 
 const projectID = "proj_test"
 
@@ -121,6 +122,9 @@ function Probe(props: {
 }
 
 describe("useEvent", () => {
+  // The added-folder list is module state; reset it so one test cannot leak into the next.
+  beforeEach(() => setExtraDirectories([]))
+
   test("delivers events for the current project", async () => {
     const { app, emit, seen, workspaces } = await mount()
 
@@ -144,6 +148,24 @@ describe("useEvent", () => {
       await Bun.sleep(30)
 
       expect(seen).toHaveLength(0)
+    } finally {
+      app.renderer.destroy()
+    }
+  })
+
+  test("delivers events for a folder added to the workspace, under another project", async () => {
+    const { app, emit, seen, workspaces } = await mount()
+
+    try {
+      // A session in an added folder runs in that folder's own project, so its events carry a
+      // project id the launch-project check would drop — the regression this guards.
+      setExtraDirectories(["/tmp/added"])
+      emit(event(vcs("added"), { directory: "/tmp/added", project: "proj_other", workspace: "ws_added" }))
+
+      await wait(() => seen.length === 1)
+
+      expect(seen).toEqual([vcs("added")])
+      expect(workspaces).toEqual(["ws_added"])
     } finally {
       app.renderer.destroy()
     }

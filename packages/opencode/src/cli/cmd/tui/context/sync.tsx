@@ -40,6 +40,7 @@ import {
   isRecentSession,
   removeDirectory as removeWatchedDirectory,
   sessionAgeCutoff,
+  setExtraDirectories,
   watchedDirectories,
 } from "./session-scope"
 
@@ -151,7 +152,11 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
     function storedExtraDirectories(): string[] {
       const stored = kv.get(SESSION_EXTRA_DIRECTORIES_KEY, [])
       if (!Array.isArray(stored)) return []
-      return stored.filter((item): item is string => typeof item === "string")
+      const directories = stored.filter((item): item is string => typeof item === "string")
+      // Mirror to the event filter, which cannot reach the kv context: a session added to the
+      // workspace runs in its own project, and its events would otherwise be dropped.
+      setExtraDirectories(directories)
+      return directories
     }
 
 

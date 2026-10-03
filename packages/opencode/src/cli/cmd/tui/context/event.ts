@@ -1,6 +1,7 @@
 import type { Event } from "@opencode-ai/sdk/v2"
 import { useProject } from "./project"
 import { useSDK } from "./sdk"
+import { isExtraDirectory } from "./session-scope"
 
 type EventMetadata = {
   workspace: string | undefined
@@ -16,7 +17,13 @@ export function useEvent() {
         return
       }
 
-      if (event.directory === "global" || event.project === project.project()) {
+      // A session in a folder added to the workspace runs in that folder's own project, so its
+      // events carry a different project id. Keep it by folder, or it would open and show nothing.
+      if (
+        event.directory === "global" ||
+        event.project === project.project() ||
+        isExtraDirectory(event.directory)
+      ) {
         handler(event.payload, { workspace: event.workspace })
       }
     })

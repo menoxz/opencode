@@ -69,3 +69,25 @@ export const SESSION_EXTRA_DIRECTORIES_KEY = "session_extra_directories"
 export function isRecentSession(session: { time: { updated: number } }, cutoff: number): boolean {
   return session.time.updated >= cutoff
 }
+
+/**
+ * The folders the user added to the workspace, mirrored here so the event stream can recognise them.
+ *
+ * A session that lives in an added folder runs in that folder's own project, so its events carry a
+ * project id the launch-project check would drop — the session would open and then show nothing at
+ * all. `sync` owns the list (it reads it from kv) and publishes it on every read, which keeps the
+ * event path free of both the kv context and the store.
+ */
+let extraDirectories: readonly string[] = []
+
+/** Publishes the folders the user added to the workspace, for the event stream to match against. */
+export function setExtraDirectories(directories: readonly string[]): void {
+  extraDirectories = directories
+}
+
+/** Whether a folder is one the user added to the workspace, compared by folder identity. */
+export function isExtraDirectory(directory: string | undefined | null): boolean {
+  if (!directory) return false
+  const key = folderKey(directory)
+  return extraDirectories.some((item) => folderKey(item) === key)
+}
