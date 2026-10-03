@@ -90,3 +90,35 @@ objection **bloquante**. C'est cette règle qui a produit `C-02` (gain P05 mesur
 
 Ces quatre corrections ont été trouvées **par mesure**, pas par argument. C'est le seul
 moyen fiable de valider une proposition d'outil interne.
+
+## Règle 7 — le shell n'est pas indisponible, il est intermittent
+
+La règle 2 ci-dessus est **abrogée sur le shell**, et maintenue sur `git`.
+
+**Ce que la mesure dit.** L'agent de fidélité P09 a obtenu `pwsh 7.6.6` (exit 0),
+`bun test test/tool/truncation.test.ts` (exit 0, 19 pass), `bun test
+test/tool/terminal-output.test.ts` (exit 0, 14 pass) et son harnais `bun p09-fidelity.ts`
+(`MEASURE_EXIT=0`, 6 sections `OK`). En face, le journal d'échecs enregistre 387 EPERM sur
+`pwsh.EXE` et 445 `bash` dont 36 tronqués. La lecture correcte n'est pas « le shell est mort »
+mais « **le shell échoue par intermittence** ».
+
+**Règle révisée.**
+
+1. Un agent **tente** l'exécution. En cas d'EPERM, il **relance une fois**, puis rapporte
+   `BLOCKED` avec la sortie exacte de l'erreur. Ne jamais conclure à l'indisponibilité sur un
+   seul échec.
+2. L'interdiction **reste entière pour `git`** : c'est là que se trouve `index.lock`
+   (11 processus git observés) et que le risque de corruption de l'index est réel. Seuls
+   l'orchestrateur et son index alternatif commitent.
+3. Un agent **n'écrit jamais** un fichier du dépôt par shell. Exécution de tests et de
+   mesures uniquement ; toute écriture passe par l'outil de fichier.
+4. **Pourquoi cette règle est obligatoire.** Interdire le shell supprime la seule voie de
+   **vérification par exécution**, qui est la seule qui tranche. Conséquences déjà subies :
+   `COR-R18-3` (typecheck de `tagOf` non établi) empêche `REVALIDATED-PASS` sur P18 ; P10 et
+   P15 ont des résidus qui sont des « compilations prouvées par raisonnement et non par exit
+   code » ; et C-44 montre qu'une suite instable ne peut pas servir de base de non-régression
+   alors qu'on ne sait pas la mesurer deux fois. Une règle qui interdit la preuve est une règle
+   qui produit des `INFERE`.
+
+Corollaire : `grep` échoue en EPERM sur cette machine — préférer `read` avec des ranges
+connus, ou `glob`.

@@ -48,6 +48,34 @@ Un `REVALIDATED-PASS` exige que **toutes** les objections de la vague 2 soient t
 sur une proposition qui avait des objections majeures est un signal d'alerte : vérifie
 deux fois avant de l'écrire.
 
+## Règle d'implémentabilité (vague 4) — replacement de la clause ci-dessus
+
+La clause « aucune nouvelle objection ne subsiste » est **abrogée** : elle rend l'état final
+inatteignable par construction, puisqu'une objection résiduelle même tracée et acceptée
+rétrograde automatiquement. Mesure : sur 5 revalidations, 0 atteint `REVALIDATED-PASS`
+(P02, P06, P10, P18 = `REVALIDATED-PASS_WITH_CHANGES` ; **P11 = `REVALIDATED-FAIL`**).
+
+L'implémentabilité ne dépend plus de l'**existence** d'un résidu mais de son **statut**.
+Classe **chaque** objection restante dans `## Remaining objections` avec l'un de :
+
+| statut | sens | implémentable ? |
+| --- | --- | --- |
+| `open` | non traitée, ou traitée de façon seulement superficielle | ❌ **bloquant** |
+| `out_of_scope` | hors périmètre décidé, justification écrite | ✅ |
+| `accepted` | traitée quant au fond, avec une réserve assumée et tracée | ✅ |
+| `refused` | objection du validateur **demontrée fausse**, avec la preuve | ✅ |
+
+Règles :
+1. `REVALIDATED-PASS_WITH_CHANGES` **est implémentable** si et seulement si **aucun** résidu
+   n'est `open`, et si la section `## Regressions introduced` déclare explicitement
+   qu'aucun test **vert** n'est cassé. Un test déjà rouge qui casse davantage reste un `open`.
+2. `REVALIDATED-FAIL` reste non implémentable, quelle que soit la classification : il signale
+   des Required changes **intacts**, pas des résidus.
+3. Un résidu `open` unique suffit à interdire l'implémentation. Ne le requalifie pas en
+   `accepted` pour débloquer : un validateur l'a écrit, il faut le lever explicitement.
+4. La section `## Remaining objections` doit porter **le statut en tête de chaque ligne**.
+   Une objection sans statut est traitée comme `open`.
+
 ## Interdictions
 
 - N'écris aucun fichier sous `packages/**`.

@@ -8,13 +8,21 @@ Ce fichier est l'état de référence pour ne plus redériver l'avancement. Dern
 
 | Mesure | Valeur |
 | --- | --- |
+| **DoD 1 — 20 propositions** | ✅ **PROUVÉ** : `PROPOSALS=20`, `MISSING_PROPOSAL=` (vide) |
+| **DoD 2 — 20 verdicts** | ✅ **PROUVÉ** : `VERDICTS_BASE=20` |
 | Propositions sur disque | 20 / 20 |
-| Verdicts de base sur disque | 19 / 20 (P12 manquant, validateur lancé) |
+| Verdicts de base sur disque | 20 / 20 — P12 livré en dernier, remplace un fichier préexistant non conforme (C-31) |
 | Revisions atterries | 7 (P02, P03, P04, P06, P10, P11, P18) |
 | Revisions **corrompues** à refaire | 5 (P03, P04, P07, P13, P16) — règle C-21 |
 | Revisions non encore livrées | P01, P05, P14 |
-| Revalidations sur disque | 0 |
-| Revalidations en vol | 5 (P02, P06, P10, P11, P18) |
+| Revalidations sur disque | **5** — P02, P06, P10, P18 = `REVALIDATED-PASS_WITH_CHANGES` ; **P11 = `REVALIDATED-FAIL`** |
+| **Arbitrage A-4 (fidélité P09)** | ✅ **SATISFAIT PAR MESURE** — `shell.ts:604` écart **0/0** octets, `identical=true`. Finding `P09-RESIDUAL-ARTIFACT-FIDELITY` → **clos**. Deux nouveaux résidus `residual` : dérive texte→chemin (`truncate.ts:29-31`, 6/6 sondes) et perte d'info au retour. Cf. **C-43** |
+| **Base de non-régression** | ❌ `test/tool/shell.test.ts` **instable** : 63/32/1 puis 62/33/4. `test/shell/shell.test.ts` existe et n'est **pas** mesurée. Cf. **C-44** |
+| Revalidations en vol | 0 |
+| Propositions atteignant `REVALIDATED-PASS` | **0 / 20** — clause abrogée, voir C-32 et la règle d'implémentabilité de `REVALIDATION-BRIEFS.md` |
+| **Revalidations implémentables (aucun résidu `open`)** | **0 / 5** — classement complet en C-33. P02 : R1 `ouvert` + R2 `BLOQUANTE`. P06 : objection de périmètre `BLOQUANTE`. P10 : N1 `haute`/`OPEN` + N2 `moyenne`/`OPEN`. P18 : 3 résidus non statutés donc `open`. **Aucun candidat pour la vague 4** |
+| Cycles de révision engagements | 9 (P01, P03, P04, P06, P07, P10, P11, P12, P13, P15, P16, P17, P20) — second tour requis pour P02, P06, P10, P11, P18 |
+| Dépôt commité | ✅ `267c4ce39` — contrat d'orchestration, via `GIT_INDEX_FILE` alternatif |
 
 ## Statut par proposition
 
@@ -25,13 +33,13 @@ Ce fichier est l'état de référence pour ne plus redériver l'avancement. Dern
 | P03 | `PASS_WITH_CHANGES` | **corrompue** | non | C-21 — refaire depuis un fichier propre |
 | P04 | `FAIL` | **corrompue** | non | C-21 + 3 blocages durs (quota journalier, compteur `attempt 10/10`, effort S) |
 | P05 | `PASS_WITH_CHANGES` | à faire (relancée après `budget_exceeded`) | non | — |
-| P06 | `PASS_WITH_CHANGES` | atterrie | **en vol** | F1 chemin faux, F2 voie d'accès non établie, F3 tests à réécrire |
+| P06 | `PASS_WITH_CHANGES` | atterrie | **`REVALIDATED-PASS_WITH_CHANGES`** | **objection bloquante** : C-28 réfute le §8 (effort réel **S**, un seul fichier, 0 appelant touché) ; reste 2 `compacting.prompt` court-circuite `buildPrompt` (`:655-656`), `DETAIL_BUDGET_CHARS` non exprimable par `renderBudgeted`, plafond T3 à arbitrer (750 vs 1100) ; `P06-F1` **clos** (C-27) |
 | P07 | `PASS_WITH_CHANGES` | **corrompue** | non | C-21 + **C-20** (T3 passe avant/après) |
 | P08 | `PASS_WITH_CHANGES` | à faire | non | **arbitrage humain** : R1 renversé (opt-in + census), effort L |
 | P09 | écrit (4 findings, `budget_exceeded` après écriture) | s.o. | s.o. | invariant de propriété délégué à P12 ; 3 findings `out_of_scope` |
 | P10 | `PASS_WITH_CHANGES` | atterrie (548 l.) | **en vol** | point `NEEDS_REVIEW` sur `READ_HEAVY_RAMP_SPAN` |
 | P11 | **`FAIL`** | atterrie (reprise complète) | **en vol** | arbitrage humain : typage des DoD d'effort L |
-| P12 | **manquant** | s.o. | s.o. | validateur lancé ; doit trancher l'invariant P09 |
+| P12 | `PASS_WITH_CHANGES` (livré, remplace un fichier préexistant non conforme — C-31) | à faire, **reprise complète** | non | **2 objections bloquantes** (C-30) : `redirectTargets` sans prédicat, `>` devient un chemin bidon neutralisé **par accident** (`shell.ts:413`) ; cas 2 fondé sur une affirmation non observée. 27 citations vérifiées, 0 fausse |
 | P13 | `PASS_WITH_CHANGES` | **corrompue** | non | C-21 + **C-12** (patch non compilable) + **C-13** (`always` neutralise la détection) + **C-14** (contradiction `agent.ts:356-370` vs `:119-121`) |
 | P14 | `PASS_WITH_CHANGES` | à faire (relancée après `budget_exceeded`) | non | **objection technique, pas un arbitrage humain** : `shell.ts:512` `last = preview(last + chunk)` tronque **en flux**, donc la détection proposée `body !== (last \|\| output)` vaut `last !== last` → `false` ; §4.3 « rend `truncated` honnête » échoue |
 | P15 | `PASS_WITH_CHANGES` | à faire | non | **C-18** (patch → TS18047) |
