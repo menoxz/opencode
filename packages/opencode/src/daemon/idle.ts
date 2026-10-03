@@ -3,6 +3,7 @@ import * as Log from "@opencode-ai/core/util/log"
 import * as fs from "node:fs"
 import * as path from "node:path"
 import { execSync } from "node:child_process"
+import { gitCommand } from "@opencode-ai/core/process"
 
 const log = Log.create({ service: "daemon.idle" })
 
@@ -48,7 +49,7 @@ function latestReportPath(): string {
 
 function runGit(...args: string[]): string | null {
   try {
-    return execSync(`git ${args.join(" ")}`, {
+    return execSync(`"${gitCommand()}" ${args.join(" ")}`, {
       encoding: "utf-8",
       timeout: 5000,
       stdio: ["ignore", "pipe", "pipe"],

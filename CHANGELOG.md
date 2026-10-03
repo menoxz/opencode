@@ -7,16 +7,18 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Added
+- **Dossiers ajoutés à la liste des sessions.** Les dossiers ouverts à la main (sélecteur « New session in folder ») sont suivis et listés à côté du dossier courant, marqués « + » et retirables individuellement ; l'ensemble survit aux redémarrages (`session_extra_directories`).
+
 ### Changed
-- **La barre de sessions liste tous les dossiers de la machine, sans filtre de portée.** Le libellé « this dir / this dir +N / all dirs » et le clic sur l'en-tête « Sessions » qui le basculait sont supprimés : la liste interroge désormais toujours l'endpoint cross-projet (paginé par `x-next-cursor`) et traite chaque dossier comme le dossier courant, la borne d'ancienneté (7 j) restant appliquée. Le sélecteur « New session in folder » continue d'offrir les dossiers déjà utilisés.
+- **La barre de sessions montre constamment le dossier courant et les dossiers ajoutés.** Le libellé de portée « this dir / this dir +N / all dirs » et le clic sur l'en-tête « Sessions » qui basculait la liste sont supprimés : plus de listing machine-wide, plus de clé de portée (`session_directory_scope_v2`). La fenêtre d'ancienneté de 7 jours reste appliquée.
 
 ### Removed
-- Portée mémorisée de la liste (`session_directory_scope_v2`, `session_extra_directories`), commandes palette `app.toggle.session_directory_filter` / `app.add.session_directory` / `app.clear.session_directory`, et le marquage « + » des dossiers ajoutés (`navDirectoryLabel`, `removableDirKey`, `removableDirectories`, `selectionDirKey`).
+- Portée mémorisée de la liste (`session_directory_scope_v2`, `DEFAULT_DIRECTORY_SCOPE`), commande palette `app.toggle.session_directory_filter`, et listing cross-projet via `experimental.session.list({ roots: true })`.
 
 ### Fixed
-- **Logo `OPENCODEV2` de la barre de sessions rendu conforme au mot-symbole officiel.** Les footers TUI (sidebar session, footer sidebar, footer home) affichaient « OPENCODEV2 » en un seul bloc monochrome (`<b>`), alors que le mot-symbole validé est bichrome : `OPEN` atténué et `CODEV2` accentué. Les trois lignes rendent désormais cette bichromie (`textMuted` pour `OPEN`, `primary` pour `CODEV2`, la version restant en `textMuted`), alignées sur `logo-ornate-v2-*.svg`.
-- **Le dialogue de mise à jour nomme l'application au redémarrage.** « Please restart the application » devient « Please restart OPENCODEV2 » ; le titre du dialogue et le reste du message étaient déjà brandés `OPENCODEV2`.
-
+- **Mot-symbole « OpenCodev2 » rendu dans sa casse exacte.** Les trois footers TUI (sidebar session, footer sidebar, footer home) et le dialogue de mise à jour l'affichaient tout en capitales (« OPENCODEV2 ») ; ils écrivent désormais « OpenCodev2 » — bichromie conservée (`OPEN` atténué, `CODEV2` accentué) — y compris le titre de terminal et le message « Successfully updated to OpenCodev2 v… ».
+- **`EPERM: operation not permitted, uv_spawn 'git'` — cause racine corrigée.** Sous Windows, `git` se résout vers un petit lanceur (`Git\cmd\git.exe` ou `Git\bin\git.exe`) qui relance le vrai binaire `Git\mingw64\bin\git.exe` dans un second processus ; ce sous-lancement échoue par intermittence (mesuré : 1 échec sur 80 démarrages par lanceur, 0 pour le vrai binaire) et un lancement refusé dans un processus qu'opencode n'a pas créé échappe au retry de lancement. `@opencode-ai/core/process` expose désormais `gitCommand()`, qui résout `git` vers le vrai binaire et supprime le second lancement ; tous les appels git l'utilisent (cœur `git`, `project`, `snapshot`, `worktree`, daemon `auto-commit`/`idle`).
 ## [v2.3.44] - 2026-10-02
 
 ### Changed

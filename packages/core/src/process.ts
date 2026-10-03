@@ -3,6 +3,60 @@ import type { PlatformError } from "effect/PlatformError"
 import { ChildProcess } from "effect/unstable/process"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { CrossSpawnSpawner } from "./cross-spawn-spawner"
+import fs from "node:fs"
+import nodePath from "node:path"
+
+/**
+ * Windows resolves `git` to one of two small launchers, `Git\cmd\git.exe` or `Git\bin\git.exe`, that
+ * re-exec the real `Git\mingw64\bin\git.exe` in a second process. That nested spawn intermittently
+ * fails on this host with `EPERM: operation not permitted, uv_spawn 'git'` or "error launching git"
+ * (measured: one failure in eighty starts for either launcher, zero for the real binary). The refusal
+ * happens in a process opencode never launched, so `retryTransientLaunch` cannot observe or retry it.
+ * Resolving the launcher to the real binary drops the second spawn and the whole failure mode with it.
+ */
+let gitCommandCache: string | undefined
+
+function realGitBinary(resolved: string): string {
+  if (process.platform !== "win32") return resolved
+  const direct = nodePath.join(nodePath.dirname(nodePath.dirname(resolved)), "mingw64", "bin", "git.exe")
+  try {
+    return fs.existsSync(direct) ? direct : resolved
+  } catch {
+    return resolved
+  }
+}
+
+function searchGit(): string | null {
+  const env = process.env
+  const pathValue = env.PATH ?? env.Path ?? ""
+  const extensions =
+    process.platform === "win32" ? (env.PATHEXT ?? env.PathExt ?? ".EXE;.CMD;.BAT;.COM").split(";") : [""]
+  for (const directory of pathValue.split(nodePath.delimiter)) {
+    if (!directory) continue
+    for (const extension of extensions) {
+      const candidate = nodePath.join(directory, "git" + extension)
+      try {
+        if (fs.existsSync(candidate)) return candidate
+      } catch {
+        // An unreadable PATH entry is skipped, never fatal.
+      }
+    }
+  }
+  return null
+}
+
+/** The git executable to spawn, resolved once and preferring the real binary over the re-exec launcher. */
+export function gitCommand(): string {
+  if (gitCommandCache !== undefined) return gitCommandCache
+  let resolved: string | null = null
+  try {
+    resolved = searchGit()
+  } catch {
+    resolved = null
+  }
+  gitCommandCache = resolved ? realGitBinary(resolved) : "git"
+  return gitCommandCache
+}
 
 export class AppProcessError extends Schema.TaggedErrorClass<AppProcessError>()("AppProcessError", {
   command: Schema.String,

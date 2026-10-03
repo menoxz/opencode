@@ -153,6 +153,7 @@ export type SessionFolderPick = {
   variant: string | undefined
   agent: { name: string } | undefined
   create: ReturnType<typeof useSDK>["client"]["session"]["create"]
+  onDirectoryUsed?: (directory: string) => void
   onCreated: (sessionID: string) => void
   onNoModel?: () => void
 }
@@ -170,6 +171,7 @@ export async function pickSessionFolder(deps: SessionFolderPick): Promise<void> 
     model: { providerID: model.providerID, id: model.modelID, variant: deps.variant },
   })
   if (result.error || !result.data) return
+  deps.onDirectoryUsed?.(deps.directory)
   deps.onCreated(result.data.id)
 }
 
@@ -179,6 +181,8 @@ export function openSessionFolder(deps: {
   sdk: ReturnType<typeof useSDK>
   local: ReturnType<typeof useLocal>
   directories: readonly string[]
+  /** Registers the folder the session lands in, so the list keeps it once the process ends. */
+  onDirectoryUsed?: (directory: string) => void
   onCreated: (sessionID: string) => void
   onNoModel?: () => void
 }) {
@@ -192,6 +196,7 @@ export function openSessionFolder(deps: {
           variant: deps.local.model.variant.current(),
           agent: deps.local.agent.current() ?? undefined,
           create: (input) => deps.sdk.client.session.create(input),
+          onDirectoryUsed: deps.onDirectoryUsed,
           onCreated: deps.onCreated,
           onNoModel: deps.onNoModel,
         })

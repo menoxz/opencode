@@ -35,10 +35,10 @@ export function DialogSessionList() {
   const quickSwitch9 = useCommandShortcut("session.quick_switch.9")
 
   const [searchResults, { refetch }] = createResource(
-    () => ({ query: search() }),
+    () => ({ query: search(), filter: sync.session.query() }),
     async (input) => {
       if (!input.query) return undefined
-      const result = await sdk.client.session.list({ search: input.query, limit: 30 })
+      const result = await sdk.client.session.list({ search: input.query, limit: 30, ...input.filter })
       return result.data ?? []
     },
   )

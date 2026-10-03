@@ -5,7 +5,7 @@ import { Context, Effect, Layer } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { AbsolutePath } from "./schema"
 import { AppFileSystem } from "./filesystem"
-import { AppProcess, retryTransientLaunch } from "./process"
+import { AppProcess, gitCommand, retryTransientLaunch } from "./process"
 
 export interface Repo {
   /**
@@ -93,7 +93,7 @@ function run(cwd: string, proc: AppProcess.Interface) {
   return (args: string[]) =>
     retryTransientLaunch(
       proc.run(
-        ChildProcess.make("git", args, {
+        ChildProcess.make(gitCommand(), args, {
           cwd,
           extendEnv: true,
           stdin: "ignore",

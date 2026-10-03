@@ -2,7 +2,7 @@ import { Cause, Duration, Effect, Layer, Option, Schedule, Schema, Semaphore, Co
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { formatPatch, structuredPatch } from "diff"
 import path from "path"
-import { AppProcess, retryTransientLaunch } from "@opencode-ai/core/process"
+import { AppProcess, gitCommand, retryTransientLaunch } from "@opencode-ai/core/process"
 import { InstanceState } from "@/effect/instance-state"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { Hash } from "@opencode-ai/core/util/hash"
@@ -97,7 +97,7 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
           const git = Effect.fnUntraced(
             function* (cmd: string[], opts?: { cwd?: string; env?: Record<string, string>; stdin?: string }) {
               const result = yield* retryTransientLaunch(
-                appProcess.run(ChildProcess.make("git", cmd, { cwd: opts?.cwd, env: opts?.env, extendEnv: true }), {
+                appProcess.run(ChildProcess.make(gitCommand(), cmd, { cwd: opts?.cwd, env: opts?.env, extendEnv: true }), {
                   stdin: opts?.stdin,
                   timeout: gitTimeout,
                 }),
@@ -607,7 +607,7 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
 
                     const batch = yield* retryTransientLaunch(
                       appProcess.run(
-                        ChildProcess.make("git", [...cfg, ...args(["cat-file", "--batch"])], {
+                        ChildProcess.make(gitCommand(), [...cfg, ...args(["cat-file", "--batch"])], {
                           cwd: state.directory,
                           extendEnv: true,
                         }),

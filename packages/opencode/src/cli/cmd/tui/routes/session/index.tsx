@@ -85,6 +85,7 @@ import {
   toggleCollapsed,
   toggleRevealed,
   usedDirectories,
+  removableDirKey,
 } from "./session-nav"
 import { openSessionFolder } from "../../component/dialog-directory-select"
 import { SubagentBar } from "./subagent-bar.tsx"
@@ -358,6 +359,7 @@ export function Session() {
   const [navFocused, setNavFocused] = createSignal(false)
   const [navSelected, setNavSelected] = createSignal(0)
   const [navPendingDelete, setNavPendingDelete] = createSignal<string>()
+
   const [navOverrides, setNavOverrides] = createSignal<Record<string, boolean>>({})
   const [navQuery, setNavQuery] = createSignal("")
   const [navRevealed, setNavRevealed] = createSignal<string[]>([])
@@ -723,9 +725,17 @@ export function Session() {
       value: "session.delete",
       category: "Session",
       run: () => {
-        const target = selectionSessionID(navList(), navSel()) ?? route.sessionID
+        const folder = removableDirKey(navList(), navSel()); if (folder) return void sync.session.removeDirectory(folder); const target = selectionSessionID(navList(), navSel()) ?? route.sessionID
         if (target) void navDelete(target)
-        if (target) void navDelete(target)
+      },
+    },
+    {
+      title: "Remove added folder from session list",
+      value: "session.directory.remove",
+      category: "Session",
+      run: () => {
+        const folder = removableDirKey(navList(), navSel())
+        if (folder) void sync.session.removeDirectory(folder)
       },
     },
     {
@@ -1528,6 +1538,7 @@ export function Session() {
     setNavFocused(false)
     dialog.replace(() => <DialogSessionRename session={id} />)
   }
+
   const navOpenSession = (id: string) => {
     setNavFocused(false)
     navigate({ type: "session", sessionID: id })
@@ -1563,6 +1574,7 @@ export function Session() {
               selected={navSel()}
               focused={navFocused()}
               height={navListHeight(dimensions().height)}
+              added={sync.session.extraDirectories()} origin={sync.path.directory}
               overrides={navOverrides()}
               revealed={navRevealed()}
               frame={navFrame()}
@@ -1592,6 +1604,7 @@ export function Session() {
                   sdk,
                   local,
                   directories: usedDirectories(sync.data.session),
+                  onDirectoryUsed: (directory) => void sync.session.addDirectory(directory),
                   onCreated: (sessionID) => navigate({ type: "session", sessionID }),
                   onNoModel: () => navigate({ type: "home" }),
                 })

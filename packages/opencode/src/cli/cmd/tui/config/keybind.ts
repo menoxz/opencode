@@ -259,6 +259,8 @@ export const CommandMap = {
   app_toggle_file_context: "app.toggle.file_context",
   app_toggle_diffwrap: "app.toggle.diffwrap",
   app_toggle_paste_summary: "app.toggle.paste_summary",
+  app_add_session_directory: "app.add.session_directory",
+  app_clear_session_directory: "app.clear.session_directory",
   command_list: "command.palette.show",
   help_show: "help.show",
   docs_open: "docs.open",

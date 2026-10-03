@@ -20,6 +20,7 @@ import {
   navRows,
   navSelection,
   navVisible,
+  removableDirKey,
   selectionSessionID,
   toggleCollapsed,
   toggleRevealed,
@@ -50,6 +51,7 @@ export function SessionNavPanel() {
   const [navFocused, setNavFocused] = createSignal(false)
   const [navSelected, setNavSelected] = createSignal(0)
   const [navPendingDelete, setNavPendingDelete] = createSignal<string>()
+
   const [navOverrides, setNavOverrides] = createSignal<Record<string, boolean>>({})
   const [navQuery, setNavQuery] = createSignal("")
   const [navRevealed, setNavRevealed] = createSignal<string[]>([])
@@ -105,6 +107,7 @@ export function SessionNavPanel() {
       sdk,
       local,
       directories: usedDirectories(sync.data.session),
+      onDirectoryUsed: (directory) => void sync.session.addDirectory(directory),
       onCreated: (sessionID) => route.navigate({ type: "session", sessionID }),
     })
   }
@@ -119,10 +122,18 @@ export function SessionNavPanel() {
   }
 
   const deleteSelected = () => {
+    // A folder row is not a session: the same gesture removes an added folder from the list, and the
+    // guard makes the workspace's own folder unreachable however the cursor reached it.
+    const folder = removableDirKey(navList(), navSel())
+    if (folder) return void sync.session.removeDirectory(folder)
     const target = selectionSessionID(navList(), navSel())
     if (target) void navDelete(target)
   }
 
+  const removeSelectedFolder = () => {
+    const folder = removableDirKey(navList(), navSel())
+    if (folder) void sync.session.removeDirectory(folder)
+  }
 
   const renameSession = (id: string) => dialog.replace(() => <DialogSessionRename session={id} />)
 
@@ -146,6 +157,13 @@ export function SessionNavPanel() {
       { namespace: "palette" as const, name: "session.delete", title: "Delete session", category: "Session", run: deleteSelected },
       { namespace: "palette" as const, name: "session.rename", title: "Rename session", category: "Session", run: renameSelected },
       { namespace: "palette" as const, name: "session.nav.toggle", title: "Show session navbar", category: "Session", run: showNavbar },
+      {
+        namespace: "palette" as const,
+        name: "session.directory.remove",
+        title: "Remove added folder from session list",
+        category: "Session",
+        run: removeSelectedFolder,
+      },
     ],
   }))
 
@@ -162,6 +180,8 @@ export function SessionNavPanel() {
         selected={navSel()}
         focused={navFocused()}
         height={navListHeight(dimensions().height)}
+        added={sync.session.extraDirectories()}
+        origin={sync.path.directory}
         overrides={navOverrides()}
         revealed={navRevealed()}
         frame={navFrame()}

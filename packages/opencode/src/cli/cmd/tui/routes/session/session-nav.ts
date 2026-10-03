@@ -27,6 +27,8 @@ export type NavGroup = {
   key: string
   label: string
   count: number
+  /** True only for a folder the user added, never for the workspace's own. */
+  added: boolean
   active: boolean
   updated: number
   sessions: NavItem[]
@@ -39,7 +41,7 @@ export type NavGroup = {
  * arithmetic cannot see.
  */
 export type NavRowModel =
-  | { kind: "dir"; key: string; label: string; count: number; collapsed: boolean; selected: boolean }
+  | { kind: "dir"; key: string; label: string; count: number; collapsed: boolean; added: boolean; selected: boolean }
   | { kind: "session"; key: string; id: string; title: string; activity: NavActivity; updated?: number; selected: boolean }
   | { kind: "more"; key: string; hidden: number; selected: boolean }
   | { kind: "gap"; key: string; selected: boolean }
@@ -55,6 +57,11 @@ export type NavRowModel =
 export type NavState = {
   overrides: Readonly<Record<string, boolean>>
   revealed: readonly string[]
+  /**
+   * The folders the user added, already filtered of the workspace's own by `removableDirectories`:
+   * they are listed even when they hold no session, and carry the "+" mark that makes them removable.
+   */
+  added?: readonly string[]
   /** Set while a search runs: every directory opens so no match stays behind a fold. */
   reveal?: boolean
 }
@@ -277,7 +284,7 @@ export function directoryChoice(
  * worked on is never pushed below the fold, then directories are ordered by their most recent
  * activity. Pure, so grouping is a unit test rather than a claim about the renderer.
  */
-export function navGroups(sessions: readonly NavSession[], activeID: string | undefined): NavGroup[] {
+export function navGroups(sessions: readonly NavSession[], activeID: string | undefined, added: readonly string[] = []): NavGroup[] {
   // Bucket on the folder's identity, not its stored spelling: two sessions of the same folder written
   // as `C:\x` and `C:/x` must land in one group, and `key` keeps the first spelling seen so the label
   // and the fold state stay stable while the list fluctuates at startup.
@@ -288,11 +295,21 @@ export function navGroups(sessions: readonly NavSession[], activeID: string | un
     if (bucket) bucket.list.push(session)
     else buckets.set(identity, { key: session.directory ?? "", list: [session] })
   }
+  // An added folder is listed even when it holds no recent session: otherwise it would be counted in
+  // the scope line yet own no row, and so have no way to leave the list again. The identity match is
+  // what keeps that placeholder from appearing beside the very sessions it duplicates.
+  for (const directory of added) {
+    const identity = folderKey(directory)
+    if (!identity || buckets.has(identity)) continue
+    buckets.set(identity, { key: directory, list: [] })
+  }
+  const addedKeys = new Set(added.map(folderKey).filter(Boolean))
   return [...buckets.entries()]
-    .map(([, bucket]) => ({
+    .map(([identity, bucket]) => ({
       key: bucket.key,
       label: navBasename(bucket.key),
       count: bucket.list.length,
+      added: addedKeys.has(identity),
       active: bucket.list.some((session) => session.id === activeID),
       updated: bucket.list.reduce((latest, session) => Math.max(latest, session.updated ?? 0), 0),
       sessions: navItems(bucket.list, activeID),
@@ -315,7 +332,7 @@ export function navVisibleSessions(sessions: readonly NavItem[], opened: boolean
  */
 export function navRows(sessions: readonly NavSession[], activeID: string | undefined, state: NavState): NavRowModel[] {
   const content: NavRowModel[] = []
-  navGroups(sessions, activeID).forEach((group) => {
+  navGroups(sessions, activeID, state.added ?? []).forEach((group) => {
     // A pinned directory keeps the exact fold the user chose; every other one follows the default,
     // which only the active session's directory opens. Reading the pinned value (instead of flipping
     // the default) is what keeps an opened folder from closing when the active session moves into it.
@@ -326,6 +343,7 @@ export function navRows(sessions: readonly NavSession[], activeID: string | unde
       label: group.label,
       count: group.count,
       collapsed,
+      added: group.added,
       selected: false,
     })
     if (collapsed) return
@@ -370,6 +388,39 @@ export function selectionSessionID(rows: readonly NavRowModel[], index: number):
   return row?.kind === "session" ? row.id : undefined
 }
 
+/** The directory key under a row, so the header action can toggle the right folder. */
+export function selectionDirKey(rows: readonly NavRowModel[], index: number): string | undefined {
+  const row = rows[clampSelection(index, rows.length)]
+  return row?.kind === "dir" ? row.key.slice("dir:".length) : undefined
+}
+
+/**
+ * The folders the user added that may be shown as added and removed from the list: never the folder
+ * the workspace opened on, and never a blank entry. Comparison is case-insensitive because the paths
+ * come from a case-insensitive filesystem, so an added folder spelled like the origin is the origin.
+ */
+export function removableDirectories(added: readonly string[], origin: string | undefined): string[] {
+  const home = (origin ?? "").trim().toLowerCase()
+  const seen = new Set<string>()
+  return added.filter((directory) => {
+    const key = directory.trim().toLowerCase()
+    if (!key || key === home || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+/**
+ * The added folder the row at this index names, or undefined for every other row. This is the single
+ * guard the removal action reads, so the workspace's own folder can never be removed however the
+ * cursor reached it: its row is not marked added, so it is never returned here.
+ */
+export function removableDirKey(rows: readonly NavRowModel[], index: number): string | undefined {
+  const row = rows[clampSelection(index, rows.length)]
+  if (row?.kind !== "dir" || !row.added) return undefined
+  return row.key.slice("dir:".length)
+}
+
 /** Pins one directory's fold to the opposite of its current state and leaves every other entry untouched. */
 export function toggleCollapsed(overrides: Readonly<Record<string, boolean>>, key: string, collapsed: boolean): Record<string, boolean> {
   return { ...overrides, [key]: !collapsed }
@@ -380,18 +431,21 @@ export function toggleRevealed(revealed: readonly string[], key: string): string
   return revealed.includes(key) ? revealed.filter((entry) => entry !== key) : [...revealed, key]
 }
 
-export type NavDirRowInput = { label: string; count: number; collapsed: boolean; width: number }
+export type NavDirRowInput = { label: string; count: number; collapsed: boolean; width: number; added?: boolean }
 
 /**
  * A directory header: the disclosure glyph, the folder name prefixed with "/" so it reads as a path,
- * and its session count right against the name. Selection is shown by the row's background, not by a
- * chevron.
+ * and its session count right against the name. A folder the user added carries a "+" before the
+ * path, so the folder the workspace opened on stays distinguishable from the ones added to the list.
+ * Selection is shown by the row's background, not by a chevron.
  */
 export function navDirRow(input: NavDirRowInput): string {
   const prefix = `  ${input.collapsed ? "▸" : "▾"} `
   const suffix = ` ${input.count}`
   const available = Math.max(1, input.width - prefix.length - suffix.length)
-  return `${prefix}${navLabel(`/${input.label}`, available)}${suffix}`
+  // The mark is part of the label, not extra chrome: the reserve above stays exact, so the line
+  // cannot overflow the bar whatever the folder is called.
+  return `${prefix}${navLabel(`${input.added ? "+" : ""}/${input.label}`, available)}${suffix}`
 }
 
 export type NavRowInput = {
@@ -439,6 +493,11 @@ export type NavFooterShortcuts = { new: string; delete: string; rename: string }
 export function footerLines(width: number, shortcuts: NavFooterShortcuts): string[] {
   const text = `new ${shortcuts.new}  del ${shortcuts.delete}  ren ${shortcuts.rename}`
   return [navLabel(text, Math.max(1, width))]
+}
+
+/** The bar's scope line: the current folder, and the folders the user added on top of it. */
+export function navDirectoryLabel(added = 0): string {
+  return added > 0 ? `this dir +${added}` : "this dir"
 }
 
 /**

@@ -67,6 +67,8 @@ async function renderBar(props: {
   selected: number
   focused: boolean
   height?: number
+  added?: string[]
+  origin?: string
   overrides?: Readonly<Record<string, boolean>>
   revealed?: string[]
   frame?: number
@@ -93,6 +95,8 @@ async function renderBar(props: {
           selected={props.selected}
           focused={props.focused}
           height={props.height ?? 20}
+          added={props.added}
+          origin={props.origin}
           overrides={props.overrides ?? {}}
           revealed={props.revealed ?? []}
           frame={props.frame ?? 0}
@@ -133,6 +137,25 @@ test("groups the sessions under a directory header with its session count", asyn
   expect(text).toContain("Fix flaky test")
   const header = linesOf(app).find((line) => line.includes("opencode-fork")) ?? ""
   expect(header).toMatch(/opencode-fork\s+2$/)
+})
+
+test("marks an added folder with a plus and leaves the workspace's own unmarked", async () => {
+  const own: NavSession[] = [{ id: "s_own", title: "Own session", directory: "C:\\work\\repo" }]
+  const app = await renderBar({
+    sessions: own,
+    activeID: "s_own",
+    selected: 0,
+    focused: false,
+    added: ["C:\\work\\extra"],
+    origin: "C:\\work\\repo",
+  })
+  const lines = linesOf(app)
+  // Read on the real frame: the added folder carries the "+", the origin's own row never does.
+  const addedRow = lines.find((line) => line.includes("extra")) ?? ""
+  const ownRow = lines.find((line) => line.includes("/repo")) ?? ""
+  expect(addedRow).toContain("+/extra")
+  expect(ownRow).toContain("/repo")
+  expect(ownRow).not.toContain("+/repo")
 })
 
 test("a directory without the active session keeps only its single-line header", async () => {
@@ -405,6 +428,7 @@ test("offers a folder search field in the bar", async () => {
   expect(app.captureCharFrame()).toContain("Search folders")
 })
 
+
 test("marks the row awaiting delete confirmation", async () => {
   const app = await renderBar({ sessions: twoDirs, activeID: "a1", selected: 1, focused: false, pendingDelete: "a1" })
   expect(app.captureCharFrame()).toContain("press again")
@@ -503,7 +527,8 @@ test("takes keys in the search field, narrows the list and leaves on Escape", as
   expect(app.captureCharFrame()).toContain("Alpha one")
 })
 
-test("creating a session in a picked folder reports it, and nothing when it fails", async () => {
+test("creating a session in a picked folder registers that folder, and nothing when it fails", async () => {
+  const used: string[] = []
   const created: string[] = []
   const deps = {
     directory: "C:\\jeanluc",
@@ -514,17 +539,22 @@ test("creating a session in a picked folder reports it, and nothing when it fail
   await pickSessionFolder({
     ...deps,
     create: (async () => ({ data: { id: "ses_new" } })) as never,
+    onDirectoryUsed: (directory) => used.push(directory),
     onCreated: (id) => created.push(id),
   })
+  expect(used).toEqual(["C:\\jeanluc"])
   expect(created).toEqual(["ses_new"])
 
-  // The failure paths report nothing, or a session the call never created would look created.
+  // The failure paths must register nothing, or a folder the session never landed in would stick.
+  used.length = 0
   created.length = 0
   await pickSessionFolder({
     ...deps,
     create: (async () => ({ error: "boom" })) as never,
+    onDirectoryUsed: (directory) => used.push(directory),
     onCreated: (id) => created.push(id),
   })
+  expect(used).toEqual([])
   expect(created).toEqual([])
 
   let missingModel = 0
@@ -532,10 +562,12 @@ test("creating a session in a picked folder reports it, and nothing when it fail
     ...deps,
     model: undefined,
     create: (async () => ({ data: { id: "ses_never" } })) as never,
+    onDirectoryUsed: (directory) => used.push(directory),
     onCreated: (id) => created.push(id),
     onNoModel: () => (missingModel += 1),
   })
   expect(missingModel).toBe(1)
+  expect(used).toEqual([])
   expect(created).toEqual([])
 })
 

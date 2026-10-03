@@ -2,7 +2,7 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import { execSync, type ExecSyncOptions } from "node:child_process"
 import * as Log from "@opencode-ai/core/util/log"
-import { retryTransientLaunchSync } from "@opencode-ai/core/process"
+import { gitCommand, retryTransientLaunchSync } from "@opencode-ai/core/process"
 
 const log = Log.create({ service: "daemon.auto-commit" })
 
@@ -27,7 +27,7 @@ function git(args: string[], cwd: string, options?: ExecSyncOptions): string {
     // A refused process start (EPERM/EACCES, measured on this host) is not a
     // git failure: retry it, otherwise a mandatory commit is silently lost.
     const out = retryTransientLaunchSync(() =>
-      execSync(`git ${args.join(" ")}`, {
+      execSync(`"${gitCommand()}" ${args.join(" ")}`, {
         cwd,
         encoding: "utf-8",
         stdio: "pipe",
@@ -60,7 +60,7 @@ export function hasUncommittedChanges(cwd: string): boolean {
 export function getRepoRoot(cwd: string): string | null {
   try {
     return retryTransientLaunchSync(() =>
-      execSync("git rev-parse --show-toplevel", {
+      execSync(`"${gitCommand()}" rev-parse --show-toplevel`, {
         cwd,
         encoding: "utf-8",
         stdio: "pipe",

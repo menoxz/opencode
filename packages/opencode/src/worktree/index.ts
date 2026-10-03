@@ -16,7 +16,7 @@ import { Effect, Layer, Path, Schema, Scope, Context } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { NodePath } from "@effect/platform-node"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
-import { AppProcess, retryTransientLaunch } from "@opencode-ai/core/process"
+import { AppProcess, gitCommand, retryTransientLaunch } from "@opencode-ai/core/process"
 import { InstanceState } from "@/effect/instance-state"
 
 const log = Log.create({ service: "worktree" })
@@ -164,7 +164,7 @@ export const layer: Layer.Layer<
     const git = Effect.fnUntraced(
       function* (args: string[], opts?: { cwd?: string }) {
         const result = yield* retryTransientLaunch(
-          appProcess.run(ChildProcess.make("git", args, { cwd: opts?.cwd, extendEnv: true, stdin: "ignore" })),
+          appProcess.run(ChildProcess.make(gitCommand(), args, { cwd: opts?.cwd, extendEnv: true, stdin: "ignore" })),
         )
         return {
           code: result.exitCode,
