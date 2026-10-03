@@ -4,6 +4,7 @@ import {
   getWorkspaceRouteSessionID,
   workspaceProxyURL,
 } from "../../src/server/shared/workspace-routing"
+import { resolveInstanceDirectory } from "../../src/server/routes/instance/httpapi/middleware/workspace-routing"
 import { SessionID } from "../../src/session/schema"
 
 describe("isLocalWorkspaceRoute", () => {
@@ -85,5 +86,30 @@ describe("workspaceProxyURL", () => {
     const target = new URL("http://remote:3000/api")
     const result = workspaceProxyURL(target, new URL("http://localhost/users"))
     expect(result.toString()).toBe("http://remote:3000/api/users")
+  })
+})
+
+describe("resolveInstanceDirectory", () => {
+  // Regression for the multi-folder workspace defect: a session created in an added folder
+  // (C:\jeanluc) was served from the folder the TUI was launched in (C:\jeanluc\opencode-fork),
+  // so it inherited that folder's AGENTS.md and git worktree. The session's own directory must win.
+  test("a session's own directory wins over the launch/request directory", () => {
+    expect(
+      resolveInstanceDirectory({
+        sessionDirectory: "C:\\jeanluc",
+        requestDirectory: "C:\\jeanluc\\opencode-fork",
+      }),
+    ).toBe("C:\\jeanluc")
+  })
+
+  test("requests with no session fall back to the request/launch directory", () => {
+    expect(resolveInstanceDirectory({ requestDirectory: "C:\\jeanluc\\opencode-fork" })).toBe(
+      "C:\\jeanluc\\opencode-fork",
+    )
+    expect(resolveInstanceDirectory({ sessionDirectory: undefined, requestDirectory: "C:\\launch" })).toBe("C:\\launch")
+  })
+
+  test("a blank session directory does not win over a real request directory", () => {
+    expect(resolveInstanceDirectory({ sessionDirectory: "   ", requestDirectory: "C:\\launch" })).toBe("C:\\launch")
   })
 })

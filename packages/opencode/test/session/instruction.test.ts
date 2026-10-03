@@ -8,6 +8,8 @@ import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { ModelID, ProviderID } from "../../src/provider/schema"
 import { Instruction } from "../../src/session/instruction"
 import type { MessageV2 } from "../../src/session/message-v2"
+import { Workspace } from "../../src/control-plane/workspace"
+import { planRequest } from "../../src/server/routes/instance/httpapi/middleware/workspace-routing"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { Global } from "@opencode-ai/core/global"
 import { RuntimeFlags } from "../../src/effect/runtime-flags"
@@ -219,6 +221,39 @@ describe("Instruction.system", () => {
         expect(rules[1]).toContain("summary")
         expect(rules[1]).not.toBe(`Instructions from: ${path.join(projectTmp, "AGENTS.md")}\n# Project Instructions`)
       }).pipe(provideInstance(projectTmp), provideInstruction({ home: globalTmp, config: globalTmp }))
+    }),
+  )
+
+  it.live("end-to-end: a session in an added folder loads that folder's AGENTS.md, never the launch folder's", () =>
+    Effect.gen(function* () {
+      // The TUI was launched in `launch`; the session lives in the added folder `added`.
+      const launch = yield* tmpWithFiles({ "AGENTS.md": "# Launch Instructions" })
+      const added = yield* tmpWithFiles({ "AGENTS.md": "# Added Instructions" })
+
+      // The routing middleware decides which folder serves the session request. The client sends its
+      // launch directory as a fallback header, but the session's own directory must win. This is the
+      // exact chain that injected the wrong AGENTS.md: request -> plan.directory -> Instruction.
+      const request = {
+        url: "/session/ses_added",
+        method: "GET",
+        headers: { "x-opencode-directory": launch },
+      } as unknown as Parameters<typeof planRequest>[0]
+      const plan = (yield* planRequest(request, undefined, added).pipe(
+        Effect.provide(Layer.mock(Workspace.Service)({})),
+      )) as { _tag: string; directory: string }
+      expect(plan._tag).toBe("Local")
+      expect(plan.directory).toBe(added)
+
+      yield* Effect.gen(function* () {
+        const svc = yield* Instruction.Service
+        const paths = yield* svc.systemPaths()
+        expect(paths.has(path.join(added, "AGENTS.md"))).toBe(true)
+        expect(paths.has(path.join(launch, "AGENTS.md"))).toBe(false)
+
+        const rules = yield* svc.system()
+        expect(rules.some((rule) => rule.includes(path.join(added, "AGENTS.md")))).toBe(true)
+        expect(rules.every((rule) => !rule.includes(path.join(launch, "AGENTS.md")))).toBe(true)
+      }).pipe(provideInstance(plan.directory), provideInstruction({ home: added, config: added }))
     }),
   )
 

@@ -87,6 +87,20 @@ function defaultDirectory(request: HttpServerRequest.HttpServerRequest, url: URL
   return url.searchParams.get("directory") || request.headers["x-opencode-directory"] || process.cwd()
 }
 
+/**
+ * The directory an instance is served from. A session-scoped request names its session in the path,
+ * and that session owns a directory — the folder it was created in, which may be a folder the user
+ * added to the workspace rather than the one the TUI was launched in. Serving such a request from
+ * the launch directory instead makes the session read the wrong AGENTS.md/CLAUDE.md, the wrong git
+ * worktree and the wrong file tree, so the session's own directory always wins. The request/client
+ * directory stays the fallback for routes that name no session (session list, session creation,
+ * file search), and for a session whose directory is unknown.
+ */
+export function resolveInstanceDirectory(input: { sessionDirectory?: string; requestDirectory: string }): string {
+  const session = input.sessionDirectory?.trim()
+  return session ? session : input.requestDirectory
+}
+
 function shouldStayOnControlPlane(request: HttpServerRequest.HttpServerRequest, url: URL): boolean {
   return isLocalWorkspaceRoute(request.method, url.pathname) || url.pathname.startsWith("/console")
 }
@@ -157,9 +171,10 @@ function planWorkspaceRequest(
   })
 }
 
-function planRequest(
+export function planRequest(
   request: HttpServerRequest.HttpServerRequest,
   sessionWorkspaceID?: WorkspaceID,
+  sessionDirectory?: string,
 ): Effect.Effect<RequestPlan, never, Workspace.Service> {
   return Effect.gen(function* () {
     const url = requestURL(request)
@@ -178,7 +193,10 @@ function planRequest(
       return yield* planWorkspaceRequest(request, url, workspace)
     }
 
-    return RequestPlan.Local({ directory: defaultDirectory(request, url), workspaceID: envWorkspaceID ?? workspaceID })
+    return RequestPlan.Local({
+      directory: resolveInstanceDirectory({ sessionDirectory, requestDirectory: defaultDirectory(request, url) }),
+      workspaceID: envWorkspaceID ?? workspaceID,
+    })
   })
 }
 
@@ -223,7 +241,7 @@ function routeHttpApiWorkspace<E>(
           Effect.catchDefect(() => Effect.succeed(undefined)),
         )
       : undefined
-    const plan = yield* planRequest(request, session?.workspaceID)
+    const plan = yield* planRequest(request, session?.workspaceID, session?.directory)
     return yield* routeWorkspace(client, effect, plan)
   })
 }
