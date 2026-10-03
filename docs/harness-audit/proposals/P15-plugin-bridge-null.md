@@ -13,15 +13,15 @@ Cartographie exhaustive des sites du pont dans `packages/opencode/src/plugin/ind
 **(a) Déclaration du pont nullable — `plugin/index.ts:280`**
 
 ```ts
-    let bridge: EffectBridge.Shape | null = null
-    let watchingStarted = false
+let bridge: EffectBridge.Shape | null = null
+let watchingStarted = false
 ```
 
 **(b) Producteur du `null` — `plugin/index.ts:312-313`**
 
 ```ts
-      if (!bridge) bridge = yield* EffectBridge.make().pipe(Effect.catchCause(() => Effect.succeed(null as any)))
-      if (!bridge) return
+if (!bridge) bridge = yield * EffectBridge.make().pipe(Effect.catchCause(() => Effect.succeed(null as any)))
+if (!bridge) return
 ```
 
 **(c) Le seul déréférencement du pont nullable — `plugin/index.ts:356-361`**
@@ -85,7 +85,7 @@ export const WorkspaceRef = Context.Reference<WorkspaceID | undefined>("~opencod
 ```
 
 **INFERE:** `EffectBridge.make()` est donc infaillible en pratique (canal `never` + deux références à
-valeur par défaut). *Vérification :* test unitaire `packages/opencode/test/plugin/bridge-non-null.test.ts`
+valeur par défaut). _Vérification :_ test unitaire `packages/opencode/test/plugin/bridge-non-null.test.ts`
 (T1 du § 7) qui construit un pont sans contexte et échoue si le résultat est nul ou si l'effet échoue.
 
 **(h) Le style du dépôt est le pont non-null : 20 sites sur 22** — `src/session/llm.ts:243`,
@@ -145,7 +145,7 @@ dans une fibre Effect : elle est levée dans un callback `setTimeout` (356), don
 `src/cli/cmd/tui/worker.ts:30,36` et `src/cli/cmd/tui/thread.ts:176-177` — dont le comportement exact
 (journalisation ou sortie) n'a pas été lu.
 **INFERE:** le processus survit grâce à ce gestionnaire, mais l'abandon silencieux du rechargement à
-chaud et l'absence de trace exploitable restent plausibles. *Vérification :* lire
+chaud et l'absence de trace exploitable restent plausibles. _Vérification :_ lire
 `src/index.ts:55-80`, puis provoquer un `reload()` avec `flags.pure` forcé et observer le code de
 sortie du processus.
 
@@ -192,7 +192,7 @@ Ce qui change, précisément :
   réintroduit plus tard une affectation dans la portée.
 - Le type de `bridge` (280) reste `EffectBridge.Shape | null` : il continue de porter l'état
   « pas encore armé » tant que 312 n'a pas tourné. Le type somme est conservé, mais il n'est plus
-  *atteignable* au moment où il est déréférencé.
+  _atteignable_ au moment où il est déréférencé.
 
 ### Correctif B — couvrir l'échec synchrone de `subscribe()` (traite le site réel de `366`)
 
@@ -242,7 +242,7 @@ toujours armés. `watcherCleanup` (370) n'est pas affecté.
    désactive la vérification, et le compilateur ne peut toujours rien dire si l'invariant de 313 est
    un jour violé. On paie la complexité d'un type somme pour un trou qui reste.
 2. **Garder le `catchCause` et ajouter une garde runtime `if (b) b.promise(...)` en 359.** Rejeté :
-   cela rend le pont nullable *définitivement* et déplace le défaut vers une branche muerte. Le
+   cela rend le pont nullable _définitivement_ et déplace le défaut vers une branche muerte. Le
    `.catch` de 359 reste alors dans le faux — le code continue d'affirmer « je recharge », il ne
    recharge pas, et rien ne le signale. C'est la stratégie « gérer null » demandée en option 3 du
    mandat ; elle est rejetée parce que l'état `null` est lui-même illégitime (§ 3) et que 20 des 22 sites du
