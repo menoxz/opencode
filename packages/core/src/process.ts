@@ -16,14 +16,31 @@ import nodePath from "node:path"
  */
 let gitCommandCache: string | undefined
 
+// A Git-for-Windows install keeps the real `git.exe` under an architecture
+// directory — `mingw64` on the classic builds, `ucrt64`/`clang64`/`clangarm64`
+// on the newer ones — while `<root>\cmd\git.exe` and `<root>\bin\git.exe` are
+// tiny launchers that re-exec it. Probing every arch name (measured: this host
+// ships only `ucrt64`, so the previous `mingw64`-only lookup fell back to the
+// launcher and the EPERM persisted).
+const GIT_ARCH_DIRECTORIES = ["mingw64", "ucrt64", "clang64", "clangarm64", "mingw32", "usr"]
+
 function realGitBinary(resolved: string): string {
   if (process.platform !== "win32") return resolved
-  const direct = nodePath.join(nodePath.dirname(nodePath.dirname(resolved)), "mingw64", "bin", "git.exe")
-  try {
-    return fs.existsSync(direct) ? direct : resolved
-  } catch {
-    return resolved
+  const leaf = nodePath.basename(resolved).toLowerCase()
+  const container = nodePath.basename(nodePath.dirname(resolved)).toLowerCase()
+  // Only the re-execing launchers sit directly under `<root>\cmd` or `<root>\bin`;
+  // a path already inside an architecture directory is the real binary.
+  if (leaf !== "git.exe" || (container !== "cmd" && container !== "bin")) return resolved
+  const root = nodePath.dirname(nodePath.dirname(resolved))
+  for (const directory of GIT_ARCH_DIRECTORIES) {
+    const direct = nodePath.join(root, directory, "bin", "git.exe")
+    try {
+      if (fs.existsSync(direct)) return direct
+    } catch {
+      // An unreadable candidate is skipped, never fatal.
+    }
   }
+  return resolved
 }
 
 function searchGit(): string | null {
