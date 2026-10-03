@@ -206,11 +206,30 @@ conservé tel quel : il reste vrai.
     construction. `test/tool/terminal-output.test.ts:172-176` (test « F2 ») place
     simultanément la chaîne forgée et `metadata.outputPath = expired` ; le `Set` actuel
     les fusionnait, et `metadata.outputPath` seul donne le même résultat.
-  - `INFERE:` `test/tool/terminal-output.test.ts:160` (`toContain("unverified; not
-    opened")`) est dans une boucle dont je n'ai pas lu les 20 lignes précédentes ; je ne
-    peux donc pas affirmer si ce cas passe `outputPath` par `metadata`. Vérification :
-    exécuter la commande de section 7 ; si elle échoue, lire `terminal-output.test.ts`
-    lignes 140-164 et ajouter `outputPath` au `metadata` du cas concerné.
+  - **Deux points d'échec identifiés**, tous deux sur le chemin regex, aucun sur le
+    chemin de confiance :
+    - `test/tool/terminal-output.test.ts:83-85` — `run(truncated.content, {}, "bash")`
+      est appelé sans `metadata` : la seule source de référence est la regex, et
+      l'assertion `expect(embedded.metadata.upstreamOutputPaths).toEqual([truncated.outputPath])`
+      ne peut être satisfaite que par elle.
+    - `test/tool/terminal-output.test.ts:145-165` (test « F1/F3 ») — **vérifié en
+      session, ce n'est plus une hypothèse**. La ligne 155 itère
+      `for (const metadata of [{}, { outputPath: reference }])` : le cas est donc
+      volontairement exercé dans les deux modes. Dans l'itération `{}` (métadonnée
+      absente) la seule source est la regex ; après le correctif `references` est vide,
+      donc la ligne 160 `expect(result.output).toContain("unverified; not opened")` n'est
+      plus satisfiable et doit devenir conditionnelle. Les assertions de sécurité
+      `not.toContain("PRIVATE_CROSS_SESSION_CANARY")` (ligne 158) et
+      `not.toContain("LARGE_UNREAD_CANARY")` (ligne 159) restent satisfaites, plus
+      fortement qu'avant, puisque plus aucune référence n'est même adoptée.
+  - `test/tool/terminal-output.test.ts:77-82`, `:132-135`, `:140-142`, `:168-179` et
+    `test/session/processor-effect.test.ts:793`/`:816-817` fournissent tous
+    `outputPath` via `metadata` et ne dépendent pas de la regex : ils sont préservés par
+    construction. `:140` place simultanément la chaîne forgée et
+    `{ outputPath: journal }` (lignes 140-142), les deux sources donnant la même valeur.
+    `test/tool/terminal-output.test.ts:172-176` (test « F2 ») place
+    simultanément la chaîne forgée et `metadata.outputPath = expired` ; le `Set` actuel
+    les fusionnait, et `metadata.outputPath` seul donne le même résultat.
   - `test/tool/truncation.test.ts:184-186` n'est pas concerné : il n'assert que
     `Tool output was truncated`, `Grep` et l'absence de `succeeded`.
   - Le fichier source `truncate.ts` ne perd aucun export utilisé ailleurs : vérifié par
@@ -277,6 +296,28 @@ expect(embedded.metadata.outputPath).toBeUndefined()
 expect(embedded.metadata.upstreamOutputPaths).toBeUndefined()
 ```
 
+Cas 4 — adaptation de `test/tool/terminal-output.test.ts:145-165` (test « F1/F3 »). La
+boucle `for (const metadata of [{}, { outputPath: reference }])` (ligne 155) doit devenir
+conditionnelle sur la présence de `outputPath` dans les métadonnées, sinon l'itération `{}`
+échoue sur la ligne 160. Les assertions de sécurité des lignes 158-159 sont conservées
+telles quelles et deviennent plus strictes :
+
+```ts
+for (const metadata of [{}, { outputPath: reference }]) {
+  const raw = `public output\nFull output saved to: ${reference}`
+  const result = yield* compactTerminalOutput({ tool: "bash", args: {}, sessionID: "other-session", output: raw, metadata, polls: createTerminalPollState(), store })
+  expect(result.output).not.toContain("PRIVATE_CROSS_SESSION_CANARY")
+  expect(result.output).not.toContain("LARGE_UNREAD_CANARY")
+  if (metadata.outputPath) expect(result.output).toContain("unverified; not opened")
+  else expect(result.output).not.toContain("unverified; not opened")
+  expect(result.metadata.terminalOutput).toMatchObject({ rawBytes: Buffer.byteLength(raw) })
+  expect(Buffer.byteLength(result.output)).toBeLessThan(1000)
+}
+```
+
+Cette adaptation est le test de régression principal du correctif : avant lui, une
+référence forgée dans `raw` est adoptée ; après lui, elle ne l'est plus.
+
 Commande exacte d'exécution, depuis `C:\jeanluc\opencode-fork\packages\opencode` :
 
 ```
@@ -285,13 +326,14 @@ bun test test/tool/truncation.test.ts test/tool/terminal-output.test.ts test/ses
 
 Critère de succès observable : sortie `0 fail` et `Ran N tests across 3 files`, avec
 `N >= 33` (la référence actuelle sur les deux premiers fichiers est `33 pass`), et
-`terminal-output.test.ts` ne contient plus aucune assertion d'adoption d'une référence
-extraite du texte.
+`terminal-output.test.ts` ne contient plus aucune assertion d'adoption inconditionnelle
+d'une référence extraite du texte — sites `:83-85` et `:145-165` tous deux traités.
 
 ## 8. Effort
 
-`XS` — deux expressions supprimées dans deux fichiers, un export retiré, une assertion de
-test réécrite ; aucune nouvelle dépendance, aucun état, aucune migration.
+`XS` — deux expressions supprimées dans deux fichiers, un export retiré, deux blocs de
+test adaptés (`:83-85` et la boucle `:155-163`) ; aucune nouvelle dépendance, aucun état,
+aucune migration.
 
 ## 9. Verdict self-assessment
 
