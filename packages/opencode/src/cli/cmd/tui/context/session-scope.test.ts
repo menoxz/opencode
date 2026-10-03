@@ -1,13 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import {
-  SESSION_MAX_AGE_DAYS,
-  addDirectory,
-  removeDirectory,
-  isRecentSession,
-  SESSION_DIRECTORY_SCOPE_KEY,
-  sessionAgeCutoff,
-  watchedDirectories,
-} from "./session-scope"
+import { SESSION_MAX_AGE_DAYS, folderKey, isRecentSession, sessionAgeCutoff } from "./session-scope"
 
 describe("session scope", () => {
   test("bounds the listing to recent sessions, excluding anything older than the limit", () => {
@@ -23,28 +15,6 @@ describe("session scope", () => {
 
     // The bound is configurable, so the rule can be read from one place.
     expect(now - sessionAgeCutoff(now, 7)).toBe(7 * 24 * 60 * 60 * 1000)
-  })
-
-  test("adds a folder to the watched list, refusing duplicates and empty input", () => {
-    expect(addDirectory([], "C:\\work\\a")).toEqual(["C:\\work\\a"])
-    expect(addDirectory(["C:\\work\\a"], "C:\\work\\b")).toEqual(["C:\\work\\a", "C:\\work\\b"])
-    // The same folder twice, whatever the casing, and a blank path, change nothing.
-    expect(addDirectory(["C:\\work\\a"], "c:\\WORK\\A")).toEqual(["C:\\work\\a"])
-    expect(addDirectory(["C:\\work\\a"], "   ")).toEqual(["C:\\work\\a"])
-  })
-
-  test("removes a folder from the watched list, so it can leave the view it was added to", () => {
-    expect(removeDirectory(["C:\\work\\a", "C:\\work\\b"], "C:\\work\\a")).toEqual(["C:\\work\\b"])
-    expect(removeDirectory(["C:\\work\\a"], "C:\\WORK\\A")).toEqual([])
-    expect(removeDirectory(["C:\\work\\a"], "C:\\work\\b")).toEqual(["C:\\work\\a"])
-  })
-
-  test("watches the current folder plus the added ones, without repeating the current folder", () => {
-    expect(watchedDirectories("C:\\work\\a", [])).toEqual(["C:\\work\\a"])
-    expect(watchedDirectories("C:\\work\\a", ["C:\\work\\b"])).toEqual(["C:\\work\\a", "C:\\work\\b"])
-    // Adding the folder already open is a no-op, not a duplicate the list would show twice.
-    expect(watchedDirectories("C:\\work\\a", ["C:\\work\\a"])).toEqual(["C:\\work\\a"])
-    expect(watchedDirectories(undefined, ["C:\\work\\b"])).toEqual(["C:\\work\\b"])
   })
 
   test("keeps a session on the age boundary and drops the one a millisecond past it", () => {
@@ -76,9 +46,8 @@ describe("session scope", () => {
     expect(isRecentSession({ time: { updated: now - week - 1 } }, cutoff)).toBe(false)
   })
 
-  test("takes its scope from a key the superseded version never wrote to", () => {
-    // That version persisted "project" under `session_directory_scope`, and a stored value wins over
-    // any default, so reusing the name would keep every install on the machine-wide listing.
-    expect(SESSION_DIRECTORY_SCOPE_KEY).not.toBe("session_directory_scope")
+  test("groups a folder under one identity whatever its spelling", () => {
+    expect(folderKey("C:\\work\\a")).toBe(folderKey("c:/WORK/a/"))
+    expect(folderKey(undefined)).toBe("")
   })
 })

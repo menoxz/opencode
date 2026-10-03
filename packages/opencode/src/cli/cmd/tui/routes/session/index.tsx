@@ -85,7 +85,6 @@ import {
   toggleCollapsed,
   toggleRevealed,
   usedDirectories,
-  removableDirKey,
 } from "./session-nav"
 import { openSessionFolder } from "../../component/dialog-directory-select"
 import { SubagentBar } from "./subagent-bar.tsx"
@@ -119,7 +118,6 @@ import { DialogRetryAction } from "../../component/dialog-retry-action"
 import { SessionRetry } from "@/session/retry"
 import { getRevertDiffFiles } from "../../util/revert-diff"
 import { OPENCODE_BASE_MODE, useBindings, useCommandShortcut, useOpencodeKeymap } from "../../keymap"
-import { DEFAULT_DIRECTORY_SCOPE, SESSION_DIRECTORY_SCOPE_KEY } from "../../context/session-scope"
 import { PathFormatterProvider, usePathFormatter } from "../../context/path-format"
 import {
   buildGoalEditTemplate,
@@ -360,10 +358,6 @@ export function Session() {
   const [navFocused, setNavFocused] = createSignal(false)
   const [navSelected, setNavSelected] = createSignal(0)
   const [navPendingDelete, setNavPendingDelete] = createSignal<string>()
-  const [navDirectoryScope, setNavDirectoryScope] = kv.signal<"project" | "directory">(
-    SESSION_DIRECTORY_SCOPE_KEY,
-    DEFAULT_DIRECTORY_SCOPE,
-  )
   const [navOverrides, setNavOverrides] = createSignal<Record<string, boolean>>({})
   const [navQuery, setNavQuery] = createSignal("")
   const [navRevealed, setNavRevealed] = createSignal<string[]>([])
@@ -729,17 +723,9 @@ export function Session() {
       value: "session.delete",
       category: "Session",
       run: () => {
-        const folder = removableDirKey(navList(), navSel()); if (folder) return void sync.session.removeDirectory(folder); const target = selectionSessionID(navList(), navSel()) ?? route.sessionID
+        const target = selectionSessionID(navList(), navSel()) ?? route.sessionID
         if (target) void navDelete(target)
-      },
-    },
-    {
-      title: "Remove added folder from session list",
-      value: "session.directory.remove",
-      category: "Session",
-      run: () => {
-        const folder = removableDirKey(navList(), navSel())
-        if (folder) void sync.session.removeDirectory(folder)
+        if (target) void navDelete(target)
       },
     },
     {
@@ -1542,10 +1528,6 @@ export function Session() {
     setNavFocused(false)
     dialog.replace(() => <DialogSessionRename session={id} />)
   }
-  const navToggleDirectories = () => {
-    setNavDirectoryScope((current) => (current === "project" ? "directory" : "project"))
-    void sync.bootstrap({ fatal: false })
-  }
   const navOpenSession = (id: string) => {
     setNavFocused(false)
     navigate({ type: "session", sessionID: id })
@@ -1581,8 +1563,6 @@ export function Session() {
               selected={navSel()}
               focused={navFocused()}
               height={navListHeight(dimensions().height)}
-              allDirectories={navDirectoryScope() === "project"}
-              added={sync.session.extraDirectories()} origin={sync.path.directory}
               overrides={navOverrides()}
               revealed={navRevealed()}
               frame={navFrame()}
@@ -1605,7 +1585,6 @@ export function Session() {
                 if (focused) promptRef.current?.blur()
                 else promptRef.current?.focus()
               }}
-              onToggleDirectories={() => navToggleDirectories()}
               onNew={() => {
                 setNavFocused(false)
                 openSessionFolder({
@@ -1613,7 +1592,6 @@ export function Session() {
                   sdk,
                   local,
                   directories: usedDirectories(sync.data.session),
-                  onDirectoryUsed: (directory) => void sync.session.addDirectory(directory),
                   onCreated: (sessionID) => navigate({ type: "session", sessionID }),
                   onNoModel: () => navigate({ type: "home" }),
                 })

@@ -2,8 +2,7 @@
 import { describe, expect, test } from "bun:test"
 import { Global } from "@opencode-ai/core/global"
 import { tmpdir } from "../../../fixture/fixture"
-import { directory, json, mount, wait } from "./sync-fixture"
-import { SESSION_DIRECTORY_SCOPE_KEY } from "../../../../src/cli/cmd/tui/context/session-scope"
+import { json, mount, wait } from "./sync-fixture"
 import type { GlobalEvent } from "@opencode-ai/sdk/v2"
 
 function branchEvent(branch: string, workspace?: string): GlobalEvent {
@@ -20,13 +19,11 @@ function branchEvent(branch: string, workspace?: string): GlobalEvent {
 }
 
 describe("tui sync", () => {
-  test("starts on the current folder, drops sessions past the age bound, and adds then removes a folder", async () => {
+  test("lists every folder of the machine, bounded by age", async () => {
     const previous = Global.Path.state
     await using tmp = await tmpdir()
     Global.Path.state = tmp.path
-    // A kv left behind by an earlier version: it holds the old default `"project"` under the legacy
-    // key. The bar must not honour it, or it would keep listing every folder on the machine.
-    await Bun.write(`${tmp.path}/kv.json`, JSON.stringify({ session_directory_scope: "project" }))
+    await Bun.write(`${tmp.path}/kv.json`, "{}")
 
     const now = Date.now()
     const day = 24 * 60 * 60 * 1000
@@ -41,63 +38,19 @@ describe("tui sync", () => {
     })
 
     const machine: URL[] = []
-    const { app, kv, sync, session: sessionCalls } = await mount((url) => {
-      if (url.pathname === "/experimental/session") {
-        machine.push(url)
-        // The machine-wide listing also returns an old session: the bound must drop it here too.
-        return json([
-          session("ses_machine", "proj_other", "/other", now),
-          session("ses_ancient", "proj_other", "/other", now - 400 * day),
-        ])
-      }
-      if (url.pathname !== "/session") return
-      if (url.searchParams.get("directory") === "/tmp/elsewhere") {
-        return json([session("ses_added", "proj_other", "/tmp/elsewhere", now)])
-      }
-      // Older than the bound: it must not be listed even though the endpoint returned it.
+    const { app, sync } = await mount((url) => {
+      if (url.pathname !== "/experimental/session") return
+      machine.push(url)
+      // The machine-wide listing returns a recent session and an ancient one: the bound drops the old.
       return json([
-        session("ses_here", "proj_test", directory, now),
-        session("ses_stale", "proj_test", directory, now - 400 * day),
+        session("ses_machine", "proj_other", "/other", now),
+        session("ses_ancient", "proj_other", "/other", now - 400 * day),
       ])
     })
 
     try {
-      // The legacy value is still in the kv and is deliberately not read; the assertions below prove
-      // the default by behaviour rather than by a stored value.
-      expect(kv.get("session_directory_scope")).toBe("project")
       await wait(() => sync.data.session.length > 0)
-
-      // Only the current folder's recent session is listed: the stale one and the other
-      // project's session stay out.
-      expect(sync.data.session.map((item) => item.id)).toEqual(["ses_here"])
-
-      // It asks for that folder, not the whole machine, and passes an explicit age bound. The
-      // `directory` param is the SDK client's own injection for the folder the client runs in, and
-      // it is only added when the request does not already carry one: an added folder keeps its own.
-      expect(sessionCalls[0]?.searchParams.get("path")).toBe("packages/opencode")
-      expect(sessionCalls[0]?.searchParams.get("directory")).toBe(directory)
-      expect(sessionCalls.some((url) => url.searchParams.get("directory") === "/tmp/elsewhere")).toBe(false)
-      expect(sessionCalls[0]?.searchParams.get("start")).not.toBeNull()
-      expect(machine.length).toBe(0)
-
-      // A folder the user adds joins the list, with its own session.
-      await sync.session.addDirectory("/tmp/elsewhere")
-      await wait(() => sync.data.session.length === 2)
-      expect(sync.session.extraDirectories()).toEqual(["/tmp/elsewhere"])
-      expect(kv.get("session_extra_directories")).toEqual(["/tmp/elsewhere"])
-      expect(sync.data.session.map((item) => item.id)).toEqual(["ses_added", "ses_here"])
-      expect(sessionCalls.some((url) => url.searchParams.get("directory") === "/tmp/elsewhere")).toBe(true)
-
-      // Removing it takes the folder and its session back out of the list.
-      await sync.session.removeDirectory("/tmp/elsewhere")
-      await wait(() => sync.data.session.length === 1)
-      expect(sync.session.extraDirectories()).toEqual([])
-      expect(sync.data.session.map((item) => item.id)).toEqual(["ses_here"])
-
-      // Widening to the whole machine uses the cross-project endpoint, still bounded by age.
-      kv.set(SESSION_DIRECTORY_SCOPE_KEY, "project")
-      await sync.session.refresh()
-      await wait(() => sync.data.session.some((item) => item.id === "ses_machine"))
+      // Every folder is listed, not only the current one, and the age bound still drops the ancient session.
       expect(machine.length).toBeGreaterThan(0)
       expect(machine[0]?.searchParams.get("roots")).toBe("true")
       expect(sync.data.session.map((item) => item.id)).toEqual(["ses_machine"])

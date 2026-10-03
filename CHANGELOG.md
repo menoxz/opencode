@@ -7,8 +7,15 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Changed
+- **La barre de sessions liste tous les dossiers de la machine, sans filtre de portée.** Le libellé « this dir / this dir +N / all dirs » et le clic sur l'en-tête « Sessions » qui le basculait sont supprimés : la liste interroge désormais toujours l'endpoint cross-projet (paginé par `x-next-cursor`) et traite chaque dossier comme le dossier courant, la borne d'ancienneté (7 j) restant appliquée. Le sélecteur « New session in folder » continue d'offrir les dossiers déjà utilisés.
+
+### Removed
+- Portée mémorisée de la liste (`session_directory_scope_v2`, `session_extra_directories`), commandes palette `app.toggle.session_directory_filter` / `app.add.session_directory` / `app.clear.session_directory`, et le marquage « + » des dossiers ajoutés (`navDirectoryLabel`, `removableDirKey`, `removableDirectories`, `selectionDirKey`).
+
 ### Fixed
 - **Logo `OPENCODEV2` de la barre de sessions rendu conforme au mot-symbole officiel.** Les footers TUI (sidebar session, footer sidebar, footer home) affichaient « OPENCODEV2 » en un seul bloc monochrome (`<b>`), alors que le mot-symbole validé est bichrome : `OPEN` atténué et `CODEV2` accentué. Les trois lignes rendent désormais cette bichromie (`textMuted` pour `OPEN`, `primary` pour `CODEV2`, la version restant en `textMuted`), alignées sur `logo-ornate-v2-*.svg`.
+- **Le dialogue de mise à jour nomme l'application au redémarrage.** « Please restart the application » devient « Please restart OPENCODEV2 » ; le titre du dialogue et le reste du message étaient déjà brandés `OPENCODEV2`.
 
 ## [v2.3.44] - 2026-10-02
 

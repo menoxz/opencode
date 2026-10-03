@@ -54,7 +54,6 @@ import { DialogConfirm } from "./ui/dialog-confirm"
 import { ToastProvider, useToast } from "./ui/toast"
 import { DialogDirectorySelect, openSessionFolder } from "./component/dialog-directory-select"
 import { usedDirectories } from "./routes/session/session-nav"
-import { DEFAULT_DIRECTORY_SCOPE, SESSION_DIRECTORY_SCOPE_KEY } from "@tui/context/session-scope"
 import { ExitProvider, useExit } from "./context/exit"
 import { Session as SessionApi } from "@/session/session"
 import { TuiEvent } from "./event"
@@ -125,7 +124,6 @@ const appBindingCommands = [
   "app.toggle.file_context",
   "app.toggle.diffwrap",
   "app.toggle.paste_summary",
-  "app.toggle.session_directory_filter",
 ] as const
 
 function rendererConfig(_config: TuiConfig.Resolved): CliRendererConfig {
@@ -358,14 +356,14 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     if (!terminalTitleEnabled() || Flag.OPENCODE_DISABLE_TERMINAL_TITLE) return
 
     if (route.data.type === "home") {
-      renderer.setTerminalTitle("OpenCode")
+      renderer.setTerminalTitle("OPENCODEV2")
       return
     }
 
     if (route.data.type === "session") {
       const session = sync.session.get(route.data.sessionID)
       if (!session || SessionApi.isDefaultTitle(session.title)) {
-        renderer.setTerminalTitle("OpenCode")
+        renderer.setTerminalTitle("OPENCODEV2")
         return
       }
 
@@ -495,7 +493,6 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
             sdk,
             local,
             directories: usedDirectories(sync.data.session),
-            onDirectoryUsed: (directory) => void sync.session.addDirectory(directory),
             onCreated: (sessionID) => route.navigate({ type: "session", sessionID }),
             onNoModel: () => route.navigate({ type: "home" }),
           })
@@ -824,44 +821,6 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
           dialog.clear()
         },
       },
-      {
-        name: "app.toggle.session_directory_filter",
-        title:
-          kv.get(SESSION_DIRECTORY_SCOPE_KEY, DEFAULT_DIRECTORY_SCOPE) === "directory"
-            ? "Show sessions of every directory"
-            : "Filter sessions to this directory",
-        category: "System",
-        run: async () => {
-          const scope = kv.get(SESSION_DIRECTORY_SCOPE_KEY, DEFAULT_DIRECTORY_SCOPE)
-          kv.set(SESSION_DIRECTORY_SCOPE_KEY, scope === "directory" ? "project" : "directory")
-          await sync.session.refresh()
-          dialog.clear()
-        },
-      },
-      {
-        name: "app.add.session_directory",
-        title: "Add a folder to the session list",
-        category: "System",
-        run: () => {
-          dialog.replace(() => (
-            <DialogDirectorySelect
-              directories={usedDirectories(sync.data.session)}
-              onPick={(directory) => {
-                void sync.session.addDirectory(directory)
-              }}
-            />
-          ))
-        },
-      },
-      {
-        name: "app.clear.session_directory",
-        title: "Clear the added folders of the session list",
-        category: "System",
-        run: async () => {
-          for (const directory of sync.session.extraDirectories()) await sync.session.removeDirectory(directory)
-          dialog.clear()
-        },
-      },
     ].map((command) => ({
       namespace: "palette",
       ...command,
@@ -971,7 +930,7 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
     await DialogAlert.show(
       dialog,
       "Update Complete",
-      `Successfully updated to OPENCODEV2 v${result.data.version}. Please restart the application.`,
+      `Successfully updated to OPENCODEV2 v${result.data.version}. Please restart OPENCODEV2.`,
     )
 
     void exit()

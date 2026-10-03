@@ -67,9 +67,6 @@ async function renderBar(props: {
   selected: number
   focused: boolean
   height?: number
-  allDirectories?: boolean
-  added?: string[]
-  origin?: string
   overrides?: Readonly<Record<string, boolean>>
   revealed?: string[]
   frame?: number
@@ -82,7 +79,6 @@ async function renderBar(props: {
   onNew?: () => void
   onDelete?: (id: string) => void
   onRename?: (id: string) => void
-  onToggleDirectories?: () => void
   onClearPending?: () => void
   onSearch?: (query: string) => void
   searchQuery?: string
@@ -97,9 +93,6 @@ async function renderBar(props: {
           selected={props.selected}
           focused={props.focused}
           height={props.height ?? 20}
-          allDirectories={props.allDirectories ?? false}
-          added={props.added}
-          origin={props.origin}
           overrides={props.overrides ?? {}}
           revealed={props.revealed ?? []}
           frame={props.frame ?? 0}
@@ -112,7 +105,6 @@ async function renderBar(props: {
           onNew={props.onNew ?? (() => {})}
           onDelete={props.onDelete ?? (() => {})}
           onRename={props.onRename ?? (() => {})}
-          onToggleDirectories={props.onToggleDirectories ?? (() => {})}
           onClearPending={props.onClearPending}
           onSearch={props.onSearch}
           searchQuery={props.searchQuery}
@@ -141,25 +133,6 @@ test("groups the sessions under a directory header with its session count", asyn
   expect(text).toContain("Fix flaky test")
   const header = linesOf(app).find((line) => line.includes("opencode-fork")) ?? ""
   expect(header).toMatch(/opencode-fork\s+2$/)
-})
-
-test("marks an added folder with a plus and leaves the workspace's own unmarked", async () => {
-  const own: NavSession[] = [{ id: "s_own", title: "Own session", directory: "C:\\work\\repo" }]
-  const app = await renderBar({
-    sessions: own,
-    activeID: "s_own",
-    selected: 0,
-    focused: false,
-    added: ["C:\\work\\extra"],
-    origin: "C:\\work\\repo",
-  })
-  const lines = linesOf(app)
-  // Read on the real frame: the added folder carries the "+", the origin's own row never does.
-  const addedRow = lines.find((line) => line.includes("extra")) ?? ""
-  const ownRow = lines.find((line) => line.includes("/repo")) ?? ""
-  expect(addedRow).toContain("+/extra")
-  expect(ownRow).toContain("/repo")
-  expect(ownRow).not.toContain("+/repo")
 })
 
 test("a directory without the active session keeps only its single-line header", async () => {
@@ -432,16 +405,6 @@ test("offers a folder search field in the bar", async () => {
   expect(app.captureCharFrame()).toContain("Search folders")
 })
 
-test("clicking the directory label asks the route to toggle the scope", async () => {
-  let flipped = false
-  const app = await renderBar({ sessions, selected: 0, focused: false, allDirectories: true, onToggleDirectories: () => (flipped = true) })
-  const y = linesOf(app).findIndex((line) => line.includes("all dirs"))
-  expect(y).toBeGreaterThanOrEqual(0)
-  await app.mockMouse.click(linesOf(app)[y].indexOf("all dirs"), y)
-  await settled(app)
-  expect(flipped).toBe(true)
-})
-
 test("marks the row awaiting delete confirmation", async () => {
   const app = await renderBar({ sessions: twoDirs, activeID: "a1", selected: 1, focused: false, pendingDelete: "a1" })
   expect(app.captureCharFrame()).toContain("press again")
@@ -481,7 +444,6 @@ test("takes keys in the search field, narrows the list and leaves on Escape", as
           selected={0}
           focused={true}
           height={20}
-          allDirectories={false}
           overrides={{ "C:\\w\\alpha": false }}
           revealed={[]}
           frame={0}
@@ -492,7 +454,6 @@ test("takes keys in the search field, narrows the list and leaves on Escape", as
           onNew={() => {}}
           onDelete={() => {}}
           onRename={() => {}}
-          onToggleDirectories={() => {}}
           shortcuts={{ new: "alt+n", delete: "ctrl+d", rename: "ctrl+r" }}
           searchQuery={query()}
           searching={searching()}
@@ -542,8 +503,7 @@ test("takes keys in the search field, narrows the list and leaves on Escape", as
   expect(app.captureCharFrame()).toContain("Alpha one")
 })
 
-test("creating a session in a picked folder registers that folder, and nothing when it fails", async () => {
-  const used: string[] = []
+test("creating a session in a picked folder reports it, and nothing when it fails", async () => {
   const created: string[] = []
   const deps = {
     directory: "C:\\jeanluc",
@@ -554,22 +514,17 @@ test("creating a session in a picked folder registers that folder, and nothing w
   await pickSessionFolder({
     ...deps,
     create: (async () => ({ data: { id: "ses_new" } })) as never,
-    onDirectoryUsed: (directory) => used.push(directory),
     onCreated: (id) => created.push(id),
   })
-  expect(used).toEqual(["C:\\jeanluc"])
   expect(created).toEqual(["ses_new"])
 
-  // The failure paths must register nothing, or a folder the session never landed in would stick.
-  used.length = 0
+  // The failure paths report nothing, or a session the call never created would look created.
   created.length = 0
   await pickSessionFolder({
     ...deps,
     create: (async () => ({ error: "boom" })) as never,
-    onDirectoryUsed: (directory) => used.push(directory),
     onCreated: (id) => created.push(id),
   })
-  expect(used).toEqual([])
   expect(created).toEqual([])
 
   let missingModel = 0
@@ -577,12 +532,10 @@ test("creating a session in a picked folder registers that folder, and nothing w
     ...deps,
     model: undefined,
     create: (async () => ({ data: { id: "ses_never" } })) as never,
-    onDirectoryUsed: (directory) => used.push(directory),
     onCreated: (id) => created.push(id),
     onNoModel: () => (missingModel += 1),
   })
   expect(missingModel).toBe(1)
-  expect(used).toEqual([])
   expect(created).toEqual([])
 })
 
@@ -609,7 +562,6 @@ test("clicking a directory's Read more reveals its extra sessions", async () => 
           selected={0}
           focused={false}
           height={20}
-          allDirectories={false}
           overrides={{}}
           revealed={revealed()}
           frame={0}
@@ -620,7 +572,6 @@ test("clicking a directory's Read more reveals its extra sessions", async () => 
           onNew={() => {}}
           onDelete={() => {}}
           onRename={() => {}}
-          onToggleDirectories={() => {}}
           shortcuts={{ new: "alt+n", delete: "ctrl+d", rename: "ctrl+r" }}
         />
       )

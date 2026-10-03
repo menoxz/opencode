@@ -9,14 +9,12 @@ import {
   filterNavSessions,
   footerLines,
   navDirRow,
-  navDirectoryLabel,
   navEmptyRow,
   navMoreRow,
   navQueryRow,
   navRow,
   navRows,
   navScrollOffset,
-  removableDirectories,
   searchAppend,
   searchBackspace,
   type NavRowModel,
@@ -39,11 +37,6 @@ export function SessionNavBar(props: {
   selected: number
   focused: boolean
   height: number
-  allDirectories: boolean
-  /** The folders the list adds on top of the current one, so the scope stays visible and removable. */
-  added?: readonly string[]
-  /** The folder the workspace opened on: never marked as added, and never removable. */
-  origin?: string
   overrides: Readonly<Record<string, boolean>>
   revealed: string[]
   frame: number
@@ -56,7 +49,6 @@ export function SessionNavBar(props: {
   onNew: () => void
   onDelete: (id: string) => void
   onRename: (id: string) => void
-  onToggleDirectories: () => void
   onClearPending?: () => void
   searchQuery?: string
   searching?: boolean
@@ -70,9 +62,6 @@ export function SessionNavBar(props: {
   const { theme } = useTheme()
   const width = () => props.width ?? NAV_WIDTH
   const innerWidth = () => Math.max(1, width() - 2)
-  // The added folders, minus the workspace's own: the filter lives in `session-nav`, so the "+" mark,
-  // the scope count and the removal guard can never disagree about what counts as added.
-  const addable = () => removableDirectories(props.added ?? [], props.origin)
   const rows = () =>
     // Filtered here and not only at the call site: the home screen's panel handed this bar the raw
     // list, so a query narrowed the panel's own cursor while the bar kept listing every session.
@@ -80,7 +69,6 @@ export function SessionNavBar(props: {
       overrides: props.overrides,
       revealed: props.revealed,
       reveal: (props.searchQuery ?? "").length > 0,
-      added: addable(),
     })
   const [hover, setHover] = createSignal<number | null>(null)
   const tuiConfig = useTuiConfig()
@@ -104,7 +92,7 @@ export function SessionNavBar(props: {
     // arithmetic still sees it, instead of a margin that would push the last rows out of frame.
     if (row.kind === "gap") return ""
     if (row.kind === "dir")
-      return navDirRow({ label: row.label, count: row.count, collapsed: row.collapsed, added: row.added, width: innerWidth() })
+      return navDirRow({ label: row.label, count: row.count, collapsed: row.collapsed, width: innerWidth() })
     if (row.kind === "session")
       return navRow({
         title: row.title,
@@ -208,12 +196,11 @@ export function SessionNavBar(props: {
           flexDirection="row"
           gap={1}
           flexShrink={0}
-          onMouseUp={() => (props.pendingDelete ? props.onClearPending?.() : props.onToggleDirectories())}
+          onMouseUp={() => props.pendingDelete && props.onClearPending?.()}
         >
           <text fg={theme.text}>
             <b>Sessions</b>
           </text>
-          <text fg={theme.textMuted}>{navDirectoryLabel(props.allDirectories, addable().length)}</text>
         </box>
         <box flexShrink={0} onMouseUp={() => props.onSearchFocus?.(true)}>
           <text fg={theme.textMuted} wrapMode="none">
