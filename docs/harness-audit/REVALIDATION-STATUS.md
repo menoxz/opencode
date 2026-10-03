@@ -1,0 +1,90 @@
+# Statut de la vague 3 — registre autoritaire
+
+Ce fichier est l'état de référence pour ne plus redériver l'avancement. Dernière mise à jour : après la livraison des révisions P10 et P18 et la remontée du verdict P01.
+
+**Règle de lecture** : une proposition n'est *revalidée* que si `verdicts/PXX-revalidation.md` existe sur disque avec un statut `REVALIDATED-*`. Le marqueur `> Révisé après verdict` dans `proposals/` **n'est pas une preuve** (cf. C-21).
+
+## Décompte
+
+| Mesure | Valeur |
+| --- | --- |
+| Propositions sur disque | 20 / 20 |
+| Verdicts de base sur disque | 19 / 20 (P12 manquant, validateur lancé) |
+| Revisions atterries | 7 (P02, P03, P04, P06, P10, P11, P18) |
+| Revisions **corrompues** à refaire | 5 (P03, P04, P07, P13, P16) — règle C-21 |
+| Revisions non encore livrées | P01, P05, P14 |
+| Revalidations sur disque | 0 |
+| Revalidations en vol | 5 (P02, P06, P10, P11, P18) |
+
+## Statut par proposition
+
+| P | Verdict de base | Révision | Revalidation | Blocage |
+| --- | --- | --- | --- | --- |
+| P01 | `PASS_WITH_CHANGES` | à faire | non | **C-22** (la proposition inverse le code sur la menace) + **C-23** (T2 n'exerce pas le chemin visé) |
+| P02 | `PASS_WITH_CHANGES` | atterrie | **en vol** | — |
+| P03 | `PASS_WITH_CHANGES` | **corrompue** | non | C-21 — refaire depuis un fichier propre |
+| P04 | `FAIL` | **corrompue** | non | C-21 + 3 blocages durs (quota journalier, compteur `attempt 10/10`, effort S) |
+| P05 | `PASS_WITH_CHANGES` | à faire (relancée après `budget_exceeded`) | non | — |
+| P06 | `PASS_WITH_CHANGES` | atterrie | **en vol** | F1 chemin faux, F2 voie d'accès non établie, F3 tests à réécrire |
+| P07 | `PASS_WITH_CHANGES` | **corrompue** | non | C-21 + **C-20** (T3 passe avant/après) |
+| P08 | `PASS_WITH_CHANGES` | à faire | non | **arbitrage humain** : R1 renversé (opt-in + census), effort L |
+| P09 | écrit (4 findings, `budget_exceeded` après écriture) | s.o. | s.o. | invariant de propriété délégué à P12 ; 3 findings `out_of_scope` |
+| P10 | `PASS_WITH_CHANGES` | atterrie (548 l.) | **en vol** | point `NEEDS_REVIEW` sur `READ_HEAVY_RAMP_SPAN` |
+| P11 | **`FAIL`** | atterrie (reprise complète) | **en vol** | arbitrage humain : typage des DoD d'effort L |
+| P12 | **manquant** | s.o. | s.o. | validateur lancé ; doit trancher l'invariant P09 |
+| P13 | `PASS_WITH_CHANGES` | **corrompue** | non | C-21 + **C-12** (patch non compilable) + **C-13** (`always` neutralise la détection) + **C-14** (contradiction `agent.ts:356-370` vs `:119-121`) |
+| P14 | `PASS_WITH_CHANGES` | à faire (relancée après `budget_exceeded`) | non | **objection technique, pas un arbitrage humain** : `shell.ts:512` `last = preview(last + chunk)` tronque **en flux**, donc la détection proposée `body !== (last \|\| output)` vaut `last !== last` → `false` ; §4.3 « rend `truncated` honnête » échoue |
+| P15 | `PASS_WITH_CHANGES` | à faire | non | **C-18** (patch → TS18047) |
+| P16 | `PASS_WITH_CHANGES` | **corrompue** | non | C-21 + **C-10** (sévérité réelle `low`) + **C-11** (casse `terminal-output.test.ts:160`) |
+| P17 | `PASS_WITH_CHANGES` | à faire | non | collision `truncate.ts` avec P16 |
+| P18 | `PASS_WITH_CHANGES` | atterrie | **en vol** | prémisse du mandat fausse ; 8 autres sites escaladés (P18-bis) ; désaccord `cross-spawn-spawner.ts:86-93` |
+| P19 | `PASS_WITH_CHANGES` | à faire | non | réemploi des logs SQL déjà écrits |
+| P20 | **`FAIL`** | en cours (re-scope vers B1 seul) | non | **A1/A2 non livrés** (dénominateur faux, mesure non reproductible) ; B1 défendable ; 2 citations fausses (`AGENTS.md:110` inexistante, `tools.ts` sans chemin — réel : `src/session/tools.ts`) |
+
+## Arbitrages tranchés par l'opérateur (2026-10-03)
+
+| # | Sujet | Décision | Conséquence |
+| --- | --- | --- | --- |
+| A-1 | **P08** — R1 renversé par son propre verdict (effort L) | **Opt-in + census SQL read-only seul.** Aucune purge par défaut. | La proposition P08 se replie sur B : la croissance des parts reasoning reste **non bornée** (3 045 134 car. = 50 % d'une session) et le finding **P08-R2B-REASONING-NON-BORNE** reste `residual` **assumé**, pas corrigé. Le refus de purge est désormais une décision tracée, pas une omission. |
+| A-2 | **P11** — typage des DoD d'effort | **Schéma dédié + plafond.** Un DoD d'effort doit porter un seuil chiffré falsifiable ; « L » seul est **refusé**. | Contredit `goal-contract.ts:609-628` qui refuse aujourd'hui tout goal dont une DoD n'est pas un artefact vérifiable. La révision de P11 doit implémenter le schéma, pas assouplir la barrière. |
+| A-3 | **P09 / P12** — propriétaire de l'invariant « la sortie complète existe sur disque » | **`shell.ts`** (seule couche où la donnée est intacte avant troncature). | Confirme le choix du validateur P09 ; `P09-OWNERSHIP-INVARIANT` passe `out_of_scope` → **tranché**. Renforce la collision `shell.ts` (P09, P12, P13, P14, P18) : vague 4 **obligatoirement** séquentielle sur ce fichier. |
+| A-4 | **P09-RESIDUAL** — fidélité de l'artefact | **Mesurer avant d'implémenter.** | `P09-RESIDUAL-ARTIFACT-FIDELITY` reste `open` jusqu'à une comparaison octet à octet entre la sortie réelle et ce que la troncature a écrit. Mesure lancée ; **P09 n'est pas implémentable avant son résultat**. |
+
+### Cadre d'un arbitrage qui n'existait pas
+
+`P14` figurait dans la liste des arbitrages humains sous « quel filtre de secrets ? ». **Cette question était fausse** : le verdict P14 ne contient aucune objection de filtre de secrets. Son objection est **technique** — `shell.ts:512` `last = preview(last + chunk)` tronque **en flux**, donc la détection proposée `body !== (last || output)` vaut `last !== last` → `false`, et §4.3 « rend `truncated` honnête » échoue. Aucune décision humaine n'est requise ; c'est une reprise de proposition.
+
+## Collisions de fichiers connues (règle : un fichier source = un seul agent)
+
+| Fichier | Propositions en conflit |
+| --- | --- |
+| `shell.ts` | P09, P12, P13, P14, P18 |
+| `truncate.ts` | P16, P17 |
+| `compaction.ts` | P06, P10 |
+| `goal-contract.ts` | P11 |
+
+## Rappel des contraintes d'orchestration
+
+- Interdire `git` et le shell aux agents (EPERM sur `git.exe`, `pwsh.exe`, `cmd.exe`).
+- Ne jamais commiter depuis un agent ; un commit unique par l'orchestrateur.
+- Ne pas lancer un agent de révision tant que l'auteur de la proposition n'a pas terminé (C-21).
+- Lectures par tranches `offset` / `limit` ; `grep` échoue en EPERM ; `glob` peut expirer (~30 s).
+
+## Blocage du DoD « dépôt commité » (2026-10-03, mesuré)
+
+Le commit des 10 fichiers du contrat d'orchestration est **impossible en l'état**. Deux défauts distincts, mesurés :
+
+| Symptôme | Code | Sortie exacte |
+| --- | --- | --- |
+| `git add` échoue | `ADD_EXIT=1` | ``git: 'C:\Program Files\Git\cmd\git.exe' is not a git command. See 'git --help'.`` |
+| `git commit` échoue | `COMMIT_EXIT=128` | ``fatal: Unable to create 'C:/jeanluc/opencode-fork/.git/index.lock': File exists.`` |
+
+**Propriété du verrou, mesurée** : `GITPROCS=11` processus `git`/`git-lfs` vivants ; `.git/index.lock` âgé de **2 841 s** (47 min), taille **687 102 o**.
+
+**Décision** : le verrou **n'est pas supprimé**. Avec 11 processus git en vie, l'obsolescence du verrou n'est pas prouvée ; le supprimer risquerait de corrompre l'index. Tuer ou relancer un processus git préexistant exigerait une demande explicite de l'opérateur, avec la liste des PID concernés. Le DoD « dépôt commité » reste donc **ouvert**, cause consignée ici.
+
+**Cause unique : le verrou.** Mesure de contrôle : `git add --dry-run <chemin>` et `git add --dry-run -- <chemin>` échouent tous deux avec l'erreur **identique** `Unable to create '.../.git/index.lock': File exists` (`A_EXIT=128`, `B_EXIT=128`), et `git --version` répond `2.56.0.windows.1` — l'outil est sain. J'avais d'abord attribué à `git add` un second défaut d'argument (``git.exe`` reçu comme sous-commande, `ADD_EXIT=1`) : **cette attribution était fausse**, je la retire. Ce message reste inexpliqué mais **n'est pas** la cause bloquante.
+
+**Voie retenue, non destructive** : committer via un index Git **alternatif** (`GIT_INDEX_FILE` pointant hors du dépôt), après `git read-tree HEAD`. Cette voie n'écrit jamais dans `.git/index.lock`, ne supprime aucun verrou et ne tue aucun processus. Elle est réversible : un commit mal formé reste un objet dangling, jamais une perte de travail.
+
+HEAD au moment du premier échec : `9783daea6 docs(harness-audit): add independent P17 verdict (PASS_WITH_CHANGES)`.
