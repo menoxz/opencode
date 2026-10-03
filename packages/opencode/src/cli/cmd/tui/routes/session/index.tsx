@@ -1748,7 +1748,7 @@ export function Session() {
               <Show when={sessionPanel() === "logs"}>
                 <TuiPluginRuntime.Slot name="session_logs" />
               </Show>
-              <box flexShrink={0}>
+              <box flexShrink={0} zIndex={1000}>
                 <Show when={permissions().length > 0}>
                   <PermissionPrompt request={permissions()[0]} />
                 </Show>
