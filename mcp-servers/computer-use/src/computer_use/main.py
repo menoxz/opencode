@@ -50,17 +50,17 @@ def computer_snapshot(scope: str = "foreground", max_depth: int = 12, max_nodes:
 
 
 @mcp.tool(description="Click an element by uid (from a snapshot) or by role and/or name. button: left|right|middle; double: click twice.")
-def computer_click(uid: str | None = None, role: str | None = None, name: str | None = None, button: str = "left", double: bool = False) -> str:
+def computer_click(uid: str | None = None, role: str | None = None, name: str | None = None, automation_id: str | None = None, button: str = "left", double: bool = False) -> str:
     try:
-        return _ok(uia.click(uid=uid, role=role, name=name, button=button, double=double))
+        return _ok(uia.click(uid=uid, role=role, name=name, automation_id=automation_id, button=button, double=double))
     except Exception as exc:
         return _err(exc)
 
 
 @mcp.tool(description="Set the text of an input element located by uid or role/name.")
-def computer_fill(value: str, uid: str | None = None, role: str | None = None, name: str | None = None) -> str:
+def computer_fill(value: str, uid: str | None = None, role: str | None = None, name: str | None = None, automation_id: str | None = None) -> str:
     try:
-        return _ok(uia.fill(value=value, uid=uid, role=role, name=name))
+        return _ok(uia.fill(value=value, uid=uid, role=role, name=name, automation_id=automation_id))
     except Exception as exc:
         return _err(exc)
 
@@ -74,17 +74,17 @@ def computer_press_key(keys: str, uid: str | None = None) -> str:
 
 
 @mcp.tool(description="Scroll an element located by uid or role/name. direction: up|down|left|right|pgup|pgdn; amount: wheel notches.")
-def computer_scroll(direction: str = "down", amount: int = 3, uid: str | None = None, role: str | None = None, name: str | None = None) -> str:
+def computer_scroll(direction: str = "down", amount: int = 3, uid: str | None = None, role: str | None = None, name: str | None = None, automation_id: str | None = None) -> str:
     try:
-        return _ok(uia.scroll(direction=direction, amount=amount, uid=uid, role=role, name=name))
+        return _ok(uia.scroll(direction=direction, amount=amount, uid=uid, role=role, name=name, automation_id=automation_id))
     except Exception as exc:
         return _err(exc)
 
 
 @mcp.tool(description="Wait until an element matching role and/or name reaches a state: exists|visible|enabled|absent. Returns met=true as soon as the condition holds, otherwise met=false at timeout. Blocks on state instead of a fixed sleep.")
-def computer_wait_for(role: str | None = None, name: str | None = None, timeout: float = 5.0, state: str = "exists") -> str:
+def computer_wait_for(role: str | None = None, name: str | None = None, automation_id: str | None = None, timeout: float = 5.0, state: str = "exists") -> str:
     try:
-        return _ok(uia.wait_for(role=role, name=name, timeout=timeout, state=state))
+        return _ok(uia.wait_for(role=role, name=name, automation_id=automation_id, timeout=timeout, state=state))
     except Exception as exc:
         return _err(exc)
 

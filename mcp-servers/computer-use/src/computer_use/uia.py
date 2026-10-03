@@ -64,13 +64,13 @@ def _children(info: Any) -> list[Any]:
             continue
         try:
             items = value() if callable(value) else value
-            return list(items)
+            return [c for c in items]  # type: ignore[union-attr]
         except Exception:
             continue
     fn = getattr(info, "iter_children", None)
     if callable(fn):
         try:
-            return list(fn())
+            return [c for c in fn()]  # type: ignore[union-attr]
         except Exception:
             pass
     return []
@@ -150,6 +150,30 @@ def _iter_all(limit: int = 4000, max_depth: int = DEFAULT_MAX_DEPTH) -> Iterator
 
 
 # --- public API --------------------------------------------------------------
+def _capture(scope: str, max_depth: int, max_nodes: int) -> tuple[list[dict[str, Any]], dict[str, Any], bool]:
+    """Walk the UIA tree once and return (nodes, uid_map, truncated) without storing."""
+    roots = _roots(scope)
+    nodes: list[dict[str, Any]] = []
+    uid_map: dict[str, Any] = {}
+    truncated = False
+    stack: list[tuple[Any, int, Optional[str]]] = [(r, 0, None) for r in reversed(roots)]
+    while stack:
+        info, depth, parent = stack.pop()
+        if len(nodes) >= max_nodes:
+            truncated = True
+            break
+        try:
+            node = _node(info, depth, parent)
+        except Exception:
+            continue
+        nodes.append(node)
+        uid_map[node["uid"]] = info
+        if depth < max_depth:
+            for child in reversed(_children(info)):
+                stack.append((child, depth + 1, node["uid"]))
+    return nodes, uid_map, truncated
+
+
 def snapshot(
     scope: str = "foreground",
     max_depth: int = DEFAULT_MAX_DEPTH,
@@ -157,26 +181,7 @@ def snapshot(
 ) -> dict[str, Any]:
     """Capture a structured UIA snapshot; stores it as the session baseline."""
     with _LOCK:
-        roots = _roots(scope)
-        nodes: list[dict[str, Any]] = []
-        uid_map: dict[str, Any] = {}
-        truncated = False
-        stack: list[tuple[Any, int, Optional[str]]] = [(r, 0, None) for r in reversed(roots)]
-        while stack:
-            info, depth, parent = stack.pop()
-            if len(nodes) >= max_nodes:
-                truncated = True
-                break
-            try:
-                node = _node(info, depth, parent)
-            except Exception:
-                continue
-            nodes.append(node)
-            uid_map[node["uid"]] = info
-            if depth < max_depth:
-                for child in reversed(_children(info)):
-                    stack.append((child, depth + 1, node["uid"]))
-
+        nodes, uid_map, truncated = _capture(scope, max_depth, max_nodes)
         global _last_nodes, _uid_map
         _last_nodes = nodes
         _uid_map = uid_map
@@ -204,6 +209,18 @@ def resolve(
             raise UiaError(f"unknown uid {uid!r}; take a snapshot first")
         if not (role or name or automation_id):
             raise UiaError("provide a uid, or role/name/automation_id to locate the element")
+        # Prefer the elements captured by the last snapshot: targeting the freshest
+        # captured tree is far more reliable than re-walking UIA live.
+        for node in _last_nodes:
+            if role and (node.get("role", "") or "").lower() != role.lower():
+                continue
+            if name and name.lower() not in (node.get("name", "") or "").lower():
+                continue
+            if automation_id and (node.get("automation_id", "") or "") != automation_id:
+                continue
+            info = _uid_map.get(node["uid"])
+            if info is not None:
+                return info
         for info in _iter_all():
             ct = (_get(info, "control_type", "") or "").lower()
             nm = (_get(info, "name", "") or "")
@@ -233,10 +250,11 @@ def click(
     uid: Optional[str] = None,
     role: Optional[str] = None,
     name: Optional[str] = None,
+    automation_id: Optional[str] = None,
     button: str = "left",
     double: bool = False,
 ) -> dict[str, Any]:
-    info = resolve(uid=uid, role=role, name=name)
+    info = resolve(uid=uid, role=role, name=name, automation_id=automation_id)
     wrapper = _wrapper(info)
     try:
         wrapper.set_focus()
@@ -251,25 +269,25 @@ def fill(
     uid: Optional[str] = None,
     role: Optional[str] = None,
     name: Optional[str] = None,
+    automation_id: Optional[str] = None,
 ) -> dict[str, Any]:
-    info = resolve(uid=uid, role=role, name=name)
+    info = resolve(uid=uid, role=role, name=name, automation_id=automation_id)
     wrapper = _wrapper(info)
-    last_exc: Optional[Exception] = None
-    for method in ("set_edit_text", "set_text"):
-        fn = getattr(wrapper, method, None)
-        if callable(fn):
-            try:
-                fn(value)
-                return {"filled": _node(info, 0, None), "method": method, "value": value}
-            except Exception as exc:
-                last_exc = exc
+    # Preferred: the UI Automation Value pattern writes text without simulating keys.
+    iv = getattr(wrapper, "iface_value", None)
+    if iv is not None:
+        try:
+            iv.SetValue(value)
+            return {"filled": _node(info, 0, None), "method": "iface_value.SetValue", "value": value}
+        except Exception:
+            pass
     # Fallback: focus and type, escaping pywinauto special characters.
     try:
         wrapper.set_focus()
-        wrapper.type_keys(_escape(value), with_spaces=True, set_foreground=True)
+        wrapper.type_keys(_escape(value), with_spaces=True)
         return {"filled": _node(info, 0, None), "method": "type_keys", "value": value}
     except Exception as exc:
-        raise UiaError(f"cannot fill element ({last_exc or exc})") from exc
+        raise UiaError(f"cannot fill element ({exc})") from exc
 
 
 def press_key(keys: str, uid: Optional[str] = None) -> dict[str, Any]:
@@ -280,7 +298,7 @@ def press_key(keys: str, uid: Optional[str] = None) -> dict[str, Any]:
             _wrapper(resolve(uid=uid)).set_focus()
         except Exception:
             pass
-    send_keys(keys, set_foreground=uid is None)
+    send_keys(keys)
     return {"pressed": keys}
 
 
@@ -290,11 +308,16 @@ def scroll(
     uid: Optional[str] = None,
     role: Optional[str] = None,
     name: Optional[str] = None,
+    automation_id: Optional[str] = None,
 ) -> dict[str, Any]:
-    info = resolve(uid=uid, role=role, name=name)
+    info = resolve(uid=uid, role=role, name=name, automation_id=automation_id)
     wrapper = _wrapper(info)
     try:
-        wrapper.scroll(direction, amount, set_foreground=True)
+        wrapper.set_focus()
+    except Exception:
+        pass
+    try:
+        wrapper.scroll(direction, amount)
         return {"scrolled": _node(info, 0, None), "direction": direction, "amount": amount}
     except Exception:
         # Fall back to a wheel event at the element centre.
@@ -310,6 +333,7 @@ def scroll(
 def wait_for(
     role: Optional[str] = None,
     name: Optional[str] = None,
+    automation_id: Optional[str] = None,
     timeout: float = DEFAULT_TIMEOUT,
     state: str = "exists",
 ) -> dict[str, Any]:
@@ -320,7 +344,7 @@ def wait_for(
     deadline = time.monotonic() + max(0.0, float(timeout))
     last: Optional[dict[str, Any]] = None
     while True:
-        match = _find(role=role, name=name)
+        match = _find(role=role, name=name, automation_id=automation_id)
         ok = False
         if state == "absent":
             ok = match is None
@@ -339,13 +363,30 @@ def wait_for(
         time.sleep(POLL_INTERVAL)
 
 
-def _find(role: Optional[str], name: Optional[str]) -> Optional[dict[str, Any]]:
+def _find(role: Optional[str], name: Optional[str], automation_id: Optional[str] = None) -> Optional[dict[str, Any]]:
+    # Observe live state with a fresh capture (never clobbering the stored baseline),
+    # then fall back to a live walk.
+    try:
+        nodes, _map, _trunc = _capture("foreground", DEFAULT_MAX_DEPTH, DEFAULT_MAX_NODES)
+    except Exception:
+        nodes = []
+    for node in nodes:
+        if role and (node.get("role", "") or "").lower() != role.lower():
+            continue
+        if name and name.lower() not in (node.get("name", "") or "").lower():
+            continue
+        if automation_id and (node.get("automation_id", "") or "") != automation_id:
+            continue
+        return node
     for info in _iter_all():
         ct = (_get(info, "control_type", "") or "").lower()
         nm = (_get(info, "name", "") or "")
+        aid = (_get(info, "automation_id", "") or "")
         if role and ct != role.lower():
             continue
         if name and name.lower() not in nm.lower():
+            continue
+        if automation_id and aid != automation_id:
             continue
         try:
             return _node(info, 0, None)
