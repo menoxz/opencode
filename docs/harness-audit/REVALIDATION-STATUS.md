@@ -17,7 +17,26 @@ Ce fichier est l'état de référence pour ne plus redériver l'avancement. Dern
 | Revisions non encore livrées | P01, P05, P14 |
 | Revalidations sur disque | **5** — P02, P06, P10, P18 = `REVALIDATED-PASS_WITH_CHANGES` ; **P11 = `REVALIDATED-FAIL`** |
 | **Arbitrage A-4 (fidélité P09)** | ✅ **SATISFAIT PAR MESURE** — `shell.ts:604` écart **0/0** octets, `identical=true`. Finding `P09-RESIDUAL-ARTIFACT-FIDELITY` → **clos**. Deux nouveaux résidus `residual` : dérive texte→chemin (`truncate.ts:29-31`, 6/6 sondes) et perte d'info au retour. Cf. **C-43** |
-| **Base de non-régression** | ❌ `test/tool/shell.test.ts` **instable** : 63/32/1 puis 62/33/4. `test/shell/shell.test.ts` existe et n'est **pas** mesurée. Cf. **C-44** |
+| **Base de non-régression (shell)** | ✅ **`test/shell/shell.test.ts` = 12 pass / 0 fail, exit 0** — verte et stable. **C'est la base de la vague 4 pour les correctifs de permissions shell**, en remplacement de `test/tool/shell.test.ts` (instable, **C-44**). Cf. **C-47** |
+| **Seuil « typecheck vert »** | ✅ **`bun typecheck` → `TYPECHECK_EXIT=0`** (16 s, bun 1.4.2). Lève `COR-R18-3`. Cf. **C-46** |
+
+### Statuts réels des revalidations (extraits des fichiers, pas des rapports d'agents)
+
+| P | Statut sur disque | Blocage restant |
+| --- | --- | --- |
+| P02 | `REVALIDATED-PASS_WITH_CHANGES` | — **cycle 2 déclare 0 résidu `open`** ⇒ **1ᵉʳ candidat vague 4**, sous réserve de revalidation cycle 2 |
+| P06 | `REVALIDATED-PASS_WITH_CHANGES` | objection de périmètre (C-28), levée au cycle 2 ; divergence T3 1 200 vs 1 100 (C-49) |
+| P10 | `REVALIDATED-PASS_WITH_CHANGES` | N1 casse 2 tests verts ; N2 `Compaction.select` non exporté |
+| P11 | **`REVALIDATED-FAIL`** | 3 des 4 Required changes intacts ; arbitrage **A-2 contesté** (C-34) |
+| P18 | `REVALIDATED-PASS_WITH_CHANGES` | branche `Busy` non testée ; `EBUSY_ANY` non audité ; `COR-R18-3` **levé par C-46** |
+| P20 | **`REVALIDATED-FAIL`** | **un seul** Required change intact : seconde moitié de **RC6** — test qui mesure le vrai `packages/opencode/AGENTS.md` au lieu d'un `AGENTS.md` synthétique. Résidu **R2 `open`** : seule preuve existante = un `rg` manuel, **interdit en vague 4**. Remède **S** : `test/agents-md.test.ts` (nouveau), motif déjà prouvé par `test/daemon/console-visibility.test.ts:17,51,60`. 10 des 11 RC résolus, 17 citations exactes |
+
+**Candidats vagues 4 (aucun résidu `open`) : 1 / 6 — P02.** Les deux `FAIL` (P11, P20) sont non implémentables
+par définition de la règle d'implémentabilité, quel que soit le nombre de cycles.
+
+**Livrables non encore revalidés** (ordre de priorité) : **P16** (livré, 7 RC, **C-50/C-51**), P11 (cycle 2),
+P10 (cycle 2), P20 (R2 : test de contenu `test/agents-md.test.ts`), P18 (cycle 2 interrompu par `budget_exceeded`),
+P01, P05, P14, P17, P03. Revalidations **en vol** : P02, P04, P06, P07, P08, P12, P13, P15, P19.
 | Revalidations en vol | 0 |
 | Propositions atteignant `REVALIDATED-PASS` | **0 / 20** — clause abrogée, voir C-32 et la règle d'implémentabilité de `REVALIDATION-BRIEFS.md` |
 | **Revalidations implémentables (aucun résidu `open`)** | **0 / 5** — classement complet en C-33. P02 : R1 `ouvert` + R2 `BLOQUANTE`. P06 : objection de périmètre `BLOQUANTE`. P10 : N1 `haute`/`OPEN` + N2 `moyenne`/`OPEN`. P18 : 3 résidus non statutés donc `open`. **Aucun candidat pour la vague 4** |
