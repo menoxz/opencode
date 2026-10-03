@@ -807,7 +807,13 @@ export function Autocomplete(props: {
     const count = options().length || 1
     if (!store.visible) return Math.min(10, count)
     positionTick()
-    return Math.min(10, count, Math.max(1, props.anchor().y))
+    // `top` is measured from the anchor's parent origin (see position()), so the
+    // height cap must share that origin. Clamping to the screen-absolute
+    // anchor().y instead made `top` negative whenever the prompt's parent started
+    // below the screen top (navbar/header), drawing the panel above the prompt and
+    // over the agent's output. Cap to the room actually available above the anchor
+    // within its parent.
+    return Math.min(10, count, Math.max(1, position().y))
   })
 
   let scroll: ScrollBoxRenderable
@@ -817,7 +823,7 @@ export function Autocomplete(props: {
     <box
       visible={store.visible !== false}
       position="absolute"
-      top={position().y - height()}
+      top={Math.max(0, position().y - height())}
       left={position().x}
       width={position().width}
       zIndex={100}

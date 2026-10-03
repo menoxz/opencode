@@ -7,6 +7,11 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.3.45] - 2026-10-03
+
+### Fixed
+- **Le panneau de commandes « / » ne recouvre plus la sortie de l'agent.** Sa hauteur était plafonnée par `props.anchor().y` — la coordonnée **écran** du prompt — puis retranchée à `position().y`, qui est **relative au parent** du prompt (`anchor.y - anchor.parent.y`, autocomplete.tsx). Quand le parent du prompt ne commence pas en haut de l'écran (bandeau/entête au-dessus) et que le prompt est proche du haut, `top = position().y - height()` devenait négatif : le panneau était dessiné **au-dessus du prompt, par-dessus la sortie de l'agent**, d'où le panneau « confondu » avec le transcript par intermittence selon la géométrie (terminal court, liste d'options longue). La hauteur est désormais plafonnée dans le même repère que `top` (`position().y`) et `top` est borné à `0`, ce qui garde le panneau juste au-dessus du prompt.
+
 ## [v2.3.44] - 2026-10-02
 
 ### Changed
