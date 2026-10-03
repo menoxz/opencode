@@ -50,8 +50,10 @@ function Version(props: { api: TuiPluginApi }) {
 
   return (
     <box flexShrink={0}>
-      <text fg={theme().textMuted}>
-        <b>OPENCODEV2</b> {props.api.app.version}
+      <text>
+        <span style={{ fg: theme().textMuted, bold: true }}>OPEN</span>
+        <span style={{ fg: theme().primary, bold: true }}>CODEV2</span>{" "}
+        <span style={{ fg: theme().textMuted }}>{props.api.app.version}</span>
       </text>
     </box>
   )

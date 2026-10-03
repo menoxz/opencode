@@ -7,6 +7,9 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Fixed
+- **Logo `OPENCODEV2` de la barre de sessions rendu conforme au mot-symbole officiel.** Les footers TUI (sidebar session, footer sidebar, footer home) affichaient « OPENCODEV2 » en un seul bloc monochrome (`<b>`), alors que le mot-symbole validé est bichrome : `OPEN` atténué et `CODEV2` accentué. Les trois lignes rendent désormais cette bichromie (`textMuted` pour `OPEN`, `primary` pour `CODEV2`, la version restant en `textMuted`), alignées sur `logo-ornate-v2-*.svg`.
+
 ## [v2.3.45] - 2026-10-03
 
 ### Fixed
