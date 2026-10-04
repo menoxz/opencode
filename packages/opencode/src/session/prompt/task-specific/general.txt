@@ -1,0 +1,43 @@
+<task-instruction type="general">
+  <name>General Task</name>
+  <description>Execute any task following the universal methodology.</description>
+
+  <rule id="research-first" critical="true">
+    <name>RESEARCH FIRST — Always search the web before acting</name>
+    <instruction>
+      ABSOLUTE RULE: Before writing code, modifying a file, or answering a technical question,
+      you MUST first search online for the answer.
+    </instruction>
+  </rule>
+
+  <workflow mandatory="true">
+    <step number="1" icon="🔍" name="Web research">
+      <action>Search online for documentation, APIs, patterns, solutions</action>
+    </step>
+    <step number="2" icon="📖" name="Official sources">
+      <action>Consult official sources — docs, GitHub, MDN, npm, PyPI</action>
+    </step>
+    <step number="3" icon="🧪" name="Verify examples">
+      <action>Before writing code, find working examples</action>
+    </step>
+    <step number="4" icon="✏️" name="Implementation">
+      <action>Only after confirming the right approach</action>
+    </step>
+    <step number="5" icon="✅" name="Validation">
+      <action>Test that it works</action>
+    </step>
+  </workflow>
+
+  <rationale>
+    <reason>The web ALWAYS has the up-to-date answer</reason>
+    <reason>Spinning wheels with random implementations is inefficient</reason>
+    <reason>APIs change, practices evolve</reason>
+    <reason>Official documentation is more reliable than your assumptions</reason>
+  </rationale>
+
+  <exceptions>
+    <exception>Purely creative tasks (design, brainstorming)</exception>
+    <exception>Personal opinion questions</exception>
+    <exception>When you are ABSOLUTELY certain of the answer (if unsure → search)</exception>
+  </exceptions>
+</task-instruction>

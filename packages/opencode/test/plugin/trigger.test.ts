@@ -1,0 +1,134 @@
+import { describe, expect } from "bun:test"
+import { Effect, Layer } from "effect"
+import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
+import path from "path"
+import { pathToFileURL } from "url"
+import { Bus } from "../../src/bus"
+import { Config } from "../../src/config/config"
+import { RuntimeFlags } from "../../src/effect/runtime-flags"
+import { InstanceState } from "../../src/effect/instance-state"
+import { Plugin } from "../../src/plugin/index"
+import { ModelID, ProviderID } from "../../src/provider/schema"
+import { emptyConsoleState } from "../../src/config/console-state"
+import { provideTmpdirInstance } from "../fixture/fixture"
+import { testEffect } from "../lib/effect"
+
+// The plugin under test is declared as a *global* origin. Project-local plugins are deliberately
+// ignored (config.ts deletes `plugin` for local scope), so a project-scoped origin never loads and
+// the hooks under test would never register.
+const configLayer = Layer.effect(
+  Config.Service,
+  Effect.gen(function* () {
+    return Config.Service.of({
+      get: () =>
+        InstanceState.directory.pipe(
+          Effect.map((dir) => ({
+            plugin_origins: [
+              {
+                spec: pathToFileURL(path.join(dir, "plugin.ts")).href,
+                source: path.join(dir, "opencode.json"),
+                scope: "global" as const,
+              },
+            ],
+          })),
+        ),
+      getGlobal: () => Effect.succeed({}),
+      getConsoleState: () => Effect.succeed(emptyConsoleState),
+      update: () => Effect.void,
+      updateGlobal: (config: Config.Info) => Effect.succeed({ info: config, changed: false }),
+      invalidate: () => Effect.void,
+      directories: () => Effect.succeed([]),
+      waitForDependencies: () => Effect.void,
+    })
+  }),
+)
+const it = testEffect(
+  Layer.mergeAll(
+    Plugin.layer.pipe(
+      Layer.provide(Bus.layer),
+      Layer.provide(configLayer),
+      Layer.provide(RuntimeFlags.layer({ disableDefaultPlugins: true })),
+    ),
+    CrossSpawnSpawner.defaultLayer,
+  ),
+)
+const systemHook = "experimental.chat.system.transform"
+
+function withProject<A, E, R>(source: string, self: Effect.Effect<A, E, R>) {
+  return provideTmpdirInstance((dir) =>
+    Effect.gen(function* () {
+      const file = path.join(dir, "plugin.ts")
+      yield* Effect.all(
+        [
+          Effect.promise(() => Bun.write(file, source)),
+          Effect.promise(() =>
+            Bun.write(
+              path.join(dir, "opencode.json"),
+              JSON.stringify(
+                {
+                  $schema: "https://opencode.ai/config.json",
+                  plugin: [pathToFileURL(file).href],
+                },
+                null,
+                2,
+              ),
+            ),
+          ),
+        ],
+        { discard: true, concurrency: 2 },
+      )
+      return yield* self
+    }),
+  )
+}
+
+const triggerSystemTransform = Effect.fn("PluginTriggerTest.triggerSystemTransform")(function* () {
+  const plugin = yield* Plugin.Service
+  const out = { system: [] as string[] }
+  yield* plugin.trigger(
+    systemHook,
+    {
+      model: {
+        providerID: ProviderID.anthropic,
+        modelID: ModelID.make("claude-sonnet-4-6"),
+      },
+    },
+    out,
+  )
+  return out.system
+})
+
+describe("plugin.trigger", () => {
+  it.live("runs synchronous hooks without crashing", () =>
+    withProject(
+      [
+        "export default async () => ({",
+        `  ${JSON.stringify(systemHook)}: (_input, output) => {`,
+        '    output.system.unshift("sync")',
+        "  },",
+        "})",
+        "",
+      ].join("\n"),
+      Effect.gen(function* () {
+        expect(yield* triggerSystemTransform()).toEqual(["sync"])
+      }),
+    ),
+  )
+
+  it.live("awaits asynchronous hooks", () =>
+    withProject(
+      [
+        "export default async () => ({",
+        `  ${JSON.stringify(systemHook)}: async (_input, output) => {`,
+        "    await Bun.sleep(1)",
+        '    output.system.unshift("async")',
+        "  },",
+        "})",
+        "",
+      ].join("\n"),
+      Effect.gen(function* () {
+        expect(yield* triggerSystemTransform()).toEqual(["async"])
+      }),
+    ),
+  )
+})

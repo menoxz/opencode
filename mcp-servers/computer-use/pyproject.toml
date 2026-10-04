@@ -1,0 +1,22 @@
+[project]
+name = "computer-use-mcp"
+version = "0.1.0"
+description = "Computer-use MCP server: structured UIA snapshots and precise, deterministic desktop control on Windows"
+requires-python = ">=3.10"
+dependencies = [
+  "mcp>=1.0.0,<2",
+  "pywinauto>=0.6.9",
+  "comtypes>=1.4.0",
+  "pywin32>=306",
+  "Pillow>=10.0.0",
+]
+
+[project.scripts]
+computer-use-mcp = "computer_use.main:main"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

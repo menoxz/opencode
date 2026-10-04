@@ -1,0 +1,356 @@
+#!/usr/bin/env bun
+
+import { $ } from "bun"
+import fs from "fs"
+import path from "path"
+import { fileURLToPath, pathToFileURL } from "url"
+import { createSolidTransformPlugin } from "@opentui/solid/bun-plugin"
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+const dir = path.resolve(__dirname, "..")
+
+process.chdir(dir)
+
+const generated = await import("./generate.ts")
+
+import pkg from "../package.json"
+
+// 🔒 Guard: dev builds are not allowed — force version from package.json
+process.env.OPENCODE_VERSION = pkg.version
+const { Script } = await import("@opencode-ai/script")
+
+if (Script.version.startsWith("0.0.0-")) {
+  console.error("")
+  console.error("=".repeat(60))
+  console.error("  BUILD BLOCKED: Dev version detected")
+  console.error(`  Detected:    ${Script.version}`)
+  console.error(`  Package.json: ${pkg.version}`)
+  console.error("")
+  console.error("  You MUST bump the version in packages/opencode/package.json")
+  console.error("  before building. Use a proper semver (e.g., 1.18.13).")
+  console.error("=".repeat(60))
+  console.error("")
+  process.exit(1)
+}
+
+// Load migrations from migration directories
+const migrationDirs = (
+  await fs.promises.readdir(path.join(dir, "migration"), {
+    withFileTypes: true,
+  })
+)
+  .filter((entry) => entry.isDirectory() && /^\d{4}\d{2}\d{2}\d{2}\d{2}\d{2}/.test(entry.name))
+  .map((entry) => entry.name)
+  .sort()
+
+const migrations = await Promise.all(
+  migrationDirs.map(async (name) => {
+    const file = path.join(dir, "migration", name, "migration.sql")
+    const sql = await Bun.file(file).text()
+    const match = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/.exec(name)
+    const timestamp = match
+      ? Date.UTC(
+          Number(match[1]),
+          Number(match[2]) - 1,
+          Number(match[3]),
+          Number(match[4]),
+          Number(match[5]),
+          Number(match[6]),
+        )
+      : 0
+    return { sql, timestamp, name }
+  }),
+)
+console.log(`Loaded ${migrations.length} migrations`)
+
+const singleFlag = process.argv.includes("--single")
+const baselineFlag = process.argv.includes("--baseline")
+const skipInstall = process.argv.includes("--skip-install")
+const sourcemapsFlag = process.argv.includes("--sourcemaps")
+const plugin = createSolidTransformPlugin()
+const skipEmbedWebUi = process.argv.includes("--skip-embed-web-ui")
+const reuseWebUi = process.argv.includes("--reuse-web-ui")
+
+const createEmbeddedWebUIBundle = async (rebuild: boolean) => {
+  console.log(rebuild ? `Building Web UI to embed in the binary` : `Reusing the existing Web UI bundle`)
+  const appDir = path.join(import.meta.dirname, "../../app")
+  const dist = path.join(appDir, "dist")
+  if (rebuild) {
+    process.env.OPENCODE_CHANNEL = Script.channel
+    const vite = await import(pathToFileURL(path.join(appDir, "node_modules/vite/dist/node/index.js")).href)
+    const config = (await import(pathToFileURL(path.join(appDir, "vite.config.ts")).href)).default
+    await vite.build({ ...config, root: appDir, configFile: false, build: { ...config.build, sourcemap: false } })
+  }
+  const files = (await Array.fromAsync(new Bun.Glob("**/*").scan({ cwd: dist })))
+    .map((file) => file.replaceAll("\\", "/"))
+    .filter((file) => !file.endsWith(".map"))
+    .sort()
+  const imports = files.map((file, i) => {
+    const spec = path.relative(dir, path.join(dist, file)).replaceAll("\\", "/")
+    return `import file_${i} from ${JSON.stringify(spec.startsWith(".") ? spec : `./${spec}`)} with { type: "file" };`
+  })
+  const entries = files.map((file, i) => `  ${JSON.stringify(file)}: file_${i},`)
+  return [
+    `// Import all files as file_$i with type: "file"`,
+    ...imports,
+    `// Export with original mappings`,
+    `export default {`,
+    ...entries,
+    `}`,
+  ].join("\n")
+}
+
+const embeddedFileMap = skipEmbedWebUi ? null : await createEmbeddedWebUIBundle(!reuseWebUi)
+
+const allTargets: {
+  os: string
+  arch: "arm64" | "x64"
+  abi?: "musl"
+  avx2?: false
+}[] = [
+  {
+    os: "linux",
+    arch: "arm64",
+  },
+  {
+    os: "linux",
+    arch: "x64",
+  },
+  {
+    os: "linux",
+    arch: "x64",
+    avx2: false,
+  },
+  {
+    os: "linux",
+    arch: "arm64",
+    abi: "musl",
+  },
+  {
+    os: "linux",
+    arch: "x64",
+    abi: "musl",
+  },
+  {
+    os: "linux",
+    arch: "x64",
+    abi: "musl",
+    avx2: false,
+  },
+  {
+    os: "darwin",
+    arch: "arm64",
+  },
+  {
+    os: "darwin",
+    arch: "x64",
+  },
+  {
+    os: "darwin",
+    arch: "x64",
+    avx2: false,
+  },
+  {
+    os: "win32",
+    arch: "arm64",
+  },
+  {
+    os: "win32",
+    arch: "x64",
+  },
+  {
+    os: "win32",
+    arch: "x64",
+    avx2: false,
+  },
+]
+
+const targets = singleFlag
+  ? allTargets.filter((item) => {
+      if (item.os !== process.platform || item.arch !== process.arch) {
+        return false
+      }
+
+      // When building for the current platform, prefer a single native binary by default.
+      // Baseline binaries require additional Bun artifacts and can be flaky to download.
+      if (item.avx2 === false) {
+        return baselineFlag
+      }
+
+      // also skip abi-specific builds for the same reason
+      if (item.abi !== undefined) {
+        return false
+      }
+
+      return true
+    })
+  : allTargets
+
+// On Windows, the running binary cannot be deleted (EPERM).
+// Clean web UI artifacts but keep the binary — Bun.build() will overwrite it.
+try {
+  for (const entry of fs.readdirSync(path.join(dir, "dist"))) {
+    if (entry.endsWith(".exe") || entry === "opencode-windows-x64") continue
+    fs.rmSync(path.join(dir, "dist", entry), { recursive: true, force: true })
+  }
+} catch { /* dist may not exist yet */ }
+
+const binaries: Record<string, string> = {}
+if (!skipInstall) {
+  for (const dependency of [
+    `@opentui/core@${pkg.dependencies["@opentui/core"]}`,
+    `@parcel/watcher@${pkg.dependencies["@parcel/watcher"]}`,
+  ]) {
+    const install = Bun.spawn([process.execPath, "install", "--ignore-scripts", "--os=*", "--cpu=*", dependency], {
+      cwd: dir,
+      stdout: "inherit",
+      stderr: "inherit",
+    })
+    const exitCode = await install.exited
+    if (exitCode !== 0) throw new Error(`Installing ${dependency} failed with exit code ${exitCode}`)
+  }
+}
+for (const item of targets) {
+  const name = [
+    pkg.name,
+    // changing to win32 flags npm for some reason
+    item.os === "win32" ? "windows" : item.os,
+    item.arch,
+    item.avx2 === false ? "baseline" : undefined,
+    item.abi === undefined ? undefined : item.abi,
+  ]
+    .filter(Boolean)
+    .join("-")
+  console.log(`building ${name}`)
+  await fs.promises.mkdir(path.join(dir, `dist/${name}/bin`), { recursive: true })
+
+  const localPath = path.resolve(dir, "node_modules/@opentui/core/parser.worker.js")
+  const rootPath = path.resolve(dir, "../../node_modules/@opentui/core/parser.worker.js")
+  const parserWorker = fs.realpathSync(fs.existsSync(localPath) ? localPath : rootPath)
+  const workerPath = "./src/cli/cmd/tui/worker.ts"
+
+  // Use platform-specific bunfs root path based on target OS
+  const bunfsRoot = item.os === "win32" ? "B:/~BUN/root/" : "/$bunfs/root/"
+  const workerRelativePath = path.relative(dir, parserWorker).replaceAll("\\", "/")
+
+  await Bun.build({
+    conditions: ["browser"],
+    tsconfig: "./tsconfig.json",
+    plugins: [plugin],
+    external: ["node-gyp"],
+    format: "esm",
+    minify: false,
+    sourcemap: sourcemapsFlag ? "linked" : "none",
+    splitting: false,
+    compile: {
+      autoloadBunfig: false,
+      autoloadDotenv: false,
+      autoloadTsconfig: true,
+      autoloadPackageJson: true,
+      target: name.replace(pkg.name, "bun") as any,
+      outfile: `dist/${name}/bin/opencode`,
+      execArgv: [`--user-agent=opencode/${Script.version}`, "--use-system-ca", "--"],
+      windows: {},
+    },
+    files: embeddedFileMap ? { "opencode-web-ui.gen.ts": embeddedFileMap } : {},
+    entrypoints: ["./src/index.ts", parserWorker, workerPath, ...(embeddedFileMap ? ["opencode-web-ui.gen.ts"] : [])],
+    define: {
+      OPENCODE_VERSION: `'${Script.version}'`,
+      OPENCODE_MIGRATIONS: JSON.stringify(migrations),
+      OPENCODE_MODELS_DEV: generated.modelsData,
+      OTUI_TREE_SITTER_WORKER_PATH: bunfsRoot + workerRelativePath,
+      OPENCODE_WORKER_PATH: workerPath,
+      OPENCODE_CHANNEL: `'${Script.channel}'`,
+      OPENCODE_LIBC: item.os === "linux" ? `'${item.abi ?? "glibc"}'` : "",
+    },
+  })
+
+  // Smoke test: only run if binary is for current platform
+  if (item.os === process.platform && item.arch === process.arch && !item.abi) {
+    const binaryPath = process.platform === "win32"
+      ? path.resolve(dir, `dist/${name}/bin/opencode.exe`)
+      : `dist/${name}/bin/opencode`
+    console.log(`Running smoke test: ${binaryPath} --version`)
+    // Bun.build can resolve before Windows releases the freshly linked PE for
+    // CreateProcess. The file is already readable but uv_spawn returns EPERM
+    // during this short handoff window (antivirus scanning the new PE can widen
+    // it), so retry briefly instead of failing an otherwise successful build.
+    const runSmoke = async () => {
+      const smoke = Bun.spawn([binaryPath, "--version"], { stdout: "pipe", stderr: "pipe" })
+      const [exitCode, stdout, stderr] = await Promise.all([
+        smoke.exited,
+        new Response(smoke.stdout).text(),
+        new Response(smoke.stderr).text(),
+      ])
+      return { exitCode, stdout, stderr }
+    }
+    const smoke = await (async () => {
+      for (let attempt = 0; ; attempt++) {
+        try {
+          return await runSmoke()
+        } catch (error) {
+          const handoff = process.platform === "win32" && error instanceof Error && (error as NodeJS.ErrnoException).code === "EPERM"
+          if (!handoff || attempt >= 19) throw error
+          await Bun.sleep(250)
+        }
+      }
+    })()
+    if (smoke.exitCode !== 0) throw new Error(`Smoke test failed for ${name}: ${smoke.stderr.trim() || `exit ${smoke.exitCode}`}`)
+    console.log(`Smoke test passed: ${smoke.stdout.trim()}`)
+
+    // Copy to root dist/bin/ for local launcher (npm ps1 points here)
+    // On Windows, rename the in-use binary first (rename works even when file is locked),
+    // then copy the new one.  If rename also fails, skip (binary will be updated on next build).
+    const ext = item.os === "win32" ? ".exe" : ""
+    const rootDistBin = path.resolve(dir, "../../dist/bin")
+    const src = path.resolve(dir, `dist/${name}/bin/opencode${ext}`)
+    const dest = path.join(rootDistBin, `opencode${ext}`)
+    const backup = path.join(rootDistBin, `opencode.old${ext}`)
+    await fs.promises.mkdir(rootDistBin, { recursive: true })
+    try {
+      // On Windows, rename the existing binary first (rename works even when file is locked),
+      // then rename the new one in place.
+      if (process.platform === "win32") {
+        await fs.promises.rename(dest, backup).catch(() => {})
+        await fs.promises.rename(src, dest)
+        console.log(`Rotated old binary and renamed ${src} → ${dest}`)
+      } else {
+        // On Unix, direct copy works
+        await fs.promises.copyFile(src, dest)
+        console.log(`Copied ${src} → ${dest}`)
+      }
+    } catch (e) {
+      console.log(`Will update binary on next restart (current binary in use): ${e}`)
+    }
+  }
+
+  fs.rmSync(path.join(dir, `dist/${name}/bin/tui`), { recursive: true, force: true })
+  await Bun.file(`dist/${name}/package.json`).write(
+    JSON.stringify(
+      {
+        name,
+        version: Script.version,
+        preferUnplugged: true,
+        os: [item.os],
+        cpu: [item.arch],
+      },
+      null,
+      2,
+    ),
+  )
+  binaries[name] = Script.version
+}
+
+if (Script.release) {
+  for (const key of Object.keys(binaries)) {
+    if (key.includes("linux")) {
+      await $`tar -czf ../../${key}.tar.gz *`.cwd(`dist/${key}/bin`)
+    } else {
+      await $`zip -r ../../${key}.zip *`.cwd(`dist/${key}/bin`)
+    }
+  }
+  await $`gh release upload v${Script.version} ./dist/*.zip ./dist/*.tar.gz --clobber --repo ${process.env.GH_REPO}`
+}
+
+export { binaries }

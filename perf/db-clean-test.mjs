@@ -1,0 +1,12 @@
+import { Database } from "bun:sqlite"
+const d = new Database("C:/Users/jeanl/.local/share/opencodev2/opencode.db")
+const find = d.prepare("SELECT id FROM session WHERE title LIKE '%TOKENSPEEDTEST%' OR title LIKE '%VITESSE%'")
+const rows = find.all()
+const del = d.prepare("DELETE FROM session WHERE id = ?")
+const delOrphanM = d.prepare("DELETE FROM message WHERE session_id NOT IN (SELECT id FROM session)")
+const delOrphanP = d.prepare("DELETE FROM part WHERE session_id NOT IN (SELECT id FROM session)")
+for (const r of rows) del.run(r.id)
+delOrphanM.run()
+delOrphanP.run()
+console.log("removed test sessions:", rows.length)
+console.log("sessions:", d.query("SELECT COUNT(*) n FROM session").get().n)

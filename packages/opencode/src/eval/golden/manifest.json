@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "note": "Counts are measured by src/eval/golden validators on the real artifacts in fixtures/. Never edit them by hand: run `bun run script/golden-bless.ts`.",
+  "cases": [
+    {
+      "id": "bpmn/sample-employee-onboarding.bpmn",
+      "artifact": "bpmn/sample-employee-onboarding.bpmn",
+      "kind": "bpmn",
+      "sha256": "0091c6b7b103275707741d0426454ad4eb18d909b5840730eee19b4404850b9e",
+      "fingerprint": {
+        "BPMN_LAYOUT_SHAPE_OVERLAP": 1
+      }
+    },
+    {
+      "id": "bpmn/sample-incident-report.bpmn",
+      "artifact": "bpmn/sample-incident-report.bpmn",
+      "kind": "bpmn",
+      "sha256": "d8dffa5de30d998a07a34a397bd3d80c67a54e684c8e48a045e338b9b72f46c1",
+      "fingerprint": {}
+    },
+    {
+      "id": "bpmn/sample-leave-request-as-is.bpmn",
+      "artifact": "bpmn/sample-leave-request-as-is.bpmn",
+      "kind": "bpmn",
+      "sha256": "39a69f1f40290b7b034a5077155ed016a581a6d66b47e3fcb5949f94dcca6fee",
+      "fingerprint": {
+        "BPMN_GATEWAY_MISSING_CONDITION": 2,
+        "BPMN_NODE_NO_INCOMING": 1,
+        "BPMN_NODE_NO_OUTGOING": 2,
+        "BPMN_PROCESS_NO_END_EVENT": 2,
+        "BPMN_PROCESS_NO_START_EVENT": 1
+      }
+    },
+    {
+      "id": "bpmn/sample-purchase-approval.bpmn",
+      "artifact": "bpmn/sample-purchase-approval.bpmn",
+      "kind": "bpmn",
+      "sha256": "e4d75dfe188323e87c4d3be410fb28874c2754bb7071f57254f311818e0bbdfe",
+      "fingerprint": {}
+    },
+    {
+      "id": "bpmn/sample-supplier-payment.bpmn",
+      "artifact": "bpmn/sample-supplier-payment.bpmn",
+      "kind": "bpmn",
+      "sha256": "707daba49b17bc534ba789c3c825bde4872517220bd4323dc2499d4f0babc1ad",
+      "fingerprint": {
+        "BPMN_GATEWAY_MISSING_CONDITION": 2
+      }
+    },
+    {
+      "id": "formio/sample-candidature-v1.json",
+      "artifact": "formio/sample-candidature-v1.json",
+      "kind": "formio",
+      "sha256": "67a733f18734b4544dfe9adc8a0e1bff01b2a27577c5e9936085f62b92e702df",
+      "fingerprint": {
+        "FORMIO_DISABLED_REQUIRED": 1,
+        "FORMIO_DUPLICATE_KEY": 1,
+        "FORMIO_FILE_KEY_NOT_FILES": 1,
+        "FORMIO_FILE_STORAGE_NOT_URL": 1
+      }
+    },
+    {
+      "id": "formio/sample-satisfaction-v1.json",
+      "artifact": "formio/sample-satisfaction-v1.json",
+      "kind": "formio",
+      "sha256": "abaab10c2f1fdef2914ddcb531d4704c689d7549ca999cbf87f19f729f2e6b43",
+      "fingerprint": {}
+    }
+  ]
+}

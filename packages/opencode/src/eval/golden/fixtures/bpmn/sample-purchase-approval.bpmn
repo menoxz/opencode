@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  id="Definitions_PUR_001"
+                  targetNamespace="http://bpmn.io/schema/bpmn">
+
+  <bpmn:process id="proc_pur" name="Processus d'achat" isExecutable="true">
+    <bpmn:startEvent id="s_start" name="Besoin identifié" />
+    <bpmn:userTask id="t_request" name="Rédiger la demande" />
+    <bpmn:exclusiveGateway id="g_approval" name="Seuil d'approbation ?" />
+    <bpmn:task id="t_manager" name="Approbation manager" />
+    <bpmn:task id="t_dir" name="Approbation direction" />
+    <bpmn:task id="t_order" name="Passer la commande" />
+    <bpmn:endEvent id="e_done" name="Commande passée" />
+    <bpmn:sequenceFlow id="f1" sourceRef="s_start" targetRef="t_request" />
+    <bpmn:sequenceFlow id="f2" sourceRef="t_request" targetRef="g_approval" />
+    <bpmn:sequenceFlow id="f3" sourceRef="g_approval" targetRef="t_manager">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">montant &lt; 1000</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f4" sourceRef="g_approval" targetRef="t_dir">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">montant &gt;= 1000</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f5" sourceRef="t_manager" targetRef="t_order" />
+    <bpmn:sequenceFlow id="f6" sourceRef="t_dir" targetRef="t_order" />
+    <bpmn:sequenceFlow id="f7" sourceRef="t_order" targetRef="e_done" />
+  </bpmn:process>
+
+  <bpmndi:BPMNDiagram id="Diagram_PUR_001">
+    <bpmndi:BPMNPlane id="Plane_PUR_001" bpmnElement="proc_pur">
+      <bpmndi:BPMNShape id="s_start_di" bpmnElement="s_start">
+        <dc:Bounds x="120" y="160" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="t_request_di" bpmnElement="t_request">
+        <dc:Bounds x="200" y="140" width="120" height="76" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="g_approval_di" bpmnElement="g_approval">
+        <dc:Bounds x="370" y="155" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="t_manager_di" bpmnElement="t_manager">
+        <dc:Bounds x="470" y="100" width="120" height="76" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="t_dir_di" bpmnElement="t_dir">
+        <dc:Bounds x="470" y="220" width="120" height="76" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="t_order_di" bpmnElement="t_order">
+        <dc:Bounds x="640" y="160" width="120" height="76" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e_done_di" bpmnElement="e_done">
+        <dc:Bounds x="810" y="180" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="156" y="178" />
+        <di:waypoint x="200" y="178" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

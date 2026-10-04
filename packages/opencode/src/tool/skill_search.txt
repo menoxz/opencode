@@ -1,0 +1,12 @@
+Search the full catalogue of installed skills by natural-language query and return the ones that match, ranked.
+
+Your system prompt only lists the skills that were judged relevant to the last user message — a small subset of what is actually installed. Every other skill is loadable but invisible: you cannot name what you have never been shown.
+
+Use this tool whenever:
+- you are about to perform a task that feels like it should already have a procedure
+- no listed skill matches, but the domain is common (deployment, testing, a specific API, a file format, a tool)
+- you want to check whether a method already exists before improvising one
+
+Search by what you are trying to do, not by a guessed skill name. Error strings, symptoms and domain vocabulary all work, because the skill body is indexed, not just its one-line description.
+
+Then load the match with the `skill` tool.

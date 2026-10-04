@@ -1,0 +1,59 @@
+export * as ConfigContextRollout from "./context-rollout"
+
+import { Schema } from "effect"
+
+const ReplayToolOutputs = Schema.Literals(["full", "summary", "off"])
+const ReplayToolInputs = Schema.Literals(["full", "summary", "off"])
+const ReplayReasoning = Schema.Literals(["on", "off"])
+const InjectionSkills = Schema.Literals(["verbose", "short"])
+const InjectionInstructions = Schema.Literals(["full", "summary", "off"])
+const SystemBoilerplate = Schema.Literals(["full", "light", "minimal"])
+const CavemanSyntheticArtifacts = Schema.Literals(["on", "off"])
+const GoalDod = Schema.Literals(["on", "off"])
+const Profile = Schema.Literals(["baseline", "measured"])
+
+export const Info = Schema.Struct({
+  profile: Schema.optional(Profile).annotate({
+    description: "Applies a named context profile before per-field overrides. 'baseline' preserves defaults; 'measured' uses conservative context reductions.",
+  }),
+  replay_tool_inputs: Schema.optional(ReplayToolInputs).annotate({
+    description: "Controls how historical tool inputs are replayed into model context.",
+  }),
+  replay_tool_outputs: Schema.optional(ReplayToolOutputs).annotate({
+    description: "Controls how historical tool outputs are replayed into model context.",
+  }),
+  replay_reasoning: Schema.optional(ReplayReasoning).annotate({
+    description: "Controls whether historical reasoning blocks are replayed into model context.",
+  }),
+  reasoning_max_chars: Schema.optional(Schema.Number).annotate({
+    description:
+      "Caps the characters of reasoning replayed for each historical assistant turn. Keeps the field present (DeepSeek requires it) while shrinking old chain-of-thought. 0 disables.",
+  }),
+  reasoning_keep_recent: Schema.optional(Schema.Number).annotate({
+    description: "Most recent assistant turns whose reasoning is replayed in full before reasoning_max_chars applies.",
+  }),
+  summary_boundary_step: Schema.optional(Schema.Number).annotate({
+    description:
+      "Assistant tool turns that close a summarization block: historical tool inputs and outputs are only reduced at multiples of this step, so a smaller value elides more of the distant history (default 20).",
+  }),
+  injection_skills: Schema.optional(InjectionSkills).annotate({
+    description: "Controls whether available skills are injected in verbose or short form.",
+  }),
+  injection_instructions: Schema.optional(InjectionInstructions).annotate({
+    description: "Controls how AGENTS/instruction files are injected into model context.",
+  }),
+  system_boilerplate: Schema.optional(SystemBoilerplate).annotate({
+    description: "Controls how much system methodology boilerplate is injected.",
+  }),
+  caveman_synthetic_artifacts: Schema.optional(CavemanSyntheticArtifacts).annotate({
+    description: "Controls caveman compression for synthetic prompt artifacts only.",
+  }),
+  goal_dod: Schema.optional(GoalDod).annotate({
+    description: "Controls the Goal/DoD feature rollout.",
+  }),
+}).annotate({
+  identifier: "ConfigContextRollout",
+  description: "Experimental rollout controls for context-reduction optimizations.",
+})
+
+export type Info = Schema.Schema.Type<typeof Info>

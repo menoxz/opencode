@@ -1,0 +1,5 @@
+---
+mode: all
+permission:
+  "*": allow
+---

@@ -1,0 +1,1 @@
+CREATE INDEX `part_time_created_idx` ON `part` (`time_created`);

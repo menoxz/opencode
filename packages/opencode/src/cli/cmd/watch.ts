@@ -1,0 +1,170 @@
+import { Effect, Console } from "effect"
+import { AppRuntime } from "@/effect/app-runtime"
+import { effectCmd } from "../effect-cmd"
+import { create as createDaemon } from "../../daemon/index"
+import { checkTriggers, memoryConsolidate, tunnelHealthCheck, processQueue, detectPatterns, runSanityEval } from "../../daemon/triggers"
+import { processMCPCommands } from "../../daemon/mcp-control"
+import { every_30s, every_5m, every_1m, every_6h, every_24h, every_1h } from "../../daemon/scheduler"
+import { subscribeFileChanges, startFileWatcher } from "../../daemon/file-watcher"
+import { listenForTriggers } from "../../daemon/ws-push"
+import * as Log from "@opencode-ai/core/util/log"
+import * as fs from "node:fs"
+import * as path from "node:path"
+import { daemonDir, pidFilePath, serviceDir } from "@/daemon/paths"
+import { releaseSpawnLock } from "@/daemon/autostart"
+
+const log = Log.create({ service: "daemon.cli" })
+
+export { daemonDir, serviceDir }
+
+/**
+ * Write a PID file so the wrapper script (or system monitoring) can track us.
+ */
+export function writePidFile(dir: string): void {
+  try {
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(pidFilePath(dir), String(process.pid), "utf-8")
+  } catch (e) {
+    console.error(`Failed to write PID file: ${e}`)
+  }
+}
+
+/**
+ * Remove the PID file on shutdown.
+ */
+export function removePidFile(dir: string): void {
+  try {
+    const file = pidFilePath(dir)
+    if (fs.existsSync(file)) fs.unlinkSync(file)
+  } catch { /* best-effort */ }
+}
+
+/**
+ * Core daemon handler — shared between `opencode watch`, `opencode daemon start`,
+ * and Windows service mode (`opencode daemon start --service`).
+ */
+export const daemonHandler = Effect.fn("Daemon.handler")(function* (
+  args: { daemon?: boolean; service?: boolean; "pid-file"?: string },
+) {
+  const isDaemon = args.daemon ?? false
+  const isService = args.service ?? false
+  const customPidFile = args["pid-file"] as string | undefined
+  const dd = customPidFile
+    ? path.dirname(customPidFile)
+    : isService
+      ? serviceDir()
+      : daemonDir()
+
+  if (isService) {
+    // Service mode: write PID to system-wide directory, log via structured logger
+    writePidFile(dd)
+    releaseSpawnLock(dd)
+    log.info("daemon start (service mode)", { pid: process.pid, pidDir: dd })
+  } else if (isDaemon) {
+    writePidFile(dd)
+    releaseSpawnLock(dd)
+    log.info("daemon start", { pid: process.pid, pidDir: dd })
+  } else {
+    Console.log(`🧠 opencodev2-daemon starting (PID: ${process.pid})`)
+  }
+
+  const daemon = yield* createDaemon
+
+  // Autonomous eval loop: the hourly sanity suite and the regression
+  // investigation task it enqueues. A run that keeps failing against the
+  // aggregated baseline would otherwise re-enqueue `eval-regression-sanity`
+  // every hour, so make the whole loop opt-out.
+  const evalOff = process.env.OPENCODE_NO_DAEMON_EVAL === "1"
+
+  // FIX: Force real eval mode for continuous improvement loop
+  if (!evalOff) process.env.OPENCODE_DAEMON_EVAL_REAL = "1"
+
+  // Register periodic tasks
+  yield* daemon.register("trigger-check", checkTriggers, every_30s)
+  yield* daemon.register("mcp-control", processMCPCommands as unknown as () => Effect.Effect<void>, every_30s)
+  yield* daemon.register("memory-consolidate", memoryConsolidate as unknown as () => Effect.Effect<void>, every_6h)
+  yield* daemon.register("pattern-detection", detectPatterns as unknown as () => Effect.Effect<void>, every_24h)
+  yield* daemon.register("tunnel-health", tunnelHealthCheck, every_1m)
+
+  // Periodic eval: run sanity suite and check for regression
+  if (!evalOff) {
+    yield* daemon.register("sanity-eval", runSanityEval as unknown as () => Effect.Effect<void>, every_1h)
+  }
+
+  // Candidate generation is part of pattern-detection so both use one report snapshot.
+  yield* daemon.register("process-queue", processQueue, every_5m)
+
+  // File watcher: queues one `fw-*` task per workspace file change, so a busy
+  // workspace floods the autonomous task queue. Give it the same explicit
+  // opt-out as the eval loop.
+  const watchOff = process.env.OPENCODE_NO_DAEMON_WATCH === "1"
+
+  // File watcher cleanup (periodic — removes stale cooldown entries)
+  if (!watchOff) {
+    yield* daemon.register("file-watcher-cleanup", subscribeFileChanges, every_30s)
+  }
+
+  // File watcher subscription (long-lived — event-driven via @parcel/watcher)
+  if (!watchOff) {
+    yield* daemon.forkForever("file-watcher", startFileWatcher)
+  }
+
+  // Register WebSocket push listener (event-driven, reconnects automatically)
+  yield* daemon.forkForever("ws-push", listenForTriggers)
+
+  const st = yield* daemon.status()
+
+  if (isService) {
+    log.info("daemon ready (service mode)", { tasks: st.tasks })
+  } else if (isDaemon) {
+    log.info("daemon ready", { tasks: st.tasks })
+  } else {
+    Console.log(`✅ Daemon running. Registered tasks: ${st.tasks.join(", ")}`)
+    Console.log("ℹ️  Press Ctrl+C to stop")
+  }
+
+  // Graceful shutdown: stop daemon tasks and remove PID file
+  const shutdown = Effect.gen(function* () {
+    if (isService) log.info("daemon shutting down (service mode)...")
+    else if (isDaemon) log.info("daemon shutting down...")
+    else Console.log("\nShutting down daemon...")
+    removePidFile(dd)
+    yield* daemon.stop().pipe(Effect.ignore)
+  })
+
+  // Trap OS signals for clean exit
+  const onSignal = (signal: string) => {
+    AppRuntime.runFork(
+      shutdown.pipe(Effect.andThen(() => process.exit(0))) as any,
+    )
+  }
+  process.on("SIGTERM", () => onSignal("SIGTERM"))
+  // Service mode: SCM sends CTRL_BREAK (not SIGINT), so don't trap SIGINT
+  // which interferes with Windows console event handling.
+  if (!isService) {
+    process.on("SIGINT", () => onSignal("SIGINT"))
+  }
+
+  // Keep alive indefinitely — daemon runs until interrupted
+  yield* Effect.never
+})
+
+export const WatchCommand = effectCmd({
+  command: "watch",
+  describe: "Run opencodev2 in daemon mode — background agent with periodic tasks",
+  builder: (yargs) =>
+    yargs
+      .option("daemon", {
+        type: "boolean",
+        describe: "Daemonize — write PID file and suppress interactive output",
+        default: false,
+      })
+      .option("pid-file", {
+        type: "string",
+        describe: "Custom PID file path (default: $LOCALAPPDATA/opencodev2/daemon.pid)",
+      }),
+  instance: false,
+  handler: Effect.fn("Cli.watch")(function* (args) {
+    return yield* daemonHandler(args)
+  }),
+})

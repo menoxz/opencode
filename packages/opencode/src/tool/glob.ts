@@ -1,0 +1,118 @@
+import path from "path"
+import { Effect, Schema } from "effect"
+import * as Stream from "effect/Stream"
+import { InstanceState } from "@/effect/instance-state"
+import { AppFileSystem } from "@opencode-ai/core/filesystem"
+import { Ripgrep } from "../file/ripgrep"
+import { assertExternalDirectoryEffect } from "./external-directory"
+import DESCRIPTION from "./glob.txt"
+import * as Tool from "./tool"
+import { Reference } from "@/reference/reference"
+import { DEFAULT_TTL, Service as ToolCacheService } from "./cache"
+
+// Note: glob.ts deliberately does NOT use SearchIndexService (see
+// search-index.ts). That index narrows searches by file *content*
+// (trigrams), which doesn't help glob — glob matches by *file name/path*
+// pattern, already delegated to ripgrep --files + a glob filter. A
+// content-trigram index cannot safely predict which file *names* match a
+// glob. If file-name search ever becomes slow enough to warrant it, a
+// separate name/path index would be the right tool, not this one.
+
+export const Parameters = Schema.Struct({
+  pattern: Schema.String.annotate({ description: "The glob pattern to match files against" }),
+  path: Schema.optional(Schema.String).annotate({
+    description: `The directory to search in. If not specified, the current working directory will be used. IMPORTANT: Omit this field to use the default directory. DO NOT enter "undefined" or "null" - simply omit it for the default behavior. Must be a valid directory path if provided.`,
+  }),
+})
+
+export const GlobTool = Tool.define(
+  "glob",
+  Effect.gen(function* () {
+    const rg = yield* Ripgrep.Service
+    const fs = yield* AppFileSystem.Service
+    const reference = yield* Reference.Service
+    const cache = yield* ToolCacheService
+
+    return {
+      description: DESCRIPTION,
+      parameters: Parameters,
+      execute: (params: { pattern: string; path?: string }, ctx: Tool.Context) =>
+        Effect.gen(function* () {
+          const ins = yield* InstanceState.context
+          yield* ctx.ask({
+            permission: "glob",
+            patterns: [params.pattern],
+            always: ["*"],
+            metadata: {
+              pattern: params.pattern,
+              path: params.path,
+            },
+          })
+
+          let search = params.path ?? ins.directory
+          search = path.isAbsolute(search) ? search : path.resolve(ins.directory, search)
+          yield* reference.ensure(search)
+          const info = yield* fs.stat(search).pipe(Effect.catch(() => Effect.succeed(undefined)))
+          if (info?.type === "File") {
+            throw new Error(`glob path must be a directory: ${search}`)
+          }
+          yield* assertExternalDirectoryEffect(ctx, search, {
+            bypass: yield* reference.contains(search),
+            kind: "directory",
+          })
+
+          const cacheKey = `glob:${search}:${params.pattern}`
+          const cached = yield* cache.get(cacheKey)
+          if (cached) return cached.data as Tool.ExecuteResult
+
+          const limit = 100
+          let truncated = false
+          const files = yield* rg.files({ cwd: search, glob: [params.pattern], signal: ctx.abort }).pipe(
+            Stream.mapEffect((file) =>
+              Effect.gen(function* () {
+                const full = path.resolve(search, file)
+                const info = yield* cache.getStatMtime(fs, full)
+                return { path: full, mtime: info?.mtime ?? 0 }
+              }),
+            ),
+            Stream.take(limit + 1),
+            Stream.runCollect,
+            Effect.timeoutOrElse({
+              duration: "30 seconds",
+              orElse: () => Effect.fail(new Error(`glob timed out after 30 seconds: ${search}`)),
+            }),
+            Effect.map((chunk) => [...chunk]),
+          )
+
+          if (files.length > limit) {
+            truncated = true
+            files.length = limit
+          }
+          files.sort((a, b) => b.mtime - a.mtime)
+
+          const output = []
+          if (files.length === 0) output.push("No files found")
+          if (files.length > 0) {
+            output.push(...files.map((file) => file.path))
+            if (truncated) {
+              output.push("")
+              output.push(
+                `(Results are truncated: showing first ${limit} results. Consider using a more specific path or pattern.)`,
+              )
+            }
+          }
+
+          const result = {
+            title: path.relative(ins.worktree, search),
+            metadata: {
+              count: files.length,
+              truncated,
+            },
+            output: output.join("\n"),
+          }
+          yield* cache.set(cacheKey, result, DEFAULT_TTL.glob)
+          return result
+        }).pipe(Effect.orDie),
+    }
+  }),
+)

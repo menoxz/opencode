@@ -1,0 +1,381 @@
+import { afterEach, describe, expect } from "bun:test"
+import { Effect, Layer } from "effect"
+import { Agent } from "@/agent/agent"
+import { BackgroundJob } from "@/background/job"
+import { Bus } from "@/bus"
+import { Config } from "@/config/config"
+import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
+import { Session } from "@/session/session"
+import { SessionRunState } from "@/session/run-state"
+import { SessionStatus } from "@/session/status"
+import { Truncate } from "@/tool/truncate"
+import { ToolRegistry } from "@/tool/registry"
+import { RuntimeFlags } from "@/effect/runtime-flags"
+import type { Tool } from "@/tool/tool"
+import { MessageID } from "@/session/schema"
+import { ModelID, ProviderID } from "@/provider/schema"
+import { disposeAllInstances } from "../fixture/fixture"
+import { testEffect } from "../lib/effect"
+
+afterEach(async () => {
+  await disposeAllInstances()
+})
+
+const ref = {
+  providerID: ProviderID.opencode,
+  modelID: ModelID.make("test-model"),
+}
+
+const layer = Layer.mergeAll(
+  Agent.defaultLayer,
+  BackgroundJob.defaultLayer,
+  Bus.defaultLayer,
+  Config.defaultLayer,
+  CrossSpawnSpawner.defaultLayer,
+  Session.defaultLayer,
+  SessionRunState.defaultLayer,
+  SessionStatus.defaultLayer,
+  Truncate.defaultLayer,
+  ToolRegistry.defaultLayer,
+  RuntimeFlags.layer({}),
+)
+
+const it = testEffect(layer)
+
+function parseResult(result: { output: string }) {
+  return JSON.parse(result.output) as {
+    status: "ok" | "error"
+    action: "create" | "edit" | "suggest" | "apply"
+    updatedFields: string[]
+    warnings: string[]
+    suggestion?: { objective: string; dod: string[]; outOfScope: string[] }
+    goalState?: { goal: string; dod: string[]; outOfScope: string[]; source: string; status: string }
+  }
+}
+
+const getTool = Effect.fn("GoalContractTest.getTool")(function* (id: string) {
+  const registry = yield* ToolRegistry.Service
+  const agent = yield* Agent.Service
+  const build = yield* agent.get("build")
+  const list = yield* registry.tools({ ...ref, agent: build })
+  const tool = list.find((item) => item.id === id)
+  if (!tool) throw new Error(`tool not found: ${id}`)
+  return tool
+})
+
+const mkContext = (sessionID: string, messages: Tool.Context["messages"] = []): Tool.Context => ({
+  sessionID: sessionID as any,
+  messageID: MessageID.ascending(),
+  agent: "build",
+  abort: new AbortController().signal,
+  messages,
+  metadata: () => Effect.void,
+  ask: () => Effect.void,
+})
+
+describe("tool.goal-contract", () => {
+  it.instance("persists evidence and refuses completion while sticky findings remain open", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({ title: "sticky completion evidence" })
+      yield* sessions.setGoalState({
+        sessionID: session.id,
+        goalState: {
+          status: "draft", source: "user", goal: "Secure tenant search", dod: ["tenant isolation verified"], outOfScope: [],
+          version: 1, updatedAt: 1,
+          findings: [{ id: "SEC-001", severity: "high", status: "open", summary: "filter missing", evidence: ["audit ses_a"], firstSeenAt: 1, updatedAt: 1 }],
+        } as any,
+      })
+      const complete = yield* getTool("complete_objective")
+      const evidence = [{ dod: "tenant isolation verified", proof: "integration test tenant-isolation passed 4/4 exit 0" }]
+
+      const refused = (yield* complete.execute({ summary: "fixed", evidence }, mkContext(session.id))).metadata.result
+      expect(refused.status).toBe("error")
+      expect(refused.warnings.join(" ")).toContain("SEC-001")
+      expect((yield* sessions.get(session.id)).goalState?.status).toBe("draft")
+
+      const accepted = (yield* complete.execute({
+        summary: "fixed", evidence,
+        findings: [{ id: "SEC-001", severity: "high", status: "closed", summary: "filter missing", evidence: ["independent re-audit ses_b PASS 4/4"] }],
+      } as any, mkContext(session.id))).metadata.result
+      expect(accepted.status).toBe("ok")
+      const stored = (yield* sessions.get(session.id)).goalState as any
+      expect(stored.status).toBe("completed")
+      expect(stored.findings[0].status).toBe("closed")
+      expect(stored.completion.evidence).toEqual(evidence)
+      expect(stored.completion.summary).toBe("fixed")
+
+      const reopened = (yield* complete.execute({
+        findings: [{ id: "SEC-002", severity: "critical", status: "open", summary: "late audit leak", evidence: ["audit ses_c"] }],
+      } as any, mkContext(session.id))).metadata.result
+      expect(reopened.status).toBe("error")
+      const reopenedState = (yield* sessions.get(session.id)).goalState as any
+      expect(reopenedState.status).toBe("edited")
+      expect(reopenedState.findings.find((item: any) => item.id === "SEC-002")?.status).toBe("open")
+    }),
+  )
+
+  it.instance("does not accept an unverified required DoD item as completion", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({ title: "strict closure" })
+      yield* sessions.setGoalState({
+        sessionID: session.id,
+        goalState: {
+          status: "draft",
+          source: "user",
+          goal: "Ship three lots",
+          dod: ["authentication implemented", "billing migration applied", "reporting endpoint shipped"],
+          outOfScope: [],
+          version: 1,
+          updatedAt: 1,
+        } as any,
+      })
+      const complete = yield* getTool("complete_objective")
+
+      // Unverified no longer counts as done: a required gap keeps the objective open.
+      const refused = (yield* complete.execute(
+        {
+          summary: "authentication done",
+          evidence: [{ dod: "authentication implemented", proof: "bun test auth.test.ts: 3 pass, exit 0" }],
+          unverified: [
+            { dod: "billing migration applied", reason: "not started yet" },
+            { dod: "reporting endpoint shipped", reason: "not started yet" },
+          ],
+        } as any,
+        mkContext(session.id),
+      )).metadata.result
+      expect(refused.status).toBe("error")
+      expect((yield* sessions.get(session.id)).goalState?.status).toBe("draft")
+
+      // A genuine external obstacle is recorded as blocked, not completed.
+      const blocked = (yield* complete.execute(
+        {
+          outcome: "blocked",
+          summary: "authentication done",
+          evidence: [{ dod: "authentication implemented", proof: "bun test auth.test.ts: 3 pass, exit 0" }],
+          unverified: [
+            { dod: "billing migration applied", reason: "third-party staging returns HTTP 503, ticket VENDOR-42 opened" },
+            { dod: "reporting endpoint shipped", reason: "third-party staging returns HTTP 503, ticket VENDOR-42 opened" },
+          ],
+        } as any,
+        mkContext(session.id),
+      )).metadata.result
+      expect(blocked.status).toBe("ok")
+      const stored = (yield* sessions.get(session.id)).goalState as any
+      expect(stored.status).toBe("blocked")
+      expect(stored.completion.unverified).toHaveLength(2)
+    }),
+  )
+
+  it.instance("refuses a blocked outcome without a declared external blocker", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({ title: "blocked needs a reason" })
+      yield* sessions.setGoalState({
+        sessionID: session.id,
+        goalState: {
+          status: "draft",
+          source: "user",
+          goal: "Ship the lot",
+          dod: ["lot implemented"],
+          outOfScope: [],
+          version: 1,
+          updatedAt: 1,
+        } as any,
+      })
+      const complete = yield* getTool("complete_objective")
+      const refused = (yield* complete.execute({ outcome: "blocked", evidence: [] } as any, mkContext(session.id))).metadata
+        .result
+      expect(refused.status).toBe("error")
+      expect(refused.warnings.join(" ")).toContain("No blocker declared")
+      expect((yield* sessions.get(session.id)).goalState?.status).toBe("draft")
+    }),
+  )
+
+  it.instance("does not rewrite an unchanged goal contract", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({ title: "idempotent goal contract" })
+      const create = yield* getTool("create_objective")
+      const input = { objective: "Ship safely", dod: ["tests pass"], outOfScope: ["no deploy"] }
+
+      yield* create.execute(input, mkContext(session.id))
+      const first = (yield* sessions.get(session.id)).goalState
+      const result = parseResult(yield* create.execute(input, mkContext(session.id)))
+      const second = (yield* sessions.get(session.id)).goalState
+
+      expect(result.status).toBe("ok")
+      expect(result.updatedFields).toEqual([])
+      expect(result.warnings).toContain("No semantic change; goalState was not rewritten.")
+      expect(second?.version).toBe(first?.version)
+      expect(second?.updatedAt).toBe(first?.updatedAt)
+    }),
+  )
+
+  it.instance("create_objectif creates goalState with structured response", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({ title: "goal contract test" })
+      const create = yield* getTool("create_objectif")
+
+      const result = yield* create.execute(
+        {
+          objective: "Compacter Objective dans la sidebar",
+          dod: ["2 lignes max", "ellipsis"],
+          outOfScope: ["refonte complète TUI"],
+        },
+        mkContext(session.id),
+      )
+
+      const parsed = parseResult(result)
+      expect(parsed.status).toBe("ok")
+      expect(parsed.action).toBe("create")
+      expect(parsed.updatedFields).toContain("objective")
+      expect(parsed.goalState?.goal).toBe("Compacter Objective dans la sidebar")
+
+      const updated = yield* sessions.get(session.id)
+      expect(updated.goalState?.goal).toBe("Compacter Objective dans la sidebar")
+      expect(updated.goalState?.dod).toEqual(["2 lignes max", "ellipsis"])
+    }),
+  )
+
+  it.instance("create_objective alias works and rejects empty objective", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({ title: "goal contract alias" })
+      const create = yield* getTool("create_objective")
+
+      const fail = yield* create.execute({ objective: "   " }, mkContext(session.id))
+      const parsedFail = parseResult(fail)
+      expect(parsedFail.status).toBe("error")
+      expect(parsedFail.warnings.join(" ")).toContain("Objective cannot be empty")
+
+      const ok = yield* create.execute({ objective: "Create from alias" }, mkContext(session.id))
+      const parsedOk = parseResult(ok)
+      expect(parsedOk.status).toBe("ok")
+      expect(parsedOk.goalState?.goal).toBe("Create from alias")
+    }),
+  )
+
+  it.instance("edit_objectif updates only provided fields", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({ title: "goal edit test" })
+      const create = yield* getTool("create_objectif")
+      const edit = yield* getTool("edit_objectif")
+
+      yield* create.execute(
+        {
+          objective: "Initial objective",
+          dod: ["initial dod"],
+          outOfScope: ["initial oos"],
+        },
+        mkContext(session.id),
+      )
+
+      const result = yield* edit.execute({ objective: "Edited objective" }, mkContext(session.id))
+      const parsed = parseResult(result)
+      expect(parsed.status).toBe("ok")
+      expect(parsed.updatedFields).toEqual(["objective"])
+      expect(parsed.goalState?.goal).toBe("Edited objective")
+      expect(parsed.goalState?.dod).toEqual(["initial dod"])
+    }),
+  )
+
+  it.instance("suggest_objectif suggests from prompt/context and does not persist", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({ title: "goal suggest test" })
+      const suggest = yield* getTool("suggest_objectif")
+
+      const result = yield* suggest.execute(
+        {
+          prompt: "Objectif: améliorer la lisibilité\nDoD:\n- compacter\nHors périmètre:\n- migration",
+        },
+        mkContext(session.id),
+      )
+      const parsed = parseResult(result)
+      expect(parsed.status).toBe("ok")
+      expect(parsed.action).toBe("suggest")
+      expect(parsed.suggestion?.objective).toBe("améliorer la lisibilité")
+      expect(parsed.suggestion?.outOfScope).toEqual(["migration"])
+
+      const unchanged = yield* sessions.get(session.id)
+      expect(unchanged.goalState).toBeUndefined()
+    }),
+  )
+
+  it.instance("apply_contract_from_prompt applies FR/EN sections and handles invalid prompt", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({ title: "goal apply test" })
+      const apply = yield* getTool("apply_contract_from_prompt")
+
+      const invalid = yield* apply.execute({ prompt: "   " }, mkContext(session.id))
+      const parsedInvalid = parseResult(invalid)
+      expect(parsedInvalid.status).toBe("error")
+
+      const result = yield* apply.execute(
+        {
+          prompt: [
+            "Objective: Add native contract tools",
+            "Definition of Done:",
+            "- create/edit tools",
+            "- tests pass",
+            "Hors périmètre:",
+            "- db migration",
+          ].join("\n"),
+        },
+        mkContext(session.id),
+      )
+
+      const parsed = parseResult(result)
+      expect(parsed.status).toBe("ok")
+      expect(parsed.updatedFields).toEqual(["objective", "dod", "outOfScope"])
+      expect(parsed.goalState?.goal).toBe("Add native contract tools")
+      expect(parsed.goalState?.dod).toEqual(["create/edit tools", "tests pass"])
+      expect(parsed.goalState?.outOfScope).toEqual(["db migration"])
+
+      const updated = yield* sessions.get(session.id)
+      expect(updated.goalState?.goal).toBe("Add native contract tools")
+    }),
+  )
+  it.instance("does not evidence-gate self-referential delivery DoD", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({ title: "delivery-only DoD" })
+      yield* sessions.setGoalState({
+        sessionID: session.id,
+        goalState: {
+          status: "draft", source: "user", goal: "Implement feature",
+          dod: ["Targeted tests pass", "Rapport final concis : conception, fichiers changés, commandes et risques."],
+          outOfScope: [], version: 1, updatedAt: 1,
+        } as any,
+      })
+      const complete = yield* getTool("complete_objective")
+      const result = (yield* complete.execute({
+        summary: "done",
+        evidence: [{ dod: "Targeted tests pass", proof: "bun test target: 4 pass, exit 0" }],
+      }, mkContext(session.id))).metadata.result
+      expect(result.status).toBe("ok")
+      expect((yield* sessions.get(session.id)).goalState?.status).toBe("completed")
+    }),
+  )
+
+  it.instance("still evidence-gates a business artifact named final report", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({ title: "business final report" })
+      yield* sessions.setGoalState({ sessionID: session.id, goalState: {
+        status: "draft", source: "user", goal: "Generate report", dod: ["Rapport final PDF généré et signé"],
+        outOfScope: [], version: 1, updatedAt: 1,
+      } as any })
+      const complete = yield* getTool("complete_objective")
+      const result = (yield* complete.execute({ summary: "done", evidence: [] }, mkContext(session.id))).metadata.result
+      expect(result.status).toBe("error")
+      expect((yield* sessions.get(session.id)).goalState?.status).toBe("draft")
+    }),
+  )
+
+})

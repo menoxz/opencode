@@ -1,0 +1,25 @@
+FIX VALIDATION — tool-input replay truncation (opencode fork 1.18.62)
+
+ROOT CAUSE (proof):
+  summarizeToolInputValue, message-v2.ts:365-414
+  - strings >80 chars: `${slice(0,80)}… [${len} chars]`  (U+2026 literal)
+  - arrays >5 items collapse; MAX_DEPTH=3, MAX_KEYS=8, MAX_ITEMS=5, MAX_STRING=80
+  Format + constants match the artifacts seen in agent history
+  (e.g. "…Destinati… [92 chars]" = 80 + "… [" suffix).
+
+LAYER: replay/serialization of PAST tool-calls into context
+  (NOT live execution — live always ran full args).
+  RECENT_TOOL_TURNS_IN_FULL=1 → older turns summarized even pre-compaction.
+
+FIX: DEFAULTS.replayToolInputs "summary"→"full" (context-rollout.ts:28-33)
+  gate message-v2.ts:416-417  `if (mode === "full") return input`  → verbatim.
+
+DEPLOY: 1.18.62 built (EXIT=0), copied to %APPDATA%\npm\opencode.exe,
+  --version=1.18.62, debug info EXIT=0, running pid confirmed via session_info.
+
+EMPIRICAL (this session, post-restart, on 1.18.62):
+  - 130-char single-line string passed + rendered intact, 0 "… [N chars]".
+  - 7-item array passed + rendered intact, 0 "[Array(N)]" collapse.
+  - aged turns (>RECENT_TOOL_TURNS_IN_FULL) still full → summarize path bypassed.
+
+RESULT: all 4 DoD items satisfied.

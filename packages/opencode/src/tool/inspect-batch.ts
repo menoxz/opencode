@@ -1,0 +1,341 @@
+import { Cause, Effect, Schema } from "effect"
+import { PositiveInt } from "@opencode-ai/core/schema"
+import * as Tool from "./tool"
+import { ReadTool } from "./read"
+import { GlobTool } from "./glob"
+import { GrepTool } from "./grep"
+import { RuntimeFlags } from "@/effect/runtime-flags"
+import { inspectBudget } from "./lean-output-policy"
+
+const FlexiblePositiveInt = Schema.Union([
+  PositiveInt,
+  Schema.NumberFromString.check(Schema.isInt(), Schema.isGreaterThan(0)),
+])
+
+const Common = {
+  id: Schema.String.annotate({ description: "Unique action id within this batch" }),
+  dependsOn: Schema.optional(Schema.Array(Schema.String)).annotate({
+    description: "Action ids that must complete successfully before this action runs",
+  }),
+}
+
+const ReadAction = Schema.Struct({
+  ...Common,
+  type: Schema.Literal("read"),
+  filePath: Schema.String,
+  offset: Schema.optional(FlexiblePositiveInt),
+  limit: Schema.optional(FlexiblePositiveInt),
+})
+const GlobAction = Schema.Struct({
+  ...Common,
+  type: Schema.Literal("glob"),
+  pattern: Schema.String,
+  path: Schema.optional(Schema.String),
+})
+const GrepAction = Schema.Struct({
+  ...Common,
+  type: Schema.Literal("grep"),
+  pattern: Schema.String,
+  path: Schema.optional(Schema.String),
+  include: Schema.optional(Schema.String),
+})
+
+export const InspectActionSchema = Schema.Union([ReadAction, GlobAction, GrepAction])
+export type InspectAction = Schema.Schema.Type<typeof InspectActionSchema>
+
+export const Parameters = Schema.Struct({
+  actions: Schema.Array(InspectActionSchema).annotate({
+    description: "At most 16 read-only actions. Independent actions run together; dependsOn creates barriers.",
+  }),
+  maxConcurrency: Schema.optional(FlexiblePositiveInt).annotate({ description: "Concurrency cap, clamped to 1..8" }),
+  maxCharsPerResult: Schema.optional(FlexiblePositiveInt).annotate({
+    description:
+      "Per-action cap; default min(4000, 16000/action count). Explicit 1000..20000, further bounded by Lean policy when enabled.",
+  }),
+})
+
+function firstByID(actions: readonly InspectAction[]) {
+  const map = new Map<string, InspectAction>()
+  for (const action of actions) if (!map.has(action.id)) map.set(action.id, action)
+  return map
+}
+
+function dependencyCycle(actions: readonly InspectAction[]): string[] | undefined {
+  const byID = firstByID(actions)
+  const visiting = new Set<string>()
+  const visited = new Set<string>()
+  const stack: string[] = []
+
+  function visit(id: string): string[] | undefined {
+    if (visiting.has(id)) {
+      const start = stack.indexOf(id)
+      return [...stack.slice(start), id]
+    }
+    if (visited.has(id)) return undefined
+    const action = byID.get(id)
+    if (!action) return undefined
+    visiting.add(id)
+    stack.push(id)
+    for (const dep of action.dependsOn ?? []) {
+      const cycle = visit(dep)
+      if (cycle) return cycle
+    }
+    stack.pop()
+    visiting.delete(id)
+    visited.add(id)
+    return undefined
+  }
+
+  for (const action of actions) {
+    const cycle = visit(action.id)
+    if (cycle) return cycle
+  }
+  return undefined
+}
+
+export function validateInspectActions(actions: readonly InspectAction[]): string[] {
+  const errors: string[] = []
+  if (actions.length === 0) errors.push("At least one action is required")
+  if (actions.length > 16) errors.push("At most 16 actions are allowed")
+  const seen = new Set<string>()
+  for (const action of actions) {
+    if (seen.has(action.id)) errors.push(`Duplicate action id: ${action.id}`)
+    seen.add(action.id)
+  }
+  for (const action of actions) {
+    for (const dep of action.dependsOn ?? []) {
+      if (!seen.has(dep)) errors.push(`Action ${action.id} depends on unknown action: ${dep}`)
+    }
+  }
+  const cycle = dependencyCycle(actions)
+  if (cycle) errors.push(`Dependency cycle detected: ${cycle.join(" -> ")}`)
+  return errors
+}
+
+function inspectActionKey(action: InspectAction) {
+  const dependsOn = [...(action.dependsOn ?? [])].sort()
+  if (action.type === "read")
+    return JSON.stringify([action.type, action.filePath, action.offset ?? null, action.limit ?? null, dependsOn])
+  if (action.type === "glob") return JSON.stringify([action.type, action.pattern, action.path ?? null, dependsOn])
+  return JSON.stringify([action.type, action.pattern, action.path ?? null, action.include ?? null, dependsOn])
+}
+
+export function deduplicateInspectActions(actions: readonly InspectAction[]) {
+  const primaryByKey = new Map<string, string>()
+  const aliases = new Map<string, string>()
+  const unique: InspectAction[] = []
+  for (const action of actions) {
+    const key = inspectActionKey(action)
+    const primary = primaryByKey.get(key)
+    if (primary) aliases.set(action.id, primary)
+    else {
+      primaryByKey.set(key, action.id)
+      unique.push(action)
+    }
+  }
+  const resolve = (id: string): string => (aliases.has(id) ? resolve(aliases.get(id)!) : id)
+  return {
+    actions: unique.map((action) => ({
+      ...action,
+      ...(action.dependsOn ? { dependsOn: [...new Set(action.dependsOn.map(resolve))] } : {}),
+    })) as InspectAction[],
+    aliases,
+  }
+}
+
+export function planInspectRounds(actions: readonly InspectAction[]): InspectAction[][] {
+  const errors = validateInspectActions(actions)
+  if (errors.length) throw new Error(errors.join("; "))
+  const pending = new Map(actions.map((action) => [action.id, action]))
+  const completed = new Set<string>()
+  const rounds: InspectAction[][] = []
+  while (pending.size > 0) {
+    const ready = actions.filter(
+      (action) => pending.has(action.id) && (action.dependsOn ?? []).every((dep) => completed.has(dep)),
+    )
+    if (ready.length === 0) throw new Error("Dependency graph cannot make progress")
+    rounds.push(ready)
+    for (const action of ready) {
+      pending.delete(action.id)
+      completed.add(action.id)
+    }
+  }
+  return rounds
+}
+
+export type ActionResult = {
+  id: string
+  type: InspectAction["type"]
+  status: "success" | "empty" | "error" | "skipped"
+  title?: string
+  output?: string
+  error?: string
+  truncated?: boolean
+  aliasOf?: string
+}
+
+export function orderedInspectResults(
+  actions: readonly InspectAction[],
+  aliases: ReadonlyMap<string, string>,
+  results: ReadonlyMap<string, ActionResult>,
+) {
+  return actions.map((action) => {
+    const primary = aliases.get(action.id) ?? action.id
+    const result = results.get(primary)!
+    if (primary === action.id) return result
+    return {
+      ...result,
+      id: action.id,
+      aliasOf: primary,
+      ...(result.output === undefined ? {} : { output: `Same inspection as ${primary}; use that result.` }),
+    }
+  })
+}
+
+const OFFSET_OUT_OF_RANGE = /Offset (\d+) is out of range for this file \((\d+) lines\)/
+
+function emptyReadResult(action: InspectAction, cause: unknown): ActionResult | undefined {
+  if (action.type !== "read") return
+  const match = String(cause).match(OFFSET_OUT_OF_RANGE)
+  if (!match) return
+  return {
+    id: action.id,
+    type: action.type,
+    status: "empty",
+    title: "No content at requested offset",
+    output: `Offset ${match[1]} is beyond the end of the file (${match[2]} lines).`,
+  }
+}
+
+export function inspectDependencySatisfied(result: ActionResult | undefined) {
+  return result?.status === "success" || result?.status === "empty"
+}
+
+function inspectionExcerpt(output: string, maxChars: number) {
+  const marker = "\n... [inspect_batch result truncated]"
+  const end = Math.max(0, maxChars - marker.length)
+  const highSurrogate = end > 0 && /[\uD800-\uDBFF]/.test(output[end - 1])
+  return output.slice(0, highSurrogate ? end - 1 : end) + marker.slice(0, maxChars)
+}
+
+export function localizeInspectAction<E, R>(
+  action: InspectAction,
+  run: () => Effect.Effect<{ title: string; output: string }, E, R>,
+  maxChars = Number.MAX_SAFE_INTEGER,
+) {
+  return Effect.try({ try: run, catch: (error) => error }).pipe(
+    Effect.flatMap((effect) => effect),
+    Effect.matchCause({
+      onFailure: (cause): ActionResult => {
+        const error = Cause.squash(cause)
+        return (
+          emptyReadResult(action, error) ?? { id: action.id, type: action.type, status: "error", error: String(error) }
+        )
+      },
+      onSuccess: (result): ActionResult => {
+        const truncated = result.output.length > maxChars
+        return {
+          id: action.id,
+          type: action.type,
+          status: "success",
+          title: result.title,
+          output: truncated ? inspectionExcerpt(result.output, maxChars) : result.output,
+          truncated,
+        }
+      },
+    }),
+  )
+}
+
+export const InspectBatchTool = Tool.define(
+  "inspect_batch",
+  Effect.gen(function* () {
+    const readInfo = yield* ReadTool
+    const globInfo = yield* GlobTool
+    const grepInfo = yield* GrepTool
+    const read = yield* Tool.init(readInfo)
+    const glob = yield* Tool.init(globInfo)
+    const grep = yield* Tool.init(grepInfo)
+    const flags = yield* RuntimeFlags.Service
+
+    return {
+      description: [
+        "Run a bounded read-only inspection DAG in one tool call.",
+        "Supports read, glob and grep only; at most 16 actions; dependencies must be explicit.",
+        "Permissions are checked per action, errors stay local, and outputs are capped with provenance.",
+        "Group already-known independent inspections to avoid extra model turns; use exact paths, grep include and read offset/limit. Follow truncated results with only the missing relevant range. Duplicate actions reference their primary result rather than repeating content.",
+      ].join(" "),
+      parameters: Parameters,
+      execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context) =>
+        Effect.gen(function* () {
+          const actions = [...params.actions]
+          const budget = inspectBudget({
+            enabled: flags.experimentalLeanOutputBudget,
+            actionCount: actions.length,
+            requestedChars: params.maxCharsPerResult,
+          })
+          const errors = validateInspectActions(actions)
+          if (actions.length > budget.maxActions)
+            errors.push(`Lean inspection waves allow at most ${budget.maxActions} actions (received ${actions.length})`)
+          if (errors.length > 0) throw new Error(errors.join("\n"))
+          const deduped = deduplicateInspectActions(actions)
+          const rounds = planInspectRounds(deduped.actions)
+          const concurrency = Math.max(1, Math.min(8, params.maxConcurrency ?? 4))
+          const maxChars = Math.max(1_000, Math.min(20_000, budget.maxCharsPerResult))
+          const results = new Map<string, ActionResult>()
+
+          for (const round of rounds) {
+            const completed = yield* Effect.forEach(
+              round,
+              (action) => {
+                const blocked = (action.dependsOn ?? []).find((dep) => !inspectDependencySatisfied(results.get(dep)))
+                if (blocked) {
+                  return Effect.succeed<ActionResult>({
+                    id: action.id,
+                    type: action.type,
+                    status: "skipped",
+                    error: `Dependency ${blocked} did not complete successfully`,
+                  })
+                }
+                return localizeInspectAction(
+                  action,
+                  () => {
+                    if (action.type === "read") {
+                      return read.execute(
+                        { filePath: action.filePath, offset: action.offset, limit: action.limit },
+                        ctx,
+                      )
+                    }
+                    if (action.type === "glob") return glob.execute({ pattern: action.pattern, path: action.path }, ctx)
+                    return grep.execute({ pattern: action.pattern, path: action.path, include: action.include }, ctx)
+                  },
+                  maxChars,
+                )
+              },
+              { concurrency },
+            )
+            for (const result of completed) results.set(result.id, result)
+          }
+
+          const ordered = orderedInspectResults(actions, deduped.aliases, results)
+          const failed = ordered.filter((result) => result.status === "error").length
+          const empty = ordered.filter((result) => result.status === "empty").length
+          const skipped = ordered.filter((result) => result.status === "skipped").length
+          return {
+            title: `inspect_batch: ${ordered.length} action(s), ${failed} error(s), ${empty} empty, ${skipped} skipped`,
+            metadata: {
+              actions: ordered.length,
+              rounds: rounds.length,
+              failed,
+              empty,
+              skipped,
+              truncated: ordered.filter((result) => result.truncated).map((result) => result.id),
+              readOnly: true,
+              deduplicated: deduped.aliases.size,
+            },
+            output: JSON.stringify({ readOnly: true, rounds: rounds.length, results: ordered }),
+          }
+        }),
+    }
+  }),
+)

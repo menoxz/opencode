@@ -1,0 +1,38 @@
+name: generate
+
+on:
+  push:
+    branches:
+      - dev
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Setup git committer
+        run: |
+          git config --global user.email "bot@opencode.ai"
+          git config --global user.name "opencode"
+
+      - name: Generate
+        run: bun run script/generate.ts
+
+      - name: Commit and push
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git add -A
+          if git commit -m "chore: generate"; then
+            git push origin HEAD:${{ github.ref_name }} --no-verify || echo "Push failed (non-fatal)"
+          fi
