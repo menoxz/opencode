@@ -200,4 +200,4 @@ Statuts lus par lecture directe, jamais par regexp (C-142).
 | P17 | FAIL | corrige hors proposition : commit 9c9b1b97 | defaut d unite reel dans HEAD : processor.ts:591 passait maxChars en points de code dans le champ maxBytes mesure en octets, divisant par deux le budget lean sur texte accentue ; truncate.output accepte desormais un maxChars en points de code et rapporte l unite liante ; typecheck TS_ERRORS=0, suites lean 27 pass / 0 fail ; C-176 |
 | P18 | PASS_WITH_CHANGES | defaut deja corrige dans HEAD | le retry transitoire EPERM/EBUSY existe dans HEAD : launch-retry.ts:8-10 et :48, cross-spawn-spawner.ts:36 et :43, shell.ts:584, filesystem.ts:102-107 ; 4 suites dediees ; execution 8 pass / 0 fail ; C-175 |
 | P19 | FAIL | aucune | revalidation :246 |
-| P20 | FAIL | aucune | revalidation :267 |
+| P20 | FAIL | B1 implemente hors proposition : commit c90836b4 | doctrine tmux de packages/opencode/AGENTS.md:15-17 retiree au profit d un terminal gere ; garde de test packages/opencode/test/session/agents-md-doctrine.test.ts lit le vrai fichier, 2 pass / 0 fail, rouge sur HEAD (4 occurrences tmux) ; A1/A2 non livres ; C-180 |
