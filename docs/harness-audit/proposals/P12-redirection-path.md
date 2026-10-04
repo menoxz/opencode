@@ -241,7 +241,7 @@ const REDIRECT_OPERATORS = new Set([
 // nomme ou un token anonyme.
 function isRedirectOperator(text: string) {
   if (REDIRECT_OPERATORS.has(text)) return true
-  // Variantes avec descripteur numerote et那些 formes non listees : "2>>", "10>".
+  // Variantes avec descripteur numerote et ces formes non listees : "2>>", "10>".
   if (/^[0-9]+[<>]/.test(text)) return true
   // Descripteur de handle : "&1", "&2", "&-", ">&2".
   if (text.startsWith("&")) return true

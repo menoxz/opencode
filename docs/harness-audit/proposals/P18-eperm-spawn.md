@@ -290,7 +290,7 @@ Trois faits, tous relus dans le code, suffisent — aucun ne dépend d'un compte
    (`launch-retry.ts:9`) fait de `Busy` un échec transitoire **de première classe dans la
    politique du dépôt** (`:30`), et `§4.3` ne route vers `launchRefused` que les erreurs
    `isTransientLaunchFailure`-positives. Un tag `Busy` **atteint donc la fourche** dès qu'il se
-   produit, sans修改 d'aucun garde.
+   produit, sans modification d'aucun garde.
 2. **Le dépôt triche déjà exactement ce couple** (`filesystem.ts:107`), donc la bifurcation
    n'est pas une invention de P18.
 3. **L'asymétrie de coût est extreme.** Branche présente : si un `EBUSY` survient, le message
@@ -301,7 +301,7 @@ Trois faits, tous relus dans le code, suffisent — aucun ne dépend d'un compte
 
 Ce qui **change** dans cette révision : la branche n'est plus **justifiée** par `EBUSY_ANY=3`.
 Elle est **démontrée atteignable**, corroborated par `filesystem.ts:107`, **coût-efficace**, et
-—決定的な — **testée** (§7, test 2). `EBUSY_ANY=3` est **retiré de l'argumentaire**.
+— décisive — **testée** (§7, test 2). `EBUSY_ANY=3` est **retiré de l'argumentaire**.
 
 ## 3. Mechanism
 

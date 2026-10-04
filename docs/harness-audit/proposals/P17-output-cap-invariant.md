@@ -609,7 +609,7 @@ chiffre que la version précédente ne publiait pas.
 ## 8. Tests
 
 Fichier existant : `packages/opencode/test/tool/truncation.test.ts`. Les cas 1 à 3 et 5-
-7贯通 demonstration de l'invariant ; **les cas 4 et 5 sont les deux faces de l'unité**, et sont
+7 démonstration de bout en bout de l'invariant ; **les cas 4 et 5 sont les deux faces de l'unité**, et sont
 la preuve directe de la décision §4.1.
 
 ### 8.1 Invariant principal

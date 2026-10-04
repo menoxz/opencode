@@ -203,7 +203,7 @@ La révision affirme « ~205 occurrences sur la session mesurée » (lignes 391-
 artefact de mesure n'est fourni, donc je ne peux ni le confirmer ni le réfuter. Je le note
 sans le retenir : l'argument de menace du §6.1 repose sur le **mécanisme** (remontée de nom +
 rendu sans contrôle de provenance + réinjection à chaque lecture), pas sur ce décompte. Le
-gain de 205 à 1 reste是对的 par le mécanisme, que le chiffre exact soit 205 ou non.
+gain de 205 à 1 reste correct par le mécanisme, que le chiffre exact soit 205 ou non.
 
 ## Regressions introduced
 

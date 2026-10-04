@@ -37,7 +37,7 @@ défauts de méthode, pas de diagnostic : corrigeables dans le document.
 | la contradiction interne du protocole est réelle | ok | `turn-plan.ts:213` (« On every turn ») contre `turn-plan.ts:218` (« Declare only what genuinely remains ») — même tableau, lignes 5 et 11 |
 | le correctif ne casse pas un comportement existant | ok | grep sur `test/session/*.test.ts` : **zéro** occurrence de `declaredIntent`, `TurnPlan`, `declared-intent`. Le risque résiduel annoncé par la proposition (« je n'ai pas lu ce fichier ») est levé. `turn-plan.test.ts:107-122` teste `declaredIntent()` pur, que ni A ni B ne touche |
 | tests proposés sont exécutables dans ce dépôt | ok | l'alias `@/session/...` est résolu dans `test/session/` (22 imports, ex. `test/session/overflow.test.ts:5`) ; le chemin `test/session/turn-plan-dedup.test.ts` est cohérent avec `prompt.test.ts` / `message-v2.test.ts` déjà présents |
-| effort et coût annoncés réalistes | KO | coût en tokens自有 : gains non garantis, sacrifice non chiffré (O1, O2, O3) |
+| effort et coût annoncés réalistes | KO | coût en tokens propre : gains non garantis, sacrifice non chiffré (O1, O2, O3) |
 | options distinctes et correctement comparées | ok | déduplication / cadence / plafond sont trois leviers réellement distincts ; cadence et plafond sont rejetés pour de bonnes raisons (`turn-plan.ts:127` rend le plan consommable une seule fois ; le refus non annoncé coûterait un tour). Réserve de forme seulement (O5) |
 | sacrifice chiffré | KO | aucun chiffre de régression (§9 point 2 est qualitatif) |
 
@@ -83,7 +83,7 @@ cassent.
 
 Or la mesure est faisable et bon marché : `slog.info("auto-continue", …)` existe
 déjà (`prompt.ts:1931`). Le nombre de tours dont la seule raison de continuer est
-`"declared-intent"` **est le sacrifice的直接** — exactement la grandeur que la
+`"declared-intent"` **est le sacrifice direct** — exactement la grandeur que la
 Partie A supprime, et elle est déjà dans les logs.
 
 **Ce qu'il faut changer** : avant fusion, compter sur un échantillon de sessions

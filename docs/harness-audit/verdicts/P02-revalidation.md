@@ -69,7 +69,7 @@ requalifie et compte 4. J'ai vérifié **chaque** citation par `read`, sans exce
 
 **Aucune citation fausse. R2 est guéri sur le fond** : `summary` est bien de premier niveau, le
 compte est bien de 4, et les trois champs conservés le sont **sur preuve de consommateur**, pas
-par小球 intuition. Le défaut que P02 combat sur `description` ne persiste donc pas sur
+par pure intuition. Le défaut que P02 combat sur `description` ne persiste donc pas sur
 `complete_objective`.
 
 ### R3 — GUÉRIE
@@ -178,7 +178,7 @@ touche aucun code, et je l'ai établi par exécution.**
   bloquer (`repetition.ts:123`), et chaque test de ce fichier utilise une `command` distincte, donc
   aucune clé ne peut fusionner par retrait du `description`. Une collision resterait par ailleurs
   détectable, pas silencieuse : `preview(entry.args)` (`:129`, alimenté par `stableStringify(args)`
-  en `:155`) incorporate `description` dans le message de blocage, donc un blocage过一次 par
+  en `:155`) incorporate `description` dans le message de blocage, donc un blocage, une fois, par
   mauvaise fusion se lirait dans le message d'erreur. Ce n'est pas un défaut du correctif, c'est une
   limite de mesure que je consigne pour l'implémentateur.
 - Les autres surfaces de la liste §6 (`test/tool/registry.test.ts`,

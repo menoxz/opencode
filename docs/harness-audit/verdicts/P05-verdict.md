@@ -185,7 +185,7 @@ P03 (des outils MCP dont la readiness a échoué restent au catalogue) et P04
 1. **Objection 1** — Remplacer le « ~240 tokens par tour » (`:5`, `:109`, `:221`) par
    la formule `Σ(len(item)+25) − 121` et le tableau mesuré ci-dessus, avec la mention
    explicite que le gain est **nul ou négatif pour 1 à 3 DoD courts**. Ne pas annoncer
-   un gain净 là où la mesure montre un grossissement du bloc.
+   un gain net là où la mesure montre un grossissement du bloc.
 2. **Objection 2** — Rendre le test §7.1 discriminant : remplacer
    `expect(text.length).toBeLessThan(400)` par `toBeLessThan(200)`, ou par
    `expect(text.match(/^- mandatory requirement: /gm) ?? []).toHaveLength(0)`.

@@ -74,7 +74,7 @@ Statut en tête de chaque ligne, conformément à la règle 4 du gabarit.
   **G1 mesure « aucune poursuite non confrontée à une observation »**, pas « aucune poursuite ».
   Tel quel, G1 est **inatteignable** et donc non opposable : un futur correctif de la ligne 1872
   échouerait sur son propre critère de succès. Corollaire : le patch ne supprime qu'une **moitié**
-  au mieux desに合わせた Authority, ce que le document présente comme une suppression totale.
+  au mieux des ajustements d'Authority, ce que le document présente comme une suppression totale.
   *Statut `open` : traité seulement en surface (une borne et un cas limite), le fond est faux.*
 
 - **`open` — N5 (MAJEUR). La borne structurelle annoncée est fausse d'un facteur ~2.**
