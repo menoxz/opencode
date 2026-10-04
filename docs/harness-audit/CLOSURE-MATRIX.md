@@ -198,6 +198,6 @@ Statuts lus par lecture directe, jamais par regexp (C-142).
 | P15 | PASS_WITH_CHANGES | fusionnee | commit 6430ee62 : src/plugin/index.ts blob 7740186a dans HEAD ; TC_EXIT=0, TS_ERRORS=0, TS18047=0 ; meta.test.ts 3 pass / 0 fail sur chacun des deux blobs ; C-159 |
 | P16 | PASS_WITH_CHANGES | fusionnee | 39 pass / 0 fail |
 | P17 | FAIL | aucune | 9 residus open, terminal |
-| P18 | PASS_WITH_CHANGES | non implementable | COR-R18-4 open, C-143 |
+| P18 | PASS_WITH_CHANGES | non implementable | les 2 residus etaient des artefacts de mandat : COR-R18-3 refute par CORE_TC_EXIT=0, COR-R18-4 refute par SITES=34 / FILES=12 mesure contre 11 annonces ; correction de proposition en cours, C-162 |
 | P19 | FAIL | aucune | revalidation :246 |
 | P20 | FAIL | aucune | revalidation :267 |
