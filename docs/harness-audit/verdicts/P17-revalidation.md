@@ -1,260 +1,232 @@
-# Revalidation de P17 — invariant de plafond de sortie
+# Revalidation de P17 — cycle 4 (reviseur indépendant)
 
-## Proposal
+Je n'ai rédigé ni `P17-output-cap-invariant.md`, ni `P17-verdict.md`, ni aucune révision.
+Aucun fichier du dépôt n'a été modifié ; `git` n'a pas été invoqué. Les seules écritures sont
+ce verdict et deux scripts hors dépôt (`%TEMP%\opencodev2\p17-sim.mjs`, `p17-sim2.mjs`).
 
-`P17` — Invariant de plafond de sortie `min(lean, générique)`.
-Fichier : `docs/harness-audit/proposals/P17-output-cap-invariant.md`, **750 lignes** sur disque
-(le verdict de vague 2 en mesurait 194 : le dossier a été révisé depuis, §1 `:10-19` s'en réclame).
+Levée d'une confusion de cadrage avant tout : le brief affirme que « la table à `:383` déclare
+que `processor.ts:589-593` passe actuellement `{ tool: toolCall.part.tool }` **SANS**
+`maxBytes: outputBudget.maxChars` ». C'est **faux**. La colonne `avant` de `:383` déclare au
+contraire `{ maxLines, maxBytes: outputBudget.maxChars, direction }`, et la colonne `après`
+retire le `maxBytes`. La proposition dit donc vrai. C'est le brief, pas la proposition, qui
+inverse les colonnes. `F-02` est réel, et c'est la proposition qui le trouve.
 
-Revalidateur : `revalidator-independent-p17-1`. Je n'ai rédigé ni la proposition, ni
-`P17-verdict.md`, ni aucune révision. Toutes les citations de code ci-dessous ont été relues
-sur les fichiers réels de `packages/opencode/src`, pas sur le texte de la proposition.
+## Preuves d'ancrage (relevés sur les fichiers réels, pas sur la proposition)
 
-État de départ : `truncate.ts` **intact** (158 lignes ; `MAX_LINES`/`MAX_BYTES` toujours
-déclarés `:15-16`, boucle toujours en octets). La variante P16 vit dans `terminal-output.ts`
-seulement.
+| ancrage | réel | attendu par P17 | verdict |
+|---|---|---|---|
+| `terminal-output.ts:155` | `if (!isLeanTerminalTool(input.tool, input.args)) return { output: input.output, metadata: input.metadata }` | carve-out lean | exact |
+| `terminal-output.ts:7-8` | `const MAX_BYTES = 4_000` / `const MAX_LINES = 120` | 4 000 / 120 | exact |
+| `terminal-output.ts:142` | `return path.resolve(root, value).startsWith(root + path.sep)`, dans `withinTruncationRoot` (`:139`) | ancien `:142` | exact, **zéro dérive** |
+| `processor.ts:587` | `if (!terminal && flags.experimentalLeanOutputBudget && truncate._tag === "Some" && toolCall && outputBudget) {` | aucun test `isLeanAgent` | exact (comparaison caractère à caractère avec `:392`) |
+| `processor.ts:591` | `{ maxLines: outputBudget.maxLines, maxBytes: outputBudget.maxChars, direction: outputBudget.direction },` | `maxBytes: outputBudget.maxChars` **présente** | la proposition est correcte |
+| `lean-output-policy.ts:6` / `:8` | `LEAN_BROWSER_MAX_CHARS = 8_000` / `LEAN_OVERVIEW_MAX_CHARS = 6_000` | 6 000 / 8 000 | réels |
+| `truncate.ts:16` | `export const MAX_BYTES = 50 * 1024` | 51 200 générique | réel |
+| `truncate.ts:93-95` | `if (lines.length <= maxLines && totalBytes <= maxBytes) return { content: text, truncated: false }` | sortie anticipée | réel |
+| `truncate.ts:85` | `function* (text: string, options: Options = {}, _agent?: Agent.Info)` | `_agent` ignoré aujourd'hui | réel |
 
-## Revisions applied
+**Contrôle positif des recherches.** `grep path=docs/harness-audit/proposals,
+include=P17-output-cap-invariant.md` sur `expectCut|32 798|115 octets|413 octets|repeat\(151\)|toBeGreaterThan|toBeLessThan|content\.length|maxBytes:|isLeanAgent`
+→ **28 correspondances**, dont `expectCut` présent à **5 lignes** (`:688` définition, `:726`,
+`:747`, `:775`, `:820`). Même forme de recherche, même `path`, même `include` : le contrôle
+positif est donc établi, et aucune conclusion de ce verdict ne repose sur un résultat vide.
+Second contrôle, `grep path=packages/opencode/src/tool, include=terminal-output.ts` →
+**16 correspondances** (ancrages listés ci-dessus tous présents).
 
-Les trois `Required changes` de `P17-verdict.md:101-112` sont **traités dans le texte** de la
-proposition révisée. Je les nomme les uns par les autres, avec la preuve du traitement.
+## R17-01 — §8 était inexécutable : le défaut est réel, mais il a survécu sous une autre forme
 
-**RC1 — unité en points de code dans la boucle + test accentué.** Traité.
-`:232-258` fixe l'unité une fois et au bon niveau (le niveau de la borne) ; `:304-330` ajoute
-`chars` / `hitChars` et un `break` de sortie anticipée **dans les deux branches** (`head` et
-`tail`), la contrainte code-points étant évaluée en premier (`:318`, `:326`) ; `:342-345` fait
-passer `removed`/`unit` à trois branches, ce qui répond explicitement à la demande du verdict
-(`P17-verdict.md:59-61`). Le test accentué exigé est bien présent (`:622-638`).
+La contrainte de fixture §8.1 est **juste et bien démontrée**. J'ai vérifié la mécanique :
+`truncate.ts:90` fait `text.split("\n")`, `truncate.ts:109` fait `out.push(lines[i])` — seules
+des lignes entières survivent. Je confirme donc le diagnostic de `:661-668`.
 
-Je relève au passage une **décision de la révision plus juste que le verdict** : la fixture
-`"é".repeat(5000)` demandée par RC1 est **impossible à exécuter**, et la révision le démontre
-(`:640-649`) — 4 000 est `LEAN_TERMINAL_MAX_CHARS` (`lean-output-policy.ts:4`) et les outils
-terminal sont carve-out (`proposition:269`), donc `leanCeiling` renvoie `undefined` et le texte
-ressort **non tronqué**. La substitution par `repo_overview` à 7 000 caractères accentués est
-correcte : `repo_overview` est bien dans la liste blanche (`lean-output-policy.ts:56-57`,
-6 000 / 200). Cet élément de RC1 est **`accepted`**.
+Mais §8.1 **n'est pas exécutable tel quel**, pour une raison que §8.1 ne voit pas.
 
-**RC2 — publier le gain par nom d'outil avant tout chiffre.** Traité, et traité au fond.
-`:546-562` explique pourquoi le chiffre précédent (91 000 – 833 000 tokens) mesurait une
-population hors liste blanche ; `:564-585` **retire le chiffre**, lui substitue la seule borne
-dérivable du code — `0` token sur la population mesurée — et donne la formule
-`gain_tokens = (1/R) · Σ_appels max(0, L_i − min(L_i, B_i))` ; `:594-607` pose le préalable
-(histogramme par `options.tool`, avec `(c) = 0` attendu pour `read`, `inspect_batch`, `glob`,
-`grep`, `ls`). Je vérifie la prémisse : `lean-output-policy.ts:49-62` ne couvre bien que
-`isLeanTerminalTool`, `repo_overview` et `web-browser_*`. **Cet élément est `accepted`.**
+`expectCut` (`:688-699`) contient cinq assertions. J'ai réduit l'assertion (b) (`:694-696`) :
 
-**RC3 — `maxChars` justifié ou retiré ; import `RuntimeFlags` listé.** Traité.
-`:347-360` **retire** `maxChars` de `Options`, qui ne gagne que `tool?` ; la justification est
-donnée (champ d'API mort = surface de divergence vers le même plafond). `:366-370` liste les
-deux ajouts d'import de `truncate.ts`, dont `import { RuntimeFlags } from "@/effect/runtime-flags"`.
-Je vérifie le chemin de référence : `inspect-batch.ts:7` est bien exactement cette ligne.
-**Cet élément est `accepted`.**
+```
+retained + (cap - retained)  ≡  cap
+⇒  (b)  ⇔  text.slice(0, cap) === result.content.slice(0, cap)
+```
 
-## Status
+`expectCut` n'est appelée qu'à `:726`, `:747`, `:775`, `:820` — **toujours** dans une branche où
+`result.truncated === true`. Or à l'offset `cap`, `result.content` contient le bandeau
+`\n\n...${removed} ${unit} truncated...\n\n${hint}` construit en `truncate.ts:135`, jamais le préfixe
+de l'entrée. **(b) est donc fausse par construction, quelle que soit la fixture.**
 
-**Non implémentable**, pour une raison qui n'est pas « Required changes
-intacts ».
+Simulation exécutée (`node %TEMP%\opencodev2\p17-sim.mjs`, exit 0), boucle `:308-332` de la
+proposition, `width` réel = `lines[i].length + 1` :
 
-Les trois RC sont traités (`accepted` ci-dessus), donc le motif défini par
-`REVALIDATION-BRIEFS.md:72-73` pour l'échec — des Required changes intacts — est
-**inapplicable**. Mais la règle 1 (`:69-71`) rend la variante `…PASS_WITH_CHANGES`
-implémentable **si et seulement si aucun résidu n'est `open`**, et la règle 3 (`:74-75`)
-interdit de requalifier un `open` pour franchir la porte. Je trouve **trois `open`**. Écrire
-`PASS_WITH_CHANGES` affirmerait une implémentabilité fausse ; écrire `PASS` est exclu par la
-règle d'implémentabilité. La seule chaîne honnête est donc l'échec, et je précise
-que son motif ici est **l'existence de résidus `open`**, pas un Required change intact.
+| cas | `k` recalculé par moi | `retained` | annoncé | (a) | (b) | (c) sentinelles | (e) bandeau | `ALL` |
+|---|---|---|---|---|---|---|---|---|
+| 8.2 | `floor(6001/59)` = **101** | **5 958** | 101 / 5 958 `:723` | true | **false** | 101 ✓ | « characters » ✓ | **false** |
+| 8.3 | `floor(6001/207)` = **28** | **5 795** | 28 / 5 795 `:746` | true | **false** | 28 ✓ | « characters » ✓ | **false** |
+| 8.4 | `floor(51201/402)` = **127** | **51 053** | 127 / 51 053 `:770` | true | **false** | 127 ✓ | **« bytes », donc (e) false** | **false** |
+| 8.7 | `floor(6001/42)` = **142** | **5 963** | 142 / 5 963 `:815` | true | **false** | 142 ✓ | « characters » ✓ | **false** |
 
-### L'invariant est-il encore bien énoncé ?
+Mes quatre `k` et mes quatre `retained` correspondent exactement aux annonces `:723`, `:746`,
+`:770`, `:815`. La **formule fermée** de `:677` et `:689` est correcte, les fixtures
+(`:715`, `:744`, `:771`, `:818`) sont bien multi-lignes et assez courtes pour être conservées
+entières (largeur 59 / 207 / 202 cp / 42 cp, très en deçà de tout plafond), et l'assertion (c)
+(`:697`, comptage des sentinelles) est la seule assertion réellement discriminante du lot.
+Mais `expectCut` **ne retourne jamais vert**, pour deux raisons indépendantes :
 
-**Oui sur le fond et sur les plafond, non sur le point d'application qu'il présuppose.**
+1. (b) `:694-696` — fausse par construction, ci-dessus.
+2. (e) `:698` — `expect(result.content).toContain("characters truncated")` est câblée sur l'unité
+   « characters ». Or `:775` appelle `expectCut(big, result, 51_200, 402)` sur le cas **non lean**,
+   dont le bandeau doit être « bytes truncated » : mesuré `banner=false`. `expectCut` **contredit
+   donc l'assertion `:774`** de 8.4, qui exige `not.toContain("characters truncated")`.
 
-Le plafond générique est porté par quatre lignes réelles de `truncate.ts`, relevé à froid :
+Conséquence : `:834` « **Critère de succès observable** : `0 fail` » est **inatteignable** pour 8.2,
+8.3, 8.4 et 8.7. C'est un défaut bloquant au sens de la règle « une prescription de test qui ne peut
+pas atteindre son état de passage attendu est un défaut BLOQUANT ».
 
-- `truncate.ts:15` `export const MAX_LINES = 2000`
-- `truncate.ts:16` `export const MAX_BYTES = 50 * 1024` → **51 200 octets**
-- `truncate.ts:87-88` `const maxLines = options.maxLines ?? resolved.maxLines` /
-  `const maxBytes = options.maxBytes ?? resolved.maxBytes` — unique résolution du plafond
-- `truncate.ts:93-95` `if (lines.length <= maxLines && totalBytes <= maxBytes) { return { content: text, truncated: false } as const }`
+**Sur la discrimination 8.2 / 8.3 / 8.7.** Je n'ai pas accepté `:719-720` et `:814-815` sur
+parole. Le code actuel n'a **pas** de `leanCeiling` : `truncate.ts:87-88` résout
+`maxLines = 2000` et `maxBytes = 51 200` (options non fournies), et `_agent` est ignoré. Simulation
+`p17-sim2.mjs` (exit 0), limites réelles :
 
-et l'application est la boucle `:99-122`, dont le seul compteur est `bytes`
-(`:99-100`, `:104`, `:114`) avec sortie anticipée à `:105` / `:115`. `truncate.ts` étant
-resté intact, **les plafonds que la proposition énonce sont exacts et inchangés** : §2.1 cite
-`:15-16`, `:75-83` et `:87-88`, §2.3 cite `:99-122`, §2.4 cite `:124-125`. Je n'ai trouvé
-aucune citation fausse dans la section 2.
+| cas | lignes | points de code | octets | `truncated` actuel | lignes conservées | unité |
+|---|---|---|---|---|---|---|
+| 8.2 | 400 | 23 599 | 46 399 | **false** | — | — |
+| 8.3 | 400 | 82 799 | 164 799 | **true** | 124 | bytes |
+| 8.4 | 800 | 161 599 | 321 599 | **true** | 127 | bytes |
+| 8.7 | 300 | 12 599 | 12 599 | **false** | — | — |
 
-L'hypothèse de départ du dossier est également confirmée : `registry.ts:256`
-(`output: out.truncated ? out.content : output,`) reste un no-op, puisque `truncate.ts:93-95`
-garantit `out.content === output` octet pour octet quand `truncated` est faux. §4.5 (`:387-414`)
-décrit `:253`/`:256` exactement, et identifie correctement que ce bloc est **plugin-only**
-(`registry.ts:242-253`) — d'où la conclusion juste que l'invariant doit vivre ailleurs.
+- **8.2 est réellement rouge.** Assertion qui échoue : `expect(result.truncated).toBe(true)` à
+  `:721` — mesuré `false`, sortie anticipée `truncate.ts:93-95`. Motif annoncé `:719-720`
+  (« 46 399 octets passent dessous ») **exact**.
+- **8.7 est réellement rouge.** Assertion qui échoue : `expect(result.truncated).toBe(true)` à
+  `:691`, à l'intérieur de `expectCut` — mesuré `false`. Motif `:814-815` **exact**.
+- **8.3 est rouge, mais pas pour la raison annoncée.** Le tableau `:843` annonce
+  « rouge (`truncated === false`) ». C'est **faux** : le code actuel tronque déjà, à 124 lignes,
+  unité `bytes`. Aucune assertion de 8.3 ne peut donc échouer sur `truncated`. Les assertions qui
+  échouent réellement sont `:697` (`sentinels === 28`, observé `124`) et, après correctif, (b).
+  Et `:750` (`byteLength > 11 000`) **passe déjà** sur le code actuel (contenu ≈ 50 561 octets), donc
+  ce n'est pas un point de rupture. Conclusion : 8.3 discrimine, mais **par le comptage de sentinelles,
+  pas par `truncated`**. La table de discrimination est donc mensongère sur une ligne — et c'est
+  précisément la famille de erreur que l'agent de révision avait divulguée (mauvais compte de lignes
+  en 8.3).
+- **8.4 est un non-régression correcte.** `:765` (500 lignes de 40 « é » = 40 499 octets < 51 200)
+  et `:773`/`:774` sont vertes avant comme après. Le `width = 402` passé à `:775` est **juste** :
+  pour un agent non lean, `maxChars` vaut `undefined` (`lean-output-policy.ts:49-62` renvoie
+  `undefined` hors liste blanche, `leanCeiling` `:273`), donc le seul prédicat qui joue est
+  `bytes + size > maxBytes`, de largeur 402 octets. Le compteurfactual `:776`
+  (`floor(51 201 / 202) = 253`) est exact. Mon premier contrôle automatique avait signalé un écart
+  202 cp / 402 octets : c'était **ma** spécification de contrôle qui était erronée, la proposition
+  était juste — je le consigne pour que l'écart ne soit pas réintroduit.
 
-Le défaut d'énoncé est ailleurs : **la proposition présuppose une granularité de coupe qu'elle
-n'établit pas.** Sa boucle corrigée resteau niveau de la ligne — `out.push(lines[i])`
-(`:320`), `out.unshift(lines[i])` (`:328`) — sans jamais couper une ligne en son milieu, alors
-que sa borne est exprimée en **points de code**. Sur un texte sans `\n`, ces deux notions sont
-incompatibles : la boucle ne peut garder qu'un **nombre entier de lignes**, et une borne de
-6 000 points de code ne peut donc pas être atteinte sans émettre zéro ligne. C'est la cause
-racine du résidu `R17-01`.
+**8.5 et 8.6 sont bien vertes avant et après.** 8.5(a) : 900 lignes de 40 « x » = 36 899 points de
+code (`:783` exact), 36 899 < 51 200 et 901 lignes ≤ 2 000 → `truncated === false`, et le carve-out
+`leanCeiling` `:271` renvoie `undefined`. 8.5(b) : `read` est hors liste blanche → `maxChars`
+`undefined` → non tronqué. 8.6 : drapeau coupé → `:266` renvoie `undefined` → non tronqué. Le
+caractère de non-régression annoncé à `:845-847` est donc exact, et la justification `:851-853`
+(« annoncer qu'elles seraient rouges avant serait une autre affirmation infondée ») est la bonne
+posture — ce qui rend d'autant plus inexcusable l'affirmation contraire en 8.3.
 
-## Remaining objections
+## R17-02 — F-02 : dans le périmètre, et l'extension est une correction, pas du scope creep
 
-**`open` — R17-01. Les fixtures de §8 ne sont pas exécutables : le critère de succès « `0 fail` » est inatteignable, et le critère ne discrimine pas.**
-La boucle de `:304-330` est ligne-granulaire (`out.push(lines[i])`, `:320`) ; `truncate.ts:90`
-découpe sur `"\n"`. Les fixtures de §8 sont des chaînes **sans aucun `\n`** :
-`:627` `"é".repeat(7000)`, `:659` `"é".repeat(30_000)`, `:687` `"x".repeat(45_000)`.
-Conséquence arithmétique, sans interprétation : chacune produit `lines.length === 1`, donc
-**une seule itération**, dont la largeur (`:317` / `:325`) dépasse immédiatement la borne ; le
-`break` part avec `out` **vide**. Le contenu rendu est alors le bandeau seul.
-- §8.2 (`:631-634`) attend `5 500 < content.length <= 6_000` et `byteLength > 11 000` : après
-  correctif, `content` fait quelques centaines de caractères. **Rouge après.**
-- §8.3 (`:665-666`) attend `25 000 < content.length < 25 700` : idem. **Rouge après.** La
-  proposition reconnaît que 8.3 n'est pas rouge avant (`:700-701`) mais claims qu'il « fige le
-  comportement actuel » ; il ne le fige pas, il échoue aussi après.
-- §8.6 (`:687-689`) est **auto-contradictoire** : `:686` pose « un texte ASCII doit produire le
-  même résultat avant et après le patch », puis `:688` attend `truncated === true` et
-  `content.length` proche de 8 000. Sur `"x".repeat(45_000)`, l'état actuel donne
-  45 000 octets < 51 200 et 1 ligne < 2 000, donc `truncated === false` : les deux énoncés ne
-  peuvent pas être vrais à la fois. **Rouge après.**
-- §8.1 (`:617-620`) : « texte de 45 000 caractères », forme non spécifiée. Sur une fixture
-  multi-lignes réaliste, la borne de 8 000 points de code produit ~8 000 caractères de
-  prévisualisation, **plus** le bandeau et l'astuce que `truncate.output` concatène
-  (`truncate.ts:130-136`) → `content.length > 8 000`, et l'assertion `toBeLessThanOrEqual(8_000)`
-  échoue. Le seuil `8_000` est **arbitraire et faux** : il compare une sortie qui *inclut* le
-  bandeau à une borne qui ne le couvre pas.
-Ce n'est donc pas « un seuil non justifié » mais un seuil **inatteignable** : le critère de
-succès ne peut pas être atteint par le patch qu'il décrit. Zéro test de §8 ne passe dans un
-monde et échoue dans l'autre. **Bloquant.**
-*Remède en une ligne* : donner aux fixtures des retours à la ligne (`Array.from({length:N},()=>"é").join("\n")`) et comparer la **prévisualisation** (`out.join("\n")`) plutôt que `result.content`, ou majorer le seuil de la longueur du bandeau.
+Confirmé sur le fichier réel. `processor.ts:589-593` est **bien** le site qui passe
+`maxBytes: outputBudget.maxChars` (`:591`), et le garde-fou `:587` est **bien**
+`!terminal && flags.experimentalLeanOutputBudget && truncate._tag === "Some" && toolCall && outputBudget`
+— aucun test d'`isLeanAgent`, alors que `outputBudget` (`:586`) ne dépend que du nom de l'outil
+(`lean-output-policy.ts:49-62`). Un agent **non lean** qui appelle `repo_overview` ou
+`web-browser_*` passe la garde et reçoit 6 000 / 8 000 **octets** au lieu de 51 200 : restriction
+réelle d'un facteur 6 à 8,5, dès que le drapeau est actif.
 
-**`open` — R17-02. `F-02` est déclaré « hors périmètre / sans effet observable » ; c'est faux, et le chemin est dans le périmètre du patch.**
-`processor.ts:589-593` passe aujourd'hui `{ maxLines: outputBudget.maxLines, maxBytes: outputBudget.maxChars, direction: outputBudget.direction }` — je relis `:591` : `maxBytes: outputBudget.maxChars`. C'est **exactement** la collision d'unités que F-01 décrit, vivante sur le chemin session. Et `processor.ts:587` est la garde
-`if (!terminal && flags.experimentalLeanOutputBudget && truncate._tag === "Some" && toolCall && outputBudget)`
-— elle **ne teste pas `isLeanAgent`**. Donc, sous drapeau actif, avec un agent **non lean** et un
-outil de la liste blanche, `maxBytes` vaut 6 000 (ou 8 000) et `resolved.maxBytes` (51 200) est
-**écarté** par le `??` de `truncate.ts:88`. Une sortie `repo_overview` de 7 000 caractères accentués
-est alors coupée à **6 000 octets ≈ 3 000 caractères** : budget divisé par deux, défaut
-observable, et ce **après** le patch puisque §4.4 (`:379`) déclare `processor.ts` « inchangé —
-résorbé par `??` » — ce qui est faux : `maxBytes` est fourni explicitement, donc rien n'est
-résorbé. La qualification « hors périmètre » (`:716`) est donc **invalide** : c'est le même
-défaut que F-01, sur une ligne que le patch liste lui-même comme point d'application.
-**Bloquant.**
-*Remède en une ligne* : passer `{ tool: toolCall.part.tool }` et supprimer `maxBytes: outputBudget.maxChars` à `processor.ts:591`, en laissant `leanCeiling` porter la borne.
+Le correctif extended à `processor.ts` est **juste et nécessaire**, et l'argument de `:532-534` tient
+contre vérification : la borne entre par `Options.maxBytes`, un `??` explicite à `truncate.ts:88`
+que le patch de `truncate.ts` **ne réécrit pas**. `INFERE:` un patch limité à `truncate.ts` laisserait
+donc le défaut vivant ; vérification : `Select-String -Path packages\opencode\src\tool\truncate.ts -Pattern 'options.maxBytes'`
+→ `truncate.ts:88`. Ce n'est pas du scope creep, c'est la correction du fond. `:472` (retrait de
+`processor.ts:585-604` de la liste des fichiers non modifiés) est cohérent avec cette décision.
 
-**`open` — R17-03. Trois citations périmées vers `terminal-output.ts`, sur un fichier que P16 vient de réécrire.**
-La proposition fonde son carve-out sur `:142`. Or `terminal-output.ts:142` est aujourd'hui
-`return path.resolve(root, value).startsWith(root + path.sep)` — le durcissement P16 dans
-`withinTruncationRoot` (`:139-142`). Le carve-out est désormais `:155` :
-`if (!isLeanTerminalTool(input.tool, input.args)) return { output: input.output, metadata: input.metadata }`.
-Et les plafonds 4 000 / 120 sont à `:7-8` (`const MAX_BYTES = 4_000`, `const MAX_LINES = 120`),
-non à `:5-6`. Sites périmés : `:188`, `:266`, `:428`, `:431`.
-La **thèse** survit intacte (le carve-out existe bien et les plafonds sont bien 4 000 / 120) ;
-seules les ancres de ligne sont fausses. Une citation fausse est une objection bloquante.
-*Remède en une ligne* : ré-ancrer `:142` → `:155` et `:5-6` → `:7-8` aux quatre sites.
+## R17-03 — citations périmées : corrigées, et **zéro dérive résiduelle**
 
-**`accepted` — R17-04. `terminal-output.ts` n'est pas la couche propriétaire de l'invariant.**
-Vérification demandée explicitement. La proposition **ne** suppose pas cette propriété : §4.6
-(`:428-431`) déclare `terminal-output.ts` **« aucune modification »** et son carve-out
-« obligatoire », et elle place le point d'application unique dans `truncate.ts`
-(`leanCeiling` + la boucle). L'hypothèse de la question est donc **infirmée** : P17 traite
-correctement `terminal-output.ts` comme la couche qui plafonne **déjà** le terminal, pas comme
-le propriétaire de l'invariant. J'ajoute que `terminal-output.ts` reste sain sur les points
-d'atterrissage signalés : `:158` est bien un passe-through intact de `metadata.outputPath`, le
-filtre `:159` ne s'applique qu'à la référence récupérée du texte, `:162` est bien
-`const raw = input.output`, et le `+ path.sep` de `:142` rejette bien un frère dont le nom
-commence seulement par la racine. **Aucun de ces points n'est un défaut de P17.**
+Les quatre ancres corrigées sont exactes sur les fichiers actuels, malgré le fait que P16 ait été
+implémenté et commité : `:155` est bien le carve-out lean, `:7-8` sont bien `MAX_BYTES = 4_000` /
+`MAX_LINES = 120`, l'ancien `:142` est bien `path.resolve(root, value).startsWith(root + path.sep)`
+dans `withinTruncationRoot`, et il est **toujours** à `:142`. Aucune citation n'a bougé. `R17-03` est
+clos.
 
-**`accepted` — R17-05. Le seul `INFERE` est une borne de gain, pas un argument d'impact.**
-Un `rg` sur `INFERE|NON MESUR|MESURÉ|non mesur` sur la proposition ne rend **qu'une** ligne
-(`:574`, « le gain est réel mais **non mesuré** »). Il ne porte aucun argument d'impact : il
-borne le gain sur la population réellement couverte (`repo_overview` 6 000, `web-browser_*` 8 000),
-et il est accompagné de sa formule (`:578-580`) et du préalable qui le rend calculable
-(`:594-607`). L'argument d'impact, lui, est la borne `0`, qui est **dérivable du code**, pas
-une estimation (`:569-571`). Classement : `accepted`, conformément à la règle « `INFERE` non
-mesuré qui sert d'argument d'impact = `open` », qui ne s'applique pas ici. La seule affirmation
-d'impact **non** dérivée que j'ai trouvée est la clause « sans effet observable » de `F-02`,
-que **R17-02** réfute par le code.
+## Défauts divulgués par l'agent de révision : ont-ils survécu ailleurs ?
 
-**`accepted` — R17-06. Aucune dépendance à une donnée d'entrée introuvable.**
-`wave4-baseline.md` **existe** : `read` positif sur
-`C:\Users\jeanl\AppData\Local\Temp\opencodev2\wave4-baseline.md`, **192 lignes**, bun test
-v1.4.2, mesuré le 2026-10-03, 10 suites, 4 rouges, 39 tests en échec (`:11-22`). Je ne le tiens
-jamais pour absent. Vérification de la règle C-50 : **aucune** section de la proposition ne
-revendique ce fichier absent, et aucune n'en dépend. Le critère de succès de `:691-697` est
-`bun test test/tool/truncation.test.ts` → `0 fail`, qui n'a besoin d'aucune donnée externe. Le
-seul histogramme manquant est celui de `:594-607`, qui est un **prérequis d'un gain futur**,
-pas une entrée d'un critère de succès — et son absence y est déclarée comme telle (« tant
-qu'il n'est pas produit, le coefficient reste inconnu », `:583-585`), pas comme une absence de
-fichier. Aucun motif C-50 dans ce dossier.
-
-## Handed back to
-
-| résidu | trouvé dans | remède en une ligne |
-|---|---|---|
-| `R17-01` | `P17-output-cap-invariant.md:617-620`, `:627`, `:659`, `:665-666`, `:686-689` | fixtures avec `\n`, et comparer la prévisualisation et non `result.content`. |
-| `R17-02` | `P17-output-cap-invariant.md:379`, `:591`, `:716` | `processor.ts:591` → `{ tool: toolCall.part.tool }`, sans `maxBytes: outputBudget.maxChars`. |
-| `R17-03` | `P17-output-cap-invariant.md:188`, `:266`, `:428`, `:431` | ré-ancrer `terminal-output.ts:142` → `:155`, `:5-6` → `:7-8`. |
-
-Les trois sont des défauts de la proposition : ils restent `open` et ne sont pas requalifiés.
-
-## Regressions introduced
-
-**Aucun test n'est cassé par cette revalidation.** Aucun fichier sous `packages/**` n'a été
-modifié, aucun `git` n'a été exécuté, aucun fichier autre que celui-ci n'a été écrit. Aucun
-état de mesure n'a été re-demandé.
-
-**Préexistant — mesuré, non causé par P17 (qui n'est pas implémenté).** La base
-`wave4-baseline.md:11-22` et l'état fourni concordent :
-
-| suite | état | statut |
-|---|---|---|
-| `test/tool/shell.test.ts` | 63 pass / 32 fail / 1 error, exit 1 (baseline `:11`) ; 63/32/1 puis 62/33/4 (mesure fournie) | **rouge, instable, préexistant** |
-| `test/session/compaction.test.ts` | 61/2 baseline `:17` ; 63/0 **uniquement avec `--timeout 30000`** | rouge par timeout, préexistant |
-| `test/tool/read.test.ts` | 52 pass / 4 fail, exit 1 (baseline `:18`) | rouge, préexistant |
-| `test/tool/task.test.ts` | 34 pass / 1 fail, exit 1 (baseline `:19`) | rouge, préexistant |
-| `test/plugin` | oscille 124/0, 123/1, 122/2 à SHA constant | instable, préexistant |
-
-**Vert, et non cassé** : `test/tool/truncation.test.ts` 19/0, `test/tool/terminal-output.test.ts`
-14/0, `test/tool/terminal-output-truncation-root.test.ts` 6/0, `test/shell/shell.test.ts` 12/0 —
-seule base verte opposable.
-
-**Introduit : néant.** Et, par anticipation sur l'implémentation, voici ce que le patch casserait s'il
-était écrit tel quel — je l'ai vérifié contre les assertions existantes plutôt que supposé :
-
-- `truncation.test.ts:104-106` vérifie `MAX_LINES`/`MAX_BYTES` : le patch ne touche ni `:15`
-  ni `:16`. **Vert.**
-- `truncation.test.ts:147` et `:172-173` vérifient `"bytes truncated..."` ; `:61` et `:136`
-  vérifient `"...90 lines truncated..."`. Le `unit` à trois branches (`:344`) conserve
-  `"bytes"` et `"lines"` pour ces cas. **Vert.**
-- `truncation.test.ts:37-39`, `:177-192` vérifient le chemin d'écriture disque ; le carve-out
-  terminal l'évite. **Vert.**
-- Le seul risque vert identifié est `processor.ts:591`, mais le patch le laisse **inchangé** :
-  il n'introduit donc pas de casse verte — il necorrige pas un défaut préexistant, ce qui est
-  précisément R17-02.
-- `test/tool/shell.test.ts`, instable et rouge, n'est sur aucun chemin du patch ; s'il cassait
-  davantage, ce serait un `open` (règle 1), mais rien dans le diff ne l'atteint.
-
-Aucun test vert n'est cassé : la condition de la règle 1 est remplie sur ce point. Elle ne l'est
-pas sur le critère « aucun résidu `open` ».
+- **Assertion inversée de 8.2** : **n'a pas survécu**. `:721` est correctement orientée et mon
+  mesure confirme que le code actuel renvoie `false` — la déclaration « rouge » est donc exacte.
+- **Mauvais compte de lignes de 8.3** : **a survécu sous forme résiduelle**, dans trois endroits de
+  §8. Le compte 400 est juste (`lines=400` mesuré), mais le **diagnostic** de rouge de 8.3 est faux
+  (voir ci-dessus), et la même famille de dérive arithmétique traîne ailleurs :
+  - `:713` et `:727` annoncent une largeur en octets de **115** et `floor(6 001 / 115) = 52` ;
+    la largeur réelle est **116** octets (57 « é » = 114 B + sentinelle + séparateur), et
+    `floor(6 001 / 116) = 51`. Vérifié par la simulation (`BYTECAP k=51`).
+  - `:741` et `:748` annoncent **413** octets ; la largeur réelle est **412**. Le `k = 14` est
+    juste, le diviseur affiché non.
+  - `:792` et `:804` annoncent **32 798** octets pour 400 lignes de 40 « é » sans sentinelle ; le
+    vrai total est **32 399**. L'assertion `:795` reste verte (32 399 < 51 200), donc sans effet sur
+    le résultat, mais c'est une dérive de la même famille.
+  Aucun de ces nombres n'est utilisé par une assertion, donc aucun n'est bloquant : c'est
+  précisément ce qui les rend inacceptables dans un document dont l'argument central est
+  l'exactitude de l'unité.
 
 ## Final verdict
 
-`REVALIDATED-FAIL`
+**REVALIDATED-FAIL**
 
-Non implémentable. Les trois `Required changes` de `P17-verdict.md:101-112` sont **traités**
-(`accepted`), l'invariant reste correctement énoncé sur les plafonds réels
-(`truncate.ts:15` `MAX_LINES = 2000`, `:16` `MAX_BYTES = 51 200`, appliqués à `:87-88`, `:93-95`
-et `:99-122`), et `terminal-output.ts` n'est pas la couche propriétaire. Mais **trois résidus
-`open`** subsistent — R17-01 (fixtures non exécutables, critère de succès inatteignable et non
-discriminant), R17-02 (`F-02` mal classé hors périmètre alors que `processor.ts:591` porte le
-défaut de façon observable), R17-03 (citations périmées) — et la règle 3 interdit de les
-requalifier. Le dossier n'est pas un dossier dont les Required changes sont intacts : c'est un
-dossier dont **l'instruction de test est inapplicable en l'état**.
+Le diagnostic de fond de R17-01 est correct et la formule fermée de §8.1 est exacte — mes quatre `k`
+recalculés concordent avec les quatre annonces. Mais `expectCut` est appelé dans quatre tests et
+**n'en peut passer aucun** : son assertion (b) est une tautologie déguisée qui se réduit à
+`text.slice(0,cap) === content.slice(0,cap)` et est donc fausse dès que `truncated === true`, et son
+assertion (e) est câblée sur l'unité « characters » et contredit l'assertion `:774` de 8.4. Le
+critère `0 fail` de `:834` est donc inatteignable : c'est un défaut bloquant, pas une note de style.
+R17-02 et R17-03 sont clos et correctement traités. `RESIDUES_REMAINING = 9` (7 miennes, dont 2
+bloquantes, + 2 résidus déclarés hérités de `F-03` / `F-05`).
 
-## Tableau d'effort (vague 4)
-
-| item | effort | fichier principal | test à écrire | casser un test existant ? |
+| id | severity | statut | evidence (file:line) | statement |
 |---|---|---|---|---|
-| R17-01 — fixtures §8 multi-lignes + assertions sur la prévisualisation | S | `packages/opencode/test/tool/truncation.test.ts` | réécrire 8.1/8.2/8.3/8.6 avec `\n` ; comparer `content` au seuil + longueur du bandeau | `test/tool/truncation.test.ts` (vert 19/0) — relire `:147`, `:172-173` avant de patcher |
-| R17-02 — retirer `maxBytes: outputBudget.maxChars` du chemin session | S | `packages/opencode/src/session/processor.ts` | cas « drapeau actif + agent non lean + `repo_overview` accentué » : 7 000 caractères conservés, non 3 000 | `test/session/` — relire `processor.ts:586-593` ; aucune suite verte connue sur ce chemin |
-| R17-03 — ré-ancrer les 4 citations `terminal-output.ts` | XS | `docs/harness-audit/proposals/P17-output-cap-invariant.md` | aucun (documentation) | aucun |
-| Corps du patch P17 (`leanCeiling`, deux compteurs, `unit` 3 branches, 2 imports, 4 appelants) | S | `packages/opencode/src/tool/truncate.ts` | §8.1–8.3 une fois R17-01 traité | `test/tool/truncation.test.ts` — relire `:104-106`, `:61`, `:136`, `:147`, `:172-173` |
+| `V17-01` | blocking | open | `P17:694-696` (appelé `:726`, `:747`, `:775`, `:820`) ; mesuré `node %TEMP%\opencodev2\p17-sim.mjs` → `b=false` sur 8.2/8.3/8.4/8.7 | L'assertion (b) d'`expectCut` se réduit à `text.slice(0,cap) === result.content.slice(0,cap)` ; comme `expectCut` n'est appelée que sur un résultat `truncated === true`, elle bute sur le bandeau de `truncate.ts:135`. Fausse par construction : `0 fail` (`:834`) inatteignable. Correction : asserter l'identité du **préfixe** `text.slice(0, retained)` contre `result.content.slice(0, retained)`, ou asserter `result.content.startsWith(text.slice(0, retained))`. |
+| `V17-02` | blocking | open | `P17:698` vs `P17:774` et `P17:775` ; mesuré `banner=false` sur 8.4 | L'assertion (e) exige `"characters truncated"` alors que `expectCut` est appelée en 8.4 sur le cas non lean en octets, dont l'unité correcte est `bytes` — mesuré. `expectCut` contredit l'assertion `:774` du même test. Correction : passer l'unité en paramètre (`expectCut(text, result, cap, width, unit)`), ou déduire l'unité du bandeau présent. |
+| `V17-03` | material | open | `P17:843` vs `p17-sim2.mjs` (`8.3: truncated=true keptLines=124 unit=bytes`) | Le tableau de discrimination annonce 8.3 « rouge (`truncated === false`) » ; le code actuel tronque déjà (124 lignes, unité `bytes`). La assertion qui échoue réellement est `:697` (sentinelles `28` vs `124`), pas `truncated`. `:750` passe déjà sur le code actuel. La justification de non-régression `:851-853` est la bonne posture ; la ligne 8.3 du tableau la contredit. |
+| `V17-04` | minor | open | `P17:713`, `P17:727` (annoncé 115 / 52) ; `P17:741`, `P17:748` (annoncé 413) ; mesuré `lineWidth=58cp/115B` → 116 B, `206cp/411B` → 412 B, `BYTECAP k=51` | Largeurs en octets fausses d'une unité dans les contrefactuels de 8.2 et 8.3 (115 au lieu de 116, 413 au lieu de 412). Le `k` de 8.3 (14) reste juste ; celui de 8.2 est faux (51, pas 52). Aucune assertion n'en dépend. |
+| `V17-05` | minor | open | `P17:792`, `P17:804` (annoncé 32 798) ; recalcul 400 × 80 + 399 = **32 399** | Total d'octets faux pour la fixture 8.5(b) (ligne = 40 « é » = 80 octets, sans sentinelle). L'assertion `:795` reste verte ; dérive documentary. |
+| `V17-06` | minor | open | `P17:754` ; grep `repeat\(151\)` sur `include=P17-output-cap-invariant.md` → 1 seule correspondance, en prose | La prose de 8.3 affirme que « `not.toContain("é".repeat(151))` prouve que la coupe n'a pas été décidée en octets », mais cette assertion n'existe plus dans la section : la preuve correspondante est désormais `:750`. Renvoi obsolète. |
+| `V17-07` | minor | open | `P17:789` vs `P17:672-674` | `:789` (`expect(t.content.length).toBeGreaterThan(30_000)`) est exactement la « comparaison à une borne nue » que `:672-674` qualifie de « fausse par construction ». Elle passe (36 899 > 30 000) et n'est pas bloquante, mais elle contredit le principe énoncé six lignes plus haut. |
+| `V17-08` | minor | closed | `P17:188-201`, `:470` ; `terminal-output.ts:139`, `:141-142`, `:155`, `:7-8` | R17-03 : les quatre ancres corrigées sont exactes et n'ont pas bougé malgré P16 commité ; l'ancien `:142` est toujours `:142`. Zéro dérive résiduelle. |
+| `V17-09` | material | closed | `P17:383`, `:387-401`, `:527-534`, `:867` ; `processor.ts:586-591` ; `truncate.ts:88` | R17-02 : `maxBytes: outputBudget.maxChars` est bien présent à `processor.ts:591`, le garde `:587` ne teste pas `isLeanAgent`, les constantes 6 000 / 8 000 / 51 200 existent (`lean-output-policy.ts:6`, `:8`, `truncate.ts:16`). Le défaut est réel et non corrigeable depuis `truncate.ts` seul, car `Options.maxBytes` est un `??` prioritaire à `truncate.ts:88`. Étendre le correctif à `processor.ts` est une correction, pas du scope creep. |
+| `V17-10` | minor | open (assumé, hérité) | `P17:868` ; `src/tool/lean-output-policy.ts:49-62` ; `src/tool/lean-output-policy.test.ts:135` (`expect(leanToolOutputBudget("read")).toBeUndefined()` — relu) | `F-03` : la liste blanche est une allowlist, `read` / `inspect_batch` / `glob` / `grep` / `ls` n'ont aucun plafond lean, gain mesuré = 0 token. Déclaration de scope et de mesure, pas de prescription de code : ne bloque pas. Confirmé : 8.5(b) fige ce comportement en non-régression. |
+| `V17-11` | minor | open (assumé, hérité) | `P17:870` ; `lean-output-policy.ts:4` ; `P17:271` | `F-05` : la fixture `"é".repeat(5000)` du verdict initial est mono-ligne **et** teste un plafond terminal carve-out, donc inexécutable. Diagnostic juste (4 000 = `LEAN_TERMINAL_MAX_CHARS`, terminals exclus par `leanCeiling` `:271`) ; la substitution multi-lignes discrimine réellement (mesuré : 8.2 passe de `false` à `true`). Ne bloque pas. |
+
+## Handed back to
+
+Révision de `P17-output-cap-invariant.md`. Aucun de ces résidus n'est de la finition : deux sont
+bloquants au sens de la règle d'implémentabilité.
+
+**Bloquants — l'implémentation ne peut pas démarrer avant correction :**
+
+1. **`V17-01`** — réécrire l'assertion (b) d'`expectCut` (`:694-696`). En l'état elle compare
+   `text.slice(0, 6 000)` au contenu réel, qui porte le bandeau à cet offset ; elle échoue sur les
+   quatre appels. Sans cela, `bun test test/tool/truncation.test.ts` ne peut pas atteindre le
+   `0 fail` que `:834` annonce comme critère de succès.
+2. **`V17-02`** — decoupling l'assertion (e) (`:698`) de l'unité « characters », afin que
+   `expectCut(big, result, 51_200, 402)` (`:775`) cesse de contredire `:774`.
+
+**Matériel — à corriger dans la même passe :**
+
+3. **`V17-03`** — corriger la ligne 8.3 du tableau de discrimination (`:843`) : 8.3 est rouge **par le
+   comptage de sentinelles** (`:697`, 28 attendu contre 124 observé), pas parce que `truncated`
+   vaudrait `false`. Nommer l'assertion qui échoue réellement est une exigence de ce cycle.
+
+**Mineurs — même passe, sans urgence bloquante :**
+
+4. **`V17-04`** — 115 → 116 et 52 → 51 en `:713`/`:727` ; 413 → 412 en `:741`/`:748`.
+5. **`V17-05`** — 32 798 → 32 399 en `:792` et `:804`.
+6. **`V17-06`** — supprimer ou réécrire le renvoi à `not.toContain("é".repeat(151))` en `:754`,
+   l'assertion n'existant plus.
+7. **`V17-07`** — remplacer la borne nue de `:789` par une assertion sur le nombre de lignes ou
+   l'absence de troncature, conformément au principe énoncé en `:672-674`.
+
+**Ce qui ne bloque pas et ne doit pas être repris :** `V17-08` et `V17-09` sont clos et correctement
+traités — l'extension à `processor.ts` est justifiée par `truncate.ts:88` et doit être conservée.
+`V17-10` (`F-03`) et `V17-11` (`F-05`) sont des **résidus déclarés** : ce sont des constats de périmètre
+et de mesure, antérieurs à cette revalidation, qui ne prescrivent aucun code et ne rendent aucun test
+inatteignable. Ils restent `open` au sens du tableau mais **ne bloquent pas l'implémentation**. Le
+`RESIDUES_REMAINING=2` rapporté par l'agent de révision ne compte que ceux-là ; mon décompte est
+`9`, parce que `expectCut` et la table de discrimination n'ont pas été validés.
