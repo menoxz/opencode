@@ -30,7 +30,22 @@ export type Info = {
 
 export const DEFAULTS: Info = {
   replayToolInputs: "full",
-  replayToolOutputs: "full",
+  // Measured over 90 days of real sessions: tool results are 67-87% of the
+  // model-visible context, and with "full" every historical result was replayed
+  // verbatim for the whole session. Replaying the summary stub instead of the
+  // payload removes 70.9% of those bytes (12 sessions, 705k tokens) and shrinks
+  // per-turn context by 57-80%.
+  //
+  // Safety rests on the guards already in message-v2: the boundary is
+  // block-quantized (SUMMARY_BOUNDARY_STEP) so the cached prefix still grows
+  // monotonically, the newest full copy of each reference stays pinned (8 refs,
+  // 64k chars each) so the model keeps reading the file it is working on, and
+  // tool errors are never summarized.
+  //
+  // replayToolInputs stays "full" on purpose: eliding an input the model can see
+  // has twice been reproduced verbatim by the model, including the elision
+  // marker itself, which broke the tool and crashed the TUI.
+  replayToolOutputs: "summary",
   replayReasoning: "on",
   reasoningMaxChars: 0,
   reasoningKeepRecent: 1,

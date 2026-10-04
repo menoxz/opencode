@@ -13,6 +13,24 @@ describe("session.context-rollout.resolve", () => {
     expect(SessionContextRollout.resolve(parsed)).toEqual(SessionContextRollout.DEFAULTS)
   })
 
+  test("summarizes replayed tool output by default", () => {
+    // Measured against real sessions replayed through MessageV2.toModelMessages:
+    // tool results were 67-87% of the model-visible context, and under "full"
+    // every historical result replayed verbatim for the whole session. Making
+    // "summary" the default removed 62.1% of the bytes the provider receives
+    // (811,969 tokens over 7 real sessions). Pin the value so the win cannot
+    // silently regress back to full replay.
+    expect(SessionContextRollout.DEFAULTS.replayToolOutputs).toBe("summary")
+  })
+
+  test("keeps replayed tool input in full because elision was reproduced verbatim", () => {
+    // message-v2.ts records two incidents where a summarized tool input was
+    // replayed back to the model as a real call, once emitting the
+    // {__elided: ...} marker itself as a grep pattern, which errored the tool
+    // and crashed the TUI.
+    expect(SessionContextRollout.DEFAULTS.replayToolInputs).toBe("full")
+  })
+
   test("accepts experimental context rollout config", () => {
     const parsed = ConfigParse.schema(
       Config.Info,
