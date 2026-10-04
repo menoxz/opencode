@@ -966,3 +966,13 @@ n'existe pas sur le chemin principal » (§2.7), « `outputPath` est perdu avant
 §6 de la version 1 limite l'écart des deux artefacts au purge antérieur au spill » (§6 R7) et «
 l'étape 2 est conditionnée à R6 » (§4.2 de la version 1) sont **toutes retirées** : chacune est
 infirmée par une citation relue, et aucune n'est reformulée pour survivre sous une autre forme.
+## Révision post-audit (vague 20)
+
+Statut confirmé : `NOT_IMPLEMENTABLE`, `RESIDUES_REMAINING: 19` (`P09-revalidation-c2.md:17-19`).
+
+Preuve de non-corrigeabilité en l'état, lue dans le verdict, non inférée :
+
+- La proposition révisée porte 968 lignes (`P09-revalidation-c2.md:51`) ; le registre de résidus est un titre numéroté, `## 8. Residus` en `:777`, avec 15 lignes `open` en `### 8.1` (`:786`-`:800`) et 4 de plus en `### 8.3` (`:818`, `:820`, `:822`, `:824`).
+- Le finding fondateur `#3` reste `open` (`:60`) : `terminal-output.ts:182` est `const failed =` et ses deux membres sont des `.some(...)` donc `boolean` — la moitié « `boolean | undefined` » du cycle 1 est retirée — mais l'exigence 3 reste ouverte car `P09-bash-artifact-first.md:789` (R5) déclare que le correctif ne porte l'échec que sur le rendu et que rien ne prouve que S4 passe.
+
+Conclusion : la contradiction n'est pas dans le texte à corriger mais dans l'objet mesuré. Fermer les 19 résidus est une réécriture de la proposition, pas une révision bornée. Non corrigeable en l'état.

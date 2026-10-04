@@ -846,3 +846,16 @@ concernent la preuve ou le périmètre.
 | R6 | **Couplage `agent.ts:356-370` ↔ `agent.ts:119-121`** : deux textes décrivant la même politique sans lien déclaré | `open` (hors périmètre) | `P13-revalidation.md:148` (`#7`, `✅` quant au fond) : « le couplage reste implicite et non testé ». **Raison du maintien** : hors périmètre de P13 ; aucun élément du diff ne le touche. |
 | R7 | **Comportement sous `scout` non mesuré** : l'inférence « `python -c` y est refusée d'emblée » est dérivée de `merge` + `findLast`, non d'une exécution | `open` | `INFERE:` en §3.10, vérification proposée en §3.10 (test comparant `bash` sous `scout` et sous `explore`). **Raison du maintien** : le raisonnement repose sur trois lectures citées (`agent.ts:117`, `:231`, `packages/core/src/permission.ts:25`/`:33-35`) mais n'a pas d'exécution derrière lui ; je le marque donc comme inférence et non comme fait. |
 | R8 | **Faux positifs `sed -n` et `tee` en relais pur** | `accepted` (assumé) | §6 « Faux positifs ». **Raison du maintien** : bornés par le filtre `shell.ts:413` + `instance-context.ts:19`/`:23` — ils ne produisent une demande que sur une cible hors `directory` **et** hors `worktree`. **Vérification possible** : un test d'intégration par cas, non écrit à ce jour. |
+## Révision post-audit (vague 20)
+
+### R2 — `open` → `corrige` (mesure tranchée)
+
+La mesure demandée a été exécutée : `wave4-baseline.md` compte 192 lignes, pas 135. L'écart de comptage du résidu R2 (`:842`) est donc résolu en faveur de `P13-revalidation.md:142` (192) contre `CORRECTIONS.md:51` (135). Les deux sources ne divergent plus : R2 est fermé.
+
+### R1 — `open`, mesure actualisée
+
+`test/tool/shell.test.ts` mesure 76 pass / 19 fail / 1 error (Ran 95 tests, 93,50 s) sur l'arbre non modifié. La série d'instabilité est donc 63/32/1, puis 62/33/4, puis 76/19/1 : la non-reproductibilité est confirmée. R1 reste `open` et hors du périmètre de P13.
+
+### R4 — `open`, condition non remplie
+
+Le seuil `TYPECHECK_EXIT=0` est établi sur l'état courant ; le patch de P13 n'étant pas appliqué, le résultat d'après patch n'est pas connu. R4 reste `open`. R3, R5 à R8 sont inchangés.

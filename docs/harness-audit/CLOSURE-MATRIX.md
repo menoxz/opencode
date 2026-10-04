@@ -181,19 +181,19 @@ Statuts lus par lecture directe, jamais par regexp (C-142).
 
 | probleme | verdict | implementation | preuve |
 |---|---|---|---|
-| P01 | FAIL | aucune | revalidation :246 |
+| P01 | FAIL | revision vague 20 : T7 corrige, provenance non corrigeable en l etat | P01-RES-T7-BOUND corrige par chemin deterministe ; P01-RES-PROVENANCE exige un opt-in par depot, effort L ; C-186 |
 | P02 | PASS_WITH_CHANGES | fusionnee | 22 pass / 0 fail |
-| P03 | FAIL | gate implemente hors proposition | isCatalogEligible + readiness + filtre connectedClients dans src/mcp/index.ts ; test src/mcp/catalog-health-gate.test.ts 4 pass ; 21 pass / 0 fail ; typecheck 0 ; ligne d annonce unavailable_tools non posee (residu) ; validation independante due ; C-182 |
+| P03 | FAIL | residue clos : annonce unavailable_tools implementee | helper src/session/unavailable-tools.ts + cablage prompt.ts ; test 3/3 ; commit 72f6f0be ; C-185 |
 | P04 | FAIL | arbitrage C-179 : comportement delibere, changement rejete | revalidation :282 ; Retry-After long voulu et encode par deux tests verts (retry.test.ts:74-79, :83-84), borner les chemins d en-tete casserait ces tests ; RETRY_MAX_DELAY = 2_147_483_647 est le plafond setTimeout, non une politique oubliee ; sans en-tete borne a 30 s |
 | P05 | PASS_WITH_CHANGES | fusionnee | 10 pass / 0 fail |
 | P06 | PASS_WITH_CHANGES | fusionnee | 6 pass / 0 fail |
 | P07 | PASS_WITH_CHANGES | fusionnee | commit fbc65658, 2 pass / 0 fail |
 | P08 | PASS | fusionnee | commit 0523170c : census.test.ts 9 pass / 0 fail, maintenance.test.ts 22 pass / 0 fail |
-| P09 | PASS_WITH_CHANGES | non implementable | cycle 2 NOT_IMPLEMENTABLE, RESIDUES_REMAINING 19, P09-revalidation-c2.md:17 et :19 |
+| P09 | FAIL | revision vague 20 : non corrigeable en l etat | NOT_IMPLEMENTABLE, 19 residus ; proposition 978 lignes ; registre ## 8. Residus :777 ; C-186 |
 | P10 | FAIL cycle 5 (terminal) | reverti a HEAD, non implementable ; arbitrage C-174 : rejet motive par le gain | P10-R5-01 resolu par arbitrage C-174 : changement rejete, aucun gain fonctionnel demontre et machinerie inspectionProfile absente de HEAD ; la spec prescrivait la rupture de overflow.test.ts:92 et :94, C-156 |
 | P11 | PASS_WITH_CHANGES | fusionnee | commit 80aa6c31, 3 pass / 0 fail |
-| P12 | FAIL | arbitrage C-181 : non implementable, defaut de fond reel mais base rouge instable | defaut vivant : collect (shell.ts:476-512) n appelle argPath (:467) que pour pathArgs, une cible de redirection n atteint jamais la permission external_directory. Blocage : shell.test.ts mesure 76/19/1 et la revalidation 72/23, base rouge instable, O8 non satisfait ; REDIRECT_TYPES, REDIRECT_OPERAND_TYPES, isRedirectOperator, file_redirect absents de src/ ; 9 residus open ; C-181 |
-| P13 | PASS_WITH_CHANGES | non implementable | cycle 2 NOT_IMPLEMENTABLE, RESIDUES_REMAINING 6, P13-revalidation-c2.md:173 et :175 |
+| P12 | FAIL | corrige hors proposition : commit db152e27 | redirectTargets (file_redirect bash/cmd + redirection pwsh/powershell) route les cibles vers external_directory ; test 4/4 vert, rouge sous mutation ; C-184 |
+| P13 | FAIL | revision vague 20 : R2 ferme par mesure, R1 actualise | wave4-baseline.md = 192 lignes tranche R2 ; shell.test.ts 76/19/1 confirme R1 ; R3/R4 ouverts ; C-186 |
 | P14 | PASS_WITH_CHANGES | fusionnee | 19 pass / 0 fail, typecheck 0 |
 | P15 | PASS_WITH_CHANGES | fusionnee | commit 6430ee62 : src/plugin/index.ts blob 7740186a dans HEAD ; TC_EXIT=0, TS_ERRORS=0, TS18047=0 ; meta.test.ts 3 pass / 0 fail sur chacun des deux blobs ; C-159 |
 | P16 | PASS_WITH_CHANGES | fusionnee | 39 pass / 0 fail |

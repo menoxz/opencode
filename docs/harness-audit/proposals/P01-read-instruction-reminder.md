@@ -586,3 +586,15 @@ non avant, sinon un même chemin relu dans la fenêtre du cache serait servi dep
 **avec** son reminder au lieu de repasser par `reminderFor`. L'effet serait borné par la TTL
 du cache et par le fait que le cache est indexé par chemin
 (`ReadLedger.key(filepath, offset, limit)`, `read-ledger.ts:280`), donc par chemin.
+
+## Révision post-audit (vague 20)
+
+Révision d'auteur fondée sur des mesures exécutées, non sur une relecture.
+
+### P01-RES-T7-BOUND — `open` → `corrige` (corrigeable)
+
+Le verdict retient que T7 livre un critère faux, rouge à la livraison et instable par construction (`P01-revalidation.md:255-256`). Correctif : abandonner la borne de taille non déterministe (`< 512`) au profit d'un chemin déterministe — écrire une marque connue dans le fichier de test, puis asserter sa présence. Le critère ne dépend plus du rendu d'en-tête et ne peut plus être rouge par construction. Aucune modification de `src/` n'est requise : le point est corrigeable par le texte du test.
+
+### P01-RES-PROVENANCE — `open` (sévérité `haut`), non corrigeable en l'état
+
+Le verdict établit que le patch ne diminue que l'amplification et que la menace survit à une occurrence (`:257-258`). La fermeture exige un opt-in par dépôt pour `AGENTS.md` versionné : item 5 du tableau d'effort du verdict, effort `L`, changement de forme du premier rendu, risque de casser un test existant (`:272`). C'est un changement de conception à arbitrer, pas une correction bornée. Statut maintenu `open`.
