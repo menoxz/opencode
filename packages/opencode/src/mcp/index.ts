@@ -203,6 +203,17 @@ export function shouldDisconnectAfterHealthFailures(failures: number): boolean {
   return failures >= HEALTH_FAILURE_THRESHOLD
 }
 
+// The catalogue gate is deliberately stricter than the disconnect threshold. A
+// server that failed one health ping is still connected (resilience choice kept
+// by shouldDisconnectAfterHealthFailures), but its tools must stop being
+// serialised into the catalogue until a ping succeeds again. The failure counter
+// is cleared on a successful ping (MCP.ping) and on reconnect, which is what
+// restores eligibility; keeping the two thresholds separate lets resilience and
+// payload economy diverge without one silently moving the other.
+export function isCatalogEligible(failures: number): boolean {
+  return failures === 0
+}
+
 // A disconnected MCP server is only "retry shortly" when the health loop is
 // allowed to bring it back (experimental.mcp_autoreconnect). Promising a
 // recovery that is switched off sends the model to wait for a server that will
@@ -367,6 +378,7 @@ export interface Interface {
   readonly status: () => Effect.Effect<Record<string, Status>>
   readonly clients: () => Effect.Effect<Record<string, MCPClient>>
   readonly catalogVersion?: () => Effect.Effect<number>
+  readonly readiness?: () => Effect.Effect<Record<string, boolean>>
   readonly tools: () => Effect.Effect<Record<string, Tool>>
   readonly prompts: () => Effect.Effect<Record<string, PromptInfo & { client: string }>>
   readonly resources: () => Effect.Effect<Record<string, ResourceInfo & { client: string }>>
@@ -919,6 +931,15 @@ export const layer = Layer.effect(
       return s.clients
     })
 
+    const readiness = Effect.fn("MCP.readiness")(function* () {
+      const s = yield* InstanceState.get(state)
+      const result: Record<string, boolean> = {}
+      for (const name of Object.keys(s.clients)) {
+        result[name] = isCatalogEligible(s.healthFailures[name] ?? 0)
+      }
+      return result
+    })
+
     const catalogVersion = Effect.fn("MCP.catalogVersion")(function* () {
       const s = yield* InstanceState.get(state)
       return s.catalogVersion
@@ -1133,7 +1154,8 @@ export const layer = Layer.effect(
       const defaultTimeout = cfg.experimental?.mcp_timeout
 
       const connectedClients = Object.entries(s.clients).filter(
-        ([clientName]) => s.status[clientName]?.status === "connected",
+        ([clientName]) =>
+          s.status[clientName]?.status === "connected" && isCatalogEligible(s.healthFailures[clientName] ?? 0),
       )
 
       yield* Effect.forEach(
@@ -1427,6 +1449,7 @@ export const layer = Layer.effect(
       status,
       clients,
       catalogVersion,
+      readiness,
       tools,
       prompts,
       resources,

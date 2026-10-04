@@ -183,7 +183,7 @@ Statuts lus par lecture directe, jamais par regexp (C-142).
 |---|---|---|---|
 | P01 | FAIL | aucune | revalidation :246 |
 | P02 | PASS_WITH_CHANGES | fusionnee | 22 pass / 0 fail |
-| P03 | FAIL | aucune | revalidation :130 |
+| P03 | FAIL | gate implemente hors proposition | isCatalogEligible + readiness + filtre connectedClients dans src/mcp/index.ts ; test src/mcp/catalog-health-gate.test.ts 4 pass ; 21 pass / 0 fail ; typecheck 0 ; ligne d annonce unavailable_tools non posee (residu) ; validation independante due ; C-182 |
 | P04 | FAIL | arbitrage C-179 : comportement delibere, changement rejete | revalidation :282 ; Retry-After long voulu et encode par deux tests verts (retry.test.ts:74-79, :83-84), borner les chemins d en-tete casserait ces tests ; RETRY_MAX_DELAY = 2_147_483_647 est le plafond setTimeout, non une politique oubliee ; sans en-tete borne a 30 s |
 | P05 | PASS_WITH_CHANGES | fusionnee | 10 pass / 0 fail |
 | P06 | PASS_WITH_CHANGES | fusionnee | 6 pass / 0 fail |
