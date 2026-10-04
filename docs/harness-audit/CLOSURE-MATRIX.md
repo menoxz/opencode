@@ -190,7 +190,7 @@ Statuts lus par lecture directe, jamais par regexp (C-142).
 | P07 | PASS_WITH_CHANGES | fusionnee | commit fbc65658, 2 pass / 0 fail |
 | P08 | PASS | fusionnee | commit 0523170c : census.test.ts 9 pass / 0 fail, maintenance.test.ts 22 pass / 0 fail |
 | P09 | PASS_WITH_CHANGES | non implementable | cycle 2 NOT_IMPLEMENTABLE, RESIDUES_REMAINING 19, P09-revalidation-c2.md:17 et :19 |
-| P10 | FAIL cycle 5 (terminal) | reverti a HEAD, non implementable | P10-R5-01 bloquant : la spec corrigee prescribe la rupture de overflow.test.ts:92 et :94, C-156 |
+| P10 | FAIL cycle 5 (terminal) | reverti a HEAD, non implementable ; arbitrage C-174 : rejet motive par le gain | P10-R5-01 resolu par arbitrage C-174 : changement rejete, aucun gain fonctionnel demontre et machinerie inspectionProfile absente de HEAD ; la spec prescrivait la rupture de overflow.test.ts:92 et :94, C-156 |
 | P11 | PASS_WITH_CHANGES | fusionnee | commit 80aa6c31, 3 pass / 0 fail |
 | P12 | FAIL | aucune | revalidation :409 |
 | P13 | PASS_WITH_CHANGES | non implementable | cycle 2 NOT_IMPLEMENTABLE, RESIDUES_REMAINING 6, P13-revalidation-c2.md:173 et :175 |
