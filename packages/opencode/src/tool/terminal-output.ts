@@ -1,6 +1,8 @@
 import { Effect, Option, Schema } from "effect"
+import path from "path"
 import { Truncate } from "./truncate"
 import { isLeanTerminalTool } from "./lean-output-policy"
+import { TRUNCATION_DIR } from "./truncation-dir"
 
 const MAX_BYTES = 4_000
 const MAX_LINES = 120
@@ -129,6 +131,17 @@ function pollingKey(tool: string, input: RecordValue, controls: RecordValue, ses
   return query.length <= 4096 ? query : undefined
 }
 
+/**
+ * A `Full output saved to:` hint is untrusted output text, so a reference recovered from it is only
+ * trusted when it resolves inside the truncation root. The trailing separator is what rejects a
+ * sibling whose name merely starts with the root, e.g. `${TRUNCATION_DIR}_EVIL`.
+ */
+function withinTruncationRoot(value: string | undefined): value is string {
+  if (!value) return false
+  const root = path.resolve(TRUNCATION_DIR)
+  return path.resolve(root, value).startsWith(root + path.sep)
+}
+
 export const compactTerminalOutput = Effect.fn("TerminalOutput.compact")(function* (input: {
   tool: string
   args: RecordValue
@@ -140,9 +153,10 @@ export const compactTerminalOutput = Effect.fn("TerminalOutput.compact")(functio
   store: Truncate.Interface
 }) {
   if (!isLeanTerminalTool(input.tool, input.args)) return { output: input.output, metadata: input.metadata }
+  const saved = Truncate.savedOutputPath(input.output)
   const references = [...new Set([
     typeof input.metadata.outputPath === "string" ? input.metadata.outputPath : undefined,
-    Truncate.savedOutputPath(input.output),
+    withinTruncationRoot(saved) ? saved : undefined,
   ].filter((value): value is string => value !== undefined))]
   // References are untrusted data, never a capability to open another journal.
   const raw = input.output
