@@ -151,11 +151,11 @@ Source de vérité : la section `## Final verdict` de chaque `verdicts/P*-revali
 | **P06** | PASS_WITH_CHANGES | 0 | oui | `src/session/goal-context.test.ts` |
 | **P07** | PASS_WITH_CHANGES | 0 | non | `-` |
 | **P08** | PASS_WITH_CHANGES | 1 | non | `-` |
-| **P09** | PASS_WITH_CHANGES | 0 | non | `-` |
+| **P09** | PASS_WITH_CHANGES — **NOT_IMPLEMENTABLE** | 14 | non | `-` |
 | **P10** | PASS_WITH_CHANGES | 0 | non | `-` |
 | **P11** | PASS_WITH_CHANGES | 0 | non | `-` |
 | **P12** | FAIL | 0 | non | `-` |
-| **P13** | PASS_WITH_CHANGES | 0 | non | `-` |
+| **P13** | PASS_WITH_CHANGES — **NOT_IMPLEMENTABLE** | 6 | non | `-` |
 | **P14** | PASS_WITH_CHANGES | 0 | oui | `src/tool/shell.ts:289,:538,:703` |
 | **P15** | PASS_WITH_CHANGES | 1 | oui | `src/plugin/index.ts:319` |
 | **P16** | PASS_WITH_CHANGES | 0 | oui | `src/tool/terminal-output.ts:155,:161` |
