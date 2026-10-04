@@ -1,195 +1,242 @@
-# P07 — revalidation vague 4 (2ᵉ vague, sur proposition révisée)
+# P07 — revalidation vague 4 (3ᵉ vague, sur proposition révisée une seconde fois)
 
-Révalidateur indépendant. Je n'ai rédigé ni la proposition initiale, ni le verdict de la vague 3b, ni la révision ;
-je n'édite pas la proposition. Aucun `git`, aucun commit, aucun fichier modifié sous `packages/**`.
+Révalidateur indépendant. Je n'ai rédigé ni la proposition initiale, ni aucun verdict, ni aucune révision ; je
+n'édite ni la proposition ni le code (**C-36**). Aucun `git`, aucun commit, aucun fichier modifié sous
+`packages/**`.
 
-**Objet exact de cette revalidation.** La revalidation antérieure (`verdicts/P07-revalidation.md`, 338 lignes) a porté
-sur une proposition de **638 lignes**. Le texte à valider aujourd'hui en compte **403** et se déclare
-« réécriture complète » en `:3`. Les trois résidus `R1`/`R2`/`R3` de la vague 2 — les deux `Required changes`
-non traités — sont donc rejoués sur un document qui n'a plus grand-chose en commun avec celui qu'ils visaient.
+**Objet exact de cette revalidation.** La revalidation précédente (`verdicts/P07-revalidation.md`, 195 lignes) a
+porté `REVALIDATED-PASS_WITH_CHANGES` sur une proposition de **403 lignes**, avec deux résidus `open` : `N1` et
+`N2`. Le texte à valider aujourd'hui en compte **384** (relecture intégrale, fichier entier porté au contexte) et
+annonce `RESIDUES_REMAINING=0`. Je vérifie les deux corrections **sur le disque**, pas sur le rapport de l'agent
+de révision.
 
-**Base de mesure, mesurée par moi et non reprise de l'état fourni.** Deux lectures successives de `bun typecheck`
-(bun 1.4.2, `packages/opencode`) :
-
-| lecture | exit | sortie |
-| --- | --- | --- |
-| 1re | `TYPECHECK_EXIT=2` | `src/tool/shell.ts(701,24)` et `src/tool/shell.ts(705,34)` — `TS2339: Property 'length' does not exist on type 'Preview'` |
-| 2ᵉ | **`TYPECHECK_EXIT=0`** | aucune erreur |
-
-Les deux erreurs de la 1re lecture sont **toutes deux** dans `src/tool/shell.ts`, le fichier qu'un autre agent
-édite en ce moment : **C-62 s'applique intégralement**, je les signale, je ne les corrige pas, et je ne les laisse
-pas invalider mon verdict. La 2ᵉ lecture referme le cycle une fois l'édition concaténée. **Zéro erreur dans les
-fichiers que P07 touche** (`tool/task.ts`, `session/task-evidence.ts`, `session/session.ts`, `session/prompt.ts`,
-`session/system.ts`, `tool/registry.ts`). Je n'ai lancé **aucun** test qui exerce `shell.ts` ; la seule base verte
-opposable, `test/shell/shell.test.ts` **12 pass / 0 fail**, est reprise de l'état de mesure fourni et je ne l'ai pas
-rejouée. Les trois suites conditionnelles (`test/tool/shell.test.ts` instable, `compaction.test.ts` verte
-uniquement avec `--timeout 30000`, `test/plugin` instable à SHA constant) ne sont donc des portes que sous
-condition, et ne mesurent aucune régression de P07.
+**Base de mesure, mesurée par moi.** `bun typecheck` dans `packages/opencode` → **`TYPECHECK_EXIT=0`** (log :
+`C:\Users\jeanl\AppData\Local\Temp\opencodev2\p07-typecheck.log`, contenu unique `$ tsgo --noEmit`, aucune erreur).
+Contrairement à la 1re lecture de la c2, **cette vague ne voit aucune erreur** dans `src/tool/shell.ts` : **C-62
+n'est pas déclenché**, je n'ai donc rien à signaler de ce chef et surtout rien à corriger. Je n'ai lancé **aucun**
+test, et en particulier aucun test qui touche `src/tool/shell.ts` (interdiction absolue, deux agents y travaillent).
+La base verte opposable `test/shell/shell.test.ts` **12 pass / 0 fail** est reprise de l'état de mesure fourni et
+**je ne l'ai pas rejouée** ; elle ne fonde aucune affirmation de ce rapport. Codes de sortie de mes sondes :
+`rg input.directory` → `0` (6 lignes) ; `rg input?.directory` → `0` (7 lignes) ; `rg ctx.directory` sur `src/tool`
+→ `0` (1 ligne) ; `rg session.directory` sur `src` → `0` (10 lignes) ; sonde `T3` → **`RG_EXIT=1`**, qui est le
+code de non-match de `rg` et non une erreur, avec témoins positifs `T1`/`T2`/`T4` → `RG_EXIT=0` (**C-66**,
+**C-123**, motif **ASCII**).
 
 ## Proposal
 
 | champ | valeur |
 | --- | --- |
 | fichier | `docs/harness-audit/proposals/P07-subagent-contract.md` |
-| taille validée | **403 lignes** (réécriture complète, `:3`) |
+| taille validée | **384 lignes** (réécriture complète, `:3`) |
+| taille validée par la c2 | 403 lignes |
 | taille validée par la vague 3b | 638 lignes |
-| volet unique | §4(a) `:222-238` — homologuer `tests` du packet vers `goalState.completion.evidence` au point `task.ts:511-513` |
-| volets écartés | §4(b) schéma exporté `:240` ; §4(c) héritage du répertoire `:255` |
+| volet unique | §4(a) `:223-239` — homologuer `tests` du packet vers `goalState.completion.evidence` au point `task.ts:511-513` |
+| volets écartés | §4(b) schéma exporté `:241` ; §4(c) héritage du répertoire `:256` |
+| tests retenus | T1 `:316`, T2 `:328`, T4 `:334`, T5 `:341` |
+
+**Décalage de numérotation à ne pas lire comme une régression.** La c2 citait le titre de §4(b) en `:240` ; il est
+en `:241` aujourd'hui. La correction de `N1` a inséré deux lignes en `:194-195`, ce qui décale la numérotation
+aval. Aucune citation de la c2 n'est devenue fausse de ce fait : `P07:241` porte bien « ### (b) Durcir le schéma
+exporté — *écarté, sur la base de E1* », et `P07:256` porte bien l'écartement de §4(c).
 
 ## Revisions applied
 
-Les trois résidus de la vague 3b, dividés sur le **texte** et non sur l'historique du fichier :
+**N1 — traité, et le chiffre est exact.** `P07:192` affirmait « **le seul endroit** du fichier où
+`input.directory` apparaît ». Le texte courant dit : « Il n'est pas le seul : `grep input.directory` sur
+`src/session` rend six lectures, réparties sur quatre sites — `:553` (construction de l'`Info`), `:936-937`,
+`:942-943` et `:984` (filtres de listage) ».
 
-**R1 — traité, par abandon du périmètre et non par réécriture.** La vague 3b exigeait (`:40`) de réécrire §4(a) en
-`Schema.Union([LaunchParameters, FollowUpParameters])` + base nommée + garde de décodage conservée, et constatait
-trois défauts aggravants (forme variadique `proposal:347`, circularité `{ ...Parameters.fields, … }` `:341`,
-« supprimer le `Schema.decodeUnknownEffect` » `:350`). **Aucun de ces trois défauts n'existe plus dans le fichier
-courant.** Le durcissement du schéma est devenu §4(b), marqué « *écarté, sur la base de E1* » (`:240`), et le
-texte en dissuade activement l'usage : `:250-253` écrit que « la forme variadique à deux arguments n'est pas celle
-que cette révision a pu vérifier dans le dossier ». La garde est explicitement conservée, et motivée par son
-message actionnable : `:245-248` refuse de déplacer le contrôle dans le schéma parce que `task.ts:391-399` produit
-une erreur **nommée** dont le message de `task.ts:396` énumère les trois champs attendus — le déplacement « serait
-une **régression d'observabilité** ».
+Je **recompte moi-même**, et le recomptage est cette fois-ci en motif littéral, comme le texte l'annonce :
 
-**R2 — traité.** La vague 3b exigeait (`:39`) de rendre T3 discriminant et constatait que le scénario non
-discriminant était reproduit mot pour mot, l'instance discriminante n'apparaissant nulle part. Le T3 courant
-(`:333-351`) porte exactement cette instance, et je l'ai vérifiée ligne à ligne : `:342` l'agent de test **sans**
-`budgetMinutes`, `:343` `OPENCODE_TASK_BUDGET_MINUTES` **non défini**, `:344` la durée demandée par l'appel comme
-seule source restante — les trois simultanément, comme demandé. Le mécanisme qu'il combat est le bon : `:336-338`
-explique que `task.ts:694-695` est un `??`, et j'ai relu `task.ts:694` — `const minutes = next.budgetMinutes ??
-taskBudgetMinutes()` — et `:695` — `withBudget(runTask(), minutes)`. `:347` pose le critère de mutation « le test
-échoue sur le code d'origine ».
+```
+rg -n "input\.directory" packages/opencode/src/session      → RG_EXIT=0
+  session.ts:553   directory: input.directory,
+  session.ts:936         input.directory
+  session.ts:937           ? or(...conds, and(isNull(SessionTable.path), eq(SessionTable.directory, input.directory)))!
+  session.ts:942     if (input.directory) {
+  session.ts:943       conditions.push(eq(SessionTable.directory, input.directory))
+  session.ts:984     conditions.push(eq(SessionTable.directory, input.directory))
+```
 
-**R3 — traité par réfutation de sa prémisse.** La vague 3b exigeait (`:41`) que T5 asserte le **cwd effectif** d'un
-tool-call, et notait que la prémisse de la révision — une égalité de **colonnes** — était fausse. Le texte courant
-ne compare plus aucune colonne : §4(c) est **écarté** (`:255`) sur une lecture que j'ai rejouée. `prompt.ts:719`
-retourne le contexte d'instance, `prompt.ts:731` inscrit `path: { cwd: ctx.directory, root: ctx.worktree }` — les
-deux lignes sont exactes au caractère près. `session: Session.Info` est bien déstructuré à `prompt.ts:715` et
-`:718`, et n'est pas la source du `cwd`, comme affirmé. `system.ts:97` procède de même et `system.ts:103` publie
-`  Working directory: ${ctx.directory}`. J'ai ajouté le contrôle qui manquait à la vague 3b : `grep ctx.directory`
-sur `src/tool` ne rend **qu'un seul** résultat, `registry.ts:245  directory: ctx.directory` (positif, C-66), et
-`grep session.directory` sur `src` rend **10 résultats, tous dans des chemins d'affichage** (`cli/cmd/tui/routes/
-session/index.tsx:734`, `session-nav-panel.tsx:162`, `session-nav.ts:178,221,242,243,293,296`,
-`acp/agent.ts:652`, `cli/cmd/session.ts:144`) — **aucun** dans le chemin de lancement. Le cwd ne
-peut donc pas venir de la colonne.
+**Six lectures, quatre sites : le compte et les emplacements annoncés sont exacts au numéro de ligne près.**
+`:553` est bien la construction de l'`Info` (`directory: input.directory`), `:936-937`/`:942-943`/`:984` sont bien
+des filtres de listage. La clause d'unicité a disparu et l'argument de §4(c) — le `cwd` ne vient pas du filtre —
+ne s'appuie plus sur aucune cardinalité. **La correction est juste ; je n'ai pas à la refaire.**
 
-**R5 — traitement partiel.** La citation `session.ts:942-943` est explicitement retirée en `:11`, `:179-180`, et
-remplacée par `session.ts:936-937`, que j'ai relue et qui est exacte (`input.directory` puis
-`or(...conds, and(isNull(SessionTable.path), eq(SessionTable.directory, input.directory)))!`). La fausse
-affirmation « indexée » a disparu : `grep 'indexée|indexé sur|index sur'` sur `docs/harness-audit/proposals/*.md`
-ne rend **aucun** résultat, et le motif est prouvé fonctionnel puisqu'il rend `CORRECTIONS.md:66` dans la même
-arborescence (C-66). Mais la correction a **débordé** en une affirmation fausse — voir `N1`.
+**N2 — traité, suppression effective et sans renvoi pendouillant.** La sonde est en motif **ASCII** `T3`, sur le
+fichier lui-même, avec témoins positifs dans le même fichier et la même commande :
 
-**Ce que j'ai revérifié sans changement notable.** La couture réelle est celle que le texte décrit :
-`task.ts:69-81` exporte bien un `Parameters` laxiste, `task.ts:83-88` porte bien les obligations **hors** du
-chemin de validation, `task.ts:391-399` applique `Schema.decodeUnknownEffect(LaunchParameters)` et produit bien la
-`Tool.InvalidArgumentsError` au message de `:396`, `task.ts:404` rejette bien le prompt tronqué. Le point de fusion
-visé par §4(a) est réel et correctement numéroté : `task.ts:506` est bien `if (!current.goalState ||
-packet.findings.length === 0) return`, `:509-517` écrit le `goalState` parent, `:511-513` est bien
-`goalState: { …current.goalState, findings,`, et `:514` incrémente bien `version`. Les deux conséquences que §4(a)
-exige de traiter dans le même lot (`:232` sur `:506`, `:234` sur `:514`) sont donc correctement ancrées. Les bornes
-de troncature de §4(a) (`:225`) et de T2 (`:330`) sont exactes : `task-evidence.ts:40` `item.proof.slice(0, 1_000)`,
-`:42` `item.dod.slice(0, 500)`, `:62` `tests: allTests.slice(0, 32)`. `Session.create` (`session.ts:670-690`) ne
-prend **pas** `directory` et passe `directory: ctx.directory` en `:682` — le bloc de code cité par P07 `:186-189`
-est reproduit au numéro de ligne près. **Les affirmations de la vague 3b qui portaient sur des lignes de code
-tiennent toutes.**
+```
+rg -n --fixed-strings T3 <proposition>  → RG_EXIT=1  COUNT=0   (non-match, pas une erreur)
+rg -n --fixed-strings T1 <proposition>  → RG_EXIT=0  COUNT=3   (témoin positif)
+rg -n --fixed-strings T2 <proposition>  → RG_EXIT=0  COUNT=3   (témoin positif)
+rg -n --fixed-strings T4 <proposition>  → RG_EXIT=0  COUNT=2   (témoin positif)
+```
+
+Le zéro est donc **positivement contrôlé** (**C-66**, **C-123**) : la commande fonctionne et rend `T1`, `T2`, `T4`.
+Contrôle structurel par relecture : `:328` est `### T2 — la fusion reste bornée…` et `:334` est `### T4 — garde de
+non-régression du message d'erreur (volets a et b)` ; la jonctionannounced est bien `T2 → T4`.
+
+**Le contrôle que la c2 n'avait pas fait, et qui était le vrai risque du N2 : le renvoi pendoulant.** Je vérifie
+que rien, dans le texte restant, ne continue de désigner T3 :
+
+- `:349` — la commande de §7 ne cite que trois fichiers : `task-evidence-merge.test.ts`,
+  `task-decode-guard.test.ts`, `task-child-directory.test.ts`. Aucun n'était le fichier de T3, et aucun n'est
+  orphelin.
+- `:79` — la phrase que l'agent de révision dit avoir reprise dit désormais « **aucun test de §7 ne porte sur
+  lui** », ce qui est exact depuis la suppression : le seul test qui visait le court-circuit `??` était T3.
+- `:361` — « **READY** pour (a), avec T1 et T2, qui discriminent. » — énumération cohérente.
+- `:374` — « (a) seul d'abord […] avec T1-T2 discriminants. Puis T4 et T5 comme gardes de non-régression. » —
+  énumération cohérente, sans T3.
+
+La suppression est donc **propre** : ni bloc résiduel, ni renvoi, ni énumération incohérente.
+
+**R1 — toujours traité.** §4(b) reste écarté sur preuve de E1 (`:241`), la garde de décodage reste conservée et
+motivée par son message actionnable (`:246-248`, `task.ts:396`), et la forme variadique à deux arguments reste
+explicitement écartée au profit d'une forme tableau (`:251-253`, « la forme variadique à deux arguments n'est
+pas celle que cette révision a pu vérifier dans le dossier »). Aucun des trois défauts aggravants de la vague 3b
+n'est revenu.
+
+**R2 — traité, mais par un chemin différent de celui de la c2 : c'est le seul point où N2 aurait pu casser une
+exigence, et je l'ai cherché explicitement.** La c2 classait `R2` `accepted` parce que T3 (`:333-351` alors)
+portait les trois conditions discriminantes. T3 n'existe plus. L'exigence « rendre T3 discriminant » devient donc
+sans objet, et je ne peux pas la déclaré satisfaite au même titre qu'avant. Je vérifie ce qui reste à la place :
+`:77-79` affirme que le court-circuit `??` de `task.ts:694-695` est « **structurellement incapable** de distinguer
+deux mondes » et qu'« aucun test de §7 ne porte sur lui » — ce qui est exact, T3 ayant été le seul test de cette
+cible. Le mécanisme de budget est écarté comme correctif en `:283-286` (alternative 3). Aucun test résiduel ne
+revendique donc cette cible, et aucun §9 ne la revendique. **R2 reste traité** : la non-discrimination est
+maintenant **argumentée** au lieu d'être **testée**, ce qui est cohérent avec le retrait du test. J'ai vérifié
+`task.ts:694` `const minutes = next.budgetMinutes ?? taskBudgetMinutes()` et `:695` `withBudget(runTask(), minutes)`
+— le « ?? » visceral est réel, la conclusion du texte est juste.
+
+**R3 — toujours traité, prémisse mesurée une seconde fois.** §4(c) reste écarté « établi par lecture » (`:256`).
+Je rejoue les trois lectures qui fondent cet écart, au caractère près : `prompt.ts:719` `const ctx = yield*
+InstanceState.context`, `prompt.ts:731` `path: { cwd: ctx.directory, root: ctx.worktree }`, `session: Session.Info`
+bien déstructuré en `prompt.ts:715`/`:718` sans être la source du `cwd` ; `system.ts:97` même contexte,
+`system.ts:103` `  Working directory: ${ctx.directory}`. Et je rejoue les deux **comptes** que la c2 avait mesurés :
+`rg ctx.directory` sur `src/tool` → **une seule** ligne, `registry.ts:245  directory: ctx.directory,` ;
+`rg --fixed-strings session.directory` sur `packages/opencode/src` → **10** lignes, toutes dans des chemins
+d'affichage (`acp/agent.ts:652`, `cli/cmd/session.ts:144`, `cli/cmd/tui/routes/session/index.tsx:734`,
+`session-nav-panel.tsx:162`, `session-nav.ts:178,221,242,243,293,296`), **aucune** dans le chemin de lancement.
+Les deux chiffres de la c2 se reproduisent exactement ; la prémisse de la vague 3b reste réfutée.
+
+**Les affirmations de la c2 qui portaient sur des lignes de code ont toutes tenu.** Je les relis une à une :
+`task.ts:506` `if (!current.goalState || packet.findings.length === 0) return` ✓ ; `task.ts:509-517` écrit le
+`goalState` parent ✓ ; `task.ts:511-513` `goalState: { …current.goalState, findings,` ✓ ; `task.ts:514`
+`version: current.goalState.version + 1` ✓ ; `task-evidence.ts:40` `item.proof.slice(0, 1_000)` ✓, `:42`
+`item.dod.slice(0, 500)` ✓, `:62` `tests: allTests.slice(0, 32)` ✓, `:39-43` et `:44-48` conformes ✓ ;
+`task.ts:391-399` applique `Schema.decodeUnknownEffect(LaunchParameters)` et produit la `Tool.InvalidArgumentsError`
+au message de `:396` ✓ ; `task.ts:549-552` sort de boucle avec le texte ✓ ; `task.ts:579` porte bien
+`evidence_packet: packet` dans le `metadata` du chemin de fond ✓ ; `task.ts:722-726` appelle `output` ✓ ;
+`task.ts:741-744` expose `Parameters` et `execute` ✓ ; `session.ts:670-690` — `create` **ne prend pas**
+`directory` et passe `directory: ctx.directory` en `:682`, `:683` `path: sessionPath(ctx.worktree, ctx.directory)`,
+le bloc cité par `P07:186-189` est reproduit au numéro de ligne près ✓ ; `session.ts:219` est bien
+`directory: Schema.String` dans `Info` ✓. **Aucune des affirmations de la c2 sur le code n'est tombée.**
 
 ## Status
 
-Statuts posés selon la table du gabarit (`REVALIDATION-BRIEFS.md:61-66`) : `open` seul est bloquant. Je n'emploie
-pas `refused` pour `R1`/`R2`/`R3` : le gabarit réserve `refused` à une objection **démontrée fausse**, alors que
-ces trois objections étaient **fondées** et ont été dépassées par la réécriture — c'est la définition de
-`accepted` (« traitée quant au fond, avec une réserve assumée et tracée »), avec la trace que j'en fais ici.
+Statuts posés selon la table du gabarit (`REVALIDATION-BRIEFS.md:61-66`), où `open` seul est bloquant. Je n'emploie
+pas `refused` : aucune objection n'a été démontrée fausse — `N1` et `N2` étaient **fondées**, et l'agent de
+révision les a corrigées au lieu de les contester.
 
-| résidu | exigence de la vague 3b | statut courant | preuve |
+| résidu | exigence | statut courant | preuve |
 | --- | --- | --- | --- |
-| **R1** | réécrire §4(a) en `Schema.Union` tableau + base nommée + garde conservée | **`accepted`** | les trois défauts visés ont disparu ; le seul `Schema.Union` de tout `docs/harness-audit/proposals` est la mise en garde `P07:250` (§4(b) écarté `:240`, garde conservée `:245-248`) |
-| **R2** | rendre T3 discriminant | **`accepted`** | les trois conditions discriminantes sont écrites `:342-344`, critère de mutation `:347` ; le `??` visceral est relu (`task.ts:694`) |
-| **R3** | asserter le cwd effectif, conditionner (d) à la preuve que le cwd vient de la colonne | **`accepted`** | §4(c) écarté `:255` ; cwd prouvé venant du contexte d'instance (`prompt.ts:731`, `system.ts:103`, `registry.ts:245`), **0** lecture de `session.directory` sur le chemin de lancement |
-| **R5** | corriger `942-943` → `936-937` ; vérifier `task.ts:236` | **`accepted`** | correction appliquée `:11`/`:179-180`, `936-937` exacte, « indexée » éliminée — **réserve** reportée en `N1` |
-| **N1** | (nouveau) | **`open`** | `P07:192` |
-| **N2** | (nouveau) | **`open`** | `P07:333-351` contre `:240`/`:349-351` |
+| **R1** | réécrire §4(a) en `Schema.Union` tableau + garde conservée | **`accepted`** | §4(b) écarté `:241` ; garde motivée `:246-248` ; variadique écartée `:251-253` |
+| **R2** | rendre T3 discriminant | **`accepted`** | T3 supprimé sous N2 ; sa cible est désormais **argumentée** comme non discriminant (`:77-79`) au lieu d'être testée ; `task.ts:694-695` relus |
+| **R3** | asserter le cwd effectif ; conditionner (c) à la preuve | **`accepted`** | §4(c) écarté `:256` ; `prompt.ts:719`/`:731`, `system.ts:97`/`:103` relus ; `ctx.directory` sur `src/tool` = **1** ; `session.directory` sur `src` = **10**, toutes affichage |
+| **R5** | corriger `942-943` → `936-937` ; vérifier `task.ts:236` | **`accepted`** | remplacement `:11`, `:936-937` exacte ; argument de l'enveloppe retiré `:99-103` |
+| **N1** | retirer l'unicité fausse de `:192` | **`accepted`** | **fermé** — `P07:192-195` ; recomptage indépendant : **6 lectures / 4 sites**, emplacements exacts |
+| **N2** | supprimer le bloc T3 | **`accepted`** | **fermé** — `T3` → `COUNT=0` (ASCII, témoins `T1`/`T2`/`T4` positifs) ; jonction `T2` `:328` → `T4` `:334` ; renvois `:79`/`:349`/`:361`/`:374` cohérents |
+| **I1** | (nouveau, `info`) | **`accepted`** | voir `## Remaining objections` |
+| **I2** | (nouveau, `info`) | **`accepted`** | voir `## Remaining objections` |
+
+**Zéro résidu `open`.** La proposition est donc **implémentable** au sens de la règle d'implémentabilité
+(`REVALIDATION-BRIEFS.md:69-71`).
 
 ## Remaining objections
 
-**`N1` — `open` — `P07:192` affirme une unicité fausse sur le code.**
-La ligne écrit : « `session.ts:936-937` est **le seul endroit** du fichier où `input.directory` apparaît ».
-`grep input.directory` sur `src/session` rend **6 résultats** : `session.ts:553`, `:936`, `:937`, `:942`, `:943`,
-`:984`. Le motif est positif et donc probant (C-66). `936-937` n'est donc pas le seul endroit : `:942-943` existe
-toujours et lit le même champ, et `:984` en est une troisième lecture. La conséquence n'est pas cosmétique :
-l'argument qui écarte §4(c) repose sur le fait que « le filtre de listage » n'est pas la source du `cwd`, ce qui
-reste vrai, mais la proposition **s'appuie sur une affirmation de cardinalité que le code contredit**, et c'est une
-citation fausse au sens du brief, donc objection bloquante.
-**Remède, une ligne :** supprimer « est le seul endroit du fichier où » à `:192`, ou le remplacer par « est l'un des
-trois endroits du fichier qui lisent `input.directory` (`:936-937`, `:942-943`, `:984`), tous dans des filtres de
-listage ».
+**Aucune objection `open`, `out_of_scope` ou `refused`.** Les deux résidus `open` de la c2 sont clos et vérifiés. Je
+lève deux observations de rang `info`, tracées pour la suite du cycle, qui **ne bloquent rien** et que je ne fais
+volontairement pas monter en `open` : ni l'une ni l'autre n'est une affirmation fausse, et les requalifier en
+`open` ferait chuter le document pour un motif qui n'existe pas.
 
-**`N2` — `open` — T3 est conservé contre sa propre condition de suppression.**
-`P07:349-351` est explicite : « Ce test ne valide aujourd'hui **aucun** volet de cette proposition, et c'est
-volontaire […] **Si le validateur écarte (b), T3 doit être supprimé plutôt que conservé en l'état.** » Or §4(b) est
-écarté par le texte lui-même en `:240`. La condition est donc remplie et le texte ne la respecte pas. Je qualifie
-ce défaut de mineur en portée de code — un test qui ne prouve rien ne casse rien — mais **je ne le requalifierai pas
-en `out_of_scope` pour franchir la porte** : C-22, C-42, C-50 et C-107 l'ont sanctionné chez d'autres, et
-l'observation est le livrable. Règle 10 : défaut trouvé dans la proposition ⇒ `open`, avec remède.
-**Remède, une ligne :** supprimer le bloc `P07:333-351` (T3), la condition qu'il énonce lui-même étant satisfaite
-par l'écartement de §4(b).
+**`I1` — `info`, statut `accepted` — la formulation de `:194-195` est plus lâche que son compte.**
+`P07:194-195` ajoute « `session.ts:219` appartient au même ensemble d'appels ». `session.ts:219` est
+`directory: Schema.String,` dans la déclaration du schéma `Info` : c'est un **champ déclaré**, pas une lecture de
+`input.directory`, et `grep input.directory` ne le rend pas. Un lecteur qui le compterait comme un cinquième site
+obtiendrait « 5 sites » là où le texte annonce « quatre sites ». **Aucune contradiction de cardinalité n'est
+énoncée** — l'énumération des quatre sites est close avant cette phrase, et elle est exacte — mais la locution
+« même ensemble d'appels » est imprécise sur un point qui est précisément celui que `N1` portait. Remède, une
+ligne : écrire « `:219` est la déclaration du champ dans le schéma `Info`, et non une lecture ; `:553` en est la
+construction ».
 
-**Non vérifié, non faux — signalé sans objection.** `P07:193` cite `session.ts:219` comme relevant du même ensemble
-d'appels ; je n'ai pas rouvert cette ligne et je ne la conteste pas. `P07` désigne `task-evidence.ts` par son seul
-nom de fichier alors qu'il se trouve dans `src/session/` : les numéros de ligne sont exacts et sans ambiguïté (un
-seul fichier de ce nom dans le dépôt), c'est une imprécision de chemin, pas une citation fausse. `task.ts:236`, que
-la vague 3b avait acceptée (R6), est reprise en `:212` ; je ne la recertifie pas, sa plage ayant été ouverte par le
-validateur de la vague 3b et non par moi.
+**`I2` — `info`, statut `accepted` — le compte est exact sous le motif annoncé, et ne l'est pas sous un motif élargi.**
+Le texte annonce le motif qu'il a utilisé (`grep input.directory`, littéral) : sous ce motif, **six** lectures et
+**quatre** sites, ce que mon recomptage confirme à la ligne près. Mais le motif élargi `input?.directory` rend
+**sept** lignes sur **cinq** sites, la septième étant `session.ts:983  if (input?.directory) {`, qui précède le
+`:984` annoncé dans le même filtre de listage. Je n'ai pas trouvé de contradiction : une affirmation de compte
+accompagnée de son motif et vérifiable par ce motif n'est pas fausse, et le nombre annoncé est juste. Je trace
+l'écart parce qu'un futur lecteur pourrait élargir le motif et lire « sept » contre « six » sans voir la
+différence. Remède, une ligne, facultatif : préciser « six lectures sous le motif littéral `input.directory` ; le
+champ est aussi lu en `:983` via `input?.directory` ».
 
 ## Regressions introduced
 
-**Preexistantes — ni introduites par la révision, ni imputables à P07.** Le défaut que P07 combat — une DoD d'enfant
-perdue à chaque délégation, faute de fusion de `tests` — est le **sujet** de la proposition, pas une régression
-qu'elle aurait créée. Les deux erreurs de typecheck de la 1re lecture sont un artefact de l'édition concurrente de
-`src/tool/shell.ts` par un autre agent : **C-62**, signalées, non corrigées, sans effet sur ce verdict, et
-disparues à la 2ᵉ lecture. Les trois suites conditionnelles citées dans l'état de mesure sont instables ou
-sensibles au timeout **à SHA constant** : elles ne mesurent donc aucune régression de P07.
+**Aucune régression introduite, et aucun test vert cassé.** Déclaration exigée par la règle 1 du gabarit.
 
-**Introduites par la réécriture — deux, toutes deux dans le texte.** `N1` et `N2` n'existaient pas dans la version
-de 638 lignes : `N1` parce que l'ancien texte citait `942-943`, une ligne qui existe et lit bien `input.directory`,
-sans revendiquer d'unicité ; `N2` parce que l'ancien T3 et l'ancien §4(a) vivaient dans le même registre, tandis que
-la réécriture a séparé un volet écarté et une condition de suppression non exécutée. **Aucune régression dans le
-code** : je n'ai modifié aucun fichier sous `packages/**`, et la proposition elle-même ne propose qu'un ajout au
-point `task.ts:511-513` assorti des deux ajustements qu'elle nomme elle-même (`:232`, `:234`).
+- **Préexistant, non introduit :** les deux erreurs `TS2339` dans `src/tool/shell.ts:701`/`:705` vues par la 1re
+  lecture de la c2 sont **absentes** de ma lecture de cette vague (`TYPECHECK_EXIT=0`). Elles portaient sur un
+  fichier en cours d'édition concaténée par un autre agent ; le cycle s'est refermé. Je ne les ai pas corrigées et
+  je n'avais rien à signaler — **C-62 n'a pas de fait généré cette vague**, contrairement à la c2.
+- **Introduit par cette révision : rien.** La révision c3 est **textuelle** — elle porte sur
+  `docs/harness-audit/proposals/`, et je n'ai trouvé dans le document aucune instruction modifiant un fichier de
+  `packages/**` autre que le fichier de production déjà visé par §4(a) et ses tests, non encore écrits. Aucun
+  fichier du dépôt n'a été touché par ce que j'ai validé, donc aucun test vert ne peut avoir été cassé par cette
+  révision.
+- **Contrôle de non-régression que je n'ai pas joué, et que je dis ne pas avoir joué :** `test/shell/shell.test.ts`
+  (12 pass / 0 fail) et les deux suites de non-régression nommées par la proposition (`:351-352`,
+  `test/cli/tui/task-contract-compact.test.ts`, `test/tool/tasks-description.test.ts`) — **non exécutées**. La
+  première est interdite cette vague ; les deux autres sont, par construction, des portes d'**intégration** du
+  correctif §4(a), qui n'existe pas encore. Elles ne mesurent donc aucune régression de la révision.
 
 ## Final verdict
 
 **REVALIDATED-PASS_WITH_CHANGES**
 
-Les trois résidus de la vague 3b ne sont pas des lésions refermées par des formulations : la proposition a été
-réécrite, et les trois exigences sont satisfaites sur le texte courant — `R1` par l'écartement motivé du volet et
-l'abandon explicite de ses trois défauts, `R2` par une instance discriminante enfin écrite, `R3` par une réfutation
-mesurée de la prémisse que la vague 3b avait qualifiée de fausse. Le mécanisme décrit est exact là où je l'ai
-contrôlé ligne à ligne, et la couture réelle du contrat sous-agent est bien celle que le texte redescrit.
+Les deux corrections annoncées sont **réellement sur le disque et justes**. `N1` est fermé par un recomptage
+indépendant qui confirme le chiffre et les emplacements mot pour mot : six lectures, quatre sites, `:553`,
+`:936-937`, `:942-943`, `:984`. `N2` est fermé par une sonde `T3` à zéro positivement contrôlée en motif ASCII,
+par la jonction structurelle `T2` `:328` → `T4` `:334`, et par un audit des quatre endroits qui auraient pu
+conserver un renvoi pendouillant (`:79`, `:349`, `:361`, `:374`) — **aucun n'en conserve**. `R1`, `R2` et `R3`
+restent traités, `R2` par un chemin différent que je signale (sa cible est désormais argumentée, plus testée, ce
+qui est cohérent avec la suppression de T3 et ne laisse aucune revendication orpheline). Les affirmations de la c2
+qui portaient sur des lignes de code ont **toutes** tenu, et j'ai reproduit ses deux comptes à l'identique.
 
-**Non implémentable en l'état** : `N1` et `N2` sont `open`. Le gabarit (`:51-66`, règle d'implémentabilité vague 4)
-fait d'un **seul** résidu `open` une interdiction d'implémenter. Les deux sont des corrections de texte d'une
-ligne ou d'un bloc, sans effet de conception : `R1`/`R2`/`R3` sont traités, `R5` est traité sous réserve tracée, et
-aucune objection ne subsiste sur le fond du mécanisme proposé.
+**Implémentable en l'état** : aucun résidu `open`, `out_of_scope` ou `refused` ; `## Regressions introduced`
+déclare qu'aucun test vert n'est cassé. Les deux réserves `I1`/`I2` sont de forme et n'empêchent pas
+l'implémentation ; je les trace sans les gonfler, et je me les remets à moi-même plutôt que de les laisser au
+prochain cycle sous forme d'objection de seconde catégorie.
 
 ## Handed back to
 
-L'agent de révision de **P07** (vague 4). Aucun nom d'agent n'est enregistré dans les documents que j'ai lus
-(`P07:3` ne mentionne que le verdict et la date), je le désigne donc par sa fonction.
+L'agent de révision de **P07** (vague 4). Aucun nom d'agent n'est enregistré dans les documents lus (`P07:3` ne
+mentionne que le verdict et la date), je le désigne donc par sa fonction.
 
-Deux corrections, à faire dans la seule proposition, aucune ne touchant `packages/**` :
+**Aucune correction n'est requise pour rendre la proposition implémentable.** Les deux corrections de la c2
+(`N1` `:192`, `N2` `:333-351`) sont en place et vérifiées. Restent deux précisions de forme, **facultatives**,
+aucune ne touchant `packages/**` :
 
-1. `P07:192` — retirer l'affirmation d'unicité sur `input.directory` (voir `N1`, remède d'une ligne).
-2. `P07:333-351` — supprimer le bloc T3, sa condition de suppression étant satisfaite par l'écartement de §4(b)
-   (voir `N2`).
+1. `P07:194-195` — distinguer la déclaration `session.ts:219` (champ du schéma `Info`) d'une lecture de
+   `input.directory`, pour que « quatre sites » ne soit pas lu comme cinq (voir `I1`).
+2. `P07:193` — préciser que les six lectures valent sous le motif littéral `input.directory`, et que `:983` lit le
+   même champ via `input?.directory` (voir `I2`).
 
-Après ces deux retraits, aucun résidu `open` ne subsiste et la proposition redevient implémentable. Je n'ai ni
-édité la proposition ni ne le ferai : la main lui revient.
+Je n'ai ni édité la proposition ni ne le ferai (**C-36**) : la main lui revient.
 
 ## Grille d'effort
 
 | item | effort | fichier principal | test à écrire | casser un test existant ? |
 | --- | --- | --- | --- | --- |
-| `N1` — retirer l'unicité fausse de `:192` | 1 ligne | `docs/harness-audit/proposals/P07-subagent-contract.md` | aucun (correction de texte) | non |
-| `N2` — supprimer le bloc T3 `:333-351` | 1 bloc | `docs/harness-audit/proposals/P07-subagent-contract.md` | aucun (retrait de test redondant) | non |
-| réserve `R5` — reprise avec `N1` | 1 ligne | `docs/harness-audit/proposals/P07-subagent-contract.md` | aucun | non |
+| `I1` — distinguer `session.ts:219` (déclaration) d'une lecture, `:194-195` | 1 ligne | `docs/harness-audit/proposals/P07-subagent-contract.md` | aucun (correction de texte) | non |
+| `I2` — préciser le motif littéral du compte, `:193` | 1 ligne | `docs/harness-audit/proposals/P07-subagent-contract.md` | aucun (correction de texte) | non |
+| volet (a) — fusion de `tests` vers `goalState.completion.evidence`, `task.ts:511-513` | 1 affectation + 2 conditions | `packages/opencode/src/tool/task.ts` | `test/tool/task-evidence-merge.test.ts` (T1 `:316`, T2 `:328`) | non — `TYPECHECK_EXIT=0`, aucune suite verte jouée ni cassée |
