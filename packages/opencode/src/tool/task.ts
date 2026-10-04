@@ -503,15 +503,37 @@ export const TaskTool = Tool.define(
         yield* evidenceLock.withPermits(1)(
           Effect.gen(function* () {
             const current = yield* sessions.get(ctx.sessionID)
-            if (!current.goalState || packet.findings.length === 0) return
-            const findings = mergeGoalFindings(current.goalState.findings ?? [], packet.findings)
-            if (JSON.stringify(findings) === JSON.stringify(current.goalState.findings ?? [])) return
+            const goalState = current.goalState
+            if (!goalState) return
+            const completion = goalState.completion
+            const findings =
+              packet.findings.length === 0
+                ? goalState.findings
+                : mergeGoalFindings(goalState.findings ?? [], packet.findings)
+            // A child that returns proof without findings still owes that proof to the
+            // parent, so the write no longer waits for a finding to arrive. The packet
+            // already truncated every string when it was built, so each value is copied
+            // verbatim: a subagent report is untrusted text by construction and must
+            // stay text here, never become an instruction by being re-interpreted.
+            const merged: Array<{ dod: string; proof: string }> = [...(completion?.evidence ?? [])]
+            const seen = new Set(merged.map((item) => `${item.dod}\u0000${item.proof}`))
+            for (const item of packet.tests) {
+              const key = `${item.summary}\u0000${item.command}`
+              if (seen.has(key)) continue
+              seen.add(key)
+              merged.push({ dod: item.summary, proof: item.command })
+            }
+            const unchanged =
+              JSON.stringify(findings ?? []) === JSON.stringify(goalState.findings ?? []) &&
+              JSON.stringify(merged) === JSON.stringify(completion?.evidence)
+            if (unchanged) return
             yield* sessions.setGoalState({
               sessionID: ctx.sessionID,
               goalState: {
-                ...current.goalState,
-                findings,
-                version: current.goalState.version + 1,
+                ...goalState,
+                ...(findings ? { findings } : {}),
+                ...(completion ? { completion: { ...completion, evidence: merged } } : {}),
+                version: goalState.version + 1,
                 updatedAt: Date.now(),
               },
             })
