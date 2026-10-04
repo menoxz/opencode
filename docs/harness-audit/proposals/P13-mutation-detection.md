@@ -1,22 +1,39 @@
 # P13 — mutation de fichier détectée par liste fixe de commandes (`bash`)
 
 > Révisé après verdict PASS_WITH_CHANGES du 2026-10-03 — réécriture complète (fichier corrompu, règle C-21)
+>
+> **Vague 4, deuxième révision.** Les six blocages du revalidateur indépendant
+> (`docs/harness-audit/verdicts/P13-revalidation.md`, table `:140-152`) sont traités un par un,
+> chacun avec la ligne de findings qu'il ferme. Table en tête de document. Aucun autre fichier
+> n'est écrit, aucun patch n'est appliqué : ceci reste une proposition.
 
 Réécriture intégrale : rien de la version antérieure n'est conservé. Deux agents y écrivaient
 simultanément (C-21), donc chaque affirmation ci-dessous a été **re-relue directement** dans la
-source et porte son citation. Aucune affirmation n'est reprise de la version précédente sans
-relecture.
+source et porte sa citation. Aucune affirmation n'est reprise de la version précédente sans
+relecture. **Règle appliquée en vague 4** : une absence est établie par `read`, jamais par un
+glob qui ne renvoie rien — un glob négatif sans motif contraignant ne prouve pas l'absence.
+
+**Blocages de la revalidation vague 4, et où ils sont fermés.**
+
+| finding | ligne du revalidateur | Ce qui était faux | Fermé dans |
+|---|---|---|---|
+| `#1` | `P13-revalidation.md:142` | §7 déclarait `wave4-baseline.md` absent, sur un glob sans résultat | §7 « État de la baseline (C-24) » |
+| `#2` | `:143` | §7 reconduisait `68/27/3` et « 26 échecs », périmés par C-40 | §7 « État de la baseline (C-24) » |
+| `#3` | `:144` | volet B bâti sur le triplet `(pass, fail, errors)` de `test/tool/shell.test.ts`, instable | §7 volets B et C |
+| `#4` | `:145` | §3.10 affirmait `bash: "allow"` pour `explore` **et** `scout` | §3.10, rangée `scout` |
+| `#8` | `:149` | C-24 : critère de succès non discriminant tant que le volet B repose sur la suite instable | §7 « Critère de succès », + contrôle de falsifiabilité |
+| `#11` | `:152` | remède RC1 « à valider », absent du diff de §4 | §4 hunk sur `always: globs`, §6, §9 décision 1 |
 
 **Traçabilité des Required changes du verdict `PASS_WITH_CHANGES` (2026-10-03).** Le verdict
 annonce « cinq corrections » mais énumère **six** Required changes ; les six sont appliqués.
 
 | # | Required change | Traité dans | Preuve de relecture |
 |---|---|---|---|
-| RC1 | Élever l'analyse `always` dans `Risks`, avec le remède | §6 « Neutralisation par `always` » | `shell.ts:284-289`, `shell.ts:419-422`, `permission/index.ts:234`, `:241`, `:304-310`, `packages/core/src/permission.ts:21-31`, `packages/core/src/util/wildcard.ts:3-13` |
+| RC1 | Élever l'analyse `always` dans `Risks`, avec le remède | §6 « Neutralisation par `always` », §9 décision 1 | `shell.ts:284-289`, `shell.ts:419-422`, `permission/index.ts:234`, `:241`, `:304-310`, `packages/core/src/permission.ts:21-31`, `packages/core/src/util/wildcard.ts:3-13` |
 | RC2 | Corriger la justification de la clé `python -c *` | §2 « Clé d'octroi » | `permission/arity.ts:135` `python: 2` → `arity.ts:5` `tokens.slice(0, arity)` |
 | RC3 | `metadata: {}` `:287` → `:288` ; remplacer « ~100 % » | §2 et §5(a) | `shell.ts:280-283`, `:288`, `:297` |
 | RC4 | Trancher l'export ; définir les fonctions appelées ; contrat PowerShell | §4 | `shell.ts:189-194` et `:196-201` **sans `export`** ; `:224-229` ; `:203-232` |
-| RC5 | Corriger la commande de régression + baseline | §7 | glob `test/**/shell*.test.ts` → 4 chemins ; baseline 68/27/3 du verdict |
+| RC5 | Corriger la commande de régression + baseline | §7 | chemins relus par `read` (§7) ; chiffres de référence `CORRECTIONS.md:50` (C-40) |
 | RC6 | `of=` mort : retirer `dd`/`patch`/`install` | §4 (`WRITE_UTILS` réduit à 4 noms) | `shell.ts:203-232` |
 
 **Règle effective tranchée (C-14), en une phrase** : `external_directory` vaut `ask` par défaut ;
@@ -30,7 +47,8 @@ retient la **dernière** correspondance (`permission.ts:25`). Détail et preuve 
 P13. `evaluate` apparie la règle à la permission **demandée** (`permission.ts:25`), donc une
 règle `{permission: "bash"}` ne peut pas court-circuiter une demande
 `permission: "external_directory"` (`shell.ts:285`). La neutralisation existe bien, mais par
-`shell.ts:287` `always: globs` sur la demande `external_directory` elle-même. Preuve, chiffres et
+`shell.ts:287` `always: globs` sur la demande `external_directory` elle-même — remède désormais
+**retenu et porté par le diff** de §4, voir §9 décision 1. Preuve, chiffres et
 conséquence sur la sévérité en §6.
 
 ## 1. Problem
@@ -53,12 +71,6 @@ const CWD = new Set(["cd", "chdir", "popd", "pushd", "push-location", "set-locat
 `packages/opencode/src/tool/shell.ts:42-63` (`FILES`) — entrées `:44-51` puis `:55-62` :
 ```ts
 const FILES = new Set([
-  ...CWD,
-  "rm",
-  "cp",
-  "mv",
-  "mkdir",
-  "touch",
   "chmod",
   "chown",
   "cat",
@@ -106,7 +118,7 @@ const SWITCHES = new Set(["-confirm", "-debug", "-force", "-nonewline", "-recurs
 ```ts
         if (cmd && (FILES.has(cmd) || (shellKind === "cmd" && CMD_FILES.has(cmd)))) {
 ```
-`grep "FILES\.has|CMD_FILES\.has"` sur `packages/opencode/src` (relu le 2026-10-03) ne renvoie
+`grep "FILES\.has|CMD_FILES\.has"` sur `packages/opencode/src` ne renvoie
 que ces deux occurrences sur cette ligne : la liste n'a **aucun** autre site d'appel. Corriger
 la porte suffit donc à ouvrir l'extraction, sans toucher à un second appelant.
 
@@ -266,11 +278,35 @@ est encore reprise à deux endroits par réutilisation d'une constante locale
 `grep readonlyExternalDirectory` (3 occurrences : définition `:111`, consommateurs `:214` et
 `:240`) : l'agent natif `explore` l'utilise tel quel (`agent.ts:214`), et l'agent natif `scout`,
 derrière `flags.experimentalScout`, l'étend d'un `path.join(Global.Path.repos, "*"): "allow"`
-(`agent.ts:241`). Les deux sont bâtis sur `"*": "deny"` avec `bash: "allow"`
-(`agent.ts:206`/`:210` et `:231`/`:235`) et `Permission.merge(defaults, fromConfig(…), user)`
-— donc **une `python -c` écrivant hors arbre y est aujourd'hui totalement silencieuse** : la
-demande `bash` est satisfaite par l'`allow` statique, et la liste fixe n'ouvre aucune
-`external_directory`. P13 y introduit la première invite.
+(`agent.ts:241`).
+
+**Correction de vague 4 (`#4`, `P13-revalidation.md:145`) : `explore` et `scout` ne sont pas bâtis
+sur la même base.** Ce qui est vrai et cité : les deux déclarent `"*": "deny"` — `agent.ts:206`
+pour `explore`, `agent.ts:231` pour `scout` — et tous deux sont composés par
+`Permission.merge(defaults, fromConfig(…), user)` (`agent.ts:203-217` et `:228-245`). Ce qui était
+**faux** dans la version précédente, et que je retire : « avec `bash: "allow"`
+(`agent.ts:206`/`:210` et `:231`/`:235`) ». Relevé exact de `agent.ts:224-243`, relu :
+
+- `explore` (`agent.ts:205-215`) : `"*": "deny"`, `grep: "allow"`, `glob: "allow"`,
+  `list: "allow"`, **`bash: "allow"` (`:210`)**, `webfetch: "allow"`, `websearch: "allow"`,
+  `read: "allow"`, `external_directory: readonlyExternalDirectory`.
+- `scout` (`agent.ts:230-242`) : `"*": "deny"`, `grep: "allow"`, `glob: "allow"`,
+  `webfetch: "allow"`, **`websearch: "allow"` (`:235`)**, `read: "allow"`,
+  `repo_clone: "allow"`, `repo_overview: "allow"`, `external_directory: { … }`.
+  **Aucune clé `bash` dans ce bloc** ; `agent.ts:235` est `websearch`, pas `bash`.
+
+La conséquence est **non cosmétique**, donc je la pose comme inférence tracée et non comme fait :
+`INFERE:` n'ayant aucune exception `bash`, une `python -c` est **refusée d'emblée** sous
+`scout`, et non « totalement silencieuse » comme l'affirmait la version précédente. Méthode de
+vérification : `defaults` vaut `"*": "allow"` (`agent.ts:117`) mais `Permission.merge` concatène
+(`packages/core/src/permission.ts:33-35`) et `evaluate` retient la **dernière** correspondance
+(`packages/core/src/permission.ts:25`) ; le `"*": "deny"` de `agent.ts:231` suit le `"*":
+"allow"` de `agent.ts:117` dans le tableau aplati, donc il gagne. **Vérification proposée** :
+un test qui appelle `ctx.ask({ permission: "bash", patterns: ["python -c *"] })` sous l'agent
+`scout` et observe `deny`, contre `allow` sous `explore`. **Conséquence pour P13** : l'invite
+`external_directory` que le correctif introduit est **peu susceptible d'être observable sous
+`scout`**, qui refuse déjà la commande. Le changement de comportement est donc sous `explore`
+— `bash` autorisé, `external_directory` à `ask` — et sous l'agent principal.
 
 Corollaire direct pour P13 : toute cible que le détecteur ajoutera à `scan.dirs` et qui tombe
 sous `Truncate.GLOB`, `%TEMP%\*` ou `skillDirs\*` **ne demandera rien**, avant comme après
@@ -395,15 +431,60 @@ précédente, verdict objection #5) : son rôle est tenu par `pathArgs`, qui fil
 +        if (gated) {
 +          // Union, jamais substitution : `pathArgs` garde la normalisation PowerShell.
 +          const args = [...new Set([...pathArgs(command, ps, shellKind === "cmd"), ...write.paths])]
++          const fromDetector = new Set(write.paths) // remède RC1 : pistage des globs issus du détecteur
 +          for (const arg of args) {
              const resolved = yield* argPath(arg, cwd, ps, shell)
              log.info("resolved path", { arg, resolved })
              if (!resolved || containsPath(resolved, instance)) continue
              const dir = (yield* fs.isDir(resolved)) ? resolved : path.dirname(resolved)
              scan.dirs.add(dir)
++            if (fromDetector.has(arg)) scan.detected.add(dir)
            }
          }
 ```
+
+**Deuxième hunk — le remède RC1, désormais porté par le diff (`#11`, `P13-revalidation.md:152`).**
+La version précédente laissait `always: globs` inconditionnel et présentait le remède comme « à
+valider ». Il est ici **tranché et écrit**. Deux changements indissociables :
+
+```diff
+@@ shell.ts:279-290 @@
+   if (scan.dirs.size > 0) {
+     const globs = Array.from(scan.dirs).map((dir) => {
+       if (process.platform === "win32") return AppFileSystem.normalizePathPattern(path.join(dir, "*"))
+       return path.join(dir, "*")
+     })
++    const detectorGlobs = new Set(Array.from(scan.detected).map((dir) => {
++      if (process.platform === "win32") return AppFileSystem.normalizePathPattern(path.join(dir, "*"))
++      return path.join(dir, "*")
++    }))
+     yield* ctx.ask({
+       permission: "external_directory",
+       patterns: globs,
+-      always: globs,
++      always: globs.filter((glob) => !detectorGlobs.has(glob)),
+       metadata: {},
+     })
+   }
+```
+
+et l'initialisation du `scan` (`shell.ts:397-401`), qui gagne un champ :
+
+```diff
+@@ shell.ts:397-401 @@
++  const scan = { dirs: new Set<string>(), patterns: new Set<string>(), always: new Set<string>(), detected: new Set<string>() }
+```
+
+**Ce que le remède change, exactement.** `patterns` reste `globs` : l'utilisateur voit toujours la
+cible. Seul `always` est amputé des globs que le détecteur a produits : une approbation sur une
+cible issue d'une charge inline reste donc **`once`** et la fenêtre d'observation (§6) reste
+ouverte. Une approbation sur un répertoire découvert par `pathArgs` — c'est-à-dire le
+comportement d'avant ce correctif — reste `always`, donc **aucune régression de comportement sur
+le chemin préexistant**. C'est la limite exacte du remède : un répertoireatteint par une
+commande `cat` puis par une `python -c` conserve le `always` accordé par la première. `INFERE:` ce
+cas mixte est atteint — le filtrage porte sur le glob, pas sur son origine dans la session.
+Méthode de vérification : ajouter au test d'intégration une séquence `cat <cible externe>` puis
+`python -c "open('<cible externe>','w')"` et observer que la seconde demande propose `once`.
 
 Quatre propriétés de ce diff, chacune vérifiable :
 
@@ -422,15 +503,16 @@ Quatre propriétés de ce diff, chacune vérifiable :
 
 **Modification seconde, une seule chaîne : `FLAGS` (`shell.ts:78`) reçoit `"-filepath"`.**
 Sans elle, `tee-object -FilePath C:\x` perd sa cible : `-FilePath` est un `command_parameter`,
-`SWITCHES` ne le contient pas, donc `want = FLAGS.has(flag)` est faux (`:227`) et le
-paramètre **et** sa valeur sont écartés (`:224-229`). Ajout **strictement additif** — aucune
+`SWITCHES` ne le contient pas, donc `want = FLAGS.has(flag)` est faux (`:227`) et le paramètre **et** sa valeur sont écartés (`:224-229`). Ajout **strictement additif** — aucune
 entrée retirée, aucun comportement existant modifié — et nécessaire pour que le tableau
 `WRITE_UTILS` annonce `tee-object` correctement extrait, comme l'exige RC6.
 
-**Ce qui reste inchangé, et pourquoi.** `FILES`, `CMD_FILES`, `CWD`, `SWITCHES`, le type `Scan`,
-`ask`, `BashArity.prefix`, la permission `"bash"` et la clé `ShellID.ToolID` (`id.ts:14-16` qui
-impose `bash` pour la compatibilité plugins/permissions enregistrées) restent inchangés. Aucune
-permission nouvelle, aucune nouvelle clé, aucun changement de format de configuration.
+**Ce qui reste inchangé, et pourquoi.** `FILES`, `CMD_FILES`, `CWD`, `SWITCHES`, la permission
+`"bash"` et la clé `ShellID.ToolID` (`id.ts:14-16` qui impose `bash` pour la compatibilité
+plugins/permissions enregistrées) restent inchangés. Aucune permission nouvelle, aucune nouvelle
+clé, aucun changement de format de configuration. **Le type `Scan`, en revanche, change** : il
+gagne le champ `detected`, ce qui est la contrepartie assumée du remède RC1 (deux sites à tenir
+à jour au lieu d'un, comme la duplication `dynamic`/`prefix`).
 
 **Garde-fou explicite — inline ≠ exécution de script.** La détection ne se déclenche que si un
 drapeau de la table est présent dans `tokens.slice(1)`. `python script.py`, `python -m pytest`,
@@ -500,13 +582,13 @@ complète du chemin d'octroi, faite ici pour la première fois :
    `globs = Array.from(scan.dirs).map(dir => path.join(dir, "*"))` (`:280-283`, normalisé Windows).
 2. `packages/opencode/src/permission/index.ts:304-310` — à la réponse `always` :
    ```ts
-       for (const pattern of existing.info.always) {
-         approved.push({
-           permission: existing.info.permission,
-           pattern,
-           action: "allow",
-         })
-       }
+        for (const pattern of existing.info.always) {
+          approved.push({
+            permission: existing.info.permission,
+            pattern,
+            action: "allow",
+          })
+        }
    ```
 3. `:234` `const rule = evaluate(request.permission, pattern, ruleset, approved)` ;
    `:241` `if (rule.action === "allow") continue`.
@@ -537,15 +619,16 @@ précédente de ce raisonnement, et elles sont importantes :
 - elle est **conditionnelle à un choix explicite de l'utilisateur**, sur une cible réelle
   qu'il vient de voir.
 
-**Remède envisagé pour RC1 (à valider, voir §9)** : ne pas exposer `always` pour les motifs que
-le détecteur vient de produire — passer `always: []` quand `scan.dirs` provient de
-`detectWritePaths` — de sorte qu'une approbation reste `once`. Coût : l'utilisateur qui approuve
-`python -c` en boucle reçoit une invite par occurrence au lieu d'une seule. Coût inverse si on
-ne le fait pas : la fenêtre d'observation se referme définitivement, par répertoire, dès la
-première approbation. Deuxième borne, déjà présente avant le correctif et inchangée :
-`guardEscalates` (`permission/index.ts:154-160`) rend `false` sauf si
-`cfg?.jev?.guard.enabled === true`, donc par défaut il n'existe aucune seconde opinion automatique
-après un `always`.
+**Remède retenu — implementation dans le diff de §4, décision 1 du §9.** Ne pas exposer `always`
+pour les motifs que le détecteur vient de produire — `always: globs.filter(g =>
+!detectorGlobs.has(g))` — de sorte qu'une approbation reste `once`. Ce n'est plus une
+proposition à valider : c'est le second hunk du diff de §4, avec le champ `scan.detected` qui en
+est la contrepartie. Coût : l'utilisateur qui approuve `python -c` en boucle reçoit une invite
+par occurrence au lieu d'une seule. Coût inverse si on ne le fait pas : la fenêtre d'observation
+se referme définitivement, par répertoire, dès la première approbation. Deuxième borne, déjà
+présente avant le correctif et inchangée : `guardEscalates` (`permission/index.ts:154-160`)
+rend `false` sauf si `cfg?.jev?.guard.enabled === true`, donc par défaut il n'existe aucune
+seconde opinion automatique après un `always`.
 
 **Portée réelle, bornée par le code.** Trois familles de cibles ne demanderont rien, avant comme
 après : (i) tout ce qui est sous `ctx.directory` ou `ctx.worktree` (`shell.ts:413`,
@@ -567,20 +650,24 @@ faux positif ni aucune couverture ne leur est attribuée.
 `os.path.join`) : `dynamic()` (`:189-194`) signale inline sans extraire, donc **aucune** demande
 — c'est le résidu le plus important et il est voulu. (ii) Binaire renommé, interpréteur
 invoqué via `env`, charge dans une variable : rien à extraire. (iii) Formes `-o`/`--output`,
-`install -m`, `perl -pi` : hors périmètre.
+`install -m`, `perl -pi` : hors périmètre. (iv) `scout`, qui refuse `bash` d'emblée (§3.10) :
+l'invite que P13 ajoute y est inatteignable en pratique.
 
-**Régression sur les tests existants.** Périmètre réel, vérifié par glob
-(`packages/opencode/test/**/shell*.test.ts`) : `test/tool/shell.test.ts`,
-`test/tool/shell-output-prompt.test.ts`, `test/tool/shell-launch-retry.test.ts`,
-`test/shell/shell.test.ts`. Seul `test/tool/shell.test.ts` asserte le contenu des permissions
-demandées — `describe("tool.shell permissions")` y commence à **`test/tool/shell.test.ts:215`**,
+**Régression sur les tests existants.** Périmètre réel, quatre fichiers vérifiés par `read` (une
+absence ne peut pas être établie par glob, cf. la règle de tête de document) :
+`test/tool/shell.test.ts`, `test/tool/shell-output-prompt.test.ts`,
+`test/tool/shell-launch-retry.test.ts`, `test/shell/shell.test.ts`. **Les deux suites shell
+coexistent** — fait consigné par `CORRECTIONS.md:54` (c) et `CORRECTIONS.md:51` ; et
+`test/shell/shell.test.ts` est un fichier réel de 133 lignes, relu par `read` (`:1-12`).
+Seul `test/tool/shell.test.ts` asserte le contenu des permissions demandées —
+`describe("tool.shell permissions")` y commence à **`test/tool/shell.test.ts:215`**,
 et le motif de harnais à copier est `:222-232` (`capture(requests)` puis
 `expect(requests[0].permission).toBe("bash")`). `test/tool/shell-output-prompt.test.ts`,
-`test/tool/shell-launch-retry.test.ts` et `test/shell/shell.test.ts` ne sont pas relus ici et
-seront rejoués tels quels par comparaison de baseline. Deux autres blocs de
-`test/tool/shell.test.ts` étaient cités par la version précédente (`describe("tool.shell")` et
-`describe("resolveTimeout")`) : **je ne les ai pas relus**, ils sont donc hors du périmètre
-déclaré. Le critère de régression n'est **pas** « la suite passe » : voir §7.
+`test/tool/shell-launch-retry.test.ts` et `test/shell/shell.test.ts` ne sont pas relus au-delà de
+leur en-tête et sont rejoués tels quels. Deux autres blocs de `test/tool/shell.test.ts` étaient
+cités par la version précédente (`describe("tool.shell")` et `describe("resolveTimeout")`) :
+**je ne les ai pas relus**, ils sont donc hors du périmètre déclaré. Le critère de régression
+n'est **pas** « la suite passe » : voir §7.
 
 **Coût tokens / latence.** Latence : deux recherches dans une `Map`/`Set` par nœud de commande,
 soit < 10 µs, négligeable devant le `parse` wasm déjà payé (`shell.ts:649`). Pour une commande
@@ -621,6 +708,10 @@ pure sur `detectWritePaths`, sans spawn ni I/O.
 - `["python", "-c", "open(`d`,'w')"]` (charge dynamique) → `inline: true`, `paths: []`.
 - `["python", "-c", "f('w',1,'utf8')"]` → `paths: []` : `w`, `1`, `utf8` ne sont pas des littéraux.
 
+Un onzième cas est ajouté par le remède RC1, à écrire dans le fichier d'intégration :
+`cat <cible externe>` puis `python -c "open('<même cible externe>','w')"` → la **seconde** demande
+expose `always: []`. Assertion en valeur de contenu, pas en booléen global.
+
 **Test d'intégration à écrire : `packages/opencode/test/tool/shell-mutation-detect.integration.test.ts`**,
 dans le style du harnais de `packages/opencode/test/tool/shell.test.ts:215` (`:222-232`). Une
 cible **hors `directory` et hors `worktree`** est obligatoire : sinon `shell.ts:413` filtre tout
@@ -633,70 +724,125 @@ aucun ; `tee <cible externe>` en produit un.
 bun test test/tool/shell-mutation-detect.test.ts test/tool/shell-mutation-detect.integration.test.ts
 ```
 (exécutée depuis `packages/opencode`.) Le chemin `test/tool/shell/shell.test.ts` que la version
-précédente prescrivait **n'existe pas** : le chemin réel est `test/shell/shell.test.ts`
-(vérifié par glob).
+précédente prescrivait **n'existe pas**, établi cette fois par **`read` direct** — la tentative de
+lecture de ce chemin renvoie `File not found`, pas un résultat vide. Le chemin réel est
+`test/shell/shell.test.ts`, relu par `read` (fichier non vide, 133 lignes).
 
-**Commande exacte, périmètre 2 — non-régression, comparaison à baseline :**
+**État de la baseline (C-24) — corrigé (`#1` et `#2`).** La phrase « la baseline de vague 4
+n'existe pas » est **retirée** : elle reposait sur un glob sans résultat, c'est-à-dire sur une
+preuve d'absence invalide (`P13-revalidation.md:142`). Le rapport
+`C:\Users\jeanl\AppData\Local\Temp\opencodev2\wave4-baseline.md` **existe** et a été relu par le
+revalidateur : 192 lignes, en-tête « Mesuré le 2026-10-03 », et sa **ligne 11** porte
+`test/tool/shell.test.ts → exit 1, 63 pass, 32 fail, 1 errors, 95 tests, 127,13 s`
+(`P13-revalidation.md:142`). Les chiffres de référence sont donc **63 / 32 / 1**. Les chiffres
+`68 / 27 / 3` et « 26 échecs dans `tool.shell permissions` » que la version précédente
+reconduisait sont **périmés** : ils viennent du validateur d'origine et `CORRECTIONS.md:50` (C-40)
+les corrige en 63/32/1 et **28** échecs de permissions. Je ne les réemploie nulle part dans ce
+document.
+
+**La suite `test/tool/shell.test.ts` n'est pas une base de non-régression — elle est instable.**
+Deux exécutions successives **sans aucune modification du dépôt** donnent **63 pass / 32 fail /
+1 error** (127,13 s) puis **62 pass / 33 fail / 4 errors** (142,10 s) : `CORRECTIONS.md:54` (C-44).
+Le total de tests et l'exit code concordent, mais `pass/fail/errors` varient d'une unité à trois.
+`P13-revalidation.md:144` en tire la conséquence : un triplet `(pass, fail, errors)` construit sur
+cette suite « peut échouer ou réussir au hasard ». **Substituer 63/32/1 ne rendrait pas le
+critère falsifiable.** C'est pourquoi le volet B ci-dessous ne porte pas sur cette suite, et c'est
+la raison pour laquelle la version précédente est retirée plutôt que recyclée.
+
+**Commande exacte, périmètre 2 — non-régression, sur la seule base verte et stable :**
 ```powershell
-bun test test/tool/shell.test.ts test/tool/shell-output-prompt.test.ts test/tool/shell-launch-retry.test.ts test/shell/shell.test.ts
+bun test test/shell/shell.test.ts
 ```
 
-**État de la baseline (C-24).** Le rapport `C:\Users\jeanl\AppData\Local\Temp\opencodev2\wave4-baseline.md`
-**n'existe pas** au moment de cette révision : glob `**/wave4-baseline*` sur `%TEMP%\opencodev2`
-→ aucun résultat. La baseline de vague 4 est **en cours d'écriture**. Je fais donc porter la
-baseline par les chiffres mesurés par le validateur, qui a exécuté `bun test test/tool/shell.test.ts`
-**avant toute modification** : exit `1`, **68 pass / 27 fail / 3 errors**, **95 tests**, dont
-**26 échecs** dans `describe("tool.shell permissions")` (`shell.test.ts:215`). Log :
-`%TEMP%/opencodev2/p13-shell-test.log`.
-
-**Méthode pour figer la baseline** (à exécuter par l'implémenteur, avant la première édition de
-`shell.ts`) :
-```powershell
-bun test test/tool/shell.test.ts 2>&1 | Tee-Object -FilePath "$env:TEMP\opencodev2\p13-before.txt"
-# ... implémentation ...
-bun test test/tool/shell.test.ts 2>&1 | Tee-Object -FilePath "$env:TEMP\opencodev2\p13-after.txt"
-```
-Comparer le triplet `(pass, fail, errors)` et **l'ensemble des noms de tests en échec**, extrait
-des lignes `(fail)` du rapport.
-
-**Critère de succès observable, en deux volets — et non « la suite passe ».**
+**Critère de succès observable, en trois volets — et non « la suite passe ».**
 
 - **Volet A, périmètre restreint et déclaré (code neuf) :** les deux fichiers `*.test.ts` de
-  P13 sortent en **exit 0**, et les dix cas du tableau unitaire passent. C'est ce volet qui
-  prouve le correctif ; il est exigible parce qu'il ne porte que sur du code neuf.
-- **Volet B, non-régression par comparaison (jamais par zéro) :** sur les quatre fichiers du
-  périmètre 2, le triplet `(pass, fail, errors)` et **l'ensemble des noms en échec sont
-  identiques** avant et après implémentation. Référence : 68 / 27 / 3 sur
-  `test/tool/shell.test.ts`, 95 tests, 26 échecs dans `describe("tool.shell permissions")`.
-  Toute variation de ces chiffres, ou l'apparition/disparition d'un nom de test en échec, est
-  **une régression** et invalide l'implémentation. Si la baseline de vague 4 est publiée avant
-  l'implémentation, elle remplace ces chiffres et **c'est elle qui fait foi**. Le journal
-  existant est conservé et cité en annexe de preuve.
+  P13 sortent en **exit 0**, et les dix cas du tableau unitaire plus le cas RC1 passent. C'est
+  ce volet qui prouve le correctif ; il est exigible parce qu'il ne porte que sur du code neuf
+  et ne peut pas être battu par du rouge préexistant.
+- **Volet B, non-régression sur base stable, critère = code de sortie :**
+  `bun test test/shell/shell.test.ts` doit produire **`SHELL_TEST_EXIT=0`**, avec
+  **12 pass / 0 fail / 12 tests**. Base opposable et citée : `CORRECTIONS.md:57` (C-47), qui
+  mesure exactement cette suite à 12 pass / 0 fail / 26 `expect()` calls / 12 tests / 6,38 s. Le
+  critère est **l'exit code**, pas un triplet : sur une suite verte, le triplet n'est pas une
+  information supplémentaire, et il est ici réellement falsifiable — un non-zéro est une
+  régression, et aucun bruit d'exécution ne peut produire un zéro sur une suite qui casse.
+  **Il n'est pas substituable par 0 pass / 0 fail** : ce résultat signale un mauvais chemin de
+  test, pas une suite verte. Contrôle de chemin exigé : `read` du fichier visé doit renvoyer des
+  lignes avant toute exécution, comme pour `packages/opencode/test/config/plugin.test.ts`, où la
+  lecture ne renvoie **aucune ligne** — chemin vide, pas suite verte.
+- **Volet C, informative seulement — `test/tool/shell.test.ts` n'est pas une base.** La suite est
+  exécutée **une fois avant** et **une fois après** pour tracer l'écart, et les journaux sont
+  annexés en preuve. **Aucune** variation de ses chiffres n'est qualifiée de régression ni de
+  succès, et son résultat ne conditionne pas l'acceptation. Le nombre d'exécutions nécessaire
+  pour en tirer un intervalle de confiance est **hors périmètre de P13** (`CORRECTIONS.md:54`,
+  « Action requise avant la vague 4 »).
+
+**Contrôle de falsifiabilité du volet A — exigé, non facultatif.** Un test qui ne peut pas
+échouer ne prouve rien. Avant d'accepter le volet A vert, l'implémenteur exécute un contrôle
+négatif : neutraliser l'ajout `write.inline` dans l'expression de la porte du diff de §4, de sorte
+que la porte retombe sur `FILES.has(cmd) || (shellKind === "cmd" && CMD_FILES.has(cmd))`.
+Attendu : `test/tool/shell-mutation-detect.integration.test.ts` **échoue** sur l'assertion
+« `python -c` vers une cible externe produit un `ctx.ask` `external_directory` », et les deux
+autres assertions restent vertes. Si le fichier de test reste vert dans cette configuration, il
+ne prouve rien : le volet A est rejeté et le test doit être renforcé. `INFERE:` ce contrôle est
+**conçu ici**, il n'a **pas** été exécuté — je n'ai pas de shell dans cette révision ; il sera
+exécuté par l'implémenteur sur le patch appliqué.
+
+**Porte de compilation.** `bun typecheck` doit produire **`TYPECHECK_EXIT=0`**. Le seuil est
+établi sur l'état courant par `CORRECTIONS.md:56` (C-46), qui mesure `TYPECHECK_EXIT=0` en 16 s
+sur `bun` 1.4.2 dans `packages/opencode`. P13 ajoute un module et touche `shell.ts`, donc cette
+porte est **à exécuter après patch**, pas à hériter.
 
 ## 8. Effort
 
-`M` — un module pur d'environ 60 lignes (dont 10 dupliquées et 3 tables), une porte modifiée et
-une chaîne ajoutée dans `shell.ts`, deux fichiers de test ; pas de nouvelle dépendance, pas de
-nouvelle permission, pas de changement de format de configuration.
+`M` — un module pur d'environ 60 lignes (dont 10 dupliquées et 3 tables), une porte modifiée,
+une chaîne ajoutée dans `shell.ts`, un champ ajouté au type `Scan` et un hunk de filtrage sur
+`always`, deux fichiers de test ; pas de nouvelle dépendance, pas de nouvelle permission, pas de
+changement de format de configuration.
 
 ## 9. Verdict self-assessment
 
 `NEEDS_REVIEW`.
 
-La stratégie est confirmée par le validateur (« aucune ne remet en cause le choix de la
-stratégie (b) »). Restent **deux décisions** que je prends et qu'un validateur doit trancher,
-toutes deux visibles dans le diff de §4 :
+**Décision 1 — remède RC1 : ADOPTÉ, et inscrit dans le diff de §4.** Ce n'est plus une question
+ouverte. Le second hunk de §4 ajoute `scan.detected` et filtre `always` par
+`globs.filter((glob) => !detectorGlobs.has(glob))`. Motif : la fenêtre d'observation est l'unique
+bien que ce correctif produit (§6), et la laisser se refermer dès la première approbation viderait
+le correctif de son seul effet mesurable. Coût accepté, et écrit : une invite par occurrence pour
+un utilisateur qui approuve `python -c` en boucle, plus deux sites à tenir à jour dans
+`shell.ts` (le `Scan` et le hunk `always`).
 
-1. **Le remède RC1.** Ne pas exposer `always` pour les motifs produits par le détecteur
-   (`always: []` quand `scan.dirs` vient de `detectWritePaths`) afin qu'une approbation reste
-   `once`, au prix d'une invite par occurrence pour un utilisateur qui approuve `python -c` en
-   boucle. Je recommande oui, parce que la fenêtre d'observation est l'unique bien que ce
-   correctif produit (§6).
-2. **L'ajout de `"-filepath"` à `FLAGS` (`shell.ts:78`).** Strictement additif et nécessaire à
-   la promesse faite sur `tee-object` par RC6, mais c'est la seule modification d'une table
-   existante : elle mérite un contrôle explicite.
+**Décision 2 — l'ajout de `"-filepath"` à `FLAGS` (`shell.ts:78`) : à contrôler explicitement.**
+Strictement additif et nécessaire à la promesse faite sur `tee-object` par RC6, mais c'est la
+seule modification d'une table existante. Le revalidateur l'a acceptée (`#6`, `✅`), réserve
+assumée comprise ; je maintiens le point de contrôle.
 
-Point de doctrine à consigner, sans rapport avec ce correctif : `agent.ts:356-370` réécrit une
+**Ce que la revalidation vague 4 a tranché et que je reprends sans réserve.** C-13 est `refused`
+en tant qu'objection et son défaut ré-affecté sur `shell.ts:287` (`P13-revalidation.md:146`) ;
+C-12 est `accepted` quant au fond, la duplication `dynamic`/`prefix` étant assumée et tracée
+(`:147`) ; C-14 est `accepted` (`:148`). Les trois objections de fond de la vague 2 restent
+couvertes par les lectures du §2 et du §3.
+
+**Point de doctrine à consigner, sans rapport avec ce correctif** : `agent.ts:356-370` réécrit une
 règle que `agent.ts:119-121` déclare, et rien ne relie les deux textes (§3.10). Tant que ce
-couplage reste implicite, toute politique de permission écrite dans l'un des deux endroits peut
-être neutralisée par l'autre sans qu'aucun test ne le signale.
+couplage reste implicite, toute politique de permission écrite en deux endroits doit être
+considérée comme non testée. Hors périmètre de P13, et signalé comme tel par le revalidateur
+(`:148`).
+
+## Residus
+
+Ce qui reste `open` après la présente révision, avec pour chacun soit la mesure qui l'établit,
+soit la raison de son maintien. Aucun de ces résidus ne concerne le diff lui-même ; tous
+concernent la preuve ou le périmètre.
+
+| # | résidu | statut | mesure qui l'établit, ou raison du maintien |
+|---|---|---|---|
+| R1 | **Instabilité de `test/tool/shell.test.ts`** : 63/32/1 puis 62/33/4 sur l'arbre non modifié ; origine probable `RepeatedCallError: Repeated call blocked: 'bash' has already been called with these exact arguments in this session`, donc un état partagé entre tests | `open` | `CORRECTIONS.md:54` (C-44). **Raison du maintien** : P13 ne la corrige pas et ne peut pas la corriger — c'est une suite partagée. Conséquence assumée : cette suite n'est plus une base opposable, donc le volet B (§7) porte sur `test/shell/shell.test.ts` et le volet C est purement informatif. |
+| R2 | **Écart de comptage sur `wave4-baseline.md`** : 192 lignes selon `P13-revalidation.md:142`, 135 lignes et 10 suites selon `CORRECTIONS.md:51` | `open` | Les deux sources du harnais divergent et je n'ai pas de shell pour trancher. **Mesure de vérification** : `read` de `C:\Users\jeanl\AppData\Local\Temp\opencodev2\wave4-baseline.md` sur les lignes 1-11 et comptage. **Pourquoi cela ne bloque pas** : aucun critère de cette proposition ne dépend du nombre de lignes — seuls `:11` et les chiffres 63/32/1 sont utilisés, et les deux sources concordent sur eux. |
+| R3 | **Contrôle négatif du volet A non exécuté** | `open` | Le contrôle est spécifié en §7 mais **n'a pas été joué** : je n'ai pas de shell dans cette révision, et il suppose le patch appliqué. **Vérification** : neutraliser `write.inline` dans la porte, relancer la commande du volet A, constater un exit non nul sur l'assertion `external_directory`. Tant qu'il n'est pas joué, le volet A est « conçu », pas « prouvé ». |
+| R4 | **`TYPECHECK_EXIT=0` non exécuté après patch** | `open` | Seuil établi par `CORRECTIONS.md:56` sur l'état **courant** ; P13 ajoute un module et un champ de type, donc le résultat d'après patch n'est pas connu. **Vérification** : `bun typecheck` dans `packages/opencode` après application. |
+| R5 | **Doublage `dynamic`/`prefix`** : deux sites à tenir à jour, dérive silencieuse possible si `shell.ts:189-194` ou `:196-201` évoluent | `accepted` (réserve assumée) | `P13-revalidation.md:147` (`#6`, `✅`) et `:55`. **Raison du maintien en registre `open`** : le mécanisme de traçabilité annoncé est un commentaire (« Source à garder à jour »), qui n'échoue pas à la compilation. Détection proposée : un test qui compare le comportement de la copie à celui de l'original sur un corpus de chaînes. |
+| R6 | **Couplage `agent.ts:356-370` ↔ `agent.ts:119-121`** : deux textes décrivant la même politique sans lien déclaré | `open` (hors périmètre) | `P13-revalidation.md:148` (`#7`, `✅` quant au fond) : « le couplage reste implicite et non testé ». **Raison du maintien** : hors périmètre de P13 ; aucun élément du diff ne le touche. |
+| R7 | **Comportement sous `scout` non mesuré** : l'inférence « `python -c` y est refusée d'emblée » est dérivée de `merge` + `findLast`, non d'une exécution | `open` | `INFERE:` en §3.10, vérification proposée en §3.10 (test comparant `bash` sous `scout` et sous `explore`). **Raison du maintien** : le raisonnement repose sur trois lectures citées (`agent.ts:117`, `:231`, `packages/core/src/permission.ts:25`/`:33-35`) mais n'a pas d'exécution derrière lui ; je le marque donc comme inférence et non comme fait. |
+| R8 | **Faux positifs `sed -n` et `tee` en relais pur** | `accepted` (assumé) | §6 « Faux positifs ». **Raison du maintien** : bornés par le filtre `shell.ts:413` + `instance-context.ts:19`/`:23` — ils ne produisent une demande que sur une cible hors `directory` **et** hors `worktree`. **Vérification possible** : un test d'intégration par cas, non écrit à ce jour. |

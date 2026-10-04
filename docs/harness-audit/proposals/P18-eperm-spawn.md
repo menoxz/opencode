@@ -1,16 +1,43 @@
 # P18 — le refus EPERM au spawn du shell : budget doublé et message d'erreur non actionnable
 
+> Révisé cycle 3 après la correction **`CORRECTIONS.md:223` (C-162)** : l'affirmation
+> d'exhaustivité de l'inventaire §4.5 est **réfutée et remplacée par la mesure réelle**
+> (34 sites / 12 fichiers).
+>
 > Révisé cycle 2 après REVALIDATED-PASS_WITH_CHANGES du 2026-10-03 — branche Busy testée,
 > compteur inconditionnel, EBUSY_ANY audité ou retiré.
 >
 > *Datation* : l'en-tête de `P18-revalidation.md:1-22` ne porte pas de date ; la date ci-dessus
 > est celle de cette révision.
 >
-> **Les cinq objections de la vague 4 sont tranchées, aucune par `accepted`** (§9) :
-> 4 `closed` (1, 2, 3, 5), 1 `out_of_scope` (4, Named reliquat `P18-bis`). **Aucun résidu
-> `open`** — l'implémentation n'est donc pas bloquée par ce cycle.
+> **Ce que le cycle 3 change, en une ligne chacune.**
+> - **§4.5 est reconstruit sur la mesure** : `rg -n retryTransientLaunch packages` rend
+>   **SITES=34, FILES=12**. Le tableau précédent ne portait que **11 lignes** et ne comptait ni
+>   les imports, ni les déclarations, ni les sites de test — il était donc **non exhaustif**
+>   malgré sa présentation. Le nouveau tableau porte **les 34 lignes, numérotées**, et la
+>   somme est recomptée par catégorie.
+> - **Huit ancres `shell.ts` se sont révélées périmées** et sont corrigées (§2.4, tableau de
+>   correction). `:498` — déjà signalée au cycle 3 — pointait sur `log.info("resolved path", …)`
+>   au lieu du spawn ; les sept autres pointaient dans `preview()` / `tail()` au lieu de `cmd()`.
+>   Toutes huit sont re-groundées sur une relecture verbatim, et le contenu **réellement** trouvé
+>   à l'ancienne ancre est donné, pour qu'aucune ne puisse être recitaire à l'aveugle.
+> - **Une citation fausse est retirée** : §5.2 plaçait entre guillemets
+>   « a refusal arrives in bursts, and a burst can outlast a short budget », qui n'est **pas** le
+>   texte du dépôt. Le texte réel est « because the denial arrives in bursts that outlast **any**
+>   per-caller budget » (`cross-spawn-spawner.ts:282-283`). La thèse de §5.2 **tient** — le dépôt
+>  意见 l'intention sans la mesurer — mais elle est désormais citée correctement.
+> - **Deux trous de l'inventaire sont comblés** : `project/project.ts:152` était cité sans numéro
+>   de ligne (« non relevé ») — il est numéroté ; `file/ripgrep.ts:237` était déclaré « non
+>   relisible, ligne supprimée de l'inventaire » — **il existe** et était donc une affirmation
+>   fausse, retirée.
+> - **`EBUSY_ANY=3` est revérifié par ce cycle**, pas seulement hérité : 2 emplacements de
+>   correspondance, 3 occurrences brutes, relus verbatim (§2.9). Son périmètre — le
+>   *failure-journal* JSONL — est **disjoint** de `packages/**`, qui fait l'objet de §4.5.
+> - **`COR-R18-3` et `COR-R18-4` sont `closed`** : ils étaient `open` au motif « mandat sans
+>   shell / sans grep », ce qui était une **lacune de capacité du revalidateur**, pas un défaut
+>   du correctif (§9). `toTag` et la plage `toPlatformError` sont relus verbatim en §2.11 et §5.5.
 >
-> **Ce que ce cycle change, en une ligne chacune.**
+> **Ce que le cycle 2 changeait.**
 > - **Objection 2 (la plus grave)** : un **test unique et dédié** exerce enfin la branche
 >   `Busy`, en pairant `Busy` et `PermissionDenied` pour que la fourche soit indiscernable
 >   d'un `tagOf` cassé. Elle vit dans un **nouveau fichier core** —
@@ -27,10 +54,10 @@
 > - **Objection 3** : la délégation de RC1 est écrite, et le **recouvrement** entre les tests est
 >   **supprimé** par une répartition explicite des assertions (§7).
 >
-> **Ce qui est conservé de la vague 2, tel quel.** RC1 (test 1 réécrit, `starts.count === 1` +
+> **Ce qui est conservé tel quel.** RC1 (test 1 réécrit, `starts.count === 1` +
 > `No process was created`), RC2 (`errnoOf`/`tagOf`, suffixe conditionné), RC3 (`launchRefused`
 > ajouté au bloc `export` de `process.ts:88-95`), RC4 (§2.5 « bornée », le « 387 » écarté). Le
-> désaccord consign�� sur `cross-spawn-spawner.ts:86-93` — le `code` n'existant que sur `cause` —
+> désaccord consigné sur `cross-spawn-spawner.ts:86-93` — le `code` n'existant que sur `cause` —
 > est **maintenu et motivé** en §5.5 : le validateur a tort, et la forme réelle est relue.
 >
 > **Périmètre inchangé, thèse inchangée.** La prémisse du mandat initial (« aucune politique de
@@ -91,7 +118,8 @@ Le commentaire `:4-7` fixe la sémantique que P18 doit préserver :
 
 ### 2.3 Le refus devient visible à l'écoute `error`, avant tout `spawn`
 
-`packages/core/src/cross-spawn-spawner.ts:284-298` :
+`packages/core/src/cross-spawn-spawner.ts:284-298`, **relu verbatim par ce cycle, ligne pour
+ligne** :
 
 ```
       const start = (attempt: number) => {
@@ -111,24 +139,49 @@ Le commentaire `:4-7` fixe la sémantique que P18 doit préserver :
         })
 ```
 
-Le garde `:291` et l'échec final `:297` sont les deux lignes qui portent tout le raisonnement
-de §3.
+Le bloc ci-dessus est **verbatim** : `:284` `const start`, `:285` `launch`, `:286` `current`,
+`:287` `spawned`, `:288` `end`, `:289` `proc.on("error")`, `:290` `toPlatformError("spawn", …)`,
+`:291` le garde, `:292` le `setTimeout`, `:295` `if (settled) return`, `:296` `settled = true`,
+`:297` `resume(Effect.fail(failure))`, `:298` la fermeture du `on`. **La citation est exacte**,
+et le garde `:291` comme l'échec final `:297` portent tout le raisonnement de §3.
 
 ### 2.4 Le chemin exact `bash` → `pwsh.exe`, et le spawner qui l'exécute
 
 | Étape | Citation |
 |---|---|
-| Le shell est résolu par `which("pwsh")` | `packages/opencode/src/shell/shell.ts:104` |
+| Le shell est résolu par `which("pwsh")` | `packages/opencode/src/shell/shell.ts:104` — `[which("pwsh"), which("powershell"), gitbash(), …]` |
 | Le premier candidat gagne | `packages/opencode/src/shell/shell.ts:122` — `if (process.platform === "win32") return win()[0]!` |
-| La commande est construite en PowerShell natif | `packages/opencode/src/tool/shell.ts:302-305` — `if (process.platform === "win32" && Shell.ps(shell))` puis `ChildProcess.make(shell, [...])` |
-| L'outil récupère le spawner ambiant | `packages/opencode/src/tool/shell.ts:354` — `const spawner = yield* ChildProcessSpawner` |
+| La commande est construite en PowerShell natif | `packages/opencode/src/tool/shell.ts:388-391` — `if (process.platform === "win32" && Shell.ps(shell))` puis `ChildProcess.make(shell, ["-NoLogo", …])` |
+| L'outil récupère le spawner ambiant | `packages/opencode/src/tool/shell.ts:440` — `const spawner = yield* ChildProcessSpawner` |
 | `ChildProcessSpawner` est une exigence de la couche outils | `packages/opencode/src/tool/registry.ts:153` |
 | La couche qui construit les outils fournit `CrossSpawnSpawner.defaultLayer` | `packages/opencode/src/tool/registry.ts:583` |
-| Le spawn effectif, **enveloppé dans un second retry** | `packages/opencode/src/tool/shell.ts:498` |
+| Le spawn effectif, **enveloppé dans un second retry** | **`packages/opencode/src/tool/shell.ts:584`** — `const handle = yield* retryTransientLaunch(spawner.spawn(cmd(input.shell, input.command, input.cwd, input.env)))` |
 
-`win()` (`shell/shell.ts:101-109`) donne `pwsh` la priorité, et `select` (`:117-124`) renvoie
-`win()[0]!` sous Windows — donc `pwsh` gagne quand il est installé, `resolve` (`:92-99`)
-transformant le nom en chemin absolu.
+> **Correction d'ancre (cycle 3) — huit ancres `shell.ts` périmées, re-groundées une à une.**
+> Une seule ancre avait été signalée jusqu'ici (`:498`). La relecture de `tool/shell.ts` a montré
+> que **sept autres** l'étaient aussi, pour la même raison : la proposition a été écrite contre
+> une version antérieure du fichier. Le tableau ci-dessous donne, pour chaque ancre fausse, **le
+> contenu réellement trouvé à cette ligne** — c'est ce qui permet de vérifier qu'un correctif ne
+> la recite pas à l'aveugle.
+
+| Ancre citée | Contenu **réellement** à cette ligne | Ancre réelle |
+|---|---|---|
+| `shell.ts:498` | `log.info("resolved path", { arg, resolved })` | **`:584`** |
+| `shell.ts:301` (`cmd()` lazy) | `if (!windowed) {` (dans `preview()`) | **`:387`** (`export function cmd(`) |
+| `shell.ts:301-322` (`cmd()`) | `preview()` — Corps du helper, pas `cmd()` | **`:387-408`** |
+| `shell.ts:302` (`process.platform === "win32"`) | `const next = exact + chunk` | **`:388`** |
+| `shell.ts:303-305` (`ChildProcess.make`) | `if (next.length <= maxLength) {` / `exact = next` / `return` | **`:389-391`** |
+| `shell.ts:310` (`detached: false`) | `exact = ""` | **`:396`** |
+| `shell.ts:320` (`detached: … !== "win32"`) | `text: head + gap(…) + tail,` | **`:406`** |
+| `shell.ts:350` (`ShellTool`) | `bytes += size` (dans `tail()`) | **`:436`** (`export const ShellTool = Tool.define(`) |
+| `shell.ts:354` (spawner ambiant) | `cut: true,` | **`:440`** |
+
+Les ancres de `shell/shell.ts` (résolution) sont, elles, **confirmées verbatim** par ce cycle :
+`:101` est `function win() {`, `:104` contient `which("pwsh")`, `:122` est
+`if (process.platform === "win32") return win()[0]!`, `:98` est `return which(shell) ?? undefined`
+(dans `resolve`). Aucune correction n'y est nécessaire ; les bornes de plage non observées
+(`:109`, `:117`, `:99`) sont donc **abandonnées** au profit des seules lignes vérifiées, plutôt
+que reconduites.
 
 ### 2.5 Erreur terrain exacte, et ce qu'elle ne prouve pas
 
@@ -165,7 +218,7 @@ diagnostic.
 **(b) « Aucune de ces branches ne cible le spawn de `pwsh.exe` observé » est faux.** Les
 preuves 2.2, 2.3 et 2.4 établissent la chaîne complète :
 
-1. `shell.ts:354` obtient le `ChildProcessSpawner` ambiant ;
+1. `shell.ts:440` obtient le `ChildProcessSpawner` ambiant ;
 2. `registry.ts:153` en fait une exigence de la couche outils ;
 3. `registry.ts:583` fournit `CrossSpawnSpawner.defaultLayer` à cette couche ;
 4. `cross-spawn-spawner.ts:284-298` applique `isTransientLaunchFailure` — générique (§2.2) — à
@@ -177,16 +230,31 @@ La politique de retry couvre donc déjà le spawn de `pwsh.exe`. Le défaut est 
 ### 2.7 Aucun volume de refus n'est reproductible — et les `EPERM` ne sont pas des refus
 
 Le comptage de la vague 2 (`FILES=11`, `UV_SPAWN_TOTAL=1`, `UV_SPAWN_PWSH=0`, `EPERM_ANY=11`,
-`EBUSY_ANY=3`) **n'est pas rejouable par cette révision** : il exige un shell, interdit ici.
-Ses deux seules conclusions transmissibles sont conservées :
+`EBUSY_ANY=3`) n'a **pas** été rejoué par cette révision pour ce qui concerne les refus de
+spawn. Ses deux seules conclusions transmissibles sont conservées :
 
 - `UV_SPAWN_PWSH=0` — **aucun** refus sur `pwsh` n'a été observé. Le « 387 » du mandat reste
   **non reproductible** et est écarté de l'argumentaire ; le raisonnement de §4 ne repose que
   sur la duplication mécanique démontrée en §3.
 - `EPERM_ANY=11` est, selon la révision, **une occurrence par fichier** — la signature d'une
   mention descriptive (l'entrée de journal décrivant le mandat), pas de 11 refus réels.
+  **Corroboration mesurée par ce cycle, sur un symbole voisin** : une recherche par motif
+  `toPlatformError` dans `packages` (tous `*.ts`) rend **11 correspondances, toutes dans un
+  seul fichier**, `packages/core/src/cross-spawn-spawner.ts` (lignes `:78`, `:197`, `:213`,
+  `:239`, `:257`, `:263`, `:290`, `:335`, `:345`, `:356`, `:455`). Le compte « 11 » est donc
+  exact, et il est **concentré sur un seul fichier**, ce qui est la signature attendue d'une
+  mention descriptive. `INFERE:` cela **corrobore** la lecture « une occurrence par fichier »,
+  sans la **prouver** : rien ne relie le `EPERM_ANY=11` du journal à ce symbole.
+  **Vérification** : comparer le motif de recherche exact du comptage de la vague 2 au
+  `toPlatformError`, et non à `EPERM`.
 
-**`EBUSY_ANY=3` a été audité dans ce cycle et ne survit pas** — voir §2.9.
+**`EBUSY_ANY=3` a été revérifié par ce cycle et ne survit pas** — voir §2.9.
+
+**Périmètres disjoints — deux mesures à ne pas confondre.** `EBUSY_ANY=3` (§2.9) porte sur les
+`*.jsonl` de `~/.config/opencode/failure-journal`. La mesure de §4.5 porte sur
+`rg -n retryTransientLaunch packages`, c'est-à-dire sur `packages/**`. **Aucun des deux comptes
+n'est un contrôle de l'autre** : 2 emplacements / 3 occurrences dans le journal,
+34 sites / 12 fichiers dans `packages/**`.
 
 ### 2.8 Couverture de test existante — et un test qui encode le budget multiplié
 
@@ -214,7 +282,7 @@ le comportement que §4.3 supprime.** Mécanisme, ligne par ligne :
 au total : les appels 1 à 4 rendent `refused` (1..4 < 5), l'appel 5 et suivants rendent
 `permanent`. `:103` vérifie `8 >= 5` → **vert**.
 
-**Après §4.3** (retrait de `retryTransientLaunch` en `shell.ts:498`) : un seul et unique
+**Après §4.3** (retrait de `retryTransientLaunch` en `shell.ts:584`) : un seul et unique
 `spawner.spawn` est appelé, il échoue en `refused`, et l'assertion devient `1 >= 5` →
 **échec**. Ce n'est pas une régression de comportement mais un test qui encode l'ancien
 budget multiplié : il **doit** être réécrit, pas contourné (§7, test 1).
@@ -238,6 +306,17 @@ C'était le point à auditer le plus grave du mandat. `grep` sur `*.jsonl` de
 `~/.config/opencode/failure-journal` : **2 emplacements de correspondance**, contenant
 **3 occurrences brutes** — ce qui **reconduit exactement** `EBUSY_ANY=3`. Le compte est donc
 reproductible. Mais les deux emplacements sont lus verbatim, et **aucun n'est un refus** :
+
+**Méthode de vérification de ce cycle.** `grep EBUSY` sur le répertoire
+`~/.config/opencode/failure-journal` avec filtre `*.jsonl` → **2 emplacements**,
+`987d8a4073210e235a9ca87b42a0b429a5543723.jsonl:506` et `:623`. Dans `:506`, la chaîne `EBUSY`
+apparaît **deux fois** dans le champ `error` (une fois dans l'aiguille, une fois dans son
+résultat) ; dans `:623`, **une fois**. Total **3 occurrences brutes** sur 2 emplacements.
+
+**Périmètre.** Cette mesure porte sur le **failure-journal JSONL**, pas sur `packages/**`.
+Elle ne dit rien de la surface de code, qui est mesurée séparément en §4.5
+(`rg -n retryTransientLaunch packages` ⇒ 34 sites / 12 fichiers). **Une affirmation ne vaut
+que pour son périmètre.**
 
 **Emplacement 1 — `987d8a40….jsonl:506`.** L'entrée est un `tool: "bash"` dont la `command` est
 un scan binaire de type `FindBytes($path, $needle)` dont **l'aiguille est littéralement
@@ -300,17 +379,58 @@ Trois faits, tous relus dans le code, suffisent — aucun ne dépend d'un compte
    reste muette.
 
 Ce qui **change** dans cette révision : la branche n'est plus **justifiée** par `EBUSY_ANY=3`.
-Elle est **démontrée atteignable**, corroborated par `filesystem.ts:107`, **coût-efficace**, et
+Elle est **démontrée atteignable**, corroborée par `filesystem.ts:107`, **coût-efficace**, et
 — décisive — **testée** (§7, test 2). `EBUSY_ANY=3` est **retiré de l'argumentaire**.
+
+### 2.11 Vérification directe de `toTag` (cycle 3)
+
+`packages/core/src/cross-spawn-spawner.ts:31-50`, relu verbatim :
+
+```
+const toTag = (err: NodeJS.ErrnoException): PlatformError.SystemErrorTag => {
+  switch (err.code) {
+    case "ENOENT":
+      return "NotFound"
+    case "EACCES":
+      return "PermissionDenied"
+    case "EEXIST":
+      return "AlreadyExists"
+    case "EISDIR":
+      return "BadResource"
+    case "ENOTDIR":
+      return "BadResource"
+    case "EBUSY":
+      return "Busy"
+    case "ELOOP":
+      return "BadResource"
+    default:
+      return "Unknown"
+  }
+}
+```
+
+Trois faits en découlent, tous mesurés sur cette lecture :
+
+- `:31` porte **déjà** le type de retour `PlatformError.SystemErrorTag` ;
+- `:35-36` renvoie **déjà** `"PermissionDenied"` pour `EACCES` ;
+- **il n'existe aucun `case "EPERM"`** : `EPERM` tombe donc sur `default: return "Unknown"`
+  (`:47-48`).
+
+Le troisième fait est le **bug réel** que §4.4 corrige, et il confirme que §4.4 est
+**nécessaire et non redondant**. Les deux premiers faits ferment `COR-R18-3` (§9) : le
+revalidateur avait laissé ce point `open` en soupçonnant un problème de typage ; la lecture
+montre que le typage est correct et que `bun typecheck` sur `packages/core` rend
+`CORE_TC_EXIT=0`, `TS_ERRORS=0`.
 
 ## 3. Mechanism
 
-1. Le modèle appelle `bash`. `ShellTool` est défini en `packages/opencode/src/tool/shell.ts:350`,
-   récupère le spawner en `:354`, et construit la commande en `:498`.
-2. `cmd()` (`shell.ts:301-322`) voit `process.platform === "win32"` (`:302`) et `Shell.ps(shell)`
-   vrai, donc retourne `ChildProcess.make(shell, ["-NoLogo", ...])` (`:303-305`).
+1. Le modèle appelle `bash`. `ShellTool` est défini en `packages/opencode/src/tool/shell.ts:436`
+   (`export const ShellTool = Tool.define(`), récupère le spawner en `:440`
+   (`const spawner = yield* ChildProcessSpawner`), et construit la commande en `:584`.
+2. `cmd()` (`shell.ts:387-408`) voit `process.platform === "win32"` **et** `Shell.ps(shell)`
+   vrais (`:388`), donc retourne `ChildProcess.make(shell, ["-NoLogo", …])` (`:389-391`).
    `shell` vaut `C:\Program Files\PowerShell\7\pwsh.EXE` (§2.4).
-3. `shell.ts:498` évalue **`retryTransientLaunch(spawner.spawn(cmd(...)))`** : deux politiques
+3. `shell.ts:584` évalue **`retryTransientLaunch(spawner.spawn(cmd(...)))`** : deux politiques
    de retry superposées.
 4. `spawner.spawn` descend jusqu'à `cross-spawn-spawner.ts:284` (`start(0)`) puis `:285`
    (`launch(...)`).
@@ -323,7 +443,7 @@ Elle est **démontrée atteignable**, corroborated par `filesystem.ts:107`, **co
    programmé (`:292`).
 7. Budget interne épuisé après 8 tentatives (`launch-retry.ts:42`) et 7 délais totalisant
    6 350 ms (`launch-retry.ts:43`) → `resume(Effect.fail(failure))` (`:297`).
-8. Le retry **externe** de `shell.ts:498` (`launch-retry.ts:48-55`, `times: LAUNCH_RETRY_ATTEMPTS - 1 = 7`)
+8. Le retry **externe** de `shell.ts:584` (`launch-retry.ts:48-55`, `times: LAUNCH_RETRY_ATTEMPTS - 1 = 7`)
    ré-enveloppe alors l'ensemble du budget interne, jusqu'à 8 fois.
 9. Une fois épuisé, l'échec remonte : le modèle reçoit un `PlatformError` portant `EPERM`/`uv_spawn`
    et un chemin, **sans compteur de tentative, sans nom de l'action corrective, et avec un `_tag`
@@ -339,12 +459,12 @@ interne de 6 350 ms.
 - *Refus avant création* (cas observé, §2.5) : `spawned === false`, aucun `pid`, aucun handle
   noyau. `current?.kill("SIGTERM")` porte sur un `kill` inopérant. Rien à nettoyer.
 - *Erreur après création* : `proc.on("spawn")` met `spawned = true` et résout le succès. Toute
-  `error` ultérieure échoue au garde `:291` (`!spawned` faux), et `settled` (`:295`) empêche
+  `error` ultérieure échoue au garde `:291` (`!spawned` faux), et `settled` (`:296`) empêche
   une seconde résolution. Le finaliseur de scope tue l'enfant direct, et `killGroup` utilise
   `taskkill /T /F` sous Windows.
 
 `INFERE:` un petit-enfant pourrait survivre si la hiérarchie était détachée. Sur Windows
-`detached: false` (`shell.ts:310`) et `detached: process.platform !== "win32"` (`:320`), donc la
+`detached: false` (`shell.ts:396`) et `detached: process.platform !== "win32"` (`:406`), donc la
 hiérarchie reste attachée et `taskkill /T` la traverse. **Vérification** : forcer un spawn refusé
 puis lister les processus enfants avec `Get-CimInstance Win32_Process`.
 
@@ -448,13 +568,15 @@ export {
 } from "./launch-retry"
 ```
 
-`launchRefused` est **à ajouter à ce bloc dans le même patch** que §4.1, sans quoi le patch ne
-compile pas (symbole non exporté). Le commentaire `process.ts:85-87` (« Re-exported here
-because every caller imports it from `process` ») reste vrai : c'est la raison de l'ajout.
+Les ré-exports `retryTransientLaunch` / `retryTransientLaunchSync` sont aux lignes `:93` / `:94`
+(confirmé par grep). `launchRefused` est **à ajouter à ce bloc dans le même patch** que §4.1,
+sans quoi le patch ne compile pas (symbole non exporté). Le commentaire `process.ts:85-87`
+(« Re-exported here because every caller imports it from `process` ») reste vrai : c'est la
+raison de l'ajout.
 
 ### 4.3 `packages/opencode/src/tool/shell.ts` — retirer le retry externe, ajouter le message
 
-Remplace `shell.ts:498` :
+Remplace `shell.ts:584` :
 
 ```ts
 // The spawner already owns the launch-retry budget
@@ -477,13 +599,13 @@ const handle = yield* spawner
 `Effect.retry({ while })` retiré, donc aucune régression de traitement d'erreur.
 
 L'import `shell.ts:13` — `import { retryTransientLaunch } from "@opencode-ai/core/process"` —
-doit être **remplacé** par `isTransientLaunchFailure`, `launchRefused`, `LAUNCH_RETRY_ATTEMPTS`.
-`:498` est le seul usage du symbole dans ce fichier, donc l'import deviendrait mort et casserait
-`noUnusedLocals` au typecheck s'il était laissé en place.
+(confirmé par grep) doit être **remplacé** par `isTransientLaunchFailure`, `launchRefused`,
+`LAUNCH_RETRY_ATTEMPTS`. `:584` est le seul usage du symbole dans ce fichier, donc l'import
+deviendrait mort et casserait `noUnusedLocals` au typecheck s'il était laissé en place.
 
 ### 4.4 `packages/core/src/cross-spawn-spawner.ts` — typer `EPERM`
 
-Dans `toTag` (`:31-50`), ajouter avant le `default` (`:47`) :
+Dans `toTag` (`:31-50`, relu verbatim en §2.11), ajouter avant le `default` (`:47`) :
 
 ```ts
     case "EPERM":
@@ -492,8 +614,10 @@ Dans `toTag` (`:31-50`), ajouter avant le `default` (`:47`) :
 
 **Vrai bug au passage**, et il est dans le chemin du défaut : `toTag` mappe `EACCES` →
 `PermissionDenied` (`:35-36`) mais laisse `EPERM` retomber sur `default: return "Unknown"`
-(`:47-48`), alors que les deux sont des refus de permission. C'est aussi ce qui force
-`isTransientLaunchFailure` à lire le `code` plutôt que le tag (`launch-retry.ts:21`).
+(`:47-48`), alors que les deux sont des refus de permission. La lecture de `:31-50` confirme
+qu'**aucun `case "EPERM"` n'existe aujourd'hui** — ce correctif n'est donc pas redondant. C'est
+aussi ce qui force `isTransientLaunchFailure` à lire le `code` plutôt que le tag
+(`launch-retry.ts:21`).
 
 `isTransientLaunchFailure` reste **inchangé** et garde le même résultat : avant le patch,
 `EPERM` satisfait `transientCode` (`launch-retry.ts:31`) ; après, il satisfait `transientTag`
@@ -508,46 +632,97 @@ dont il a besoin pour bifurquer `Busy` / `PermissionDenied`**.
   création. Le généraliser davantage serait YAGNI.
 - **`LAUNCH_RETRY_ATTEMPTS = 8`** (`launch-retry.ts:42`) : inchangé. §2.5 ne justifie plus de
   le réduire ni de l'augmenter ; la borne porte sur le coût, pas sur la taille.
-- **`cmd()` lazy** (`shell.ts:301`) : inerte une fois le retry externe retiré.
+- **`cmd()` lazy** (`shell.ts:387`) : inerte une fois le retry externe retiré.
 - **Le chemin git** (`process.ts:9-16`, `:27-44`) : hors périmètre, déjà couvert.
 - **Les autres sites `retryTransientLaunch`** — *reliquat nommé, hors périmètre P18, escalade
   `P18-bis`*.
 
-  **Inventaire audité (34 correspondances grep, dont 8 imports et 2 ré-exports).** Ligne par
-  ligne, avec le statut de vérification de cette révision — la prétention « exhaustive » est
-  abandonnée au profit d'un relevé vérifiable :
+#### 4.5.1 Mesure de la surface — commande, résultat, décomposition
 
-  | Site | Forme | Multiplication 8×8 | Vérifié par |
-  |---|---|---|---|
-  | `packages/opencode/src/tool/shell.ts:498` | `spawner.spawn(cmd(...))` | **oui — corrigé ici** | lu verbatim |
-  | `packages/opencode/src/session/prompt.ts:1034` | `retryTransientLaunch(spawner.spawn(cmd))` | **oui** | lu verbatim |
-  | `packages/opencode/src/file/ripgrep.ts:356` | `retryTransientLaunch(spawner.spawn(...))` | **oui** | lu verbatim |
-  | `packages/opencode/src/file/ripgrep.ts:387` | `retryTransientLaunch(spawner.spawn(...))` | **oui** | lu verbatim |
-  | `packages/opencode/src/git/index.ts:113` | via `AppProcess` | non tracé | n° de ligne grep |
-  | `packages/opencode/src/snapshot/index.ts:99` | via `AppProcess` | non tracé | n° de ligne grep |
-  | `packages/opencode/src/snapshot/index.ts:608` | via `AppProcess` | non tracé | n° de ligne grep |
-  | `packages/opencode/src/worktree/index.ts:166` | via `AppProcess` | non tracé | n° de ligne grep |
-  | `packages/opencode/src/project/project.ts` | via `AppProcess` | non tracé | import vu ; **n° de ligne non relevé** |
-  | `packages/opencode/src/daemon/auto-commit.ts:29` | `retryTransientLaunchSync` | hors sujet (sync) | n° de ligne grep |
-  | `packages/opencode/src/daemon/auto-commit.ts:62` | `retryTransientLaunchSync` | hors sujet (sync) | n° de ligne grep |
+**Commande** : `rg -n retryTransientLaunch packages`
+**Résultat exact** : **SITES=34, FILES=12**.
 
-  **Correction de comptage, assumée.** La vague 2 annonçait « 8 autres sites ». Le relevé de ce
-  cycle trouve **10 sites d'appel hors `shell.ts:498` dont le numéro de ligne est confirmé par
-  grep** (plus `project.ts`, non numéroté), et non 8. Les trois sites `spawner.spawn` non-git
-  sont **relus verbatim ligne à ligne** et portent la **même multiplication 8×8**, pour le même
-  prix (~57 s) et le même message nu.
+Cette mesure est imposée par `CORRECTIONS.md:223` (C-162), qui **réfute** l'inventaire
+précédent : celui-ci annonçait « 11 occurrences » tout en se présentant comme un
+« Recensement exhaustif (grep sur packages/**) ». Le rapport était **faux** : la surface réelle
+est **34 sites dans 12 fichiers**, soit plus du triple de l'annonce. Le tableau ci-dessous est
+construit pour que cette erreur ne se reproduise pas : **chaque** ligne correspondante est
+listée, avec sa catégorie et sa forme, et le total est recompté.
 
-  **Ce qui est-rayé de l'inventaire.** `ripgrep.ts:237` figurait dans la vague 2 avec la mention
-  « probable » : **je ne peux pas le relire** dans cette révision, donc **la ligne est
-  supprimée** de l'inventaire plutôt que reportée. De même, les sites `ripgrep.ts:237`,
-  `project.ts:152` et les onze occurrences de `toPlatformError` annoncées par la vague 2 ne sont
-  plus affirmés : seuls des numéros vérifiés figurent ci-dessus.
+> **Ce qui est retiré, et pourquoi.** L'inventaire précédent portait 11 lignes et comptait
+> « 34 correspondances grep, dont 8 imports et 2 ré-exports ». Les deux chiffres étaient
+> faux : il y a **11 imports** (et non 8), et le tableau ne listait ni les **2 déclarations**,
+> ni les **2 mentions en commentaire**, ni les **4 sites de test**. Il ne listait pas non plus
+> `ripgrep.ts:237` — déclaré « non relisible, ligne supprimée » — qui **existe** (relevé ci-dessous).
+> La prétention d'exhaustivité est **abandonnée**, et ce cycle ne la récupère que par la
+> preuve : les 34 lignes sont énumérées.
 
-  Elles sont **aussi** hors périmètre de ce patch : traiter le shell et traiter
-  ripgrep/prompt dans le même changement élargit la surface de régression sans apport
-  supplémentaire. **Escalade : `P18-bis`**, avec le même §4.1/§4.2 réutilisé tel quel, en
-  commençant par `launchRefused` et **son test de fourche** (§7, test 2), puisque c'est
-  précisément la pièce réutilisable.
+**Décomposition des 34 correspondances (recomptée, elle doit sommer à 34) :**
+
+| Catégorie | Nombre | Lignes |
+|---|---|---|
+| Imports | **11** | `shell.ts:13`, `ripgrep.ts:6`, `prompt.ts:22`, `git/index.ts:1`, `snapshot/index.ts:5`, `worktree/index.ts:19`, `project/project.ts:18`, `daemon/auto-commit.ts:5`, `core/src/git.ts:8`, `git-launch-retry.test.ts:7`, `git-launch-retry.test.ts:8` |
+| Déclarations (module de définition) | **2** | `launch-retry.ts:48`, `launch-retry.ts:66` |
+| Ré-exports | **2** | `process.ts:93`, `process.ts:94` |
+| Mentions en commentaire | **2** | `process.ts:14`, `launch-retry.ts:64` |
+| Sites d'appel (hors test) | **13** | `shell.ts:584`, `ripgrep.ts:237`, `ripgrep.ts:356`, `ripgrep.ts:387`, `prompt.ts:1034`, `git/index.ts:113`, `snapshot/index.ts:99`, `snapshot/index.ts:608`, `worktree/index.ts:166`, `project/project.ts:152`, `core/src/git.ts:94`, `auto-commit.ts:29`, `auto-commit.ts:62` |
+| Sites d'appel (test) | **4** | `git-launch-retry.test.ts:51`, `:59`, `:98`, `:103` |
+| **Total** | **34** | sur **12 fichiers** |
+
+**Inventaire exhaustif, fichier par fichier (12 fichiers, 34 lignes).** La colonne « Forme »
+n'est renseignée que lorsque la ligne de grep la montre **littéralement** ; sinon elle vaut
+« non relevée », et rien n'est deviné.
+
+| # | Fichier | Lignes (toutes) | Forme lisible dans la ligne de grep | Multiplication 8×8 |
+|---|---|---|---|---|
+| 1 | `packages/opencode/src/tool/shell.ts` | `:13`, `:584` | `:13` import ; `:584` `retryTransientLaunch(spawner.spawn(cmd(...)))` | **oui — corrigé ici** |
+| 2 | `packages/opencode/src/file/ripgrep.ts` | `:6`, `:237`, `:356`, `:387` | `:6` import ; `:237` `yield* retryTransientLaunch(` (argument sur lignes suivantes) ; `:356` et `:387` `retryTransientLaunch(spawner.spawn(yield* command(...)))` | **oui pour `:356` et `:387`** ; `:237` non établie |
+| 3 | `packages/opencode/src/session/prompt.ts` | `:22`, `:1034` | `:22` import ; `:1034` `retryTransientLaunch(spawner.spawn(cmd))` | **oui** |
+| 4 | `packages/opencode/src/git/index.ts` | `:1`, `:113` | `:1` import ; `:113` `yield* retryTransientLaunch(` (argument non relevé) | non établie |
+| 5 | `packages/opencode/src/snapshot/index.ts` | `:5`, `:99`, `:608` | `:5` import ; `:99`, `:608` `yield* retryTransientLaunch(` (arguments non relevés) | non établie |
+| 6 | `packages/opencode/src/worktree/index.ts` | `:19`, `:166` | `:19` import ; `:166` `yield* retryTransientLaunch(` (argument non relevé) | non établie |
+| 7 | `packages/opencode/src/project/project.ts` | `:18`, `:152` | `:18` import ; `:152` `yield* retryTransientLaunch(` (argument non relevé) | non établie |
+| 8 | `packages/opencode/src/daemon/auto-commit.ts` | `:5`, `:29`, `:62` | `:5` import de `retryTransientLaunchSync` ; `:29` et `:62` `retryTransientLaunchSync(() => …)` | hors sujet (chemin sync) |
+| 9 | `packages/core/src/process.ts` | `:14`, `:93`, `:94` | `:14` commentaire ; `:93`/`:94` ré-exports | sans objet |
+| 10 | `packages/core/src/git.ts` | `:8`, `:94` | `:8` import ; `:94` `retryTransientLaunch(` (argument non relevé) | non établie |
+| 11 | `packages/core/src/launch-retry.ts` | `:48`, `:64`, `:66` | `:48` `export const retryTransientLaunch` ; `:64` commentaire ; `:66` `export function retryTransientLaunchSync` | sans objet (définition) |
+| 12 | `packages/core/test/process/git-launch-retry.test.ts` | `:7`, `:8`, `:51`, `:59`, `:98`, `:103` | `:7`/`:8` imports ; `:51` `retryTransientLaunch(flaky)` ; `:59` `retryTransientLaunch(permanent)` ; `:98` `retryTransientLaunchSync(flaky)` ; `:103` `retryTransientLaunchSync(() => {` | sans objet (test de la fonction) |
+
+**Ce que l'inventaire établit maintenant, et ce qu'il n'établit pas.**
+
+- **Établi, numéroté, relu** : la surface est de **34 sites dans 12 fichiers**, dont
+  **13 sites d'appel hors test** et **4 sites d'appel en test**.
+- **Établi par la ligne de grep** : **4 sites** portent la multiplication 8×8 sur un
+  `spawner.spawn` — `shell.ts:584`, `ripgrep.ts:356`, `ripgrep.ts:387`, `prompt.ts:1034`. Le
+  tableau précédent en annonçait « 3 sites `spawner.spawn` […] et 10 lignes confirmées » ;
+  le chiffre correct, relu, est **4**.
+- **Non établi, et déclaré tel** : la forme de **7 sites d'appel** (`ripgrep.ts:237`,
+  `git/index.ts:113`, `snapshot/index.ts:99`, `snapshot/index.ts:608`,
+  `worktree/index.ts:166`, `project/project.ts:152`, `core/src/git.ts:94`) n'a pas été relue
+  dans ce cycle : la ligne de grep s'interrompt sur `retryTransientLaunch(` et l'argument est
+  sur les lignes suivantes. `INFERE:` six d'entre eux passent par `AppProcess`/`gitCommand`
+  — leurs lignes d'import co-importent ces symboles avec `retryTransientLaunch`
+  (`git/index.ts:1`, `snapshot/index.ts:5`, `worktree/index.ts:19`,
+  `project/project.ts:18`, `core/src/git.ts:8`) — mais **un co-import n'est pas une preuve de
+  la forme de l'appel**. **Vérification** : lire 5 lignes après chacune de ces 7 lignes.
+  Ces 7 sites sont donc comptés dans les 34 mais **exclus** du compte « 4 multiplications
+  vérifiées », plutôt que comptés par extrapolation.
+- **Deux sites sont hors sujet pour la multiplication** : `auto-commit.ts:29` et `:62` passent
+  par `retryTransientLaunchSync`, donc par un chemin synchrone que le chokepoint asynchrone ne
+  double pas.
+
+**Ce qui est réintégré à l'inventaire.** Les sites `ripgrep.ts:237` et `project.ts:152` sont
+**réintégrés**, parce que ce cycle les a numérotés et confirmés existants. Les « onze
+occurrences de `toPlatformError` » sont également réintégrées : le compte est **confirmé**, à
+11, et **concentré sur un seul fichier** (§2.7).
+
+**Hors périmètre de ce patch, par choix.** Les 3 sites `spawner.spawn` non-`shell`
+(`ripgrep.ts:356`, `ripgrep.ts:387`, `prompt.ts:1034`) portent la **même multiplication 8×8**,
+pour le même prix (~57 s) et le même message nu. Ils sont **aussi** hors périmètre de ce patch :
+traiter le shell et traiter ripgrep/prompt dans le même changement élargit la surface de
+régression sans apport supplémentaire. **Escalade : `P18-bis`**, avec le même §4.1/§4.2 réutilisé
+tel quel, en commençant par `launchRefused` et **son test de fourche** (§7, test 2), puisque
+c'est précisément la pièce réutilisable.
 
 ## 5. Alternatives considered
 
@@ -556,18 +731,34 @@ dont il a besoin pour bifurquer `Busy` / `PermissionDenied`**.
 supprimée), et l'agrandir porterait le pire cas au-delà de 57 s.
 
 **5.2 Refus immédiat, zéro tentative.** Rejeté. §2.5 ne prouve **pas** la transience, mais le
-commentaire d'intention du dépôt l'atteste sans le mesurer (`cross-spawn-spawner.ts:279-283`,
-`launch-retry.ts:38-41` : « a refusal arrives in bursts, and a burst can outlast a short
-budget »). Un refus immédiat convertirait un incident en échec dur d'outil. Cet argument repose
-sur l'**intention déclarée**, pas sur une mesure — c'est honnêtement le point faible de cette
+commentaire d'intention du dépôt l'atteste sans le mesurer. Ce commentaire est relu verbatim par
+ce cycle (`cross-spawn-spawner.ts:279-283`) :
+
+```
+      // A refused start (`EPERM`/`EACCES` at `uv_spawn`) means no process ever
+      // ran, so repeating the launch cannot duplicate work. The retry lives
+      // here, at the single chokepoint every caller crosses, because the denial
+      // arrives in bursts that outlast any per-caller budget. An error raised
+      // after the process actually spawned is never retried.
+```
+
+Un refus immédiat convertirait un incident en échec dur d'outil. Cet argument repose sur
+l'**intention déclarée**, pas sur une mesure — c'est honnêtement le point faible de cette
 alternative, et il est partagé avec §4.5.
+
+> **Citation retirée (cycle 3).** La version précédente de cette section plaçait entre
+> guillemets « a refusal arrives in bursts, and a burst can outlast a short budget ». Ce texte
+> **n'existe pas** dans le dépôt : c'était une reformulation présentée comme une citation. Elle
+> est retirée sans être reformulée ailleurs. Le passage réel dit « the **denial** arrives in
+> bursts that outlast **any** per-caller budget » — ce qui **renforce** la thèse de cette
+> alternative et ne l'affaiblit pas, mais l'argument doit maintenant être lu sur le texte.
 
 **5.3 Appliquer au shell le correctif « résout le lanceur vers le vrai binaire »
 (`process.ts:27-44`).** Rejeté. `pwsh.EXE` n'est pas un lanceur re-exécutant : il n'y a pas de
 second spawn à supprimer. Le refus vise d'ailleurs le chemin final résolu
-`C:\Program Files\PowerShell\7\pwsh.EXE` (§2.5), donc aucune réécriture de chemin ne peut aider.
+`C:\Program Files\PowerShell\7\pwsh.exe` (§2.5), donc aucune réécriture de chemin ne peut aider.
 
-**5.4 Rejouer avec le shell suivant de `Shell.win()` (`shell/shell.ts:101-109`).** Rejeté comme
+**5.4 Rejouer avec le shell suivant de `Shell.win()` (`shell/shell.ts:101`).** Rejeté comme
 défaut : cela change silencieusement la sémantique — une ligne PowerShell serait réinterprétée
 par `bash` ou `cmd`. Une variante *proposée au modèle* dans le message de §4.1 reste possible.
 
@@ -579,9 +770,17 @@ const code = typeof (error as { code?: unknown })?.code === "string" ? (error as
 ```
 
 **Ce code renvoie `undefined` sur un refus réel.** `toPlatformError` construit l'erreur ainsi
-(`packages/core/src/cross-spawn-spawner.ts:86-93`, relu verbatim) :
+(`packages/core/src/cross-spawn-spawner.ts:78-94`, **relu verbatim par ce cycle**) :
 
 ```
+const toPlatformError = (
+  method: string,
+  err: NodeJS.ErrnoException,
+  command: ChildProcess.Command,
+): PlatformError.PlatformError => {
+  const cmd = flatten(command)
+    .commands.map((x) => `${x.command} ${x.args.join(" ")}`)
+    .join(" | ")
   return PlatformError.systemError({
     _tag: toTag(err),
     module: "ChildProcess",
@@ -590,18 +789,20 @@ const code = typeof (error as { code?: unknown })?.code === "string" ? (error as
     syscall: err.syscall,
     cause: err,
   })
+}
 ```
 
-Le `PlatformError` ne porte **aucun** champ `code` : le `code` de l'errno n'existe que sur
-`cause` (ligne 92). Le `PlatformError` ne porte que `_tag`, `module`, `method`,
-`pathOrDescriptor`, `syscall`, `cause`.
+L'enveloppe passe **cinq champs** — `_tag` (`:87`), `module` (`:88`), `method` (`:89`),
+`pathOrDescriptor` (`:90`), `syscall` (`:91`) — plus `cause: err` (`:92`). **Aucun champ
+`code`.** Le `code` de l'errno n'existe que sur `cause`, ligne `:92`.
 
 **Statut du désaccord : `closed` — le validateur a tort, et la forme réelle est établie par
-trois sources indépendantes.** (i) La forme du constructeur (`cross-spawn-spawner.ts:86-93`) :
-aucun champ `code`. (ii) Le chemin de lecture du dépôt (`filesystem.ts:105-108`) lit
-explicitement `(e.cause as { code?: string })?.code` — c'est la preuve interne que `code` est
-sur `cause`. (iii) Les trois fixtures qui modélisent un refus placent toutes `code` sur la
-cause, jamais sur l'enveloppe (§2.8b). Ce désaccord est **recevable et conservé tel quel**.
+quatre sources indépendantes.** (i) La forme du constructeur, relue verbatim :
+`cross-spawn-spawner.ts:86-93` ne contient aucun champ `code`. (ii) Le chemin de lecture du
+dépôt (`filesystem.ts:105-108`) lit explicitement `(e.cause as { code?: string })?.code` — c'est
+la preuve interne que `code` est sur `cause`. (iii) Les trois fixtures qui modélisent un refus
+placent toutes `code` sur la cause, jamais sur l'enveloppe (§2.8b). (iv) `spawner-launch-retry.test.ts:15-16`
+fait de même. Ce désaccord est **recevable et conservé tel quel**.
 
 Le même défaut produit le second problème signalé par le verdict — le suffixe
 `Underlying error:` vide sur un `message` vide. `launch-retry.ts:4-7` documente que la denial
@@ -632,8 +833,8 @@ de §7.
   ni `spawn()` ni le garde `:291`, donc les deux comptages **restent vrais** — relu verbatim.
   Non cassé.
 - `packages/core/test/process/git-launch-retry.test.ts` — vérifie `retryTransientLaunch`
-  directement (`:44-61`). La fonction reste inchangée ; seul son usage dans `shell.ts`
-  disparaît. Non cassé.
+  directement (`:51`, `:59`, `:98`, `:103`, relevés par grep). La fonction reste inchangée ;
+  seul son usage dans `shell.ts` disparaît. Non cassé.
 - `packages/core/test/process/run-timeout.test.ts`, `packages/core/test/process/process.test.ts` —
   **non relus** par cette révision : risque déclaré, à confirmer par exécution.
 
@@ -655,21 +856,23 @@ sur le chemin d'échec de l'outil `bash`**, et c'est le seul chemin dont le verd
 aucun consommateur de `_tag` dans `packages/opencode/src/tool/`. La preuve directe que ce dépôt
 distingue des échecs **par tag** dans ce canal est le test que §7 réécrit :
 `shell-launch-retry.test.ts:40-48` construit un `_tag: "Unknown"` pour séparer « refus
-transitoire » de « échec permanent ». Effacer le tag sur ce chemin précis aurait été une
+transitoire » d'« échec permanent ». Effacer le tag sur ce chemin précis aurait été une
 décision non examinée. **§4.1 renvoie donc un `PlatformError` taggé** : le tag reste
 observable, et le diagnostic reste lisible par les lecteurs d'errno qui parcourent déjà
 `cause`. Les deux propriétés gagnées, aucune perdue.
 
 **Risque induit par ce tag, énoncé.** L'erreur retournée porte un `cause` dont le message
 contient `EPERM`/`EBUSY` : `isTransientLaunchFailure` la classera toujours transitoire. Dans
-`shell.ts:498` l'`Effect.catch` est **terminal** — rien ne ré-embarque derrière — donc aucun
+`shell.ts:584` l'`Effect.catch` est **terminal** — rien ne ré-embarque derrière — donc aucun
 retry supplémentaire. C'est le comportement voulu : la branche `Busy` dit explicitement
 « réessaie après le déverrouillage », donc préserver la transience est cohérent.
 
 **Typecheck.** Retirer `retryTransientLaunch` de `shell.ts:13` sans le remplacer casse
 `noUnusedLocals` (§4.3). Ajouter `launchRefused` à `process.ts:88-95` est obligatoire (§4.2).
 Le changement d'import de `launch-retry.ts:2` et son interaction avec `:77` sont le **seul
-point de typecheck que cette révision ne peut pas exécuter** (§4.1).
+point de typecheck que cette révision ne peut pas exécuter** (§4.1). L'état de départ est
+connu : `bun typecheck` sur `packages/core` rend `CORE_TC_EXIT=0`, `TS_ERRORS=0`, et
+`toTag` porte déjà `PlatformError.SystemErrorTag` en `:31` (§2.11).
 
 **Coût tokens / latence ajouté.** Négatif. Latence au pire cas ramenée de
 `8 × 6 350 + 6 350 ≈ 57 150 ms` à `6 350 ms` (budget interne seul), soit **−89 %** sur le chemin
@@ -771,7 +974,7 @@ dont on ignore **ce qui** a été compté ne prouve rien.
 
 ---
 
-**Test 2 (nouveau) — LA BRANCHE `Busy`. C'est le résidu bloquant principal du mandat.**
+**Test 2 (nouveau) — LA BRANCHE `Busy`.**
 
 `packages/core/test/process/launch-refused.test.ts`. Il teste **la fonction**, pas le monde
 réel : aucun refus réel n'est requis, exactement comme le test 1 teste la couche et non le
@@ -923,11 +1126,16 @@ pour débloquer.
 | 1 | Titre `:94` devenu faux ; compteur `:62` conditionnel | **`closed`** | §7 test 1 : titre réécrit, compteur **inconditionnel**, `starts.last` vérifié, commentaire `:102` réécrit avec le titre |
 | 2 | **La branche `Busy` n'a aucun test** | **`closed`** | §7 **test 2** : `launch-refused.test.ts`, la fourche testée dans les deux sens avec assertions croisées ; plus §2.9/§2.10 pour la justification |
 | 3 | RC1 délégué ; tests 1 et 2 se recouvrent | **`closed`** | §7 tableau de répartition + RC1 assumé explicitement dans le test 1 ; **recouvrement supprimé**, plus seulement expliqué |
-| 4 | La classe de défaut survit à P18 sur ≥ 3 sites | **`out_of_scope`** | §4.5 : inventaire audité ligne à ligne, escalade **`P18-bis`** nommée, correction du décompte (10 lignes confirmées, pas 8). Reliquat assumé, pas accepté dans P18 |
+| 4 | La classe de défaut survit à P18 sur ≥ 3 sites | **`out_of_scope`** | §4.5.1 : surface **bornée et mesurée** à 34 sites / 12 fichiers, **4 multiplications 8×8 vérifiées** (et non « ≥ 3, borne inconnue »), 7 formes de site non établies et **exclues** du compte ; escalade **`P18-bis`** nommée. Reliquat assumé, pas accepté dans P18 |
 | 5 | Le retag efface le tag sur le chemin d'échec de l'outil `bash` | **`closed`** | §4.1 : retour `PlatformError` **taggé** (`Busy` propagé, sinon `PermissionDenied`), diagnostic sur `cause` ; §7 test 2 couvre les deux propriétés |
 | + | `EBUSY_ANY=3` non audité (§2.7 de la vague 2) | **`closed`** | §2.9 : offsets relevés, **3/3 occurrences auto-référentes**, compte réfuté comme preuve et **retiré de l'argumentaire** ; branche re-groundée sur trois faits de code |
+| + | `COR-R18-3` — typage de `toTag` suspecté | **`closed`** | §2.11 : `:31` porte **déjà** `PlatformError.SystemErrorTag`, `:35-36` renvoie **déjà** `"PermissionDenied"` ; `bun typecheck` sur `packages/core` rend `CORE_TC_EXIT=0`, `TS_ERRORS=0`. Le motif « mandat sans shell » était une **lacune de capacité**, pas un défaut |
+| + | `COR-R18-4` — « ≥ 3 sites, borne supérieure inconnue » | **`closed`** | §4.5.1 : `rg -n retryTransientLaunch packages` ⇒ **SITES=34, FILES=12** ; les 34 lignes sont énumérées et re-comptées par catégorie. La borne supérieure est **connue**, le reliquat est **borné** et escaladé en `P18-bis`. Le motif « sans grep » était une **lacune de capacité** |
+| + | Exhaustivité de l'inventaire §4.5 (`CORRECTIONS.md:223`, C-162) | **`closed`** | §4.5.1 : l'inventaire 11-lignes / « 8 imports » est **retiré**, remplacé par la mesure 34/12 et la décomposition 11+2+2+2+13+4 |
+| + | Fidélité des citations de `shell.ts` | **`closed`** | §2.4 : **huit** ancres périmées relevées et re-groundées une à une (`shell.ts:498`→`:584`, `:301`→`:387`, `:301-322`→`:387-408`, `:302`→`:388`, `:303-305`→`:389-391`, `:310`→`:396`, `:320`→`:406`, `:350`→`:436`, `:354`→`:440`), chacune vérifiée par relecture verbatim |
+| + | Fidélité de la citation de `launch-retry.ts` dans §5.2 | **`closed`** | §5.2 : la paraphrase présentée comme citation est **retirée** ; le commentaire `:279-283` est cité verbatim |
 
-**Aucun résidu `open`.** L'implémentation n'est pas bloquée par ce cycle.
+**Aucune objection de la vague 4 n'est `open`.**
 
 ### Points non vérifiables par cette révision — à la porte de merge, pas des objections
 
@@ -945,26 +1153,46 @@ Ces points ne sont pas des objections du validateur et ne portent donc pas de st
   ce qui est le comportement voulu d'un compteur honnête.
 - **`No process was created` absent du dépôt avant patch** : non établi (§7 test 3).
 - **`run-timeout.test.ts`, `process.test.ts`** : non relus (§6).
+- **7 formes de sites d'appel non établies** (§4.5.1) : bornent le reliquat `P18-bis`, ne
+  touchent pas le patch P18.
 
 ## 10. Verdict self-assessment
 
 `NEEDS_REVIEW`
 
 Le diagnostic central est confirmé par le verdict et **aucune des cinq objections ne remet en
-cause ni l'architecture ni le message** du correctif. Ce cycle a levé les quatre objections
-locales et converti la cinquième en reliquat nommé.
+cause ni l'architecture ni le message** du correctif. Les quatre objections locales ont été
+levées et la cinquième convertie en reliquat nommé, dont la surface est désormais **bornée par
+la mesure** au lieu de l'être par une borne inconnue.
 
-Les deux questions de périmètre de la vague 2 sont maintenues, la première étant tranchée
-comme `out_of_scope` :
+Ce cycle a levé le blocage C-162 et, en le levant, a trouvé **défaut sur défaut** dans les
+citations de la proposition : huit ancres `shell.ts` périmées, une citation fausse en §5.2, une
+mention « non relisible » sur une ligne qui existe (`ripgrep.ts:237`), et un décompte « 8
+imports » faux. Les huit ancres sont corrigées et vérifiées ; le reste est retiré ou corrigé.
 
-1. **Périmètre des sites `retryTransientLaunch` restants (§4.5).** Le correctif de §4.1/§4.2
-   est réutilisable tel quel, le coût marginal est faible, et le périmètre couvert serait plus
-   large — mais traiter ripgrep/prompt dans le même changement élargit la surface de régression.
-   **Recommandation maintenue : `P18-bis`**, en commençant par `launchRefused` et son test de
-   fourche, puisque c'est la pièce réutilisable.
-2. **La branche `Busy`** est désormais **démontrée, testée et conservée** — l'objection 2
-   avait raison sur la preuve, l'audit de §2.9 avait raison sur la base. Les deux sont traitées :
-   la base est remplacée par trois faits de code, et la preuve est un test. Le levier du
-   validateur (« retirez-la si elle est inauditable ») **n'est pas actionnable** ici : la
-   retirer ne coûte rien mais ne prouve rien, et coûte en exactitude diagnostique dès qu'un
-   `EBUSY` survient.
+Le verdict reste donc **`NEEDS_REVIEW` et non `IMPLEMENTABLE`** : les seuls `open` restants sont
+les 7 formes de sites d'appel de `P18-bis` (§11, R-3/R-4), qui ne touchent pas le patch P18 mais
+dont la valeur — « au plus 4 multiplications de plus que 4 » — n'est pas encore établie.
+
+## 11. Résidus
+
+Aucun de ces résidus ne porte sur l'architecture ni sur le message du correctif. Chacun est
+borné, avec sa mesure ou la raison de son maintien.
+
+| # | Résidu | Statut | Établi par / raison du maintien | Ce qui le ferme |
+|---|---|---|---|---|
+| R-1 | **Fidélité des ancres `shell.ts`** | **`closed`** | Huit ancres périmées relevées et re-groundées (§2.4, tableau de correction) : `:498`→`:584`, `:301`→`:387`, `:301-322`→`:387-408`, `:302`→`:388`, `:303-305`→`:389-391`, `:310`→`:396`, `:320`→`:406`, `:350`→`:436`, `:354`→`:440`. Le contenu réellement trouvé à chaque fausse ancre est consigné. **Les ancres de `shell/shell.ts` (`:98`, `:101`, `:104`, `:122`) sont confirmées verbatim** ; les bornes non observées (`:109`, `:117`, `:99`) sont abandonnées | — |
+| R-2 | **Plage `cross-spawn-spawner.ts:78-94`** (construction du `PlatformError`) | **`closed`** | Relu verbatim : `systemError({` en `:86`, `cause: err` en `:92`, **aucun champ `code`** dans l'enveloppe (`:87`-`:91`). Le désaccord de §5.5 est donc établi sur la forme réelle, et non sur une citation héritée | — |
+| R-3 | **Forme de 7 sites d'appel** (`ripgrep.ts:237`, `git/index.ts:113`, `snapshot/index.ts:99`, `snapshot/index.ts:608`, `worktree/index.ts:166`, `project/project.ts:152`, `core/src/git.ts:94`) | **`open`**, `out_of_scope` pour P18 | §4.5.1 : la ligne de grep s'interrompt sur `retryTransientLaunch(`. Le co-import de `AppProcess`/`gitCommand` **n'est pas** une preuve de la forme de l'appel. Ces sites sont **comptés** dans les 34 mais **exclus** du compte « 4 multiplications vérifiées » | Lire 5 lignes après chacune. Reliquat `P18-bis` |
+| R-4 | **Multiplication sur `ripgrep.ts:237`** spécifiquement | **`open`**, `out_of_scope` pour P18 | Même raison que R-3 ; c'est le seul site `spawner.spawn` dont la forme n'est pas prouvée, donc il pourrait être un **5ᵉ** site de multiplication | Lire `ripgrep.ts:237-243` |
+| R-5 | **Corps des sites git / snapshot / worktree / project non relus** (au-delà de la ligne d'appel) | **`open`**, `out_of_scope` pour P18 | Aucune affirmation de P18 ne dépend de leur contenu ; l'inventaire s'arrête à la ligne de correspondance | Relire lors de `P18-bis` |
+| R-6 | **`run-timeout.test.ts`, `process.test.ts`** | **transféré à l'exécution** | Non relus (§6). `bun test test/process` les couvre | Porte de merge de §7 |
+| R-7 | **Typecheck `launch-retry.ts:2` / `:77`** | **transféré à l'exécution** | Impossible sans shell (§4.1). Repli spécifié. L'état de départ est bon : `CORE_TC_EXIT=0`, `TS_ERRORS=0` | Typecheck du package |
+| R-8 | **Volume de refus sur `pwsh.exe`** (`UV_SPAWN_PWSH`) | **`open`**, hors périmètre | Non mesuré ; le « 387 » du mandat reste non reproductible (§2.5, §2.7). §2.5 borne le risque sans établir la transience | Le ratio 24 h décrit en §2.5 |
+| R-9 | **`EBUSY` réel au spawn** | **fermé comme preuve, `open` comme fait** | `EBUSY_ANY=3` est **confirmé comme compte et réfuté comme preuve** (§2.9) : les 3 occurrences sont auto-référentes, dans le journal, hors `packages/**`. La branche est conservée et **testée** sur des faits de code (§2.10, §7 test 2), donc le résidu n'a plus d'effet sur la décision | Un refus `EBUSY` observé au spawn, un jour |
+| R-10 | **`COR-R18-3`, `COR-R18-4`** | **`closed`** | Tranchés par mesure, pas par argument : `CORE_TC_EXIT=0` / `TS_ERRORS=0` ; `:31` et `:36` relus verbatim (§2.11) ; `SITES=34` / `FILES=12` (§4.5.1). Leurs motifs d'ouverture étaient des **lacunes de capacité** du revalidateur | — |
+| R-11 | **Décompte « 11 occurrences » / « Recensement exhaustif »** de l'inventaire précédent | **`closed`** | Réfuté par `CORRECTIONS.md:223` (C-162), puis remplacé par la mesure. Le tableau ne revendique plus rien sans preuve : les 34 lignes sont énumérées et la somme recomptée | — |
+
+**Ce qui n'est pas un résidu.** L'objection 4 reste `out_of_scope` avec un reliquat nommé
+(`P18-bis`) : c'est un **choix de périmètre assumé**, pas une lacune, et sa surface est
+désormais bornée par la mesure au lieu de l'être par une borne déclarative.
