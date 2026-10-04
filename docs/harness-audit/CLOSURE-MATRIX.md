@@ -189,15 +189,15 @@ Statuts lus par lecture directe, jamais par regexp (C-142).
 | P06 | PASS_WITH_CHANGES | fusionnee | 6 pass / 0 fail |
 | P07 | PASS_WITH_CHANGES | fusionnee | commit fbc65658, 2 pass / 0 fail |
 | P08 | PASS | fusionnee | commit 0523170c : census.test.ts 9 pass / 0 fail, maintenance.test.ts 22 pass / 0 fail |
-| P09 | PASS_WITH_CHANGES | non implementable | 14 residus open :294 |
+| P09 | PASS_WITH_CHANGES | non implementable | cycle 2 NOT_IMPLEMENTABLE, RESIDUES_REMAINING 19, P09-revalidation-c2.md:17 et :19 |
 | P10 | FAIL cycle 5 (terminal) | reverti a HEAD, non implementable | P10-R5-01 bloquant : la spec corrigee prescribe la rupture de overflow.test.ts:92 et :94, C-156 |
 | P11 | PASS_WITH_CHANGES | fusionnee | commit 80aa6c31, 3 pass / 0 fail |
 | P12 | FAIL | aucune | revalidation :409 |
-| P13 | PASS_WITH_CHANGES | non implementable | 6 residus open :172 |
+| P13 | PASS_WITH_CHANGES | non implementable | cycle 2 NOT_IMPLEMENTABLE, RESIDUES_REMAINING 6, P13-revalidation-c2.md:173 et :175 |
 | P14 | PASS_WITH_CHANGES | fusionnee | 19 pass / 0 fail, typecheck 0 |
 | P15 | PASS_WITH_CHANGES | fusionnee | commit 6430ee62 : src/plugin/index.ts blob 7740186a dans HEAD ; TC_EXIT=0, TS_ERRORS=0, TS18047=0 ; meta.test.ts 3 pass / 0 fail sur chacun des deux blobs ; C-159 |
 | P16 | PASS_WITH_CHANGES | fusionnee | 39 pass / 0 fail |
 | P17 | FAIL | aucune | 9 residus open, terminal |
-| P18 | PASS_WITH_CHANGES | non implementable | les 2 residus etaient des artefacts de mandat : COR-R18-3 refute par CORE_TC_EXIT=0, COR-R18-4 refute par SITES=34 / FILES=12 mesure contre 11 annonces ; correction de proposition en cours, C-162 |
+| P18 | PASS_WITH_CHANGES | non implementable | cycle 2 NOT_IMPLEMENTABLE, RESIDUES_REMAINING 5, P18-revalidation-c2.md:13 et :15 ; COR-R18-3 et COR-R18-4 fermes par C-162 |
 | P19 | FAIL | aucune | revalidation :246 |
 | P20 | FAIL | aucune | revalidation :267 |
