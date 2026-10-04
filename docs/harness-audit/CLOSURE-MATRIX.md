@@ -137,3 +137,33 @@ politique de **3 cycles maximum** et la sortie `NOT-IMPLEMENTABLE`, qui est une 
 **Deux blocages exogènes résistent** : **A-2 contesté** (C-34) et **A-5 / A-6 non tranchés**.
 Aucun des trois n'est de mon ressort : ils engagent la politique de déploiement du fork et le
 compromis effort/preuve du goal contract.
+## État vérifié — census des verdicts définitifs
+
+Source de vérité : la section `## Final verdict` de chaque `verdicts/P*-revalidation.md`, lue à partir de son ancre. Aucun verdict absent : `FINALSEC_MISSING=0`. Le comptage des findings `open` tolère la cellule en gras (`**open**`) comme la cellule nue ; un motif unique sur `open` nu rendait un zéro faux (ledger C-130).
+
+| proposition | verdict définitif | findings `open` | implémenté | preuve `fichier:ligne` |
+|---|---|---|---|---|
+| **P01** | FAIL | 0 | non | `-` |
+| **P02** | PASS_WITH_CHANGES | 0 | oui | `src/tool/repetition.ts:82,:88` |
+| **P03** | FAIL | 0 | non | `-` |
+| **P04** | FAIL | 0 | non | `-` |
+| **P05** | PASS_WITH_CHANGES | 0 | oui | `src/session/lean-advisory.ts` |
+| **P06** | PASS_WITH_CHANGES | 0 | oui | `src/session/goal-context.test.ts` |
+| **P07** | PASS_WITH_CHANGES | 0 | non | `-` |
+| **P08** | PASS_WITH_CHANGES | 1 | non | `-` |
+| **P09** | PASS_WITH_CHANGES | 0 | non | `-` |
+| **P10** | PASS_WITH_CHANGES | 0 | non | `-` |
+| **P11** | PASS_WITH_CHANGES | 0 | non | `-` |
+| **P12** | FAIL | 0 | non | `-` |
+| **P13** | PASS_WITH_CHANGES | 0 | non | `-` |
+| **P14** | PASS_WITH_CHANGES | 0 | oui | `src/tool/shell.ts:289,:538,:703` |
+| **P15** | PASS_WITH_CHANGES | 1 | oui | `src/plugin/index.ts:319` |
+| **P16** | PASS_WITH_CHANGES | 0 | oui | `src/tool/terminal-output.ts:155,:161` |
+| **P17** | FAIL | 7 | non | `-` |
+| **P18** | PASS_WITH_CHANGES | 0 | non | `-` |
+| **P19** | FAIL | 0 | non | `-` |
+| **P20** | FAIL | 0 | non | `-` |
+
+Synthèse : **7 `FAIL`** (P01, P03, P04, P12, P17, P19, P20), **13 `PASS_WITH_CHANGES`**, 0 `PASS`. **6 des 13 propositions validées sont implémentées et mesurées** ; **7 validées ne sont pas implémentées** : P07, P08, P09, P10, P11, P13, P18. Findings `open` restants : P08 (1), P15 (1), P17 (7).
+
+Le tableau de décisions ci-dessus est antérieur à ce census et conserve des libellés de cycle par obsolétude ; il est conservé comme trace de décision, ce census fait foi.
