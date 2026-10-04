@@ -155,24 +155,35 @@ verdict** : sans filet de reprise, toute purge par défaut est un pari sans cont
 1149:             type: "reasoning",
 ```
 
-**E13 — mesures terrain fournies par l'audit, non re-mesurées ici** : base de 5 209 Mo ;
-1 064 394 243 octets de parts sur les 1 000 sessions les plus récentes ; une session de 485
-étapes pèse 6,1 Mo ; **les parts `reasoning` d'une session pèsent 3 045 134 caractères, soit
-50 % de la session**.
+**E13 — re-mesuré sur la base réelle** `C:\Users\jeanl\.local\share\opencode\opencode.db`
+(`sqlite3 -readonly`, `EXIT=0`) : fichier de **4 089 565 184 octets** (`page_count = 998429`,
+`page_size = 4096`) ; **672 804 parts** et **3 475 615 849 caractères** au total. La session la
+plus lourde en `reasoning`, `ses_106da869affe6n5CLpUQUcAyj4`, porte **6 410 314 caractères** de
+`reasoning` sur **30 251 627 caractères** de parts au total, soit **21,2 %**. Sur l'ensemble de
+la base, `reasoning` ne pèse que **7,6 %** des caractères, contre **85,0 %** pour `tool`.
 
-> Provenance : ces quatre chiffres proviennent du rapport d'audit initial, reprises telles
-> quelles dans la version précédente de cette proposition (lignes 167-170, marquées
-> « mesures terrain fournies par l'audit (non re-mesurées ici) »). Ils ne sont **pas**
-> re-mesurés dans ce cycle, faute d'accès shell. Ils sont utilisés ici uniquement comme
-> **ordre de grandeur motivant l'existence d'un census**, jamais comme résultat de mesure.
+> Provenance : la version précédente de cette proposition (lignes 167-170) portait « base de
+> 5 209 Mo », « 1 064 394 243 octets de parts sur les 1 000 sessions les plus récentes » et
+> « une session de 485 étapes pèse 6,1 Mo », en marquant le tout « mesures terrain fournies par
+> l'audit (non re-mesurées ici) », etannonçait **3 045 134 caractères = 50 % de la session**.
+> Ces trois valeurs de volume **ne sont pas re-mesurées ici** et restent des ordres de grandeur
+> du rapport initial. En revanche le chiffre `reasoning` était faux et non reproductible : il est
+> **remplacé** ci-dessus par la mesure.
+>
+> Méthode : `SELECT json_extract(data,'$.type') AS type, count(*), sum(length(data)) FROM part
+> GROUP BY type`, puis regroupement par `session_id` trié sur la somme `reasoning` ; taille de
+> fichier par `page_count * page_size`, et `freelist_count` via `pragma_freelist_count`.
 
 ### Résiduel assumé — `FINDING P08-R2B-REASONING-NON-BORNE` : `residual` (assumé)
 
 La voie B **ne corrige pas** la croissance des parts `reasoning`. Elle la **mesure**. La
 croissance reste non bornée, et c'est un choix, pas une lacune de cette proposition :
 
-- **E13** : 3 045 134 caractères de `reasoning` pour **une seule session**, soit **50 %** de
-  son volume. C'est la moitié de la base qui grandit sans borner.
+- **E13** : **6 410 314 caractères** de `reasoning` pour **une seule session** — la plus lourde,
+  `ses_106da869affe6n5CLpUQUcAyj4` — sur **30 251 627 caractères** de parts, soit **21,2 %**, et
+  non la moitié d'une session. Sur l'ensemble de la base, `reasoning` ne pèse que **7,6 %** des
+  caractères, `tool` **85,0 %**. Ce qui grandit sans borner est donc bien réel, mais d'un ordre
+  de grandeur inférieur à celui qu'annonçait le rapport d'audit initial.
 - **E7** + **E12** : même purgée, la voie A ne toucherait que les parts `tool` ; les parts
   `reasoning` sont explicitement traitées au rejeu (`message-v2.ts:1125-1155`), donc les
   supprimer dégraderait la rejouabilité d'une session au lieu de libérer de l'espace.
@@ -245,16 +256,23 @@ export function census(db: Runner, before: number): Census {
   const sizes = query(
     db,
     `SELECT (SELECT page_count FROM pragma_page_count) * (SELECT page_size FROM pragma_page_size) AS db,
-            (SELECT page_count - freelist_count FROM pragma_page_count) * (SELECT page_size FROM pragma_page_size) AS free`,
+            ((SELECT page_count FROM pragma_page_count) - (SELECT freelist_count FROM pragma_freelist_count)) * (SELECT page_size FROM pragma_page_size) AS free`,
   )
   // ...reduce grouped into Census
 }
 ```
 
-**Les deux seules requêtes sont des `SELECT`.** `pragma_page_count` et `pragma_page_size` sont
-des fonctions table en **lecture seule** ; ils ne sont pas des `PRAGMA` mutateurs et ne
-modifient pas la base. C'est pourquoi le census mesure `freelistBytes` : il rend visible
-l'espace que le `journal_mode = WAL` de E9 laisse derrière lui, sans jamais le rendre.
+**Les deux seules requêtes sont des `SELECT`.** `pragma_page_count`, `pragma_freelist_count` et
+`pragma_page_size` sont des fonctions table en **lecture seule** ; ce ne sont pas des `PRAGMA`
+mutateurs et elles ne modifient pas la base. Elles sont de surcroît **distinctes** :
+`pragma_page_count` n'expose qu'une seule colonne, `page_count`, et `freelist_count` appartient à
+`pragma_freelist_count`. D'où les **deux sous-requêtes séparées** de l'expression `free` — écrire
+`page_count - freelist_count` dans `pragma_page_count` ne se prépare sur aucune base réelle
+(`no such column: freelist_count`, `EXIT=1`). Contrôle positif sur la base réelle
+(`sqlite3 -readonly`, `EXIT=0`) : `SELECT * FROM pragma_page_count` rend `page_count = 998429`,
+`SELECT * FROM pragma_freelist_count` rend `freelist_count = 46`. C'est pourquoi le census mesure
+`freelistBytes` : il rend visible l'espace que le `journal_mode = WAL` de E9 laisse derrière lui,
+sans jamais le rendre.
 
 ### 4.2 `maintenance.ts` — un chemin d'appel séparé, jamais `maintain()`
 
@@ -416,13 +434,30 @@ Il devient le **garde-fou de la nouvelle politique** et s'élargit à la fois en
   test("no retention configured — the default path never deletes, and the census is read-only", async () => {
     StorageMaintenance.resetPurgeClock()
     const db = spy()
-    const stop = StorageMaintenance.schedule(db, { intervalMs: 5 })   // purge:true, env par défaut
-    await new Promise((done) => setTimeout(done, 30))
-    stop()
-    // La nouvelle politique : rien n'est supprimé sans OPENCODE_PART_RETENTION_DAYS.
-    expect(db.queries.some((q) => /DELETE/i.test(q))).toBe(false)
-    // Le census ne peut pas être câblé sur ce chemin : checkpoint() y écrit.
-    expect(db.queries.some((q) => /VACUUM/i.test(q))).toBe(false)
+    // schedule() n'accepte pas d'env : maintenance.ts:184 fait maintain(db, purge ? process.env : {}).
+    // On fixe donc explicitement un env VIDE, restauré en `finally`. Sans ce pin, l'assertion
+    // tient sur l'absence fortuite de la variable DANS LA MACHINE, et rouge sur toute machine
+    // où OPENCODE_PART_RETENTION_DAYS est posée : résultat non reproductible.
+    const ambient = process.env.OPENCODE_PART_RETENTION_DAYS
+    delete process.env.OPENCODE_PART_RETENTION_DAYS
+    try {
+      const stop = StorageMaintenance.schedule(db, { intervalMs: 5 })   // purge:true, env={}
+      await new Promise((done) => setTimeout(done, 30))
+      stop()
+      // La nouvelle politique : rien n'est supprimé sans OPENCODE_PART_RETENTION_DAYS.
+      expect(db.queries.some((q) => /DELETE/i.test(q))).toBe(false)
+      // Le census ne peut pas être câblé sur ce chemin : checkpoint() y écrit.
+      expect(db.queries.some((q) => /VACUUM/i.test(q))).toBe(false)
+    } finally {
+      if (ambient === undefined) delete process.env.OPENCODE_PART_RETENTION_DAYS
+      else process.env.OPENCODE_PART_RETENTION_DAYS = ambient
+    }
+    // Même garde-fou sur un env VIDE passé EN ARGUMENT, comme les tests voisins
+    // :85 / :98 / :100 / :101 / :107 — ici l'assertion porte sur `{}`, jamais sur l'ambiant.
+    StorageMaintenance.resetPurgeClock()
+    const main = spy()
+    StorageMaintenance.maintain(main, {})
+    expect(main.queries.some((q) => /DELETE/i.test(q))).toBe(false)
     // Secondary databases keep their existing guarantee.
     const secondary = spy()
     const stopSecondary = StorageMaintenance.schedule(secondary, { intervalMs: 5, purge: false })
@@ -481,9 +516,15 @@ Rien ne reste à trancher. Les six Required changes du verdict sont traités :
 **Ce qui reste `residual` :**
 
 - `P08-R2B-REASONING-NON-BORNE` — **`residual`, assumé.** La croissance des parts `reasoning`
-  n'est pas bornée : **3 045 134 caractères = 50 % d'une session** (E13, mesure terrain de
-  l'audit, non re-mesurée ici). Le census la mesure, ne la corrige pas. La corriger exigerait un
-  seuil par espace disque cible **et** le filet `opencode db backup` qui manque (E10).
+  n'est pas bornée. **Mesuré** sur la base réelle `C:\Users\jeanl\.local\share\opencode\opencode.db`
+  (`sqlite3 -readonly`, `EXIT=0` ; E13 re-mesuré) : la session la plus lourde en `reasoning`,
+  `ses_106da869affe6n5CLpUQUcAyj4`, pèse **6 410 314 caractères** de `reasoning` sur
+  **30 251 627 caractères** de parts au total, soit **21,2 %**. Sur l'ensemble de la base,
+  `reasoning` ne pèse que **7,6 %** des caractères, contre **85,0 %** pour `tool`. *Méthode* :
+  `SELECT json_extract(data,'$.type') AS type, count(*), sum(length(data)) FROM part GROUP BY type`,
+  puis regroupement par `session_id` trié sur la somme `reasoning`. Le census la mesure, ne la
+  corrige pas. La corriger exigerait un seuil par espace disque cible **et** le filet
+  `opencode db backup` qui manque (E10).
 - `P08-VACUUM-COUT-NON-MESURE` — **`out_of_scope`.** Aucun coût de `VACUUM` ni de passe de
   purge n'est publié ; les valeurs dérivées de la version précédente sont supprimées du
   raisonnement, avec la méthode de mesure consignée en §2 pour qui rouvrirait le point.
