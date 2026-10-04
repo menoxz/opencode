@@ -173,3 +173,31 @@ Le tableau de décisions ci-dessus est antérieur à ce census et conserve des l
 | proposition | verdict | refutation par execution | preuve |
 |---|---|---|---|
 | **P10** | **REVALIDATED-FAIL** (execution) | implantation refutee : la porte `ramp >= 1` exige 60 000 tokens inspectes, donc `isReadHeavy` devient faux la ou HEAD etait vrai ; 2 assertions vertes de HEAD inversees (`src/session/overflow.test.ts:32` et `:44`) ; 2 tests proteges de `compaction.test.ts` casses (filtre `read-heavy fraction` 0 pass / 1 fail exit 1, filtre `uses configured automatic` 0 pass / 1 fail exit 1) | revert `git cat-file blob HEAD:<path>` sur 4 fichiers, `MATCH=True` (compaction.ts `want=got=50cd63a6`), `bun typecheck` EXIT 0 et 0 erreur TS, R1 1 pass / 0 fail, R2 1 pass / 0 fail, R3 14 pass / 0 fail, ledger C-141 |
+
+
+## Disposition definitive des 20 problemes
+
+Statuts lus par lecture directe, jamais par regexp (C-142).
+
+| probleme | verdict | implementation | preuve |
+|---|---|---|---|
+| P01 | FAIL | aucune | revalidation :246 |
+| P02 | PASS_WITH_CHANGES | fusionnee | 22 pass / 0 fail |
+| P03 | FAIL | aucune | revalidation :130 |
+| P04 | FAIL | aucune | revalidation :282 |
+| P05 | PASS_WITH_CHANGES | fusionnee | 10 pass / 0 fail |
+| P06 | PASS_WITH_CHANGES | fusionnee | 6 pass / 0 fail |
+| P07 | PASS_WITH_CHANGES | fusionnee | commit fbc65658, 2 pass / 0 fail |
+| P08 | PASS_WITH_CHANGES en c6 | bloque, 1 open residuel | C-32, revalidation c7 en cours |
+| P09 | PASS_WITH_CHANGES | non implementable | 14 residus open :294 |
+| P10 | falsifie par execution | reverti a HEAD | C-141, typecheck 0, 14 pass / 0 fail |
+| P11 | PASS_WITH_CHANGES | fusionnee | commit 80aa6c31, 3 pass / 0 fail |
+| P12 | FAIL | aucune | revalidation :409 |
+| P13 | PASS_WITH_CHANGES | non implementable | 6 residus open :172 |
+| P14 | PASS_WITH_CHANGES | fusionnee | 19 pass / 0 fail, typecheck 0 |
+| P15 | PASS_WITH_CHANGES | fusionnee | 124 pass / 0 fail, typecheck 0 |
+| P16 | PASS_WITH_CHANGES | fusionnee | 39 pass / 0 fail |
+| P17 | FAIL | aucune | 9 residus open, terminal |
+| P18 | PASS_WITH_CHANGES | non implementable | COR-R18-4 open, C-143 |
+| P19 | FAIL | aucune | revalidation :246 |
+| P20 | FAIL | aucune | revalidation :267 |
