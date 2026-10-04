@@ -192,7 +192,7 @@ Statuts lus par lecture directe, jamais par regexp (C-142).
 | P09 | PASS_WITH_CHANGES | non implementable | cycle 2 NOT_IMPLEMENTABLE, RESIDUES_REMAINING 19, P09-revalidation-c2.md:17 et :19 |
 | P10 | FAIL cycle 5 (terminal) | reverti a HEAD, non implementable ; arbitrage C-174 : rejet motive par le gain | P10-R5-01 resolu par arbitrage C-174 : changement rejete, aucun gain fonctionnel demontre et machinerie inspectionProfile absente de HEAD ; la spec prescrivait la rupture de overflow.test.ts:92 et :94, C-156 |
 | P11 | PASS_WITH_CHANGES | fusionnee | commit 80aa6c31, 3 pass / 0 fail |
-| P12 | FAIL | aucune | revalidation :409 |
+| P12 | FAIL | arbitrage C-181 : non implementable, defaut de fond reel mais base rouge instable | defaut vivant : collect (shell.ts:476-512) n appelle argPath (:467) que pour pathArgs, une cible de redirection n atteint jamais la permission external_directory. Blocage : shell.test.ts mesure 76/19/1 et la revalidation 72/23, base rouge instable, O8 non satisfait ; REDIRECT_TYPES, REDIRECT_OPERAND_TYPES, isRedirectOperator, file_redirect absents de src/ ; 9 residus open ; C-181 |
 | P13 | PASS_WITH_CHANGES | non implementable | cycle 2 NOT_IMPLEMENTABLE, RESIDUES_REMAINING 6, P13-revalidation-c2.md:173 et :175 |
 | P14 | PASS_WITH_CHANGES | fusionnee | 19 pass / 0 fail, typecheck 0 |
 | P15 | PASS_WITH_CHANGES | fusionnee | commit 6430ee62 : src/plugin/index.ts blob 7740186a dans HEAD ; TC_EXIT=0, TS_ERRORS=0, TS18047=0 ; meta.test.ts 3 pass / 0 fail sur chacun des deux blobs ; C-159 |
