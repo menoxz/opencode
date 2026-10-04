@@ -167,3 +167,9 @@ Source de vérité : la section `## Final verdict` de chaque `verdicts/P*-revali
 Synthèse : **7 `FAIL`** (P01, P03, P04, P12, P17, P19, P20), **13 `PASS_WITH_CHANGES`**, 0 `PASS`. **6 des 13 propositions validées sont implémentées et mesurées** ; **7 validées ne sont pas implémentées** : P07, P08, P09, P10, P11, P13, P18. Findings `open` restants : P08 (1), P15 (1), P17 (7).
 
 Le tableau de décisions ci-dessus est antérieur à ce census et conserve des libellés de cycle par obsolétude ; il est conservé comme trace de décision, ce census fait foi.
+
+## Vague 5 - refutations par execution (code reverti)
+
+| proposition | verdict | refutation par execution | preuve |
+|---|---|---|---|
+| **P10** | **REVALIDATED-FAIL** (execution) | implantation refutee : la porte `ramp >= 1` exige 60 000 tokens inspectes, donc `isReadHeavy` devient faux la ou HEAD etait vrai ; 2 assertions vertes de HEAD inversees (`src/session/overflow.test.ts:32` et `:44`) ; 2 tests proteges de `compaction.test.ts` casses (filtre `read-heavy fraction` 0 pass / 1 fail exit 1, filtre `uses configured automatic` 0 pass / 1 fail exit 1) | revert `git cat-file blob HEAD:<path>` sur 4 fichiers, `MATCH=True` (compaction.ts `want=got=50cd63a6`), `bun typecheck` EXIT 0 et 0 erreur TS, R1 1 pass / 0 fail, R2 1 pass / 0 fail, R3 14 pass / 0 fail, ledger C-141 |
