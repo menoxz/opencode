@@ -1,0 +1,1082 @@
+import { BusEvent } from "@/bus/bus-event"
+import { ReadLedger } from "@/tool/read-ledger"
+import * as ContextLedger from "./context-ledger"
+import { Bus } from "@/bus"
+import * as Session from "./session"
+import { compressGoalState, type GoalState } from "./goal-state"
+import type { GoalFindingStatus } from "./goal-evidence"
+import { SessionID, MessageID, PartID } from "./schema"
+import { Provider } from "@/provider/provider"
+import { MessageV2 } from "./message-v2"
+import { Token } from "@/util/token"
+import * as Log from "@opencode-ai/core/util/log"
+import { SessionProcessor } from "./processor"
+import { Agent } from "@/agent/agent"
+import { Plugin } from "@/plugin"
+import { Config } from "@/config/config"
+import { NotFoundError } from "@/storage/storage"
+import { ModelID, ProviderID } from "@/provider/schema"
+import { Effect, Layer, Context, Schema, Option } from "effect"
+import * as DateTime from "effect/DateTime"
+import { InstanceState } from "@/effect/instance-state"
+import { isOverflow as overflow, isReadHeavy, usable } from "./overflow"
+import { serviceUse } from "@opencode-ai/core/effect/service-use"
+import { RuntimeFlags } from "@/effect/runtime-flags"
+import { EventV2Bridge } from "@/event-v2-bridge"
+import { SessionEvent } from "@opencode-ai/core/session-event"
+import { SessionContextRollout } from "./context-rollout"
+import { JevCompaction } from "@/jev/compaction"
+import { JevClient } from "@/jev/client"
+import { FetchHttpClient, HttpClient } from "effect/unstable/http"
+
+const log = Log.create({ service: "session.compaction" })
+
+export const Event = {
+  Compacted: BusEvent.define(
+    "session.compacted",
+    Schema.Struct({
+      sessionID: SessionID,
+    }),
+  ),
+}
+
+export const PRUNE_MINIMUM = 20_000
+export const PRUNE_PROTECT = 40_000
+const TOOL_OUTPUT_MAX_CHARS = 2_000
+const PRUNE_PROTECTED_TOOLS = ["skill"]
+const DEFAULT_TAIL_TURNS = 2
+const MIN_PRESERVE_RECENT_TOKENS = 2_000
+const MAX_PRESERVE_RECENT_TOKENS = 8_000
+// A read-heavy window is mostly the file bytes the model just loaded. Keeping
+// only MAX_PRESERVE_RECENT_TOKENS of them makes compaction summarise those bytes
+// away, and the model pays for them a second time by re-reading the same files —
+// the most expensive way to save context. A read-heavy session therefore keeps a
+// larger verbatim tail, still bounded so the summary has room to work.
+const MAX_READ_HEAVY_PRESERVE_RECENT_TOKENS = 24_000
+const SUMMARY_TEMPLATE = `Output exactly the Markdown structure shown inside <template> and keep the section order unchanged. Do not include the <template> tags in your response.
+<template>
+## Goal
+- [single-sentence task summary]
+
+## Constraints & Preferences
+- [user constraints, preferences, specs, or "(none)"]
+
+## Progress
+### Done
+- [completed work or "(none)"]
+
+### In Progress
+- [current work or "(none)"]
+
+### Blocked & Difficultés
+- [blockers, root causes of bugs/delays, difficulties encountered, or "(none)"]
+
+## DoD (unmet)
+- [each Definition-of-Done item still unproven, or "(none) — every item is proven"]
+
+## Findings
+- [FINDING <id> [severity/status]: summary, or "(none)"]
+
+## Decisions & Lessons
+- [key decisions with rejected alternatives, lessons learned, things to avoid repeating, or "(none)"]
+
+## Next Steps
+- [ordered next actions or "(none)"]
+
+## Critical Context
+- [important technical facts, known issues, fragile areas, workarounds, lingering technical debt, open questions, or "(none)"]
+
+## Relevant Files
+- [file or directory path: why it matters, or "(none)"]
+</template>
+
+Rules:
+- Keep every section, even when empty.
+- Use terse bullets, not prose paragraphs.
+- Preserve exact file paths, commands, error strings, and identifiers when known.
+- Copy DoD wording and finding ids verbatim from <task-contract>; write "(none)" only when that block lists none. Never invent a DoD item or a finding id.
+- Do not mention the summary process or that context was compacted.`
+
+// ── GoalState compression utilities ──────────────────────────────────────────
+
+// Owned by the GoalState domain module so the session layer can regenerate the
+// derived block without importing this module (which imports session).
+export { compressGoalState }
+
+type Sticky = {
+  id: string
+  status: GoalFindingStatus
+  text: string
+  firstSeenAt: number
+}
+
+/** Priority order for the sticky tier: the closure barrier (goal-contract.ts:609) only
+ *  reads `open`, so `open` must never be the line that gets cut. */
+const FINDING_PRIORITY: Record<GoalFindingStatus, number> = {
+  open: 0,
+  residual: 1,
+  out_of_scope: 2,
+  closed: 3,
+}
+
+const OPEN_BUDGET_CHARS = 1_600
+const DETAIL_BUDGET_CHARS = 800
+const OPEN_OVERFLOW_MAX_LINES = 25
+
+/** `items` MUST already be sorted by the caller (priority, then firstSeenAt, then id).
+ *  This function never reorders: rendering is the only concern. */
+function renderBudgeted(items: readonly Sticky[], budget: number) {
+  const shown: string[] = []
+  const hidden: string[] = []
+  let spent = 0
+  for (const item of items) {
+    if (shown.length > 0 && spent + item.text.length > budget) hidden.push(item.id)
+    else {
+      shown.push(item.text)
+      spent += item.text.length
+    }
+  }
+  return { shown, hidden }
+}
+
+/** Generated by the harness, never by the model: it names the elements that were dropped. */
+const OVERFLOW_MARKER = (ids: readonly string[]) =>
+  `+${ids.length} éléments non affichés : ${ids.slice(0, 6).join(", ")}${ids.length > 6 ? ", …" : ""} — lire la liste complète via task-contract(edit)`
+
+/** The `open` band is capped, so a surplus `open` is named line by line up to
+ *  OPEN_OVERFLOW_MAX_LINES and then counted. No `open` is ever silently truncated:
+ *  the loss is bounded by construction, never proportional to the findings count. */
+function renderOpenOverflow(hidden: readonly string[]): string[] {
+  const named = hidden.slice(0, OPEN_OVERFLOW_MAX_LINES)
+  const beyond = hidden.length - named.length
+  const ids = hidden.slice(OPEN_OVERFLOW_MAX_LINES, OPEN_OVERFLOW_MAX_LINES + 6)
+  return [
+    ...named.map((id) => `OPEN: ${id} [open] — résumé tronqué, lire via task-contract(edit)`),
+    `OPEN: +${hidden.length} findings open non affichés${beyond > 0 ? ` (${beyond} au-delà du plafond de ${OPEN_OVERFLOW_MAX_LINES} lignes)` : ""} — ids non listés: ${ids.join(", ")}${ids.length > 0 && beyond > 0 ? ", …" : ""} — lire la liste complète via task-contract(edit)`,
+  ]
+}
+
+const byStickyOrder = (a: Sticky, b: Sticky) =>
+  FINDING_PRIORITY[a.status] - FINDING_PRIORITY[b.status] ||
+  a.firstSeenAt - b.firstSeenAt ||
+  a.id.localeCompare(b.id)
+
+function stickyGoalContext(state: GoalState): string {
+  const ordered = (state.findings ?? []).toSorted(
+    (a, b) =>
+      FINDING_PRIORITY[a.status] - FINDING_PRIORITY[b.status] ||
+      a.firstSeenAt - b.firstSeenAt ||
+      a.id.localeCompare(b.id),
+  )
+
+  const open = renderBudgeted(
+    ordered
+      .filter((finding) => finding.status === "open")
+      .map((finding) => ({
+        id: finding.id,
+        status: finding.status,
+        text: `FINDING ${finding.id} [${finding.severity}/${finding.status}]: ${finding.summary.slice(0, 160)}`,
+        firstSeenAt: finding.firstSeenAt,
+      })),
+    OPEN_BUDGET_CHARS,
+  )
+
+  /** One pre-sorted list, one budget, one marker. There is no second call site on
+   *  DETAIL_BUDGET_CHARS: a shared budget with a local `spent` is not expressible, so the
+   *  tiers are merged instead of stacked. Never summed with the `open` tier either. */
+  const detail = [
+    ...ordered
+      .filter((finding) => finding.status !== "open")
+      .map((finding) => ({
+        id: finding.id,
+        status: finding.status,
+        text: `FINDING ${finding.id} [${finding.severity}/${finding.status}]: ${finding.summary.slice(0, 120)}`,
+        firstSeenAt: finding.firstSeenAt,
+      })),
+    ...(state.completion?.unverified ?? []).map((item, index) => ({
+      id: `UNVERIFIED-${index}`,
+      status: "out_of_scope" as const,
+      text: `UNVERIFIED: ${item.dod.slice(0, 160)} → ${item.reason.slice(0, 240)}`,
+      firstSeenAt: index,
+    })),
+  ].toSorted(byStickyOrder)
+  const renderedDetail = renderBudgeted(detail, DETAIL_BUDGET_CHARS)
+
+  return [
+    ...open.shown,
+    ...(open.hidden.length > 0 ? renderOpenOverflow(open.hidden) : []),
+    ...renderedDetail.shown,
+    ...(renderedDetail.hidden.length > 0 ? [OVERFLOW_MARKER(renderedDetail.hidden)] : []),
+  ].join("\n")
+}
+
+/**
+ * Format a GoalState as an XML task-contract block for system prompt injection.
+ * Returns empty string when status is "skipped".
+ */
+export function formatGoalContext(state: GoalState): string {
+  if (state.status === "skipped") return ""
+
+  if (state.status === "completed") {
+    const goal = state.goal.replace(/\n/g, " ").trim().slice(0, 200)
+    const sticky = stickyGoalContext(state)
+    const summary = state.completion?.summary?.trim().slice(0, 400)
+    return `<task-contract status="completed">\nGOAL (DONE): ${goal}${summary ? `\nSUMMARY: ${summary}` : ""}${sticky ? `\n${sticky}` : ""}\nThis objective is achieved. Do not redo it. Await a new objective from the user.\n</task-contract>\n`
+  }
+
+  const body = state.compressed ?? compressGoalState(state)
+  const sticky = stickyGoalContext(state)
+  return `<task-contract status="${state.status}">\n${body}${sticky ? `${sticky}\n` : ""}</task-contract>\n`
+}
+
+/** Status badge for TUI — always French labels. */
+export function formatGoalStatusBadge(state: Pick<GoalState, "status">): string {
+  const labels: Record<GoalState["status"], string> = {
+    approved: "approuvé",
+    draft: "brouillon",
+    skipped: "ignoré",
+    edited: "édité",
+    pending_user: "en attente",
+    completed: "terminé",
+    blocked: "bloqué",
+  }
+  return `[Goal: ${labels[state.status]}]`
+}
+
+type Turn = {
+  start: number
+  end: number
+  id: MessageID
+}
+
+type Tail = {
+  start: number
+  id: MessageID
+}
+
+type CompletedCompaction = {
+  userIndex: number
+  assistantIndex: number
+  summary: string | undefined
+}
+
+function summaryText(message: MessageV2.WithParts) {
+  const text = message.parts
+    .filter((part): part is MessageV2.TextPart => part.type === "text")
+    .map((part) => part.text.trim())
+    .filter(Boolean)
+    .join("\n\n")
+    .trim()
+  return text || undefined
+}
+
+function completedCompactions(messages: MessageV2.WithParts[]) {
+  const users = new Map<MessageID, number>()
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i]
+    if (msg.info.role !== "user") continue
+    if (!msg.parts.some((part) => part.type === "compaction")) continue
+    users.set(msg.info.id, i)
+  }
+
+  return messages.flatMap((msg, assistantIndex): CompletedCompaction[] => {
+    if (msg.info.role !== "assistant") return []
+    if (!msg.info.summary || !msg.info.finish || msg.info.error) return []
+    const userIndex = users.get(msg.info.parentID)
+    if (userIndex === undefined) return []
+    return [{ userIndex, assistantIndex, summary: summaryText(msg) }]
+  })
+}
+
+function buildPrompt(input: { previousSummary?: string; context: string[] }) {
+  const anchor = input.previousSummary
+    ? [
+        "Update the anchored summary below using the conversation history above.",
+        "Preserve still-true details, remove stale details, and merge in the new facts.",
+        "<previous-summary>",
+        input.previousSummary,
+        "</previous-summary>",
+      ].join("\n")
+    : "Create a new anchored summary from the conversation history above."
+  return [anchor, SUMMARY_TEMPLATE, ...input.context].join("\n\n")
+}
+
+function preserveRecentBudget(input: { cfg: Config.Info; model: Provider.Model; readHeavy: boolean }) {
+  const configured = input.cfg.compaction?.preserve_recent_tokens
+  if (configured !== undefined) return configured
+  const max = input.readHeavy
+    ? (input.cfg.compaction?.read_heavy_preserve_recent_tokens ?? MAX_READ_HEAVY_PRESERVE_RECENT_TOKENS)
+    : MAX_PRESERVE_RECENT_TOKENS
+  return Math.min(max, Math.max(MIN_PRESERVE_RECENT_TOKENS, Math.floor(usable(input) * 0.25)))
+}
+
+function turns(messages: MessageV2.WithParts[]) {
+  const result: Turn[] = []
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i]
+    if (msg.info.role !== "user") continue
+    if (msg.parts.some((part) => part.type === "compaction")) continue
+    result.push({
+      start: i,
+      end: messages.length,
+      id: msg.info.id,
+    })
+  }
+  for (let i = 0; i < result.length - 1; i++) {
+    result[i].end = result[i + 1].start
+  }
+  return result
+}
+
+function splitTurn(input: {
+  messages: MessageV2.WithParts[]
+  turn: Turn
+  model: Provider.Model
+  budget: number
+  estimate: (input: {
+    messages: MessageV2.WithParts[]
+    model: Provider.Model
+    rollout: SessionContextRollout.Info
+  }) => Effect.Effect<number>
+  rollout: SessionContextRollout.Info
+}) {
+  return Effect.gen(function* () {
+    if (input.budget <= 0) return undefined
+    if (input.turn.end - input.turn.start <= 1) return undefined
+    for (let start = input.turn.start + 1; start < input.turn.end; start++) {
+      const size = yield* input.estimate({
+        messages: input.messages.slice(start, input.turn.end),
+        model: input.model,
+        rollout: input.rollout,
+      })
+      if (size > input.budget) continue
+      return {
+        start,
+        id: input.messages[start]!.info.id,
+      } satisfies Tail
+    }
+    return undefined
+  })
+}
+
+export interface Interface {
+  readonly isOverflow: (input: {
+    tokens: MessageV2.Assistant["tokens"]
+    model: Provider.Model
+    messages?: MessageV2.WithParts[]
+  }) => Effect.Effect<boolean>
+  readonly prune: (input: { sessionID: SessionID }) => Effect.Effect<void>
+  readonly process: (input: {
+    parentID: MessageID
+    messages: MessageV2.WithParts[]
+    sessionID: SessionID
+    auto: boolean
+    overflow?: boolean
+  }) => Effect.Effect<"continue" | "stop">
+  readonly create: (input: {
+    sessionID: SessionID
+    agent: string
+    model: { providerID: ProviderID; modelID: ModelID }
+    auto: boolean
+    overflow?: boolean
+  }) => Effect.Effect<void>
+}
+
+/** Pairs Jev is asked about; each pair costs two questions. */
+export const MAX_PRUNABLE_PAIRS = Math.floor(JevCompaction.MAX_QUESTIONS / 2)
+
+/** Longest call rendering sent to Jev; arguments name the target, the rest is noise. */
+const PRUNE_CALL_MAX_CHARS = 500
+
+/** What a refuted result is replaced by; the summary keeps the fact, not the payload. */
+export const PRUNED_MARKER = "[pruned by jev: not load-bearing for later work]"
+
+function renderPruneCall(part: MessageV2.ToolPart): string {
+  const input = (part.state as { input?: unknown }).input
+  return `${part.tool} ${JSON.stringify(input ?? {})}`.slice(0, PRUNE_CALL_MAX_CHARS)
+}
+
+function renderPruneResult(part: MessageV2.ToolPart): string | undefined {
+  return part.state.status === "completed" ? String(part.state.output ?? "") : undefined
+}
+
+/** Tool calls in the head, in transcript order, in the shape Jev pairs. */
+export function pruneEvents(messages: readonly MessageV2.WithParts[]): JevCompaction.ToolEvent[] {
+  return messages.flatMap((message) =>
+    message.info.role !== "assistant"
+      ? []
+      : message.parts.flatMap((part) =>
+          part.type !== "tool"
+            ? []
+            : [
+                {
+                  callId: part.callID,
+                  tool: part.tool,
+                  call: renderPruneCall(part),
+                  result: renderPruneResult(part),
+                  batch: message.info.id,
+                },
+              ],
+        ),
+  )
+}
+
+/**
+ * The heaviest pairs, since those are what the transcript spends its context on,
+ * returned in transcript order so the questions read naturally. Bounded by
+ * `MAX_PRUNABLE_PAIRS`, which is all Jev's question budget allows.
+ */
+export function heaviestPairs(pairs: readonly JevCompaction.ToolPair[]): JevCompaction.ToolPair[] {
+  return pairs
+    .map((pair, index) => ({ pair, index, size: pair.call.length + (pair.result?.length ?? 0) }))
+    .toSorted((left, right) => right.size - left.size)
+    .slice(0, MAX_PRUNABLE_PAIRS)
+    .toSorted((left, right) => left.index - right.index)
+    .map((entry) => entry.pair)
+}
+
+/**
+ * Apply what Jev refuted to the transcript handed to the summarizer. A pair gone
+ * entirely takes its tool part with it; a pair whose result alone was refuted
+ * keeps the call but not the payload. Retained parts are the original objects,
+ * so retained bytes are unchanged. Returns how many results were replaced.
+ */
+export function rewriteRefuted(
+  messages: MessageV2.WithParts[],
+  asked: readonly JevCompaction.ToolPair[],
+  kept: readonly JevCompaction.ToolPair[],
+): number {
+  const after = new Map(kept.map((pair) => [pair.callId, pair]))
+  const decisions = new Map(asked.map((pair) => [pair.callId, after.get(pair.callId)]))
+  let marked = 0
+  for (const message of messages) {
+    const parts: MessageV2.Part[] = []
+    for (const part of message.parts) {
+      if (part.type !== "tool" || !decisions.has(part.callID)) {
+        parts.push(part)
+        continue
+      }
+      const outcome = decisions.get(part.callID)
+      if (!outcome) continue
+      if (outcome.result === undefined && part.state.status === "completed") {
+        marked += 1
+        parts.push({ ...part, state: { ...part.state, output: PRUNED_MARKER } })
+        continue
+      }
+      parts.push(part)
+    }
+    message.parts = parts
+  }
+  return marked
+}
+
+export class Service extends Context.Service<Service, Interface>()("@opencode/SessionCompaction") {}
+
+export const use = serviceUse(Service)
+
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const bus = yield* Bus.Service
+    const config = yield* Config.Service
+    const session = yield* Session.Service
+    const agents = yield* Agent.Service
+    const plugin = yield* Plugin.Service
+    const processors = yield* SessionProcessor.Service
+    const provider = yield* Provider.Service
+    const http = yield* HttpClient.HttpClient
+    const events = yield* EventV2Bridge.Service
+    const flags = yield* RuntimeFlags.Service
+
+    const isOverflow = Effect.fn("SessionCompaction.isOverflow")(function* (input: {
+      tokens: MessageV2.Assistant["tokens"]
+      model: Provider.Model
+      messages?: MessageV2.WithParts[]
+    }) {
+      return overflow({
+        cfg: yield* config.get(),
+        tokens: input.tokens,
+        model: input.model,
+        messages: input.messages,
+        outputTokenMax: flags.outputTokenMax,
+      })
+    })
+
+    const estimate = Effect.fn("SessionCompaction.estimate")(function* (input: {
+      messages: MessageV2.WithParts[]
+      model: Provider.Model
+      rollout: SessionContextRollout.Info
+    }) {
+      const msgs = yield* MessageV2.toModelMessagesEffect(input.messages, input.model, {
+        replayToolInputs: input.rollout.replayToolInputs,
+        replayToolOutputs: input.rollout.replayToolOutputs,
+        replayReasoning: input.rollout.replayReasoning,
+        reasoningMaxChars: input.rollout.reasoningMaxChars,
+        reasoningKeepRecent: input.rollout.reasoningKeepRecent,
+        summaryBoundaryStep: input.rollout.summaryBoundaryStep,
+      })
+      return Token.estimate(JSON.stringify(msgs))
+    })
+
+    const select = Effect.fn("SessionCompaction.select")(function* (input: {
+      messages: MessageV2.WithParts[]
+      cfg: Config.Info
+      model: Provider.Model
+      rollout: SessionContextRollout.Info
+    }) {
+      const limit = input.cfg.compaction?.tail_turns ?? DEFAULT_TAIL_TURNS
+      if (limit <= 0) return { head: input.messages, tail_start_id: undefined }
+      const budget = preserveRecentBudget({ cfg: input.cfg, model: input.model, readHeavy: isReadHeavy(input.messages, input.cfg) })
+      const all = turns(input.messages)
+      if (!all.length) return { head: input.messages, tail_start_id: undefined }
+      const recent = all.slice(-limit)
+      const sizes = yield* Effect.forEach(
+        recent,
+        (turn) =>
+          estimate({
+            messages: input.messages.slice(turn.start, turn.end),
+            model: input.model,
+            rollout: input.rollout,
+          }),
+        { concurrency: 1 },
+      )
+
+      let total = 0
+      let keep: Tail | undefined
+      for (let i = recent.length - 1; i >= 0; i--) {
+        const turn = recent[i]!
+        const size = sizes[i]
+        if (total + size <= budget) {
+          total += size
+          keep = { start: turn.start, id: turn.id }
+          continue
+        }
+        const remaining = budget - total
+        const split = yield* splitTurn({
+          messages: input.messages,
+          turn,
+          model: input.model,
+          budget: remaining,
+          estimate,
+          rollout: input.rollout,
+        })
+        if (split) keep = split
+        else if (!keep) log.info("tail fallback", { budget, size, total })
+        break
+      }
+
+      if (!keep || keep.start === 0) return { head: input.messages, tail_start_id: undefined }
+      return {
+        head: input.messages.slice(0, keep.start),
+        tail_start_id: keep.id,
+      }
+    })
+
+    // goes backwards through parts until there are PRUNE_PROTECT tokens worth of tool
+    // calls, then erases output of older tool calls to free context space
+    const prune = Effect.fn("SessionCompaction.prune")(function* (input: { sessionID: SessionID }) {
+      const cfg = yield* config.get()
+      if (cfg.compaction?.prune === false) return
+      log.info("pruning")
+
+      const msgs = yield* session
+        .messages({ sessionID: input.sessionID })
+        .pipe(Effect.catchIf(NotFoundError.isInstance, () => Effect.succeed(undefined)))
+      if (!msgs) return
+
+      let total = 0
+      let pruned = 0
+      const toPrune: MessageV2.ToolPart[] = []
+      let turns = 0
+
+      loop: for (let msgIndex = msgs.length - 1; msgIndex >= 0; msgIndex--) {
+        const msg = msgs[msgIndex]
+        if (msg.info.role === "user") turns++
+        if (turns < 2) continue
+        if (msg.info.role === "assistant" && msg.info.summary) break loop
+        for (let partIndex = msg.parts.length - 1; partIndex >= 0; partIndex--) {
+          const part = msg.parts[partIndex]
+          if (part.type !== "tool") continue
+          if (part.state.status !== "completed") continue
+          if (PRUNE_PROTECTED_TOOLS.includes(part.tool)) continue
+          if (part.state.time.compacted) break loop
+          const estimate = Token.estimate(part.state.output)
+          total += estimate
+          if (total <= PRUNE_PROTECT) continue
+          pruned += estimate
+          toPrune.push(part)
+        }
+      }
+
+      log.info("found", { pruned, total })
+      if (pruned > PRUNE_MINIMUM) {
+        for (const part of toPrune) {
+          if (part.state.status === "completed") {
+            part.state.time.compacted = Date.now()
+            yield* session.updatePart(part)
+          }
+        }
+        log.info("pruned", { count: toPrune.length })
+        // Pruning erased `read` output from the context, so the ledgers that
+        // claim the model still holds those bytes must forget them — otherwise a
+        // later read answers "unchanged, scroll back" pointing at bytes that no
+        // longer exist, and the model is left without them. Compaction resets the
+        // same state for the same reason.
+        ContextLedger.invalidate(input.sessionID)
+        ReadLedger.reset(input.sessionID)
+      }
+    })
+
+    const processCompaction = Effect.fn("SessionCompaction.process")(function* (input: {
+      parentID: MessageID
+      messages: MessageV2.WithParts[]
+      sessionID: SessionID
+      auto: boolean
+      overflow?: boolean
+    }) {
+      const parent = input.messages.findLast((m) => m.info.id === input.parentID)
+      if (!parent || parent.info.role !== "user") {
+        throw new Error(`Compaction parent must be a user message: ${input.parentID}`)
+      }
+      const userMessage = parent.info
+      const compactionPart = parent.parts.find((part): part is MessageV2.CompactionPart => part.type === "compaction")
+      if (input.overflow && !compactionPart) {
+        throw new Error(`Overflow compaction parent must contain a compaction part: ${input.parentID}`)
+      }
+
+      let messages = input.messages
+      let replay:
+        | {
+            info: MessageV2.User
+            parts: MessageV2.Part[]
+          }
+        | undefined
+      if (input.overflow) {
+        const idx = input.messages.findIndex((m) => m.info.id === input.parentID)
+        for (let i = idx - 1; i >= 0; i--) {
+          const msg = input.messages[i]
+          if (msg.info.role === "user" && !msg.parts.some((p) => p.type === "compaction")) {
+            replay = { info: msg.info, parts: msg.parts }
+            messages = input.messages.slice(0, i)
+            break
+          }
+        }
+        const hasContent =
+          replay && messages.some((m) => m.info.role === "user" && !m.parts.some((p) => p.type === "compaction"))
+        if (!hasContent) {
+          replay = undefined
+          messages = input.messages
+        }
+      }
+
+      const agent = yield* agents.get("compaction")
+      const model = agent.model
+        ? yield* provider.getModel(agent.model.providerID, agent.model.modelID).pipe(Effect.orDie)
+        : yield* provider.getModel(userMessage.model.providerID, userMessage.model.modelID).pipe(Effect.orDie)
+      const cfg = yield* config.get()
+      const rollout = SessionContextRollout.resolve(cfg)
+      const history = compactionPart && messages.at(-1)?.info.id === input.parentID ? messages.slice(0, -1) : messages
+      const prior = completedCompactions(history)
+      const hidden = new Set(prior.flatMap((item) => [item.userIndex, item.assistantIndex]))
+      const previousSummary = prior.at(-1)?.summary
+      const selected = yield* select({
+        messages: history.filter((_, index) => !hidden.has(index)),
+        cfg,
+        model,
+        rollout,
+      })
+      // Allow plugins to inject context or replace compaction prompt.
+      const compacting = yield* plugin.trigger(
+        "experimental.session.compacting",
+        { sessionID: input.sessionID },
+        { context: [], prompt: undefined },
+      )
+      // Jev's pre-summary pass: it reads a digest of the head and answers one
+      // typed batch naming the anchors the summary must not drop (paths,
+      // commands, identifiers, error strings). The result is one extra context
+      // block — never a prompt replacement — and any Jev failure (absent key,
+      // network, unparsable answer) leaves the context untouched so compaction
+      // always proceeds. Cost is bounded by `max_questions`.
+      const jevCfg = cfg.jev?.compaction
+      const jevDigest =
+        jevCfg?.enabled === true
+          ? JevCompaction.clampState(
+              selected.head.flatMap((message) =>
+                message.parts.flatMap((part) => {
+                  if (part.type === "text" && !part.synthetic) return [`${message.info.role}: ${part.text}`]
+                  if (part.type === "tool") return [`${message.info.role} ran tool ${part.tool}`]
+                  return []
+                }),
+              ),
+            )
+          : ""
+      const jevCandidates = jevDigest
+        ? JevCompaction.candidatesFromText(jevDigest, jevCfg?.max_questions ?? JevCompaction.MAX_QUESTIONS)
+        : []
+      const jevChecklist =
+        jevCandidates.length === 0
+          ? undefined
+          : yield* JevClient.decide(
+              http,
+              { state: jevDigest, questions: JevCompaction.checklistQuestions(jevCandidates) },
+              cfg.jev,
+            ).pipe(
+              Effect.map((response) =>
+                JevCompaction.renderChecklist({
+                  candidates: jevCandidates,
+                  answers: response.answers,
+                  threshold: jevCfg?.threshold,
+                }),
+              ),
+              Effect.catch(() => Effect.succeed(undefined)),
+            )
+      // Jev's pruning pass. The checklist above decides what the summary must
+      // keep; this one decides what never has to enter it. Jev reads the tool
+      // calls in the head — heaviest first, since those are the payloads the
+      // transcript actually spends its context on — and refutes the calls and
+      // results later work would not miss. A refuted result is replaced by a
+      // short marker and a fully refuted call is dropped, so the summarizer reads
+      // a smaller transcript and the summary shrinks with it. Retained parts are
+      // the original objects, and any Jev failure leaves the head untouched.
+      const jevAsked =
+        jevCfg?.enabled === true ? heaviestPairs(JevCompaction.pairTurns(pruneEvents(selected.head))) : []
+      const jevKept =
+        jevAsked.length === 0
+          ? undefined
+          : yield* JevClient.decide(
+              http,
+              {
+                state: jevDigest || "Tool calls from a coding session about to be compacted.",
+                questions: JevCompaction.keepQuestions(jevAsked),
+              },
+              cfg.jev,
+            ).pipe(
+              Effect.map((response) =>
+                JevCompaction.prune(jevAsked, response.answers, jevCfg?.threshold ?? JevCompaction.DEFAULT_THRESHOLD),
+              ),
+              Effect.catch(() => Effect.succeed(undefined)),
+            )
+      // The LLM boundary supplies escaped live state, not a raw/stale goal hint.
+      const resolvedPrompt =
+        compacting.prompt ??
+        buildPrompt({
+          previousSummary,
+          context: jevChecklist ? [...compacting.context, jevChecklist] : compacting.context,
+        })
+      // Injected after prompt resolution, so a plugin-supplied prompt (which
+      // short-circuits buildPrompt) carries the contract too. Single call site:
+      // the goal contract is never concatenated twice.
+      const goalContract = (
+        yield* session
+          .get(input.sessionID)
+          .pipe(Effect.catchIf(NotFoundError.isInstance, () => Effect.succeed(undefined)))
+      )?.goalState
+      const nextPrompt = goalContract ? resolvedPrompt + formatGoalContext(goalContract) : resolvedPrompt
+      const msgs = structuredClone(selected.head)
+      if (jevKept) {
+        log.info("jev compaction prune", {
+          sessionID: input.sessionID,
+          asked: jevAsked.length,
+          kept: jevKept.length,
+          marked: rewriteRefuted(msgs, jevAsked, jevKept),
+        })
+      }
+      yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
+      const modelMessages = yield* MessageV2.toModelMessagesEffect(msgs, model, {
+        stripMedia: true,
+        toolOutputMaxChars: TOOL_OUTPUT_MAX_CHARS,
+        replayToolInputs: rollout.replayToolInputs,
+        replayToolOutputs: rollout.replayToolOutputs,
+        replayReasoning: rollout.replayReasoning,
+        // The summarizer is the one consumer that rewrites the head: it must read
+        // the reasoning in full, because a pre-truncated "why" cannot be summarised
+        // back into something faithful to the work it explains.
+        reasoningMaxChars: 0,
+        reasoningKeepRecent: rollout.reasoningKeepRecent,
+        summaryBoundaryStep: rollout.summaryBoundaryStep,
+      })
+      const ctx = yield* InstanceState.context
+      const msg: MessageV2.Assistant = {
+        id: MessageV2.nextID(input.sessionID),
+        role: "assistant",
+        parentID: input.parentID,
+        sessionID: input.sessionID,
+        mode: "compaction",
+        agent: "compaction",
+        variant: userMessage.model.variant,
+        summary: true,
+        path: {
+          cwd: ctx.directory,
+          root: ctx.worktree,
+        },
+        cost: 0,
+        tokens: {
+          output: 0,
+          input: 0,
+          reasoning: 0,
+          cache: { read: 0, write: 0 },
+        },
+        modelID: model.id,
+        providerID: model.providerID,
+        time: {
+          created: Date.now(),
+        },
+      }
+      yield* session.updateMessage(msg)
+      const processor = yield* processors.create({
+        assistantMessage: msg,
+        sessionID: input.sessionID,
+        model,
+      })
+      const result = yield* processor.process({
+        user: userMessage,
+        workingStateUserID: input.messages.findLast(
+          (message) =>
+            message.info.role === "user" &&
+            message.parts.some(
+              (part) => part.type === "file" || (part.type === "text" && !part.synthetic && !part.ignored),
+            ),
+        )?.info.id,
+        agent,
+        sessionID: input.sessionID,
+        tools: {},
+        system: [],
+        messages: [
+          ...modelMessages,
+          {
+            role: "user",
+            content: [{ type: "text", text: nextPrompt }],
+          },
+        ],
+        model,
+      })
+
+      if (result === "compact") {
+        processor.message.error = new MessageV2.ContextOverflowError({
+          message: replay
+            ? "Conversation history too large to compact - exceeds model context limit"
+            : "Session too large to compact - context exceeds model limit even after stripping media",
+        }).toObject()
+        processor.message.finish = "error"
+        yield* session.updateMessage(processor.message)
+        return "stop"
+      }
+
+      if (compactionPart && selected.tail_start_id && compactionPart.tail_start_id !== selected.tail_start_id) {
+        yield* session.updatePart({
+          ...compactionPart,
+          tail_start_id: selected.tail_start_id,
+        })
+      }
+
+      if (result === "continue" && input.auto) {
+        if (replay) {
+          const original = replay.info
+          const replayMsg = yield* session.updateMessage({
+            id: MessageV2.nextID(input.sessionID),
+            role: "user",
+            sessionID: input.sessionID,
+            time: { created: Date.now() },
+            agent: original.agent,
+            model: original.model,
+            format: original.format,
+            tools: original.tools,
+            system: original.system,
+          })
+          for (const part of replay.parts) {
+            if (part.type === "compaction") continue
+            const replayPart =
+              part.type === "file" && MessageV2.isMedia(part.mime)
+                ? {
+                    type: "text" as const,
+                    text: `[Attached ${part.mime}: ${part.filename ?? "file"}]`,
+                    synthetic: true,
+                    metadata: { compaction_replay: true },
+                  }
+                : part.type === "text"
+                  ? {
+                      ...part,
+                      synthetic: true,
+                      metadata: { ...part.metadata, compaction_replay: true },
+                    }
+                  : part
+            yield* session.updatePart({
+              ...replayPart,
+              id: PartID.ascending(),
+              messageID: replayMsg.id,
+              sessionID: input.sessionID,
+            })
+          }
+        }
+
+        if (!replay) {
+          const info = yield* provider.getProvider(userMessage.model.providerID)
+          if (
+            (yield* plugin.trigger(
+              "experimental.compaction.autocontinue",
+              {
+                sessionID: input.sessionID,
+                agent: userMessage.agent,
+                model: yield* provider
+                  .getModel(userMessage.model.providerID, userMessage.model.modelID)
+                  .pipe(Effect.orDie),
+                provider: {
+                  source: info.source,
+                  info,
+                  options: info.options,
+                },
+                message: userMessage,
+                overflow: input.overflow === true,
+              },
+              { enabled: true },
+            )).enabled
+          ) {
+            const continueMsg = yield* session.updateMessage({
+              id: MessageV2.nextID(input.sessionID),
+              role: "user",
+              sessionID: input.sessionID,
+              time: { created: Date.now() },
+              agent: userMessage.agent,
+              model: userMessage.model,
+            })
+            const text =
+              (input.overflow
+                ? "The previous request exceeded the provider's size limit due to large media attachments. The conversation was compacted and media files were removed from context. If the user was asking about attached images or files, explain that the attachments were too large to process and suggest they try again with smaller or fewer files.\n\n"
+                : "") +
+              "Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed."
+            yield* session.updatePart({
+              id: PartID.ascending(),
+              messageID: continueMsg.id,
+              sessionID: input.sessionID,
+              type: "text",
+              // Internal marker for auto-compaction followups so provider plugins
+              // can distinguish them from manual post-compaction user prompts.
+              // This is not a stable plugin contract and may change or disappear.
+              metadata: { compaction_continue: true },
+              synthetic: true,
+              text,
+              time: {
+                start: Date.now(),
+                end: Date.now(),
+              },
+            })
+          }
+        }
+      }
+
+      if (processor.message.error) return "stop"
+      if (result === "continue") {
+        const summary = summaryText(
+          (yield* session.messages({ sessionID: input.sessionID }).pipe(Effect.orDie)).find(
+            (item) => item.info.id === msg.id,
+          ) ?? {
+            info: msg,
+            parts: [],
+          },
+        )
+        // Jev's post-summary pass is verification, not enforcement: one typed
+        // batch reports which load-bearing anchors the summary dropped, and the
+        // verdict is logged so the loss is observable. It never blocks or
+        // rewrites the summary, and any Jev failure is silent.
+        const jevAudit =
+          jevCfg?.enabled === true && summary && jevCandidates.length > 0
+            ? yield* JevClient.decide(
+                http,
+                {
+                  state: JevCompaction.clampState([jevDigest, `SUMMARY:\n${summary}`]),
+                  questions: JevCompaction.auditQuestions(jevCandidates),
+                },
+                cfg.jev,
+              ).pipe(Effect.catch(() => Effect.succeed(undefined)))
+            : undefined
+        if (jevAudit)
+          log.info("jev compaction audit", {
+            model: jevAudit.model,
+            anchors: jevCandidates.length,
+            missing: JevCompaction.missingFromSummary({
+              candidates: jevCandidates,
+              answers: jevAudit.answers,
+              threshold: jevCfg?.threshold,
+            }),
+          })
+        if (flags.experimentalEventSystem) {
+          yield* events.publish(SessionEvent.Compaction.Ended, {
+            sessionID: input.sessionID,
+            timestamp: DateTime.makeUnsafe(Date.now()),
+            text: summary ?? "",
+            include: selected.tail_start_id,
+          })
+        }
+        // Compaction can drop earlier `read` output from the context, so the
+        // session read ledger must forget what it believes the model still
+        // holds — otherwise a later read would answer "unchanged, scroll back"
+        // pointing at bytes that no longer exist. See tool/read-ledger.ts.
+        // The same reasoning applies to the context allocation. A slot tells the
+        // model its target is still in the window, and only the harness can know
+        // whether the summary kept it: every slot is marked elided, so a claimed
+        // presence has to be re-earned by a fresh observation. See
+        // session/context-ledger.ts.
+        ContextLedger.invalidate(input.sessionID)
+        ReadLedger.reset(input.sessionID)
+        yield* bus.publish(Event.Compacted, { sessionID: input.sessionID })
+      }
+      return result
+    })
+
+    const create = Effect.fn("SessionCompaction.create")(function* (input: {
+      sessionID: SessionID
+      agent: string
+      model: { providerID: ProviderID; modelID: ModelID }
+      auto: boolean
+      overflow?: boolean
+    }) {
+      const msg = yield* session.updateMessage({
+        id: MessageV2.nextID(input.sessionID),
+        role: "user",
+        model: input.model,
+        sessionID: input.sessionID,
+        agent: input.agent,
+        time: { created: Date.now() },
+      })
+      yield* session.updatePart({
+        id: PartID.ascending(),
+        messageID: msg.id,
+        sessionID: msg.sessionID,
+        type: "compaction",
+        auto: input.auto,
+        overflow: input.overflow,
+      })
+      if (flags.experimentalEventSystem) {
+        yield* events.publish(SessionEvent.Compaction.Started, {
+          sessionID: input.sessionID,
+          timestamp: DateTime.makeUnsafe(Date.now()),
+          reason: input.auto ? "auto" : "manual",
+        })
+      }
+    })
+
+    return Service.of({
+      isOverflow,
+      prune,
+      process: processCompaction,
+      create,
+    })
+  }),
+)
+
+export const defaultLayer = Layer.suspend(() =>
+  layer.pipe(
+    Layer.provide(Provider.defaultLayer),
+    Layer.provide(Session.defaultLayer),
+    Layer.provide(SessionProcessor.defaultLayer),
+    Layer.provide(Agent.defaultLayer),
+    Layer.provide(Plugin.defaultLayer),
+    Layer.provide(Bus.layer),
+    Layer.provide(Config.defaultLayer),
+    Layer.provide(RuntimeFlags.defaultLayer),
+    Layer.provide(EventV2Bridge.defaultLayer),
+    Layer.provide(FetchHttpClient.layer),
+  ),
+)
+
+export * as SessionCompaction from "./compaction"
