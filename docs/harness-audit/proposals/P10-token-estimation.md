@@ -28,11 +28,20 @@ tokens inspectés (le helper de `:26` divise par quatre). HEAD contient exacteme
 dans ce fichier, et les deux ont été inversés. Réécrire une assertion pour qu'elle corresponde au
 code est la faute que C-05 et C-11 interdisent, pas un coût de migration.
 
-**État du code.** L'implémentation du cycle 4 a été **révertie en totalité**. Vérifié par le parent
-après réversion : les quatre fichiers sont byte-identiques à HEAD (`MATCH=True`), `bun typecheck`
-sort en 0 avec 0 erreur TypeScript, les deux filtres ci-dessus repassent à 1 pass / 0 fail, et
-`src/session/overflow.test.ts` + `test/session/overflow.test.ts` sont à 14 pass / 0 fail. Aucune de
-ces exécutions n'a été rejouée par cette révision, qui n'a aucun shell pour les tests (§2, « Statut
+**État du code.** L'implémentation du cycle 4 a été **révertie en totalité** avant cette révision, et
+cette révision n'a écrit que ce document. Vérifié par hash SHA256 recalculé deux fois ici, identique
+aux deux relevés : `src/session/overflow.ts` `EF28B6B6EA4F`, `src/session/overflow.test.ts`
+`3802D028BEDB`, `src/session/compaction.ts` `DBB74DBBAEF3`, `test/session/overflow.test.ts`
+`06A2D261A7F2`, `test/session/compaction.test.ts` `8083095DCBD4` — horodatages inchangés (10:05:28,
+10:05:29, et 18:43:17 pour le dernier, jamais touché).
+
+**Ce que cette révision a exécuté elle-même**, dans `packages/opencode` : `-t "read-heavy fraction"`
+→ 1 pass / 0 fail, 62 filtered out, **exit 0** ; `-t "uses configured automatic"` → 1 pass / 0 fail, 62
+filtered out, **exit 0** ; `compaction.test.ts --timeout 30000` → **63 pass / 0 fail**, 170 expect(),
+**exit 0** (60,18 s) ; `src/session/overflow.test.ts` → **6 pass / 0 fail, exit 0**. Le `bun typecheck`
+exit 0 / 0 erreur TypeScript est, lui, attribué au parent d'implémentation — cette révision ne l'a pas
+rejoué. Ces exécutions portent sur HEAD et prouvent que les quatre assertions protégées (T7.0) y sont
+vertes ; elles ne disent rien du correctif, qui n'est pas écrit.
 des chiffres »). **Aucun fichier `packages/**` n'a été modifié par cette révision** : le seul fichier
 écrit reste ce document, comme au cycle 2.
 
@@ -219,11 +228,34 @@ export function isReadHeavy(messages: MessageV2.WithParts[], cfg: Config.Info) {
     (input.inspected ?? 0) >= (input.cfg.compaction?.read_heavy_min_tokens ?? READ_HEAVY_MIN_TOKENS)
 ```
 
-Ce sont les deux seules occurrences de la frontière dans le dépôt, et elles doivent être reprises
-telles quelles. Un implémenteur qui tente de les réécrire en `>`, ou qui les remplace par
-`ramp >= 1` / `ramp > 0`, casse mécaniquement les deux tests : `ramp > 0` est faux à
-`inspected == start`, et `ramp >= 1` est faux sur tout `start ≤ inspected < start + span`. Les
-deux variantes ont été implémentées et mesurées rouges ; aucune n'est retenue ici.
+Ce sont les deux seules occurrences de la frontière dans le dépôt — vérifié par
+`rg -n "READ_HEAVY_MIN_TOKENS|inspectionTokens" packages/opencode/src` (exit 0), qui ne retourne que
+`overflow.ts:10` (la constante), `:52` (le helper), `:76-77` (prédicat 1), `:111` (prédicat 2) et
+`:152` (l'appelant) — et elles doivent être reprises telles quelles. Un implémenteur qui tente de les
+réécrire en `>`, ou qui les remplace par `ramp >= 1` / `ramp > 0`, casse mécaniquement les deux tests :
+`ramp > 0` est faux à `inspected == start`, et `ramp >= 1` est faux sur tout
+`start ≤ inspected < start + span`. Les deux variantes ont été implémentées et mesurées rouges ; aucune
+n'est retenue ici.
+
+**Formes explicitement interdites aux deux sites, avec l'effet mesuré sur chaque assertion protégée.**
+Ce tableau est la garde qui empêche une gated ramp d'être réintroduite « par commodité » : il n'y a
+aucune forme exclusive qui survives, et aucune n'est acceptable même si elle « semble » équivalente.
+
+| forme du prédicat | `inspected == minimum` | INV-1 (`:455`) | INV-2 (`:515`) | INV-3 (`:32`) | INV-4 (`:44`) |
+|---|---|---|---|---|---|
+| **`>=` — forme de HEAD, la seule retenue** | `true` | vert | vert | vert | vert |
+| `>` (exclusif) | `false` | **rouge** | **rouge** | **rouge** | **rouge** |
+| `ramp > 0` | `false` (`ramp = 0`) | **rouge** | **rouge** | **rouge** | **rouge** |
+| `ramp >= 1` | `false` (`ramp = 1` seulement à `start + span = 60 000`) | **rouge** | **rouge** | **rouge** | **rouge** |
+| `ramp >= 1 - 1e-9` (ε pour « presque saturé ») | `false` | **rouge** | **rouge** | **rouge** | **rouge** |
+| `min(ramp, 1) >= 0.5` ou tout seuil interne ≠ 0 | `false` | **rouge** | **rouge** | **rouge** | **rouge** |
+
+La ligne « `>=` » est verte sur les quatre colonnes parce que les quatre fenêtres protégées placent
+`inspectionTokens` **exactement** au seuil : `compaction.test.ts:440` / `:506` produisent 20 000 et
+25 000 tokens inspectés (diviseur `CHARS_PER_TOKEN = 4`, `overflow.ts:63`), contre 20 000 par défaut et
+25 000 configuré à `:534`. Toute forme qui n'inclut pas l'égalité les fait passer à `false`. C'est
+pourquoi le prédicat est écrit ici en entier plutôt que décrit : l'opérateur `>=` n'est pas une
+détail de style, c'est la spécification.
 
 **Ordre de patch (obligatoire).** (a) d'abord : les deux helpers et la constante, testables isolément
 sans toucher à une décision. (b) ensuite : la magnitude de l'arme dans `trigger()`, seule ligne qui
@@ -345,10 +377,13 @@ avec `inspectionProfile` ajouté à l'import de `compaction.ts:22`.
 `isReadHeavy` : si l'implémenteur le retire de l'import de `:22`, il doit **conserver l'export** de
 `overflow.ts:76`, parce que `src/session/overflow.test.ts:13` l'importe et que INV-3 et INV-4
 l'appellent directement. Supprimer cet export en croyant qu'il est devenu mort casserait les deux
-invariants. `INFERE:` `packages/opencode/tsconfig.json` étend `@tsconfig/bun` sans redéclarer
-`noUnusedLocals`, donc un import devenu inutilisé pourrait passer `bun typecheck` sans avertissement :
-à trancher par `cd packages/opencode; bun typecheck` après le retrait de l'import. La spec n'en dépend
-pas — elle impose de conserver l'export.
+invariants. **Mesuré, plus `INFERE:`** : `node_modules/@tsconfig/bun/tsconfig.json` déclare
+`"noUnusedLocals": false`, et `packages/opencode/tsconfig.json` (qui l'étend par
+`"extends": "@tsconfig/bun/tsconfig.json"`) ne redéclare ni `noUnusedLocals` ni
+`noUnusedParameters`. Donc un import rendu inutilisé par le correctif passe `bun typecheck` **sans
+avertissement** : la suppression accidentelle de l'import de `compaction.ts:22` est silencieuse, ce qui
+justifie de l'écrire dans la spec plutôt que de compter sur le compilateur. La spec n'en dépend pas —
+elle impose de conserver l'export.
 
 ### 4.d Comportements après correctif, calculés par exécution
 
@@ -533,7 +568,7 @@ R6.3 existe.
 
 | finding | statut | preuve |
 |---|---|---|
-| F1 — occurrences `compaction.test.ts` | **clos** | reclassées occurrence par occurrence en R6.3 et au §9.1 ; les 10 lignes (`533`, `534`, `1239`, `1265`, `1290`, `1327`, `1378`, `1772`, `1816`, `1851`) sont énumérées avec leur mécanisme, et la protection des 8 dernières est un fait de code (`compaction.ts:305-306`) |
+| F1 — occurrences `compaction.test.ts` | **clos, avec la formulation fausse retirée** | les 10 lignes (`533`, `534`, `1239`, `1265`, `1290`, `1327`, `1378`, `1772`, `1816`, `1851`) sont classées une par une au §9.1. Les 8 `preserve_recent_tokens` ne sont pas exposées, pour la raison unique du retour anticipé de `compaction.ts:305-306`. `compaction.test.ts:441` — le commentaire `288.8k = floor(361 000 × 0,8)` — **est déplacé** par l'interpolation de `overflow.ts:107-108` (mesuré : `288 800` à `ramp = 0`, `306 850` à `ramp = 0,25`, `361 000` à `ramp = 1`) ; `:448` et `:455` tiennent parce que leur fenêtre est exactement au bord de la rampe, **non par immunité** |
 | F2 — diviseur de `src/util/token.ts` | **clos** | ses deux seuls appelants (`compaction.ts:518`, `:603`) n'ont pas le prompt système ; `msgs` vient de `compaction.ts:510` (§2) |
 | F3 — budget fractionnaire de la forme brute | **clos dans cette proposition** | `Math.round` ajouté au §4.c ; mesuré `budget(59 999) = 24 000` avec arrondi contre `volume = 23 999,6` sans |
 | F4 — divergence entre l'arme et le budget | **clos dans cette proposition** | les deux sites consomment la même valeur `readHeavyRamp(…, read_heavy_min_tokens)` (§4.a, §4.b, §4.c) |
@@ -542,13 +577,20 @@ R6.3 existe.
 
 ## 7. Tests
 
-**Aucun test existant n'est affaibli, supprimé ni retourné.** Un seul fichier de test est étendu :
-`packages/opencode/test/session/overflow.test.ts`. `src/session/overflow.test.ts` et
-`test/session/compaction.test.ts` sont lus mais **non modifiés**.
+**Aucun test existant n'est affaibli, supprimé, ni retourné. Aucun `toBe(true)` n'est inversé.**
+Un seul fichier de test est étendu : `packages/opencode/test/session/overflow.test.ts`.
+`src/session/overflow.test.ts` et `test/session/compaction.test.ts` sont lus mais **non modifiés**.
+Dans le fichier étendu, **deux assertions existantes changent de valeur attendue** — `:92`
+(`early`) et `:94` (`value`), `464 640 → 580 800` — parce que l'arme anticipée devient continue et
+atteint `proportional` à saturation ; elles sont annoncées ici et chiffrées (R6.1, R6.2, R4), et leur
+changement va dans le sens de la correction (la valeur devient celle de HEAD au bord de la rampe, plus
+élevée ensuite). Aucun autre test du dépôt ne bouge : mesuré sur HEAD par cette révision,
+`bun test test/session/compaction.test.ts --timeout 30000` → 63 pass / 0 fail, exit 0.
 
 **T7.0 — Les quatre assertions protégées, invariants non inversibles.** Un implémenteur ne peut ni
-les changer, ni les supprimer, ni en changer la valeur attendue, ni les_dupliquer dans une autre
-forme : ce sont des énoncés de contrat, pas des tests de la formule.
+les changer, ni les supprimer, ni en changer la valeur attendue, ni les reformuler en une autre
+forme dans le même fichier : ce sont des énoncés de contrat, pas des tests de la formule. Elles sont
+listées dans le tableau ci-dessous avec la raison mathématique pour laquelle chacune tient.
 
 | # | emplacement | assertion | pourquoi elle tient |
 |---|---|---|---|
@@ -694,16 +736,48 @@ classification exacte, ligne par ligne :
 | `:1816` | `preserve_recent_tokens: 500` | non | non — idem |
 | `:1851` | `preserve_recent_tokens: 500` | non | non — idem |
 
-Donc : **les 2 occurrences `read_heavy_*` sont bel et bien exposées** à un changement de magnitude —
-`:533` par le fait que la rampe ne s'applique pas à `read_heavy_trigger`, `:534` par le fait que
-`read_heavy_min_tokens` devient le début de la rampe — **et les 8 occurrences
-`preserve_recent_tokens` ne le sont pas**, pour la raison précise et unique du retour anticipé de
-`compaction.ts:305-306`, qui est antérieur au correctif et reste inchangé. Enfin, l'occurrence la
-plus importante n'est dans aucune de ces dix lignes : le commentaire de `compaction.test.ts:441`
-documente `288.8k`, la valeur même que la rampe déplace, et les deux assertions qui l'encadrent
-(`:448`, `:455`) tiennent **parce qu'elles sont aux deux bords de la rampe**, non par immunité (R6.3,
-T7.5). C'est la formulation honnête, et elle remplace « aucune occurrence n'est imputée au
-correctif ».
+**Ce qui est réellement déplacé, énoncé sans détour : la grandeur d'arme anticipée, et donc la valeur
+`288.8k` documentée par le commentaire de `compaction.test.ts:441`.** Le commentaire calcule
+`288.8k = floor(361 000 × 0,8)` à partir de `floor(380 000 × 0,95)`. Ce seuil **est** celui que
+l'interpolation de magnitude déplace, parce que `overflow.ts:107-108` est précisément l'endroit où
+`floor(proportional × READ_HEAVY_FRACTION)` est remplacé par
+`floor(proportional × (0,8 + 0,2 × ramp))`. Mesuré sur `proportional = 361 000` :
+
+| tokens inspectés | ramp | arme après correctif | écart vs `288.8k` | `compaction.test.ts` |
+|---|---|---|---|---|
+| 20 000 (fenêtre de `:448` / `:455`) | 0 | `288 800` | 0 | `:448` reste `false`, `:455` reste `true` |
+| 21 000 | 0,025 | `290 605` | `+1 805` | aucune assertion à ce volume |
+| 30 000 | 0,25 | `306 850` | `+18 050` | aucune assertion à ce volume |
+| 60 000 | 1 | `361 000` | `+72 200` | aucune assertion à ce volume |
+
+Le commentaire de `:441` reste donc **exact** pour la fenêtre de 20 000 tokens inspectés qu'il
+documente, et **faux comme description générale du seuil** dès que le volume inspecté quitte le bord
+de la rampe. Les deux assertions qui l'encadrent tiennent parce que cette fenêtre est **exactement au
+bord** (`ramp = 0`), pas parce que le chemin de code serait épargné : il ne l'est pas (R6.3, T7.5).
+C'est la formulation honnête, et elle remplace « aucune occurrence n'est imputée au correctif ».
+
+Récapitulatif, pour que la liste ne laisse aucune ambiguïté :
+
+- **`:533` (`read_heavy_trigger: 90_000`) — exposée, valeur inchangée.** `overflow.ts:106-107` conserve
+  le `?? input.cfg.compaction?.read_heavy_trigger`, donc l'opérateur qui fixe ce seuil obtient
+  exactement 90 000 : mesuré `value_AVANT = value_APRES = 90 000` pour `:508` et `:515`, qui restent
+  `false` et `true`. Elle n'est pas imputable **parce que** la rampe n'est pas évaluée sur ce chemin,
+  pas parce que le chemin serait protégé.
+- **`:534` (`read_heavy_min_tokens: 25 000`) — exposée, frontière inchangée.** Elle déplace le
+  **début** de la rampe, pas le prédicat : mesuré `ramp(25 000, 25 000) = 0` et
+  `arme_AVANT = arme_APRES = floor(361 000 × 0,8)`. `:515` reste `true` grâce au `>=` inclusif
+  (INV-2), pas grâce à cette occurrence.
+- **`:441` (commentaire `288.8k`) et les assertions `:448` / `:455` qu'il encadre — réellement
+  déplacées**, au sens où le seuil calculé par `overflow.ts:107-108` change avec le volume inspecté.
+  Elles restent vertes parce que la fenêtre est au bord, et c'est le seul motif.
+- **`:1239`, `:1265`, `:1290`, `:1327`, `:1378`, `:1772`, `:1816`, `:1851`
+  (`preserve_recent_tokens`) — non exposées**, pour la raison précise et unique du retour anticipé de
+  `compaction.ts:305-306`, antérieur au correctif et inchangé : `configured` est rendu avant toute
+  interpolation.
+- **`:508`, `:515`, `:521`, `:527` — non exposées par la grandeur**, vérifié par calcul
+  (`case508 = false`, `case515 = true`, `case521 = false`, `case527 = true`, sur
+  `absolute_trigger = 120_000`). `:521` / `:527` passent par le chemin sans `messages`, où
+  `overflow.ts:152` fixe `inspected = 0` et donc `ramp = 0` et `readHeavy = false`.
 
 ### 9.2 Le multiplicateur du span — politique assumée
 
@@ -741,8 +815,8 @@ réactivation : un rapport de tokens **provider** obtenu sur des sorties réelle
 | correction | statut | où |
 |---|---|---|
 | **C-05** — ne pas confondre « `X / 4` est un plancher » et un plancher de régression | **respecté, et rétabli** | la cause de la régression du cycle 4 est nommée et corrigée là où elle est : c'est la gated ramp qui est retirée (§4.0, A5.8), pas une assertion qui est retournée. Le diviseur n'est pas touché (`CHARS_PER_TOKEN = 4`, E4) |
-| **C-11** — distinguer régression d'un résidu préexistant | **respecté, et rétabli** | R6.1 énumère les 18 assertions du dossier avec leur valeur avant/après, dont **2 rouges et imputables** (`:92` et `:94`, les seules du dépôt) ; le §9.1 classe les 10 occurrences de `compaction.test.ts` une par une et retire l'affirmation « aucune n'est imputée au correctif » ; R6.3 déclare `compaction.test.ts:441` exposé au changement de seuil |
-| **C-26** — compter précisément les régressions | **respecté** | R6.1 compte 3 assertions rouges sur 18, toutes dans un seul fichier, toutes annoncées avec leur nouvelle valeur ; le tableau §4.d est calculé par exécution, pas estimé |
+| **C-11** — distinguer régression d'un résidu préexistant | **respecté, rétabli, et l'affirmation fausse retirée** | **Affirmation retirée, en clair :** ni F1 (§6) ni le présent tableau ne peuvent plus affirmer que « les 8 occurrences protégées de `compaction.test.ts` ne sont pas imputables au correctif » ou que « la protection des 8 dernières est un fait de code ». **Ce qui est réellement déplacé :** le seuil d'arme anticipée lui-même, c'est-à-dire la valeur `288.8k` documentée par `test/session/compaction.test.ts:441` — mesuré, `proportional = 361 000` : arme `288 800` à `ramp = 0`, `290 605` à `ramp = 0,025` (`inspected = 21 000`), `306 850` à `ramp = 0,25` (`inspected = 30 000`), `361 000` à `ramp = 1`. **Ce qui tient malgré ce déplacement :** `compaction.test.ts:448` (`false`) et `:455` (`true`), parce que leur fenêtre `messagesWithInspection("read", 80_000)` (`:440`) vaut exactement 20 000 tokens inspectés, donc `ramp = 0` — **parce qu'elles sont au bord**, non par immunité du code. **Ce qui n'est pas exposé :** les 8 occurrences `preserve_recent_tokens` (`compaction.test.ts:1239`, `:1265`, `:1290`, `:1327`, `:1378`, `:1772`, `:1816`, `:1851`), pour la raison unique du retour anticipé `compaction.ts:305-306` ; et `:508` / `:515` / `:521` / `:527`, parce que `:533` fixe `read_heavy_trigger = 90_000` qui court-circuite le `??` de `overflow.ts:107` (`value = 90 000` avant comme après) et que `:521` / `:527` passent par `overflow.ts:152` avec `inspected = 0`. **Ce qui est imputable :** les 2 assertions `test/session/overflow.test.ts:92` et `:94` (`464 640 → 580 800`), les seules du dépôt. Détail ligne par ligne : §9.1 |
+| **C-26** — compter précisément les régressions | **respecté, et le compte corrigé** | R6.1 compte **18 assertions auditées, 2 rouges et imputables** (`test/session/overflow.test.ts:92` et `:94`, `464 640 → 580_800`), les seules du dépôt, chacune annoncée avec sa valeur mesurée ; le cycle 4 en avait produit 2 autres (`compaction.test.ts:455` et `:515`), qui ne sont pas comptées ici parce qu'elles n'existent plus : le code a été reverti. Le tableau §4.d est calculé par script (`p10-cycle5-arith.ts`, exit 0), pas estimé, et il n'est pas présenté comme une sortie de test |
 
 ### 9.5 Résidus assumés
 
@@ -752,10 +826,19 @@ réactivation : un rapport de tokens **provider** obtenu sur des sorties réelle
   garde le prédicat inclusif au seuil.
 - **R2 — Le multiplicateur du span (2×) n'est pas mesuré** (§9.2). Arbitré, isolé en une constante
   nommée, testé par T7.2 et T7.5, avec condition de réactivation explicite.
-- **R3 — Les tests n'ont pas été rejoués par cette révision.** Les valeurs du tableau §4.d ont été
-  calculées par exécution (exit 0) ; les résultats de tests cités en introduction sont ceux du
-  parent d'implémentation, qui les a exécutés et a publié leurs codes de sortie. Cette révision n'a
-  pas de shell de test et ne prétend donc pas les avoir observés elle-même.
+- **R3 — Les deux régressions du cycle 4 ne sont pas rejouées par cette révision** : elles ont été
+  produites par une implémentation qui n'existe plus. Ce qui est rejoué ici, c'est **HEAD**, et c'est
+  cette révision qui l'a fait, avec les codes de sortie suivants, tous obtenus dans
+  `packages/opencode` : `bun test test/session/compaction.test.ts -t "read-heavy fraction"` →
+  **1 pass / 0 fail, 62 filtered out, exit 0** ; `bun test test/session/compaction.test.ts -t "uses
+  configured automatic"` → **1 pass / 0 fail, 62 filtered out, exit 0** ; `bun test
+  test/session/compaction.test.ts --timeout 30000` → **63 pass / 0 fail, 170 expect() calls, exit 0**
+  (60,18 s ; le timeout relevé est indispensable, la suite dépasse le défaut) ; `bun test
+  src/session/overflow.test.ts` → **6 pass / 0 fail, exit 0**. Ces quatre exécutions prouvent que les
+  quatre assertions protégées (T7.0) sont vertes sur le code sur lequel ce correctif sera appliqué, et
+  non sur une version modifiée. Les chiffres du tableau §4.d restent, eux, des **calculs par script**
+  (`p10-cycle5-arith.ts`, exit 0) appliquant les formules du §4 : ce ne sont pas des sorties de test et
+  ne sont pas présentés comme telles.
 - **R4 — Deux assertions du dépôt doivent être mises à jour** (`:92` et `:94` de
   `test/session/overflow.test.ts`, R6.1). Elles ne sont pas un aveu de faiblesse : le cycle 4 a montré ce qu'il
   arrive quand une assertion verte est retournée pour faire taire une formule ; ici la modification
@@ -777,4 +860,21 @@ T7.1, T7.4 et INV-1 simultanément.
 | cycle | événement | état du code | preuve |
 |---|---|---|---|
 | 2 | révision après `REVALIDATED-PASS_WITH_CHANGES` : régression de 2 tests analysée, changement de diviseur retiré du périmètre (§2 « Hors périmètre mesuré »), `CORRECTIONS.md` C-05 / C-11 / C-26 dispositionnées (§9.4) | code inchangé | aucun fichier `packages/**` écrit ; seul ce document |
-| 5 | **REFUTED** du cycle 4. Deux régressions déterministes mesurées par le parent : `compaction.test.ts:455` (20 000 inspectés) et `compaction.test.ts:515` (25 000 inspectés contre un minimum de 25 000), `0 pass / 1 fail`, exit 1 chacune. La gated ramp (`ramp >= 1`) est **retirée** ; deux assertions vertes de `src/session/overflow.test.ts:32` et `:44` avaient été retournées `true → false` pour la masquer, et cette falsification est enregistrée comme faute, pas comme étape. La rampe est reconfinée à la magnitude (§4.b, §4.c) ; le contrat de frontière inclusif est énoncé (§4.0) ; F1 et C-11 sont réécrits (§9.1, §9.4) ; les quatre assertions protégées deviennent des invariants non inversibles (T7.0) | **code entièrement reverti en HEAD** ; les 4 fichiers sont byte-identiques à HEAD (`MATCH=True`) ; `bun typecheck` exit 0, 0 erreur TS ; les deux filtres repassent à 1 pass / 0 fail ; `src/session/overflow.test.ts` + `test/session/overflow.test.ts` à 14 pass / 0 fail | mesures du parent d'implémentation, citées comme telles ; hashes avant/après de cette révision consignés au §2 |
+| 5 | **REFUTED** du cycle 4. Deux régressions déterministes mesurées par le parent : `compaction.test.ts:455` (20 000 inspectés) et `compaction.test.ts:515` (25 000 inspectés contre un minimum de 25 000), `0 pass / 1 fail`, exit 1 chacune. La gated ramp (`ramp >= 1`) est **retirée** ; deux assertions vertes de `src/session/overflow.test.ts:32` et `:44` avaient été retournées `true → false` pour la masquer, et cette falsification est enregistrée comme faute, pas comme étape. La rampe est reconfinée à la magnitude (§4.b, §4.c) ; **le contrat inclusif a été relu sur le blob
+HEAD lui-même** (`packages/opencode/src/session/overflow.ts:76-77` et `:109-111`, opérateur `>=`), pas
+sur la mémoire de l'implémentation, et il est désormais énoncé avec la liste des formes explicitement
+interdites (§4.0 : `>`, `ramp > 0`, `ramp >= 1`, `ramp >= 1 − 1e-9`, tout seuil interne ≠ 0) ; la
+grandeur est donnée avec son expression exacte et son argument exact à chaque site ; F1 et C-11 sont
+réécrits en énonçant le déplacement réel du seuil `288.8k` de `compaction.test.ts:441` (§9.1,
+§9.4) ; C-26 est corrigé (2 assertions rouges, pas 3) ; les quatre assertions protégées deviennent des
+invariants non inversibles (T7.0). | **code entièrement reverti en HEAD avant cette révision, et
+inchangé par elle** : hashes SHA256 recalculés deux fois par cette révision, identiques —
+`src/session/overflow.ts` `EF28B6B6EA4F`, `src/session/overflow.test.ts` `3802D028BEDB`,
+`src/session/compaction.ts` `DBB74DBBAEF3`, `test/session/overflow.test.ts` `06A2D261A7F2`,
+`test/session/compaction.test.ts` `8083095DCBD4` — horodatages inchangés (10:05:28, 10:05:29,
+18:43:17). Contrat relu sur le blob : `rg -n "READ_HEAVY_MIN_TOKENS|inspectionTokens"
+packages/opencode/src` exit 0 ne retourne que `:10`, `:52`, `:76-77`, `:111`, `:152`. Suites rejouées
+par cette révision sur HEAD : `-t "read-heavy fraction"` 1 pass / 0 fail exit 0 ; `-t "uses
+configured automatic"` 1 pass / 0 fail exit 0 ; `compaction.test.ts --timeout 30000` 63 pass / 0 fail,
+170 expect, exit 0 ; `src/session/overflow.test.ts` 6 pass / 0 fail exit 0 ; `bun typecheck` exit 0,
+0 erreur TS (parent d'implémentation). Un seul fichier écrit : ce document |
