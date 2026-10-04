@@ -76,7 +76,7 @@ où le délai est exprimé en millisecondes.
 
 Le court-circuit en `??` est ici **structurellement incapable** de distinguer deux mondes : dès qu'un budget
 d'agent est présent, la valeur résolue est la même quelle que soit l'issue de la discussion. Toute assertion
-construite sur ce court-circuit ne prouve rien. C'est le fondement de la réécriture de T3 en §7.
+construite sur ce court-circuit ne prouve rien — c'est pourquoi aucun test de §7 ne porte sur lui.
 
 ### E3 — L'enveloppe de retour ne transporte que du texte — *angle mort C-25 refermé*
 
@@ -189,9 +189,10 @@ ratio n'est conservé ici.
 683:        path: sessionPath(ctx.worktree, ctx.directory),
 ```
 
-`session.ts:936-937` est le seul endroit du fichier où `input.directory` apparaît, et il appartient à un
-**filtre de listage** de sessions, pas à la signature de création. `session.ts:219` appartient au même ensemble
-d'appels.
+`session.ts:936-937` appartient à un **filtre de listage** de sessions, pas à la signature de création. Il
+n'est pas le seul : `grep input.directory` sur `src/session` rend six lectures, réparties sur quatre sites —
+`:553` (construction de l'`Info`), `:936-937`, `:942-943` et `:984` (filtres de listage). `session.ts:219`
+appartient au même ensemble d'appels.
 
 ## 3. Mechanism
 
@@ -329,26 +330,6 @@ elle active simultanément les deux causes de la perte identifiées en §2 E4.
 `test/tool/task-evidence-merge.test.ts`. Une preuve d'enfant dépassant 1 000 caractères, plus de 32 entrées.
 Critère : la valeur fusionnée est tronquée aux mêmes bornes que `task-evidence.ts:40` et `task-evidence.ts:62`,
 et aucun champ n'est interprété comme une instruction. Couvre le risque d'injection de §6.
-
-### T3 — **discriminant, réécrit** — *C-20*
-
-> **Pourquoi cette réécriture est nécessaire.** Le T3 antérieur posait `budget_minutes: 1` sur l'agent de test.
-> Or `task.ts:694-695` est un `??` : avec un budget d'agent présent, le court-circuit rend la durée résolue
-> **identique avant et après** toute modification de cette ligne. Les assertions passaient donc dans les deux
-> mondes — **le test ne prouvait rien** (C-20). Il ne distinguait pas un code corrigé d'un code intact.
-
-Conditions nécessaires pour que le test discrimine, **les trois simultanément** :
-
-- l'agent de test **sans** `budgetMinutes`, pour que le premier opérande de `task.ts:694-695` soit `undefined` ;
-- `OPENCODE_TASK_BUDGET_MINUTES` **non défini**, pour que le second le soit aussi ;
-- la durée demandée par l'appel comme **seule** source restante.
-
-Alors, et seulement alors, le `??` cesse de court-circuiter et le test peut distinguer une résolution qui tient
-compte de l'appel d'une résolution qui l'ignore. **Critère de succès : le test échoue sur le code d'origine.**
-
-Ce test ne valide aujourd'hui **aucun** volet de cette proposition, et c'est volontaire : il établit un point de
-comparaison honnête pour le volet (b), qui reste à instruire. Si le validateur écarte (b), T3 doit être supprimé
-plutôt que conservé en l'état.
 
 ### T4 — garde de non-régression du message d'erreur (volets a et b)
 

@@ -49,7 +49,7 @@ avec `INSPECTION_TOOLS = new Set(["read", "grep", "glob", "inspect_batch", "repo
 ```
 
 **E3 — La décision que ce booléen commande.**
-`packages/opencode/src/session/compaction.ts:199-206` :
+`packages/opencode/src/session/compaction.ts:304-310` :
 
 ```ts
 function preserveRecentBudget(input: { cfg: Config.Info; model: Provider.Model; readHeavy: boolean }) {
@@ -62,8 +62,8 @@ function preserveRecentBudget(input: { cfg: Config.Info; model: Provider.Model; 
 }
 ```
 
-avec `MIN_PRESERVE_RECENT_TOKENS = 2_000` (`compaction.ts:47`), `MAX_PRESERVE_RECENT_TOKENS = 8_000`
-(`compaction.ts:48`) et `MAX_READ_HEAVY_PRESERVE_RECENT_TOKENS = 24_000` (`compaction.ts:54`,
+avec `MIN_PRESERVE_RECENT_TOKENS = 2_000` (`compaction.ts:48`), `MAX_PRESERVE_RECENT_TOKENS = 8_000`
+(`compaction.ts:49`) et `MAX_READ_HEAVY_PRESERVE_RECENT_TOKENS = 24_000` (`compaction.ts:55`,
 commenté `:49-53` : « Keeping only MAX_PRESERVE_RECENT_TOKENS of them makes compaction summarise
 those bytes away, and the model pays for them a second time by re-reading the same files »). Le
 plafond de 24 000 est donc une décision délibérée, pas une valeur manquante : il est exposé en
@@ -87,13 +87,13 @@ consommé par `threshold()` lignes 21-25) n'ont aucun lien avec le signal read-h
 (ligne 10) devient le **début** de la rampe. **`CHARS_PER_TOKEN` (ligne 11) reste `4` et n'est pas
 touché** : son unique site d'usage est `overflow.ts:63` (« Hors périmètre mesuré », §2). Côté
 compaction, `TOOL_OUTPUT_MAX_CHARS` (ligne 44), `PRUNE_PROTECTED_TOOLS` (ligne 45) et
-`DEFAULT_TAIL_TURNS` (ligne 46, consommé par `compaction.ts:422`) pilotent l'élagage et la queue :
+`DEFAULT_TAIL_TURNS` (ligne 47, consommé par `compaction.ts:527`) pilotent l'élagage et la queue :
 hors périmètre.
 
 **E5 — Les deux seuls appelants, et le fait que le ratio n'atteint la décision que par l'arme
-anticipée.** `isReadHeavy` est importé en un seul endroit, `packages/opencode/src/session/compaction.ts:21`
+anticipée.** `isReadHeavy` est importé en un seul endroit, `packages/opencode/src/session/compaction.ts:22`
 (`import { isOverflow as overflow, isReadHeavy, usable } from "./overflow"`), et appelé en un seul
-endroit, `compaction.ts:424` :
+endroit, `compaction.ts:529` :
 
 ```ts
       const budget = preserveRecentBudget({ cfg: input.cfg, model: input.model, readHeavy: isReadHeavy(input.messages, input.cfg) })
@@ -182,9 +182,9 @@ justification d'impact.** Trois raisons, toutes vérifiables :
    `system.some((entry) => entry.includes("<goal_reminder"))`) et `<task-contract>`
    (`packages/opencode/src/session/compaction.ts:119-124`). Aucun n'est une sortie d'outil.
 2. Aucun appelant de `Token.estimate` ne lit le prompt système : les deux seuls appels sont
-   `packages/opencode/src/session/compaction.ts:413` (`Token.estimate(JSON.stringify(msgs))`, où
-   `msgs` provient de `MessageV2.toModelMessagesEffect(input.messages, ...)` à `compaction.ts:405`,
-   donc des seuls messages de session) et `compaction.ts:498`
+   `packages/opencode/src/session/compaction.ts:518` (`Token.estimate(JSON.stringify(msgs))`, où
+   `msgs` provient de `MessageV2.toModelMessagesEffect(input.messages, ...)` à `compaction.ts:510`,
+   donc des seuls messages de session) et `compaction.ts:603`
    (`Token.estimate(part.state.output)`, une sortie d'outil). Le patch ne change donc **zéro
    octet** de ce chemin.
 3. En conséquence, la construction `isDense` de la version précédente ne devait pas exister : ses
@@ -217,10 +217,10 @@ sans modification.
    cache lu (`cacheAware` faux, `overflow.ts:89-91`), l'arme anticipée vaut
    `floor(proportional × 0,8)` (`overflow.ts:108`) mais n'est **activée** que si le booléen est vrai
    (`overflow.ts:109-112`), et c'est `arm` qui entre dans `value` (`overflow.ts:114`).
-5. Il entre une seconde fois dans le budget de verbatim : `compaction.ts:424` appelle
+5. Il entre une seconde fois dans le budget de verbatim : `compaction.ts:529` appelle
    `isReadHeavy(input.messages, input.cfg)` et passe le booléen à `preserveRecentBudget`, qui
-   choisit entre 8 000 et 24 000 (`compaction.ts:202-204`). L'appelant est le `const select` local
-   de `compaction.ts:416`.
+   choisit entre 8 000 et 24 000 (`compaction.ts:307-309`). L'appelant est le `const select` local
+   de `compaction.ts:521`.
 6. **Le défaut.** Les deux sites consomment la même grandeur mais reçoivent un booléen : le seuil
    de `isReadHeavy` (`overflow.ts:77`) est une comparaison binaire, donc la valeur utile
    — « combien de volume d'inspection » — est perdue à la frontière. Une fenêtre à 18 000 tokens
@@ -240,7 +240,7 @@ supplémentaire pour rendre le budget testable.
 décision de compaction, et il se teste isolément dans
 `packages/opencode/test/session/overflow.test.ts` (bloc `describe` ligne 74) sans toucher au reste ;
 puis (b), qui introduit `readHeavyRamp` et `inspectionProfile` et corrige les deux prédicats ;
-puis (d), qui change la signature de `preserveRecentBudget` et l'appelant `compaction.ts:424`.
+puis (d), qui change la signature de `preserveRecentBudget` et l'appelant `compaction.ts:529`.
 Piège connu : ni le commentaire économique de `overflow.ts:15-20` ni `threshold()`
 (`overflow.ts:21-25`) ne doivent apparaître dans aucun diff — c'est le travail de calibrage, et
 T7.5 en est le garde-fou.
@@ -293,7 +293,7 @@ export function readHeavyRamp(inspected: number, start = READ_HEAVY_MIN_TOKENS) 
 `cfg.compaction?.read_heavy_min_tokens` reste lu par les deux appelants, donc la clé existante
 garde exactement son effet : elle déplace le début de la rampe, elle ne le supprime pas.
 `isReadHeavy` reste exporté avec sa signature actuelle (`overflow.ts:76`, importé par
-`compaction.ts:21`) et devient un cas particulier de la fonction de profil, ce qui supprime la
+`compaction.ts:22`) et devient un cas particulier de la fonction de profil, ce qui supprime la
 possibilité que le trigger et le budget divergent :
 
 ```ts
@@ -306,7 +306,7 @@ export function inspectionProfile(messages: MessageV2.WithParts[], start?: numbe
 `isReadHeavy(messages, cfg)` devient
 `inspectionProfile(messages, cfg.compaction?.read_heavy_min_tokens).ramp >= 1`.
 
-**d) Budget de verbatim continu** (`compaction.ts:199-206`). L'early return sur
+**d) Budget de verbatim continu** (`compaction.ts:304-310`). L'early return sur
 `preserve_recent_tokens` (`:201`), le plancher `MIN_PRESERVE_RECENT_TOKENS` (`:205`) et le plafond
 `floor(usable * 0.25)` sont conservés à l'identique — le résumé garde la même place, c'est une
 exigence de fonctionnement et pas un réglage :
@@ -323,7 +323,7 @@ export function preserveRecentBudget(input: { cfg: Config.Info; model: Provider.
 ```
 
 La seule addition par rapport à la version précédente est le mot-clé **`export`** : c'est ce qui rend
-T7.2 et T7.4 constructibles (§7). Le `const select` de `compaction.ts:416-424` reste local et n'est
+T7.2 et T7.4 constructibles (§7). Le `const select` de `compaction.ts:521-529` reste local et n'est
 pas touché — il continue d'appeler `preserveRecentBudget` avec la rampe au lieu du booléen :
 
 ```ts
@@ -383,7 +383,7 @@ entrées.
   `packages/opencode/src/util/token.ts:1-5` : voir « Hors périmètre mesuré » au §2.
 - `trigger().readHeavy` reste observé et journalisé (`overflow.ts:118`, `:167`), avec la
   nouvelle définition explicitée ci-dessus et dans R6.1.
-- `MAX_READ_HEAVY_PRESERVE_RECENT_TOKENS` (`compaction.ts:54`) reste le plafond, et sa molette
+- `MAX_READ_HEAVY_PRESERVE_RECENT_TOKENS` (`compaction.ts:55`) reste le plafond, et sa molette
   `read_heavy_preserve_recent_tokens` (`config.ts:328-330`) reste prioritaire : l'opérateur qui
   fixe un plafond continue d'obtenir exactement ce plafond.
 
@@ -492,7 +492,7 @@ config auditée : `false` à `inspected = 1 000`, `18 000`, `19 999`, `20 000`, 
 de la suppression du cliff : `readHeavy` ne peut plus être vrai pendant que le budget est encore
 partiel. Conséquence à assumer : tout consommateur de `trigger().readHeavy` voit `false` sur la
 zone de transition. Dans le dépôt, le seul consommateur est le journal de débogage
-(`overflow.ts:167`) ; `isReadHeavy` n'a qu'un appelant en production (`compaction.ts:21`/`:424`),
+(`overflow.ts:167`) ; `isReadHeavy` n'a qu'un appelant en production (`compaction.ts:22`/`:529`),
 que le changement (d) remplace par la rampe.
 
 **R6.2 — Modification des seuils d'arme anticipée, y compris dans la zone médiane.** C'est le
@@ -513,9 +513,11 @@ Ce déplacement est la conséquence directe du changement demandé : on remplace
 une moyenne pondérée par le volume. Les deux extrémités sont inchangées et vérifiées : à
 `inspected = 500 000` la rampe vaut 1, donc `early = 464 640`, `readHeavy = true` et
 `value = 464 640`, et les assertions des lignes 92, 94, 103, 104 restent identiques ; à
-`inspected = 1 000` la rampe vaut 0, l'arme vaut `proportional`, et
-`Math.min(proportional, absolute, proportional) = Math.min(proportional, absolute)`, donc les
-lignes 113 et 115 ne voient aucun changement.
+`inspected = 1 000` la rampe vaut 0, donc `early = floor(proportional × (0,8 + 0,2 × 1)) =
+proportional`. `proportional` est **déjà un entier** (`overflow.ts:102` fait
+`Math.floor(usable × threshold)`), donc l'arme vaut `580 800` et non `464 640`. **La ligne 113
+change : `464_640` → `580_800`**, et son assertion doit être réécrite (voir T7.5) ; la ligne 115,
+elle, ne voit aucun changement.
 
 **R6.3 — Trois changements de comportement à la frontière, que rien n'observait aujourd'hui.**
 Aucun test existant ne couvre la valeur *exacte* d'`inspected = 20 000` (le test le plus proche est
@@ -560,11 +562,11 @@ soit une rampe saturée quelle que soit la valeur du span.
 | finding | statut | preuve |
 |---|---|---|
 | F1 — occurrences `compaction.test.ts` non classifiées | **clos** | grep `preserve_recent_tokens\|read_heavy\|readHeavy` sur `packages/opencode/test/session/compaction.test.ts` : **10** correspondances, `533`, `534`, `1239`, `1265`, `1290`, `1327`, `1378`, `1772`, `1816`, `1851`, chacune relue et protégée (voir R6.1 bis) |
-| F2 — diviseur de `src/util/token.ts` | **clos** | ses deux seuls appelants (`compaction.ts:413`, `:498`) n'ont pas le prompt système ; `msgs` vient de `compaction.ts:405` |
+| F2 — diviseur de `src/util/token.ts` | **clos** | ses deux seuls appelants (`compaction.ts:518`, `:603`) n'ont pas le prompt système ; `msgs` vient de `compaction.ts:510` |
 | F3 — budget fractionnaire de la forme brute | **clos dans cette proposition** | `Math.round` ajouté au §4(d) ; `INFERE:` `23 999,6` à `59 999`, et `p10-ramp.ts:8` implémente la forme sans arrondi |
 | F4 — divergence possible entre l'arme et le budget | **clos dans cette proposition** | les deux consomment `inspectionProfile(...).ramp` (§4(b)) |
 | F5 — deux assertions vertes cassées | **clos dans cette proposition** | cause isolée à `ramp > 0` (§4(c)), remplacée par `ramp >= 1` ; les deux assertions sont mises à jour et un cas de saturation est ajouté (T7.6) |
-| F6 — T7.4 non constructible | **clos dans cette proposition** | `export` sur `preserveRecentBudget` (§4(d)) ; T7.2 et T7.4 n'utilisent plus le `const select` local de `compaction.ts:416` |
+| F6 — T7.4 non constructible | **clos dans cette proposition** | `export` sur `preserveRecentBudget` (§4(d)) ; T7.2 et T7.4 n'utilisent plus le `const select` local de `compaction.ts:521` |
 
 ## 7. Tests
 
@@ -606,13 +608,15 @@ dans `describe("Overflow read-heavy trigger")` :
     expect(trigger.cacheAware).toBe(false)
     expect(trigger.early).toBe(551_760)
     expect(trigger.readHeavy).toBe(false)
-    expect(trigger.value).toBe(551_760)
+    expect(trigger.value).toBe(580_800)
   })
 ```
 
-Critère de succès observable : `early` et `value` valent exactement `551_760` (et non `464_640`,
-valeur actuelle), ce qui prouve que le point médian est rampe et pas plancher ; `readHeavy` vaut
-`false`, conformément à R6.1 bis.
+Critère de succès observable : `early` vaut exactement `551_760` (et non `464_640`, valeur
+actuelle), ce qui prouve que le point médian est rampe et pas plancher ; `readHeavy` vaut `false`,
+conformément à R6.1 bis. Ce `false` est ce qui **désarme** l'arme (`ramp >= 1` non atteint), donc
+`value` vaut `Math.min(proportional, absolute) = 580_800` (`overflow.ts:114`) : la zone médiane est
+vérifiée par `early`, `value` ne vaudrait `551_760` que si l'arme y restait active.
 
 **T7.4 — Frontière `19 999 / 20 000` du budget et de l'arme.** Même fichier :
 
@@ -631,10 +635,15 @@ côtés ; le test échoue sur le code actuel, où budget(20 000) vaut `24 000` e
 Effect** : il n'utilise que l'export du §4(d), ce qui le rend constructible dans ce dépôt (F6).
 
 **T7.5 — Non-régression du pivot et de l'arme existante.** Vérifier que les seuils de
-`packages/opencode/test/session/overflow.test.ts` lignes 70, 82, 92, 94, 103, 104, 113, 114 et 115
+`packages/opencode/test/session/overflow.test.ts` lignes 70, 82, 92, 94, 103, 104, 114 et 115
 sont inchangés après le correctif. C'est le test qui protège le travail de `overflow.ts:15-20`. Ces
 valeurs sont confirmées par le tableau du §4 (`inspected = 500 000` ⇒ rampe 1, donc
 `readHeavy = true` ; `inspected = 1 000` ⇒ rampe 0, donc `readHeavy = false`).
+
+**Réécriture de la ligne 113.** Elle sort de la liste ci-dessus : à `inspected = 1 000` la rampe
+vaut 0, donc `early = proportional = 580_800` et non `464_640`. L'assertion `:113` devient
+`expect(trigger.early).toBe(580_800)`. C'est le **seul** test vert du dossier que le correctif
+réécrit sans le casser ; aucun autre test de la proposition (T7.1 à T7.6) ne touche à `:113`.
 
 **T7.6 — Les deux prédicats exposés, à leur nouvelle définition.** Dans
 `packages/opencode/src/session/overflow.test.ts`, deux assertions changent (`true` → `false`) et un
@@ -690,9 +699,9 @@ correction du correctif, l'autre par retrait de l'affirmation non mesurée.
 | # | Required change | statut | où et comment |
 |---|---|---|---|
 | RC1 | Re-scaler la preuve du point (a) | **appliqué** | « Hors périmètre mesuré » (§2) : `32 807 / 2,8` et « −3 515 tokens par tour » ne subsistent que dans le paragraphe de retrait et dans A5.6, qui rejette l'alternative ; `CHARS_PER_TOKEN` reste `4` (E4) ; `isDense` et ses trois branches XML sont retirés — aucun `isDense` n'existe dans `src/session/` ; le ratio 2,8 n'est appliqué au JSON qu'avec la mesure du §9.3 |
-| RC2 | Couvrir la zone médiane de la rampe | **appliqué** | R6.2 chiffre `23 000 → 572 088`, `30 000 → 551 760` (+87 120, +18,75 %), `59 999 → 464 642` ; le tableau du §4 couvre `20 000 < inspected < 60 000` en six points ; T7.3 asserte `early` **et** `value === 551_760` à `inspected: 30 000` |
+| RC2 | Couvrir la zone médiane de la rampe | **appliqué** | R6.2 chiffre `23 000 → 572 088`, `30 000 → 551 760` (+87 120, +18,75 %), `59 999 → 464 642` ; le tableau du §4 couvre `20 000 < inspected < 60 000` en six points ; T7.3 asserte `early === 551 760` à `inspected: 30 000`, `value` y valant `580 800` parce que `readHeavy` y vaut `false` et désarme donc l'arme |
 | RC3 | Corriger R6.1 et couvrir la frontière | **appliqué** | R6.1 est réécrit : il constate **deux** assertions rouges (`:32` et `:44`), nomme la cause réelle (`ramp > 0` à `tokens == start`, pas le diviseur), déclare le helper `chars` intact ; la correction est dans la formule (§4(c), `ramp >= 1`, avec A5.8 en contrepartie) et T7.6 verrouille le nouveau prédicat ; T7.4 verrouille la frontière `19 999 / 20 000`, via l'accesseur exporté et non via un `Compaction.select` inexistant |
-| RC4 | Énumérer la ligne 1851 et clore F1 | **appliqué** | R6.1 bis et F1 : les 10 occurrences sont énumérées et relues une à une (`533`, `534`, `1239`, `1265`, `1290`, `1327`, `1378`, `1772`, `1816`, `1851`), chacune avec son mécanisme de protection (`overflow.ts:107` pour les deux premières, `compaction.ts:201` pour les huit autres) ; F1 est clos sur preuve, pas sur déclaration |
+| RC4 | Énumérer la ligne 1851 et clore F1 | **appliqué** | R6.1 bis et F1 : les 10 occurrences sont énumérées et relues une à une (`533`, `534`, `1239`, `1265`, `1290`, `1327`, `1378`, `1772`, `1816`, `1851`), chacune avec son mécanisme de protection (`overflow.ts:107` pour les deux premières, `compaction.ts:306` pour les huit autres — le retour anticipé de `preserveRecentBudget`) ; F1 est clos sur preuve, pas sur déclaration |
 
 Les deux objections qui restaient ouvertes sont traitées, pas contournées :
 
@@ -700,7 +709,9 @@ Les deux objections qui restaient ouvertes sont traitées, pas contournées :
   changement de sémantique documenté (R6.1 bis). Les deux tests sont **verts aujourd'hui** et
   casseraient sous la variante `ramp > 0` : ce sont donc deux défauts du correctif, pas des résidus.
 - **N2** (T7.4 illisible via `Compaction.select`) → **résolu** : `preserveRecentBudget` est
-  exporté (`compaction.ts:416` est un `const` local à portée de fonction, donc non exportable).
+  exporté : l'export porte sur la `function` de niveau module `preserveRecentBudget`
+  (`compaction.ts:304`), le `const select` de `compaction.ts:521` restant, lui, un `const` local à
+  portée de fonction et donc non exportable. Le coût est le mot-clé `export`.
   Le coût `XS` est répercuté au §8.
 
 ### 9.2 Décision sur `READ_HEAVY_RAMP_SPAN` — politique assumée, mesure hors périmètre
@@ -744,7 +755,7 @@ Le ratio « ≈ 2,8 caractères par token » **est retiré de tout raisonnement 
    tokens **provider** correspondant à une sortie réelle de `inspect_batch` ou `repo_overview`, à
    volume connu.
 3. **Aucun patch ne le traverse.** Les deux seuls appelants de `Token.estimate` sont
-   `compaction.ts:413` et `compaction.ts:498`, et ni l'un ni l'autre ne voit le prompt système
+   `compaction.ts:518` et `compaction.ts:603`, et ni l'un ni l'autre ne voit le prompt système
    (§2, point 2). Le gain annoncé de « −3 515 tokens par tour » était donc nul par construction.
 
 **Condition de réactivation :** un rapport de tokens provider, obtenu sur des sorties réelles de
@@ -758,7 +769,7 @@ reste une piste distincte, non ouverte ici.
 | correction | statut | où |
 |---|---|---|
 | **C-05** — ne pas confondre « `X / 4` est un plancher » et un plancher de régression | **respecté** | Le plancher de la régression est isolé et corrigé là où il est : §4(c) fixe `ramp >= 1` (au lieu de `ramp > 0`), et la cause est nommée (« `ramp > 0` appliqué à `tokens == start` »), pas absorbée dans un ajustement de test. Le diviseur, lui, n'est pas touché (`CHARS_PER_TOKEN = 4`, E4), conformément à la lettre de C-05. |
-| **C-11** — distinguer regression d'un résidu préexistant | **respecté** | R6.1 tranche assertion par assertion : `:32` et `:44` sont **vertes dans le fichier actuel** et casseraient sous `ramp > 0`, donc imputables au correctif. Aucune des 8 occurrences protégées de `compaction.test.ts` (F1) n'est imputée au correctif : elles sont couvertes par `overflow.ts:107` ou `compaction.ts:201`, tous deux conservés. Aucun résidu n'est présenté comme clos par ce correctif. |
+| **C-11** — distinguer regression d'un résidu préexistant | **respecté** | R6.1 tranche assertion par assertion : `:32` et `:44` sont **vertes dans le fichier actuel** et casseraient sous `ramp > 0`, donc imputables au correctif. Aucune des 8 occurrences protégées de `compaction.test.ts` (F1) n'est imputée au correctif : elles sont couvertes par `overflow.ts:107` ou `compaction.ts:306`, tous deux conservés. Aucun résidu n'est présenté comme clos par ce correctif. |
 | **C-26** — compter précisément les régressions | **respecté** | R6.1 énumère les 6 assertions du fichier, dont 2 rouges, avec la cause et la correction ; le tableau du §4 est numéroté point par point. |
 
 ### 9.5 Résidus assumés
