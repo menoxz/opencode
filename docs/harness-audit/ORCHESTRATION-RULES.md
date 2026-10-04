@@ -222,3 +222,40 @@ signale et une suspension se mesure.
 6. **Un `exit 0` ne prouve pas un commit.** `P06_NOT_COMMITTED exit=0` : le refus d'exécution du
    hook fait sortir `git commit` sans écrire la référence (**C-87**, **C-89**). Seul le delta de
    `HEAD` prouve.
+7. **L'autorité de « reste-t-il à commiter » est `git diff HEAD --stat`**, jamais `ls-tree`,
+   jamais `status` (**C-91**, **C-73**). `ls-tree` répond « ce chemin existe-t-il dans l'arbre »,
+   ce qui est vrai pour tout fichier déjà suivi et ne dit rien d'une modification non committée ;
+   `status` dépend de l'index réel, dont on a établi qu'il porte des suppressions fantômes. Une
+   garde doit décider de la **même** question que la décision à prendre, sinon elle renvoie un
+   compte plausible et fait sauter le travail.
+
+## Règle 12 — commiter par plumbing quand `git commit` est inutilisable
+
+`git commit` est devenu inutilisable dans cette session : 4 suspensions de 120 à 600 s, un
+refus de lancement des shims husky (`env: '.husky/_/prepare-commit-msg': Permission denied`),
+et un `exit 0` sans écriture de référence. La trace `GIT_TRACE` ne montrait que le chemin
+nominal, donc rien ne disait quoi suspendre.
+
+Voie retenue, en **plumbing**, qui n'exécute aucun sous-processus :
+
+```powershell
+$before = (git rev-parse HEAD).Trim()
+git read-tree HEAD
+git add -- <fichiers>
+$tree = (git write-tree).Trim()
+$new   = (git commit-tree $tree -p $before -m "<message>").Trim()
+git update-ref refs/heads/dev $new $before   # <nouveau> <ancien> : refus si course
+$after = (git rev-parse HEAD).Trim()          # DELTA_OK si $after -eq $new
+```
+
+1. **`update-ref` prend l'ancien sha en garde.** Une écriture concurrente entre le `read-tree` et
+   l'`update-ref` est alors **refusée**, pas silencieusement écrasée. C'est la propriété qui
+   manque à tout le reste du protocole.
+2. **Aucun hook n'est contourné : il n'y en a aucun à contourner.** Mesuré : `core.hooksPath =
+   .husky/_`, `.husky/` ne contient que **`pre-push`** (vérification de version `bun` par semver,
+   **jamais** exécuté par `commit`), `lint-staged` absent des deux manifestes. Le refus est un
+   défaut d'environnement de la même famille que les 387 refus `pwsh`, pas un contrôle de qualité.
+3. **Les contrôles de qualité restent, et sont proof** : delta `HEAD` (**C-87**), garde de marqueur
+   (règle 8), test ciblé vert avant commit. Le commit conserve auteur, date, message et parent.
+4. **Le lot reste interdit** (**C-88**) : un commit par lot, avec son delta imprimé, sinon le delta
+   du suivant masque l'échec du précédent.
