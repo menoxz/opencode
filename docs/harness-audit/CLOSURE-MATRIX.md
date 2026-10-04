@@ -152,7 +152,7 @@ Source de vérité : la section `## Final verdict` de chaque `verdicts/P*-revali
 | **P07** | PASS_WITH_CHANGES | 0 | non | `-` |
 | **P08** | PASS | 0 | fusionne | commit 0523170c : census read-only, 9 tests verts, typecheck 0 |
 | **P09** | PASS_WITH_CHANGES — **NOT_IMPLEMENTABLE** | 14 | non | `-` |
-| **P10** | PASS_WITH_CHANGES | 0 | non | `-` |
+| **P10** | FAIL (cycle 5, terminal) | 0 | non | `-` |
 | **P11** | PASS_WITH_CHANGES | 0 | non | `-` |
 | **P12** | FAIL | 0 | non | `-` |
 | **P13** | PASS_WITH_CHANGES — **NOT_IMPLEMENTABLE** | 6 | non | `-` |
@@ -190,12 +190,12 @@ Statuts lus par lecture directe, jamais par regexp (C-142).
 | P07 | PASS_WITH_CHANGES | fusionnee | commit fbc65658, 2 pass / 0 fail |
 | P08 | PASS | fusionnee | commit 0523170c : census.test.ts 9 pass / 0 fail, maintenance.test.ts 22 pass / 0 fail |
 | P09 | PASS_WITH_CHANGES | non implementable | 14 residus open :294 |
-| P10 | falsifie par execution | reverti a HEAD | C-141, typecheck 0, 14 pass / 0 fail |
+| P10 | FAIL cycle 5 (terminal) | reverti a HEAD, non implementable | P10-R5-01 bloquant : la spec corrigee prescribe la rupture de overflow.test.ts:92 et :94, C-156 |
 | P11 | PASS_WITH_CHANGES | fusionnee | commit 80aa6c31, 3 pass / 0 fail |
 | P12 | FAIL | aucune | revalidation :409 |
 | P13 | PASS_WITH_CHANGES | non implementable | 6 residus open :172 |
 | P14 | PASS_WITH_CHANGES | fusionnee | 19 pass / 0 fail, typecheck 0 |
-| P15 | PASS_WITH_CHANGES | fusionnee | 124 pass / 0 fail, typecheck 0 |
+| P15 | PASS_WITH_CHANGES | non fusionnee | WORKTREE 7740186a != HEAD 013cf994 sur src/plugin/index.ts, donc le patch P15 n'est pas dans HEAD ; C-18 refute sa compilation strict (TS18047) ; suites du pont vertes sur le HEAD d'origine seulement |
 | P16 | PASS_WITH_CHANGES | fusionnee | 39 pass / 0 fail |
 | P17 | FAIL | aucune | 9 residus open, terminal |
 | P18 | PASS_WITH_CHANGES | non implementable | COR-R18-4 open, C-143 |

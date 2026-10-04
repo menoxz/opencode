@@ -1,307 +1,300 @@
-# P10 — Revalidation (indépendante) de la proposition révisée une seconde fois
+# P10 — Revalidation indépendante, cycle 5
 
-Révalidateur indépendant. Je n'ai rédigé ni la proposition initiale, ni aucun verdict, ni aucune
-révision. **Je ne corrige ni la proposition ni le code** (C-36) : ce rapport constate, classe et
-rend la main.
+Revalidator : agent indépendant, n'a pas rédigé la proposition, ne la répare pas.
+Cible unique : `docs/harness-audit/proposals/P10-token-estimation.md`.
+Fichier écrit par cette revalidation : `docs/harness-audit/verdicts/P10-revalidation.md` (celui-ci).
+Aucun fichier sous `packages/**` ni la proposition n'a été modifié. `git` non employé.
+Aucun test n'a été exécuté par moi : je n'ai fait que de l'arithmétique reproductible (`bun`, exit 0)
+et des recherches de texte.
 
-Sources lues, dans l'ordre imposé : `proposals/P10-token-estimation.md` (**788 lignes**, version
-validée ici), `verdicts/P10-revalidation.md` (revalidation c2, 193 lignes, `REVALIDATED-FAIL`),
-`CORRECTIONS.md` (C-36, C-50, C-66, C-107), plus `REVALIDATION-BRIEFS.md` pour le gabarit et sa
-règle d'implémentabilité.
+## Dérive de l'artefact pendant la revalidation — à lire avant les citations
 
-## Proposal
+La proposition a été **réécrite par son auteur pendant que je revalidais**. Mesure, `bash` exit 0 :
 
-`docs/harness-audit/proposals/P10-token-estimation.md`, **788 lignes** (contrôlé : `End of file -
-total 788 lines`). Self-assessment `READY` (§9, `:694`), §9.1 (`:699-704`) déclare RC1, RC2, RC3, RC4
-**appliqué**, `:708-713` déclare **N1 résolue par le correctif** et **N2 résolu**.
-
-L'agent rapporte `RESIDUES_REMAINING=0`. **Contrôle sur disque (C-66) :** grep
-`RESIDUES_REMAINING|Remaining objections|RESIDU` sur `proposals/P10-token-estimation.md` → **0 hit** ;
-contrôle positif sur le **même chemin et le même `include`** avec le motif ASCII connu
-`proportional` → **23 hits** (103, 104, 116, 122, 149, 150, 218, 249, 251, 258, 285, 346, 361, 501,
-516, 517, 588, 604, 618, 627, 628, 644, 724). Le zéro est donc **réel**, pas un moteur de recherche
-défaillant. La chaîne littérale `RESIDUES_REMAINING` n'apparaît nulle part : l'agent emploie
-`### 9.5 Résidus assumés` (`:775-788`). Aucune régression de forme — la section
-`## Remaining objections` du gabarit relève de mon rapport, pas de la proposition.
-
-Corrections auditées :
-
-- **C-36** appliquée — je n'écris rien sous `packages/**`, je ne lance aucun `git`, je n'édite pas la
-  proposition. Le « après correctif » de `## Regressions introduced` est donc **calculé**, jamais
-  exécuté, et signalé comme tel.
-- **C-50** appliquée — existence vérifiée par `read` uniquement ; `glob` n'a servi à rien.
-- **C-66** appliquée — tout zéro est adossé à un motif ASCII connu **et positif**.
-- **C-107** appliquée — chaque objection de ce rapport porte son statut en tête de ligne.
-- **C-62** appliquée — **aucun** test touchant `src/tool/shell.ts` n'a été lancé ; je n'ai donc pas
-  rejoué la base `test/shell/shell.test.ts` de la c2 et je m'en prive volontairement comme base
-  opposable.
-
-## Revisions applied
-
-| # | Required change (c2) | Statut après réexamen c3 | Preuve |
-|---|---|---|---|
-| RC1 | Re-scaler la preuve du point (a) | **RÉSOLU** | Inchangé et reconfirmé : `isDense` et ses branches XML sont retirés, ratio 2,8 confiné à §9.3 (`:744-765`) avec trois motifs cumulatifs et condition de réactivation chiffrée. `CHARS_PER_TOKEN = 4` intact (`overflow.ts:11`, `:63`) |
-| RC2 | Couvrir la zone médiane de la rampe | **RÉSOLU** | R6.2 (`:504-510`) : `23 000 → 572 088`, `30 000 → 551 760` (+87 120, +18,75 %), `59 999 → 464 642`. **Recalculé depuis `overflow.ts:102` et `:256-258` : les trois tombent juste**, inversion de 2 tokens comprise (tableau de recalcul dans R2). Verrou désormais exécutable par T7.3 |
-| RC3 | Corriger R6.1 et couvrir la frontière | **RÉSOLU** *(était `PARTIEL` en c2)* | Les deux pièces qui manquaient sont là. R6.1 (`:449-462`) admet **deux** assertions rouges (`:32`, `:44`) et nomme la vraie cause (`ramp > 0` à `tokens == start`, pas le diviseur) ; la frontière `19 999 / 20 000` est couverte par T7.4 (`:624-629`) **et** `inspected = 1 000` est couvert par la réécriture de `:113` (`:643-646`). E1 respecté : T7.4 passe par l'export du §4(d), pas par `Compaction.select` |
-| RC4 | Énumérer la ligne 1851 et clore F1 | **RÉSOLU** | Inchangé et **entièrement purgé de R3** : les 10 occurrences (`:704`) tiennent, et les **deux** renvois de mécanisme sont exacts — `overflow.ts:107` (`input.cfg.compaction?.read_heavy_trigger ??`) et `compaction.ts:306` (`if (configured !== undefined) return configured`), ce dernier étant bien le **retour anticipé** de `preserveRecentBudget` (`compaction.ts:304`) |
-
-Les deux `open` de la c2 restent **`accepted`**, à contenu strictement égal — la c3 n'y a rien
-touché, et je ne les requalifie pas (règle 3 du gabarit) :
-
-- **N1 → `accepted`.** Le défaut *nommé* — « R6.1 affirme à tort que `:32` et `:44` survivent » — a
-  disparu du texte, remplacé par un tableau ligne à ligne (`:455-462`). Ce qui subsiste est un
-  **choix assumé et tracé** : deux tests verts sont réécrits par T7.6 (`:652-664`), au même titre que
-  A5.8 (`:440-445`) refuse l'alternative de les réécrire pour préserver `ramp > 0`. Traité quant au
-  fond, réserve tracée : c'est la définition exacte de `accepted`.
-- **N2 → `accepted`.** Le remède est adopté **et chiffré** : T7.4 (`:624-629`) est constructible, et
-  son critère (`:632-635`) déclare qu'il « ne dépend d'aucun `select` ni d'aucun pipeline Effect ».
-
-## Status
-
-| # | Objet | Statut | Section |
-|---|---|---|---|
-| R1 | `:113` passe au rouge, la proposition affirmait l'inverse | **RÉSOLU** | `## Remaining objections` |
-| R2 | T7.3 asserte une valeur inatteignable, test non discriminant | **RÉSOLU** | `## Remaining objections` |
-| R3 | Citations `compaction.ts` fausses dans l'arbre | **RÉSOLU** (14/14) | `## Remaining objections` |
-| N1 | Réécriture de deux tests verts | **`accepted`** | — |
-| N2 | T7.4 non constructible | **`accepted`** | — |
-| — | `READ_HEAVY_RAMP_SPAN` (multiplicateur 3× non mesuré) | **`out_of_scope`** (`:717-742`, trois temps + condition de réactivation vérifiable) | — |
-| — | Ratio 2,8 appliqué au JSON | **`out_of_scope`** (`:744-765`, trois motifs cumulatifs + condition de réactivation) | — |
-| — | Chiffres du §4 = arithmétique dérivée, pas des sorties d'exécution | **`out_of_scope`** (`:785-788` : chaque chiffre reconduit en assertion exécutable par T7.2/T7.3/T7.4) | — |
-
-**Aucun résidu `open`.** Les `out_of_scope` sont justifiés par écrit et portent une condition de
-réactivation vérifiable ; je ne les ai pas créés, je les ai constatés tels quels.
-
-## Remaining objections
-
-Les trois résidus de la c2 sont **instruits et soldés**.
-
-### Le recalcul qui fonde tout — `proportional`, puis la borne de la rampe
-
-| étape | source **sur disque**, pas sur la proposition | valeur |
+| | snapshot jugé | snapshot courant |
 |---|---|---|
-| `reserved` | `overflow.ts:30` : `reserved = cfg.compaction?.reserved ?? Math.min(COMPACTION_BUFFER, maxOutput)` | `20 000` |
-| `usable` | `overflow.ts:27-43` (`limit.input - reserved`) ; lu dans la proposition `:149` | `968 000` |
-| `threshold` | `proportionalCfg = cfg({ threshold: 0.6 })` (`test/session/overflow.test.ts:75`), borné par `overflow.ts:21-25` | `0,6` |
-| `proportional` | `overflow.ts:102` : `Math.floor(limit.usable * threshold(input.cfg))` | **`floor(968 000 × 0,6) = 580 800`** |
+| lignes | 780 | **880** (`TOTAL_LINES=880`, `LF_COUNT=879`, `NONBLANK=738`, `CONSISTENT=True`) |
+| octets | 53 711 | **63 657** |
+| SHA-256 | non capturé | `8224545F23FC24D58240CD1FB72B3AD4683D0949C224242F4D1F608964895078` |
+| mtime | 10:42:01 | **10:50:19** |
 
-`proportional` est donc **exact et déjà entier** — l'argument de la c3 est fondé. Contrôle
-indépendant : `test/session/overflow.test.ts:69` asserte déjà
-`expect(trigger.proportional).toBe(580_800)` sur cette même `proportionalCfg`, et `:70` asserte
-`value = 580 800`. Ces deux lignes sont vertes aujourd'hui.
+**Je n'ai pas écrit ce fichier** : mon mandat l'interdit, et ma seule écriture de la session est
+`docs/harness-audit/verdicts/P10-revalidation.md` (`ALL_FORBIDDEN_OLDER_THAN_VERDICT=True` pour les quatre
+sources et les deux tests). La dérive est l'acte de l'auteur, pas le mien.
 
-La borne de la rampe est **vérifiée, pas supposée** : `overflow.ts:52-64` ne renvoie aucun compteur
-de tours — `inspectionTokens` n'additionne que `part.state.output.length` (`:60`) et divise par
-`CHARS_PER_TOKEN = 4` (`:63`). Les seuls seuils du fichier sont `READ_HEAVY_MIN_TOKENS = 20 000`
-(`:10`) et `COMPACTION_BUFFER = 20 000` (`:7`). La zone médiane annoncée `:500`
-(`20 000 < inspected < 60 000`) donne `ramp = (inspected − 20 000) / 40 000`, saturé à 0 comme à 1.
-Les trois points de contrôle de la c3 (`:504` ramp 0,075 ; `:508` ramp 0,999975 ; `:516` ramp 0 à
-1 000) sont **tous cohérents avec cette borne**, ce qui la confirme indépendamment du reste.
+Conséquence, déclarée sans détour : les citations `P10:NNN` de ce document sont ancrées sur le snapshot
+**780 lignes**, sauf celles que j'ai réancrées explicitement ci-dessous. Toute citation `P10:NNN` non
+réancrée doit être lue comme « dans le snapshot 780 lignes ». Je ne réécris pas les ~40 citations
+correspondantes : ce serait une reconstruction non vérifiée. J'ai réancré uniquement ce qui décide du
+verdict, et je l'ai mesuré sur le snapshot courant :
 
-Application de la formule du §4(c) `:256-258`,
-`early = floor(proportional × (0,8 + 0,2 × (1 − ramp)))` :
+- **T7.6 : `P10:642-646` → `P10:684-690`, la prescription est en `P10:686`** — le texte
+  « que `:92` et `:94` passent de `464_640` à `580_800` … ce sont les deux » y est toujours présent.
+  **Le constat bloquant tient sur le snapshot courant, pas seulement sur le snapshot jugé.**
+- **R6.2 passe de `P10:702-706` à `P10:510-511`** (mêmes deux lignes, `464 640 → 580 800`).
+- **`P10:744` (C-11) → `P10:818`**, et le décompte R6.1 devient `P10:819` (« 18 assertions auditées,
+  2 rouges et imputables … les seules du dépôt »).
 
-| `inspected` | `ramp` | `0,8 + 0,2 × (1 − ramp)` | `floor(580 800 × …)` | valeur c3 | valeur actuelle |
-|---|---|---|---|---|---|
-| 1 000 | 0 (clampé) | 1,0 | **580 800** | `580 800` ✓ | `464 640` |
-| 23 000 | 0,075 | 0,985 | **572 088** | `572 088` ✓ | `464 640` |
-| 30 000 | 0,25 | 0,95 | **551 760** | `551 760` ✓ | `464 640` |
-| 59 999 | 0,999975 | 0,800005 | **464 642** | `464 642` ✓ | `464 640` |
+**`P10-R5-02` est clos par cette dérive**, et je le dis contre mon propre intérêt : la fausse revendication
+de longueur qui le portait n'existe plus dans le fichier courant. Mesure : `MATCH_646=0` et `MATCH_780=0`,
+avec **contrôle positif `MATCH_20000=30`** sur le même motif et le même fichier (donc la recherche
+fonctionne), plus `CTRL_OVERFLOW_TS=43`. L'auteur a retiré la comparaison pendant que je jugeais.
 
-**Les quatre valeurs de la c3 sont exactes**, y compris l'inversion de 2 tokens à `59 999`, qui
-vient bien de l'arrondi plancher sur une multiplication flottante
-(`580 800 × 0,800005 = 464 642,904`).
-
-### R1 — `:643-646` et `:518-520`
-
-À `inspected = 1 000`, `ramp = 0`, donc `early = floor(proportional × 1) = proportional = 580 800`.
-La correction est présente **aux deux emplacements annoncés** :
-
-- `:518-520` : l'autorefutation a disparu. Le texte porte désormais « **La ligne 113 change :
-  `464_640` → `580_800`**, et son assertion doit être réécrite (voir T7.5) ; la ligne 115, elle, ne
-  voit aucun changement. » C'est l'inversion exacte demandée, et `:115` reste bien inchangée
-  (`value = min(proportional, absolute)`).
-- `:643-646` : « **Réécriture de la ligne 113.** Elle sort de la liste ci-dessus : à
-  `inspected = 1 000` la rampe vaut 0, donc `early = proportional = 580_800` et non `464_640`.
-  L'assertion `:113` devient `expect(trigger.early).toBe(580_800)`. C'est le **seul** test vert du
-  dossier que le correctif réécrit sans le casser ; aucun autre test de la proposition (T7.1 à T7.6)
-  ne touche à `:113`. »
-
-**Et la ligne visée est bien celle qu'il faut :** `test/session/overflow.test.ts:113` vaut
-`expect(trigger.early).toBe(464_640)`, dans le test `inspected: 1 000` (`:111`), avec `:114`
-`readHeavy = false` et `:115` `value = 580 800`. La correction vise donc l'assertion exacte qui
-passe au rouge, et l'exclusion de `:115` est exacte elle aussi.
-
-**Statut : `RÉSOLU`** — le défaut nommé par la c2 (« la proposition affirme que `:113` ne voit aucun
-changement ») a disparu du texte, remplacé par la mention exacte du changement et la réécriture de
-l'assertion cible.
-
-### R2 — les deux valeurs de `30 000`, et la discrimination du test
-
-À `inspected: 30 000`, `ramp = 0,25` :
-
-- **`early = floor(580 800 × (0,8 + 0,2 × 0,75)) = floor(580 800 × 0,95) = 551 760`** ✓ — donc
-  `:609` `expect(trigger.early).toBe(551_760)` est **juste** ;
-- **`readHeavy = early !== undefined && ramp >= 1` = `false`** (`:259`) ⇒ `arm = undefined` (`:260`)
-  ⇒ **`value = Math.min(proportional, absolute) = 580 800`** (`:114`, `:103`) — donc `:611`
-  `expect(trigger.value).toBe(580_800)` est **juste**, et c'est exactement ce qu'annonce le critère
-  réécrit `:615-619` : « la zone médiane est vérifiée par `early`, `value` ne vaudrait `551 760` que
-  si l'arme y restait active ».
-
-Les deux corrections annoncées sont donc présentes et exactes : `:611` porte `580 800`, `:609`
-conserve `early = 551 760`, et le critère `:615-619` explique le désarmement au lieu d'exiger une
-combinaison impossible. C'est bien la contradiction nommée par la c2 qui a disparu.
-
-**Discrimination du test (C-20), testée assertion par assertion** — la formule actuelle
-(`overflow.ts:108`, `Math.floor(proportional * READ_HEAVY_FRACTION)`) contre la formule corrigée
-(`:256-258`). Un test qui passe dans les deux mondes ne prouve rien :
-
-| assertion | formule actuelle (mesurée) | formule corrigée | discrimine ? |
-|---|---|---|---|
-| `:608` `cacheAware = false` (`cacheRead: 0`) | `false` | `false` | non |
-| `:609` `early = 551 760` | `464 640` | `551 760` | **oui** |
-| `:610` `readHeavy = false` | `false` (`20 000 ≤ 30 000`) | `false` (`0,25 < 1`) | non |
-| `:611` `value = 580 800` | `580 800` | `580 800` | non |
-
-**Une assertion sur quatre discrimine, `:609`** — mais c'est celle qui porte le point médian, et sa
-valeur est exacte. Le test est donc **discriminant** : il échoue sur le code actuel (`:609` y vaut
-`464 640` ≠ `551 760`) et ne passe que sur la formule corrigée. Les trois assertions stables ne sont
-pas du bruit : `:611` verrouille le désarmement, `:610` verrouille le prédicat `ramp >= 1` de R6.1
-bis, `:608` verrouille la branche sans cache. **C-20 est satisfait.**
-
-**Statut : `RÉSOLU`** — l'inatteignabilité nommée par la c2 venait de ce que `:609` et `:611`
-exigeaient contradictoirement `readHeavy = false` **et** `value = 551 760` ; la révision a séparé
-les deux et corrigé `value` en `580 800`.
-
-### R3 — les 14 ancres annoncées, vérifiées une à une sur disque
-
-| ancrage c3 | ligne sur disque | contenu réel | verdict |
-|---|---|---|---|
-| `:21 → :22` | `compaction.ts:22` | `import { isOverflow as overflow, isReadHeavy, usable } from "./overflow"` | ✅ |
-| `:46 → :47` | `compaction.ts:47` | `const DEFAULT_TAIL_TURNS = 2` | ✅ |
-| `:47 → :48` | `compaction.ts:48` | `const MIN_PRESERVE_RECENT_TOKENS = 2_000` | ✅ |
-| `:48 → :49` | `compaction.ts:49` | `const MAX_PRESERVE_RECENT_TOKENS = 8_000` | ✅ |
-| `:54 → :55` | `compaction.ts:55` | `const MAX_READ_HEAVY_PRESERVE_RECENT_TOKENS = 24_000` | ✅ |
-| `:199-206 → :304-310` | `compaction.ts:304-310` | `function preserveRecentBudget(...)` … `return Math.min(max, Math.max(MIN_…_TOKENS, Math.floor(usable(input) * 0.25)))` | ✅ |
-| `:201 → :306` | `compaction.ts:306` | `if (configured !== undefined) return configured` — **le retour anticipé** | ✅ |
-| `:405 → :510` | `compaction.ts:510` | `const msgs = yield* MessageV2.toModelMessagesEffect(input.messages, input.model, {` | ✅ |
-| `:413 → :518` | `compaction.ts:518` | `return Token.estimate(JSON.stringify(msgs))` | ✅ |
-| `:416 → :521` | `compaction.ts:521` | `const select = Effect.fn("SessionCompaction.select")(function* (input: {` | ✅ |
-| `:422 → :527` | `compaction.ts:527` | `const limit = input.cfg.compaction?.tail_turns ?? DEFAULT_TAIL_TURNS` | ✅ |
-| `:424 → :529` | `compaction.ts:529` | `const budget = preserveRecentBudget({ cfg: input.cfg, model: input.model, readHeavy: isReadHeavy(input.messages, input.cfg) })` | ✅ |
-| `:498 → :603` | `compaction.ts:603` | `const estimate = Token.estimate(part.state.output)` | ✅ |
-| RC4 (`:702`) | `overflow.ts:107` | `input.cfg.compaction?.read_heavy_trigger ??` | ✅ |
-
-**14 ancres sur 14 exactes.** Je n'ai pas « déclaré toutes correctes » : les 14 sont lues et
-confrontées au contenu réel de la ligne. Le mécanisme de protection cité pour RC4 est bien le retour
-anticipé de `preserveRecentBudget`, et `overflow.ts:107` est bien la ligne qui protège les deux
-premières occurrences de `compaction.test.ts`.
-
-**Statut : `RÉSOLU`** — les treize citations `compaction.ts` et le renvoi `overflow.ts:107` sont
-réalignées et exactes.
-
-### N1 et N2 — inchangés, traces
-
-- **`accepted`** — N1. Deux tests verts réécrits par T7.6 (`:652-664`), choix documenté et tracé
-  (§ R6.1 `:455-462`, A5.8 `:440-445`). Le défaut nommé par N1 a disparu du texte. Réserve : le
-  correctif fait passer deux tests verts au rouge avant réécriture — c'est **déclaré**, ce n'est pas
-  une perte sèche.
-- **`accepted`** — N2. T7.4 (`:624-629`) passe par l'export du §4(d) et son critère (`:632-635`)
-  déclare l'absence de dépendance à `select`. Réserve : l'export de `preserveRecentBudget`
-  (`:711-713`) n'existe pas dans l'arbre ; il fait partie du correctif, donc rien à reprocher, mais
-  il faut bien le dire.
-
-### Ce que je ne requalifie pas
-
-Les quatre `out_of_scope` de la c3 sont **constatés, pas créés** : `READ_HEAVY_RAMP_SPAN`
-(`:717-742`), ratio 2,8 (`:744-765`), chiffres du §4 dérivés (`:785-788`), et l'item
-`HAS_DENSITY`/`TOOL_OUTPUT_MAX_CHARS` du même §9.5. Tous portent une justification écrite et, pour
-les deux premiers, une condition de réactivation vérifiable. Je les laisse tels quels : les
-requalifier pour franchir la porte serait précisément l'interdit de C-22/C-42.
-
-## Regressions introduced
-
-**Base fournie, mesurée sur cette session, exit codes réels.** Aucun test touchant
-`src/tool/shell.ts` n'a été lancé (C-62) ; la ligne « base verte opposable » de la c2 n'est donc pas
-rejouée, et je ne la présente pas comme rejouée.
-
-| Base | Commande | Exit code | Résultat |
-|---|---|---|---|
-| `test/session/overflow.test.ts` | `bun test test/session/overflow.test.ts` | **`SINGLE_EXIT=0`** | **8 pass / 0 fail**, 21 `expect()`, `Ran 8 tests across 1 file`, 3,20 s |
-| paire de régression P10 | `bun test src/session/overflow.test.ts test/session/overflow.test.ts` | **`COMBINED_EXIT=0`** | **14 pass / 0 fail**, 27 `expect()`, `Ran 14 tests across 2 files`, 1,85 s |
-| Typage | `bun typecheck` | **`TYPECHECK_EXIT=0`** | `ERR_COUNT=0`, journal 17 octets, queue `$ tsgo --noEmit` |
-
-Le compte **8 pass / 0 fail** du fichier seul est le chiffre demandé, et il **concorde** avec la
-décomposition de la c2 (6 + 2 = 8). La paire **14 pass / 0 fail** reproduit exactement la base c2.
-Aucune des deux erreurs de typecheck transitoires signalées par la c2 dans `src/tool/shell.ts` n'a
-été reproduite : `ERR_COUNT=0`.
-
-**Introduit par le correctif — calculé, pas exécuté.** Le correctif n'existe pas dans l'arbre (je
-n'écris rien sous `packages/**`), la colonne « après » est une **prédiction**, signalée comme telle.
-
-| Fichier de test | Avant (mesuré) | Après (calculé) | Détail |
-|---|---|---|---|
-| `src/session/overflow.test.ts` | **6 pass / 0 fail** | **6 pass / 0 fail** | `:32` et `:44` passent au rouge sous `ramp >= 1`, puis sont **réécrits** par T7.6 (`:652-664`) → repassent verts. `:36`, `:40`, `:48`, `:52` restent verts |
-| `test/session/overflow.test.ts` | **8 pass / 0 fail** | **8 pass / 0 fail**, +2 tests ajoutés | `:113` passe au rouge puis est **réécrit** par `:643-646` en `expect(trigger.early).toBe(580_800)` → repasse vert. Le test **ajouté** par T7.3 passe (`:609` vaut bien `551 760`, `:611` bien `580 800`) |
-| **Total** | **14 pass / 0 fail**, `COMBINED_EXIT=0` | **14 pass / 0 fail** + 2 ajoutés, exit 0 (prédit) | **aucun test vert n'est laissé cassé** |
-
-**Déclaration exigée par le gabarit : oui, explicitement.** Le correctif fait transiter **trois**
-tests verts par le rouge — `:32` et `:44` (N1 `accepted`, réécrits par T7.6) et `:113` (R1, réécrit
-par `:643-646`) — mais **les trois sont réécrits par la proposition elle-même**, avec la ligne et la
-valeur exactes. Les deux tests ajoutés (T7.3, T7.4) passent : `:609` et `:611` portent des valeurs
-que j'ai recalculées, et le critère `:632-635` annonce que T7.4 échoue sur le code actuel. Il ne
-reste donc **aucun test vert cassé en silence**, et aucun test déjà rouge qui casse davantage.
+Le reste de mes constats est **indépendant du numérotage de lignes** : il porte sur les expressions
+arithmétiques (que j'ai reproduites), sur le contenu des tests sous `packages/**` (que je n'ai pas rejoué
+mais dont j'ai lu les lignes), et sur la logique de la spécification. Ces constats-là survivent au
+renumérotage.
 
 ## Final verdict
 
-`REVALIDATED-PASS_WITH_CHANGES`
+**REVALIDATED-FAIL**
 
-Les trois résidus de la c2 sont **`RÉSOLU`**, chacun sur preuve, et j'ai refait les calculs plutôt
-que de reprendre ceux de l'agent :
+La proposition est arithmétiquement juste, complète et honnête sur son exposition résiduelle — c'est un
+document nettement meilleur que le cycle 4. Mais elle échoue à la clause d'implémentabilité, et pour une
+raison qui ne peut pas être contournée : **elle prescrit la réécriture de deux assertions vertes de HEAD**,
+`test/session/overflow.test.ts:92` et `:94` (`toBe(464_640)` → `toBe(580_800)`), et cette réécriture est
+*logiquement forcée* par ses propres invariants. Elle ne peut donc pas être satisfaite sans casser un test
+vert. Clause : implémentable ⟺ aucun résidu `open` **et** aucun test vert cassé. Les deux conditions
+échouent.
 
-- **R1** — `proportional = floor(968 000 × 0,6) = 580 800`, donc à `inspected = 1 000`
-  (`ramp = 0`) l'arme vaut **`580 800`** et non `464 640`. `:518-520` porte désormais l'inversion
-  exacte et `:643-646` réécrit l'assertion `:113` en `expect(trigger.early).toBe(580_800)`, qui est
-  bien l'assertion fautive — `:115` est, elle, légitimement inchangée.
-- **R2** — à `inspected: 30 000`, `ramp = 0,25`, donc **`early = floor(580 800 × 0,95) = 551 760`**
-  ✓ et **`readHeavy = false` ⇒ `value = 580 800`**. `:611` porte `580 800`, `:609` conserve
-  `551 760`, le critère `:615-619` explique le désarmement. Le test est **discriminant** : `:609`
-  vaut `464 640` sur le code actuel et `551 760` sur la formule corrigée (C-20 satisfait).
-- **R3** — **14 ancres sur 14 exactes**, toutes lues sur disque, plus le renvoi `overflow.ts:107`.
+`RESIDUES_REMAINING` : **oui** — 1 `residual` (1 `blocking`), 1 `out_of_scope` (1 `minor`),
+9 `closed`. Le `residual` est un défaut **mesuré, confirmé et réancré sur le snapshot courant** que mon
+mandat m'interdit de réparer ; il reste un défaut ouvert, pas un accord. `RESIDUES_REMAINING` est donc
+non nul, et c'est ce qui fonde `REVALIDATED-FAIL`.
 
-**RC3** passe de `PARTIEL` à **`RÉSOLU`** (R6.1 admet les deux assertions rouges et nomme la bonne
-cause ; T7.4 verrouille la frontière `19 999 / 20 000` ; la réécriture de `:113` ferme le second
-trou). RC1, RC2 et RC4 tiennent toujours, RC4 désormais purgé de R3.
+---
 
-**Aucun résidu `open`.** Il ne reste que des `accepted` (N1, N2 — réserve tracée) et des
-`out_of_scope` (span 3×, ratio 2,8, chiffres dérivés — trois d'entre eux portent une condition de
-réactivation vérifiable). Je n'ai requalifié aucun `open` pour franchir la porte : il n'y en avait
-plus à requalifier.
+## 1. Arithmétique — reproduite par moi, chiffres du revalidateur
 
-C'est `PASS_WITH_CHANGES` plutôt que `PASS` : la clause « aucune nouvelle objection » étant
-abrogée par la règle d'implémentabilité du gabarit, `PASS` exigerait que **toutes** les objections,
-y compris les `accepted` et les `out_of_scope`, eussent été liquidées, ce qui n'est pas le cas et ne
-doit pas l'être — une réserve assumée et tracée reste une réserve.
+Script : `%TEMP%\opencodev2\p10-reval-arith.ts`, `p10-reval2.ts`, `p10-reval3.ts`, `bun` → **exit 0**.
+Constantes HEAD : `READ_HEAVY_FRACTION = 0.8`, `READ_HEAVY_MIN_TOKENS = 20_000`, `MAX_PRESERVE_RECENT_TOKENS
+= 8_000`, plafond read-heavy `24_000` (`src/session/overflow.ts:15-20`, `src/session/compaction.ts:49`,`:55`).
+`SPAN = 2 × 20_000 = 40 000`.
 
-### Handed back to
+### 1.a La rampe — conforme à la revendication
 
-`docs/harness-audit/proposals/P10-token-estimation.md` : **rien à corriger**. La proposition est
-implémentable en l'état. Pour la vague d'implémentation, l'ordre dicté par le tableau ci-dessous
-suffit ; deux réserves `accepted` restent à garder visibles pendant le portage :
+| inspected | ma valeur | attendu |
+|---|---|---|
+| 0 | `0` | `0` |
+| 18 000 | `0` | `0` |
+| 19 999 | `0` | `0` |
+| **20 000** | **`0`** | **`0`** |
+| 30 000 | `0.25` | `0.25` |
+| 59 999 | `0.999975` | `0.999975` |
+| **60 000** | **`1`** | **`1`** |
+| 500 000 | `1` | `1` |
 
-1. **N1** — ne pas « réparer » `:32` et `:44` en ajustant le helper `chars` ou `CHARS_PER_TOKEN` :
-   la réécriture par T7.6 est le remède retenu, et `CHARS_PER_TOKEN = 4` ne bouge pas.
-2. **N2** — l'export de `preserveRecentBudget` (`compaction.ts:304`) fait partie du correctif ; sans
-   lui T7.4 n'est pas constructible.
+Aucune valeur `NaN`. **Conforme.**
 
-| item | effort | fichier principal | test à écrire | casser un test existant ? |
+### 1.b `Math.floor(proportional × 0.8) = 288 800` — vérifié
+
+`proportional = 361 000` (chaîne T7.5 : usable `380 000` × `0.95` → `Math.floor` = `361 000`, reproduit).
+`Math.floor(361000 × 0.8) = 288800`. Et `early(361000, ramp=0) === 288800`, avec
+`early(361000,0) === Math.floor(361000*0.8)` → **`true`** (identité, pas coïncidence).
+
+Conséquence : à rampe 0, `compaction.test.ts:441` (commentaire documentant `288.8k`), `:448`
+(`trigger < 290 000`) et `:455` (`toBe(true)`) restent **strictement identiques** à HEAD. Marge
+`290 000 − 288 800 = 1 200`. **Conforme.**
+
+### 1.c Le `Math.round` — la revendication est exacte et `Math.round` est bien obligatoire
+
+À `inspected = 59 999` : `ramp = 0.999975` → valeur **non arrondie = `23999.6`**, valeur **arrondie =
+`24000`**. La revendication « 23 999,6 » est exacte au chiffre près. Sans arrondi, `budget` vaudrait
+`23999.6` et toutes les assertions de budget entières casseraient. **Conforme, et mandatory confirmé.**
+
+### 1.d Les neuf valeurs de T7.3 — les neuf reproduites
+
+`8 000, 8 000, 8 000, 8 000, 8 400, 9 200, 12 000, 24 000, 24 000` pour `18 000 / 19 999 / 20 000 /
+20 001 / 21 000 / 23 000 / 30 000 / 59 999 / 60 000`. **Les neuf exactes**, suite non décroissante,
+`budgetAt(23 000) = 9 200` strictement compris entre `8 000` et `12 000`. **Conforme.**
+
+### 1.e T7.4 et T7.5
+
+- T7.4 : `early(580800, 0.25) = 493680` — exactement la valeur annoncée, distincte de `464 640`.
+- T7.5 : `usable = 380000`, `proportional = 361000`, `early(rampe 0) = 288800` — exactement l'ancrage annoncé.
+
+### 1.f Le prédiction `:92`/`:94` — arithmétiquement exacte
+
+`test/session/overflow.test.ts:89` fixe `inspected: 500_000` → `ramp = 1` →
+`early = Math.floor(580800 × (0.8 + 0.2 × 1)) = Math.floor(580800) = 580800`. **Prédit, exact.**
+(Idem `value`, `:94`.) Et `59 999` → `580 797` : les deux lignes de tableau `P10:367` et `P10:369` sont
+juste, il n'y a pas de contradiction interne.
+
+---
+
+## 2. Derivabilité — oui, plus aucun seuil ni frontière au goût
+
+Aucun `à choisir` résiduel. La seule grandeur libre — le multiplicateur du span — est **explicite et
+nommée** (`READ_HEAVY_RAMP_SPAN = 2 × READ_HEAVY_MIN_TOKENS`), déclarée « arbitré, pas mesuré »
+(`P10:710`), et **ne décide d'aucun prédicat** (`P10:716-719`), donc ne peut casser aucun des tests
+protégés. Ce n'est pas une taste-portion : c'est une constante documentée, modifiable en une ligne, avec
+condition de réactivation posée (`P10:725-727`).
+
+Preuve que la dépendance est réellement absente, pas seulement affirmée : j'ai fait varier le span sur
+`{1 000, 4 000, 10 000, 20 000, 40 000, 100 000}` et la rampe à `inspected = 20 000` vaut `0` pour les six,
+donc `early(361000, ·) = 288800` pour les six → `T7_5_value_under_any_span_all_288800 = true`. La
+revendication « T7.5 est ce qui empêche un span plus court de casser INV-1 » est **vérifiée, pas cru**.
+
+Les deux prédicats de site restent inclusifs et inchangés : `src/session/overflow.ts:76-77` et `:111` sont
+laissés tels quels, ce qui préserve la frontière inclusive de HEAD (`>=`). Le gated `ramp >= 1` du cycle 4 a
+disparu — les colonnes `readHeavy` de `P10:359-369` sont identiques avant/après sur toute la plage, ce que
+j'ai confirmé : le multiplicateur n'apparaît que dans la magnitude.
+
+§4.c ajoute `export` sur `preserveRecentBudget` (`HEAD: src/session/compaction.ts:304` est un `function`
+non exporté ; le fichier HEAD expose 17 symbols et `preserveRecentBudget` n'en fait pas partie). C'est le
+correctif de N2, et il est explicite.
+
+---
+
+## 3. Exposition résiduelle — **BLOCANTE**
+
+`T7.6` (`P10:642-646`) : « **et** que `:92` et `:94` passent de `464_640` à `580_800` (R6.1) : ce sont
+les deux seules assertions du dépôt que le correctif modifie, **et elles doivent l'être** ».
+
+Donc : la spécification **prescrit** la rupture de deux assertions vertes de HEAD. Je vérifie si la rupture
+était évitable — elle ne l'est pas.
+
+**Preuve de la forcing.** Pour que `:92`/`:94` restent à `464 640`, il faut
+`floor(580800 × (0.8 + 0.2 × r)) = 464640`, soit `0.2 × 580800 × r = 116 160 × r < 1`, donc
+`r < 8.61e-6`. Or `r = (500 000 − 20 000)/span = 480 000/span`, d'où `span > 5.58 × 10^10`. Tout span fini
+et raisonnable produit `r > 0` à `inspected = 500 000`, donc `early > 464 640`. Et les invariants propres de
+la proposition (`T7.2` : `readHeavyRamp(60_000) === 1` ; `T7.3` : `budgetAt(60_000) === 24_000` ; `T7.4` :
+`early(30_000) === 493 680`) **épinglent le span à 40 000**. Les deux intentions sont mutuellement
+incompatibles : on ne peut pas garder `:92`/`:94` et tenir T7.2/T7.4.
+
+Pour fermer définitivement l'alternative « plafonner ou faire retomber la rampe au-delà d'un certain
+volume », qui rendrait la rupture évitable : `INFERE:` exécuter la formule du §4.b sur `inspected` de
+60 000 à 500 000 par pas de 1 000 et vérifier que `early` y est strictement croissant et ne redonne
+jamais `464 640`. On attendrait une suite strictement croissante, donc aucun repli possible — ce qui
+confirme l'impossibilité de préserver `:92`/`:94` sous la forme spécifiée.
+
+**Le document est honnête là-dessus** — `R6.1` énumère les 2 rouges imputables, `C-11` a été révisé pour
+admettre « 2 rouges et imputables (`:92` et `:94`, les seules du dépôt) » (`P10:744`), et §9.1 retire
+l'affirmation « aucune occurrence n'est imputée au correctif » (`P10:705-706`). Je n'ai trouvé aucune
+tentative de masquer la rupture. **C'est la transparence qui rend le verdict `FAIL` et non `PASS`, pas
+l'inverse** : une spécification honnête qui casse un test vert reste une spécification qui casse un test
+vert.
+
+**Vérification indépendante de « les deux seules du dépôt »** — je ne l'ai pas prise pour argent comptant.
+`compaction.test.ts` contient 11 correspondances `24_000|8_000|preserve_recent|MAX_PRESERVE`, que j'ai
+classées une à une : `:665`, `:690`, `:702` sont `output: 128_000` (faux positifs de la sous-chaîne
+`8_000`), et `:1239`, `:1265`, `:1290`, `:1327`, `:1378`, `:1772`, `:1816`, `:1851` sont des valeurs de
+configuration `preserve_recent_tokens` quiattaquent le **retour anticipé** de `src/session/compaction.ts:305-306`,
+antérieur au correctif et laissé intact par §4.c. **Aucune assertion verte ne colle le budget verbatim
+read-heavy.** La revendication est exacte.
+
+---
+
+## 4. Propriété lecture seule — confirmée
+
+Le correctif ne touche que deux fonctions pures, `overflow.ts` et `compaction.ts`.
+
+Recherche large `\bINSERT\b|\bUPDATE\b|\bDELETE\b|\bSELECT\b|\.exec\(|db\.` sur la proposition :
+**3 lignes**, toutes bénignes — `P10:135` (« le `const select` local de `compaction.ts:521` »),
+`P10:541` et `P10:603` (« dépend d'aucun `select` »). Ce sont l'identifiant JS `select` et de la prose, pas
+du SQL. Recherche stricte, sensible à la casse : `COUNT_STRICT = 0`. Le mot `SQL` lui-même n'apparaît
+**pas** dans la proposition (`CTRL_sql_word = 0`), et `census` non plus (`CTRL_census = 0`) — la propriété
+est tenue par construction, non par affirmation. **Aucun SQL mutant n'est ajouté. Confirmé.**
+
+---
+
+## 5. Contrôle d'honnêteté — conforme, sauf la revendication de longueur
+
+Le revalidateur **n'a exécuté aucun test** et le dit. Je n'ai trouvé **aucune** revendication de test
+passant sans code de sortie. Les seules passes citées sont soit attribuées explicitement au parent
+d'implémentation (`P10:26`, « mesures du parent d'implémentation, citées comme telles »), soit un code de
+sortie de script : `P10:357` « Source : exécution du script 4.a, **exit 0** », dont j'ai **reproduit**
+tous les nombres (`proportional = 580800`, `floor(usable × 0,25) = 242000`, `ceiling = 24000`,
+`start = 20000`, `span = 40000`, `floor = 8000`). L'artefact de scratch qu'il invoque existe
+(`%TEMP%\opencodev2\p10-cycle5-arith.ts`, 3 354 octets) — c'est un script, pas un run de test.
+**Aucun finding d'honnêteté sur les tests.**
+
+En revanche la revendication « *Line count is now 646 (was 780)* » est **fausse telle qu'écrite** :
+`TOTAL_LINES = 780`, `BLANK = 134`, `NONBLANK = 646`, `BYTES = 53 711`. Le fichier fait toujours 780
+lignes ; 646 est le compte des lignes **non vides**. La réduction annoncée est un artefact de méthode de
+comptage, et « was 780 » est le total. Le document n'a pas rétréci.
+
+---
+
+## 6. Statut des invariants tels qu'ils se tiennent maintenant
+
+| invariant | site | verdict | preuve |
+|---|---|---|---|
+| **INV-1** | `test/session/compaction.test.ts:455` `toBe(true)` | **préservé** | prédicat inclusif `:76-77`/`:111` non modifié ; `inspected = 20 000`, rampe 0 → `readHeavy` reste `true` (colonnes `P10:364`) |
+| **INV-2** | `test/session/compaction.test.ts:515` `toBe(true)` | **préservé** | idem ; `25 000` contre un minimum `25 000`, frontière `>=` inchangée |
+| **INV-3** | `src/session/overflow.test.ts:32` `toBe(true)` | **préservé** | predicate intact, aucun `ramp >= 1` ne subsiste |
+| **INV-4** | `src/session/overflow.test.ts:44` `toBe(true)` | **préservé** | idem |
+| `:441` | `test/session/compaction.test.ts:441` | **EXPOSÉ, correctement déclaré** | `P10:702-706` + `R6.3` ; valeur 288 800 conservée, seul le commentaire documente la valeur déplacée |
+| **—** | `test/session/overflow.test.ts:92`, `:94` | **CASSÉ par prescription** | `P10:644` — `REVALIDATED-FAIL` |
+
+Les quatre invariants non inversibles sont réellement non inversibles : aucun ne dépend de la magnitude,
+donc aucun n'est atteignable par le multiplicateur du span. C'est le progrès réel du cycle 5.
+
+---
+
+## 7. Findings
+
+Statuts : `closed` = vérifié et clos par moi. `residual` = défaut **mesuré et confirmé**, que je ne peux pas
+réparer (mon mandat interdit de toucher la proposition) et qui attend une décision de l'auteur ; il reste
+un défaut ouvert, pas un accord. `out_of_scope` = hors périmètre de ce cycle, avec condition de
+réactivation posée par la proposition elle-même. Aucun de ces trois statuts n'adoucit le verdict :
+`REVALIDATED-FAIL` tient, et `P10-R5-01` reste **bloquant**.
+
+| id | sévérité | statut | preuve (file:line) | constat |
 |---|---|---|---|---|
-| §4(a) — ratios d'estimation (`CHARS_PER_TOKEN`, `HAS_DENSITY`) | `S` | `packages/opencode/src/session/overflow.ts` | aucun | aucun |
-| §4(b) — `threshold()` / `usable()` | `XS` | `packages/opencode/src/session/overflow.ts` | aucun | aucun |
-| §4(c) — `READ_HEAVY_FRACTION`, `readHeavyRamp`, `ramp >= 1` | `S` | `packages/opencode/src/session/overflow.ts` | T7.1, T7.2 | `test/session/overflow.test.ts:113` — **rouge attendu**, réécrit en `:643-646` |
-| §4(d) — export de `preserveRecentBudget` | `XS` | `packages/opencode/src/session/compaction.ts` | aucun | aucun |
-| R6.1 — `isReadHeavy` porte la rampe | `S` | `packages/opencode/src/session/overflow.ts` | T7.6 | `src/session/overflow.test.ts:32` et `:44` — rouges attendus, réécrits par T7.6 |
-| R6.2 / T7.3 — `early` au point médian, `value` désarmée | `S` | `test/session/overflow.test.ts` | T7.3 | aucun (test ajouté) |
-| T7.4 — frontière `19 999 / 20 000` | `S` | `test/session/overflow.test.ts` | T7.4 | aucun (test ajouté) |
-| T7.5 — non-régression des seuils existants | `XS` | `test/session/overflow.test.ts` | T7.5 | aucun |
-| F1 — occurrences protégées de `compaction.test.ts` | `S` | `test/session/compaction.test.ts` | aucun | aucun — couvert par `overflow.ts:107` et `compaction.ts:306` |
+| **P10-R5-01** | **blocking** | `residual` | `P10:642-646` (snapshot 780 l.) → **réancré `P10:684-690`, prescription en `P10:686`** (snapshot 880 l., SHA256 `8224545F…`) ; `packages/opencode/test/session/overflow.test.ts:92`, `:94`, `:89` | T7.6 **prescrit** la réécriture de deux assertions vertes de HEAD (`toBe(464_640)` → `toBe(580_800)`). La rupture est logiquement forcée : garder `464 640` exige `span > 5.58e10`, incompatible avec les invariants T7.2/T7.4 qui épinglent `span = 40 000`. Implémentable ⟺ aucun test vert cassé → **non implémentable**. |
+| **P10-R5-02** | material | **`closed`** | `P10` (longueur globale) ; snapshot 780 l. : `TOTAL_LINES=780 / BLANK=134 / NONBLANK=646` ; snapshot 880 l. : `MATCH_646=0`, `MATCH_780=0`, contrôle positif `MATCH_20000=30` | **Clos par la dérive, et je le dis contre mon propre intérêt.** La revendication était fausse sur le snapshot jugé — 780 lignes, 646 = non vides — et **n'existe plus** dans le snapshot courant, mesurée à `MATCH_646=0` et `MATCH_780=0` contre un contrôle positif `MATCH_20000=30` sur le même motif et le même fichier. L'auteur l'a retirée pendant ma revalidation. |
+| **P10-R5-03** | minor | `out_of_scope` | `P10:708-727` | Le multiplicateur 2 du span reste un arbitrage non mesuré. **Non bloquant** : constante nommée, ne décide aucun prédicat, et j'ai vérifié que la valeur 288 800 de T7.5 est invariante pour tout span de 1 000 à 100 000. |
+| **P10-R5-04** | minor | closed | `src/session/overflow.ts:76-77`, `:111` vs `P10:275-300` | Les deux prédicats de site restent inclusifs et inchars. Le gated `ramp >= 1` du cycle 4 a disparu. |
+| **P10-R5-05** | minor | closed | ma mesure `bun`, exit 0 (§1.a-§1.f) | Les six expressions annoncées sont exactes au chiffre près, y compris `23999.6` et les neuf valeurs de T7.3. |
+| **P10-R5-06** | minor | closed | `P10:589-604` ; ma mesure | T7.3 ne dépend que de l'export du §4.c — pas de `select`, pas de pipeline Effect. §4.c ajoute bien `export` (`HEAD compaction.ts:304` ne l'a pas). |
+| **P10-R5-07** | minor | closed | `P10:359-369` ; ma mesure §1.f | La table R6.1 est exacte sur les neuf lignes, `readHeavy` identique avant/après, y compris les deux lignes 59 999 / 60 000 que j'ai cru contradictoires avant vérification. |
+| **P10-R5-08** | minor | closed | `P10:744` ; `compaction.test.ts:665,690,702,1239,1265,1290,1327,1378,1772,1816,1851` | « Les deux seules assertions du dépôt » est exact : les 11 correspondances de budget sont des `128_000` ou des `preserve_recent_tokens` de config hitting le retour anticipé `compaction.ts:305-306`. Aucune assertion verte ne colle le budget. |
+| **P10-R5-09** | minor | closed | `P10:26`, `P10:357` ; artefact `%TEMP%\opencodev2\p10-cycle5-arith.ts` | Aucun test passant revendiqué sans code de sortie. Les passes sont attribuées au parent ; les seuls codes de sortie cités sont ceux du script 4.a, dont j'ai reproduit les nombres. |
+| **P10-R5-10** | minor | closed | `P10` entier ; `COUNT_STRICT=0`, `CTRL_overflow_ts=32` | Lecture seule confirmée : aucune SQL mutant ; les 3 hits du motif large sont l'identifiant `select` et de la prose. |
+| **P10-R5-11** | minor | closed | `P10:627-640`, `P10:716-719` | La revendication « T7.5 empêche un span plus court de casser INV-1 » est **vérifiée** par variation du span, pas seulement affirmée. |
+
+---
+
+## Contrôles positifs
+
+Aucun de mes zéros n'est dépourvu d'un contrôle positif sur un motif connu présent.
+
+| recherche | résultat | contrôle positif sur un motif connu présent |
+|---|---|---|
+| `toBe(true)` dans `src/session/overflow.test.ts` | **2** (`:32`, `:44`) | fichier lu en entier, 54 lignes, 6 assertions `toBe` énumérées (`:32` T, `:36` F, `:40` F, `:44` T, `:48` F, `:52` F) |
+| motifs SQL mutants, P10 | `COUNT_STRICT = 0` | `overflow.ts` dans P10 = **32** ; `compaction.ts` = **27** |
+| mots `SQL` / `census`, P10 | `0` / `0` | idem 32 / 27 |
+| budget dans `compaction.test.ts` | 11 matches, **0 assertion** | `toBe` = **136**, `isOverflow` = **31** dans le même fichier |
+| exports de `compaction.ts` | `preserveRecentBudget` **absent** des 17 | `export function preserveRecentBudget` introuvable, `function` nu en `:304` |
+| rampe « trivialement nulle » | `ramp(30 000) = 0.25` | valeur intérieure non nulle observée |
+
+---
+
+## Handed back to
+
+`P10-token-estimation.md`, auteur du cycle 5.
+
+**Le travail de fond est bon et je le dis :** la rampe est enfin confinée à la magnitude, les deux prédicats
+de site sont intacts, les six expressions sont exactes, `Math.round` est correctement justifié, les
+quatre invariants sont réellement non inversibles, la propriété lecture seule tient, et le document
+annonce sa propre rupture au lieu de la maquiller. C'est un bon diagnostic.
+
+**Ce qui bloque, et rien d'autre :** `T7.6` prescrit de casser `test/session/overflow.test.ts:92` et
+`:94`. Ce n'est pas un oubli, c'est un choix — mais c'est un choix que la clause d'implémentabilité
+interdit tant qu'il n'est pas levé. Trois voies, à ton arbitrage, je n'en choisirai pas pour toi :
+
+1. **Déplacer la magnitude hors de `early`** — interpoler entre `floor(proportional × 0.8)` et
+   `proportional` sur la **fenêtre de verbatim** plutôt que sur le déclencheur, si un point d'appui existe
+   qui ne touche aucune assertion. Cela laisserait `:92`/`:94` vertes. `INFERE:` il faudrait d'abord établir
+   qu'un tel point d'appui existe ; je ne l'ai pas cherché, et ce n'est pas mon rôle de le concevoir.
+2. **Faire endosser la rupture** — si changer le calibrage de l'arme à 500 000 inspectés est un choix
+   produit assumé, il lui faut un acte explicite (une décision d'owner, pas une ligne de spec), et
+   `P10-R5-01` se ferme alors sur cette base.
+3. **Allonger le span** pour que `ramp(500 000)` soit négligeable — mathématiquement possible
+   (`span > 5.58e10`), sémantiquement absurde, et incompatible avec T7.2/T7.4. Je la mentionne pour
+   complétude, pas comme option.
+
+Et une correction de forme, sans rapport avec le verdict : `P10-R5-02`, la longueur. Dis `646 lignes non
+vides sur 780` ou supprime la comparaison « was 780 », mais n'annonce pas une réduction qui n'a pas eu
+lieu.
