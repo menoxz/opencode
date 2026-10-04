@@ -114,4 +114,33 @@ Le commit des 10 fichiers du contrat d'orchestration est **impossible en l'état
 
 **Voie retenue, non destructive** : committer via un index Git **alternatif** (`GIT_INDEX_FILE` pointant hors du dépôt), après `git read-tree HEAD`. Cette voie n'écrit jamais dans `.git/index.lock`, ne supprime aucun verrou et ne tue aucun processus. Elle est réversible : un commit mal formé reste un objet dangling, jamais une perte de travail.
 
-HEAD au moment du premier échec : `9783daea6 docs(harness-audit): add independent P17 verdict (PASS_WITH_CHANGES)`.
+### Arbitrages opérateur — décisions du 4 octobre 2026 (postérieures à A-1..A-4)
+
+| # | Sujet | Décision | Conséquence |
+| --- | --- | --- | --- |
+| **A-2 (revu)** | P11 — typage des DoD d'effort | **Plafond `M`, pas de schéma dédié.** Le revalidateur avait refusé A-2 sur le fond (**C-34**) : `dod` est un `Schema.Array(Schema.String)`, typer les items exige une autorité d'écriture hors `edit_objective`, plus gros que R1+R2. | **A-2 est remplacé**, pas appliqué tel quel. La révision cycle 2 de P11 a déjà implémenté « 6 seuils chiffrés conformes à `:609-628` », ce qui est compatible. Le trou résiduel O1 se ferme **en `S`**, pas dans un lot `L` futur. P11 attend sa revalidation cycle 2 |
+| **A-5** | P19 — seuil de (Q) avant d'exécuter la Partie A | **Sans objet.** La Partie A n'est livrée que si ce seuil est fixé… or la proposition révisée **ne modifie aucun fichier** (§4 « Aucun fichier n'est modifié », §5 « Ne rien changer. Retenue. », §8 « XS / zéro patch »). | Il n'y a plus rien à conditionner. **Le seuil n'a pas à être fixé.** P19 reste non implémentable, mais pour une raison plus forte que celle du brief : non pas « bilan inconnu », mais **bilan inexistant par construction**. Voir **C-58** |
+| **A-6** | P20 / R3 — le fork vise-t-il des checkouts hors contrat `opencodev2` ? | **Non — usage privé.** | **R3 reste `accepted`** et **P20 n'est pas rouvert**. Le mode de défaillance silencieux hors contrat est assumé. Le seul blocage de P20 demeure **R2** (test de contenu, effort `S`, `test/agents-md.test.ts`) |
+
+### État des 14 revalidations — vague 4
+
+| P | Revalidation la plus récente | Résidu `open` | Implémentable |
+| --- | --- | --- | --- |
+| **P02** | `PASS_WITH_CHANGES` (cycle 2) | **0** | ✅ **vague 4 lancée** — spec d'exécution donnée au validateur |
+| **P06** | `PASS_WITH_CHANGES` (cycle 2) | **0** | ✅ **vague 4 lancée** — T4/T4c/T1, quota 1 200 |
+| **P15** | `PASS_WITH_CHANGES` | **0** | ✅ **vague 4 lancée** — **doit utiliser les en-têtes de hunk corrigés (451→457)**, le patch publié n'est pas applicable |
+| **P16** | `PASS_WITH_CHANGES` | **0** | ✅ **vague 4 lancée** — filtre `TRUNCATION_DIR`, le `+ path.sep` est ce qui le rend sain |
+| P04 | **`FAIL`** (cycle 2) | **6** (`R1`–`R6`) | ❌ quota atteint : `RETRY_QUOTA_MAX_DELAY` n'est câblée à aucune sortie de `delay()`, §4.1 contredit §4.3 |
+| P07 | `PASS_WITH_CHANGES` (cycle 2) | **3** (`R1`,`R2`,`R3`) | ❌ quota atteint — Required changes 3, 4, 5 intacts |
+| P12 | **`FAIL`** (cycle 2) | **1** (`R2`) | ❌ quota atteint — `REDIRECT_TYPES` inverse les grammaires, le fail-closed est fail-**ouvert** |
+| P13 | `PASS_WITH_CHANGES` (cycle 2) | **6** | ❌ quota atteint — C-13 **ré-affecté** (`shell.ts:287`, pas `always`) ; `§3.10` faux sur `scout` |
+| P20 | **`FAIL`** (cycle 2) | **1** (`R2`) | ❌ quota atteint — 10 des 11 RC résolus ; R3 `accepted` et **non rouvert** (A-6) |
+| P08 | **`FAIL`** | **3** | ❌ — SQL **invalidé** (`freelist_count` absent), dépendance `process.env`, chiffre « 50 % » → **21,2 %** |
+| P19 | **`FAIL`** | G1 inatteignable + `prompt.ts:1872` | ❌ — la proposition révisée est un **no-op** ; `G1` ne peut atteindre 0 car `:1885` restitutionne `"execute"` |
+| P10 | `PASS_WITH_CHANGES` (cycle 1) | N1, N2 **corrigés** au cycle 2 | ⏳ revalidation cycle 2 à demander |
+| P11 | **`FAIL`** (cycle 1) | 4 RC intacts **corrigés** au cycle 2 | ⏳ revalidation cycle 2 à demander |
+| P18 | `PASS_WITH_CHANGES` (cycle 1) | **3** | ⏳ cycle 2 **interrompu** (`budget_exceeded`) — à relancer, pas identique |
+
+**Jamais revalidées** (livrées ou en cours de révision) : **P01, P03, P05, P14, P17**.
+
+**Bilan** : **4 implémentables sur 20** — et 4 au plafond de 3 cycles qui sont désormais **`NOT-IMPLEMENTABLE`** par politique C-37, finding et correctif conservés au rapport.
