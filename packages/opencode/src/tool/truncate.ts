@@ -22,6 +22,13 @@ export type Result = { content: string; truncated: false } | { content: string; 
 export interface Options {
   maxLines?: number
   maxBytes?: number
+  /**
+   * Code-point cap, in characters — never bytes. The lean output budget is
+   * expressed in code points (lean-output-policy.ts) while `maxBytes` measures
+   * the file written to disk; passing one in the other's field silently halves
+   * the budget on accented text. Both constraints apply, whichever binds first.
+   */
+  maxChars?: number
   direction?: "head" | "tail"
   outputPath?: string
 }
@@ -86,43 +93,63 @@ export const layer = Layer.effect(
       const resolved = yield* limits()
       const maxLines = options.maxLines ?? resolved.maxLines
       const maxBytes = options.maxBytes ?? resolved.maxBytes
+      const maxChars = options.maxChars
       const direction = options.direction ?? "head"
       const lines = text.split("\n")
       const totalBytes = Buffer.byteLength(text, "utf-8")
+      const totalChars = text.length
 
-      if (lines.length <= maxLines && totalBytes <= maxBytes) {
+      if (lines.length <= maxLines && totalBytes <= maxBytes && (maxChars === undefined || totalChars <= maxChars)) {
         return { content: text, truncated: false } as const
       }
 
       const out: string[] = []
       let i = 0
       let bytes = 0
+      let chars = 0
       let hitBytes = false
+      let hitChars = false
 
       if (direction === "head") {
         for (i = 0; i < lines.length && i < maxLines; i++) {
           const size = Buffer.byteLength(lines[i], "utf-8") + (i > 0 ? 1 : 0)
+          const width = lines[i].length + (i > 0 ? 1 : 0)
+          if (maxChars !== undefined && chars + width > maxChars) {
+            hitChars = true
+            break
+          }
           if (bytes + size > maxBytes) {
             hitBytes = true
             break
           }
           out.push(lines[i])
           bytes += size
+          chars += width
         }
       } else {
         for (i = lines.length - 1; i >= 0 && out.length < maxLines; i--) {
           const size = Buffer.byteLength(lines[i], "utf-8") + (out.length > 0 ? 1 : 0)
+          const width = lines[i].length + (out.length > 0 ? 1 : 0)
+          if (maxChars !== undefined && chars + width > maxChars) {
+            hitChars = true
+            break
+          }
           if (bytes + size > maxBytes) {
             hitBytes = true
             break
           }
           out.unshift(lines[i])
           bytes += size
+          chars += width
         }
       }
 
-      const removed = hitBytes ? totalBytes - bytes : lines.length - out.length
-      const unit = hitBytes ? "bytes" : "lines"
+      const removed = hitChars
+        ? totalChars - chars
+        : hitBytes
+          ? totalBytes - bytes
+          : lines.length - out.length
+      const unit = hitChars ? "characters" : hitBytes ? "bytes" : "lines"
       const preview = out.join("\n")
       const references = [...new Set([options.outputPath, savedOutputPath(text)].filter((value): value is string => value !== undefined))]
       const file = yield* write(text)
