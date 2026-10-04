@@ -64,13 +64,24 @@ Une ligne n'est `implémentable` que si sa revalidation le dit et qu'aucun rési
 | --- | --- | --- |
 | Propositions | **20 / 20** | `PROPOSALS=20`, `MISSING_PROPOSAL=` (vide) |
 | Verdicts de base | **20 / 20** | `VERDICTS_BASE=20` |
-| Revalidations sur disque | **6** | P02, P06, P10, P11, P18, P20 |
-| Statuts de revalidation | **0** `PASS` · **4** `PASS_WITH_CHANGES` · **2** `FAIL` | extrait des fichiers, pas des rapports |
-| **Implémentables** | **0 / 20 — 1 candidat en attente** | seul P02 déclare 0 résidu `open`, revalidation cycle 2 en vol |
-| Implémentations mergées | **0** | vague 4 non démarrée |
-| Revalidations en vol | **10** | P02, P04, P06, P07, P08, P12, P13, P15, P16, P19 |
-| Dépôt commité | ✅ **2 commits** | `267c4ce39`, `01dda735a` |
-| Typecheck | ✅ exit **0** | `TYPECHECK_EXIT=0`, 16 s, bun 1.4.2 (**C-46**) |
+| Revalidations sur disque | **14** | P01→P20 sauf P03, P05, P09, P14, P17 (P01/P03/P05/P14 en cours, P17 bloquée par **C-60**) |
+| Statuts de revalidation | **0** `PASS` · **10** `PASS_WITH_CHANGES` · **4** `FAIL` | extraits des fichiers par `grep`, jamais des rapports d'agents |
+| **Implémentables** | **4 / 20** — **P02, P06, P15, P16** | chacune avec **0 résidu `open`** attesté sur disque |
+| **Au plafond C-37** (3 cycles) | **4** — P04, P07, P12, P13 | `NOT-IMPLEMENTABLE` par politique, finding et correctif conservés au rapport |
+| Vague 4 | **démarrée** — 4 fichiers disjoints | `repetition.ts`, `compaction.ts`, `plugin/index.ts`, `truncate.ts` + `terminal-output.ts` |
+| **Implémentations mergées** | **0 / 4** — première édition visible : `repetition.ts` | `DECORATIVE = new Set(["description"])` + projection filtrée ; **fail-closed vérifié** : le filtre ne retire que la clé nommée, un champ inconnu reste dans la clé donc dans le blocage |
+| Dépôt commité | ✅ **4 commits** | `267c4ce39`, `01dda735a`, `0b443deb3`, `97f13eb96` |
+| Typecheck (avant vague 4) | ✅ exit **0** | `TYPECHECK_EXIT=0`, 16 s, bun 1.4.2 (**C-46**) |
+| Base de non-régression | `test/shell/shell.test.ts` **12 / 0** | verte et stable ; remplace `test/tool/shell.test.ts`, **instable** (**C-44**) |
+
+### Deux artefacts à surveiller dans le worktree
+
+- `packages/opencode/watchdog-run.log` — **non suivi**, produit par une exécution de test. Ne doit
+  pas être commité ; à ignorer ou à supprimer après la vague 4.
+- `packages/opencode/test/session/llm.test.ts` — **modifié, 1 953 / 1 871 lignes**, alors qu'aucun
+  agent de la vague 4 n'avait cette cible. Ce n'est **pas** une dégât d'agent : c'est la
+  modification préexistante consignée par `P09-WORKTREE-PREEXISTING`, non produite par cette
+  session et volontairement non annulée. **À ne pas commiter sans décision explicite.**
 
 ## Arbitrages opérateur
 

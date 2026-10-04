@@ -122,3 +122,62 @@ mais « **le shell échoue par intermittence** ».
 
 Corollaire : `grep` échoue en EPERM sur cette machine — préférer `read` avec des ranges
 connus, ou `glob`.
+
+## Règle 8 — garde de marqueur de sonde avant commit
+
+Un agent qui prouve son correctif **revert sa propre source** pour exécuter la phase rouge.
+C'est la pratique correcte, et c'est aussi un état dangereux : `repetition.ts:81` a porté
+`/** TEMPORARY BASELINE PROBE — restore immediately. */` au-dessus d'un `signature()` reverté
+à l'original. La restauration dépend d'une action future par un acteur qui peut avoir disparu
+— trois agents ont déjà subi `budget_exceeded` cette session.
+
+Avant de commiter **tout** fichier sous `packages/**` :
+
+```powershell
+Select-String -Path <fichier> -Pattern 'TEMPORARY|BASELINE PROBE|restore immediately|XXX|FIXME'
+```
+
+Une correspondance = **arrêt dur**, pas de commit. Un filtre de signature inopérant accompagné
+d'un commentaire qui *invite* à le restaurer est le pire des deux mondes, et un
+`restore immediately` orphelin ne sera jamais restauré.
+
+Corollaire : la preuve « échoue avant / passe après » se consigne dans le **rapport de
+revalidation**, jamais dans une source committée.
+
+## Règle 9 — un fichier sous édition appartient à son agent, pour la mesure aussi
+
+La règle 1 protège l'**écriture**. Celle-ci protège la **mesure**.
+
+**Aucun test ne s'exécute sur un fichier dont un agent est propriétaire**, y compris pour
+l'orchestrateur. J'ai violé cette règle en lançant `bun test` sur `repetition.ts` pendant que
+l'agent P02 le possédait : `TEST_EXIT=1`, 20 pass / 2 fail, les deux échecs se ramenant au
+seul `signature()` reverté. `grep DECORATIVE src/**/*.ts` → 0 correspondance. Ce n'était pas
+un défaut du travail, c'était **ma course**.
+
+Un `TEST_EXIT` rouge obtenu sur un fichier en cours d'édition est une course, pas un constat.
+La seule lecture admise pendant une édition est `read`, qui n'a pas d'effet de bord.
+
+## Règle 10 — un défaut trouvé dans l'artefact évalué ne se ferme pas sur place
+
+La porte de refus de livraison exige qu'aucun finding `high` ne reste `open`. La règle 8 et
+C-36 interdisent au revalidateur d'éditer la proposition qu'il valide. Les deux règles se
+neutralisent : un revalidateur qui découvre un défaut `high` **dans la proposition** ne peut
+le clore qu'en editant la proposition, donc en détruisant son indépendance.
+
+**Interdit** : requalifier un `open` en `out_of_scope` pour franchir la porte. C'est
+falsifier son propre audit, et c'est exactement le défaut que C-22 et C-42 ont sanctionné.
+
+**Résolution** : distinguer deux natures de finding.
+
+| finding porte sur | qui peut le clore | statut attendu du revalidateur |
+|---|---|---|
+| le **système audité** (`packages/**`) | l'agent d'implémentation | `open` → `closed` par le correctif testé |
+| l'**artefact évalué** (la proposition) | l'agent de révision du cycle suivant | `open`, avec le remède en une ligne et la section `## Handed back to` |
+
+Un revalidation file est **complet** même porteur d'un `open` : l'observation est le livrable,
+la clôture du défaut appartient au cycle de révision suivant. La sévérité du défaut dans le
+document n'est pas la sévérité du finding contre le harnais — un `high` dans un brouillon est
+un `medium` contre le système tant que le brouillon n'est pas implémenté.
+
+Coût de cette règle : elle autorise un rapport livré avec un `open`. C'est le prix de
+l'indépendance de l'audit, et l'audit indépendant est le seul qui tranche.
