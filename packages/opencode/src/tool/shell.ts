@@ -139,6 +139,35 @@ function commands(node: Node) {
   return node.descendantsOfType("command").filter((child): child is Node => Boolean(child))
 }
 
+// File redirection targets (`> file`, `2> file`, `>> file`, `2>file`) are files
+// the command writes to, but `parts` drops `redirection` and `file_redirect`
+// nodes, so they never reached `argPath` and never triggered the
+// `external_directory` permission. Recover the target word of every
+// `file_redirect`, skipping descriptor redirects (`2>&1`, `<&0`) whose target is
+// a `file_descriptor` rather than a path word, and heredocs whose target is a
+// `heredoc_body`.
+function redirectTargets(node: Node) {
+  const out: string[] = []
+  const skip = new Set(["file_descriptor", "file_redirection_operator", "heredoc_body", "heredoc_start"])
+  const push = (redirect: Node) => {
+    for (let i = 0; i < redirect.namedChildCount; i++) {
+      const child = redirect.namedChild(i)
+      if (!child || skip.has(child.type)) continue
+      const text = child.text.trim()
+      if (!text || text === ">" || text === ">>" || text === "<" || text === ">&" || text === "<&") continue
+      out.push(text)
+    }
+  }
+  // tree-sitter-bash and tree-sitter-cmd wrap a redirect in `file_redirect`;
+  // tree-sitter-powershell uses `redirection` with a `file_redirection_operator`
+  // child. Handle both; descriptor redirects (`2>&1`) and heredocs are skipped
+  // by type so their non-path targets are never resolved as files.
+  for (const type of ["file_redirect", "redirection"]) {
+    for (const redirect of node.descendantsOfType(type)) if (redirect) push(redirect)
+  }
+  return out
+}
+
 function unquote(text: string) {
   if (text.length < 2) return text
   const first = text[0]
@@ -500,6 +529,14 @@ export const ShellTool = Tool.define(
             const dir = (yield* fs.isDir(resolved)) ? resolved : path.dirname(resolved)
             scan.dirs.add(dir)
           }
+        }
+
+        const statement = node.parent?.type === "redirected_statement" ? node.parent : node
+        for (const arg of redirectTargets(statement)) {
+          const resolved = yield* argPath(arg, cwd, ps, shell)
+          if (!resolved || containsPath(resolved, instance)) continue
+          const dir = (yield* fs.isDir(resolved)) ? resolved : path.dirname(resolved)
+          scan.dirs.add(dir)
         }
 
         if (tokens.length && (!cmd || !CWD.has(cmd))) {

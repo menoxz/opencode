@@ -936,6 +936,41 @@ describe("tool.shell permissions", () => {
     }),
   )
 
+  // A shell redirection target (`> file`) is a file the command writes to, but it
+  // is a `file_redirect` node that `parts` drops, so before the fix it never
+  // reached `argPath` and never raised the external_directory permission: a
+  // command could write anywhere the process could. The instance boundary is set
+  // with `runIn("/tmp/project")`, whose resolved worktree stays "/" and therefore
+  // does not swallow an absolute path the way a real temp dir under the home
+  // directory does.
+  each("asks for external_directory permission when a redirect target is outside project", () =>
+    Effect.gen(function* () {
+      const outerTmp = yield* tmpdirScoped()
+      const target = path.join(outerTmp, "redirect-out.txt")
+      yield* runIn(
+        "/tmp/project",
+        Effect.gen(function* () {
+          const err = new Error("stop after permission")
+          const requests: Array<Omit<Permission.Request, "id" | "sessionID" | "tool">> = []
+          expect(
+            yield* fail(
+              {
+                command: `echo secret > ${target}`,
+                description: "Redirect to external file",
+              },
+              capture(requests, err),
+            ),
+          ).toMatchObject({ message: err.message })
+          const extDirReq = requests.find((r) => r.permission === "external_directory")
+          const expected = glob(path.join(outerTmp, "*"))
+          expect(extDirReq).toBeDefined()
+          expect(extDirReq!.patterns).toContain(expected)
+          expect(extDirReq!.always).toContain(expected)
+        }),
+      )
+    }),
+  )
+
   each("does not ask for external_directory permission when rm inside project", () =>
     Effect.gen(function* () {
       const tmp = yield* tmpdirScoped()
