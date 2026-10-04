@@ -35,6 +35,7 @@ import type { JSONSchema7 } from "@ai-sdk/provider"
 import { SessionCompaction } from "./compaction"
 import { Bus } from "../bus"
 import { SystemPrompt } from "./system"
+import { unavailableToolsLine } from "./unavailable-tools"
 import { SelfImprove } from "@/self-improve"
 import { Instruction } from "./instruction"
 import { Plugin } from "../plugin"
@@ -2286,6 +2287,18 @@ export const layer = Layer.effect(
             const toolListStart = Date.now()
             const cachedToolList = injectionCache.get(`toolList:${securityMode}`)
             const toolList = cachedToolList.cached ? cachedToolList.value : injectionCache.set(`toolList:${securityMode}`, yield* sys.toolList(securityMode))
+            // P03: a connected server excluded from the catalogue by a health
+            // failure must be named, not silently missing. Readiness is live state,
+            // so it is computed outside the cached tool list; a readiness failure
+            // must never break the turn, hence the catch to an empty map.
+            const mcpReadiness = mcp.readiness
+              ? yield* mcp.readiness().pipe(Effect.catch(() => Effect.succeed({} as Record<string, boolean>)))
+              : ({} as Record<string, boolean>)
+            const unavailableLine = unavailableToolsLine(
+              Object.entries(mcpReadiness)
+                .filter(([, ok]) => !ok)
+                .map(([name]) => name),
+            )
             contextSummary.add(
               "toolList",
               toolList ? `inject tool list for security mode ${securityMode}` : "no tool list available",
@@ -2294,7 +2307,7 @@ export const layer = Layer.effect(
               { cached: cachedToolList.cached },
             )
 
-            system.push([...instructions, env.stable, preloadedSkills, toolList].filter((entry) => entry).join("\n"))
+            system.push([...instructions, env.stable, preloadedSkills, toolList, unavailableLine].filter((entry) => entry).join("\n"))
             system.push(env.runtime)
             if (plan) volatile.push(plan)
             // What the model already holds, stated before it acts. A repeated
