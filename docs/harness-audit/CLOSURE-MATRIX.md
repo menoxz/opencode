@@ -184,7 +184,7 @@ Statuts lus par lecture directe, jamais par regexp (C-142).
 | P01 | FAIL | aucune | revalidation :246 |
 | P02 | PASS_WITH_CHANGES | fusionnee | 22 pass / 0 fail |
 | P03 | FAIL | aucune | revalidation :130 |
-| P04 | FAIL | aucune | revalidation :282 |
+| P04 | FAIL | arbitrage C-179 : comportement delibere, changement rejete | revalidation :282 ; Retry-After long voulu et encode par deux tests verts (retry.test.ts:74-79, :83-84), borner les chemins d en-tete casserait ces tests ; RETRY_MAX_DELAY = 2_147_483_647 est le plafond setTimeout, non une politique oubliee ; sans en-tete borne a 30 s |
 | P05 | PASS_WITH_CHANGES | fusionnee | 10 pass / 0 fail |
 | P06 | PASS_WITH_CHANGES | fusionnee | 6 pass / 0 fail |
 | P07 | PASS_WITH_CHANGES | fusionnee | commit fbc65658, 2 pass / 0 fail |
