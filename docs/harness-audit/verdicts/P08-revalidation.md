@@ -1,257 +1,220 @@
-# P08 — Revalidation après re-scope (indépendant)
+# P08 — revalidation cycle 4
 
-Re-scope sujet : `docs/harness-audit/proposals/P08-retention-default.md` (489 lignes).
-Verdict d'origine : `docs/harness-audit/verdicts/P08-verdict.md` (`PASS_WITH_CHANGES`, 6 Required changes).
-Arbitrage opposable : **A-1**, `docs/harness-audit/REVALIDATION-STATUS.md:75`.
+**Artifact evaluated**: `docs/harness-audit/proposals/P08-retention-default.md` (530 lines, mtime `2026-10-04 08:24:13`, 29 006 bytes).
+**Revalidator**: independent. No repair was performed on the artifact. `git` was not used.
+**Real database**: `C:\Users\jeanl\.local\share\opencode\opencode.db`, all queries `sqlite3 -readonly`.
+**Probe artifacts**: `C:\Users\jeanl\AppData\Local\Temp\opencodev2\p08-r1-r2-probe.log`, `p08-r1d-mtime.log`, `p08-r1d2.log`.
 
-> Je n'ai rédigé ni la proposition, ni son verdict, ni le re-scope. Je n'ai modifié aucun fichier
-> sous `packages/**`, je n'ai exécuté aucune commande `git`, et je n'ai pas édité la proposition (C-36).
+**Path correction, recorded once**: the citation path is
+`packages/opencode/src/storage/maintenance.ts` and `packages/opencode/src/storage/maintenance.test.ts`,
+NOT `src/session/`. `packages/opencode/test/session/maintenance.test.ts` does not exist. The proposal
+cites the correct path (`:348`, `:355`, `:409`, `:411`); the c3 brief that introduced `src/session` did not.
 
-## Proposal
+---
 
-Ce que la proposition **prend maintenant pour périmètre**, annoncé dans son titre même
-(`P08-retention-default.md:1`) :
+## R1 — `P08-CENSUS-SQL-FREELIST-INVALIDE` → RESOLVED
 
-> `# P08 — Census en lecture seule de la croissance de `opencode.db` (aucune purge par défaut)`
+The c4 SQL (`:258-259`) reads `freelist_count` from `pragma_freelist_count`, not from
+`pragma_page_count`. Executed against the real database:
 
-et sa bannière de re-scope (`:3`) :
+| # | Query | EXIT | Result |
+|---|---|---|---|
+| R1-A | `SELECT * FROM pragma_page_count;` | 0 | `998429` — one column, one row |
+| R1-B | `SELECT * FROM pragma_freelist_count;` | 0 | `46` |
+| R1-C | `SELECT page_count - freelist_count FROM pragma_page_count;` (old form) | **1** | `Parse error near line 1: no such column: freelist_count` |
+| R1-E | `SELECT name FROM pragma_table_info('pragma_page_count');` | 0 | `page_count` |
+| R1-F | `SELECT name FROM pragma_table_info('pragma_freelist_count');` | 0 | `freelist_count` |
 
-> `Re-scope après verdict PASS_WITH_CHANGES et arbitrage A-1 — purge par défaut abandonnée, census read-only seul, effort L retiré`
+R1-A/B are the exact statements the proposal prints as its positive control at `:272-273`; R1-E/F are
+the authoritative column names and settle the question directly — `pragma_page_count` exposes
+**only** `page_count`, and `freelist_count` lives in `pragma_freelist_count`. R1-C reproduces the old
+form with the claimed error text and a non-zero exit, matching `:271` verbatim.
 
-Le mécanisme est un census SQL en lecture seule (`census()`, `:237-251`) câblé **hors** de
-`maintain()` et **hors** de `schedule()` (`:259-269`), plus une fonction d'avertissement
-`logRetentionOff()` (`:262-266`). Effort déclaré `S` (`:454-458`).
+**c4 SQL executed as extracted from the file** (not retyped). The SQL is a TypeScript template literal
+spanning `:258-259`; the trailing `,` after the closing backtick is a TS argument separator *outside*
+the SQL, so extraction takes the literal's interior only:
 
-### A-1 est-elle respectée ?
+```
+SELECT (SELECT page_count FROM pragma_page_count) * (SELECT page_size FROM pragma_page_size) AS db,
+((SELECT page_count FROM pragma_page_count) - (SELECT freelist_count FROM pragma_freelist_count)) * (SELECT page_size FROM pragma_page_size) AS free
+```
 
-**Oui.** A-1 tranche : « **Opt-in + census SQL read-only seul.** Aucune purge par défaut », et
-« La proposition P08 se replie sur B […] Le refus de purge est désormais une décision tracée, pas
-une omission ».
+Result: **EXIT=0**, header `db|free`, values **`4089565184 | 4089376768`**.
 
-Trois contrôles indépendants, tous positifs :
+Cross-check: `998429 * 4096 = 4 089 565 184` and `(998429 - 46) * 4096 = 4 089 376 768`, both
+reproduced independently (R2-D). `4089565184` matches the file size stated at `:159`.
 
-1. **Aucune purge automatique.** La chaîne de rétention est inchangée et vérifiée ligne à ligne :
-   `maintenance.ts:51` `retentionDays(env = process.env)` → `:52-53` `Number(raw)` puis
-   `Number.isFinite(raw) && raw > 0`, donc `undefined` sans variable. `maintenance.ts:101-108`
-   `maintain()` ne purge que si `days !== undefined`. `maintenance.ts:176-184` `schedule()` appelle
-   `maintain(db, purge ? process.env : {})`. Aucun code n'injecte de `OPENCODE_PART_RETENTION_DAYS`.
-   La purge automatique est donc réellement absente, pas seulement promises.
-2. **Aucun garde-fou d'effort `L`.** Le bloc `§8` (`:460-464`) ne conserve pas `L` comme
-  |Referentiel : il le **refuse explicitement** — « La règle « effort `L` » n'est pas simplement
-   révisée à la baisse : **elle est retirée avec la purge automatique**, qui en était le seul
-   motif. » La ligne d'effort unique du document est `S` (`:456`).
-3. **Aucune trace de R1 en annexe.** Une recherche exhaustive des marqueurs `R1|Voie A|annexe|Annexe|
-   effort L` sur les 489 lignes ne remonte que dix occurrences, dont aucune survivance de la voie A :
-   les titres `:1` et `:3`, la justification de rejet « toute purge par défaut est un pari sans
-   contrepartie » `:140`, la ligne 419 qui est le commentaire `// purge:true, env par défaut` du
-   **nouveau** test, la ligne 436 (« 24 correspondances »), le bloc de refus `§8` `:460-463`, et les
-   deux lignes du tableau `§9` `:474` et `:479` qui annoncent l'absence de purge par défaut. **Il n'y
-   a pas d'annexe.** A-1 est respectée.
+Two extraction failures of mine are on the record and were **not** counted against the proposal:
+the first run kept the markdown backticks (syntax error, EXIT=1) and the second kept the trailing TS
+comma (`incomplete input`, EXIT=1). Both were extraction defects; the SQL itself is executable. Logged
+in `p08-r1d-mtime.log:1-6`.
 
-## Revisions applied
+The census is a new file (`:238`, `src/storage/census.ts`), so no census source exists to be wrong;
+what had to be true — that this SQL prepares and returns the two values — is now true on the real
+database.
 
-Les 6 Required changes du verdict, point par point, avec la preuve du traitement :
+## R2 — `P08-E13-CHIFFRE-50POURCENT-NON-REPRODUIBLE` → RESOLVED
 
-| # | Required change | Traitement vérifié |
-|---|---|---|
-| 1 | Abandonner le défaut à 90 jours | **Fait.** `:22-33` (E1) et `:35-42` (E2) citent `maintenance.ts:50-54` et `:101-108`, que j'ai relus : conformes au caractère littéral. `:1`, `:3`, `:474`, `:479` annoncent l'absence de purge par défaut. |
-| 2 | Corriger le chemin `exec` de R2a | **Traité par suppression.** R2a (boucle par lots) n'est pas proposé ; `purgeOldParts` (`maintenance.ts:65-72`) reste inchangé et n'est atteignable qu'en opt-in sur la seule base principale. |
-| 3 | Ajouter `maintenance.test.ts:69-71` à la régression | **Traité par suppression, et signalé.** `:447-452` explique que le risque disparaît car `purgeOldParts` conserve son type de retour. `:70` garde bien `toBe(false)` : vérifié, `maintenance.ts:65` déclare toujours `boolean`. Le document signale lui-même « un écart avec le décompte initial, signalé ici plutôt que masqué » `:452`. |
-| 4 | Établir ou corriger le coût annoncé de R2a | **Traité par suppression.** Le census est borné en `time_created` (`:242`) et s'appuie donc sur l'index. Aucune durée publiée. |
-| 5 | Passer `M` à `L`, isoler R3 | **Fait, avec inversion assumée.** R3 retiré (`:5.4`), effort descendu à `S`, `L` explicitement retiré `:460-464`. C'est l'inversion que A-1 a ordonnée. |
-| 6 | Annoncer le périmètre réel dans le titre et le résumé | **Fait.** Le titre et la bannière `:3`, plus `:5-8` (« la base continuera de croître, y compris sur ses parts `reasoning` »). |
-
-### La chaîne « le census n'écrit rien », ligne à ligne
-
-L'affirmation centrale de l'agent est **juste quant au câblage, et fausse quant à
-l'exécutabilité**.
-
-- **Le `checkpoint()` écrit bien.** `maintenance.ts:44-48` : `checkpoint()` exécute
-  `PRAGMA wal_checkpoint(TRUNCATE)` et `:107` `maintain()` l'appelle **inconditionnellement**.
-  Toute fonction câblée sur ce chemin écrivrait donc. Le constat de l'agent est juste.
-- **Le census est bien hors de ce chemin.** `:259-269` le place hors de `maintain()` et de
-  `schedule()`, dont les corps relus (`:101-108`, `:176-184`) n'appellent que `purgeOldParts` et
-  `checkpoint`. Aucun `census()` dans ces corps. **Vérifié.**
-- **Les deux requêtes du census sont bien des `SELECT`** (`:241-243`, `:247-248`), et une
-  troisième assertion `every(q => /^SELECT/i.test(q.trim()))` est présente `:377`, avec refus de
-  `DELETE|UPDATE|INSERT|VACUUM` `:375` et refus de `PRAGMA` hors `page_count`/`page_size` `:376`.
-  **Le test exécutable exigé existe et est correct.**
-
-Mais la seconde requête **ne se prépare pas sur une base réelle** :
+Recomputed with my own SQL, same method the file declares at `:173-175`:
 
 ```sql
--- propositions/P08-retention-default.md:248
-(SELECT page_count - freelist_count FROM pragma_page_count) * (SELECT page_size FROM pragma_page_size) AS free
+SELECT coalesce(json_extract(data,'$.type'),'NULLTYPE') AS type, count(*), sum(length(data)) FROM part GROUP BY type;
+SELECT count(*), sum(length(data)) FROM part;
+SELECT coalesce(json_extract(data,'$.type'),'NULLTYPE') AS type, count(*), sum(length(data)) FROM part WHERE session_id='ses_106da869affe6n5CLpUQUcAyj4' GROUP BY type;
 ```
 
-Mesuré sur la base réelle, `sqlite3 -readonly`, `EXIT=1` :
+Base totals — **672 804 parts, 3 475 615 849 characters** (matches `:160`):
 
+| type | rows | characters | share |
+|---|---|---|---|
+| tool | 190 947 | 2 953 691 159 | **84.982 %** |
+| reasoning | 108 702 | 265 175 764 | **7.6285 %** |
+| text | 74 393 | 187 562 336 | 5.396 % |
+| step-finish | 143 031 | 25 626 989 | 0.737 % |
+| patch | 10 529 | 20 341 347 | 0.585 % |
+| file | 248 | 17 125 298 | 0.493 % |
+| step-start | 143 783 | 6 005 619 | 0.173 % |
+| compaction | 1 171 | 87 337 | 0.003 % |
+
+Session `ses_106da869affe6n5CLpUQUcAyj4`: `reasoning` = **6 410 314**, session total = **30 251 627**
+→ `6410314 / 30251627` = **21.190 %**.
+
+File: `page_count = 998429`, `page_size = 4096`, product **4 089 565 184** (matches `:159`).
+
+The on-disk footprint confirms 4 089 565 184 is the whole database, not just the main file:
+`opencode.db` = 4 089 565 184, `opencode.db-wal` = 4 128 272, `opencode.db-shm` = 32 768,
+sum **4 093 726 224** bytes = 4 093,7 Mo = 3 904,1 MiB. This matters for the open finding below:
+`INFERE:` the legacy « base de 5 209 Mo » at `:166` is ~27 % above the real footprint **including**
+WAL and shm, so it cannot be excused as a different accounting boundary. Command:
+`Get-ChildItem -LiteralPath "C:\Users\jeanl\.local\share\opencode" -File | Where-Object Name -like "opencode.db*"
+| Measure-Object -Property Length -Sum` (EXIT=0).
+
+All four claims at `:160-163` reproduce exactly: 672 804 parts, 3 475 615 849 chars, 6 410 314 /
+30 251 627 = 21,2 %, reasoning 7,6 % vs tool 85,0 %. The false "3 045 134 caractères = 50 % de la
+session" no longer appears as a claim.
+
+**Positive control for the JSON-type query form** (same database, same statement shape):
+`json_extract(data,'$.type')='reasoning'` → **108 702 rows**; negative control
+`'__no_such_type__'` → **0 rows**, both EXIT=0. The query discriminates, so the group-by is not
+silently returning an empty set.
+
+**Provenance block `:165-171` — honest, not a re-import of the bad number.** It (a) marks the three
+legacy volume figures explicitly as *not re-measured*, (b) keeps the 50 % figure only as a cited
+historical error, (c) states plainly that the reasoning figure was false and is replaced. The false
+value is quarantined with its origin attached, not restated as fact. One defect survives inside that
+block — see `P08-E13-VOLUMES-LEGALES-PERIMEES`.
+
+## R3 — `P08-REECRITURE-DEPENDE-ENV-AMBIANT` → RESOLVED
+
+**Does `schedule()` accept an env argument? No** — and the proposal says so correctly at `:437`.
+
+```ts
+// packages/opencode/src/storage/maintenance.ts:176-184
+export function schedule(
+  db: Runner,
+  options: { intervalMs?: number; purge?: boolean } = {},
+): () => void {
+  ...
+  const purge = options.purge ?? true
+  const timer = setInterval(() => maintain(db, purge ? process.env : {}), options.intervalMs ?? CHECKPOINT_INTERVAL_MS)
 ```
-$ sqlite3 -readonly $db "SELECT 'PGC_COLS=' || group_concat(name) FROM pragma_table_info('pragma_page_count');
-                         SELECT 'FREELIST=' || (SELECT freelist_count FROM pragma_freelist_count);"
-PGC_COLS=page_count
-FREELIST=46
-EXIT=0
 
-$ sqlite3 -readonly $db "SELECT 'FREELIST=' || (SELECT page_count-freelist_count FROM pragma_page_count);"
-Error: in prepare, no such column: freelist_count
-  SELECT 'FREELIST=' || (SELECT page_count-freelist_count FROM pragma_page_count
-                             error here ---^
-EXIT=1
-```
+The signature (`maintenance.ts:176-179`) has exactly two parameters and no env slot; `:184` forwards
+ambient `process.env` whenever `purge` is true, and `:183` makes `purge` default to true. So
+`schedule(db, { intervalMs: 5 })` reads the machine's environment. The proposal's diagnosis at
+`:438-440` is correct: without pinning, `expect(... /DELETE/i).toBe(false)` at `:448` passes only by
+the accident of the variable being absent on the author's machine.
 
-`pragma_page_count` n'expose **qu'une seule colonne**, `page_count`. `freelist_count` vit dans la
-fonction table distincte `pragma_freelist_count`, qui répond `46`. La forme correcte est donc
-`(SELECT page_count FROM pragma_page_count) - (SELECT freelist_count FROM pragma_freelist_count)`.
+**Can the prescribed test reach its pass state? Yes** — verified against the real code:
 
-Conséquence : **le census échoue à se préparer sur toute base réelle**, donc `census()` lève sur le
-chemin nominal. Le titre dit « read-only » et il l'est ; il ne fonctionne pas. C'est le défaut
-majeur de cette revalidation. Noter que la méthode de mesure de `P08-VACUUM-COUT-NON-MESURE`
-(`:196-197`) utilise, elle, la forme **correcte** `page_count * page_size` : l'incohérence est
-interne au document.
+- `maintenance.ts:101` — `maintain(db, env = process.env, now = Date.now())`.
+- `maintenance.ts:51-54` — `retentionDays` returns `undefined` when the variable is absent
+  (`Number(undefined)` → `NaN`, `Number.isFinite(NaN)` false), so `:103` skips `purgeOldParts`.
+- `maintenance.ts:65-72` — `purgeOldParts` is the only `DELETE` emitter (`DELETE FROM part WHERE …`),
+  which is what makes the negative assertion at `:448` meaningful rather than vacuous.
+- `maintenance.ts:44-48` — `checkpoint` emits only `PRAGMA wal_checkpoint(TRUNCATE)`, no `VACUUM`,
+  so the assertion at `:450` is satisfiable.
+- `maintenance.ts:111` — `resetPurgeClock()` exists and is the established neighbour convention
+  (`maintenance.test.ts:76`, `:83`, `:93`, `:140`).
 
-## Status
+**Is the `delete`/`finally` restore complete for both branches? Yes.** `:441` captures
+`ambient = process.env.OPENCODE_PART_RETENTION_DAYS` before anything; `:442` deletes it; `:452-453`
+restores in `finally` with an explicit `ambient === undefined` branch (stay deleted) and an `else`
+branch (reassign). Both outcomes of "was it set?" are covered, and the restore runs even if the
+`schedule`/sleep/`stop` body throws.
 
-| Objet | Statut | Preuve |
+**Does the direct assertion match the neighbouring convention? Yes.** The second assertion at
+`:459` calls `StorageMaintenance.maintain(main, {})` with an explicit env object, exactly as
+neighbours do at `maintenance.test.ts:85`, `:98`, `:100`, `:101`, `:107`. It is placed *after* the
+`finally`, so the ambient variable is already restored and the assertion reads no ambient state —
+which is the stated purpose at `:455-456`. `spy()`/`db.queries` usage matches the existing
+`schedule` tests at `:113-121`, including the `intervalMs: 5` + short-sleep shape at `:115-116`.
+
+**Was the test file modified by the revision agent? No.**
+
+- `packages/opencode/src/storage/maintenance.test.ts` — LastWriteTime **2026-08-16 13:48:34**, length
+  9 166 bytes. The proposal's LastWriteTime is **2026-10-04 08:24:13**. The test file predates the
+  revision by 49 days and is far outside any c4 window.
+- Content still uses the colocated `src/` import: `maintenance.test.ts:11`
+  `import { StorageMaintenance } from "./maintenance"`.
+- `packages/opencode/src/storage/maintenance.ts` — LastWriteTime **2026-08-16 13:48:02**, also
+  untouched.
+- `packages/opencode/src/shell/shell.ts` (2026-07-29 09:05:05),
+  `packages/opencode/src/tool/shell.ts` (2026-10-04 06:15:57),
+  `packages/plugin/src/shell.ts` (2026-05-25 23:08:18). `INFERE:` the `src/tool/shell.ts` timestamp
+  predates the P08 rewrite by >2 h and belongs to another workstream; P08 contains zero occurrences
+  of the string `shell` (grep over the proposal, include `P08-retention-default.md` → 0 matches, run
+  under the same positive-control conditions below), so no revision step could have touched it.
+
+**Positive controls for the zero-result searches** (a zero match proves nothing alone):
+
+| search | result | positive control, same path + same include |
 |---|---|---|
-| A-1 respectée | **confirmé** | `maintenance.ts:51-53`, `:101-108`, `:176-184` relus ; 10 marqueurs R1/Voie A, aucune annexe |
-| Census hors `maintain()`/`schedule()` | **confirmé** | `:259-269` ; corps de `maintain`/`schedule` relus, aucun appel `census()` |
-| `checkpoint()` écrit (`wal_checkpoint(TRUNCATE)`) | **confirmé** | `maintenance.ts:44-48`, `:107` |
-| Test exécutable « n'écrit rien » présent | **confirmé** | `:375-377` |
-| SQL du census exécutable | **RÉFUTÉ** | `EXIT=1`, `no such column: freelist_count` |
-| Fichier de test au chemin réel | **confirmé** | `packages/opencode/src/storage/maintenance.test.ts`, 246 lignes ; `:139-147` relu et identique à l'état « actuel » cité `:396-404` |
-| Dossier `test/storage/` pour le nouveau test | **confirmé** | existe : `db.test.ts`, `storage.test.ts`, `db-migrations.test.ts`, `json-migration.test.ts`, `workspace-time-migration.test.ts` |
-| Commandes de test §7 | **confirmées** | `packages/opencode/package.json:10` = `"test": "bun test --timeout 30000"` ; `package.json:25` racine = `"test": "echo 'do not run tests from root' && exit 1"` — les deux cités correctement |
-| Chiffres E13 | **re-mesurés** |voir ci-dessous |
+| `from "\./maintenance"`, path `packages/opencode/src/storage`, include `maintenance.test.ts` | **1** match (`:11`) | same search itself is the positive control |
+| `from "\./maintenance"`, path `packages/opencode/test`, include `maintenance.test.ts` | **0** matches | `*.test.ts` files under `packages/opencode/test` = **340**; under `packages/opencode/src` = **68** — the glob/enumeration form works in both trees |
+| pattern `shell`, path `docs/harness-audit/proposals`, include `P08-retention-default.md` | **0** matches | pattern `maintenance\.test\.ts`, same path + include → **17** matches |
+| `json_extract` type query, real DB | 108 702 rows | negative control `__no_such_type__` → 0 rows |
 
-### E13 — re-mesuré, le shell étant autorisé (règle 7 d'`ORCHESTRATION-RULES.md`)
-
-L'objection `P08-E13-NOT-REMEASURED` (« faute d'accès shell ») reposait sur une interdiction
-levée. Elle est donc re-mesurée, et **ses quatre chiffres sont caducs**.
-
-Base réelle : `C:\Users\jeanl\.local\share\opencode\opencode.db`, `sqlite3 -readonly`, `EXIT=0`.
-
-| grandeur | mesuré | dans la proposition |
-|---|---|---|
-| taille du fichier | **3 900,1 Mo** (`-wal` 3,9 Mo) ; `page_count=998429`, `page_size=4096` | « 5 209 Mo » (état du dossier) — **non reproductible aujourd'hui** |
-| parts, total | **672 804** parts | non chiffré |
-| caractères, total | **3 475 615 849** | non chiffré |
-| `tool` | 190 947 parts / **2 953 691 159 car.** (85,0 %) | — |
-| `reasoning` | 108 702 parts / **265 175 764 car.** (7,6 %) | — |
-| `freelist` | **46 pages = 188 416 octets** (0,005 % du fichier) | — |
-
-Contrôle de cohérence : la somme des lignes par type vaut exactement `672 804`, et la somme des
-caractères par type vaut exactement `3 475 615 849`.
-
-Le chiffre le plus contestable, « 3 045 134 caractères = **50 % d'une session** » (`:484-485`), est
-**non reproductible**. Session la plus lourde en `reasoning` aujourd'hui,
-`ses_106da869affe6n5CLpUQUcAyj4` : `reasoning` = **6 410 314 car.** sur 1 728 parts, pour
-**30 251 627 car.** de parts au total sur cette session, soit **21,2 %**, et non 50 %. Sur
-l'ensemble : `reasoning` pèse 7,6 % de la base, `tool` 85,0 %.
-
-La tendance, elle, est confirmée et plus marquée que le chiffreannounced : `NSESS=2352`, et les
-**1 000 sessions les plus récentes** concentrent **1 988 649 418 caractères**, soit **57 %** de la
-base dans 42 % des sessions.
-
-## Remaining objections
-
-Chaque objection porte son statut en tête de ligne, conformément à la règle d'implémentabilité.
-
-- **`open` — `P08-CENSUS-SQL-FREELIST-INVALIDE`.** `:248` utilise `freelist_count` à l'intérieur de
-  `pragma_page_count`, qui n'a qu'une colonne. Mesuré : `PGC_COLS=page_count`, puis
-  `Error: in prepare, no such column: freelist_count`, `EXIT=1`. Le census ne s'exécute donc sur
-  aucune base réelle, et le titre annonce une fonctionnalité qui lève. Correctif d'une ligne :
-  `(SELECT page_count FROM pragma_page_count) - (SELECT freelist_count FROM pragma_freelist_count)`.
-  **Bloquant.** Le test §7 ne l'attrape pas : le point 4 de §7 ne couvre qu'un handle qui lève, et un spy ne
-  valide pas le SQL contre un schéma réel.
-- **`open` — `P08-REECRITURE-DEPENDE-ENV-AMBIANT`.** Le test réécrit `:419` appelle
-  `schedule(db, { intervalMs: 5 })` sans `purge`, donc `maintenance.ts:184` transmet `process.env`.
-  Le garde-fou « rien n'est supprimé sans `OPENCODE_PART_RETENTION_DAYS` » tient donc sur
-  l'absence de la variable **dans l'environnement de la machine**, non sur une assertion portant sur
-  `{}`. Les tests voisins (`:85`, `:98`, `:100`, `:101`, `:107`) passent un env explicite ; le
-  nouveau test, seul, dépend de l'ambiant. Sur une machine où la variable est posée, le test rouge
-  pour une raison extérieure à la politique. Correctif : passer un env vide explicite.
-- **`open` — `P08-E13-CHIFFRE-50POURCENT-NON-REPRODUIBLE`.** `:484-485` publie « 3 045 134
-  caractères = 50 % d'une session » en `residual` `assumé`. Mesuré : 6 410 314 caractères de `reasoning`,
-  soit **21,2 %** de la session la plus lourde du jour, et 7,6 % de la base. La mention « non
-  re-mesurée ici » `:485` est honnête, mais un chiffre faux publié reste un chiffre faux : il est
-  maintenant mesurable, donc remplaçable par une phrase. **Bloquant au sens de la règle 3.**
-- **`accepted` — `P08-TESTS-EXISTANTS-A-REECRIRE`.** Le chemin réel est bien
-  `packages/opencode/src/storage/maintenance.test.ts` (246 lignes), **pas** `test/` (C-40 respecté).
-  `:139-147` est relu et **identique au caractère près** à l'« état actuel » cité `:396-404` : même
-  titre, même `purge: false`, mêmes deux assertions. La réécriture proposée `:416-432` est
-  structurellement saine : elle couvre le **chemin par défaut** (là où l'ancien ne couvrait que
-  `purge: false` des bases secondaires), interdit `DELETE` **et** `VACUUM`, et **conserve** la
-  garantie secondaire existante. Elle ne casse aucun autre cas du fichier : l'inventaire de `:435-445`
-  recense 24 correspondances et les 23 autres sont classées `inchangé`, et ma relecture du fichier
-  confirme qu'aucun autre cas n'encode de purge par défaut. **Réserve assumée** : la dépendance à
-  l'environnement ci-dessus, qui n'est pas traitée.
-- **`out_of_scope` — `P08-VACUUM-COUT-NON-MESURE`.** **Approuvé, sans réserve.** `:186-191` ne
-  « reformule » pas les chiffres : il les **supprime** du raisonnement, ce qui est exactement la
-  bonne pratique — un chiffre déduit qui ressemble à une mesure oriente vers un budget faux. Les
-  trois étapes de mesure sont complètes et exécutables (`:195-197`) : (a) chronométrer `VACUUM` sur
-  une **copie**, (b) lire la taille avant/après, (c) publier durée **et** taille avec base et
-  matériel. La ligne « aucune de ces trois étapes n'a été faite ici » `:198` est exacte. La voie B
-  n'exécute ni `VACUUM` ni purge, donc ces durées n'entrent dans aucune décision de ce document.
-  **Justification écrite** : conforme à `out_of_scope`. J'ajoute que la mesure est aujourd'hui
-  sans objet : `freelist = 46 pages` sur 3 900 Mo, soit 188 416 octets récupérables — un `VACUUM`
-  n'aurait rien à rendre ici.
-- **`out_of_scope` — `P08-R2B-REASONING-NON-BORNE`.** Classé `out_of_scope`, **et non `open`**,
-  conformément à A-1 qui décide explicitement de ne pas borner cette croissance. La section `:483-486`
-  le présente correctement comme `residual` **assumé** et non corrigé — « le census la mesure, ne la
-  corrige pas » `:485` — et ne prétend à aucun remède. C'est bien un `out_of_scope` et non un point
-  traité presented comme résolu. **Justification écrite** : la correction exigerait un seuil par
-  espace disque cible **et** le filet `opencode db backup` qui manque (E10). Réserve indépendante :
-  le chiffre publié est faux (voir ci-dessus), ce qui n'en fait pas un point `open` de cadrage.
-- **`refused` — `P08-E13-NOT-REMEASURED`.** L'objection est fondée sur « pas d'accès shell ». Le
-  shell est autorisé (règle 7 d'`ORCHESTRATION-RULES.md`) et **fonctionne** : `sqlite3 -readonly`,
-  `EXIT=0`, quatre chiffres obtenus. Le **`grep` ne souffre d'aucun EPERM** sur cette machine — il a
-  rendu ses résultats du premier coup (23 correspondances sur `maintenance.test.ts`, 10 sur la
-  proposition, 5 sur `maintenance.ts`). La prémisse de l'objection est donc démontrée fausse, avec
-  preuve ; elle est **refusée**. Les valeurs mesurées sont consignées plus haut.
-
-## Regressions introduced
-
-**Aucun test vert n'est cassé.**
-
-- Le nouveau `packages/opencode/test/storage/census.test.ts` est un fichier **créé**, dans un dossier
-  qui existe déjà. Il ne peut casser aucun test existant.
-- La réécriture de `maintenance.test.ts:139-147` est confinée à un bloc `test()`. Les 23 autres cas
-  du fichier sont inchangés, et aucun n'encode de purge par défaut : la réécriture ne modifie ni
-  `maintenance.ts`, ni une signature, ni un timer. `purgeOldParts` conserve son type `boolean`
-  (`maintenance.ts:65`), donc `maintenance.test.ts:70` reste vert sans retouche.
-- Une réserve d'hygiène, déjà comptée comme `open` ci-dessus : le test réécrit dépend de
-  `process.env`. Ce n'est pas une régression d'un test vert vers rouge dans l'environnement de
-  référence, mais une fragilité à corriger avant merge.
-
-Aucun Required change n'est intact : les 6 sont traités (table `## Revisions applied`). Le
-`REVALIDATED-FAIL` ci-dessous ne repose donc **pas** sur des Required changes intacts, comme le
-décrit la règle 2 du gabarit, mais sur un **défaut bloquant nouveau** découvert par ce revalidateur
-et sur deux autres `open` : le document ne peut pas être implémenté en l'état.
+---
 
 ## Final verdict
 
-`REVALIDATED-FAIL`
+**REVALIDATED-PASS_WITH_CHANGES**
 
-Non implémentable : trois résidus `open` subsistent, dont un qui empêche le census de s'exécuter sur
-une base réelle. La règle 3 du gabarit est explicite — « un résidu `open` unique suffit à interdire
-l'implémentation. Ne le requalifie pas en `accepted` pour débloquer » — et je ne le requalifierai
-pas. Le correctif du défaut principal tient en une ligne et ne remet en cause ni A-1, ni le
-re-périmètre, ni aucun des 6 Required changes : une fois cette ligne corrigée, ce document redevient
-`REVALIDATED-PASS_WITH_CHANGES` sous réserve du classement des deux autres `open`, dont un est une
-simple phrase à réécrire.
+All three residues open at c3 are fixed against real code and real data, not reformulated:
+`P08-CENSUS-SQL-FREELIST-INVALIDE` and `P08-E13-CHIFFRE-50POURCENT-NON-REPRODUIBLE` are confirmed by
+execution on the 4 GB live database, and `P08-REECRITURE-DEPENDE-ENV-AMBIANT` is confirmed against the
+real `schedule()`/`maintain()` signatures, with the prescribed test provably able to reach its pass
+state. One minor residual remains, and it does not block implementation.
 
-Ce qui est **acquis** et n'est pas remis en cause : A-1 est respectée point par point ; le census est
-réellement câblé hors de tout chemin qui écrit ; le test exécutable « le census n'écrit rien » est
-présent et correctement écrit ; le refus de purge est une décision tracée, pas une omission.
+| id | severity | statut | evidence | statement |
+|---|---|---|---|---|
+| `P08-CENSUS-SQL-FREELIST-INVALIDE` | blocking | closed | `P08-retention-default.md:258-259`, `:271-273`; `sqlite3 -readonly` EXIT=0 for `pragma_page_count` (`998429`, sole column `page_count`) and `pragma_freelist_count` (`46`, column `freelist_count`); old form EXIT=1 `no such column: freelist_count`; c4 SQL as extracted from the file EXIT=0 → `db=4089565184 free=4089376768` | The freelist column is read from the right table-valued function, and the expression executes on the real database. |
+| `P08-E13-CHIFFRE-50POURCENT-NON-REPRODUIBLE` | blocking | closed | `P08-retention-default.md:160-163`; my SQL: 672 804 parts / 3 475 615 849 chars, reasoning 265 175 764 = 7.6285 %, tool 2 953 691 159 = 84.982 %, session reasoning 6 410 314 / 30 251 627 = 21.190 %, `998429*4096` = 4 089 565 184 | Every figure at `:160-163` reproduces independently to the stated digit; the false 50 % claim is gone from the assertion text. |
+| `P08-E13-PROVENANCE-HONESTE` | material | closed | `P08-retention-default.md:165-171` | The provenance block labels the three legacy volumes as not re-measured and keeps 50 % only as a cited historical error. Quarantined, not smuggled back in. |
+| `P08-REECRITURE-DEPENDE-ENV-AMBIANT` | blocking | closed | `maintenance.ts:176-179` (no env parameter), `:183-184` (`purge ? process.env : {}`), `:101`, `:51-54`, `:65-72`, `:44-48`, `:111`; `P08-retention-default.md:441-454`, `:459`; neighbours `maintenance.test.ts:76,83,85,93,98,100,101,107,113-121,140` | The rewriter's diagnosis of ambient-env dependence is correct, the pin+restore covers both branches, and the second assertion follows the explicit-env convention of the neighbours. |
+| `P08-TEST-FICHIER-INTACT` | material | closed | `maintenance.test.ts` mtime `2026-08-16 13:48:34` vs proposal mtime `2026-10-04 08:24:13`; `maintenance.test.ts:11` still `from "./maintenance"`; `maintenance.ts` mtime `2026-08-16 13:48:02`; `packages/opencode/test` holds 340 `*.test.ts` vs 68 under `src` | The revision agent modified nothing under `packages/**`; the colocated `src/` layout and its import are intact. |
+| `P08-E13-VOLUMES-LEGALES-PERIMEES` | minor | **open** | `P08-retention-default.md:159` states 4 089 565 184 bytes (measured, verified), while `:166-167` still carries « base de 5 209 Mo » and « une session de 485 étapes pèse 6,1 Mo » as un-re-measured legacy orders of magnitude. On-disk footprint including WAL and shm = **4 093 726 224** bytes = 4 093,7 Mo, still ~27 % below 5 209 Mo | §E13 is titled « re-mesuré sur la base réelle » yet still carries a stale file size that no accounting boundary rescues: it exceeds the WAL-inclusive footprint too. The provenance label makes this non-deceptive, but a reader scanning §E13 sees two irreconcilable sizes. The 50 % figure itself is properly retired — this is only the leftover volume text. |
 
-## Effort
+## Handed back to
 
-| item | effort | fichier principal | test à écrire | casser un test existant ? |
-| --- | --- | --- | --- | --- |
-| Corriger `freelist_count` → `pragma_freelist_count` dans la requête de tailles | `S` | `packages/opencode/src/storage/maintenance.ts` | dans `census.test.ts` | aucun |
-| Créer `census()` : 2 `SELECT`, `Census`, `.reduce`, aucun `PRAGMA` mutateur | `S` | `packages/opencode/src/storage/maintenance.ts` | `packages/opencode/test/storage/census.test.ts` | aucun |
-| Créer la sous-commande `opencode db census` | `S` | `packages/opencode/src/storage/maintenance.ts` (point de câblage) ; chemin CLI exact **non relu**, à confirmer à l'implémentation | dans `census.test.ts` | aucun |
-| Créer `logRetentionOff()`, câblé hors `maintain()` et hors `schedule()` | `S` | `packages/opencode/src/storage/maintenance.ts` | dans `census.test.ts` | aucun |
-| Réécrire le garde-fou `maintenance.test.ts:139-147` (chemin **par défaut**, `DELETE` + `VACUUM`) | `S` | `packages/opencode/src/storage/maintenance.test.ts` | réécriture en place | **oui** — relire les 24 correspondances du fichier et passer un env explicite au lieu de `process.env` |
-| Corriger le chiffre E13 « 3 045 134 car. = 50 % d'une session » | `S` | `docs/harness-audit/proposals/P08-retention-default.md:483-486` | aucun | aucun |
+One residual, listed for the revision author:
+
+1. **`P08-E13-VOLUMES-LEGALES-PERIMEES`** (minor, open) — delete the three dead volume figures at
+   `:166-167` (« base de 5 209 Mo », « 1 064 394 243 octets de parts sur les 1 000 sessions les plus
+   récentes », « une session de 485 étapes pèse 6,1 Mo ») or restate them with an explicit pointer to
+   the superseded snapshot date, so §E13 does not present an unmeasured 5 209 Mo beside its own
+   verified 4 089 565 184-byte measurement. The « base de 5 209 Mo » figure has no defensible
+   accounting boundary: the WAL-inclusive footprint is 4 093 726 224 bytes (4 093,7 Mo), so it is
+   ~27 % high even counting `-wal` and `-shm`. The other two figures I could not refute or confirm —
+   they are volumes of a superseded snapshot and are retired by the same edit.
+
+**This does not block implementation.** The three residues that gated implementation are closed on
+executed evidence: the census SQL runs (`EXIT=0`, `db=4089565184`, `free=4089376768`), the retention
+figures are reproducible to the stated digit, and the prescribed test at `:436-463` reaches its pass
+state against the real `schedule()`/`maintain()` contract. Residual 1 is a documentation-hygiene item
+in a block that is already honestly labelled.
+
+Nothing else is owed on R1, R2 or R3.
+
+`RESIDUES_REMAINING = 1` (derived from the single `open` row in the findings table).
