@@ -150,7 +150,7 @@ Source de vérité : la section `## Final verdict` de chaque `verdicts/P*-revali
 | **P05** | PASS_WITH_CHANGES | 0 | oui | `src/session/lean-advisory.ts` |
 | **P06** | PASS_WITH_CHANGES | 0 | oui | `src/session/goal-context.test.ts` |
 | **P07** | PASS_WITH_CHANGES | 0 | non | `-` |
-| **P08** | PASS_WITH_CHANGES | 1 | non | `-` |
+| **P08** | PASS | 0 | oui | c7 REVALIDATED-PASS, RESIDUES_REMAINING=0 |
 | **P09** | PASS_WITH_CHANGES — **NOT_IMPLEMENTABLE** | 14 | non | `-` |
 | **P10** | PASS_WITH_CHANGES | 0 | non | `-` |
 | **P11** | PASS_WITH_CHANGES | 0 | non | `-` |
