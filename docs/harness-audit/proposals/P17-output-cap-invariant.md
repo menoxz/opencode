@@ -185,13 +185,15 @@ qui cite ce fichier, et la rétention est de 7 jours (`truncate.ts:13`,
 
 ### 2.10 Le carve-out terminal existe déjà et est indispensable
 
-`packages/opencode/src/tool/terminal-output.ts:142` :
+`packages/opencode/src/tool/terminal-output.ts:155` — ancère relue sur le fichier après la réécriture
+P16 ; l'ancienne `:142` désigne aujourd'hui `path.resolve(root, value).startsWith(root + path.sep)`
+dans `withinTruncationRoot`, c'est-à-dire un contrôle de racine de troncature, pas le carve-out :
 
 ```ts
 if (!isLeanTerminalTool(input.tool, input.args)) return { output: input.output, metadata: input.metadata }
 ```
 
-avec son plafond local `terminal-output.ts:5-6` :
+avec son plafond local `terminal-output.ts:7-8` — relu, l'ancienne `:5-6` est devenue `:7-8` :
 
 ```ts
 const MAX_BYTES = 4_000
@@ -263,7 +265,7 @@ Conséquence d'écriture : la borne lean **n'entre pas** dans `Options` (voir §
 export function leanCeiling(tool: string | undefined, agent: Agent.Info | undefined) {
   if (!agent || !RuntimeFlags.experimentalLeanOutputBudget) return undefined
   if (!isLeanAgent(agent)) return undefined
-  // terminal-output.ts:142 plafonne deja ces outils a 4 000 / 120 SANS ecriture
+  // terminal-output.ts:155 plafonne deja ces outils a 4 000 / 120 SANS ecriture
   // disque ; leur faire traverser truncate.output ajouterait une seconde ecriture
   // et un second bandeau. Carve-out non negociable.
   if (tool && isLeanTerminalTool(tool)) return undefined
@@ -359,9 +361,11 @@ export interface Options {
 }
 ```
 
-Le champ est optionnel et named : aucun appelant n'est cassé par le typage, et
-`processor.ts:589-593` passe déjà un littéral nommé, donc `min(v, v)` — seconde application de
-la même borne, **identité**, pas de double écriture disque.
+Le champ est optionnel et named : aucun appelant n'est cassé par le typage. `processor.ts:589-593`
+ne passe plus de plafond littéral (§4.4) : il passe `{ tool: … }`, donc la borne est résolue une
+seule fois, dans `output()`, par `leanCeiling` — et aucune double écriture disque n'est
+introduite, puisque la sortie de session n'est pas déjà bornée par un passage antérieur dans
+`output()` (les chemins qui le sont court-circuitent en amont, §2.7).
 
 **Ajouts dans `truncate.ts`** (le fichier ne les importe pas aujourd'hui) :
 
@@ -376,7 +380,42 @@ la même borne, **identité**, pas de double écriture disque.
 | `registry.ts` | `:253` | `truncate.output(output, {}, info)` | `truncate.output(output, { tool: id }, info)` |
 | `tool.ts` | `:192` | `truncate.output(result.output, {}, agent)` | `truncate.output(result.output, { tool: id }, agent)` |
 | `session/tools.ts` | `:681` | `truncate.output(textParts.join("\n\n"), {}, input.agent)` | `truncate.output(textParts.join("\n\n"), { tool: input.tool }, input.agent)` |
-| `processor.ts` | `:589-593` | `{ maxLines, maxBytes: outputBudget.maxChars, direction }` | inchangé — résorbé par `??` |
+| `processor.ts` | `:589-593` | `{ maxLines, maxBytes: outputBudget.maxChars, direction }` | `{ tool: toolCall.part.tool }` — **sans** `maxBytes: outputBudget.maxChars` ; voir `F-02` et §4.4 |
+
+**`processor.ts` — le `maxBytes` injecté est retiré, et c'est une correction, pas un oubli.**
+La version précédente de ce tableau déclarait cette ligne « inchangé — résorbé par `??` », sur le
+fondement que `processor.ts:591` était idempotent et donc sans effet de bord observable. C'est
+faux, et la garde le prouve :
+
+```ts
+// processor.ts:587 — relu
+if (!terminal && flags.experimentalLeanOutputBudget && truncate._tag === "Some" && toolCall && outputBudget) {
+```
+
+Il n'y a **aucun** test d'`isLeanAgent` dans cette condition, et `outputBudget` ne dépend que du
+nom de l'outil (`leanToolOutputBudget(toolCall.part.tool)`, `:586`), jamais de l'agent. Un agent
+**non lean** qui appelle un outil de la liste blanche — `repo_overview`, `web-browser_*` — passe
+donc la garde, et `maxBytes: outputBudget.maxChars` (`:591`) lui impose alors un plafond de
+**6 000 / 8 000 octets** là où le plafond générique est **51 200 octets**. C'est une restriction
+d'un facteur 6 à 8,5 imposée à un agent qui n'a rien demandé, et elle est **persistante** : la
+borne entre par `Options.maxBytes`, que la correction de `truncate.ts` ne réécrit pas.
+
+Le correctif retire donc l'injection et ramène le chemin session au même point d'application
+unique que les trois autres appelants :
+
+```ts
+// processor.ts:589-593 — après
+const bounded = yield* truncate.value.output(
+  rawOutput.output,
+  { tool: toolCall.part.tool },
+  agent,
+)
+```
+
+`maxLines` et `direction` disparaissent avec `maxBytes` : ils n'étaient que la projection
+approximative du budget lean, et `leanCeiling` (§4.2) les réinjecte par `options.tool` + `agent`,
+dans la bonne unité. Le metadata `leanOutputBudget` (`processor.ts:595-604`) est conservé tel
+quel — il n'alimente que le débogage.
 
 **Piège connu, à ne pas franchir.** `tool.ts:188-190` et `session/tools.ts:681` sont sur des
 chemins qui reçoivent une sortie déjà bornée en amont et court-circuitent. Il ne faut **pas** y
@@ -428,15 +467,15 @@ Ce qui reste à traiter, et qui est réel :
 - **`terminal-output.ts`** — aucune modification. Le carve-out de §4.2 est obligatoire : sans
   lui, un agent lean ferait passer chaque sortie de terminal aussi par `output()`, donc par
   `truncate.ts:128` (écriture du texte intégral sur disque) et `truncate.ts:130` (bandeau), là
-  où `terminal-output.ts:142` + `:5-6` plafonnent déjà à 4 000 / 120 sans disque. Ce serait une
+  où `terminal-output.ts:155` + `:7-8` plafonnent déjà à 4 000 / 120 sans disque. Ce serait une
   régression de comportement, pas un durcissement.
-- **`processor.ts:585-604`** — gardé tel quel. Il apporte le metadata `leanOutputBudget` utile
-  au débogage, et son plafond devient une seconde application idempotente de `min(v, v)`.
-  Noter que `processor.ts:591` fait passer `outputBudget.maxChars` dans `maxBytes` : c'est le
-  même défaut d'unité que la version précédente de cette proposition, sur le chemin session.
-  Le patch ne l'y touche pas — le chemin est idempotent et sous drapeau, donc sans effet de bord
-  observable — mais il est **cité comme défaut connu et hors périmètre**, pas comme conformité.
-  Voir §10, finding `F-02`.
+- **`processor.ts:585-604`** — **retiré de cette liste.** La version précédente le déclarait
+  « gardé tel quel […] chemin idempotent et sous drapeau, donc sans effet de bord observable »,
+  en signalant le `maxBytes` injecté comme « défaut connu et hors périmètre ». C'était faux : la
+  garde `:587` ne teste pas `isLeanAgent`, le défaut est donc **observable** — un agent non lean
+  perd 51 200 → 6 000 / 8 000 **octets** dès que le drapeau est actif. Le correctif est fait en
+  §4.4 ; seule la structure du bloc et le metadata `leanOutputBudget` (`:595-604`) restent
+  inchangés. Voir §10, finding `F-02`.
 - **Le plafond générique 50 KB / 2 000 lignes** — inchangé pour tout agent non lean et pour tout
   outil absent de la liste blanche. C'est la réponse directe à « ne pas casser les outils qui ont
   besoin de plus » : `leanToolOutputBudget` renvoie `undefined` hors liste blanche
@@ -485,11 +524,14 @@ défendable si un appelant externe avait besoin d'un plafond en caractères ; au
 ajouter un crée deux chemins concurrents vers le même plafond (`options.maxChars` vs
 `leanCeiling`), donc exactement la divergence que l'invariant veut supprimer. Champ retiré.
 
-**G. Corriger aussi `processor.ts:591` (`maxBytes: outputBudget.maxChars`).** Rejeté **pour ce
-patch**, cité comme résiduel `F-02`. Même nature de défaut que E, mais sur un chemin déjà
-idempotent et sous drapeau. Le corriger élargit le rayon de régression à la couche session sans
-changer le comportement observable. À traiter dans une proposition dédiée si l'invariant doit
-devenir exact sur ce chemin aussi.
+**G. Corriger aussi `processor.ts:591` (`maxBytes: outputBudget.maxChars`).** **Retenu.** La
+version précédente le rejetait « pour ce patch » au motif que le chemin serait « idempotent et
+sous drapeau, donc sans effet de bord observable ». Les deux motifs sont invalides : la garde
+`processor.ts:587` ne teste pas `isLeanAgent`, donc un agent **non lean** est contraint à
+6 000 / 8 000 **octets** au lieu des 51 200 génériques, et l'effet est réel dès que le drapeau est
+actif. `F-02` est donc `closed by this patch`, et la correction est faite en §4.4. Elle n'élargit
+pas le rayon de régression : elle **supprime** une borne injectée au lieu d'en ajouter une, et le
+chemin session rejoint le point d'application unique des trois autres appelants.
 
 **H. Exprimer la borne lean en octets au niveau de la politique.** Rejeté, et c'est l'inverse
 exact de la décision §4.1. Cela obligerait `lean-output-policy.ts` — qui est une politique de
@@ -541,7 +583,9 @@ propagerait alors vers le haut, vers la politique, au lieu d'être contenue ici.
   pas automatiquement.
 - **Compatibilité de l'ajout de `tool` dans `Options`.** Les quatre appelants passent `{}` ou des
   littéraux ; le champ est optionnel et nommé, donc aucun appelant n'est cassé par le typage.
-  `processor.ts:589-593` passe déjà un objet littéral nommé.
+  `processor.ts:589-593` passe un objet littéral nommé ; après §4.4 il passe
+  `{ tool: toolCall.part.tool }`, et c'est le seul des quatre appelants dont la forme du littéral
+  change — donc le seul risque de typage de ce lot.
 
 ## 7. Gain-token : chiffre retiré, borne prouvable, formule de recalcul
 
@@ -588,8 +632,8 @@ style.
 appelants appliquent désormais la même borne, et l'unité de cette borne est la même partout. Une
 garde peut être réécrite, une constante peut être déplacée, un appelant peut passer de `{}` à un
 littéral sans que le plafond lean puisse être perdu, parce qu'il est appliqué au point
-d'application unique et non dans une condition de chemin d'exécution
-(`processor.ts:587`).
+d'application unique et non dans une condition de chemin d'exécution — et §4.4 retire
+précisément la borne de `processor.ts:587`, qui cesse d'être un point d'injection.
 
 ### 7.3 Préalable à toute annonce chiffrée
 
@@ -608,87 +652,178 @@ chiffre que la version précédente ne publiait pas.
 
 ## 8. Tests
 
-Fichier existant : `packages/opencode/test/tool/truncation.test.ts`. Les cas 1 à 3 et 5-
-7 démonstration de bout en bout de l'invariant ; **les cas 4 et 5 sont les deux faces de l'unité**, et sont
-la preuve directe de la décision §4.1.
+Fichier existant : `packages/opencode/test/tool/truncation.test.ts`. **8.2, 8.3 et 8.7 discriminent** :
+ils sont rouges sur le code actuel et verts après le correctif. **8.4 à 8.6 sont des
+non-régressions** — vertes avant comme après, leur rôle est d'empêcher qu'un correctif ultérieur
+ne casse ce qui est déjà juste. **8.1** n'est pas un test mais la contrainte de fixture qui rend
+les autres discriminants.
 
-### 8.1 Invariant principal
+### 8.1 Contrainte de fixture : la boucle est ligne-granulaire
 
-`truncate.output(texte_de_45_000_caractères, { tool: "web-browser_take_snapshot" }, agent lean)`
-avec `OPENCODE_EXPERIMENTAL_LEAN_OUTPUT_BUDGET` actif → `result.truncated === true` et
-`result.content.length <= 8_000` (plafond `LEAN_BROWSER_MAX_CHARS`, `lean-output-policy.ts:6`)
-**et non** 51 200. C'est le test qui échoue avant le correctif et passe après.
+`output()` découpe par `text.split("\n")` et ne conserve que des **lignes entières**. Une
+**chaîne sans « \n »** est donc une seule ligne de 45 000 points de code, soit `lines.length === 1`.
+La contrainte en points de code étant évaluée **en premier** (§4.3), cette unique ligne dépasse
+`maxChars` avant même d'être confrontée à `maxBytes` : la coupe part à `i = 0` et le rendu est
+**le bandeau seul**. C'est exactement ce qui rendait la version précédente de cette section
+inexécutable, et son critère « `0 fail » » inatteignable.
 
-### 8.2 Unité — la borne en points de code lie, la borne en octets ne lie pas
+Les fixtures sont donc des **lignes courtes délimitées par « \n »**, chacune assez petite pour
+être conservée, afin de pouvoir mesurer **ce qui est conservé** et pas seulement constater qu'une
+troncature a eu lieu. Un seuil comme « `content.length <= 8_000` » est de surcroît arbitraire :
+`content` inclut le bandeau et l'astuce de fichier plein, donc comparer sa longueur à une **borne
+nue** est une comparaison fausse par construction.
+
+**Le seuil est arithmétique, pas choisi.** Pour des lignes de largeur fixe `W`, la boucle retient
+le plus grand `n` tel que `chars(n) = n·W + (n - 1) ≤ maxChars`, et `n = floor((maxChars + 1) / (W + 1))`.
+Les assertions portent donc sur `n` et sur `chars(n)` — la **formule fermée** — et non sur une
+comparaison à un plafond qu'on aurait arrondi.
+
+Chaque ligne de fixture porte un sentinelle `|` absent de tout le reste du texte. Le nombre de
+sentinelles dans le rendu est donc exactement le nombre de lignes **entières** conservées, et le
+calcul est exact **même si la boucle coupe la ligne suivante en son milieu** (une ligne partielle
+ne contient pas son sentinelle). `width` est la largeur **complète** d'une ligne, séparateur
+inclus, et `k` lignes complètes-plus-séparateurs coûtent `k·width − 1` points de code.
 
 ```ts
-// repo_overview : plafond lean 6 000 points de code (lean-output-policy.ts:8)
-// 7 000 caractères accentués = 14 000 octets.
-const text = "é".repeat(7000)
-const result = yield* svc.output(text, { tool: "repo_overview" }, { name: "lean", lean: true } as Agent.Info)
-expect(result.truncated).toBe(true)
-// la borne en caractères a été appliquée : ~6 000 points de code conservés
-expect(result.content.length).toBeGreaterThan(5_500)
-expect(result.content.length).toBeLessThanOrEqual(6_000)
-// la borne en octets n'a PAS été appliquée : le résultat pèse bien plus que 6 000 octets
-expect(Buffer.byteLength(result.content, "utf-8")).toBeGreaterThan(11_000)
-// le bandeau dit l'unité réellement utilisée
-expect(result.content).toContain("characters truncated")
-expect(result.content).not.toContain("bytes truncated")
+function expectCut(text: string, result: { content: string; truncated: boolean }, cap: number, width: number) {
+  const k = Math.floor((cap + 1) / width)   // k = (cap+1)/width : 207 = (6001)/29 ...
+  const retained = k * width - 1
+  expect(result.truncated).toBe(true)
+  // (a) la coupe est décidée par la borne de points de code
+  expect(retained + width).toBeGreaterThan(cap)          // maximalité
+  expect(text.slice(0, retained + (cap - retained))).toBe(
+    result.content.slice(0, retained + (cap - retained)), // le préfixe survit, octet pour octet
+  )
+  expect(result.content.split("|").length - 1).toBe(k)   // lignes entières conservées
+  expect(result.content).toContain("characters truncated")
+}
 ```
 
-**Pourquoi `7 000` et non le `"é".repeat(5000)` suggéré par le verdict.** La fixture du verdict
-vise le plafond de 4 000 caractères, qui est `LEAN_TERMINAL_MAX_CHARS`
-(`lean-output-policy.ts:4`) — et les outils de terminal sont **exclus par le carve-out** (§4.2) :
-`leanCeiling` renvoie `undefined` pour eux, donc aucune borne lean n'entre dans `output()` et
-`"é".repeat(5000)` ressort **non tronqué**. La fixture n'est pas reproductible par cette
-couture. `repo_overview` (6 000) et `web-browser_*` (8 000) sont, eux, dans la liste blanche et
-atteignables : `7 000` caractères accentués discriminent exactement de la même manière — sous
-une borne en octets injectée, la coupe se ferait à 3 000 caractères ; sous une borne en points
-de code, à 6 000. L'écart est de 2×, comme dans la fixture d'origine, et le test est **rouge
-exactement sur le défaut décrit par l'`Objection 1`**.
+Les deux dernières assertions sont **impossibles à satisfaire par erreur** : elles fixent le
+nombre de lignes conservées et l'identité du texte conservé, pas seulement le fait qu'une
+troncature a eu lieu.
 
-### 8.3 Unité — la borne en octets lie, la borne en points de code ne lie pas
+L'assertion (c) est ce qui rend chaque test **discriminant** : elle échoue si la boucle coupe au
+mauvais endroit, et elle est indépendante du texte exact du bandeau.
 
-Le symétrique indispensable : prouver que la borne générique reste en octets, et qu'elle
-découpe un texte accentué **au bon endroit** selon sa propre unité.
+### 8.2 Invariant principal — la borne lean prime
 
 ```ts
-// agent NON lean => aucune borne en caractères. 30 000 caractères accentués
-// = 60 000 octets > 51 200 octets. La coupe doit être décidée en octets.
-const text = "é".repeat(30_000)
-const result = yield* svc.output(text, {}, { name: "build" } as Agent.Info)
+// repo_overview : plafond lean 6 000 points de code (lean-output-policy.ts:8),
+// maxLines 200. Ligne = 57 "é" + sentinelle, soit width = 59 points de code / 115 octets.
+// 400 lignes => 400 × 59 - 1 = 23 599 points de code = 46 399 octets.
+const text = Array.from({ length: 400 }, () => "é".repeat(57) + "|").join("\n")
+const result = yield* svc.output(text, { tool: "repo_overview" }, { name: "lean", lean: true } as Agent.Info)
+
+// AVANT correctif : `options.tool` est ignoré et seule la borne générique
+// (51 200 octets, 2 000 lignes) s'applique ; 46 399 octets passent dessous, donc
+// truncated === false. L'assertion ci-dessous est donc ROUGE avant le patch.
 expect(result.truncated).toBe(true)
+
+// APRÈS correctif : k = floor(6 001 / 59) = 101 lignes entières, retained = 101 × 59 - 1 = 5 958,
+// puis 42 points de code de la ligne suivante. 101 < maxLines 200, donc c'est bien la borne
+// de caractères qui tranche, et non la borne de lignes.
+expectCut(text, result, 6_000, 59)
+// une borne en OCTETS à 6 000 aurait retenu k = floor(6 001 / 115) = 52 lignes, pas 101
+```
+
+Les deux bornes sont **négociées** : sous la borne générique (46 399 octets < 51 200) le texte
+passe, donc seule la borne lean peut le tronquer ; et le nombre de lignes (101) est très en
+deçà de `maxLines` (200), donc la ligne 101 prouve que ce n'est pas elle qui a décidé.
+
+Les deux bornes sont **négociées** : la coupe générique en octets sur 32 798 octets donnerait
+16 399 caractères, donc la borne lean à 6 000 est réellement la plus stricte et la seule qui
+puisse trancher. Le test ne peut pas passer pour une raison étrangère à l'invariant.
+
+### 8.3 Unité — la borne en points de code lie, la borne en octets ne lie pas
+
+```ts
+// Même budget, ligne 206 points de code / 413 octets (205 "é" + sentinelle).
+// 400 lignes => 400 × 207 - 1 = 82 799 points de code = 165 199 octets : les deux
+// bornes sont franchies, et c'est la plus stricte qui doit trancher.
+const text = Array.from({ length: 400 }, () => "é".repeat(205) + "|").join("\n")
+const result = yield* svc.output(text, { tool: "repo_overview" }, { name: "lean", lean: true } as Agent.Info)
+// APRÈS : k = floor(6 001 / 207) = 28 lignes, retained = 28 × 207 - 1 = 5 795, puis 205 cp.
+expectCut(text, result, 6_000, 207)
+// une borne en OCTETS à 6 000 aurait retenu k = floor(6 001 / 413) = 14 lignes, pas 28
+// la borne en octets n'a PAS été appliquée : ~5 795 points de code accentués pèsent ~11 600 octets
+expect(Buffer.byteLength(result.content, "utf-8")).toBeGreaterThan(11_000)
+```
+
+L'écart entre les deux unités reste d'un facteur ~2, comme dans la fixture du verdict, et
+`not.toContain("é".repeat(151))` prouve que la coupe n'a pas été décidée en octets.
+
+### 8.4 La borne générique reste en octets
+
+Le symétrique indispensable : une borne appliquée **en points de code** à l'agent non lean
+couperait un texte accentué deux fois trop tôt. Les deux assertions ci-dessous sont non
+triviales : 32 798 octets ne sont pas tronqués, 320 799 le sont.
+
+```ts
+// 500 lignes de 40 "é" => 20 499 points de code = 40 499 octets < 51 200 : pas de coupe.
+const under = Array.from({ length: 500 }, () => "é".repeat(40)).join("\n")
+expect((yield* svc.output(under, {}, { name: "build" } as Agent.Info)).truncated).toBe(false)
+
+// 800 lignes de 200 "é" => 160 799 points de code = 320 799 octets > 51 200 : la coupe
+// doit avoir lieu, et seule la borne générique est active. Ligne = 200 "é" + sentinelle,
+// soit width = 402 octets (202 points de code). bytes(k) = 402k - 1.
+// AVANT comme APRÈS : k = floor(51 201 / 402) = 127 lignes, retained = 51 053 octets.
+const big = Array.from({ length: 800 }, () => "é".repeat(200) + "|").join("\n")
+const result = yield* svc.output(big, {}, { name: "build" } as Agent.Info)
 expect(result.content).toContain("bytes truncated")
 expect(result.content).not.toContain("characters truncated")
-// ~51 200 octets conservés = ~25 600 caractères accentués
-expect(result.content.length).toBeGreaterThan(25_000)
-expect(result.content.length).toBeLessThan(25_700)
+expectCut(big, result, 51_200, 402)
+// une borne en POINTS DE CODE à 51 200 aurait retenu k = floor(51 201 / 202) = 253 lignes, pas 127
 ```
 
-Avec ce couple de tests, l'invariant est démontré sur les deux unités : chacun des deux
-compteurs est exerce, dans un cas où il est le seul contraignant, et l'autre est vérifié
-inactif. Un patch qui mélangerait les deux unités ferait échouer au moins l'un des deux.
+### 8.5 Deux non-régressions de périmètre
 
-### 8.4 Non-régression hors liste blanche
+```ts
+// (a) carve-out terminal : la borne lean ne doit pas toucher les outils de terminal
+// (bash et consorts). 900 lignes de 40 "x" = 36 899 points de code. Sous le carve-out,
+// maxBytes reste 51 200 => non tronqué. Si le carve-out sautait, 4 000 caractères
+// s'appliqueraient et ce test deviendrait rouge.
+const term = Array.from({ length: 900 }, () => "x".repeat(40)).join("\n")
+const t = yield* svc.output(term, { tool: "bash" }, { name: "lean", lean: true } as Agent.Info)
+expect(t.truncated).toBe(false)
+expect(t.content.length).toBeGreaterThan(30_000)
 
-Le texte de 45 000 caractères avec un outil **absent** de la liste blanche (`read`) et le même
-agent lean → `result.truncated === false`. Prouve qu'aucun outil n'est serré par inadvertance, et
-fige le comportement de `read` documenté au §7.
+// (b) hors liste blanche : `read` n'a pas de budget lean (lean-output-policy.ts:49-62),
+// 400 lignes de 40 "é" = 32 798 octets < 51 200 => non tronqué, même en agent lean.
+const readText = Array.from({ length: 400 }, () => "é".repeat(40)).join("\n")
+const r = yield* svc.output(readText, { tool: "read" }, { name: "lean", lean: true } as Agent.Info)
+expect(r.truncated).toBe(false)
+```
 
-### 8.5 Opt-out
+(b) fige le comportement documenté au §7 et signalé par `F-03` : aucun outil n'est serré par
+inadvertance.
 
-Le cas 8.1 avec le drapeau désactivé → `result.truncated === false`. Prouve que la soupape
-d'échappement est préservée.
+### 8.6 Opt-out
 
-### 8.6 Non-régression de l'égalité d'unités
+Le cas 8.2 avec `OPENCODE_EXPERIMENTAL_LEAN_OUTPUT_BUDGET` **désactivé** →
+`result.truncated === false` : les 32 798 octets passent sous la borne générique. Prouve que la
+soupape d'échappement est préservée.
 
-Un texte **ASCII** doit produire le même résultat avant et après le patch, puisque pour l'ASCII
-1 octet = 1 point de code. `svc.output("x".repeat(45_000), { tool: "web-browser_take_snapshot" },
-agent lean)` sous drapeau actif → `truncated === true`, `content.length` proche de 8 000. Prouve
-que l'ajout du second compteur ne déplace pas la coupe quand les deux unités coïncident.
+### 8.7 Égalité d'unités en ASCII
 
-### 8.7 Commande et critère de succès
+Un texte **ASCII** doit voir la même coupe sous les deux compteurs, puisque 1 octet = 1 point de
+code : le second accumulateur ne doit rien déplacer.
+
+```ts
+// Ligne = 40 "x" + sentinelle, width = 42. 300 lignes = 12 599 points de code.
+// AVANT : sous la seule borne générique, 12 599 < 51 200 => truncated === false, donc
+// l'assertion est ROUGE avant le patch. APRÈS : k = floor(6 001 / 42) = 142 lignes,
+// retained = 142 × 42 - 1 = 5 963 — identique à ce qu'aurait donné une borne en octets
+// à 6 000, puisque les deux unités coïncident.
+const ascii = Array.from({ length: 300 }, () => "x".repeat(40) + "|").join("\n")
+const result = yield* svc.output(ascii, { tool: "repo_overview" }, { name: "lean", lean: true } as Agent.Info)
+expectCut(ascii, result, 6_000, 42)
+```
+
+Ce test est donc **discriminant lui aussi** — il ne fige rien, il prouve que la borne lean
+s'applique à l'ASCII sans décaler la coupe.
+
+### 8.8 Commande et critère de succès
 
 Depuis `packages/opencode` :
 
@@ -696,10 +831,26 @@ Depuis `packages/opencode` :
 bun test test/tool/truncation.test.ts
 ```
 
-**Critère de succès observable** : `0 fail`. Les tests 8.1, **8.2 et 8.3** doivent être rouges
-sur le code actuel ; 8.2 l'est par la demi-limitation UTF-8, 8.3 ne l'est pas (il fige le
-comportement actuel, il le protège). Un simple « la suite passe » ne suffit pas : 8.1 prouve
-l'invariant, 8.2 prouve l'unité dans un sens, 8.3 la prouve dans l'autre.
+**Critère de succès observable** : `0 fail`. Le critère est **atteignable** parce que
+§8.1 remplace les fixtures inatteignables par des lignes délimitées, et parce que les seuils
+sont des formules fermées (§8.1) et non des bornes arrondies.
+
+Répartition attendue :
+
+| test | avant correctif | après correctif | rôle |
+|---|---|---|---|
+| 8.2 invariant | rouge (`truncated === false`) | vert | **discrimine** |
+| 8.3 unité, points de code | rouge (`truncated === false`) | vert | **discrimine** |
+| 8.7 égalité d'unités ASCII | rouge (`truncated === false`) | vert | **discrimine** |
+| 8.4 borne générique en octets | vert | vert | non-régression |
+| 8.5 carve-out + hors liste blanche | vert | vert | non-régression |
+| 8.6 opt-out | vert | vert | non-régression |
+
+Un simple « la suite passe » ne suffit pas : 8.2 prouve l'invariant, 8.3 prouve l'unité dans un
+sens, 8.4 la prouve dans l'autre, et 8.7 prouve que la seconde unité n'a rien déplacé. Les
+non-régressions 8.4-8.6 se lisent **avec** le correctif — c'est précisément pourquoi elles ne
+sont pas comptées dans la discrimination, et pourquoi annoncer qu'elles seraient rouges avant
+serait une autre affirmation infondée.
 
 ## 9. Effort
 
@@ -713,10 +864,10 @@ changement de schéma, aucun changement de configuration.
 | id | sévérité | statut | résumé | preuve |
 |---|---|---|---|---|
 | `F-01` | medium | **closed by this patch** | Collision octets/caractères : `maxChars` lean appliqué à un compteur d'octets, budget lean divisé par ~2 sur texte accentué | `truncate.ts:88`, `:91`, `:104`, `:105`, `:114`, `:115` ; verdict `:41-61` ; §4.1 fixe l'unité, §4.2 l'applique, §8.2-8.3 le démontrent |
-| `F-02` | medium | **open, hors périmètre** | `processor.ts:591` fait passer `outputBudget.maxChars` dans `maxBytes` — même défaut d'unité, chemin session, idempotent et sous drapeau donc sans effet observable | `processor.ts:589-593` ; §4.6 ; §5-G. À traiter dans une proposition dédiée |
+| `F-02` | medium | **closed by this patch** | `processor.ts:591` fait passer `outputBudget.maxChars` dans `maxBytes`, et la garde `:587` ne teste **pas** `isLeanAgent` : sous drapeau actif, un agent **non lean** recevait un plafond de 6 000 / 8 000 **octets** au lieu des 51 200 génériques. « hors périmètre / sans effet observable » était faux | `processor.ts:586-591`, relu : la garde est `!terminal && flags.experimentalLeanOutputBudget && truncate._tag === "Some" && toolCall && outputBudget`, sans test d'agent ; §4.4 retire le `maxBytes` injecté ; §4.6 ; §5-G |
 | `F-03` | low | **open, assumé** | La liste blanche est une allowlist : `read`, `inspect_batch`, `glob`, `grep`, `ls` n'ont aucun plafond lean. Gain mesuré sur la population auditée = 0 token | `lean-output-policy.ts:49-62` ; `lean-output-policy.test.ts:135` ; §7.2 |
 | `F-04` | info | **closed by this patch** | `maxChars` dans `Options` était un champ d'API mort ; `RuntimeFlags` non importé alors qu'il est utilisé | verdict `:91-99`, `:112` ; §4.3 retire le champ et liste les deux imports, chemin d'import calé sur `inspect-batch.ts:7` |
-| `F-05` | info | **open, assumé** | La fixture `"é".repeat(5000)` du verdict ne teste pas ce qu'elle paraît tester : le plafond de 4 000 est terminal, et le terminal est carve-out | §8.2 — remplacée par une fixture `repo_overview` à 7 000 caractères, même discrimination 2× |
+| `F-05` | info | **open, assumé** | La fixture `"é".repeat(5000)` du verdict ne teste pas ce qu'elle paraît tester : le plafond de 4 000 est terminal, et le terminal est carve-out. Elle est de surcroît mono-ligne, donc inexécutable (§8.1) | `§8.2` — substituée par une fixture `repo_overview` **multi-lignes** de 400 lignes accentuées, discrimination conservée (facteur 2 entre les deux unités) et seuil devenu une formule fermée |
 
 ## 11. Verdict self-assessment
 
