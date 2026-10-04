@@ -188,7 +188,7 @@ Statuts lus par lecture directe, jamais par regexp (C-142).
 | P05 | PASS_WITH_CHANGES | fusionnee | 10 pass / 0 fail |
 | P06 | PASS_WITH_CHANGES | fusionnee | 6 pass / 0 fail |
 | P07 | PASS_WITH_CHANGES | fusionnee | commit fbc65658, 2 pass / 0 fail |
-| P08 | PASS_WITH_CHANGES en c6 | bloque, 1 open residuel | C-32, revalidation c7 en cours |
+| P08 | PASS | implementable, 0 residu | c7 REVALIDATED-PASS, RESIDUES_REMAINING=0, SQL EXIT=0, census read-only |
 | P09 | PASS_WITH_CHANGES | non implementable | 14 residus open :294 |
 | P10 | falsifie par execution | reverti a HEAD | C-141, typecheck 0, 14 pass / 0 fail |
 | P11 | PASS_WITH_CHANGES | fusionnee | commit 80aa6c31, 3 pass / 0 fail |

@@ -1,220 +1,259 @@
-# P08 — revalidation cycle 4
+# P08 — revalidation cycle 7 (independent)
 
-**Artifact evaluated**: `docs/harness-audit/proposals/P08-retention-default.md` (530 lines, mtime `2026-10-04 08:24:13`, 29 006 bytes).
-**Revalidator**: independent. No repair was performed on the artifact. `git` was not used.
-**Real database**: `C:\Users\jeanl\.local\share\opencode\opencode.db`, all queries `sqlite3 -readonly`.
-**Probe artifacts**: `C:\Users\jeanl\AppData\Local\Temp\opencodev2\p08-r1-r2-probe.log`, `p08-r1d-mtime.log`, `p08-r1d2.log`.
-
-**Path correction, recorded once**: the citation path is
-`packages/opencode/src/storage/maintenance.ts` and `packages/opencode/src/storage/maintenance.test.ts`,
-NOT `src/session/`. `packages/opencode/test/session/maintenance.test.ts` does not exist. The proposal
-cites the correct path (`:348`, `:355`, `:409`, `:411`); the c3 brief that introduced `src/session` did not.
-
----
-
-## R1 — `P08-CENSUS-SQL-FREELIST-INVALIDE` → RESOLVED
-
-The c4 SQL (`:258-259`) reads `freelist_count` from `pragma_freelist_count`, not from
-`pragma_page_count`. Executed against the real database:
-
-| # | Query | EXIT | Result |
-|---|---|---|---|
-| R1-A | `SELECT * FROM pragma_page_count;` | 0 | `998429` — one column, one row |
-| R1-B | `SELECT * FROM pragma_freelist_count;` | 0 | `46` |
-| R1-C | `SELECT page_count - freelist_count FROM pragma_page_count;` (old form) | **1** | `Parse error near line 1: no such column: freelist_count` |
-| R1-E | `SELECT name FROM pragma_table_info('pragma_page_count');` | 0 | `page_count` |
-| R1-F | `SELECT name FROM pragma_table_info('pragma_freelist_count');` | 0 | `freelist_count` |
-
-R1-A/B are the exact statements the proposal prints as its positive control at `:272-273`; R1-E/F are
-the authoritative column names and settle the question directly — `pragma_page_count` exposes
-**only** `page_count`, and `freelist_count` lives in `pragma_freelist_count`. R1-C reproduces the old
-form with the claimed error text and a non-zero exit, matching `:271` verbatim.
-
-**c4 SQL executed as extracted from the file** (not retyped). The SQL is a TypeScript template literal
-spanning `:258-259`; the trailing `,` after the closing backtick is a TS argument separator *outside*
-the SQL, so extraction takes the literal's interior only:
-
-```
-SELECT (SELECT page_count FROM pragma_page_count) * (SELECT page_size FROM pragma_page_size) AS db,
-((SELECT page_count FROM pragma_page_count) - (SELECT freelist_count FROM pragma_freelist_count)) * (SELECT page_size FROM pragma_page_size) AS free
-```
-
-Result: **EXIT=0**, header `db|free`, values **`4089565184 | 4089376768`**.
-
-Cross-check: `998429 * 4096 = 4 089 565 184` and `(998429 - 46) * 4096 = 4 089 376 768`, both
-reproduced independently (R2-D). `4089565184` matches the file size stated at `:159`.
-
-Two extraction failures of mine are on the record and were **not** counted against the proposal:
-the first run kept the markdown backticks (syntax error, EXIT=1) and the second kept the trailing TS
-comma (`incomplete input`, EXIT=1). Both were extraction defects; the SQL itself is executable. Logged
-in `p08-r1d-mtime.log:1-6`.
-
-The census is a new file (`:238`, `src/storage/census.ts`), so no census source exists to be wrong;
-what had to be true — that this SQL prepares and returns the two values — is now true on the real
-database.
-
-## R2 — `P08-E13-CHIFFRE-50POURCENT-NON-REPRODUIBLE` → RESOLVED
-
-Recomputed with my own SQL, same method the file declares at `:173-175`:
-
-```sql
-SELECT coalesce(json_extract(data,'$.type'),'NULLTYPE') AS type, count(*), sum(length(data)) FROM part GROUP BY type;
-SELECT count(*), sum(length(data)) FROM part;
-SELECT coalesce(json_extract(data,'$.type'),'NULLTYPE') AS type, count(*), sum(length(data)) FROM part WHERE session_id='ses_106da869affe6n5CLpUQUcAyj4' GROUP BY type;
-```
-
-Base totals — **672 804 parts, 3 475 615 849 characters** (matches `:160`):
-
-| type | rows | characters | share |
-|---|---|---|---|
-| tool | 190 947 | 2 953 691 159 | **84.982 %** |
-| reasoning | 108 702 | 265 175 764 | **7.6285 %** |
-| text | 74 393 | 187 562 336 | 5.396 % |
-| step-finish | 143 031 | 25 626 989 | 0.737 % |
-| patch | 10 529 | 20 341 347 | 0.585 % |
-| file | 248 | 17 125 298 | 0.493 % |
-| step-start | 143 783 | 6 005 619 | 0.173 % |
-| compaction | 1 171 | 87 337 | 0.003 % |
-
-Session `ses_106da869affe6n5CLpUQUcAyj4`: `reasoning` = **6 410 314**, session total = **30 251 627**
-→ `6410314 / 30251627` = **21.190 %**.
-
-File: `page_count = 998429`, `page_size = 4096`, product **4 089 565 184** (matches `:159`).
-
-The on-disk footprint confirms 4 089 565 184 is the whole database, not just the main file:
-`opencode.db` = 4 089 565 184, `opencode.db-wal` = 4 128 272, `opencode.db-shm` = 32 768,
-sum **4 093 726 224** bytes = 4 093,7 Mo = 3 904,1 MiB. This matters for the open finding below:
-`INFERE:` the legacy « base de 5 209 Mo » at `:166` is ~27 % above the real footprint **including**
-WAL and shm, so it cannot be excused as a different accounting boundary. Command:
-`Get-ChildItem -LiteralPath "C:\Users\jeanl\.local\share\opencode" -File | Where-Object Name -like "opencode.db*"
-| Measure-Object -Property Length -Sum` (EXIT=0).
-
-All four claims at `:160-163` reproduce exactly: 672 804 parts, 3 475 615 849 chars, 6 410 314 /
-30 251 627 = 21,2 %, reasoning 7,6 % vs tool 85,0 %. The false "3 045 134 caractères = 50 % de la
-session" no longer appears as a claim.
-
-**Positive control for the JSON-type query form** (same database, same statement shape):
-`json_extract(data,'$.type')='reasoning'` → **108 702 rows**; negative control
-`'__no_such_type__'` → **0 rows**, both EXIT=0. The query discriminates, so the group-by is not
-silently returning an empty set.
-
-**Provenance block `:165-171` — honest, not a re-import of the bad number.** It (a) marks the three
-legacy volume figures explicitly as *not re-measured*, (b) keeps the 50 % figure only as a cited
-historical error, (c) states plainly that the reasoning figure was false and is replaced. The false
-value is quarantined with its origin attached, not restated as fact. One defect survives inside that
-block — see `P08-E13-VOLUMES-LEGALES-PERIMEES`.
-
-## R3 — `P08-REECRITURE-DEPENDE-ENV-AMBIANT` → RESOLVED
-
-**Does `schedule()` accept an env argument? No** — and the proposal says so correctly at `:437`.
-
-```ts
-// packages/opencode/src/storage/maintenance.ts:176-184
-export function schedule(
-  db: Runner,
-  options: { intervalMs?: number; purge?: boolean } = {},
-): () => void {
-  ...
-  const purge = options.purge ?? true
-  const timer = setInterval(() => maintain(db, purge ? process.env : {}), options.intervalMs ?? CHECKPOINT_INTERVAL_MS)
-```
-
-The signature (`maintenance.ts:176-179`) has exactly two parameters and no env slot; `:184` forwards
-ambient `process.env` whenever `purge` is true, and `:183` makes `purge` default to true. So
-`schedule(db, { intervalMs: 5 })` reads the machine's environment. The proposal's diagnosis at
-`:438-440` is correct: without pinning, `expect(... /DELETE/i).toBe(false)` at `:448` passes only by
-the accident of the variable being absent on the author's machine.
-
-**Can the prescribed test reach its pass state? Yes** — verified against the real code:
-
-- `maintenance.ts:101` — `maintain(db, env = process.env, now = Date.now())`.
-- `maintenance.ts:51-54` — `retentionDays` returns `undefined` when the variable is absent
-  (`Number(undefined)` → `NaN`, `Number.isFinite(NaN)` false), so `:103` skips `purgeOldParts`.
-- `maintenance.ts:65-72` — `purgeOldParts` is the only `DELETE` emitter (`DELETE FROM part WHERE …`),
-  which is what makes the negative assertion at `:448` meaningful rather than vacuous.
-- `maintenance.ts:44-48` — `checkpoint` emits only `PRAGMA wal_checkpoint(TRUNCATE)`, no `VACUUM`,
-  so the assertion at `:450` is satisfiable.
-- `maintenance.ts:111` — `resetPurgeClock()` exists and is the established neighbour convention
-  (`maintenance.test.ts:76`, `:83`, `:93`, `:140`).
-
-**Is the `delete`/`finally` restore complete for both branches? Yes.** `:441` captures
-`ambient = process.env.OPENCODE_PART_RETENTION_DAYS` before anything; `:442` deletes it; `:452-453`
-restores in `finally` with an explicit `ambient === undefined` branch (stay deleted) and an `else`
-branch (reassign). Both outcomes of "was it set?" are covered, and the restore runs even if the
-`schedule`/sleep/`stop` body throws.
-
-**Does the direct assertion match the neighbouring convention? Yes.** The second assertion at
-`:459` calls `StorageMaintenance.maintain(main, {})` with an explicit env object, exactly as
-neighbours do at `maintenance.test.ts:85`, `:98`, `:100`, `:101`, `:107`. It is placed *after* the
-`finally`, so the ambient variable is already restored and the assertion reads no ambient state —
-which is the stated purpose at `:455-456`. `spy()`/`db.queries` usage matches the existing
-`schedule` tests at `:113-121`, including the `intervalMs: 5` + short-sleep shape at `:115-116`.
-
-**Was the test file modified by the revision agent? No.**
-
-- `packages/opencode/src/storage/maintenance.test.ts` — LastWriteTime **2026-08-16 13:48:34**, length
-  9 166 bytes. The proposal's LastWriteTime is **2026-10-04 08:24:13**. The test file predates the
-  revision by 49 days and is far outside any c4 window.
-- Content still uses the colocated `src/` import: `maintenance.test.ts:11`
-  `import { StorageMaintenance } from "./maintenance"`.
-- `packages/opencode/src/storage/maintenance.ts` — LastWriteTime **2026-08-16 13:48:02**, also
-  untouched.
-- `packages/opencode/src/shell/shell.ts` (2026-07-29 09:05:05),
-  `packages/opencode/src/tool/shell.ts` (2026-10-04 06:15:57),
-  `packages/plugin/src/shell.ts` (2026-05-25 23:08:18). `INFERE:` the `src/tool/shell.ts` timestamp
-  predates the P08 rewrite by >2 h and belongs to another workstream; P08 contains zero occurrences
-  of the string `shell` (grep over the proposal, include `P08-retention-default.md` → 0 matches, run
-  under the same positive-control conditions below), so no revision step could have touched it.
-
-**Positive controls for the zero-result searches** (a zero match proves nothing alone):
-
-| search | result | positive control, same path + same include |
-|---|---|---|
-| `from "\./maintenance"`, path `packages/opencode/src/storage`, include `maintenance.test.ts` | **1** match (`:11`) | same search itself is the positive control |
-| `from "\./maintenance"`, path `packages/opencode/test`, include `maintenance.test.ts` | **0** matches | `*.test.ts` files under `packages/opencode/test` = **340**; under `packages/opencode/src` = **68** — the glob/enumeration form works in both trees |
-| pattern `shell`, path `docs/harness-audit/proposals`, include `P08-retention-default.md` | **0** matches | pattern `maintenance\.test\.ts`, same path + include → **17** matches |
-| `json_extract` type query, real DB | 108 702 rows | negative control `__no_such_type__` → 0 rows |
-
----
+Target: `docs/harness-audit/proposals/P08-retention-default.md` (535 lines).
+Scope of this cycle: only `P08-C5-CENSUS-ERROR-CONTRACT`, raised by cycle 6, plus
+regression control on everything cycle 4-6 closed.
 
 ## Final verdict
 
-**REVALIDATED-PASS_WITH_CHANGES**
+**REVALIDATED-PASS**
 
-All three residues open at c3 are fixed against real code and real data, not reformulated:
-`P08-CENSUS-SQL-FREELIST-INVALIDE` and `P08-E13-CHIFFRE-50POURCENT-NON-REPRODUIBLE` are confirmed by
-execution on the 4 GB live database, and `P08-REECRITURE-DEPENDE-ENV-AMBIANT` is confirmed against the
-real `schedule()`/`maintain()` signatures, with the prescribed test provably able to reach its pass
-state. One minor residual remains, and it does not block implementation.
+`RESIDUES_REMAINING = 0`.
+
+Cycle 6's blocking contradiction is resolved. Option A was implemented as described and
+the §4.1 prescription and the §7 test now describe the same function. No new contradiction,
+no regressed figure, no mis-declared anchor.
+
+## Why test 4 is now reachable — the one sentence
+
+Both `query()` calls sit inside the `try` opened at `:251` and closed at `:264`, so a throwing
+handle is intercepted before it can cross the function boundary and the handler returns the
+neutral `Census` at `:265` — the exact object §7 test 4 (`:410-412`) demands, with « pas de
+throw » satisfied by construction rather than by a weakened assertion.
+
+Evidence, `census()` body verbatim (`:248-267`):
+
+```
+248: /** Read-only. Emits SELECT statements exclusively: no DELETE, no VACUUM, no mutating PRAGMA.
+249:  *  Ne propage jamais (§7, test 4) : un handle qui lève rend un `Census` vide (0 = verrouillé ou vide). */
+250: export function census(db: Runner, before: number): Census {
+251:   try {
+252:   const grouped = query(
+253:     db,
+254:     `SELECT json_extract(data,'$.type') AS type, count(*) AS parts, COALESCE(sum(length(data)),0) AS chars
+255:      FROM part WHERE time_created < ${Math.floor(before)}
+256:      GROUP BY type`,
+257:   )
+258:   const sizes = query(
+259:     db,
+260:     `SELECT (SELECT page_count FROM pragma_page_count) * (SELECT page_size FROM pragma_page_size) AS db,
+261:             ((SELECT page_count FROM pragma_page_count) - (SELECT freelist_count FROM pragma_freelist_count)) * (SELECT page_size FROM pragma_page_size) AS free`,
+262:   )
+263:   // ...reduce grouped into Census
+264:   } catch {
+265:     return { totalParts: 0, byType: {}, dbBytes: 0, freelistBytes: 0 }
+266:   }
+267: }
+```
+
+Escape-path audit: the only calls in the body are the two `query()` at `:252` and `:258`,
+and `:263`'s elided reduce sits *inside* the `try`. Both the success-path `Census` and every
+failure therefore terminate within `:251`–`:266`. No path lets an error escape `census()`.
+Not blocking.
+
+`throw` occurrences in `:248-268` = **0**, identical-form positive control
+`try {` in the same range = **1** (`rg -n -F`, range filter `^(24[89]|25[0-9]|26[0-8]):`).
+
+## SQL literals — extracted from the file, not retyped
+
+Extraction: `Get-Content` lines 254-256 and 260-261, backticks stripped, `${…}` bound to a
+constant, trailing source comma stripped, executed through `sqlite3 -readonly` against
+`C:\Users\jeanl\.local\share\opencode\opencode.db`.
+
+```
+SELECT (SELECT page_count FROM pragma_page_count) * (SELECT page_size FROM pragma_page_size) AS db,
+       ((SELECT page_count FROM pragma_page_count) - (SELECT freelist_count FROM pragma_freelist_count)) * (SELECT page_size FROM pragma_page_size) AS free
+```
+
+→ **EXIT=0**, `db=4089565184 free=4089376768`. Matches R1's mandated pair.
+
+Negative control, same text with only `pragma_freelist_count` → `pragma_page_count`:
+**EXIT=1**, `Error: in prepare, no such column: freelist_count`.
+
+`SELECT * FROM pragma_page_count` → EXIT=0, single column `998429`;
+`SELECT * FROM pragma_freelist_count` → EXIT=0, `46`.
+Page geometry → EXIT=0, `PC=998429 PS=4096 PROD=4089565184 FREE=46`.
+
+Broken form absent from the file: `freelist_count FROM pragma_page_count` = **0** hits;
+identical-form positive control `freelist_count FROM pragma_freelist_count` = **1** hit.
+
+## Line count and anchor arithmetic
+
+`LINES=535` (`Get-Content … .Count`). The declared +5 (530→535) is fully accounted for, with
+no unexplained line:
+
+| Added | Location | Count |
+|---|---|---|
+| JSDoc line | `:249` | +1 |
+| `try {` | `:251` | +1 |
+| `} catch {` | `:264` | +1 |
+| neutral `return` | `:265` | +1 |
+| *(elided reduce at `:263` is pre-existing, not added)* | | |
+| **total** | | **+5** |
+
+Old span `:249-262` = 14 lines → new `:250-267` = 18 lines = +4, plus the +1 JSDoc line that
+pushed the definition from `:249` to `:250`. The two figures reconcile exactly.
+
+Every declared anchor verified at its new position:
+
+| Anchor | Verdict | Observed |
+|---|---|---|
+| `:249-262`→`:250-267` | correct | `export function census` at `:250`, closing `}` at `:267` |
+| `:405-407`→`:410-412` | correct | test 4 occupies `:410`, `:411`, `:412` |
+| `:379-488`→`:384-493` | correct | `:384` = `## 7. Tests`; `:494` = `## 8. Effort` |
+| `:414-422`→`:419-427` | correct | `:419` = `test("purge:false never emits a DELETE…`; `:427` = `})`; fence `:428` |
+| `:434-467`→`:439-472` | correct | `:439` = `test("la purge reste impossible…`; `:472` = `})`; fence `:473` |
+| unmoved `:158`–`:163`, `:165-171`, `:168-169`, `:184-185`, `:152-187` | correct | all read in place, §E13 intact |
+
+**No anchor is wrong.**
+
+## `:159` and the three percentages, quoted
+
+`:159-163` verbatim:
+
+```
+159: (`sqlite3 -readonly`, `EXIT=0`) : fichier de **4 089 565 184 octets** (`page_count = 998429`,
+160: `page_size = 4096`) ; **672 804 parts** et **3 475 615 849 caractères** au total. La session la
+161: plus lourde en `reasoning`, `ses_106da869affe6n5CLpUQUcAyj4`, porte **6 410 314 caractères** de
+162: `reasoning` sur **30 251 627 caractères** de parts au total, soit **21,2 %**. Sur l'ensemble de
+163: la base, `reasoning` ne pèse que **7,6 %** des caractères, contre **85,0 %** pour `tool`.
+```
+
+Reproduced from the live DB, all EXIT=0:
+`TOTALS parts=672804 chars=3475615849` · per-type `reasoning 265175764` /
+`tool 2953691159` · session `SES r=6410314` / `SES all=30251627` · `998429 * 4096 = 4089565184`.
+
+Derived: reasoning **7.6296 %**, tool **84.9832 %**, session **21.1900 %**. The proposal's
+published one-decimal figures (7,6 % / 85,0 % / 21,2 %) are the correct roundings.
+
+> Info, not a proposal defect: the brief's own four-decimal values (7.6285 %, 84.982 %) are
+> each ~0.001 low against the measured ratios. The document publishes only the rounded forms,
+> so nothing in the proposal is wrong. R2's raw counts all reproduce exactly.
+
+## Read-only status and wiring
+
+Within the census body `:250-267`, using `rg -n -F` with the range filter
+`^(25[0-9]|26[0-7]):`, whole-document totals as the positive control:
+
+| Term | Body | Document | Verdict |
+|---|---|---|---|
+| `DELETE` | 0 | 10 | absent from census |
+| `VACUUM` | 0 | 9 | absent from census |
+| `wal_checkpoint` | 0 | 4 | not introduced |
+| `INSERT` | 0 | 1 | absent |
+| `UPDATE` | 0 | 1 | absent |
+| `DROP` | 0 | 0 | absent |
+| `query(` | **2** | 2 | positive control passes |
+
+Table-valued read functions present: `pragma_page_count` (7), `pragma_freelist_count` (5),
+`pragma_page_size` (4). `:270-272` states in the document that all three are read-only
+functions, not mutating `PRAGMA`. Census remains **SELECT-only**.
+
+Wiring — `census(` occurs at exactly three places: `:250` (definition), `:304` (the separate
+read-only CLI path), `:395` (the test). Positive control `export function census` = 1.
+`:292` states « Câblé **hors de `maintain()`** et **hors de `schedule()`** ». `maintain()`
+(`maintenance.ts:101-108`) calls only `purgeOldParts()` and `checkpoint(db)`; it never
+references `census`. The census therefore cannot run on the `checkpoint()` path that emits
+`PRAGMA wal_checkpoint(TRUNCATE)` (`maintenance.ts:44-48`, the write at `:45`).
+
+## §E13 volume coherence
+
+No two irreconcilable sizes. The two large figures are explicitly *different quantities*,
+each labelled at its own line, and they reconcile arithmetically:
+
+- `:159` `4 089 565 184 octets` — the `db` file alone (`Get-Item`, EXIT=0: `4089565184`).
+- `:168` `4 093 726 224 o = 4 093,7 Mo` — the `db`+`-wal`+`-shm` **trio**, with its own
+  decomposition printed at `:169`: `4 089 565 184 + 4 128 272 + 32 768`. Measured trio:
+  `db=4089565184 wal=4128272 shm=32768 sum=4093726224`. Sums exactly.
+- `:169` « 5 209 Mo » explicitly **abandonné** — a struck figure, not a competing claim.
+- `:170` 1000 most recent sessions (`time_created DESC`) = `1 988 649 418 o` / `383 487 parts`.
+  Reproduced EXIT=0 by the same bare-column ordering the document names: `BARE parts=383487
+  chars=1988649418`.
+- `:171` « 485 étapes / 6,1 Mo » **supprimé**. `SELECT count(*) … HAVING count(*)=485` →
+  EXIT=0, `N485=0`; identical-form positive control `HAVING count(*)=10939` → EXIT=0, `N10939=1`.
+
+Provenance block `:165-171` coherent: each struck figure is named, marked abandoned, and
+paired with the measurement that replaced it plus the exit code that produced it.
+
+## R3 and the Option-A justification
+
+- `schedule()` takes no env parameter: `maintenance.ts:176-179` is
+  `schedule(db: Runner, options: { intervalMs?: number; purge?: boolean } = {})`.
+- `maintenance.ts:184` is `maintain(db, purge ? process.env : {})` — `process.env` forwarded.
+- Both `finally` outcomes covered in the proposal's test: `:456` `} finally {`, `:457`
+  `if (ambient === undefined) delete process.env.OPENCODE_PART_RETENTION_DAYS`,
+  `:458` `else process.env.OPENCODE_PART_RETENTION_DAYS = ambient`. Both the *undefined* and
+  the *defined* ambient branch are present.
+  - `finally` in `maintenance.ts` = **0** hits; identical-form positive control `try` = **3**
+    hits. The source has no `finally` at all; the clause concerns the proposal's test code.
+  - `finally` in the proposal = **2** hits (`:443` comment, `:456` code); identical-form
+    positive control `try {` = **2** hits.
+- Option A's precedent is real: `maintenance.ts:44-48` already absorbs a busy database via
+  `attempt(() => execute(db, "PRAGMA wal_checkpoint(TRUNCATE)"))` at `:45` and returns the
+  neutral `false` at `:47`. `census()` now follows the established house pattern of degrading
+  to a neutral value instead of propagating. Cited at `:99` (E8) and `:442`.
+
+## C-54 is accurate and not a P08 residue
+
+`docs/harness-audit/CORRECTIONS.md:63` states « base **3 900 Mo** (et non 5 209) ».
+`Get-Item` on `.local\share\opencode\opencode.db` → `4089565184` bytes = `3900.1` MiB: C-54's
+figure reproduces exactly. `opencodev2\opencode.db` → `5646573568` bytes = `5385` MiB, matching
+neither C-54's 3 900 Mo nor the struck 5 209 Mo. Cycle 4's flag stays withdrawn.
+
+> Info: that second path is a live database and grew between cycles (the brief recorded
+> `5 636 284 416` / `5 375,2 Mo`). It is not referenced by any figure the proposal asserts, so
+> the drift changes no conclusion. Flagged only so the next revalidator does not mistake the
+> difference for a discrepancy.
+
+## Findings
 
 | id | severity | statut | evidence | statement |
 |---|---|---|---|---|
-| `P08-CENSUS-SQL-FREELIST-INVALIDE` | blocking | closed | `P08-retention-default.md:258-259`, `:271-273`; `sqlite3 -readonly` EXIT=0 for `pragma_page_count` (`998429`, sole column `page_count`) and `pragma_freelist_count` (`46`, column `freelist_count`); old form EXIT=1 `no such column: freelist_count`; c4 SQL as extracted from the file EXIT=0 → `db=4089565184 free=4089376768` | The freelist column is read from the right table-valued function, and the expression executes on the real database. |
-| `P08-E13-CHIFFRE-50POURCENT-NON-REPRODUIBLE` | blocking | closed | `P08-retention-default.md:160-163`; my SQL: 672 804 parts / 3 475 615 849 chars, reasoning 265 175 764 = 7.6285 %, tool 2 953 691 159 = 84.982 %, session reasoning 6 410 314 / 30 251 627 = 21.190 %, `998429*4096` = 4 089 565 184 | Every figure at `:160-163` reproduces independently to the stated digit; the false 50 % claim is gone from the assertion text. |
-| `P08-E13-PROVENANCE-HONESTE` | material | closed | `P08-retention-default.md:165-171` | The provenance block labels the three legacy volumes as not re-measured and keeps 50 % only as a cited historical error. Quarantined, not smuggled back in. |
-| `P08-REECRITURE-DEPENDE-ENV-AMBIANT` | blocking | closed | `maintenance.ts:176-179` (no env parameter), `:183-184` (`purge ? process.env : {}`), `:101`, `:51-54`, `:65-72`, `:44-48`, `:111`; `P08-retention-default.md:441-454`, `:459`; neighbours `maintenance.test.ts:76,83,85,93,98,100,101,107,113-121,140` | The rewriter's diagnosis of ambient-env dependence is correct, the pin+restore covers both branches, and the second assertion follows the explicit-env convention of the neighbours. |
-| `P08-TEST-FICHIER-INTACT` | material | closed | `maintenance.test.ts` mtime `2026-08-16 13:48:34` vs proposal mtime `2026-10-04 08:24:13`; `maintenance.test.ts:11` still `from "./maintenance"`; `maintenance.ts` mtime `2026-08-16 13:48:02`; `packages/opencode/test` holds 340 `*.test.ts` vs 68 under `src` | The revision agent modified nothing under `packages/**`; the colocated `src/` layout and its import are intact. |
-| `P08-E13-VOLUMES-LEGALES-PERIMEES` | minor | **open** | `P08-retention-default.md:159` states 4 089 565 184 bytes (measured, verified), while `:166-167` still carries « base de 5 209 Mo » and « une session de 485 étapes pèse 6,1 Mo » as un-re-measured legacy orders of magnitude. On-disk footprint including WAL and shm = **4 093 726 224** bytes = 4 093,7 Mo, still ~27 % below 5 209 Mo | §E13 is titled « re-mesuré sur la base réelle » yet still carries a stale file size that no accounting boundary rescues: it exceeds the WAL-inclusive footprint too. The provenance label makes this non-deceptive, but a reader scanning §E13 sees two irreconcilable sizes. The 50 % figure itself is properly retired — this is only the leftover volume text. |
+| P08-C5-CENSUS-ERROR-CONTRACT | blocking→none | **closed** | proposal `:251`, `:264`, `:265`, `:410-412` | §4.1 and §7 test 4 now agree. Both `query()` calls are inside the `try`; the `catch` returns the neutral `Census`, so « pas de throw » holds by construction and test 4 is reachable. |
+| P08-C6-JSDOC-NON-PROPAGATION | minor | **closed** | proposal `:249` | The non-propagation contract is now stated in the JSDoc, and matches the implementation at `:264-265`. |
+| P08-C7-LINE-COUNT | minor | **closed** | `LINES=535`; `:249`/`:251`/`:264`/`:265` | 530→535 is real and fully accounted for: +1 JSDoc, +1 `try`, +1 `catch`, +1 `return`. |
+| P08-C8-ANCHORS | minor | **closed** | `:250`, `:267`, `:384`, `:410`, `:419`, `:439`, `:472`, `:494` | All five moved anchors and all unmoved anchors land on the content claimed. No anchor is wrong. |
+| P08-C9-SQL-UNCHANGED | material | **closed** | `EXIT=0` `db=4089565184 free=4089376768`; `EXIT=1` `no such column: freelist_count` | Literals extracted from `:254-256`/`:260-261` run clean; the R1 negative form fails. The exact +5 delta also proves nothing inside the literals changed. |
+| P08-C10-READ-ONLY | material | **closed** | body counts 0 for `DELETE`/`VACUUM`/`wal_checkpoint`/`INSERT`/`UPDATE`/`DROP`; control `query(`=2 | Census remains SELECT-only, no mutating `PRAGMA`, no `wal_checkpoint` introduced. |
+| P08-C11-WIRING | material | **closed** | `:250`, `:292`, `:304`, `maintenance.ts:101-108` | `census(` is defined once and reached only from the separate CLI path and the test; never from `maintain()`/`schedule()`. |
+| P08-C12-E13-VOLUMES | minor | **closed** | `:159`, `:168-171`; `sum=4093726224`; `BARE parts=383487 chars=1988649418`; `N485=0` / `N10939=1` | No two irreconcilable sizes: `db` alone and the `db+wal+shm` trio are distinct labelled quantities that sum correctly. Struck figures are marked abandoned and replaced by measured ones. |
+| P08-C13-C54 | minor | **closed** | `CORRECTIONS.md:63`; `Get-Item` → `4089565184` = `3900.1` MiB | C-54 is accurate. It describes the audited `db` file; cycle 4's residue flag remains withdrawn. |
+| P08-C14-PCT-ROUNDING | info | **out_of_scope** | proposal `:163`; measured 7.6296 % / 84.9832 % / 21.1900 % | The document's 7,6 % / 85,0 % / 21,2 % are correct roundings. The brief's four-decimal variants sit ~0.001 low; no proposal text is affected. |
+| P08-C15-V2-DB-DRIFT | info | **out_of_scope** | `Get-Item` → `5646573568` bytes = 5385 MiB | A live path grew since cycle 4. No figure the proposal asserts depends on it. |
+
+**Cycle-6 open findings: 1. Cycle-7 residual findings: 0.**
+
+`RESIDUES_REMAINING = 0`, justified as follows: the only finding cycle 6 left open was the
+error-contract contradiction, and it is closed by direct observation of the implemented body
+(`:251`/`:264`/`:265`) against the unchanged test (`:410-412`). Every other item on the
+contract re-measured against the live database and the live source, and every declared figure
+reproduced. The two entries above are `info`/`out_of_scope`: neither is a defect in the
+proposal, neither blocks implementation, and neither is a residue of P08 — one concerns the
+brief's rounding, the other a file outside the proposal's evidence chain.
+
+### Inference marked
+
+- **INFERE:** « The SQL literals are byte-identical to the pre-revision version » and
+  « §7 test 4 is byte-unchanged ». `git` is forbidden for this cycle and the previous
+  revision is not on disk, so byte-identity cannot be diffed directly. Verify with
+  `git diff -- docs/harness-audit/proposals/P08-retention-default.md` once version control is
+  permitted: the diff should show exactly five added lines, at `:249`, `:251`, `:264`, `:265`
+  and one context shift, with zero modifications inside `:254-256` and `:260-261`. The
+  arithmetic corroborates it — a +5 delta accounted for line-for-line by the four declared
+  insertions leaves no room for an edit inside the literals — and the literals execute
+  `EXIT=0` with R1's mandated output.
 
 ## Handed back to
 
-One residual, listed for the revision author:
+The P08 implementation pass. The proposal is implementable as written: `census()` has a
+single, coherent, non-propagating error contract, emits read-only `SELECT` statements only, and
+is wired on a call path disjoint from `maintain()`/`schedule()`. No change is requested.
 
-1. **`P08-E13-VOLUMES-LEGALES-PERIMEES`** (minor, open) — delete the three dead volume figures at
-   `:166-167` (« base de 5 209 Mo », « 1 064 394 243 octets de parts sur les 1 000 sessions les plus
-   récentes », « une session de 485 étapes pèse 6,1 Mo ») or restate them with an explicit pointer to
-   the superseded snapshot date, so §E13 does not present an unmeasured 5 209 Mo beside its own
-   verified 4 089 565 184-byte measurement. The « base de 5 209 Mo » figure has no defensible
-   accounting boundary: the WAL-inclusive footprint is 4 093 726 224 bytes (4 093,7 Mo), so it is
-   ~27 % high even counting `-wal` and `-shm`. The other two figures I could not refute or confirm —
-   they are volumes of a superseded snapshot and are retired by the same edit.
+Two instructions for whoever implements it:
 
-**This does not block implementation.** The three residues that gated implementation are closed on
-executed evidence: the census SQL runs (`EXIT=0`, `db=4089565184`, `free=4089376768`), the retention
-figures are reproducible to the stated digit, and the prescribed test at `:436-463` reaches its pass
-state against the real `schedule()`/`maintain()` contract. Residual 1 is a documentation-hygiene item
-in a block that is already honestly labelled.
-
-Nothing else is owed on R1, R2 or R3.
-
-`RESIDUES_REMAINING = 1` (derived from the single `open` row in the findings table).
+1. Preserve the `try`/`catch` shape of `:251`–`:266` verbatim. The catch at `:264` is load-bearing
+   for §7 test 4 (`:410-412`); any future edit that lets a `query()` failure escape re-opens a
+   blocking finding.
+2. Reproduce the measurements in this verdict rather than retyping them from the proposal — the
+   percentage and volume figures were taken from `sqlite3 -readonly` against the live database,
+   and the brief's four-decimal variants are known to drift (P08-C14).
