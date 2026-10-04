@@ -162,13 +162,13 @@ plus lourde en `reasoning`, `ses_106da869affe6n5CLpUQUcAyj4`, porte **6 410 314 
 `reasoning` sur **30 251 627 caractères** de parts au total, soit **21,2 %**. Sur l'ensemble de
 la base, `reasoning` ne pèse que **7,6 %** des caractères, contre **85,0 %** pour `tool`.
 
-> Provenance : la version précédente de cette proposition (lignes 167-170) portait « base de
-> 5 209 Mo », « 1 064 394 243 octets de parts sur les 1 000 sessions les plus récentes » et
-> « une session de 485 étapes pèse 6,1 Mo », en marquant le tout « mesures terrain fournies par
-> l'audit (non re-mesurées ici) », etannonçait **3 045 134 caractères = 50 % de la session**.
-> Ces trois valeurs de volume **ne sont pas re-mesurées ici** et restent des ordres de grandeur
-> du rapport initial. En revanche le chiffre `reasoning` était faux et non reproductible : il est
-> **remplacé** ci-dessus par la mesure.
+> Provenance : la version précédente (lignes 167-170) annonçait « base de 5 209 Mo », « 1 064 394 243
+> octets de parts sur les 1 000 sessions les plus récentes », « une session de 485 étapes pèse 6,1 Mo
+> », le tout « non re-mesuré ici », et **3 045 134 caractères = 50 % de la session**. Les trois
+> volumes sont **re-mesurés** et périmés : empreinte `db`+`-wal`+`-shm` **4 093 726 224 o = 4 093,7 Mo**
+> (4 089 565 184 + 4 128 272 + 32 768, `Get-Item`, `EXIT=0`) ; « 5 209 Mo » **abandonné** ; 1 000
+> sessions les plus récentes (`time_created DESC`) **1 988 649 418 o** / 383 487 parts (`EXIT=0`) ;
+> « 485 étapes / 6,1 Mo » **supprimé** : 0 session à 485 parts (`EXIT=0`; contrôle `= 10939` → 1).
 >
 > Méthode : `SELECT json_extract(data,'$.type') AS type, count(*), sum(length(data)) FROM part
 > GROUP BY type`, puis regroupement par `session_id` trié sur la somme `reasoning` ; taille de
@@ -245,8 +245,10 @@ export type Census = {
   freelistBytes: number
 }
 
-/** Read-only. Emits SELECT statements exclusively: no DELETE, no VACUUM, no mutating PRAGMA. */
+/** Read-only. Emits SELECT statements exclusively: no DELETE, no VACUUM, no mutating PRAGMA.
+ *  Ne propage jamais (§7, test 4) : un handle qui lève rend un `Census` vide (0 = verrouillé ou vide). */
 export function census(db: Runner, before: number): Census {
+  try {
   const grouped = query(
     db,
     `SELECT json_extract(data,'$.type') AS type, count(*) AS parts, COALESCE(sum(length(data)),0) AS chars
@@ -259,6 +261,9 @@ export function census(db: Runner, before: number): Census {
             ((SELECT page_count FROM pragma_page_count) - (SELECT freelist_count FROM pragma_freelist_count)) * (SELECT page_size FROM pragma_page_size) AS free`,
   )
   // ...reduce grouped into Census
+  } catch {
+    return { totalParts: 0, byType: {}, dbBytes: 0, freelistBytes: 0 }
+  }
 }
 ```
 
