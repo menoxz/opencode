@@ -150,7 +150,7 @@ Source de vérité : la section `## Final verdict` de chaque `verdicts/P*-revali
 | **P05** | PASS_WITH_CHANGES | 0 | oui | `src/session/lean-advisory.ts` |
 | **P06** | PASS_WITH_CHANGES | 0 | oui | `src/session/goal-context.test.ts` |
 | **P07** | PASS_WITH_CHANGES | 0 | non | `-` |
-| **P08** | PASS | 0 | oui | c7 REVALIDATED-PASS, RESIDUES_REMAINING=0 |
+| **P08** | PASS | 0 | fusionne | commit 0523170c : census read-only, 9 tests verts, typecheck 0 |
 | **P09** | PASS_WITH_CHANGES — **NOT_IMPLEMENTABLE** | 14 | non | `-` |
 | **P10** | PASS_WITH_CHANGES | 0 | non | `-` |
 | **P11** | PASS_WITH_CHANGES | 0 | non | `-` |
@@ -188,7 +188,7 @@ Statuts lus par lecture directe, jamais par regexp (C-142).
 | P05 | PASS_WITH_CHANGES | fusionnee | 10 pass / 0 fail |
 | P06 | PASS_WITH_CHANGES | fusionnee | 6 pass / 0 fail |
 | P07 | PASS_WITH_CHANGES | fusionnee | commit fbc65658, 2 pass / 0 fail |
-| P08 | PASS | implementable, 0 residu | c7 REVALIDATED-PASS, RESIDUES_REMAINING=0, SQL EXIT=0, census read-only |
+| P08 | PASS | fusionnee | commit 0523170c : census.test.ts 9 pass / 0 fail, maintenance.test.ts 22 pass / 0 fail |
 | P09 | PASS_WITH_CHANGES | non implementable | 14 residus open :294 |
 | P10 | falsifie par execution | reverti a HEAD | C-141, typecheck 0, 14 pass / 0 fail |
 | P11 | PASS_WITH_CHANGES | fusionnee | commit 80aa6c31, 3 pass / 0 fail |
