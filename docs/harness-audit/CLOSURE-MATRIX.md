@@ -197,7 +197,7 @@ Statuts lus par lecture directe, jamais par regexp (C-142).
 | P14 | PASS_WITH_CHANGES | fusionnee | 19 pass / 0 fail, typecheck 0 |
 | P15 | PASS_WITH_CHANGES | fusionnee | commit 6430ee62 : src/plugin/index.ts blob 7740186a dans HEAD ; TC_EXIT=0, TS_ERRORS=0, TS18047=0 ; meta.test.ts 3 pass / 0 fail sur chacun des deux blobs ; C-159 |
 | P16 | PASS_WITH_CHANGES | fusionnee | 39 pass / 0 fail |
-| P17 | FAIL | aucune | 9 residus open, terminal |
-| P18 | PASS_WITH_CHANGES | non implementable | cycle 2 NOT_IMPLEMENTABLE, RESIDUES_REMAINING 5, P18-revalidation-c2.md:13 et :15 ; COR-R18-3 et COR-R18-4 fermes par C-162 |
+| P17 | FAIL | corrige hors proposition : commit 9c9b1b97 | defaut d unite reel dans HEAD : processor.ts:591 passait maxChars en points de code dans le champ maxBytes mesure en octets, divisant par deux le budget lean sur texte accentue ; truncate.output accepte desormais un maxChars en points de code et rapporte l unite liante ; typecheck TS_ERRORS=0, suites lean 27 pass / 0 fail ; C-176 |
+| P18 | PASS_WITH_CHANGES | defaut deja corrige dans HEAD | le retry transitoire EPERM/EBUSY existe dans HEAD : launch-retry.ts:8-10 et :48, cross-spawn-spawner.ts:36 et :43, shell.ts:584, filesystem.ts:102-107 ; 4 suites dediees ; execution 8 pass / 0 fail ; C-175 |
 | P19 | FAIL | aucune | revalidation :246 |
 | P20 | FAIL | aucune | revalidation :267 |
