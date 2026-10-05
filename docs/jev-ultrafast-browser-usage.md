@@ -42,8 +42,14 @@ Donc la charge technique du projet — la seule requête à choix multiples avec
 fonctionne bien sur notre fournisseur. `TYPESAFE_API_KEY` de l'environnement renvoie 401 sur
 `api.typesafe.ai` ; le preset `command-code` et sa clé dédiée sont le chemin qui fonctionne.
 
-Latence : non mesurée de façon fiable chez nous (la sonde l'expose mais mes extracted runs ne
-l'ont pas rendue de façon stable). Chiffre du dépôt à titre indicatif : médiane 178 ms par requête.
+Latence mesurée chez nous (`bun script/jev-wire-probe.ts`, `RESULT=PASS`) : 1 033 ms pour la
+requête à deux têtes (5 354 tokens entrée / 574 sortie, 9 738 octets de corps) et 470 ms pour la
+requête à trois têtes (7 942 / 1 077, 14 505 octets). Chiffre du dépôt à titre indicatif : médiane
+178 ms. Nos mesures sont deux appels seulement, sur une machine et un fournisseur différents — la
+constante « médiane 178 ms » n'est donc pas confirmée chez nous.
+
+Conséquence pratique : la forme est validée, la vitesse ne l'est pas. Le fan-out ajoute ~60 % de
+tokens entrée pour un gain qui reste à mesurer sur une vraie page.
 
 ## Ce qu'il faut prendre
 
