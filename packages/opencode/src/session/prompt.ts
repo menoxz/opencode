@@ -75,6 +75,9 @@ import * as EffectLogger from "@opencode-ai/core/effect/logger"
 import { InstanceState } from "@/effect/instance-state"
 import { TaskTool, type TaskPromptOps } from "@/tool/task"
 import { PlanEngine, type ExecutionPlan } from "@/plan-engine"
+import { JevComplexity } from "@/jev/complexity"
+import { ConfigJev } from "@/config/jev"
+import { HttpClient } from "effect/unstable/http"
 import * as PostMortem from "@/memory/post-mortem"
 import { SessionRunState } from "./run-state"
 import * as PromptMethodology from "./prompt-methodology"
@@ -2028,7 +2031,36 @@ export const layer = Layer.effect(
             )
             const currentUserText = currentUserMsg ? getUserPromptText(currentUserMsg) : ""
             if (currentUserText && !isContinuationPrompt(currentUserText)) {
-              const complexity = PlanEngine.heuristicComplexity(currentUserText)
+              // The keyword classifier is the fallback, never the primary verdict: it
+              // returned "complex" for 16 of 20 real prompts and "simple" for none,
+              // because it matches keywords bidirectionally. `heuristic` stays
+              // authoritative whenever Jev cannot answer, so the gate degrades to
+              // the previous behaviour instead of opening or closing arbitrarily.
+              const heuristic = PlanEngine.heuristicComplexity(currentUserText) as JevComplexity.Complexity
+              const jevInfo = ConfigJev.resolve((yield* config.get()).jev)
+              const autoPlan = jevInfo?.auto_plan
+              let complexity = heuristic
+              if (autoPlan?.enabled === true) {
+                const http = yield* Effect.serviceOption(HttpClient.HttpClient)
+                if (Option.isNone(http)) {
+                  yield* slog.warn("jev auto-plan skipped: no HttpClient in this loop context")
+                } else {
+                  const outcome = yield* JevComplexity.classify(http.value, jevInfo, {
+                    task: currentUserText,
+                    fallback: heuristic,
+                    autoPlanAt: autoPlan.auto_plan_at ?? JevComplexity.DEFAULT_AUTO_PLAN_AT,
+                    timeoutMs: autoPlan.timeout_ms ?? JevComplexity.DEFAULT_TIMEOUT_MS,
+                    enabled: true,
+                    circuit: JevComplexity.circuit,
+                  })
+                  complexity = outcome.value
+                  yield* (outcome.source === "jev"
+                    ? slog.info("jev task complexity", { complexity: outcome.value, latencyMs: outcome.latencyMs })
+                    : slog.warn("jev task complexity unavailable, deterministic classifier answers", {
+                        reason: outcome.reason,
+                      }))
+                }
+              }
               if (complexity === "complex" && planEngine) {
                 yield* slog.info("auto-planning triggered for complex task")
 
