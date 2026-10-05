@@ -1,0 +1,27 @@
+{
+  "url": "https://www.google.com/travel/flights?hl=en",
+  "title": "Google Flights",
+  "elements": [
+    { "uid": "e1", "role": "heading", "name": "Flights" },
+    { "uid": "e2", "role": "combobox", "name": "Trip type" },
+    { "uid": "e3", "role": "option", "name": "One way", "actionable": true },
+    { "uid": "e4", "role": "combobox", "name": "Where from?" },
+    { "uid": "e5", "role": "listbox", "name": "Suggested airports" },
+    { "uid": "e6", "role": "option", "name": "Zurich (ZRH)" },
+    { "uid": "e7", "role": "combobox", "name": "Where to?" },
+    { "uid": "e8", "role": "option", "name": "London (LON)" },
+    { "uid": "e9", "role": "combobox", "name": "Departure" },
+    { "uid": "e10", "role": "gridcell", "name": "September 20, 2026" },
+    { "uid": "e11", "role": "combobox", "name": "Passengers" },
+    { "uid": "e12", "role": "option", "name": "1 adult" },
+    { "uid": "e13", "role": "combobox", "name": "Class" },
+    { "uid": "e14", "role": "option", "name": "Economy" },
+    { "uid": "e15", "role": "button", "name": "Search" },
+    { "uid": "e16", "role": "button", "name": "Reset", "actionable": false },
+    { "uid": "e17", "role": "checkbox", "name": "Flexible dates" },
+    { "uid": "e18", "role": "button", "name": "Filter results" },
+    { "uid": "e19", "role": "StaticText", "name": "Cheapest round trip CHF 118" },
+    { "uid": "e20", "role": "link", "name": "Privacy" },
+    { "uid": "e21", "role": "link", "name": "Terms" }
+  ]
+}
