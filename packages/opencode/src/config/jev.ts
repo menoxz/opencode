@@ -150,10 +150,10 @@ export const Intake = Schema.Struct({
       "System One model id used for the intake questions only, so the filter can run on a cheaper or faster model than the rest of Jev (for example `openjev-latest`). When set (or when `base_url`/`endpoint` is set) the questions travel in their own request; otherwise they merge into the shared post round-trip. Defaults to `jev.model`.",
   }),
   base_url: Schema.optional(Schema.String).annotate({
-    description: "System One host used for the intake questions only. Overrides `jev.base_url` for this hook.",
+    description: `System One host used for the intake questions only. Overrides \`jev.base_url\` for this hook, and is subject to the same Command Code host check.`,
   }),
   endpoint: Schema.optional(Schema.String).annotate({
-    description: "Full System One endpoint used for the intake questions only. Overrides `base_url` for this hook.",
+    description: `Full System One endpoint used for the intake questions only. Overrides \`base_url\`, and is subject to the same Command Code host check.`,
   }),
 }).annotate({ identifier: "JevIntakeConfig" })
 export type Intake = Schema.Schema.Type<typeof Intake>
@@ -181,22 +181,20 @@ export const Tools = Schema.Struct({
 export type Tools = Schema.Schema.Type<typeof Tools>
 
 export const Info = Schema.Struct({
-  provider: Schema.optional(JevClient.Provider).annotate({
-    description:
-      'Named provider preset setting `base_url` and `model` together: `"typesafe"` (api.typesafe.ai, jev-latest), `"openjev"` (api.codiv.ai, openjev-latest) or `"command-code"` (Command Code GOAT Provider API, typesafe/jev). An explicit `base_url` or `model` still wins.',
+  provider: Schema.optional(Schema.Literal(JevClient.PROVIDER)).annotate({
+    description: `Named provider preset setting \`base_url\` and \`model\` together. This build talks to Command Code only, so the sole accepted value is "${JevClient.PROVIDER}" — \`typesafe/jev\` is served nowhere else. The other presets are unreachable from here; an explicit \`base_url\`, \`endpoint\` or \`model\` is accepted only when it already points at ${JevClient.COMMAND_CODE_BASE_URL}.`,
   }),
   api_key: Schema.optional(Schema.String).annotate({
-    description:
-      "System One API key. Prefer the TYPESAFE_API_KEY or JEV_API_KEY environment variable over storing a secret in a config file.",
+    description: `System One API key. Read from the ${JevClient.PROVIDER_ENV_KEY} environment variable first, then this field. No other environment variable is consulted, so a stale key cannot silently win over a working one.`,
   }),
   base_url: Schema.optional(Schema.String).annotate({
-    description: `API base URL. Defaults to ${JevClient.DEFAULT_BASE_URL} (TypeSafe production). Set ${JevClient.OPENJEV_BASE_URL} — or the ${JevClient.BASE_URL_ENV} environment variable — to run against Codiv OpenJev.`,
+    description: `API base URL. Defaults to ${JevClient.COMMAND_CODE_BASE_URL} (Command Code Provider API). An explicit value is honoured only when its host is already Command Code; any other host is refused, because \`typesafe/jev\` is served there only.`,
   }),
   endpoint: Schema.optional(Schema.String).annotate({
     description: "Full System One endpoint. Overrides `base_url`. Defaults to `<base_url>/v1/systemone`.",
   }),
   model: Schema.optional(JevSchema.Model).annotate({
-    description: `Default model id. Defaults to ${JevClient.DEFAULT_MODEL}, or ${JevClient.OPENJEV_MODEL} when \`base_url\` or ${JevClient.BASE_URL_ENV} points at the OpenJev host.`,
+    description: `Default model id. Defaults to ${JevClient.COMMAND_CODE_MODEL} on the locked Command Code host. An explicit value is kept as written, so it is never resolved to another host's preset.`,
   }),
   shadow: Schema.optional(Schema.Boolean).annotate({
     description:

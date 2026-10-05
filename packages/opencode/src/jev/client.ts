@@ -14,8 +14,38 @@ export const OPENJEV_MODEL = "openjev-latest"
 export const COMMAND_CODE_BASE_URL = "https://api.commandcode.ai/provider"
 export const COMMAND_CODE_MODEL = "typesafe/jev"
 
-export const BASE_URL_ENV = "TYPESAFE_BASE_URL"
-export const MODEL_ENV = "TYPESAFE_MODEL"
+/**
+ * The only provider this build talks to.
+ *
+ * The historical resolution (provider preset, then `TYPESAFE_BASE_URL` /
+ * `TYPESAFE_MODEL`, then the `TYPESAFE_*` / `JEV_*` keys, then the presets) left
+ * four ways to pick a host and a key independently, and this environment exercises
+ * the worst of them: `TYPESAFE_API_KEY` is set and answers HTTP 401 on both
+ * `api.typesafe.ai` and the Command Code Provider API, so the cascade picked a dead
+ * key on every call and every caller degraded to its fallback without anyone seeing
+ * why. Host, model and key are now pinned together, and `typesafe/jev` is served by
+ * Command Code only.
+ */
+export const PROVIDER = "command-code" as const
+
+/**
+ * The single environment variable that can authenticate a Jev call.
+ *
+ * Deliberately a literal rather than a lookup in the old `PROVIDER_ENV_KEYS` table:
+ * the lock must not depend on a table that can grow a second host again.
+ */
+export const PROVIDER_ENV_KEY = "COMMAND_CODE_API_KEY" as const
+
+/**
+ * True only for a host the Command Code Provider API serves.
+ *
+ * The check is on the host, not the string: a path, a trailing slash or another
+ * scheme is the same provider, while a different host is not — and pointing a
+ * `typesafe/jev` request anywhere else 404s on every call.
+ */
+export function isProviderHost(value: string | undefined): boolean {
+  return value !== undefined && host(value) === host(COMMAND_CODE_BASE_URL)
+}
 
 export const Provider = Schema.Literals(["typesafe", "openjev", "command-code"]).annotate({
   identifier: "JevProvider",
@@ -31,26 +61,6 @@ export const PROVIDERS: Record<Provider, { base_url: string; model: string }> = 
   typesafe: { base_url: DEFAULT_BASE_URL, model: DEFAULT_MODEL },
   openjev: { base_url: OPENJEV_BASE_URL, model: OPENJEV_MODEL },
   "command-code": { base_url: COMMAND_CODE_BASE_URL, model: COMMAND_CODE_MODEL },
-}
-
-/**
- * Environment variables checked before `config.jev.api_key`. Keeping the
- * secret in the environment is the documented default: opencode validates
- * config strictly and config files are routinely committed.
- */
-export const ENV_KEYS = ["TYPESAFE_API_KEY", "JEV_API_KEY"] as const
-
-/**
- * Each provider has its own secret: a `typesafe` key is rejected by the
- * Command Code API and vice-versa. A `provider` preset therefore reads its own
- * variable first — otherwise a stale `TYPESAFE_API_KEY` in the environment
- * would be sent to the wrong host and fail with HTTP 401 — and only then falls
- * back to the generic keys.
- */
-export const PROVIDER_ENV_KEYS: Record<Provider, string> = {
-  typesafe: ENV_KEYS[0],
-  openjev: ENV_KEYS[1],
-  "command-code": "COMMAND_CODE_API_KEY",
 }
 
 /**
@@ -79,15 +89,17 @@ export type Settings = {
   model?: string
 }
 
+/**
+ * The Command Code key, and only the Command Code key.
+ *
+ * `COMMAND_CODE_API_KEY` first, then an explicit `jev.api_key` for a config that
+ * carries its own secret. The `TYPESAFE_*` and `JEV_*` variables are no longer
+ * consulted: they authenticate hosts this build does not call, and accepting one
+ * would trade a loud 401 for a silent fallback.
+ */
 export function apiKey(settings?: Settings, env: NodeJS.ProcessEnv = process.env): string | undefined {
-  if (settings?.provider) {
-    const scoped = env[PROVIDER_ENV_KEYS[settings.provider]]
-    if (scoped) return scoped
-  }
-  for (const name of ENV_KEYS) {
-    const value = env[name]
-    if (value) return value
-  }
+  const scoped = env[PROVIDER_ENV_KEY]
+  if (scoped) return scoped
   return settings?.api_key
 }
 
@@ -96,12 +108,16 @@ function host(value: string): string | undefined {
   return new URL(value).host
 }
 
-function preset(settings?: Settings) {
-  return settings?.provider ? PROVIDERS[settings.provider] : undefined
-}
-
-export function baseUrl(settings?: Settings, env: NodeJS.ProcessEnv = process.env): string {
-  return settings?.base_url ?? env[BASE_URL_ENV] ?? preset(settings)?.base_url ?? DEFAULT_BASE_URL
+/**
+ * The Command Code Provider API host.
+ *
+ * An explicit `base_url` is honoured only when it already points at Command Code;
+ * any other host is refused and the preset wins. `TYPESAFE_BASE_URL` is no longer
+ * consulted, for the same reason the key is pinned.
+ */
+export function baseUrl(settings?: Settings, _env: NodeJS.ProcessEnv = process.env): string {
+  if (isProviderHost(settings?.base_url)) return settings!.base_url!
+  return COMMAND_CODE_BASE_URL
 }
 
 /**
@@ -109,25 +125,18 @@ export function baseUrl(settings?: Settings, env: NodeJS.ProcessEnv = process.en
  * switching host — an explicit `provider` preset, `base_url`, or the
  * environment — never leaves a model id pointed at a host that does not serve it.
  */
-export function resolveModel(settings?: Settings, env: NodeJS.ProcessEnv = process.env): string {
-  const resolved = host(baseUrl(settings, env))
-  const byHost =
-    resolved === host(COMMAND_CODE_BASE_URL)
-      ? COMMAND_CODE_MODEL
-      : resolved === host(OPENJEV_BASE_URL)
-        ? OPENJEV_MODEL
-        : DEFAULT_MODEL
-  return settings?.model ?? env[MODEL_ENV] ?? preset(settings)?.model ?? byHost
+export function resolveModel(settings?: Settings, _env: NodeJS.ProcessEnv = process.env): string {
+  return settings?.model ?? COMMAND_CODE_MODEL
 }
 
 export function resolveEndpoint(settings?: Settings, env: NodeJS.ProcessEnv = process.env): string {
-  return settings?.endpoint ?? `${baseUrl(settings, env).replace(/\/+$/, "")}/v1/systemone`
+  if (isProviderHost(settings?.endpoint)) return settings!.endpoint!
+  return `${baseUrl(settings, env).replace(/\/+$/, "")}/v1/systemone`
 }
 
 export class NotConfiguredError extends Schema.TaggedErrorClass<NotConfiguredError>()("JevNotConfiguredError", {}) {
   override get message() {
-    const keys = [...new Set([...ENV_KEYS, ...Object.values(PROVIDER_ENV_KEYS)])]
-    return `Jev is not configured. Set ${keys.join(" or ")}, or \`jev.api_key\` in opencode.json, to use the Jev decision model.`
+    return `Jev is not configured. Set ${PROVIDER_ENV_KEY}, or \`jev.api_key\` in opencode.json, to use the Jev decision model.`
   }
 }
 
