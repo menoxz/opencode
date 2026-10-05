@@ -1,6 +1,13 @@
 import { Effect } from "effect"
 import { HttpClient } from "effect/unstable/http"
 import { JevClient } from "./client"
+import { decide as decideBounded, makeCircuit, type Circuit } from "./decide"
+
+/** Round-trip bound. The observed median is ~830 ms with a 4.3 s tail. */
+export const DEFAULT_TIMEOUT_MS = 5_000
+
+/** Process-wide breaker: endpoint reachability is a process property, not a call property. */
+const processCircuit = makeCircuit()
 import { JevSchema } from "./schema"
 
 /**
@@ -127,13 +134,26 @@ export const judge = Effect.fn("JevRelevance.judge")(function* (
   http: HttpClient.HttpClient,
   settings: JevClient.Settings | undefined,
   input: QuestionInput,
+  options: { readonly enabled?: boolean; readonly timeoutMs?: number; readonly circuit?: Circuit } = {},
 ) {
-  const response = yield* JevClient.decide(
-    http,
-    { state: `Relevance check before the ${input.tool} call.`, questions: relevanceQuestions(input) },
-    settings,
-  )
-  return interpret(response)
+  // Fail-open, and deliberately the opposite of the guard: a redundant call is
+  // wasted work, never damage. When the model cannot answer, the call proceeds
+  // exactly as it would with relevance switched off, so an outage costs a little
+  // wasted context rather than the loop. The fallback is `undefined` — an
+  // abstention, not a verdict — so the hook declines to judge and returns early.
+  const outcome = yield* decideBounded<Assessment | undefined>({
+    label: "relevance",
+    circuit: options.circuit ?? processCircuit,
+    enabled: options.enabled !== false,
+    timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    fallback: () => undefined,
+    run: JevClient.decide(
+      http,
+      { state: `Relevance check before the ${input.tool} call.`, questions: relevanceQuestions(input) },
+      settings,
+    ).pipe(Effect.map(interpret)),
+  })
+  return outcome.value
 })
 
 export * as JevRelevance from "./relevance"

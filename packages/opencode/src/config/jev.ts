@@ -1,5 +1,6 @@
 import { Schema } from "effect"
 import { JevClient } from "@/jev/client"
+import { JevComplexity } from "@/jev/complexity"
 import { JevSchema } from "@/jev/schema"
 import { JevGuard } from "@/jev/guard"
 import { JevCompaction } from "@/jev/compaction"
@@ -40,6 +41,28 @@ export const Plan = Schema.Struct({
   }),
 }).annotate({ identifier: "JevPlanConfig" })
 export type Plan = Schema.Schema.Type<typeof Plan>
+
+export const AutoPlan = Schema.Struct({
+  enabled: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "Decide task complexity with Jev instead of the keyword classifier. Two noul questions ask whether the task is a small single-step change and whether it needs decomposition into planned steps; the auto-planning gate opens when the second is at or above auto_plan_at, and the deterministic classifier answers instead when Jev is disabled, absent, slow or out of service. Costs one Jev round-trip per session, on the first step of a build or orchestrator turn only. Default off.",
+  }),
+  auto_plan_at: Schema.optional(Schema.Number).annotate({
+    description: `Probability (0..1) at or above which the task is treated as complex. Defaults to ${JevComplexity.DEFAULT_AUTO_PLAN_AT}.`,
+  }),
+  timeout_ms: Schema.optional(Schema.Number).annotate({
+    description: `Round-trip bound in milliseconds before the deterministic classifier answers instead. Defaults to ${JevComplexity.DEFAULT_TIMEOUT_MS}.`,
+  }),
+}).annotate({ identifier: "JevAutoPlanConfig" })
+export type AutoPlan = Schema.Schema.Type<typeof AutoPlan>
+
+export const Prefilter = Schema.Struct({
+  enabled: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "Screen calls deterministically before submitting them to Jev. Measured over 400 real sessions: a command carrying a destructive pattern is 1.6% of shell calls, and a repeat of an already-seen target is 13.7% of all calls, so the filter takes guard and relevance from 118.9 candidate calls per session down to 0.55. Defaults to true; set false to have Jev judge every call. This is a cost control and never a safety boundary: a call the filter skips is simply not submitted, and the permission layer stays the only place a call can be refused.",
+  }),
+}).annotate({ identifier: "JevPrefilterConfig" })
+export type Prefilter = Schema.Schema.Type<typeof Prefilter>
 
 export const Review = Schema.Struct({
   enabled: Schema.optional(Schema.Boolean).annotate({
@@ -188,6 +211,8 @@ export const Info = Schema.Struct({
       'Activation preset. `"safe"` turns on every hook whose failure mode is advisory — route, plan, relevance, review, next_action and intake — so Jev assists the loop without ever refusing a call or ending a run. A hook set explicitly wins: `enabled: false` beside `profile: "safe"` stays off. Opt-in: without it every hook keeps its default (off).',
   }),
   guard: Schema.optional(Guard),
+  prefilter: Schema.optional(Prefilter),
+  auto_plan: Schema.optional(AutoPlan),
   route: Schema.optional(Route),
   plan: Schema.optional(Plan),
   review: Schema.optional(Review),

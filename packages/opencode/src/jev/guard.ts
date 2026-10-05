@@ -3,6 +3,10 @@ import { HttpClient } from "effect/unstable/http"
 import { JevClient } from "./client"
 import { JevSchema } from "./schema"
 import type { UntrustedHit } from "./state"
+import { decide as decideBounded, makeCircuit, type Circuit, type Fallback } from "./decide"
+
+/** Process-wide breaker: endpoint reachability is a process property, not a call property. */
+const processCircuit = makeCircuit()
 
 /**
  * Probability gate. A `noul` answer is a single probability that the risky
@@ -68,6 +72,13 @@ export type Outcome = {
   decision: Decision
   reason: string
   signal: Signal
+  /**
+   * Set only when the deterministic fallback answered because Jev could not.
+   * A caller must not memoise such a verdict: it describes the outage, not the
+   * call, and caching it would keep escalating every repeat long after the
+   * endpoint recovered.
+   */
+  fallback?: Fallback
 }
 
 const percent = (value: number) => `${(value * 100).toFixed(1)}%`
@@ -175,14 +186,42 @@ export const screen = Effect.fn("JevGuard.screen")(function* (
     untrusted: readonly UntrustedHit[]
     threshold: number
   },
+  options: { readonly enabled?: boolean; readonly timeoutMs?: number; readonly circuit?: Circuit } = {},
 ) {
   const request: JevSchema.Request = {
     state: `Pre-tool guard for ${input.tool}.`.slice(0, MAX_STATE_CHARS),
     questions: guardQuestions(input),
   }
-  const response = yield* JevClient.decide(http, request, settings)
-  const signal = signalFrom(response)
-  return signal ? decide(signal, input.threshold) : undefined
+  // Fail-closed. Reaching this point means the deterministic pre-filter already
+  // found a destructive pattern, so an unavailable model must not resolve into a
+  // silent allow. Asking the user is the safe verdict: it never refuses a call
+  // they did want, and never waves one through they did not. This deliberately
+  // replaces the previous `undefined`-on-failure behaviour, which failed open.
+  const outcome = yield* decideBounded<Outcome | undefined>({
+    label: "guard",
+    circuit: options.circuit ?? processCircuit,
+    enabled: options.enabled !== false,
+    timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    fallback: () => UNAVAILABLE,
+    run: JevClient.decide(http, request, settings).pipe(
+      Effect.map((response) => {
+        const signal = signalFrom(response)
+        return signal ? decide(signal, input.threshold) : undefined
+      }),
+    ),
+  })
+  if (outcome.value === undefined) return undefined
+  return outcome.source === "jev" ? outcome.value : { ...outcome.value, fallback: outcome.reason }
 })
+
+/** The verdict used whenever the model cannot answer about a flagged call. */
+const UNAVAILABLE: Outcome = {
+  decision: "ask",
+  reason:
+    "Jev is unavailable and the deterministic pre-filter flagged this call as destructive, so it is escalated rather than silently allowed",
+  signal: { risk: 1, userRequested: 0, fromUntrusted: 0 },
+}
+
+export const DEFAULT_TIMEOUT_MS = 5_000
 
 export * as JevGuard from "./guard"

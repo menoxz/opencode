@@ -1,9 +1,11 @@
 import { Effect } from "effect"
 import { HttpClient } from "effect/unstable/http"
 import { JevClient } from "./client"
+import { JevComplexity } from "./complexity"
 import { JevGuard } from "./guard"
 import { JevIntake } from "./intake"
 import { JevNextAction } from "./next-action"
+import { JevPrefilter } from "./prefilter"
 import { JevRelevance } from "./relevance"
 import { JevReview } from "./review"
 import { JevSchema } from "./schema"
@@ -28,7 +30,9 @@ import * as State from "./state"
 /** Structural view of `config.jev`, so this module never imports the config schema. */
 export type JevSettings = JevClient.Settings & {
   shadow?: boolean
+  prefilter?: { enabled?: boolean }
   guard?: { enabled?: boolean; threshold?: number; permissions?: readonly string[] }
+  auto_plan?: { enabled?: boolean; auto_plan_at?: number; timeout_ms?: number }
   route?: { enabled?: boolean; threshold?: number }
   review?: { enabled?: boolean }
   untrusted?: { enabled?: boolean; threshold?: number }
@@ -77,6 +81,12 @@ export const guard = Effect.fn("JevHooks.guard")(function* (
   if (section?.enabled !== true) return undefined
   const threshold = section.threshold ?? JevGuard.DEFAULT_THRESHOLD
   const args = renderArgs(input.args)
+  // Deterministic pre-filter: only an executed command carrying a destructive
+  // pattern earns a round-trip. Measured at 1.6% of shell calls (220 of 13 405
+  // over 400 sessions). A pre-filter narrows what the model is asked about; it
+  // never authorises anything, so a pattern missed here means "not asked", and
+  // the permission layer stays the only place a call can be refused.
+  if (settings?.prefilter?.enabled !== false && !JevPrefilter.guardCandidate(input.tool, args).screen) return undefined
   const key = [
     input.tool,
     args,
@@ -94,7 +104,10 @@ export const guard = Effect.fn("JevHooks.guard")(function* (
     threshold,
   }).pipe(Effect.catch(() => Effect.succeed(undefined)))
   if (!outcome) return undefined
-  State.cacheVerdict(input.sessionID, key, outcome)
+  // A fail-closed escalation describes the outage, not the call. Memoising it
+  // would keep escalating every repeat of the call for the rest of the session,
+  // long after the endpoint recovered, so only a real verdict is cached.
+  if (outcome.fallback === undefined) State.cacheVerdict(input.sessionID, key, outcome)
   return { ...outcome, cached: false }
 })
 
@@ -122,6 +135,13 @@ export const relevance = Effect.fn("JevHooks.relevance")(function* (
 ) {
   const section = settings?.relevance
   if (section?.enabled !== true) return undefined
+  // Deterministic pre-filter: a first read of a target can never be redundant,
+  // and an identical call is already refused by the repetition ledger, so only
+  // a repeat of an already-seen target with different arguments is worth asking
+  // about. Fail-open by construction: not screening a call only means the model
+  // is not consulted, and the hook never blocks a call in the first place.
+  if (settings?.prefilter?.enabled !== false && !JevPrefilter.relevanceCandidate(input.tool, renderArgs(input.args), input.observed).screen)
+    return undefined
   const redundantAt = section.threshold ?? JevRelevance.DEFAULT_REDUNDANT_AT
   const ambiguousAt = section.ambiguous_threshold ?? JevRelevance.DEFAULT_AMBIGUOUS_AT
   const args = renderArgs(input.args)

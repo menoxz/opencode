@@ -29,7 +29,7 @@ const host = (respond: () => Response) => {
 const identical = {
   sessionID: "ses_memo_same",
   tool: "bash",
-  args: { command: "git status --short" },
+  args: { command: "rm -rf ./dist" },
   lastUser: "commit the guard fix",
 }
 
@@ -52,7 +52,7 @@ describe("jev guard memoisation", () => {
   test("asks Jev again when the arguments differ", async () => {
     const { client, seen } = host(() => Response.json(answers(0.9)))
     await deliberate(client, identical)
-    await deliberate(client, { ...identical, args: { command: "git diff" } })
+    await deliberate(client, { ...identical, args: { command: "rm -rf ./build" } })
     expect(seen).toHaveLength(2)
   })
 
@@ -83,9 +83,23 @@ describe("jev guard memoisation", () => {
 
   test("does not remember a call Jev never answered", async () => {
     const { client, seen } = host(() => new Response("boom", { status: 500 }))
-    expect(await deliberate(client, identical)).toBeUndefined()
-    expect(await deliberate(client, identical)).toBeUndefined()
+    // Fail-closed: reaching here means the pre-filter flagged the call, so an
+    // unavailable model escalates rather than silently allowing. The escalation
+    // must not be memorised, otherwise a recovered endpoint stays blocked for the
+    // rest of the session and every repeat of the call keeps escalating.
+    const first = await deliberate(client, identical)
+    expect(first).toMatchObject({ decision: "ask", cached: false })
+    expect(first?.reason).toContain("Jev is unavailable")
+    const second = await deliberate(client, identical)
+    expect(second).toMatchObject({ decision: "ask", cached: false })
     expect(seen).toHaveLength(2)
+  })
+
+  test("never reaches Jev for a benign command", async () => {
+    const { client, seen } = host(() => Response.json(answers(0.9)))
+    const benign = { ...identical, args: { command: "git status --short" } }
+    expect(await deliberate(client, benign)).toBeUndefined()
+    expect(seen).toHaveLength(0)
   })
 
   test("never deliberates when the guard is off", async () => {
