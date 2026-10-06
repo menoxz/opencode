@@ -213,8 +213,22 @@ export function registerOpencodeKeymap(
     enabled: () => renderer.currentFocusedEditor !== null,
     bindings: config.keybinds.gather("input", inputCommands),
   })
+  // opentui's Textarea always merges in its own default bindings, which map the
+  // bare home/end keys to input.buffer.home/end. While the prompt holds focus
+  // that layer shadows the session's home/end -> session.first/session.last, so
+  // Home/End stop scrolling the transcript. Re-assert the session navigation at
+  // a higher priority whenever an editor has focus.
+  const offTranscriptNav = keymap.registerLayer({
+    mode: OPENCODE_BASE_MODE,
+    priority: 1,
+    bindings: [
+      { key: "home", cmd: "session.first", desc: "First message" },
+      { key: "end", cmd: "session.last", desc: "Last message" },
+    ],
+  })
 
   return () => {
+    offTranscriptNav()
     offInputBindings()
     offBackspace()
     offEscape()

@@ -2,6 +2,7 @@
 import type { TuiPlugin, TuiPluginApi } from "@opencode-ai/plugin/tui"
 import type { InternalTuiPlugin } from "../../plugin/internal"
 import { useTheme } from "@tui/context/theme"
+import type { ScrollBoxRenderable } from "@opentui/core"
 import { useBindings } from "../../keymap"
 import type {
   AssistantMessage,
@@ -293,6 +294,7 @@ function Turn(props: { api: TuiPluginApi; message: Message; index: number }) {
 
 function Trajectory(props: { api: TuiPluginApi; sessionID?: string; defaultOverride?: boolean }) {
   const { theme } = useTheme()
+  let logsScroll: ScrollBoxRenderable | undefined
   // Capture the session route the panel opened on, so a later navigation cannot
   // silently re-point the trajectory at another session.
   const [bound] = createSignal(props.defaultOverride ? currentSessionID(props.api) : props.sessionID)
@@ -350,6 +352,20 @@ function Trajectory(props: { api: TuiPluginApi; sessionID?: string; defaultOverr
         category: "Session",
         run: () => toggleAllOutput(false),
       },
+      {
+        name: "logs.scrollStart",
+        title: "Scroll to first message",
+        category: "Session",
+        run: () => logsScroll?.scrollTo(0),
+      },
+      {
+        name: "logs.scrollEnd",
+        title: "Scroll to last message",
+        category: "Session",
+        run: () => {
+          if (logsScroll) logsScroll.scrollTo(logsScroll.scrollHeight)
+        },
+      },
     ],
     bindings: [
       { key: "escape", cmd: "logs.home", desc: "Back" },
@@ -357,6 +373,8 @@ function Trajectory(props: { api: TuiPluginApi; sessionID?: string; defaultOverr
       { key: "e", cmd: "logs.expandAll", desc: "Expand all" },
       { key: "z", cmd: "logs.collapseAll", desc: "Collapse all" },
       { key: "q", cmd: "logs.home", desc: "Session" },
+      { key: "home", cmd: "logs.scrollStart", desc: "First message" },
+      { key: "end", cmd: "logs.scrollEnd", desc: "Last message" },
     ],
   }))
 
@@ -387,7 +405,7 @@ function Trajectory(props: { api: TuiPluginApi; sessionID?: string; defaultOverr
             when={messages().length}
             fallback={<text fg={theme.textMuted}>No messages yet for this session.</text>}
           >
-            <scrollbox flexGrow={1}>
+            <scrollbox flexGrow={1} ref={(r) => (logsScroll = r as ScrollBoxRenderable)}>
               <For each={messages()}>{(message, index) => <Turn api={props.api} message={message} index={index()} />}</For>
             </scrollbox>
           </Show>
