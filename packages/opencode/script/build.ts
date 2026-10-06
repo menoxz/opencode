@@ -312,8 +312,29 @@ for (const item of targets) {
       // On Windows, rename the existing binary first (rename works even when file is locked),
       // then rename the new one in place.
       if (process.platform === "win32") {
-        await fs.promises.rename(dest, backup).catch(() => {})
-        await fs.promises.rename(src, dest)
+        // A running dist/bin/opencode.exe keeps the destination locked. The rotate used to
+        // fail silently: the build still exited 0 (the smoke test runs on the fresh
+        // per-package binary) while dist/bin/opencode.exe stayed STALE — and that stale file
+        // is exactly what gets deployed. Retry the handoff, then fail loudly instead of
+        // shipping a binary that does not match the source.
+        let rotated = false
+        let last: unknown
+        for (let attempt = 0; attempt < 10; attempt++) {
+          try {
+            await fs.promises.rename(dest, backup).catch(() => {})
+            await fs.promises.rename(src, dest)
+            rotated = true
+            break
+          } catch (error) {
+            last = error
+            await Bun.sleep(300)
+          }
+        }
+        if (!rotated) {
+          throw new Error(
+            `dist/bin/opencode${ext} is locked (is a dist/bin copy still running?): ${last}`,
+          )
+        }
         console.log(`Rotated old binary and renamed ${src} → ${dest}`)
       } else {
         // On Unix, direct copy works
@@ -321,7 +342,8 @@ for (const item of targets) {
         console.log(`Copied ${src} → ${dest}`)
       }
     } catch (e) {
-      console.log(`Will update binary on next restart (current binary in use): ${e}`)
+      console.log(`Could not refresh the root dist binary: ${e}`)
+      throw e
     }
   }
 
