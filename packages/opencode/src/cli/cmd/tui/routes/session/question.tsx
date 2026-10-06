@@ -1,5 +1,5 @@
 import { createStore } from "solid-js/store"
-import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js"
+import { createMemo, createSignal, For, Show } from "solid-js"
 import { useRenderer } from "@opentui/solid"
 import type { TextareaRenderable } from "@opentui/core"
 import { selectedForeground, tint, useTheme } from "../../context/theme"
@@ -7,16 +7,22 @@ import type { QuestionAnswer, QuestionRequest } from "@opencode-ai/sdk/v2"
 import { useSDK } from "../../context/sdk"
 import { SplitBorder } from "../../component/border"
 import { useTuiConfig } from "../../context/tui-config"
-import { useBindings, useOpencodeModeStack } from "../../keymap"
+import { useBindings } from "../../keymap"
 
-const QUESTION_MODE = "question"
+// The question keys must work while a prompt is on screen. They used to be bound
+// to a dedicated `question` mode pushed on the shared mode stack, but any overlay
+// that pushed another mode (a dialog pushes "modal", autocomplete pushes
+// "autocomplete", plugins push their own) made the question layer inactive and the
+// keys stop working entirely: the user could still click an option, but Enter never
+// submitted and Escape never cancelled. Keep the layer mode-agnostic and give it a
+// priority just below dialogs so it survives whatever sits on top of the stack.
+const QUESTION_PRIORITY = 1
 
 export function QuestionPrompt(props: { request: QuestionRequest }) {
   const sdk = useSDK()
   const { theme } = useTheme()
   const renderer = useRenderer()
   const tuiConfig = useTuiConfig()
-  const modeStack = useOpencodeModeStack()
 
   const questions = createMemo(() => props.request.questions)
   const single = createMemo(() => questions().length === 1 && questions()[0]?.multiple !== true)
@@ -122,13 +128,8 @@ export function QuestionPrompt(props: { request: QuestionRequest }) {
     pick(opt.label)
   }
 
-  onMount(() => {
-    const popMode = modeStack.push(QUESTION_MODE)
-    onCleanup(popMode)
-  })
-
   useBindings(() => ({
-    mode: QUESTION_MODE,
+    priority: QUESTION_PRIORITY,
     enabled: store.editing && !confirm(),
     commands: [
       {
@@ -209,7 +210,7 @@ export function QuestionPrompt(props: { request: QuestionRequest }) {
     const max = Math.min(total, 9)
 
     return {
-      mode: QUESTION_MODE,
+      priority: QUESTION_PRIORITY,
       enabled: !store.editing,
       commands: [
         {

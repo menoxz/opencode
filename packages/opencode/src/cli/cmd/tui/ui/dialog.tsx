@@ -101,6 +101,10 @@ function init() {
 
   useBindings(() => ({
     enabled: store.stack.length > 0 && !renderer.getSelection()?.getSelectedText(),
+    // A dialog must beat the question prompt's return/escape, which now live in
+    // the base mode at priority 1 so they survive overlays pushed on top of the
+    // shared mode stack. Keep dialogs strictly above them.
+    priority: 2,
     bindings: [
       {
         key: "escape",
