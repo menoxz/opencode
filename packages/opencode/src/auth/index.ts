@@ -22,6 +22,7 @@ export class Oauth extends Schema.Class<Oauth>("OAuth")({
 export class Api extends Schema.Class<Api>("ApiAuth")({
   type: Schema.Literal("api"),
   key: Schema.String,
+  keys: Schema.optional(Schema.Array(Schema.String)),
   metadata: Schema.optional(Schema.Record(Schema.String, Schema.String)),
 }) {}
 

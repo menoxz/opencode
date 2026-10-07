@@ -86,6 +86,10 @@ export const Info = Schema.Struct({
     Schema.StructWithRest(
       Schema.Struct({
         apiKey: Schema.optional(Schema.String),
+        apiKeys: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
+          description:
+            "Ordered list of API keys for this provider. The first usable key is used; when a request fails with an authentication or rate-limit error (401/402/403/429), the next key is tried automatically. `apiKey` is equivalent to the first entry.",
+        }),
         baseURL: Schema.optional(Schema.String),
         enterpriseUrl: Schema.optional(Schema.String).annotate({
           description: "GitHub Enterprise URL for copilot authentication",

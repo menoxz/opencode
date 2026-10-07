@@ -481,11 +481,21 @@ export const ProvidersLoginCommand = effectCmd({
     }
 
     const key = yield* Prompt.password({
-      message: "Enter your API key",
+      message: "Enter your API key (or several fallback keys separated by commas)",
       validate: (x) => (x && x.length > 0 ? undefined : "Required"),
     })
     const apiKey = yield* promptValue(key)
-    yield* Effect.orDie(authSvc.set(provider, { type: "api", key: apiKey }))
+    const keys = Array.from(
+      new Set(
+        apiKey
+          .split(/[,\n]/)
+          .map((item) => item.trim())
+          .filter((item) => item.length > 0),
+      ),
+    )
+    yield* Effect.orDie(
+      authSvc.set(provider, keys.length > 1 ? { type: "api", key: keys[0], keys } : { type: "api", key: keys[0] }),
+    )
 
     yield* Prompt.outro("Done")
   }),

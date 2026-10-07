@@ -1008,6 +1008,7 @@ export const Info = Schema.Struct({
   source: Schema.Literals(["env", "config", "custom", "api"]),
   env: Schema.Array(Schema.String),
   key: optionalOmitUndefined(Schema.String),
+  keys: optionalOmitUndefined(Schema.Array(Schema.String)),
   options: Schema.Record(Schema.String, Schema.Any),
   models: Schema.Record(Schema.String, Model),
 }).annotate({ identifier: "Provider" })
@@ -1475,11 +1476,15 @@ export const layer = Layer.effect(
         for (const [id, provider] of Object.entries(database)) {
           const providerID = ProviderID.make(id)
           if (disabled.has(providerID)) continue
-          const apiKey = provider.env.map((item) => envs[item]).find(Boolean)
-          if (!apiKey) continue
+          const envKeys = provider.env
+            .map((item) => envs[item])
+            .filter((item): item is string => typeof item === "string" && item.length > 0)
+          if (envKeys.length === 0) continue
+          const keys = Array.from(new Set(envKeys))
           mergeProvider(providerID, {
             source: "env",
-            key: provider.env.length === 1 ? apiKey : undefined,
+            key: keys[0],
+            keys,
           })
         }
 
@@ -1489,9 +1494,11 @@ export const layer = Layer.effect(
           const providerID = ProviderID.make(id)
           if (disabled.has(providerID)) continue
           if (provider.type === "api") {
+            const keys = Array.from(new Set([provider.key, ...(provider.keys ?? [])].filter((item) => item.length > 0)))
             mergeProvider(providerID, {
               source: "api",
-              key: provider.key,
+              key: keys[0],
+              keys,
             })
           }
         }
@@ -1689,7 +1696,19 @@ export const layer = Layer.effect(
         })
 
         if (baseURL !== undefined) options["baseURL"] = baseURL
-        if (options["apiKey"] === undefined && provider.key) options["apiKey"] = provider.key
+        // Ordered pool of API keys for this provider: explicit config first
+        // (`options.apiKeys` / `options.apiKey`), then auth.json / env (`keys` / `key`).
+        const fallbackKeys = Array.from(
+          new Set(
+            [options["apiKeys"], options["apiKey"], provider.keys, provider.key]
+              .flatMap((item) => (Array.isArray(item) ? item : typeof item === "string" ? [item] : []))
+              .filter((item): item is string => typeof item === "string" && item.length > 0),
+          ),
+        )
+        if (fallbackKeys.length > 0) {
+          options["apiKeys"] = fallbackKeys
+          if (options["apiKey"] === undefined) options["apiKey"] = fallbackKeys[0]
+        }
         if (model.headers)
           options["headers"] = {
             ...options["headers"],
@@ -1709,6 +1728,28 @@ export const layer = Layer.effect(
         const customFetch = options["fetch"]
         const chunkTimeout = options["chunkTimeout"]
         delete options["chunkTimeout"]
+
+        const retryableStatus = new Set([401, 402, 403, 429])
+        const runFetch = async (fetchFn: typeof fetch, target: any, attempt: Record<string, any>, keyIndex: number) => {
+          if (keyIndex > 0 && keyIndex < fallbackKeys.length) {
+            const next = fallbackKeys[keyIndex]
+            const headers = new Headers(attempt.headers as any)
+            let replaced = false
+            for (const name of Array.from(headers.keys())) {
+              if (/^(authorization|x-api-key|api-key|x-goog-api-key)$/i.test(name)) {
+                const current = headers.get(name) ?? ""
+                const space = current.indexOf(" ")
+                const prefix = space > 0 && /^bearer$/i.test(current.slice(0, space)) ? current.slice(0, space + 1) : ""
+                headers.set(name, prefix + next)
+                replaced = true
+              }
+            }
+            if (!replaced) headers.set("authorization", `Bearer ${next}`)
+            attempt.headers = headers
+          }
+          // @ts-ignore see here: https://github.com/oven-sh/bun/issues/16682
+          return fetchFn(target, attempt as any)
+        }
 
         options["fetch"] = async (input: any, init?: BunFetchRequestInit) => {
           const fetchFn = customFetch ?? fetch
@@ -1742,11 +1783,16 @@ export const layer = Layer.effect(
             }
           }
 
-          const res = await fetchFn(input, {
-            ...opts,
-            // @ts-ignore see here: https://github.com/oven-sh/bun/issues/16682
-            timeout: false,
-          })
+          const replayable = opts.body === undefined || typeof opts.body === "string"
+          const canRetry = fallbackKeys.length > 1 && replayable && (typeof input === "string" || input instanceof URL)
+
+          let res = await runFetch(fetchFn, input, { ...opts, timeout: false }, 0)
+          if (canRetry && retryableStatus.has(res.status)) {
+            for (let i = 1; i < fallbackKeys.length; i++) {
+              res = await runFetch(fetchFn, input, { ...opts, timeout: false }, i)
+              if (!retryableStatus.has(res.status)) break
+            }
+          }
 
           if (!chunkAbortCtl) return res
           return wrapSSE(res, chunkTimeout, chunkAbortCtl)
