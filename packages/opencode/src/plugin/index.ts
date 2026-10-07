@@ -277,6 +277,7 @@ export const layer = Layer.effect(
     )
 
     let watcherCleanup: (() => void) | null = null
+    let bridge: EffectBridge.Shape | null = null
     let watchingStarted = false
 
     // Hook generation currently served to sessions. It is swapped only when a full init loads
@@ -308,15 +309,8 @@ export const layer = Layer.effect(
       if (watchingStarted) return
       watchingStarted = true
       if (flags.pure) return
-      // `make()` has a `never` error channel (src/effect/bridge.ts:54): it only reads
-      // Effect.context() and two Context.Reference that both default to undefined
-      // (src/effect/instance-ref.ts:5-10). The former
-      // `Effect.catchCause(() => Effect.succeed(null as any))` could therefore yield `null`
-      // only for a defect, and its sole consumer was `if (!bridge) return` below: hot reload
-      // silently off, no warning, unrecoverable since `watchingStarted` is already true.
-      // It bought no availability anyway — init() runs the same make() unprotected one line
-      // earlier via InstanceState.get(state) (plugin/index.ts:398 -> :137).
-      const b: EffectBridge.Shape = yield* EffectBridge.make()
+      if (!bridge) bridge = yield* EffectBridge.make().pipe(Effect.catchCause(() => Effect.succeed(null as any)))
+      if (!bridge) return
       if (watcherCleanup) {
         watcherCleanup()
         watcherCleanup = null
@@ -347,11 +341,7 @@ export const layer = Layer.effect(
       if (parcelWatcher) {
         for (const dir of dirs) {
           if (!fs.existsSync(dir)) continue
-          // `.catch` below only covers rejection; a synchronous throw would escape
-          // ensureWatching, fail Plugin.init() and take the instance bootstrap down.
-          let pending: Promise<ParcelWatcher.AsyncSubscription>
-          try {
-            pending = parcelWatcher.subscribe(
+          const pending = parcelWatcher.subscribe(
             dir,
             (err, evts) => {
               if (err) {
@@ -366,17 +356,13 @@ export const layer = Layer.effect(
                   setTimeout(() => {
                     timers.delete(evt.path)
                     log.info("plugin file changed, reloading", { file: evt.path })
-                    b.promise(reload()).catch((err) => log.error("plugin reload error", { err }))
+                    bridge!.promise(reload()).catch((err) => log.error("plugin reload error", { err }))
                   }, DEBOUNCE_MS),
                 )
               }
             },
             { backend },
-            )
-          } catch (err) {
-            log.error("plugin watch subscribe threw", { dir, err })
-            continue
-          }
+          )
           pending.then((s) => subs.push(s)).catch((err) => log.error("plugin watch subscribe failed", { dir, err }))
         }
       }

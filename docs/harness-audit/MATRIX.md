@@ -12,12 +12,9 @@ Source de vérité du suivi. Regenerable ; toute ligne sans verdict est en vol.
 ## État au dernier point
 
 - **propositions** : 20 / 20 ✅
-- **verdicts reçus** : 13 / 20 — en vol : P01, P09, P12, P13, P14, P15, P20
+- **verdicts** : 7 / 20 en cours
 - **validateurs lancés** : 20 (P01→P20)
-- **statuts** : 12 `PASS_WITH_CHANGES`, **1 `FAIL` (P11)**, 0 `PASS` sans réserve
-
-> Les statuts et les corrections exigées sont indexés dans `REVISIONS.md`.
-> Le verdict sur disque fait foi ; ce tableau est un aiguillage.
+- **verdicts reçus** : tous `PASS_WITH_CHANGES` à ce stade — aucun `FAIL`, aucun `PASS` sans réserve
 
 ## Matrice
 

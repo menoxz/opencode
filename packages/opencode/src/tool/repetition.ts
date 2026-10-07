@@ -78,16 +78,9 @@ export function stableStringify(value: unknown): string {
   return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(",")}}`
 }
 
-/** Top-level arg fields carrying no execution semantics: excluded from the key. */
-const DECORATIVE = new Set(["description"])
-
-/** Signature of one tool call: tool identity plus its semantic arguments. */
+/** Signature of one tool call: the tool identity plus its exact arguments. */
 export function signature(tool: string, args: unknown): string {
-  const semantic =
-    args !== null && typeof args === "object" && !Array.isArray(args)
-      ? Object.fromEntries(Object.entries(args as Record<string, unknown>).filter(([k]) => !DECORATIVE.has(k)))
-      : args
-  return `${tool}\u0000${stableStringify(semantic)}`
+  return `${tool}\u0000${stableStringify(args)}`
 }
 
 /** Cheap, allocation-light digest of tool output. */

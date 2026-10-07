@@ -1,78 +1,68 @@
-# P15 — `null as any` puis `bridge!` : trou de type du pont de rechargement à chaud des plugins
-
-> Révisé après verdict PASS_WITH_CHANGES du 2026-10-03 — correctif rendu compilable (C-18), branche catchCause revue (C-08)
+# P15 — Pont plugin nullable déréférencé dans le chemin de rechargement à chaud
 
 ## 1. Problem
 
-Le pont `EffectBridge` du rechargement à chaud des plugins est déclaré nullable, rendu nullable par
-une assertion `null as any` qui fait disparaître l'erreur de type du compilateur, puis déréférencé
-par une assertion `bridge!` ; dans la même fonction, l'abonnement au watcher n'est pas protégé
-contre une levée synchrone.
-
-**Deux prémisses initiales sont corrigées** (C-08, `CORRECTIONS.md:18`). Le déréférencement de
-`plugin/index.ts:359` est **inatteignable aujourd'hui** (§ 3) : le défaut qui y subsiste est un
-**trou de type**, pas une panne vivante. Et `plugin/index.ts:366` **n'est pas** un pont : `pending`
-est une `Promise<ParcelWatcher.AsyncSubscription>` dont le `.catch` couvre le rejet.
+Le pointeur non optionnel `bridge!` déréférencé dans le callback de rechargement à chaud des plugins
+ne peut pas s'exécuter aujourd'hui, mais il est rendu possible par un `as any` qui fait disappear
+l'erreur de type que le compilateur devrait signaler.
 
 ## 2. Evidence
 
-Toutes les citations de cette section ont été relues dans le code réel pendant cette révision :
-`packages/opencode/src/plugin/index.ts` lu **en entier** (451 lignes), `src/effect/bridge.ts` lu en
-entier (84 lignes), `src/effect/instance-ref.ts` lu en entier (11 lignes), `src/project/bootstrap.ts:30-60`,
-et le répertoire `packages/opencode/test/plugin/`. Les affirmations héritées du verdict sont marquées
-**[hérité]** et citent leur source.
+Cartographie exhaustive des sites du pont dans `packages/opencode/src/plugin/index.ts` :
 
-**(a) Le champ nullable — `plugin/index.ts:279-281`**
+**(a) Déclaration du pont nullable — `plugin/index.ts:280`**
 
 ```ts
-let watcherCleanup: (() => void) | null = null
 let bridge: EffectBridge.Shape | null = null
 let watchingStarted = false
 ```
 
-**(b) Le producteur du `null` — `plugin/index.ts:311-313`**
+**(b) Producteur du `null` — `plugin/index.ts:312-313`**
 
 ```ts
-if (flags.pure) return
-if (!bridge) bridge = yield* EffectBridge.make().pipe(Effect.catchCause(() => Effect.succeed(null as any)))
+if (!bridge) bridge = yield * EffectBridge.make().pipe(Effect.catchCause(() => Effect.succeed(null as any)))
 if (!bridge) return
 ```
 
-**(c) Le seul déréférencement — `plugin/index.ts:356-360`**
+**(c) Le seul déréférencement du pont nullable — `plugin/index.ts:356-361`**
 
 ```ts
-setTimeout(() => {
-  timers.delete(evt.path)
-  log.info("plugin file changed, reloading", { file: evt.path })
-  bridge!.promise(reload()).catch((err) => log.error("plugin reload error", { err }))
-}, DEBOUNCE_MS),
+                  setTimeout(() => {
+                    timers.delete(evt.path)
+                    log.info("plugin file changed, reloading", { file: evt.path })
+                    bridge!.promise(reload()).catch((err) => log.error("plugin reload error", { err }))
+                  }, DEBOUNCE_MS),
 ```
 
-**(d) `plugin/index.ts:366` — ce n'est pas le pont** (prémisse réfutée)
+**(d) `plugin/index.ts:366` — `pending` n'est PAS le pont**
 
 ```ts
-pending.then((s) => subs.push(s)).catch((err) => log.error("plugin watch subscribe failed", { dir, err }))
+          const pending = parcelWatcher.subscribe(
+            dir,
+            (err, evts) => {
 ```
 
-`pending` est la valeur de retour de `parcelWatcher.subscribe(...)` (`:344`), de type
-`Promise<ParcelWatcher.AsyncSubscription>` — le même type que les éléments de
-`const subs: ParcelWatcher.AsyncSubscription[] = []` (`:338`). Ce n'est ni le pont nullable, ni un
-type optionnel, et `.catch` couvre le rejet. **La ligne 366 n'est pas le pont.**
+`pending` est la valeur de retour de `parcelWatcher.subscribe(...)`, de type
+`Promise<ParcelWatcher.AsyncSubscription>` (cf. `plugin/index.ts:338` pour le type de l'élément
+poussé : `const subs: ParcelWatcher.AsyncSubscription[] = []`). Ce n'est ni le pont nullable, ni un
+type optionnel : `.catch` couvre bien le rejet. **L'affirmation de la matrice (« même forme, même
+défaut ») est donc inexacte pour la ligne 366** ; le défaut réel qui s'y cache est différent et est
+traité au § 4 (correctif B).
 
-**(e) Le vrai défaut vivant est en amont, `plugin/index.ts:341-344`** — `subscribe` est appelé sans
-`try` dans la boucle `341-368` :
+**(e) Le pont `Shape` non-null du même fichier — `plugin/index.ts:137-141`**
 
 ```ts
-if (parcelWatcher) {
-  for (const dir of dirs) {
-    if (!fs.existsSync(dir)) continue
-    const pending = parcelWatcher.subscribe(
+        const bridge = yield* EffectBridge.make()
+
+        function publishPluginError(message: string) {
+          bridge.fork(bus.publish(Session.Event.Error, { error: new NamedError.Unknown({ message }).toObject() }))
 ```
 
-Une levée synchrone de `subscribe` s'échappe de `ensureWatching` (`:308`) → `init` (`:397-400`) →
-`bootstrap.ts:44`.
+C'est un **second pont**, non nullable, immunisé contre le défaut : `make()` est appelé directement, sans
+`catchCause`. Toute lacune de `EffectBridge.make()` fait donc échouer l'init d'instance, pas le
+rechargement à chaud.
 
-**(f) Le pont est infaillible — `src/effect/bridge.ts:54-59`**
+**(f) Le canal d'erreur de `EffectBridge.make()` est `never` — `src/effect/bridge.ts:54`**
 
 ```ts
 export function make(): Effect.Effect<Shape> {
@@ -82,243 +72,133 @@ export function make(): Effect.Effect<Shape> {
     const instance = (yield* InstanceRef) ?? captured.instance
 ```
 
-Canal d'erreur `never`, `R = never` : la signature ne déclare aucun paramètre de type après `Shape`.
-Le corps (55-81) ne fait que `Effect.context()`, `captureSync()`, et lire deux `Context.Reference`
-dont les deux valeurs par défaut existent — `src/effect/instance-ref.ts:5-10` :
+Aucun `require`, aucun accès disque, aucun réseau, aucun code utilisateur dans ce corps.
+
+**(g) Les deux références ne sont pas obligatoires — `src/effect/instance-ref.ts:5-10`**
 
 ```ts
 export const InstanceRef = Context.Reference<InstanceContext | undefined>("~opencode/InstanceRef", {
   defaultValue: () => undefined,
-})
+...
+export const WorkspaceRef = Context.Reference<WorkspaceID | undefined>("~opencode/WorkspaceRef", {
+  defaultValue: () => undefined,
 ```
 
-Ni disque, ni `require`, ni réseau. Un `Effect.catchCause` placé au-dessus de `make()` ne peut donc
-produire `null` que pour un **defect**, pas pour un échec typé.
+**INFERE:** `EffectBridge.make()` est donc infaillible en pratique (canal `never` + deux références à
+valeur par défaut). _Vérification :_ test unitaire `packages/opencode/test/plugin/bridge-non-null.test.ts`
+(T1 du § 7) qui construit un pont sans contexte et échoue si le résultat est nul ou si l'effet échoue.
 
-**(g) Le même appel est déjà nu dans ce fichier, une ligne AVANT `ensureWatching`** —
-`plugin/index.ts:133-140` :
+**(h) Le style du dépôt est le pont non-null : 20 sites sur 22** — `src/session/llm.ts:243`,
+`src/tool/registry.ts:241`, `src/plugin/index.ts:137`, `src/mcp/index.ts:717,891,1004,1096,1153`,
+`src/provider/provider.ts:1276`, `src/bus/index.ts:101,242`, `src/skill/index.ts:308`,
+`src/daemon/file-watcher.ts:103`, `src/sync/index.ts:107,149`,
+`src/server/routes/instance/httpapi/handlers/pty.ts:169`, `.../global.ts:73`,
+`src/pty/index.ts:186`, `src/file/watcher.ts:92`, `src/command/index.ts:74` — tous de la forme
+`const bridge = yield* EffectBridge.make()`. Les **deux seuls** outliers sont
+`src/plugin/index.ts:280` et `src/agent/agent.ts:421`.
 
-```ts
-const state = yield* InstanceState.make<State>(
-  Effect.fn("Plugin.state")(function* (ctx) {
-    const hooks: Hooks[] = []
-    const failures: string[] = []
-    const bridge = yield* EffectBridge.make()
-
-    function publishPluginError(message: string) {
-      bridge.fork(bus.publish(Session.Event.Error, { error: new NamedError.Unknown({ message }).toObject() }))
-```
-
-`init` (`:397-400`) matérialise cet état **avant** d'appeler `ensureWatching` :
-
-```ts
-const init = Effect.fn("Plugin.init")(function* () {
-  yield* InstanceState.get(state)
-  yield* ensureWatching()
-})
-```
-
-Conséquence décisive (§ 4, correctif A) : **une lacune de `make()` échoue déjà `init` à `:398`, via
-`:137`, sans filet** — une ligne avant `:399`. Le `catchCause` de `:312` ne protége donc rien qui ne
-soit déjà perdu. `:140` prouve de plus que le résultat de `yield* EffectBridge.make()` est bien de
-type `Shape` sans aucune assertion : c'est le précédent exact du patch proposé.
-
-**(h) Le champ `bridge` n'a aucun autre consommateur.** Occurrences exhaustives du mot `bridge` dans
-`plugin/index.ts` (fichier lu en entier) : `24` (import), `137` et `140` (**un autre pont**, `const`
-local dans le closure d'`InstanceState`), `280`, `312`, `313`, `359`. Rien après `359` : ni
-`reload()` (`:402-425`), ni le finaliseur (`:432-439`), ni `Service.of` (`:441`) ne le lisent.
-`watchingStarted` n'apparaît qu'en `281`, `309`, `310`. Supprimer `280`, `312` et `313` n'a donc
-aucun effet de bord dans ce fichier. _INFERE :_ re-vérifiable par
-`rg -n "bridge" packages/opencode/src/plugin/index.ts`.
-
-**(i) Le site jumeau existe et est identique — `src/agent/agent.ts:421,445,446,464`** **[hérité]**
-(cité par `P15-verdict.md:135` et `CORRECTIONS.md:19`) :
-
-```ts
-let bridge: EffectBridge.Shape | null = null      // 421
-…
-if (flags.pure) return                                                                    // 444
-if (!bridge) bridge = yield* EffectBridge.make().pipe(Effect.catchCause(() => Effect.succeed(null as any)))  // 445
-if (!bridge) return                                                                       // 446
-```
-
-et `464` : `bridge!.promise(reload()).catch((err) => console.error("agent reload error", err))`.
-
-**(j) `plugin.init()` est le seul `init()` non protégé du bootstrap — `src/project/bootstrap.ts:44`
-contre `:47-51`**
-
-```ts
-yield* plugin.init()
-yield* Effect.forEach(
-  [reference, lsp, shareNext, format, file, fileWatcher, vcs, snapshot, project],
-  (s) => s.init().pipe(Effect.catchCause((cause) => Effect.logWarning("init failed", { cause }))),
-  { concurrency: "unbounded", discard: true },
-).pipe(Effect.withSpan("InstanceBootstrap.init"))
-```
-
-**(k) Le répertoire de test existe déjà** — `packages/opencode/test/plugin/` contient **14
-fichiers** : `auth-override.test.ts`, `cloudflare.test.ts`, `codex.test.ts`,
-`github-copilot-models.test.ts`, `hot-reload.test.ts`, `install-concurrency.test.ts`,
-`install.test.ts`, `loader-shared.test.ts`, `meta.test.ts`, `reload-rollback.test.ts`,
-`shared.test.ts`, `trigger.test.ts`, `workspace-adapter.test.ts`, `xai.test.ts`. La version
-précédente de cette proposition affirmait le contraire : c'est faux, et c'est corrigé ici (§ 7, T1).
+**(i) Les deux seuls sites d'écriture du pont nullable** sont `plugin/index.ts:280` (initialisation)
+et `plugin/index.ts:312`. Aucune affectation entre `313` et `359`, donc aucune fermeture capturée ne
+peut observer une valeur écrite après `312`.
 
 ## 3. Mechanism
 
-Chemin d'exécution complet, `ensureWatching` (`:308-376`) et ses appelants — chaque étape citée :
+Chemin d'exécution de bout en bout de `ensureWatching()` :
 
-1. `Project.run` appelle `yield* plugin.init()` à **chaque** bootstrap d'instance
-   (`src/project/bootstrap.ts:44`). Ce chemin est non protégé (j).
-2. `init` (`:397-400`) matérialise d'abord l'état d'instance : `InstanceState.get(state)` (`:398`).
-3. Cette matérialisation exécute le closure `:134-…`, dont `const bridge = yield* EffectBridge.make()`
-   (`:137`) — **non protégé**, hors de `ensureWatching` (g).
-4. Puis seulement `yield* ensureWatching()` (`:399`). `reload()` (`:419`) la rappelle aussi.
-5. `ensureWatching` sort immédiatement si `watchingStarted` est vrai (`:309`), **avant** toute
-   création de pont. Le drapeau est mis à `true` en `:310` et n'est jamais remis à zéro dans le
-   fichier (h) : **au plus une passe par layer**, donc `ensureWatching` crée au plus un pont.
-6. Retour immédiat en mode pur (`:311`).
-7. Production du pont : `:312`, puis garde `if (!bridge) return` (`:313`).
-8. L'armement n'a lieu qu'après `:313` : `subscribe` en `:344`, le callback en `:346`, le
-   `setTimeout` en `:356`, la fermeture qui lit `bridge` en `:359`.
+1. `Project.run` appelle `yield* plugin.init()` à chaque bootstrap d'instance —
+   `src/project/bootstrap.ts:44`. Ce chemin est **non protégé** : les neuf autres services du même
+   `Effect.forEach` ont chacun `Effect.catchCause(...)` (`bootstrap.ts:49`), pas `plugin.init()`.
+2. `init()` (`plugin/index.ts:397-400`) appelle `ensureWatching()` (`399`).
+3. `ensureWatching` retourne immédiatement si `watchingStarted` est vrai
+   (`plugin/index.ts:309-310`), **avant** toute création de pont. Le drapeau est mis à `true` en 310
+   et n'est jamais remis à zéro dans le fichier.
+4. Retour immédiat en mode pur : `plugin/index.ts:311`.
+5. Création du pont : `plugin/index.ts:312`. En cas de lacune de `make()`, `catchCause` renvoie
+   `null`, `bridge` reste `null`.
+6. **Garde de narrowing : `if (!bridge) return` — `plugin/index.ts:313`.** Si le pont est nul,
+   l'exécution s'arrête ici.
+7. L'armement des callbacks n'a lieu qu'après 313 : `subscribe` est appelé en
+   `plugin/index.ts:344`, le callback d'événement en `346`, le `setTimeout` en `356`, et la
+   fermeture qui lit `bridge` en `359`.
+8. À l'exécution du timer, `bridge!` (`plugin/index.ts:359`) est lu.
 
-**Pourquoi `:359` est inatteignable** (relevé de première main sur le fichier entier) : (i) les
-seules écritures du champ sont `:280` (null) et `:312`, et aucune écriture n'intervient entre `:313`
-et `:359` (h) ; (ii) les fermetures `:346`/`:356`/`:359` ne sont créées qu'après le franchissement
-de `:313`, à l'intérieur de la boucle `:341-368` ; (iii) `watchingStarted` interdit une seconde
-passe (5) — ce qui rend du reste le bloc `watcherCleanup()` de `:314-317` **mort** : ce n'est pas une
-réinitialisation, il ne faut pas s'en servir comme preuve que le pont peut être réarmé ;
-(iv) `reload()` (`:402-425`) ne lit ni n'écrit `bridge`. Enfin la branche avalée en `:312` est
-elle-même inatteignable **au sens des types** (f) : `make()` déclare un canal d'erreur `never`.
+**Conclusion du chemin : le pointeur nul est inatteignable par construction.** Les closure
+`346`/`356`/`359` ne sont créées que si `313` est franchi avec `bridge` non nul ; le drapeau
+`watchingStarted` interdit une seconde passe ; et aucune écriture n'intervient entre 313 et 359.
+Le `.catch` de `359` ne couvre ni un échec synchrone (il est attaché à une promesse qui n'est jamais
+créée si `bridge!.promise` lève) ni un pont déjà consommé — mais ces deux scénarios sont inatteignables
+ici. **Le défaut est un trou de type, pas une panne vivante.**
 
-**Ce que la branche `catchCause` atteint réellement — réponse à C-08.** Elle n'atteint rien, et le
-préciser est le point du correctif :
+**Pourquoi le pont nul est-il un état légitime — cas normal ou erreur ?** Ni l'un ni l'autre : c'est un
+état mort. `EffectBridge.make()` échouer dans cette couche n'est pas récupérable, parce que le même
+appel est fait sans `catchCause` en `plugin/index.ts:137` (§ 2e) : la lacune remonterait déjà dans
+l'init d'instance, et de là dans `plugin.init()` (`398`), puis dans le bootstrap
+(`bootstrap.ts:44`). Avaler l'échec en 312 n'achète aucune survie — il achète seulement le silence.
 
-- **Statique : rien.** `Effect.Effect<Shape>` (f) n'a pas de canal d'erreur, donc le gestionnaire
-  `catchCause` n'a rien à capturer. Le `null` qu'il aurait produit n'a **qu'un seul consommateur** :
-  la garde `if (!bridge) return` de `:313`. Si ce `null` existait, l'effet observable serait :
-  `ensureWatching` sort en silence **avant** `log.info("plugin hot-reload watchers active", …)`
-  (`:329`) et `log.info("plugin hot-reload watchers armed", …)` (`:369`). **Aucun warning, aucune
-  erreur, aucune trace** : le rechargement à chaud serait simplement éteint, et `watchingStarted`
-  étant déjà `true` (`:310`), il ne pourrait plus jamais être réarmé.
-- **À l'exécution : seulement un defect.** `catchCause` intercepte toute `Cause`, y compris un `Die`,
-  que `never` n'exclut pas statiquement — par exemple une `captureSync()` qui lèverait sur une
-  référence absente (`bridge.ts:19-25`). C'est le seul scénario où `null` peut apparaître, et c'est
-  le pire : il transforme un bug en désactivation silencieuse.
-- **Et ce n'était de toute façon pas un filet.** Le même `make()` échoue déjà `init` à `:398` via
-  `:137`, non protégé (g). Une dégradation « gracieuse » en `:312` est donc **inatteignable en tant
-  que disponibilité** : l'instance est déjà perdue une ligne avant.
-
-**Conclusion :** le défaut est un trou de type et une branche morte, pas une panne vivante. Ce qui
-reste vivant dans la même fonction est l'échec synchrone de `subscribe` (e), non protégé nulle part.
+**Question 4 du mandat — chemin de rechargement à chaud et blast radius :** oui, c'est exactement le
+chemin de rechargement à chaud, et `plugin.reload()` a bien des appelants externes
+(`src/server/routes/instance/httpapi/handlers/plugin.ts:45,52,59` pour `reload`,
+`src/project/bootstrap.ts:44` pour `init`). Une exception à `plugin/index.ts:359` ne surviendrait pas
+dans une fibre Effect : elle est levée dans un callback `setTimeout` (356), donc hors de tout
+`Effect.run*`. Elle deviendrait un `uncaughtException`. Il existe des gestionnaires de niveau processus
+— `src/index.ts:67` (`uncaughtException`) et `src/index.ts:61` (`unhandledRejection`), plus
+`src/cli/cmd/tui/worker.ts:30,36` et `src/cli/cmd/tui/thread.ts:176-177` — dont le comportement exact
+(journalisation ou sortie) n'a pas été lu.
+**INFERE:** le processus survit grâce à ce gestionnaire, mais l'abandon silencieux du rechargement à
+chaud et l'absence de trace exploitable restent plausibles. _Vérification :_ lire
+`src/index.ts:55-80`, puis provoquer un `reload()` avec `flags.pure` forcé et observer le code de
+sortie du processus.
 
 ## 4. Proposal
 
-Un seul fichier source modifié : `packages/opencode/src/plugin/index.ts`.
+Deux correctifs ciblés dans `packages/opencode/src/plugin/index.ts`. Aucun autre fichier n'est
+touché.
 
-### Correctif A — sceller le type du pont (traite `:280`, `:311-313`, `:359`)
-
-Forme retenue : **pont local typé, suppression du champ**, c'est-à-dire la deuxième forme
-explicitement acceptée par le verdict (Objection 1, `P15-verdict.md:108-114`) : *« plus simple et
-sans variable intermédiaire : `const b = yield* EffectBridge.make()` — abandonnera le champ 280 et le
-cache »*.
+### Correctif A — sceller le type du pont (traite `280`, `312`, `313`, `359`)
 
 ```diff
 --- a/packages/opencode/src/plugin/index.ts
 +++ b/packages/opencode/src/plugin/index.ts
-@@ -277,7 +277,6 @@
-     let watcherCleanup: (() => void) | null = null
--    let bridge: EffectBridge.Shape | null = null
-     let watchingStarted = false
-
-@@ -308,9 +307,15 @@
-     const ensureWatching = Effect.fnUntraced(function* () {
+@@ -309,8 +309,11 @@
        if (watchingStarted) return
        watchingStarted = true
        if (flags.pure) return
 -      if (!bridge) bridge = yield* EffectBridge.make().pipe(Effect.catchCause(() => Effect.succeed(null as any)))
 -      if (!bridge) return
-+      // `make()` has a `never` error channel (src/effect/bridge.ts:54): it only reads
-+      // Effect.context() and two Context.Reference that both default to undefined
-+      // (src/effect/instance-ref.ts:5-10). The former
-+      // `Effect.catchCause(() => Effect.succeed(null as any))` could therefore yield `null`
-+      // only for a defect, and its sole consumer was `if (!bridge) return` below: hot reload
-+      // silently off, no warning, unrecoverable since `watchingStarted` is already true.
-+      // It bought no availability anyway — init() runs the same make() unprotected one line
-+      // earlier via InstanceState.get(state) (plugin/index.ts:398 -> :137).
-+      const b: EffectBridge.Shape = yield* EffectBridge.make()
++      // EffectBridge.make() has a `never` error channel (src/effect/bridge.ts:54) and the very
++      // same call is already made bare at line 137, so a defect is not a state this layer can
++      // survive: swallowing it here would only hide a failure the instance init hits anyway.
++      if (!bridge) bridge = yield* EffectBridge.make()
++      const b = bridge // narrowed to EffectBridge.Shape, captured immutably below
        if (watcherCleanup) {
-
-@@ -354,9 +359,9 @@
-                 clearTimeout(timers.get(evt.path))
-                 timers.set(
-                   evt.path,
-                   setTimeout(() => {
+@@ -356,7 +359,7 @@
                      timers.delete(evt.path)
                      log.info("plugin file changed, reloading", { file: evt.path })
 -                    bridge!.promise(reload()).catch((err) => log.error("plugin reload error", { err }))
 +                    b.promise(reload()).catch((err) => log.error("plugin reload error", { err }))
-                   }, DEBOUNCE_MS),
 ```
 
-_Note :_ les en-têtes de hunk de ce diff sont **indicatifs** (ils n'ont pas été recalculés par un
-outil de diff) ; appliquer le patch au **contexte** des lignes montrées, pas à un offset.
+Ce qui change, précisément :
 
-**Pourquoi ce patch compile — la réponse précise à C-18 (`CORRECTIONS.md:28`).**
+- `as any` disparaît : l'affectation de 312 redevient `EffectBridge.Shape`, et le narrowing de la
+  ligne suivante est produit par le contrôle de flux du compilateur, pas par une assertion.
+- `Effect.catchCause(() => Effect.succeed(null as any))` disparaît : une lacune de `make()` remonte
+  en tant qu'échec Effect typé, exactement comme au site `137`. Le type et le comportement deviennent
+  cohérents avec le reste du module.
+- `if (!bridge) return` (313) devient du code mort et est supprimé ; `bridge` est désormais non nul
+  après l'affectation.
+- `bridge!` (359) devient `b` : plus d'assertion non-null, et la fermeture capture une liaison
+  immuable au lieu d'une `let` mutable. C'est ce qui rend la lecture de 359 stable même si quelqu'un
+  réintroduit plus tard une affectation dans la portée.
+- Le type de `bridge` (280) reste `EffectBridge.Shape | null` : il continue de porter l'état
+  « pas encore armé » tant que 312 n'a pas tourné. Le type somme est conservé, mais il n'est plus
+  _atteignable_ au moment où il est déréférencé.
 
-- **La variable nullable et son usage sont deux déclarations distinctes, et la variable nullable
-  disparaît.** Le champ `let bridge: EffectBridge.Shape | null` (`:280`) est **supprimé**, donc
-  l'union `Shape | null` n'est plus construite nulle part dans ce fichier. Aucun `as any`, aucun
-  `@ts-ignore`, aucune affirmation de type : le trou n'est pas **refermé** par un mensonge, il est
-  **supprimé à sa racine**, puisque le producteur de `null` — le `catchCause` — disparaît avec lui.
-  Le canal `never` de `make()` devient une garantie du système de types, au lieu d'être une
-  hypothèse contredite par `null as any`.
-- **L'assertion porte sur la valeur produite par l'effet, pas sur l'effet.** `make()` est un
-  **effet** : `const b: EffectBridge.Shape = EffectBridge.make()` serait un `TS2322`
-  (`Effect<Shape>` n'est pas assignable à `Shape`). Le type est donc porté par le `yield*`, qui
-  évalue l'effet et lie son résultat. L'annotation `: EffectBridge.Shape` est explicite et **exacte**
-  (ni élargissement, ni rétrécissement) ; elle est redondante avec l'inférence — comme le prouve le
-  site jumeau `:137`/`:140`, qui n'a besoin d'aucune assertion — et elle documente l'intention au
-  lecteur.
-- **Aucun narrowing n'est requis, donc aucun narrowing n'est simulé.** La forme écartée
-  (`const b = bridge` après une affectation) échouait en `TS18047` parce que le contrôle de flux ne
-  propage pas la narrowness à travers une affectation (`P15-verdict.md:23` et `:96`). Ici `b` est un
-  `const` de type `Shape` **sans condition** : il n'y a plus de branche nulle à éliminer, donc plus
-  rien à prouver au compilateur. `:359` devient `b.promise(...)` — plus de `bridge!`.
-- **Le `if (!bridge) return` de `:313` disparaît avec le champ**, et c'est cohérent : garder une
-  garde sur une variable qui n'existe plus serait du code mort supplémentaire. Le cache
-  `if (!bridge)` était déjà mort (5) : il ne coûtait rien et ne servait à rien.
-- **Aucun `throw` JavaScript n'est introduit.** `ensureWatching` reste un effet rattrapable par un
-  `Effect.catchCause` ajouté en aval — exigence de l'Objection 2 (`P15-verdict.md:116-120`).
+### Correctif B — couvrir l'échec synchrone de `subscribe()` (traite le site réel de `366`)
 
-**Ce que devient la branche `catchCause` (réponse à C-08).** Elle est **supprimée, pas réécrite** —
-première des deux branches du mandat. Le motif est établi au § 3 : une fois le champ `:280`
-supprimé, un `null` produit par `catchCause` **n'aurait plus aucun consommateur** (`:313` est
-supprimé, `:359` lit un `const` non nullable) ; le laisser en place produirait une valeur morte que
-rien ne lit. _INFERE :_ `packages/opencode/AGENTS.md` (« Use `Effect.void` instead of
-`Effect.succeed(undefined)` or `Effect.succeed(void 0)` ») banni littéralement `Effect.succeed`
-appliqué à `undefined` ; l'appliquer à `null` est une extrapolation d'après l'intention de la règle
-(fabriquer une valeur de succès factice), pas une citation littérale. La règle du dépôt est de toute
-façon respectée par la suppression : le motif disparaît du fichier. Supprimer plutôt que réécrire
-est enfin la seule option qui n'ajoute pas de `makeOptional()` dans un module partagé pour rendre
-lisible une branche morte (Objection 3, `P15-verdict.md:122-126`). Le coût de ce choix est
-explicité en § 6.
-
-**Sémantique d'échec, tranchée et écrite ici comme l'exige l'Objection 2.** Mode **dur vers
-`bootstrap.ts:44`**, sur la base de la preuve (g) : supprimer le `catchCause` **n'ajoute aucun échec
-atteignable**, puisque la même lacune de `make()` échoue déjà `init` à `:398` via `:137`, non
-protégé. Les deux sites de `make()` dans ce fichier sont désormais d'accord. Ce qui change n'est pas
-la disponibilité mais la **visibilité** : un defect devient un échec d'effet nommé, au lieu d'une
-désactivation silencieuse. Conséquences à assumer, mesurées :
-
-- `plugin.init()` est le seul `init()` non protégé du bootstrap (j) : un échec de `ensureWatching`
-  fait échouer `InstanceBootstrap.run` **[hérité : `P15-verdict.md:24` et `:62`]**.
-- `src/index.ts:61-71` ne fait que `Log.Default.error(...)` — il **ne sort pas** du processus
-  **[hérité : `P15-verdict.md:67`]** : le processus survit, le rechargement à chaud est abandonné.
-- `watchingStarted` reste `true` après l'échec (`:310`), donc aucun réarmement ultérieur n'est
-  possible — **identique** au comportement d'aujourd'hui, puisque `:313` sortait aussi avec le
-  drapeau déjà mis à `true`.
-
-### Correctif B — protéger l'échec synchrone de `subscribe()` (traite le site réel `:344`)
+Le `.catch` de `plugin/index.ts:366` ne couvre que le rejet. Un `subscribe()` qui lève de façon
+synchrone s'échappe de la boucle `342-367`, donc de `ensureWatching()`, donc de `init()` (399), donc
+du bootstrap (`bootstrap.ts:44`) : l'échec est total et non journalisé.
 
 ```diff
 @@ -341,8 +341,14 @@
@@ -331,7 +211,7 @@ désactivation silencieuse. Conséquences à assumer, mesurées :
 +          let pending: Promise<ParcelWatcher.AsyncSubscription>
 +          try {
 +            pending = parcelWatcher.subscribe(
-             dir, // … corps d'arguments identique, ligne pour ligne …
++            dir, // … corps d'arguments identique, ligne pour ligne …
              { backend },
              )
 +          } catch (err) {
@@ -342,205 +222,124 @@ désactivation silencieuse. Conséquences à assumer, mesurées :
 ```
 
 Comportement : un répertoire non abonnable est journalisé et sauté ; les autres répertoires sont
-toujours armés. `watcherCleanup` (`:370-375`) n'est pas affecté. **C'est le défaut vivant** de ce
-fichier : `subscribe` est le seul appel de `:308-376` qui puisse faire tomber `bootstrap.ts:44`.
+toujours armés. `watcherCleanup` (370) n'est pas affecté.
 
 ### Ce qui reste volontairement inchangé
 
-- **`src/agent/agent.ts:421,445,446,464` n'est pas corrigé ici** — voir § 5.6 ; finding `P15-O7`.
-- Le garde-fou métier de `reload()` (`:409-413`, rollback sur génération incomplète) est intact : il
-  est correct et sans rapport avec la nullabilité.
-- Le `if (flags.pure) return` de `:311` est intact : il protège `test/` et les sandboxes.
-- `watchingStarted` (`:309-310`) est intact, y compris son caractère non réinitialisable ; le bloc
-  `watcherCleanup()` de `:314-317` reste du code mort, volontairement non traité (hors périmètre).
-- `src/effect/bridge.ts` n'est **pas** touché : pas de `makeOptional()` (§ 5.4).
-- Le partage du pont entre instances (`P15-O8`) n'est **pas** modifié : `ensureWatching` étant défini
-  dans le closure de `layer` (`:126-443`) et ne s'exécutant qu'une fois (5), `b` reste créé une fois
-  par layer — exactement comme le champ `let` l'était. `captureSync()` n'est pas touché.
+- `src/agent/agent.ts:421,445,446,464` porte le défaut **identique** (`let bridge: Shape | null`,
+  `Effect.succeed(null as any)`, `bridge!.promise(reload())`). Il n'est **pas** corrigé ici : le
+  contrat de l'audit impose un fichier de proposition par problème, et P15 pointe
+  `src/plugin/index.ts:359`. C'est une proposition jumelle à créer, pas un oubli.
+- Le garde-fou métier de `reload()` (`plugin/index.ts:409-413`, rollback sur échec de génération) est
+  intact : il est correct et sans rapport avec la nullabilité.
+- Le `if (flags.pure) return` de 311 est intact : il protège `test/` et les sandboxes.
+- La déclaration `bridge: EffectBridge.Shape | null` (280) est conservée (voir ci-dessus).
 
 ## 5. Alternatives considered
 
-1. **`if (!bridge) bridge = yield* EffectBridge.make()` puis `const b = bridge`** (forme de la
-   version précédente de cette proposition, `P15-verdict.md:89-94`). **Rejetée : elle ne compile
-   pas.** Le type déclaré reste `EffectBridge.Shape | null` (`:280`), `make()` renvoie
-   `Effect.Effect<Shape>` (`bridge.ts:54`), et le contrôle de flux ne propage **aucune** narrowness à
-   travers une affectation — d'où `TS18047: 'b' is possibly 'null'` sur `b.promise(...)`, et
-   `tsgo --noEmit` en échec (C-18). Elle est de plus *doublement* fausse : elle affirme que `bridge`
-   est non nul après l'affectation, alors qu'il vaut `null` au premier appel ; et elle conserve
-   l'union `Shape | null`, donc ne ferme pas le trou.
-2. **Garder le champ nullable et ajouter `if (bridge === null) throw new Error(…)` avant
-   `const b: EffectBridge.Shape = bridge`** (première forme acceptée par le verdict,
-   `P15-verdict.md:102-106`). **Rejetée :** elle introduit une exception JavaScript nue dans une
-   library, dont les seules portes de sortie (`unhandledRejection` / `uncaughtException`) ne font que
-   journaliser **[hérité : `P15-verdict.md:116-120`]** — donc non rattrapable par un
-   `Effect.catchCause` ajouté en aval, dans une fonction du chemin de démarrage. Elle conserve en
-   outre le champ `:280` et son cache mort.
-3. **Garder le `catchCause` et produire `EffectBridge.Shape | null` via
-   `Effect.as(null as EffectBridge.Shape | null)`** (correctif de la version précédente de cette
-   proposition). **Rejeté :** (a) c'est la réécriture de la branche morte, alors que la preuve (g)
-   établit qu'aucune dégradation n'est atteignable ; (b) `null as EffectBridge.Shape | null` reste une
-   affirmation de type, même sans `any` ; (c) l'effet construit reste infaillible, donc le
-   compilateur n'apprend rien de nouveau ; (d) cela introduirait `Effect.as` sur un effet de
-   journalisation uniquement pour fabriquer un `null` que rien ne consommerait.
-4. **Ajouter `EffectBridge.makeOptional(): Effect.Effect<Shape | null>` à `src/effect/bridge.ts`**
-   (Objection 3, `P15-verdict.md:126`, explicitement facultative). **Rejetée :** nouvelle API dans un
-   module partagé pour rendre lisible une branche morte ; `make()` n'a aucune raison d'être
-   infaillible-nulle, et le dépôt n'a pas d'exception à son canal `never`
-   (`packages/opencode/AGENTS.md` : `Effect.void` exigé, `Effect.succeed` banni).
-5. **Garder le `catchCause` et ajouter une garde à l'exécution `if (b) b.promise(…)` en `:359`.**
-   Rejetée : rend le pont nullable définitivement et déplace le défaut vers une branche morte ; le
-   `.catch` de `:359` resterait dans le faux — le code continuerait d'affirmer « je recharge » sans le
-   faire. C'est la stratégie « gérer `null` » du mandat, rejetée parce que l'état `null` est
-   illégitime (§ 3) et que les autres sites du dépôt ne l'utilisent pas (`plugin/index.ts:137`, et le
-   même motif jumeau en `src/agent/agent.ts` **[hérité : `P15-verdict.md:71`]**).
-6. **Élargir P15 à `src/agent/agent.ts` (un seul patch pour les deux ponts).** Rejeté : le jumeau
-   n'est pas le même problème.
-   - **Rayon d'impact différent.** Dans `plugin/index.ts`, `ensureWatching` est atteint par
-     `plugin.init()` → `bootstrap.ts:44`, un `init()` **nu** (j). Dans `src/agent/agent.ts`, les
-     sites d'appel observés sont des **accesseurs** (`Agent.get`, `Agent.list`,
-     `Agent.defaultInfo`), donc un échec s'y propage vers l'appelant, pas vers un bootstrap
-     d'instance **[hérité : `P15-verdict.md:294-300`]**.
-   - **Correctif B sans équivalent.** `agent.ts` arme ses watchers par `fs.watch`, pas par
-     `@parcel/watcher` : il n'y a pas d'abonnement à protéger, donc `watch-subscribe-throw.test.ts`
-     n'aurait pas d'objet **[hérité : `P15-verdict.md:301-303`]**.
-   - **Conséquence : le dépôt garde 2 ponts nullable tant que la jumelle n'est pas traitée.** C'est
-     pourquoi `P15-O7` reste **ouvert** : la proposition jumelle est requise, pas optionnelle. Sans
-     elle, le gain de P15 est de 1 sur 2.
-
-### Findings repris du verdict (`P15-verdict.md:154-163`)
-
-| id | sévérité | statut après cette révision |
-|---|---|---|
-| `P15-O1` | high | **closed** — correctif A : `const b: EffectBridge.Shape = yield* EffectBridge.make()` sur un `const` non nullable, champ `:280` supprimé ; plus aucune narrowness à prouver, donc plus aucun `TS18047` possible. Preuve exigée : `bun typecheck` exit 0 (§ 7, T0) |
-| `P15-O2` | high | **closed** — sémantique d'échec tranchée explicitement en § 4 (« mode dur vers `bootstrap.ts:44` ») et reprise en § 6, avec la preuve (g) qu'aucun échec atteignable n'est ajouté ; aucun `throw` JavaScript |
-| `P15-O3` | low | **closed** — `makeOptional()` écarté (§ 5.4) ; ni `as any`, ni `Effect.succeed(null …)`, ni `Effect.as` réintroduits ; la branche `catchCause` est supprimée, pas réécrite |
-| `P15-O4` | medium | **closed** — T1 corrigé (§ 2 (k) : le répertoire existe, 14 fichiers) ; T2 sans `expect-type` (§ 7) |
-| `P15-O5` | low | **closed** — T3 élargi à `bridge!\.\|null as any\|Effect.succeed\(null` (§ 7) |
-| `P15-O6` | medium | **closed** — `test/plugin/watch-subscribe-throw.test.ts` ajouté (§ 7, T5) |
-| `P15-O7` | medium | **open** — proposition jumelle `src/agent/agent.ts` à créer (§ 5.6) |
-| `P15-O8` | low | **open, hors périmètre** — le pont reste une closure de **layer** (`:126-443`) figeant le contexte de la première instance via `captureSync()` (`bridge.ts:19-25`). Ce patch **ne touche pas** à `captureSync()` ni à la durée de vie du pont (§ 4) |
+1. **Remplacer `as any` par un type somme explicite `EffectBridge.Shape | null` et garder `bridge!`.**
+   Rejeté : c'est l'état actuel déguisé. Le type reste nullable, `bridge!` reste une assertion qui
+   désactive la vérification, et le compilateur ne peut toujours rien dire si l'invariant de 313 est
+   un jour violé. On paie la complexité d'un type somme pour un trou qui reste.
+2. **Garder le `catchCause` et ajouter une garde runtime `if (b) b.promise(...)` en 359.** Rejeté :
+   cela rend le pont nullable _définitivement_ et déplace le défaut vers une branche muerte. Le
+   `.catch` de 359 reste alors dans le faux — le code continue d'affirmer « je recharge », il ne
+   recharge pas, et rien ne le signale. C'est la stratégie « gérer null » demandée en option 3 du
+   mandat ; elle est rejetée parce que l'état `null` est lui-même illégitime (§ 3) et que 20 des 22 sites du
+   dépôt ne l'utilisent pas.
+3. **Supprimer entièrement le champ `bridge` et l'inliner dans `ensureWatching`.** Rejeté : bien que
+   `watchingStarted` mémorise déjà la passe, cela changerait plus de lignes que nécessaire et
+   effacerait le type somme de 280, qui reste informatif.
+4. **Corriger aussi `agent/agent.ts` dans le même patch.** Rejeté pour cette proposition (contrat
+   d'audit, § 4), mais **signalé comme finding ouvert** : tant que P15-jumeau n'est pas traité, le
+   dépôt conserve deux bridges nullable au lieu de zéro.
 
 ## 6. Risks
 
-- **Régression sur les tests existants.** Le correctif A ne modifie aucun comportement observable :
-  le champ `:280` était écrit une fois (`:312`) et lu une fois (`:359`), tous deux après le
-  franchissement de `:313` (h). Fichiers de test couvrant le chemin :
-  `packages/opencode/test/plugin/hot-reload.test.ts`, `packages/opencode/test/plugin/reload-rollback.test.ts`,
-  `packages/opencode/test/plugin/trigger.test.ts`, `packages/opencode/test/cli/tui/plugin-lifecycle.test.ts`,
-  `packages/opencode/test/config/plugin.test.ts`, `packages/opencode/test/agent/plugin-agent-regression.test.ts`
-  **[hérité : `P15-verdict.md:83`]**. Le correctif B change le comportement de `subscribe` qui lève :
-  un répertoire est sauté au lieu de faire tomber le bootstrap — c'est le but, mais un test qui
-  attendrait la propagation (aucun trouvé) échouerait. **Base de comparaison obligatoire :** 8 tests
-  échouent **avant** toute implémentation (`CORRECTIONS.md:17`, `BASELINE.md`) ; une suite rouge ne
-  prouve donc pas une régression de ce patch.
-- **Coût ajouté, chiffré.** **0 allocation supplémentaire, 0 appel réseau, 0 ms au runtime** : le
-  diff retire trois lignes exécutables et en ajoute une (plus huit lignes de commentaire et une
-  ligne de contexte) ; le nombre d'appels à `EffectBridge.make()` est inchangé (les sites `:137` et
-  `:312` restent distincts et ne sont pas fusionnés). Le `try/catch` du correctif B n'alloue rien :
-  `pending` est une variable de la boucle, pas une closure créée par répertoire. Le seul coût
-  mesurable est une exécution supplémentaire de `bun typecheck` (~60 s **[hérité :
-  `P15-verdict.md:26`]**).
-- **Risque de sécurité : aucun.** Ni surface d'injection, ni contournement de permission, ni entrée
-  non fiable : le patch ne touche aucun parseur, aucune permission, aucun appel réseau. Le seul
-  élément de sécurité du fichier est le rollback de `:409-413`, laissé intact.
-- **Risque résiduel assumé — le seul vrai.** `Effect.catchCause` intercepte aussi les **defects**,
-  que le canal `never` n'exclut pas statiquement (f). Supprimer la branche transforme donc un defect
-  hypothétique de `make()` — par exemple une `captureSync()` qui lèverait (`bridge.ts:19-25`) — en
-  échec d'effet qui remonte à `bootstrap.ts:44` (j), puis n'est **que journalisé** par
-  `src/index.ts:61-71` **[hérité : `P15-verdict.md:67`]** : le processus survit, le rechargement à
-  chaud est abandonné, et la trace porte désormais le nom de la cause. Ce changement est **délibéré**
-  et **couvert** : (a) le même defect échoue déjà `init` à `:398` via `:137` non protégé (g), donc il
-  n'est pas nouveau ; (b) un defect masqué en désactivation silencieuse est plus coûteux à diagnostiquer
-  qu'un échec visible. Si un validateur juge ce compromis inacceptable, la variante est de déplacer le
-  filet de `:137` **et** de `:312` vers un `Effect.logWarning` commun — mais cela sort de P15 (deux
-  sites, un test supplémentaire) et justifierait une proposition distincte.
-- **Non-régression du correctif B à prouver, pas à supposer** : voir T5 (§ 7).
+- **Régression sur les tests existants.** Fichiers concernés : `packages/opencode/test/config/plugin.test.ts`,
+  `packages/opencode/test/agent/plugin-agent-regression.test.ts`,
+  `packages/opencode/test/cli/tui/plugin-lifecycle.test.ts`,
+  `packages/opencode/test/cli/tui/plugin-loader.test.ts`,
+  `packages/opencode/test/cli/tui/plugin-loader-pure.test.ts`,
+  `packages/opencode/test/cli/tui/plugin-loader-entrypoint.test.ts`,
+  `packages/opencode/test/cli/tui/plugin-install.test.ts`, `.../plugin-add.test.ts`,
+  `.../plugin-toggle.test.ts`, plus les fixtures `packages/opencode/test/fixture/plugin.ts` et
+  `tui-plugin.ts`. Aucun de ces tests n'observe `bridge` : le comportement observable du chemin
+  armé est identique après le correctif A, puisque la branche avalée était inatteignable. La
+  surface à risque réel est le mode pur (`plugin-loader-pure.test.ts`), où 311 sort avant 312 — donc
+  **avant** la zone modifiée, ce qui rend la régression structurellement impossible.
+- **Disponibilité — c'est le vrai risque du correctif A.** Aujourd'hui, une lacune de `make()` en 312
+  dégrade silencieusement le rechargement à chaud. Après le correctif, elle devient un échec Effect
+  qui remonte par `init()` (`plugin/index.ts:399`) vers `plugin.init()` (`bootstrap.ts:44`) et
+  **fait échouer le bootstrap d'instance** ; les routes `POST /plugin/{reload,add,remove}` renvoient
+  une erreur 500 au lieu d'un statut trompeur. Ce changement est délibéré (une instance sans pont ne
+  peut pas servir les plugins), mais il doit être assumé par le validateur : c'est la seule variation
+  de comportement du patch.
+- **Coût en tokens / latence.** runtime : **0 allocation, 0 appel réseau, 0 ms** ajoutés — le
+  correctif remplace une construction d'effet par un appel direct et supprime un `Effect.catchCause`.
+  Le correctif B ajoute un `try/catch` sans coût sur le chemin nominal. Le seul coût mesurable est
+  **une exécution de `bun typecheck`** (~60 s d'après le budget du projet) : supprimer `as any`
+  restaure la vérification stricte et peut révéler des erreurs de type préexistantes jusque-là
+  masquées dans ce fichier. C'est le seul poste à chiffrer.
+- **Sécurité.** Aucun risque d'injection ni de contournement de permission : aucune entrée utilisateur
+  n'atteint ces lignes, les répertoires surveillés proviennent de `Global.Path.config` et des origines
+  `file://` de la configuration (`plugin/index.ts:319-322`). Le déclencheur est un changement de
+  fichier local. Le correctif B ne modifie pas la liste des répertoires. Aucun secret en jeu.
+- **Dérive possible.** Une fois `as any` retiré, `bridge` est non nul après 312 ; une affectation
+  ultérieure dans la portée deviendrait une erreur de compilation. C'est exactement l'effet recherché.
 
 ## 7. Tests
 
-Plan exécutable et vérifiable. Commandes à lancer depuis `packages/opencode`.
+**T1 — `packages/opencode/test/plugin/bridge-non-null.test.ts`** (nouveau ; le répertoire
+`packages/opencode/test/plugin/` n'existe pas encore)
 
-**T0 — compilation (preuve principale de C-18).**
+- Constat : `EffectBridge.make()` sur un effet nu, hors de tout contexte d'instance, et sur un effet
+  fournissant `InstanceRef`/`WorkspaceRef`.
+- Critère de succès observable : les deux effets **se terminent en `Success`** et `EffectBridge.Shape`
+  est non nul (les quatre membres `promise`, `fork`, `run`, `bind` sont des fonctions). Un
+  `Exit.Failure` fait échouer le test.
+- Commande : `bun test test/plugin/bridge-non-null.test.ts` depuis `packages/opencode`.
 
-- Commande : `bun typecheck` (script `tsgo --noEmit`, `packages/opencode/package.json:9`
-  **[hérité : `P15-verdict.md:23`]**).
-- Critère de succès : **exit 0**, et aucun diagnostic `TS18047` sur `plugin/index.ts`.
-- À exécuter **après** le correctif A seul (ordre imposé par `P15-verdict.md:148`).
+**T2 — test de type, la vraie régression de P15.** Un test en `expectTypeOf` / `@ts-expect-error`
+prouvant qu'une lecture non gardée d'un pont nullable est désormais refusée. Si le compilateur accepte
+toujours la lecture, le trou n'est pas scellé.
 
-**T1 — le pont n'est plus nullable au point d'usage.**
+- Commande : `bun typecheck` depuis `packages/opencode`.
 
-- Fichier à écrire : `packages/opencode/test/plugin/bridge-non-null.test.ts` — **dans le répertoire
-  existant** (14 fichiers, § 2 (k)), aligné sur `packages/opencode/test/plugin/reload-rollback.test.ts`.
-- Commande : `bun test test/plugin/bridge-non-null.test.ts`
-- Critère de succès : le test **échoue** sur le code d'avant patch (la garde `if (!bridge) return`
-  donne `watchers armed: 0` et aucune relance) et passe après (le callback du watcher déclenche une
-  relance via le pont capturé). Un test qui passe dans les deux mondes ne prouve rien.
+**T3 — garde de non-régression sur le texte source**, preuve mécanique que `as any` et `bridge!` ont
+disparu du chemin :
 
-**T2 — le type ne peut plus être blanchi.**
+```
+rg -n "bridge!|null as any" packages/opencode/src/plugin/index.ts
+```
 
-- Fichier : `packages/opencode/test/plugin/bridge-non-null.test.ts` (même fichier que T1).
-- Contenu : une assertion **`@ts-expect-error`** — *pas* `expectTypeOf` : `expect-type` n'est une
-  dépendance d'aucun `package.json` du dépôt et aucun test ne l'utilise **[hérité :
-  `P15-verdict.md:131`]**. Forme retenue, en appel plutôt qu'en affectation, pour ne dépendre ni de
-  `noUnusedLocals` ni d'un lint d'une variable inutilisée :
-  ```ts
-  declare function acceptShape(s: EffectBridge.Shape): void
-  declare const possiblyNullBridge: EffectBridge.Shape | null
-  // @ts-expect-error — the nullable bridge must not be assignable to a required Shape
-  acceptShape(possiblyNullBridge)
-  ```
-- Commande : `bun typecheck`
-- Critère de succès : exit 0 **avec** le `@ts-expect-error` — donc l'erreur existe bien. Si TypeScript
-  ne signalait rien sous la directive, `@ts-expect-error` deviendrait lui-même `TS2578` et le
-  typecheck échouerait : la preuve détecte les deux sens.
+Critère de succès : **exit 1** (aucune correspondance) ; `rg` retourne 0 tant qu'une occurrence
+subsiste.
 
-**T3 — les motifs bannis ont disparu du fichier.**
-
-- Commande :
-  `rg -n "bridge!\.|null as any|Effect.succeed\(null" packages/opencode/src/plugin/index.ts; echo "exit=$LASTEXITCODE"`
-- Critère de succès : **aucune ligne imprimée et `exit=1`**. Le motif est volontairement élargi par
-  rapport à la version précédente (`null as any` seul), qui aurait laissé passer `bridge!.`
-  **[hérité : `P15-verdict.md:143`]**.
-
-**T4 — non-régression fonctionnelle du cycle de vie plugin.**
-
-- Commande : `bun test test/cli/tui/plugin-lifecycle.test.ts` **[hérité : `P15-verdict.md:25`]**
-- Critère de succès : exit 0, et **conforme à la base** (`CORRECTIONS.md:17`).
-
-**T5 — non-régression du correctif B (défaut vivant, `P15-O6`).**
-
-- Fichier à écrire : `packages/opencode/test/plugin/watch-subscribe-throw.test.ts`.
-- Contenu : forcer le binding `@parcel/watcher` à lever **de façon synchrone** depuis `subscribe`, puis
-  vérifier que le bootstrap d'instance survit et que le répertoire fautif est journalisé
-  (`plugin watch subscribe threw`) et sauté.
-- Commande : `bun test test/plugin/watch-subscribe-throw.test.ts`
-- Critère de succès : le test **échoue** sur le code d'avant patch (le bootstrap tombe) et passe
-  après. C'est la seule preuve que le défaut vivant de `:344` est réellement fermé.
-
-**Ordre d'exécution (conformément à `P15-verdict.md:148`) :** T0 → T3 → T1 → (correctif B) T5 → T4.
+**T4 — non-régression fonctionnelle du rechargement à chaud.** Étendre
+`packages/opencode/test/cli/tui/plugin-lifecycle.test.ts` : écrire un `.ts` dans le répertoire plugin,
+attendre le debounce (300 ms, `plugin/index.ts:340`), observer `Plugin.version()` (`427-430`)
+s'incrémenter et le log `plugin file changed, reloading` (`358`).
+Commande : `bun test test/cli/tui/plugin-lifecycle.test.ts`.
+Critère : `generation` passe de N à N+1, aucun `plugin reload error` au log.
 
 ## 8. Effort
 
-`S` — trois lignes supprimées et une ajoutée dans un seul fichier, plus six lignes de `try/catch` dans
-le même fichier, deux fichiers de test à écrire et une exécution de `bun typecheck` ; aucune
-migration, aucun nouveau module, aucun changement de contrat d'API.
+`XS` — deux diffs dans un seul fichier de 451 lignes, aucune dépendance nouvelle, aucun test existant
+à réécrire ; le correctif B est un `try/catch` de six lignes.
 
 ## 9. Verdict self-assessment
 
-`READY`.
+`NEEDS_REVIEW`.
 
-Les deux objections bloquantes sont traitées par construction, et non par argumentation : le correctif A
-n'a plus de variable nullable à prouver (`const b: EffectBridge.Shape = yield* EffectBridge.make()`,
-champ `:280` supprimé, `b.promise(…)` sans assertion), et la branche `catchCause` est supprimée avec
-son seul consommateur, sur la preuve de première main que le même `make()` échoue déjà `init` à `:398`
-via `:137`. Aucun `as any`, aucun `throw` JavaScript, aucune API ajoutée, aucune sémantique d'échec
-nouvelle introduite.
+Deux questions précises à trancher par le validateur :
 
-Réserves explicites, qui n'appartiennent pas au correctif : `P15-O7` (jumeau `src/agent/agent.ts`) et
-`P15-O8` (pont partagé entre instances via `captureSync()`) restent **ouverts** et ne sont pas traités
-ici — le premier est une proposition jumelle requise, le second est hors portée par construction, ce
-patch ne touchant pas à la durée de vie du pont. Le seul arbitrage qui reste au validateur est celui du
-§ 6, « risque résiduel assumé » : accepter qu'un **defect** de `make()` devienne un échec d'effet
-visible au lieu d'une désactivation silencieuse, ou ouvrir une proposition distincte pour déplacer le
-filet commun à `:137` et `:312`. Cet arbitrage ne bloque pas le correctif A, qui est indépendant de la
-branche supprimée.
+1. **Portée.** `src/agent/agent.ts:445,464` porte exactement le même défaut (`Effect.succeed(null as any)`
+   puis `bridge!.promise(...)`). P15 doit-il rester limité à `src/plugin/index.ts`, ou le validateur
+   exige-t-il un correctif jumellé avant de statuer ? Tant que ce n'est pas tranché, le dépôt garde
+   deux ponts nullable sur 22.
+2. **Comportement à l'échec.** Le correctif A supprime l'avalement de 312 : une lacune de
+   `EffectBridge.make()` fera désormais échouer `plugin.init()` et donc le bootstrap d'instance
+   (`bootstrap.ts:44`) au lieu de dégrader silencieusement le rechargement à chaud. Est-ce le
+   comportement voulu, ou faut-il conserver une dégradation gracieuse avec un chemin de repli explicite
+   et journalisé (rechargement à chaud désactivé, instance servie) ?

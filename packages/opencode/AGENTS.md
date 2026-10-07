@@ -12,9 +12,9 @@
 ## Development server
 
 - Running `bun dev` from `packages/opencode` starts the live interactive TUI. Do not run it as a blocking foreground command when you need to inspect the result.
-- Start it through a managed terminal instead: `mcp-terminal_command_run mode=async` with `bun dev`, and record the returned command handle. This protocol is platform-neutral; a POSIX-only multiplexer is not available on the Windows/pwsh profile.
-- Read the TUI output with `mcp-terminal_terminal_read target=<handle>`, preferring a bounded `tail` or `grep` over a full-screen dump.
-- Stop it through that same handle with `mcp-terminal_command_cancel` once the turn no longer needs it. Never stop a process this turn did not start.
+- Start it in `tmux` instead: `tmux new-session -d -s opencode-dev 'bun dev'`.
+- Capture the current TUI output with: `tmux capture-pane -pt opencode-dev`.
+- Stop the session explicitly when done: `tmux kill-session -t opencode-dev`.
 
 # Module shape
 

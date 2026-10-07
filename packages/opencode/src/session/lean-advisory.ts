@@ -18,18 +18,17 @@ export function buildQaProofAdvisory(goal: GoalLike): string {
 }
 
 export function buildRiskAdvisory(goal: GoalLike, stickyFindings: readonly string[]): string {
-  const count = (goal.dod ?? []).length
+  const requirements = (goal.dod ?? []).map((item) => `- mandatory requirement: ${item}`)
   const findings = stickyFindings.map((item) => `- sticky finding: ${item}`)
-  if (count === 0 && findings.length === 0) return ""
+  if (requirements.length === 0 && findings.length === 0) return ""
   return [
     "<risk_advisory>",
     "This is advisory only: it cannot downgrade user requirements, security gates, failures or unverified evidence.",
-    `- mandatory requirements: the ${count} DoD item(s) of <task-contract>, each needing its own verifiable proof; not restated here.`,
+    ...requirements,
     ...findings,
     "Reuse proof only when its git/file/environment freshness still matches; uncertainty invalidates rather than skips it.",
-  ]
-    .concat("</risk_advisory>")
-    .join("\n")
+    "</risk_advisory>",
+  ].join("\n")
 }
 
 export function collectStickyFindings(messages: readonly { parts: readonly unknown[] }[]): string[] {

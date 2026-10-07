@@ -1,384 +1,591 @@
-# P07 — contrat de retour du sous-agent
+# P07 — Contrat des sous-agents : schéma laxiste, contexte non hérité, budget de tokens absent, cwd implicite
 
-> Révisé après verdict PASS_WITH_CHANGES du 2026-10-03 — réécriture complète (fichier corrompu, C-21), C-25 et C-20 traitées
-
-Réécriture intégrale depuis le verdict. Rien du fichier précédent n'est conservé : selon C-21, deux agents ont
-écrit ce fichier simultanément, et ni son contenu ni son bandeau n'étaient fiables.
-
-**Traçabilité des citations.** Les 28 citations validées par le verdict ont été rouvertes par tranches pendant
-cette révision. Trois écarts en découlent, tous documentés ci-dessous :
-
-- `session.ts:942-943` était **fausse**. Elle est remplacée par `session.ts:936-937`, relue (§2 E7).
-- `task.ts:236`, **jamais lue par le validateur**, a été relue et est reproduite mot pour mot en §2 E3.
-- Une citation de la version précédente ne correspondait à aucun contenu relu et a été **supprimée** plutôt que
-  recopiée (§2 E1, §5.2).
+Statut : proposition. Aucun fichier source n'a été modifié.
 
 ## 1. Problem
 
-Le sous-agent qui travaille pour son parent ne lui rend pas sa DoD. Le chemin de retour est complet et
-fonctionnel, mais la preuve que l'enfant a produite est transportée dans un metadata que personne ne relit, et
-jamais fusionnée dans l'état d'objectif du parent.
+Le `task` tool laisse le modèle lancer un sous-agent avec n'importe quel jeu de champs
+partiel : le contrat d'appel n'est pas vérifié par le schéma, le sous-agent ne reçoit aucun
+résumé du contexte du parent, aucun plafond de tokens ne peut arrêter une_session enfant,
+et le répertoire de travail de l'enfant est déduit silencieusement du contexte d'instance
+au lieu d'être déclaré.
 
 ## 2. Evidence
 
-### E1 — Le schéma exporté est laxiste, mais le contrat de lancement est déjà appliqué ailleurs
+Toutes les citations sont dans `packages/opencode/src/tool/task.ts` sauf mention contraire.
 
-`task.ts:52-59` déclare les champs de base, `task.ts:62-65` la structure qui les regroupe, `task.ts:66` le champ
-`command`. `task.ts:69-81` est le schéma **exporté** ; `task.ts:78-80` y documente `timeout_minutes`.
-`task.ts:83-88` définit `LaunchParameters`, qui rend `description`, `prompt` et `subagent_type` **obligatoires**.
-`task.ts:90-92` assure l'échappement de balisage, `task.ts:94-108` le rendu de sortie.
-
-`task.ts:741-746` confirme que `Parameters` est bien le schéma exposé au modèle et le type d'entrée du runner :
+**(a) Les cinq champs d'identité sont optionnels.** L'obligation ne vit que dans le texte
+`description` d'annotation, pas dans le type :
 
 ```ts
-741:     return {
-742:       description: DESCRIPTION + BACKGROUND_DESCRIPTION,
-743:       parameters: Parameters,
-744:       execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context) =>
+// task.ts:52-59
+const BaseParameterFields = {
+  description: Schema.optional(Schema.String).annotate({
+    description: "Required for launch/resume: a short (3-5 words) description",
+  }),
+  prompt: Schema.optional(Schema.String).annotate({
+    description: "Required for launch/resume: the task for the agent to perform",
+  }),
+  subagent_type: Schema.optional(Schema.String).annotate({
 ```
 
-**Le laxisme est réel mais n'est pas un défaut de contrat.** Les obligations portées par `task.ts:83-88` ne sont
-pas vérifiées au moment de la validation de l'appel — elles le sont par le garde de décodage de `task.ts:391-399`,
-qui produit une erreur **nommée** et un message précis :
+`task_id` (task.ts:62-65) et `command` (task.ts:66) sont également `Schema.optional`.
+Le schéma exposé est donc un `Struct` intégralement optionnel : `{ background: true }`
+passe la validation JSON et n'échoue qu'ensuite, au runtime.
+
+**(b) `LaunchParameters` existe mais n'est pas le schéma exposé.**
 
 ```ts
-391:      const params = yield* Schema.decodeUnknownEffect(LaunchParameters)(input).pipe(
-392:        Effect.mapError(
-393:          () =>
-394:            new Tool.InvalidArgumentsError({
-395:              tool: id,
-396:              detail: "Launch/resume requires description, prompt, and subagent_type strings",
-397:            }),
-398:        ),
-399:      )
+// task.ts:83-88
+const LaunchParameters = Schema.Struct({
+  ...Parameters.fields,
+  description: Schema.String,
+  prompt: Schema.String,
+  subagent_type: Schema.String,
+})
 ```
 
-`task.ts:404-410` rejette en outre un prompt porteur d'un marqueur d'élision, `task.ts:413-423` demande la
-permission, `task.ts:425-428` résout l'agent, `task.ts:430` relit la session parent.
-
-**Conclusion de cette section, contre-intuitive mais établie : il n'y a pas de trou de validation à combler
-ici.** Un lancement incomplet échoue déjà, avec un message qui nomme les trois champs manquants. C'est ce qui
-motive le rejet du volet (b) en §4.
-
-### E2 — Le budget est résolvement indépendant de l'appel
-
-`task.ts:110-118` résout une durée depuis l'environnement, `task.ts:124-128` l'applique, `task.ts:148-161`
-compose le message de dépassement, `task.ts:163-168` extrait le texte de l'enfant. `task.ts:694-695` est le point
-de résolution unique :
+et le tool exporte bien `Parameters` :
 
 ```ts
-694:    const minutes = next.budgetMinutes ?? taskBudgetMinutes()
+// task.ts:741-746
+return {
+  description: DESCRIPTION + BACKGROUND_DESCRIPTION,
+  parameters: Parameters,
+  execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context) =>
 ```
 
-La durée demandée par l'appel n'y figure pas. `task.ts:303-305` est la signature d'entrée du runner et
-`task.ts:315` traite `input.action` comme discriminant applicatif ; `task.ts:326-330` est la branche d'attente,
-où le délai est exprimé en millisecondes.
-
-Le court-circuit en `??` est ici **structurellement incapable** de distinguer deux mondes : dès qu'un budget
-d'agent est présent, la valeur résolue est la même quelle que soit l'issue de la discussion. Toute assertion
-construite sur ce court-circuit ne prouve rien — c'est pourquoi aucun test de §7 ne porte sur lui.
-
-### E3 — L'enveloppe de retour ne transporte que du texte — *angle mort C-25 refermé*
-
-**C-25.** Le validateur n'a ouvert aucune plage de `task.ts:170-300`. Son silence sur `task.ts:236` était un
-**angle mort, pas une validation**. La ligne a donc été relue directement. `task.ts:223-288` est
-`backgroundMessage`, et `task.ts:236` est la **balise d'ouverture** de l'enveloppe :
+`LaunchParameters` n'est utilisé que comme garde de décodage interne :
 
 ```ts
-235:  return [
-236:    `<task id="${input.sessionID}" state="${input.state}">`,
-237:    `<summary>${escapeTaskMarkup(title)}</summary>`,
-238:    `<${tag}>`,
-239:    escapeTaskMarkup(input.text),
-240:    `</${tag}>`,
+// task.ts:391-399
+const params = yield* Schema.decodeUnknownEffect(LaunchParameters)(input).pipe(
+  Effect.mapError(
+    () =>
+      new Tool.InvalidArgumentsError({
+        tool: id,
+        detail: "Launch/resume requires description, prompt, and subagent_type strings",
+      }),
+  ),
+)
 ```
 
-**Ce que `task.ts:236` démontre, et rien de plus :** l'enveloppe de fond est un conteneur de balises portant un
-identifiant de session, un état, un titre et un texte échappé. Elle ne porte **aucun champ structuré**.
+Conséquence : le contrat est correct mais **tardif**. Le modèle découvre la faute une fois
+l'appel construit, donc dans le contexte déjà facturé d'un tour.
 
-**Argument retiré.** La version précédente de ce fichier tirait de cette ligne un levier de correction —
-restreindre l'enveloppe à quelques balises. Cet argument est **supprimé**. Même en réduisant l'enveloppe, la
-preuve de l'enfant continuerait de se perdre en amont, à `task.ts:511-513` (§2 E4) : la perte n'est pas dans le
-format de sortie, elle est dans l'absence de fusion. Une citation ne peut pas porter à la fois une description et
-un correctif qu'elle ne démontre pas. `task.ts:236` est conservée **comme description**, et seulement comme telle.
-
-### E4 — La preuve de l'enfant est transportée, jamais fusionnée
-
-`task-evidence.ts:39-43` construit le tableau `allTests` à partir de la preuve de l'enfant :
+**(c) `timeout_minutes` n'est lu que sur la branche de suivi.**
 
 ```ts
-39:  const allTests = (input.goalState?.completion?.evidence ?? []).map((item) => ({
-40:    command: item.proof.slice(0, 1_000),
-41:    outcome: "passed" as const,
-42:    summary: item.dod.slice(0, 500),
-43:  }))
+// task.ts:78-80
+timeout_minutes: Schema.optional(Schema.Number).annotate({
+  description: "Only with action=wait: give up waiting after this many minutes and report the task as still running.",
+}),
 ```
 
-`task-evidence.ts:44-48` traite les residuals, `task-evidence.ts:66-67` sérialise le tout dans le packet.
-`task.ts:561-620` montre le chemin de fond : `task.ts:579` écrit le packet en `metadata.evidence_packet`, et
-`task.ts:593-597` puis `task.ts:607` referment ce chemin.
-
-Côté parent, `task.ts:505-507` court-circuite puis fusionne, et `task.ts:509-517` est l'unique écriture d'état
-d'objectif de ce chemin :
+la seule lecture du champ est à task.ts:329, dans le bloc `action === "wait"` :
 
 ```ts
-506:            if (!current.goalState || packet.findings.length === 0) return
-...
-509:            yield* sessions.setGoalState({
-510:              sessionID: ctx.sessionID,
-511:              goalState: {
-512:                ...current.goalState,
-513:                findings,
+// task.ts:326-330
+? yield* background
+    .wait({
+      id: target,
+      ...(params.timeout_minutes ? { timeout: params.timeout_minutes * 60_000 } : {}),
+    })
 ```
 
-**Deux faits distincts, tous deux vérifiés :**
-
-1. `task.ts:511-513` **ne fusionne que `findings`**. Aucune ligne de ce chemin ne reprend `allTests`.
-2. `task.ts:506` aggrave la situation : l'écriture n'a lieu que si le packet porte **au moins un finding**. Un
-   enfant qui produit des preuves sans finding ne déclenche donc aucune écriture du tout.
-
-`task.ts:490-491` normalise l'état en amont de cela. La preuve de l'enfant est produite, tronquée, sérialisée,
-transmise — et jamais appliquée.
-
-### E5 — Le chemin de retour enfant → parent est complet et correct
-
-Ce chemin est vérifié et **n'est pas en cause** :
-
-`task.ts:531-553` (boucle de l'enfant) → `task.ts:549` (fin de boucle) → `task.ts:485-521`
-(`persistEvidence`) → `task.ts:506-517` → `task.ts:722-726` (`output`) → `task.ts:94-108`.
-
-`task.ts:549-552` termine la boucle et capture le texte ; `task.ts:676-677` et `task.ts:699-707` composent la
-sortie, `:699-707` étant la branche `partial` / `wall_clock` ; `task.ts:710-721` termine cette composition.
-`task.ts:672-731` couvre cet assemblage de sortie.
-
-Ce maillon fonctionne de bout en bout. **Le défaut n'est pas ce chemin : il est dans ce qu'il écrit à son
-dernier étage** (E4).
-
-### E6 — L'enfant tourne sous un agent et un jeu d'outils réduits
-
-`task.ts:541` fixe l'agent de l'enfant (`agent: next.name`) ; `task.ts:543-545` retire `todowrite` et `task` du
-jeu d'outils, sauf permission explicite ; `task.ts:694-695` est le point de résolution du budget. `task.ts:451-467`
-construit la session enfant, `task.ts:456-460` portant le bloc `permission`.
-
-`subagent-summary.ts:1-11` pose le contrat de rapport causal — `outcome`, `decisions`, `evidence`, `changes`,
-`findings`, `residuals/unverified`, `next` — et `subagent-summary.ts:26-30` sélectionne le contrat applicable,
-retournant un contrat vide hors mode lean.
-
-**Conséquence arithmétique, à énoncer correctement.** Un « pas parent » et un « pas enfant » ne sont pas la même
-unité : le parent travaille avec son gros contexte système et son transcript complet, l'enfant dans un contexte
-restreint où la règle `subagent-summary.ts:16-17` interdit explicitement de renvoyer une sortie complète. Le
-rapport des coûts **par pas** mesure donc la forme de la boucle, pas l'efficacité d'une validation.
-
-**Le ratio qui portait la conclusion économique de la version précédente est abandonné.** Il compare des unités non
-comparables, et il n'est pas reproductible : la requête d'audit qui le produit n'est ni jointe ni décrite. Une
-métrique qui porte une conclusion économique sans requête reproductible n'est pas vérifiable. Aucun chiffre de ce
-ratio n'est conservé ici.
-
-### E7 — Le répertoire de l'enfant vient du contexte d'instance — *correction C-25*
-
-**Citation fausse retirée.** `session.ts:942-943` était citée pour `input.directory`. Elle est **fausse** :
-`input.directory` se trouve en réalité à **`session.ts:936-937`**.
-
-`session.ts:670-689` est `Session.create`. Son type d'entrée énumère `parentID`, `title`, `agent`, `model`,
-`permission`, `workspaceID` — **pas** `directory`. Le corps fixe le répertoire depuis le contexte d'instance :
+Un appel foreground avec `timeout_minutes: 5` est donc accepté silencieusement et n'a
+**aucun effet**. La seule borne de temps qui s'applique au lancement est
+`OPENCODE_TASK_BUDGET_MINUTES` / `agent.budget_minutes` :
 
 ```ts
-680:      return yield* createNext({
-681:        parentID: input?.parentID,
-682:        directory: ctx.directory,
-683:        path: sessionPath(ctx.worktree, ctx.directory),
+// task.ts:694-695
+const minutes = next.budgetMinutes ?? taskBudgetMinutes()
+const result = yield* withBudget(runTask(), minutes)
 ```
 
-`session.ts:936-937` appartient à un **filtre de listage** de sessions, pas à la signature de création. Il
-n'est pas le seul : `grep input.directory` sur `src/session` rend six lectures, réparties sur quatre sites —
-`:553` (construction de l'`Info`), `:936-937`, `:942-943` et `:984` (filtres de listage). `session.ts:219`
-appartient au même ensemble d'appels.
+et le commentaire task.ts:110-118 documente que ce plafond a été retiré sciemment.
+
+**(d) Aucun `directory` au `sessions.create` de l'enfant.** La création est :
+
+```ts
+// task.ts:451-467
+(yield* sessions.create({
+  parentID: ctx.sessionID,
+  title: params.description + ` (@${next.name} subagent)`,
+  agent: next.name,
+  permission: [ ... ],
+}))
+```
+
+`grep "directory" src/tool/task.ts` ne renvoie **aucune occurrence**. Or
+`Session.create` n'expose pas de `directory` dans son entrée et recopie le répertoire de
+l'instance courante :
+
+```ts
+// src/session/session.ts:670-689
+const create = Effect.fn("Session.create")(function* (input?: {
+  parentID?: SessionID
+  title?: string
+  agent?: string
+  model?: Schema.Schema.Type<typeof Model>
+  permission?: Permission.Ruleset
+  workspaceID?: WorkspaceID
+}) {
+  const ctx = yield* InstanceState.context
+  ...
+    directory: ctx.directory,
+    path: sessionPath(ctx.worktree, ctx.directory),
+```
+
+**INFERE:** un sous-agent lancé depuis un parent multi-racine hérite donc du `directory` du
+processus et non de celui du parent. *Méthode de vérification :* créer une session par
+racine, lancer un sous-agent, puis lire `SessionTable.directory` des deux lignes et
+comparer. La colonne existe et est requise (`session.ts:219`), et l'index de liste la
+filtre (`session.ts:942-943`), donc la divergence est stockable et observable.
+
+**(e) Ce qui revient au parent : findings seulement, plus le texte du dernier message.**
+
+C'est le point le plus important du dossier. Inventaire complet du retour enfant → parent :
+
+| Ce qui revient | Mécanisme | Preuve |
+|---|---|---|
+| Texte du **dernier** message de l'enfant | `result.parts.findLast(...)` | task.ts:549 |
+| Findings structurés | `mergeGoalFindings` → `setGoalState` | task.ts:507, task.ts:509-517 |
+| Findings + tests + residuals (metadata) | `evidence_packet` dans les metadata de la part synthétique | task.ts:579 |
+| Identifiant de session enfant | `<task id=...>` | task.ts:96, task.ts:236 |
+
+```ts
+// task.ts:549-552
+const text = result.parts.findLast((item) => item.type === "text")?.text ?? ""
+const stepLimited = result.info.role === "assistant" && result.info.finish === "step-limit"
+const packet = yield* persistEvidence(stepLimited ? "partial" : "completed", text)
+return { text, state: packet.state, reason: stepLimited ? ("steps" as const) : undefined, packet }
+```
+
+`findLast` ne conserve qu'**un seul** bloc de texte : toute narration intermédiaire de
+l'enfant est perdue pour le parent, alors que la transcription complète existe sur disque
+(`childTranscriptText`, task.ts:163-168) et n'est lue que pour un salvage (task.ts:557).
+
+La remontée de findings est **conditionnelle** et silencieuse sur le plan syntaxique :
+
+```ts
+// task.ts:505-507
+const current = yield* sessions.get(ctx.sessionID)
+if (!current.goalState || packet.findings.length === 0) return
+const findings = mergeGoalFindings(current.goalState.findings ?? [], packet.findings)
+```
+
+Si le parent n'a pas de `goalState`, ou si l'enfant n'a rien trouvé, **rien** n'est écrit et
+aucun avertissement n'est émis. `mergeGoalFindings` ne traite que le tableau `findings`.
+
+**Ce qui ne revient pas :**
+
+- **La DoD de l'enfant.** Le packet la reconstruit partiellement —
+  `allTests` vient de `goalState.completion.evidence` et `allResiduals` de
+  `completion.unverified` (task-evidence.ts:39-48) — mais ce tableau `tests` n'est écrit
+  que dans les **metadata** de la partie de message (task.ts:579). Il n'est jamais fusionné
+  dans le `goalState` du parent : le seul champ écrit est `findings`
+  (task.ts:511-513).
+- **Les décisions.** Aucun chemin de code ne les transporte. Elles n'existent que comme
+  texte libre dans le bloc de task.ts:549, donc avec la même fragilité que `findLast`.
+- **Les fichiers lus / modifiés.** Le packet porte `source.transcriptSessionID`
+  (task-evidence.ts:66) et `workspace.fingerprint` (task-evidence.ts:67). Le parent reçoit
+  donc *où aller chercher*, jamais *quoi*. Le `changes:` exigé par le contrat de rapport
+  n'est pas un champ structuré du packet.
+- **Le `state` de l'enfant** quand il est `blocked` : `persistEvidence` calcule
+  `effectiveState` (task.ts:490-491) mais seule la branche `stepLimited` remonte en
+  `partial` côté tâche ; un `blocked` reste absent du texte de sortie foreground
+  (task.ts:722-726 n'a que `completed` et `partial`).
+
+Aggravant : le contrat de rapport n'est injecté que sous condition :
+
+```ts
+// src/tool/subagent-summary.ts:26-30
+export function subagentResultPolicy(parentIsLean: boolean, boundedExperiment: boolean) {
+  if (parentIsLean) return { contract: LEAN_SUBAGENT_CONTRACT }
+  if (boundedExperiment) return { contract: SUBAGENT_RESULT_CONTRACT }
+  return { contract: "" }
+}
+```
+
+En mode parent non-lean et sans le drapeau expérimental, `contract` est la chaîne vide :
+l'enfant **n'est même pas invité** à rapporter décisions, changements et preuves. Les
+sections exigées (subagent-summary.ts:1-11) sont donc absentes de la sortie dans le cas par
+défaut, et leur absence n'est signalée nulle part.
+
+**(f) Concurrence : `Semaphore` est importé mais ne borne pas les lancements.**
+
+```ts
+// task.ts:11
+import { Cause, Duration, Effect, Exit, Option, Schema, Scope, Semaphore } from "effect"
+```
+
+Les trois usages réels sont un verrou de cycle de vie par session et un verrou de preuve —
+**aucun compteur de lancements** :
+
+- `lifecycleLock` → `Semaphore.makeUnsafe(1)` par session enfant (task.ts:281-289) ;
+- `evidenceLock` → `Semaphore.make(1)` pour sérialiser l'écriture des findings
+  (task.ts:301), utilisé en task.ts:503 ;
+- le double-check « déjà en cours » avant lancement (task.ts:673-679) et avant `start`
+  (task.ts:593-597) réutilise ce même verrou de 1 permis.
+
+`Semaphore` ne borne donc pas le **nombre** d'enfants simultanés. Le débit de lancements est
+borné par la seule boucle du modèle.
+
+> **MESURE TERRAIN — provenance.** Les chiffres cités dans ce paragraphe et en §2(g) —
+> 3 229 sessions enfants pour 22 parents, une session à 403 enfants, 65 enfants sans aucun
+> tool-call, 56 à `input = 0`, une session enfant de 895 étapes, ratio 0,00063 $/étape contre
+> 0,053 $/étape — proviennent de la requête d'audit fournie avec ce dossier. **Ils ne sont pas
+> re-dérivés ici** : cette proposition n'a pas d'accès à la base. *Vérification :* rejouer la
+> requête en lecture seule avant toute décision d'implémentation, et retrouver le ratio 84×.
+
+C'est l'explication mécanique la plus simple du volume observé : 3 229 sessions enfants pour 22 parents, une session à 403 enfants,
+65 enfants sans aucun tool-call et 56 à `input = 0` — des lancements vides, jamais refusés,
+parce que rien ne l'exige. Le ratio de coût Parent 0,00063 $/étape contre enfant
+0,053 $/étape (**84×**) est la conséquence directe du fait que l'échec d'un appel de
+lancement est découvert après facturation, et qu'un appel vide reste reproductible.
+
+**(g) Plafond de tokens : aucun.** `stepLimitOutput` (task.ts:148-161) gère une borne de
+**pas**, déjà appliquée en amont par `finish === "step-limit"` (task.ts:550). Aucun champ
+`token_budget` n'existe dans `BaseParameterFields`, et le mécanisme mural est un
+`Effect.timeoutOption` (task.ts:124-128) qui n'a rien à voir avec le volume de tokens. Une
+session enfant de 895 étapes est donc un résultat possible et non signalé comme anomalie.
 
 ## 3. Mechanism
 
-L'appel `task` part du parent (`task.ts:303-305`). Le cheminement réel :
+ Chemin d'exécution d'un lancement foreground incomplet, de la sortie du modèle au retour :
 
-1. **Validation du schéma exporté.** `task.ts:69-81` accepte des champs de lancement optionnels (§2 E1).
-2. **Garde de décodage.** `task.ts:391-399` applique les obligations de `task.ts:83-88` et produit, en cas
-   d'échec, une `Tool.InvalidArgumentsError` nommée, au message de `task.ts:396`. `task.ts:404-410` rejette un
-   prompt tronqué, `task.ts:413-423` demande la permission, `task.ts:425-428` résout l'agent, `task.ts:430` relit
-   la session parent.
-3. **Création de l'enfant.** `task.ts:451-467` crée la session sous l'agent de `task.ts:541`, avec les outils
-   réduits de `task.ts:543-545` et le répertoire hérité du contexte (`session.ts:682`).
-4. **Boucle.** `task.ts:531-553` exécute la session complète de l'enfant ; `task.ts:549-552` en sort avec le texte.
-5. **Persistance.** `task.ts:485-521` construit le packet ; `task.ts:505-507` court-circuite sur l'absence de
-   finding ; `task.ts:509-517` écrit un `goalState` parent où seuls les **findings** sont fusionnés.
-6. **Rendu.** `task.ts:722-726` appelle `output` (`task.ts:94-108`) ; le packet part en `metadata.evidencePacket`
-   (foreground) ou en `metadata.evidence_packet` (`task.ts:579`, chemin de fond), et l'enveloppe de fond
-   (`task.ts:236`) n'encode que des balises.
-7. **Effet final.** Le parent reçoit une preuve qu'aucun code applicatif ne relit. **Une DoD d'enfant est perdue
-   à chaque délégation.**
+1. Le modèle produit un appel `task`. Le.toolbox le valide contre le schéma exposé
+   `Parameters` (task.ts:743), c'est-à-dire un `Struct` dont **tous** les champs sont
+   optionnels (task.ts:69-81). **Étape 1 : la validation passe pour n'importe quel objet.**
+2. `run` reçoit `input` typé par `Schema.Schema.Type<typeof Parameters>` (task.ts:303-305),
+   donc le type statique ne distingue plus « lancement » de « suivi ».
+3. Le test discriminant est `if (input.action)` (task.ts:315). C'est donc la **présence
+   d'une clé `action`**, et non le schéma, qui décide de la branche. Un objet
+   `{ background: true }` n'a pas `action` et tombe dans la branche de lancement.
+4. La branche de lancement décode avec `LaunchParameters` (task.ts:391) : c'est **ici**, et
+   seulement ici, que l'erreur d'arguments est produite (task.ts:394-397). Le contrat
+   existe ; il est paid après coup.
+5. Le garde-fou suivant vérifie l'élision de prompt (task.ts:404-410), puis
+   `ctx.ask` réclame la permission (task.ts:413-420).
+6. `sessions.create` (task.ts:451-467) crée l'enfant sans `directory`. Comme
+   `Session.create` recopie `InstanceState.context.directory` (session.ts:682), l'enfant
+   travaille dans le répertoire du processus, pas nécessairement celui du parent.
+7. Le prompt de l'enfant est `params.prompt` **+** le contrat, si le contrat est non vide
+   (task.ts:532, subagent-summary.ts:26-30). Il ne contient ni le `goalState` du parent, ni
+   ses findings, ni les fichiers déjà lus : **le contexte n'est pas hérité**.
+8. `ops.prompt` bloque jusqu'à la fin (task.ts:534-548). Aucune borne de tokens. La seule
+   borne murale eventuelle est `next.budgetMinutes ?? taskBudgetMinutes()` (task.ts:694),
+   non alimentée par défaut (task.ts:110-122).
+9. Au retour, `findLast` ne garde que le dernier bloc de texte (task.ts:549). `stepLimit`
+   est converti en `partial` (task.ts:550-552).
+10. `persistEvidence` construit le packet depuis le `goalState` de l'**enfant**
+    (task.ts:492-502) ; la remontée vers le parent n'écrit que `findings`, et seulement si
+    le parent a un `goalState` **et** que le packet a des findings (task.ts:506-507).
+11. Le texte rendu au parent est `output(sessionID, text, packet)` (task.ts:94-108, appelé
+    à task.ts:725) : une balise `evidence_packet` avec l'identifiant et l'empreinte
+    workspace, et **rien d'autre**.
 
-Le défaut n'est **ni** le transport (`task-evidence.ts:39-43` fait son travail), **ni** le chemin de retour
-(E5, complet et correct), **ni** la validation (E1, le garde fonctionne). Il manque **une seule chose** : la
-fusion de `tests` au point `task.ts:511-513`.
+Le parent repart donc avec : une phrase, un id, une empreinte, et zéro DoD, zéro décision,
+ zéro chemin de fichier structuré.
 
 ## 4. Proposal
 
-### (a) Fusionner la preuve de l'enfant dans l'état d'objectif du parent — *recommandé*
+Quatre modifications, toutes dans `packages/opencode/src/tool/task.ts` sauf mention.
 
-Seule ligne manquante du mécanisme complet. `task-evidence.ts:39-43` produit `allTests`, déjà tronqué à la
-construction (`slice(0, 1_000)` sur la preuve, `slice(0, 500)` sur l'énoncé). Au point `task.ts:511-513`, à
-l'intérieur de `persistEvidence`, homologuer le champ `tests` du packet vers `goalState.completion.evidence`, en
-conservant la troncature déjà appliquée à la source.
+### (a) Exposer un `Schema.Union` de deux variantes — effort **XS**, risque **faible**
 
-Deux conséquences du code existant sont à traiter dans le même lot, faute de quoi le correctif resterait
-partiel :
+```ts
+const FollowUpParameters = Schema.Struct({
+  task_id: Schema.String,
+  action: Schema.Literals(["check", "wait", "cancel"]),
+  timeout_minutes: Schema.optional(Schema.Number),
+})
 
-- `task.ts:506` conditionne l'écriture à `packet.findings.length > 0`. Un enfant qui rapporte des preuves sans
-  finding ne produirait toujours aucune écriture ; la condition doit inclure la présence de `tests`.
-- `task.ts:514` incrémente `version`. Toute écriture supplémentaire doit le faire, sinon deux révisions
-  concurrentes de l'état d'objectif deviennent indiscernables.
+const LaunchParameters = Schema.Struct({
+  ...Parameters.fields,
+  description: Schema.String,
+  prompt: Schema.String,
+  subagent_type: Schema.String,
+})
 
-Découpage volontaire : **`tests` seul**. Les findings et les residuals suivent dans un lot distinct — un finding
-importé ne peut pas hériter d'un statut `CLOSED`, la clôture exigeant une preuve indépendante.
+export const Parameters = Schema.Union(LaunchParameters, FollowUpParameters)
+```
 
-### (b) Durcir le schéma exporté — *écarté, sur la base de E1*
+et supprimer le `Schema.decodeUnknownEffect(LaunchParameters)` de task.ts:391-399, devenu
+redondant. Le discriminant implicite reste `input.action` (task.ts:315), ce qui est correct :
+la première variante matche les lancements, la seconde impose `task_id` **et** `action`.
 
-`task.ts:69-81` exporte un schéma laxiste ; `task.ts:83-88` porte les obligations mais hors du chemin de
-validation de l'appel. Ramener le premier sur le second déplacerait l'échec au bon moment.
+*Effort* : ~15 lignes, aucune nouvelle dépendance. *Risque* : faible, mais réel — le
+`snapshot` d'outil et la complétion TUI consomment `Parameters.fields`, qui n'existe plus
+sur un `Union`. À vérifier : tout appelant de `Parameters.fields` hors task.ts.
+*INFERE* : l'existence d'au moins un tel appelant. *Vérification :* `grep "Parameters.fields"`
+sur `packages/opencode/src` et sur `packages/opencode/test`.
 
-**Je ne le recommande pas.** `task.ts:391-399` produit déjà une erreur nommée dont le message de `task.ts:396`
-énumère les trois champs attendus. Déplacer ce contrôle dans le schéma remplacerait ce message par une erreur de
-schéma générique : c'est une **régression d'observabilité** pour un défaut qui n'en est pas un. Le gain de
-précision temporelle ne compense pas la perte du message actionnable.
+**Inchangé volontairement :** la garde d'élision de prompt (task.ts:404-410). Elle est
+correcte et opère après décodage ; elle reste une défense de second rang contre un prompt
+tronqué par le mécanisme d'élision du harnais.
 
-Si le validateur juge néanmoins ce durcissement souhaitable, la forme à employer est un `Schema.Union` en
-**forme tableau** (`[Launch, FollowUp]`) ; la forme variadique à deux arguments n'est pas celle que cette
-révision a pu vérifier dans le dossier, et devra être confirmée par relecture du dépôt **et** par le typecheck
-avant intégration.
+### (b) `context_ref` compact attaché à l'enfant — effort **S**, risque **moyen**
 
-### (c) Héritage du parent — **écarté : le correctif serait inerte, établi par lecture**
+Nouveau champ optionnel sur la variante de lancement, injecté dans le prompt de l'enfant :
 
-Le mécanisme de création est établi (`session.ts:670-689`, §2 E7) : `Session.create` ne prend pas `directory` et
-hérite de `ctx.directory`. La question suivante — un outil ou le modèle lit-il le répertoire depuis la **ligne de
-session** ou depuis le **contexte d'instance** ? — est désormais répond par lecture, et non plus supposée :
+```ts
+context_ref: Schema.optional(Schema.String).annotate({
+  description:
+    "Compact brief of the parent's state the child cannot infer: goal, findings already known, files already read. Max ~800 chars.",
+}),
+```
 
-- `prompt.ts:719` récupère le contexte d'instance et `prompt.ts:731` inscrit le chemin du message enfant
-  directement depuis celui-ci : `path: { cwd: ctx.directory, root: ctx.worktree }`. `session: Session.Info` est
-  bien déstructuré à `prompt.ts:715` et `prompt.ts:718`, mais n'est pas la source du `cwd`.
-- `system.ts:97` procède de même et `system.ts:103` publie `Working directory: ${ctx.directory}` dans le bloc
-  `<env>` présenté au modèle.
+et, dans `runTask` (task.ts:531-533), concaténé avant le contrat :
 
-**Conséquence :** ni les outils ni le modèle ne lisent `session.directory`. Parent et enfant créés dans la même
-instance partagent le même contexte d'instance, donc le même répertoire. Transmettre `directory` à la création
-modifierait une colonne en base sans qu'aucun comportement observable ne change. **Le volet (c) est écarté, sur
-preuve et non sur inférence.**
+```ts
+const brief = params.context_ref ? `<context_ref>\n${escapeTaskMarkup(params.context_ref)}\n</context_ref>\n` : ""
+const prompt = brief + params.prompt + resultPolicy.contract
+```
 
-**Ce qui le rouvrirait :** que le modèle **veut** hériter du répertoire du parent. Le mécanisme technique existe
-déjà par le contexte d'instance ; rien dans le code ne sépare un parent de son enfant. C'est une question de
-produit, hors périmètre de cette proposition.
+*Pourquoi pas un héritage automatique ?* Recopier le `goalState` du parent dans chaque
+enfant coûterait du contexte sur chacun des 3 229 enfants observés, alors que seuls les
+enfants qui héritent ont besoin de l'héritage. Le champ rend le transfert **explicite et
+payé par l'appelant**.
+*Risque* : `context_ref` est du texte libre injecté dans un prompt. Il est déjà du texte
+libre (`prompt`), et il est échappé par `escapeTaskMarkup` (task.ts:90-92) avant concaténé.
+Le risque d'injection est donc le même que celui de `prompt`, pas un risque nouveau — mais
+il faut que la description du champ dise explicitement « état du parent, pas instruction ».
+
+### (c) `timeout_minutes` sur le lancement foreground — effort **XS**, risque **faible**
+
+Le mécanisme de borne et de libération de slot **existe déjà** et fonctionne : `withBudget`
+(task.ts:124-128) enveloppe `runTask` (task.ts:695), le dépassement annule l'enfant puis
+récupère le transcrit (task.ts:699-702), et le libérateur est garanti par
+`Effect.acquireUseRelease` dont la release s'exécute à l'interruption (task.ts:728-737).
+
+Le correctif est donc de **câbler le paramètre au lieu de le réimplémenter** :
+
+- changer l'annotation de task.ts:78-80 en « Foreground : abandon après N minutes, l'enfant
+  est annulé et son transcrit récupéré ; `action=wait` : idem sur le suivi. » ;
+- à task.ts:694, passer à `next.budgetMinutes ?? params.timeout_minutes ?? taskBudgetMinutes()`.
+
+Le `Semaphore` de `lifecycleLock` est libéré par la structure `withPermits`, et le job
+background est annulé par le `onCancel` déjà enregistré (task.ts:607). **Aucun nouveau
+verrou n'est requis** : c'est ce qui rend le risque faible.
+
+*Risque* : un parent qui fixe 1 minute par défaut transforme chaque sous-agent en
+`partial`. Le correctif est de ne pas donner de valeur par défaut et de documenter que la
+valeur est un engagement du parent, pas un plafond de sécurité.
+
+### (d) `directory` explicite — effort **S**, risque **moyen**
+
+`Session.create` n'accepte pas `directory` aujourd'hui (session.ts:670-677). Le correctif
+touche deux fichiers :
+
+1. `src/session/session.ts` — ajouter `directory?: string` à l'entrée de `create` et
+   substituer `input?.directory ?? ctx.directory` à `ctx.directory` (session.ts:682).
+2. `src/tool/task.ts` — propager le répertoire du parent :
+
+```ts
+(yield* sessions.create({
+  parentID: ctx.sessionID,
+  directory: parent.directory,
+  title: params.description + ` (@${next.name} subagent)`,
+  agent: next.name,
+  permission: [ ... ],
+}))
+```
+
+`parent` est déjà chargé à task.ts:430. **Ce qui change :** l'enfant travaille dans le
+répertoire du parent au lieu de celui du processus. `Session.Table.directory` est déjà
+requis et indexé (session.ts:219, session.ts:942-943) ; aucune migration nécessaire.
+*Risque* : modifier `Session.create` affecte tous ses appelants. Préférer un champ
+optionnel qui retombe sur `ctx.directory`, et ne pas changer le comportement existant quand
+le champ est absent.
+
+### Risk majeur : un budget de tokens peut-il couper une édition multi-fichiers ?
+
+**Oui, et c'est pourquoi je ne propose pas de budget de tokens dans cette proposition.**
+
+`withBudget` est un `Effect.timeoutOption` (task.ts:127). Il **interrompt la fibre**, il
+n'attend pas la fin de l'étape en cours. Un enfant en train d'écrire cinq fichiers serait
+interrompu entre deux écritures : sur disque, un lot à moitié appliqué, sans transaction, et
+le parent recevrait un `partial` qui décrit un état que personne n'a demandé. C'est
+strictement pire que l'absence de plafond, qui produit au moins un état cohérent.
+
+Les quatre stratégies, et mon arbitrage :
+
+| Stratégie | Verdict |
+|---|---|
+| Budget de tokens dur, `interrupt` sur dépassement | **Rejetée.** Coupe au milieu d'une écriture multi-fichiers ; état disque incohérent, rapport faux. |
+| Budget de tokens strict mais seulement entre deux tools | **Rejetée.** Le harnais ne garantit pas de point d'arrêt ; `step-limit` (task.ts:550) existe déjà et fait ce travail proprement, en fin de tour. |
+| Budget de tokens **moll** : avertissement injecté à 80 %, arrêt propre à la frontière de tour suivante | **Retenue pour une itération ultérieure**, pas ici. Le bon endroit est `prompt.ts` (bornes de tour), pas `task.ts`. Elle n'est pas implémentable dans ce fichier sans toucher au runner. |
+| **Plafond de pas / rapport structuré obligatoire, pas de plafond de tokens** | **Retenue maintenant.** Le mécanisme de fin existe déjà et est propre. |
+
+La sortie propre, déjà présente dans le fichier, est donc **réutilisée telle quelle** : à un
+dépassement, on annule proprement puis on récupère le transcrit et le fingerprint.
+
+```ts
+// task.ts:699-707 — le modèle à suivre
+if (Option.isNone(result)) {
+  yield* cancel.pipe(Effect.ignore)
+  const partial = yield* partialText()
+  const packet = yield* persistEvidence("partial", partial)
+  return {
+    title: params.description,
+    metadata: { ...metadata, outcome: "partial", reason: "wall_clock", evidencePacket: packet },
+    output: budgetOutput(nextSession.id, minutes ?? 0, partial),
+  }
+}
+```
+
+Le même schéma existe pour les pas (task.ts:550, task.ts:710-721) et pour l'annulation
+(task.ts:633-650). **Invariant à faire respecter par tout plafond futur :** jamais
+d'interruption au milieu d'un tool-call ; arrêter, récupérer, marquer `partial`, garder le
+transcript complet, dire au parent que c'est partiel et non vérifié.
+
+### Ce qui reste inchangé
+
+- `stepLimitOutput` (task.ts:148-161) : c'est la sortie propre de référence.
+- La remontée des findings (task.ts:503-519) : correcte, à **élargir** aux DoD plutôt
+  qu'à remplacer. Extension naturelle, à traiter en P11 : écrire
+  `completion.evidence` dans le `goalState` du parent au même endroit, sous le même verrou.
+- `lifecycleLock` : un verrou par session, un permis. Il fait son travail.
 
 ## 5. Alternatives considered
 
-1. **Fusionner toute la preuve de l'enfant** (findings, tests, residuals) d'un seul bloc. Rejeté : un finding
-   importé ne peut pas hériter du statut `CLOSED`.
-2. **Restreindre l'enveloppe de retour `task.ts:236`.** Rejeté après relecture — voir §2 E3. La ligne décrit une
-   forme de conteneur ; elle ne répare pas la perte, qui est en amont.
-3. **Faire de `timeout_minutes` un plafond d'exécution** en l'injectant dans `task.ts:694-695`. Rejeté :
-   `task.ts:78-80` le documente dans un cadre d'attente, et `task.ts:326-330` l'applique déjà à une attente en
-   millisecondes. Le câbler cumulerait deux sémantiques distinctes et rendrait `action=wait` silencieux sur
-   l'exécution.
-4. **Rendre `task_id` obligatoire au niveau du schéma.** Rejeté : `task.ts:315` traite `input.action` comme
-   optionnel, donc l'exigence ne peut pas être globale ; elle ne vaudrait que sur la branche de suivi.
-5. **Corriger le coût de délégation.** Rejeté deux fois, voir §2 E6.
+**A1 — Ne rien changer sur le schéma, renforcer seulement les descriptions.** Rejeté : le
+modèle lit une description, il ne le type-checke pas. Le défaut est structurel : à
+task.ts:69-81 le schéma autorise `{ background: true }`. Un texte d'annotation plus
+insistant ne réduit pas le taux d'échec, il ne fait que déplacer la faute.
+
+**A2 — Exposer `LaunchParameters` directement comme `Parameters` et traiter le suivi par un
+outil séparé (`task_followup`).** Rejeté, bien que le schéma devienne strict : cela scinde
+l'API en deux outils, casse les scripts et les TUI existants
+(`test/cli/tui/task-followup.test.ts`), et le suivi est aujourd'hui le mécanisme principal
+du mode background (task.ts:315). Le coût de migration est disproportionné au bénéfice.
+
+**A3 — Budget de tokens sur l'enfant.** Rejeté pour la section 4 : `Effect.timeoutOption`
+interrompt la fibre et peut casser un lot d'écritures. Le plafond de pas existe déjà et est
+propre.
+
+**A4 — Héritage automatique du `goalState` du parent vers l'enfant.** Rejeté : avec 3 229
+enfants observés, la duplication du contexte sur chaque lancement est un multiplicateur de
+coût direct, alors que seuls les enfants qui en ont besoin l'utilisent. Le champ explicite
+`context_ref` paie seulement le transfert utile.
+
+**A5 — Ne poser que (a) et (d), les corrections à risque nul, et différer le reste.**
+Retenu comme repli si le validateur juge (b) risqué : (a) et (d) sont les deux seules
+corrections qui suppriment un défaut *silencieux* (rejet tardif, mauvais cwd). (b) et (c)
+améliorent le contrat sans supprimer de silence. Le bloc (a)+(d) reste cohérent et
+livrable seul.
 
 ## 6. Risks
 
-**Régression sur les tests existants.** Le volet (a) ne touche aucun message d'erreur ni aucune annotation, donc
-`test/cli/tui/task-contract-compact.test.ts` et `test/tool/tasks-description.test.ts` ne sont pas exposés par la
-fusion elle-même. Le risque est sémantique : ajouter une écriture d'état d'objectif par fin de sous-agent peut
-entrer en conflit avec une rédaction concurrente. La protection existante est le verrou de `task.ts:503`, déjà
-posé autour du bloc d'écriture ; la condition de `task.ts:506` et l'incrément de version de `task.ts:514` doivent
-être traités dans le même lot que la fusion, sinon deux révisions concurrentes deviennent indiscernables.
+**Régression sur les tests existants.** Fichiers concernés, à exécuter avant toute
+intégration : `packages/opencode/test/tool/task.test.ts`,
+`packages/opencode/test/tool/tasks-description.test.ts`,
+`packages/opencode/test/tool/tasks-store.test.ts`,
+`packages/opencode/test/permission-task.test.ts`,
+`packages/opencode/test/cli/tui/task-followup.test.ts`,
+`packages/opencode/test/cli/tui/task-contract-compact.test.ts`.
+Les trois ruptures probables sont : (i) `Parameters.fields` disparaissant avec le `Union`,
+(ii) les tests qui passent des arguments partiels aujourd'hui acceptés et désormais rejetés —
+ce qui est **le but** mais casse des tests, (iii) les tests de description qui attendent les
+chaînes « Only with action=wait » et « Required for launch/resume », modifiées par (a) et (c).
 
-**Coût en tokens / latence.** (a) ne coûte **aucun token** au repos : c'est une affectation dans un chemin déjà
-exécuté à chaque sous-agent. Elle ajoute une écriture d'état d'objectif par fin de sous-agent, sérialisée par le
-verrou de `task.ts:503` — latence ajoutée nulle en pratique, mémoire inchangée. La taille mémoire est bornée dès
-la construction (`task-evidence.ts:62` plafonne `tests` à 32 entrées).
+**Coût en tokens / latence ajouté, chiffré.** L'effet est **négatif**, donc favorable, mais il
+ne faut pas le survendre : la réduction porte sur les appels **invalides et vides**, pas sur
+le travail utile. Sur la cohorte observée, 65 enfants sans aucun tool-call et 56 à `input = 0`
+sont des lancements qui n'auraient jamais dû exister. Ils payent au moins un tour chacun. La
+plafond coût total que cela représente n'a pas été recalculé ici — **INFERE**. *Méthode :*
+rejouer la requête d'audit avec `cost` cumulé sur ces 121 sessions. Le gain distributionnel
+est réel mais borné. L'ajout de (b) coûte, lui, ~800 caractères maximum par enfant qui
+l'utilise ; sur les 3 229 enfants cela reste négligeable devant le ratio 84×, mais c'est un
+coût net positif, pas nul. (c) **n'ajoute aucune latence** : il rend adressable une borne
+qui existe déjà et n'est pas branchée.
 
-**Sécurité.** (a) fait entrer dans l'état d'objectif du parent des chaînes **produites par un sous-agent**, donc
-non fiables par construction. Elles doivent rester **bornées** — comme le fait déjà `task-evidence.ts:40` et
-`task-evidence.ts:42` — et **jamais** interprétées comme une instruction. La troncature est appliquée à la
-construction ; la fusion ne doit pas la désappliquer. Un rapport de sous-agent qui porterait un texte d'instruction
-resterait ainsi du texte, jamais une directive exécutée.
+**Sécurité.** Aucun risque d'injection nouveau : `context_ref` est échappé par
+`escapeTaskMarkup` (task.ts:90-92) avant concaténé, exactement comme `prompt`. Deux points
+restent à surveiller. (1) `Schema.Union` durcit l'API : un appelant qui reposait sur des
+arguments partiels pour obtenir un comportement implicite recevra désormais une erreur
+explicite — c'est le but, mais une régression fonctionnelle possible en amont. (2) (d)
+retourne la valeur `parent.directory` vers l'enfant : c'est une donnée d'instance déjà
+connue du processus, elle ne franchit pas de frontière de confiance et ne contourne aucune
+permission. `deriveSubagentSessionPermission` (task.ts:456-460) reste le seul chemin
+d'octroi de droits et n'est pas touché.
 
 ## 7. Tests
 
-Créer sous `packages/opencode/test/`. Chaque test est **discriminant** : son prédicat d'échec est nommé, et il
-échoue sur le code d'origine pour passer sur le code corrigé.
+**T1 — Le schéma rejette un lancement incomplet, sans exécuter de code.**
+Chemin : `packages/opencode/test/tool/task-parameters-union.test.ts`.
+Appeler `TaskTool.parameters` (task.ts:743) avec `{ background: true }` puis valider contre
+le schéma ; appliquer aussi `{}` et `{ task_id: "x" }`.
+*Critère de succès observable :* les trois cas sont rejetés par le schéma, avant tout appel à
+`ops.prompt`. Assertion sur le fait que `promptOps.prompt` n'a jamais été invoqué — c'est ce
+qui distingue un rejet de schéma d'un échec runtime.
 
-### T1 — la preuve de l'enfant atteint l'état d'objectif du parent (volet a) — *discriminant*
+**T2 — Le schéma accepte les deux variantes et rejette un mélange.**
+Mêmes cas : `{ description, prompt, subagent_type }` valide ; `{ task_id, action: "wait" }`
+valide ; `{ task_id: "x" }` **invalide** (action obligatoire dans la variante de suivi) ;
+`{ prompt: "p" }` invalide.
+*Critère :* aucune exception ; les verdicts de validation correspondent exactement aux quatre
+cas.
 
-`test/tool/task-evidence-merge.test.ts`. Enfant dont `completion.evidence` contient une preuve, et **sans finding**.
+**T3 — `timeout_minutes` fore ground produit un `partial` propre et libère le verrou.**
+Chemin : `packages/opencode/test/tool/task-timeout.test.ts`.
+Lancer un sous-agent en foreground avec un `promptOps.prompt` qui ne termine jamais, et
+`timeout_minutes: 1` sur un agent dont `budget_minutes` vaut 1.
+*Critère de succès observable :* l'appel retourne `metadata.outcome === "partial"` et
+`metadata.reason === "wall_clock"` (task.ts:705), le texte contient `budget_exceeded`
+(task.ts:130-146), **et** un second lancement du même `task_id` n'échoue pas sur
+« already running » (task.ts:676-677) — cette troisième assertion est la preuve que le
+verrou a bien été libéré.
 
-| | `goalState.completion.evidence` du parent | `metadata.evidencePacket` |
-|---|---|---|
-| **avant correctif** | **vide** — `task.ts:511-513` ne fusionne que `findings`, et `task.ts:506` court-circuite sans finding | présent |
-| **après correctif** | contient la preuve de l'enfant | présent |
+**T4 — `context_ref` arrive chez l'enfant, échappé.**
+Chemin : `packages/opencode/test/tool/task-context-ref.test.ts`.
+Capturer les parts dans `promptOps.resolvePromptParts`.
+*Critère :* le texte capturé contient `<context_ref>` avec la chaîne fournie, et le `&`
+d'un `context_ref` en entrée apparaît sous forme `&amp;` — l'échappement est vérifié par
+l'observation, pas par relecture du code.
 
-Critère de succès : la première assertion **échoue** sur le code d'origine. L'absence de finding est délibérée :
-elle active simultanément les deux causes de la perte identifiées en §2 E4.
+**T5 — `directory` de l'enfant égale celui du parent.**
+Chemin : `packages/opencode/test/tool/task-directory.test.ts`.
+Créer un parent dans un répertoire distinct de `InstanceState.context.directory`, lancer
+un sous-agent, lire la session enfant.
+*Critère :* `child.directory === parent.directory`, et un appelant de `Session.create` sans
+`directory` continue d'obtenir `ctx.directory` (non-régression de session.ts:682).
 
-### T2 — la fusion reste bornée et n'altère pas la troncature (volet a)
+**Commande :**
 
-`test/tool/task-evidence-merge.test.ts`. Une preuve d'enfant dépassant 1 000 caractères, plus de 32 entrées.
-Critère : la valeur fusionnée est tronquée aux mêmes bornes que `task-evidence.ts:40` et `task-evidence.ts:62`,
-et aucun champ n'est interprété comme une instruction. Couvre le risque d'injection de §6.
+```
+cd packages/opencode && bun test test/tool/task
+```
 
-### T4 — garde de non-régression du message d'erreur (volets a et b)
-
-`test/tool/task-decode-guard.test.ts`. Un lancement sans `subagent_type`. Critère : échec portant
-`Tool.InvalidArgumentsError` et le texte de `task.ts:396`. Ce comportement est **déjà** produit par
-`task.ts:391-399` : ce test ne prouve aucun correctif, il garantit que la fusion de (a) ne l'altère pas. Il
-devient un test de preuve seulement si (b) est retenu.
-
-### T5 — garde de non-régression du répertoire (volet c)
-
-`test/tool/task-child-directory.test.ts`. Un appel d'outil de l'enfant qui rapporte son répertoire. Critère : le
-répertoire observé est celui du **contexte d'instance**, et non celui de la ligne de session. C'est déjà le
-comportement du code, établi par `prompt.ts:719` et `prompt.ts:731` pour le chemin du message, et par
-`system.ts:97` et `system.ts:103` pour le bloc `<env>` présenté au modèle. Ce test ne prouve aucun correctif : il
-garantit qu'une évolution future ne détourne pas le `cwd` vers `session.directory`.
-
-Commande : `bun test test/tool/task-evidence-merge.test.ts test/tool/task-decode-guard.test.ts test/tool/task-child-directory.test.ts`
-
-Régression : `bun test test/cli/tui/task-contract-compact.test.ts test/tool/tasks-description.test.ts` **avant**
-intégration.
+**Critère global de succès :** les cinq fichiers passent, et `grep "directory" src/tool/task.ts`
+renvoie au moins une occurrence — la preuve mécanique que (d) a été appliquée.
 
 ## 8. Effort
 
-**S** — un fichier de production, un lot de tests, deux suites à rejouer. (a) tient dans une affectation et deux
-conditions ; (b) est écarté ; (c) est écarté sur preuve. Seul (a) entre dans ce compte.
+**M** — les quatre correctifs sont individuellement XS à S, mais (d) touche
+`Session.create` donc tous ses appelants, et (a) oblige à reprendre les six fichiers de test
+qui consomment le schéma de l'outil.
 
 ## 9. Verdict self-assessment
 
-**READY** pour (a), avec T1 et T2, qui discriminent.
+**NEEDS_REVIEW**, sur une seule question : **l'union doit-elle rendre `action` obligatoire
+dans la variante de suivi, ou faut-il conserver `Parameters` en `Struct` et compter sur le
+décodage de task.ts:391 ?**
 
-**`NEEDS_REVIEW` sur un point précis.** (b) est écarté par ce document, sur la base de `task.ts:391-399` et du
-message de `task.ts:396`. **La question que le validateur doit trancher :** un message d'erreur qui énumère
-nommément les trois champs manquants, mais arrive après le décodage, est-il jugé acceptable ? Si la fréquence des
-lancements mal formés est élevée, le coût d'un aller-retour peut dominer le bénéfice de la précision temporelle.
-Le dossier ne contient aucune mesure de cette fréquence — c'est la donnée manquante.
+L'enjeu est la compatibilité du schéma d'outil avec ses consommateurs au-delà de
+task.ts — complétion TUI, conversion vers un format OpenAI/Anthropic, tout appelant de
+`Parameters.fields`. Un `Schema.Union` sérialise en `anyOf` ; un `Struct` fully-optional
+sérialise en un objet à propriétés optionnelles. Les deux sont valides, mais le second est
+déjà widely-supported par les adaptateurs de ce dépôt et le premier demande une
+vérification que je n'ai pas faite. Si le validateur juge que l'`anyOf` doit être évité,
+l'alternative **A5** livre (a') sous forme de validation explicite à task.ts:391 — déjà
+présente, mais remontée au schéma — plus (d), et laisse (b) et (c) pour une itération
+suivante. Le arbitrage A1 → A2 → A5 est alors à faire explicitement.
 
-**Sur (c) :** l'inférence d'inerce n'est plus une supposition. `prompt.ts:731` inscrit le chemin du message
-enfant depuis `ctx.directory`, et `system.ts:103` publie ce même `ctx.directory` au modèle ; ni l'un ni l'autre ne
-lit `session.directory`. (c) est donc **écarté sur preuve**. Ce qui le rouvrirait est une demande de produit — que
-le modèle *voudrait* hériter du répertoire du parent — et non une lacune de code.
-
-**Sur l'ordre de livraison :** (a) seul d'abord — monofichier, sans dépendance de schéma, avec T1-T2
-discriminants. Puis T4 et T5 comme gardes de non-régression. Puis (b), seulement si le validateur le demande.
-
-**Contentieux avec la version précédente, conservé pour le dossier :** le volet de câblage de `timeout_minutes`
-et l'argument d'enveloppe ont été retirés. Le premier parce que `task.ts:78-80` et `task.ts:326-330` documentent
-et appliquent déjà ce délai dans un cadre d'attente ; le second parce que `task.ts:236` ne décrit qu'une forme de
-conteneur. Ils sont signalés ici pour que le validateur ne les retrouve pas ailleurs.
-
-**Angle mort refermé :** `task.ts:236` a été relue (§2 E3). Elle prouve une chose précise et bornée — une
-enveloppe de balises portant `id`, `state`, un titre et du texte, sans champ structuré. L'argument qui en dépendait
-a été **retiré**, non recopié.
+Second point, non bloquant mais à trancher : `context_ref` est du texte libre injecté dans
+un prompt. Je le déclare non-nouveau-risque parce que `prompt` l'est déjà et que
+l'échappement est partagé. Si la politique du dépôt exige que le contexte parent n'entre
+**jamais** dans un prompt enfant, alors (b) doit être remplacé par un canal structuré hors
+prompt, ce qui change son estimation de **S** à **M**.

@@ -588,7 +588,7 @@ export const layer = Layer.effect(
               const agent = yield* agents.get(ctx.assistantMessage.agent)
               const bounded = yield* truncate.value.output(
                 rawOutput.output,
-                { maxLines: outputBudget.maxLines, maxChars: outputBudget.maxChars, direction: outputBudget.direction },
+                { maxLines: outputBudget.maxLines, maxBytes: outputBudget.maxChars, direction: outputBudget.direction },
                 agent,
               )
               rawOutput.output = bounded.content

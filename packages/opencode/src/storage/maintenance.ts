@@ -16,8 +16,6 @@
  *    `OPENCODE_PART_RETENTION_DAYS` and never runs unless asked, because
  *    silently deleting a user's transcripts to save disk is not a trade the
  *    harness gets to make on its own.
- *  - `census` is read-only. It measures what a purge would delete and deletes
- *    nothing, and it is deliberately not wired into `maintain`/`schedule`.
  */
 import * as Log from "@opencode-ai/core/util/log"
 import { statSync } from "fs"
@@ -84,73 +82,6 @@ function attempt(work: () => unknown): boolean {
     log.debug("maintenance step failed", { error: error instanceof Error ? error.message : String(error) })
     return false
   }
-}
-
-export type Census = {
-  totalParts: number
-  byType: Record<string, { parts: number; chars: number }>
-  dbBytes: number
-  freelistBytes: number
-}
-
-/**
- * Anything that can hand back rows for a raw statement. The main database is
- * the drizzle handle (`all`); a raw sqlite handle reads through `query()`. Both
- * are accepted so the census can be pointed at either side of the same file.
- */
-type Queryable = { all: (query: string) => unknown[] } | { query: (query: string) => { all: () => unknown[] } }
-
-function query(db: Queryable, sql: string): unknown[] {
-  return "all" in db ? db.all(sql) : db.query(sql).all()
-}
-
-/**
- * Measure what a retention window would cover, without deleting a byte.
- *
- * Read-only by construction: the statements emitted are two `SELECT`s and
- * nothing else. The `pragma_*` functions are table-valued *readers* — no
- * mutating `PRAGMA`, no `wal_checkpoint`. `freelist_count` comes from
- * `pragma_freelist_count` because `pragma_page_count` exposes no such column.
- *
- * Never propagates: a handle that throws (locked, busy, closed) yields the
- * neutral census, so measuring can never be the reason a command fails.
- */
-export function census(db: Queryable, before: number): Census {
-  try {
-    const grouped = query(
-      db,
-      `SELECT json_extract(data,'$.type') AS type, count(*) AS parts, COALESCE(sum(length(data)),0) AS chars
-     FROM part WHERE time_created < ${Math.floor(before)}
-     GROUP BY type`,
-    ) as { type?: string | null; parts: number; chars: number }[]
-    const sizes = query(
-      db,
-      `SELECT (SELECT page_count FROM pragma_page_count) * (SELECT page_size FROM pragma_page_size) AS db,
-            ((SELECT page_count FROM pragma_page_count) - (SELECT freelist_count FROM pragma_freelist_count)) * (SELECT page_size FROM pragma_page_size) AS free`,
-    ) as { db: number; free: number }[]
-    const byType: Record<string, { parts: number; chars: number }> = {}
-    let totalParts = 0
-    for (const row of grouped) {
-      const type = row.type ?? "unknown"
-      byType[type] = { parts: row.parts, chars: row.chars }
-      totalParts += row.parts
-    }
-    const size = sizes[0]
-    return { totalParts, byType, dbBytes: size?.db ?? 0, freelistBytes: size?.free ?? 0 }
-  } catch {
-    return { totalParts: 0, byType: {}, dbBytes: 0, freelistBytes: 0 }
-  }
-}
-
-/**
- * Trace the retention refusal. The absence of a purge is announced rather than
- * left to be inferred: an operator who does not learn the window is empty
- * cannot weigh what deleting inside it would buy.
- */
-export function logRetentionOff(env: Record<string, string | undefined> = process.env): boolean {
-  if (retentionDays(env) !== undefined) return false
-  log.info("no retention configured — nothing is ever deleted", { census: "run `opencode db census` to measure" })
-  return true
 }
 
 /**

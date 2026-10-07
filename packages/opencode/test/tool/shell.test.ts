@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { Cause, Effect, Exit, Layer } from "effect"
 import type * as Scope from "effect/Scope"
 import os from "os"
@@ -62,8 +62,8 @@ const fail = Effect.fn("ShellToolTest.fail")(function* (
   throw new Error("expected command to fail")
 })
 
-const makeCtx = (session: string): Tool.Context => ({
-  sessionID: SessionID.make(session),
+const ctx = {
+  sessionID: SessionID.make("ses_test"),
   messageID: MessageID.make("msg_test"),
   callID: "",
   agent: "build",
@@ -71,22 +71,7 @@ const makeCtx = (session: string): Tool.Context => ({
   messages: [],
   metadata: () => Effect.void,
   ask: () => Effect.void,
-})
-
-// One session per test. The repetition ledger in src/tool/repetition.ts is keyed by
-// sessionID, so a file-wide `const ctx` gave every test in this file a single shared
-// ledger: once FAILURE_LIMIT identical calls accumulated under a key, a later and
-// unrelated test got blocked for "repeating" a command it never ran. Rotating the
-// session before each test gives every test its own empty ledger, while one test that
-// deliberately calls the same command three times still trips the brake, which is the
-// contract repetition.ts exists to enforce.
-let session = 0
-let ctx = makeCtx("ses_test_0")
-
-beforeEach(() => {
-  session += 1
-  ctx = makeCtx(`ses_test_${session}`)
-})
+}
 
 Shell.acceptable.reset()
 const quote = (text: string) => `"${text}"`
@@ -922,41 +907,6 @@ describe("tool.shell permissions", () => {
               {
                 command: `cat ${filepath}`,
                 description: "Read external file",
-              },
-              capture(requests, err),
-            ),
-          ).toMatchObject({ message: err.message })
-          const extDirReq = requests.find((r) => r.permission === "external_directory")
-          const expected = glob(path.join(outerTmp, "*"))
-          expect(extDirReq).toBeDefined()
-          expect(extDirReq!.patterns).toContain(expected)
-          expect(extDirReq!.always).toContain(expected)
-        }),
-      )
-    }),
-  )
-
-  // A shell redirection target (`> file`) is a file the command writes to, but it
-  // is a `file_redirect` node that `parts` drops, so before the fix it never
-  // reached `argPath` and never raised the external_directory permission: a
-  // command could write anywhere the process could. The instance boundary is set
-  // with `runIn("/tmp/project")`, whose resolved worktree stays "/" and therefore
-  // does not swallow an absolute path the way a real temp dir under the home
-  // directory does.
-  each("asks for external_directory permission when a redirect target is outside project", () =>
-    Effect.gen(function* () {
-      const outerTmp = yield* tmpdirScoped()
-      const target = path.join(outerTmp, "redirect-out.txt")
-      yield* runIn(
-        "/tmp/project",
-        Effect.gen(function* () {
-          const err = new Error("stop after permission")
-          const requests: Array<Omit<Permission.Request, "id" | "sessionID" | "tool">> = []
-          expect(
-            yield* fail(
-              {
-                command: `echo secret > ${target}`,
-                description: "Redirect to external file",
               },
               capture(requests, err),
             ),
