@@ -5,6 +5,7 @@ import type { TextareaRenderable } from "@opentui/core"
 import { selectedForeground, tint, useTheme } from "../../context/theme"
 import type { QuestionAnswer, QuestionRequest } from "@opencode-ai/sdk/v2"
 import { useSDK } from "../../context/sdk"
+import { directoryRequestOptions } from "../../context/session-directory"
 import { SplitBorder } from "../../component/border"
 import { useTuiConfig } from "../../context/tui-config"
 import { useBindings } from "../../keymap"
@@ -18,7 +19,7 @@ import { useBindings } from "../../keymap"
 // priority just below dialogs so it survives whatever sits on top of the stack.
 const QUESTION_PRIORITY = 1
 
-export function QuestionPrompt(props: { request: QuestionRequest }) {
+export function QuestionPrompt(props: { request: QuestionRequest; directory?: string }) {
   const sdk = useSDK()
   const { theme } = useTheme()
   const renderer = useRenderer()
@@ -51,18 +52,24 @@ export function QuestionPrompt(props: { request: QuestionRequest }) {
     return store.answers[store.tab]?.includes(value) ?? false
   })
 
+  // The question lives in the instance that serves the session's own directory,
+  // which for an added-folder session differs from the TUI's launch directory.
+  // Without the directory the reply/reject is routed to the wrong instance and
+  // the server answers "reply for unknown request", so submit/cancel silently do
+  // nothing. The caller passes the session's directory (see session/index.tsx).
   function submit() {
     const answers = questions().map((_, i) => store.answers[i] ?? [])
-    void sdk.client.question.reply({
-      requestID: props.request.id,
-      answers,
-    })
+    void sdk.client.question.reply(
+      {
+        requestID: props.request.id,
+        answers,
+      },
+      directoryRequestOptions(props.directory),
+    )
   }
 
   function reject() {
-    void sdk.client.question.reject({
-      requestID: props.request.id,
-    })
+    void sdk.client.question.reject({ requestID: props.request.id }, directoryRequestOptions(props.directory))
   }
 
   function pick(answer: string, custom: boolean = false) {
@@ -75,10 +82,13 @@ export function QuestionPrompt(props: { request: QuestionRequest }) {
       setStore("custom", inputs)
     }
     if (single()) {
-      void sdk.client.question.reply({
-        requestID: props.request.id,
-        answers: [[answer]],
-      })
+      void sdk.client.question.reply(
+        {
+          requestID: props.request.id,
+          answers: [[answer]],
+        },
+        directoryRequestOptions(props.directory),
+      )
       return
     }
     setStore("tab", store.tab + 1)

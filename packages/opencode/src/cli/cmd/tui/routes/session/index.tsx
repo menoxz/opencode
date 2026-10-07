@@ -19,6 +19,7 @@ import path from "path"
 import { useRoute, useRouteData } from "@tui/context/route"
 import { useProject } from "@tui/context/project"
 import { useSync } from "@tui/context/sync"
+import { sessionDirectory } from "@tui/context/session-directory"
 import { useEvent } from "@tui/context/event"
 import { SplitBorder } from "@tui/component/border"
 import { DeliveryBadge } from "@tui/component/delivery-badge"
@@ -1753,7 +1754,10 @@ export function Session() {
                   <PermissionPrompt request={permissions()[0]} />
                 </Show>
                 <Show when={permissions().length === 0 && questions().length > 0}>
-                  <QuestionPrompt request={questions()[0]} />
+                  <QuestionPrompt
+                    request={questions()[0]}
+                    directory={sessionDirectory(sync.data.session, questions()[0]?.sessionID)}
+                  />
                 </Show>
                 <Show when={session()?.parentID} fallback={<SubagentBar />}>
                   <SubagentFooter />
