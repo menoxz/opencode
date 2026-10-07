@@ -24,7 +24,6 @@ const testLayer = (flags: Partial<RuntimeFlags.Info> = {}) => Layer.mergeAll(
   RuntimeFlags.layer(flags),
 )
 const it = testEffect(testLayer())
-const itLean = testEffect(testLayer({ experimentalLeanOutputBudget: true }))
 
 const baseCtx = {
   sessionID: SessionID.make("ses_test"),
@@ -59,7 +58,7 @@ type ToolCtx = typeof baseCtx & {
   ask: (input: AskInput) => Effect.Effect<void>
 }
 
-const execute = Effect.fn("ApplyPatchToolTest.execute")(function* (params: { patchText: string; causedBy?: string }, ctx: ToolCtx) {
+const execute = Effect.fn("ApplyPatchToolTest.execute")(function* (params: { patchText: string }, ctx: ToolCtx) {
   const info = yield* ApplyPatchTool
   const tool = yield* info.init()
   return yield* tool.execute(params, ctx)
@@ -96,15 +95,6 @@ describe("tool.apply_patch freeform", () => {
     Effect.gen(function* () {
       const { ctx } = makeCtx()
       yield* expectFailure(execute({ patchText: "" }, ctx), "patchText is required")
-    }),
-  )
-
-  itLean.live("requires causedBy after a completed patch", () =>
-    Effect.gen(function* () {
-      const { ctx } = makeCtx()
-      const previous = { ...ctx, messages: [{ parts: [{ type: "tool", tool: "apply_patch", state: { status: "completed" } }] }] } as any
-      yield* expectFailure(execute({ patchText: "invalid patch" }, previous), "requires causedBy")
-      yield* expectFailure(execute({ patchText: "invalid patch", causedBy: "targeted test failed at line 42" }, previous), "apply_patch verification failed")
     }),
   )
 

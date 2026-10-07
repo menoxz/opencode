@@ -7,7 +7,6 @@ import {
   LEAN_BROWSER_MAX_CHARS,
   LEAN_DYNAMIC_SLOT_MARGIN,
   LEAN_OVERVIEW_MAX_CHARS,
-  requiresMutationCause,
   LEAN_INSPECT_MAX_ACTIONS,
   LEAN_INSPECT_TOTAL_CHARS,
   LEAN_TERMINAL_MAX_CHARS,
@@ -66,61 +65,6 @@ describe("lean output policy", () => {
     expect(isLeanTerminalTool("mcp-terminal_command_stream", { action: "close" })).toBe(false)
     expect(isLeanTerminalTool("developer-tools_native_terminal", { action: "read" })).toBe(true)
     expect(isLeanTerminalTool("developer-tools_native_terminal", { action: "signal" })).toBe(false)
-  })
-  test("requires causal evidence after the first completed patch", () => {
-    expect(requiresMutationCause([] as any)).toBe(false)
-    expect(
-      requiresMutationCause([
-        { parts: [{ type: "tool", tool: "apply_patch", state: { status: "completed" } }] },
-      ] as any),
-    ).toBe(true)
-    expect(
-      requiresMutationCause([{ parts: [{ type: "tool", tool: "edit", state: { status: "completed" } }] }] as any),
-    ).toBe(true)
-    expect(
-      requiresMutationCause([{ parts: [{ type: "tool", tool: "write", state: { status: "completed" } }] }] as any),
-    ).toBe(true)
-    expect(
-      requiresMutationCause([{ parts: [{ type: "tool", tool: "read", state: { status: "completed" } }] }] as any),
-    ).toBe(false)
-  })
-  test("scopes edit/write causality to the same artifact", () => {
-    const previous = [
-      {
-        parts: [
-          {
-            type: "tool",
-            tool: "edit",
-            state: { status: "completed", input: { filePath: "C:\\repo\\src\\feature.ts" } },
-          },
-        ],
-      },
-    ] as any
-    expect(
-      requiresMutationCause(previous, { tool: "write", filePath: "C:\\Users\\me\\.config\\reports\\audit.md" }),
-    ).toBe(false)
-    expect(requiresMutationCause(previous, { tool: "edit", filePath: "c:/repo/src/feature.ts" })).toBe(true)
-    expect(requiresMutationCause(previous, { tool: "apply_patch" })).toBe(true)
-  })
-
-  test("allows the first report write but guards a later rewrite of that report", () => {
-    const previous = [
-      {
-        parts: [
-          {
-            type: "tool",
-            tool: "write",
-            state: { status: "completed", input: { filePath: "C:\\Users\\me\\.config\\reports\\audit.md" } },
-          },
-        ],
-      },
-    ] as any
-    expect(
-      requiresMutationCause(previous, { tool: "write", filePath: "C:\\Users\\me\\.config\\reports\\other.md" }),
-    ).toBe(false)
-    expect(
-      requiresMutationCause(previous, { tool: "write", filePath: "C:\\Users\\me\\.config\\reports\\audit.md" }),
-    ).toBe(true)
   })
   test("bounds browser and git context separately from terminal tails", () => {
     expect(LEAN_BROWSER_MAX_CHARS).toBe(8_000)

@@ -59,15 +59,6 @@ const run = Effect.fn("WriteToolTest.run")(function* (
 })
 
 describe("tool.write", () => {
-  it.live("requires causedBy after a prior write", () =>
-    Effect.gen(function* () {
-      const previous = { ...ctx, messages: [{ parts: [{ type: "tool", tool: "write", state: { status: "completed", input: { filePath: "missing.txt" } } }] }] } as any
-      const exit = yield* run({ filePath: "missing.txt", content: "x" }, previous).pipe(Effect.exit)
-      expect(Exit.isFailure(exit)).toBe(true)
-      if (Exit.isFailure(exit)) expect(Cause.pretty(exit.cause)).toContain("requires causedBy")
-    }),
-  )
-
   it.instance("allows a new report artifact after an unrelated code mutation", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance

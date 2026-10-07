@@ -15,6 +15,7 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 - **La barre de sessions montre constamment le dossier courant et les dossiers ajoutés.** Le libellé de portée « this dir / this dir +N / all dirs » et le clic sur l'en-tête « Sessions » qui basculait la liste sont supprimés : plus de listing machine-wide, plus de clé de portée (`session_directory_scope_v2`). La fenêtre d'ancienneté de 7 jours reste appliquée.
 
 ### Removed
+- **Exigence `causedBy` sur les mutations Lean supprimée.** Le champ `causedBy` obligatoire après une première mutation (`edit`/`write`/`apply_patch` sous `experimentalLeanOutputBudget`) est retiré : il n'apportait pas la valeur attendue. Les trois outils, le paramètre de schéma et le helper `requiresMutationCause` (`lean-output-policy`) sont nettoyés, tests inclus.
 - Portée mémorisée de la liste (`session_directory_scope_v2`, `DEFAULT_DIRECTORY_SCOPE`), commande palette `app.toggle.session_directory_filter`, et listing cross-projet via `experimental.session.list({ roots: true })`.
 
 ### Fixed
