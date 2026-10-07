@@ -7,6 +7,8 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.3.60] - 2026-10-07
+
 ### Added
 - **Trois décisions de la boucle agent passent par un verdict calibré, chacune avec un repli sûr.** `src/jev/decide.ts` devient le point d'extension unique (timeout borné, budget, disjoncteur à 3 échecs et 30 s, repli typé en quatre causes : désactivé, circuit ouvert, timeout, erreur — distinctes d'une abstention du modèle, qui n'ouvre pas le disjoncteur). **Complexité de tâche** : le verdict remplace le classifieur par mots-clés au gate d'auto-plan, au moyen de deux questions `noul` (`choice` ne réussit sur des candidats adjacents qu'à 1/2 sur 6, `noul` est juste 29/29, Brier 0,0197) ; le classifieur reste le repli, il renvoyait `complex` sur 16 prompts réels sur 20 et `simple` jamais. **Garde pré-outil** : filtre déterministe ne soumettant au modèle que les commandes porteuses d'un motif destructif (1,6 % des appels shell sur 400 sessions réelles), repli fail-closed — une panne escalade au lieu d'autoriser en silence, et cette escalade n'est pas mémorisée pour ne pas condamner le reste de la session. **Pertinence** : filtre sur les cibles déjà observées avec similarité par frontière de mot, repli fail-open — un appel redondant coûte du contexte, jamais des dégâts. Budget cible ~6 256 tokens/session, soit 9,5 % des 65 644 tokens de contexte outils mesurés.
 - **Dossiers ajoutés à la liste des sessions.** Les dossiers ouverts à la main (sélecteur « New session in folder ») sont suivis et listés à côté du dossier courant, marqués « + » et retirables individuellement ; l'ensemble survit aux redémarrages (`session_extra_directories`).
