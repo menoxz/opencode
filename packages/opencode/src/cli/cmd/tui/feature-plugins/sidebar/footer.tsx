@@ -1,9 +1,37 @@
 import type { TuiPlugin, TuiPluginApi } from "@opencode-ai/plugin/tui"
 import type { InternalTuiPlugin } from "../../plugin/internal"
-import { createMemo, Show } from "solid-js"
+import { createMemo, createResource, Show } from "solid-js"
 import { Global } from "@opencode-ai/core/global"
 
 const id = "internal:sidebar-footer"
+
+/**
+ * Pick the branch to show for a folder. The per-directory lookup wins once it
+ * has settled (`string` = a branch, `null` = no repo there); while it is still
+ * loading (`undefined`) fall back to the workspace branch, but only when the
+ * folder is the one the workspace was opened in. A folder added to the
+ * workspace must never inherit another folder's branch.
+ */
+export function selectFooterBranch(input: {
+  resolved: string | null | undefined
+  directory: string
+  currentDirectory: string
+  currentBranch: string | undefined
+}): string | undefined {
+  if (typeof input.resolved === "string") return input.resolved
+  if (input.resolved === null) return undefined
+  return input.directory === input.currentDirectory ? input.currentBranch : undefined
+}
+
+export function formatFooterPath(input: { directory: string; branch: string | undefined; home: string }) {
+  const out = input.directory.replace(input.home, "~")
+  const text = input.branch ? out + ":" + input.branch : out
+  const list = text.split("/")
+  return {
+    parent: list.slice(0, -1).join("/"),
+    name: list.at(-1) ?? "",
+  }
+}
 
 function View(props: { api: TuiPluginApi; session_id?: string }) {
   const theme = () => props.api.theme.current
@@ -14,17 +42,32 @@ function View(props: { api: TuiPluginApi; session_id?: string }) {
   )
   const done = createMemo(() => props.api.kv.get("dismissed_getting_started", false))
   const show = createMemo(() => !has() && !done())
-  const path = createMemo(() => {
-    const sessionDir = props.session_id ? props.api.state.session.get(props.session_id)?.directory : undefined
-    const dir = sessionDir || props.api.state.path.directory || process.cwd()
-    const out = dir.replace(Global.Path.home, "~")
-    const text = props.api.state.vcs?.branch ? out + ":" + props.api.state.vcs.branch : out
-    const list = text.split("/")
-    return {
-      parent: list.slice(0, -1).join("/"),
-      name: list.at(-1) ?? "",
-    }
+  const directory = createMemo(
+    () =>
+      (props.session_id ? props.api.state.session.get(props.session_id)?.directory : undefined) ||
+      props.api.state.path.directory ||
+      process.cwd(),
+  )
+  // The branch must describe `directory`, not the folder the TUI was launched in.
+  // A session in a folder added to the workspace lives in another git worktree,
+  // so the workspace-level `state.vcs` would show the wrong branch (the default
+  // one) against that folder.
+  const [branch] = createResource(directory, async (dir): Promise<string | null> => {
+    const result = await props.api.client.vcs.get({ directory: dir }).catch(() => undefined)
+    return result?.data?.branch ?? null
   })
+  const path = createMemo(() =>
+    formatFooterPath({
+      directory: directory(),
+      branch: selectFooterBranch({
+        resolved: branch(),
+        directory: directory(),
+        currentDirectory: props.api.state.path.directory,
+        currentBranch: props.api.state.vcs?.branch,
+      }),
+      home: Global.Path.home,
+    }),
+  )
 
   return (
     <box gap={1}>
