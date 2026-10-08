@@ -5,12 +5,7 @@ import * as Log from "@opencode-ai/core/util/log"
 import type { MessageV2 } from "./message-v2"
 
 const COMPACTION_BUFFER = 20_000
-// Compaction should be the agent's deliberate move first and the harness's safety
-// net second. Keeping the last ~2% of the usable window (instead of 5%) leaves the
-// agent room to run its own `compact` while the objective is still fully visible,
-// and the absolute / read-heavy triggers below still bound the worst case, so the
-// window is never actually overrun. Compact later, but never past the cliff.
-const DEFAULT_THRESHOLD = 0.98
+const DEFAULT_THRESHOLD = 0.95
 const READ_HEAVY_FRACTION = 0.8
 const READ_HEAVY_MIN_TOKENS = 20_000
 const CHARS_PER_TOKEN = 4
