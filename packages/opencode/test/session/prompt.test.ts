@@ -854,13 +854,13 @@ autoPlanResume.instance("auto-plan does not re-run when resuming an unfinished t
   }),
 )
 
-it.instance("goal draft is created from recent history when current prompt is short", () =>
+it.instance("a plain prompt does not auto-create a goal contract", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig(providerCfg)
     const prompt = yield* SessionPrompt.Service
     const sessions = yield* Session.Service
     const session = yield* sessions.create({
-      title: "Goal from history",
+      title: "No auto goal",
       permission: [{ permission: "*", pattern: "*", action: "allow" }],
     })
 
@@ -874,19 +874,9 @@ it.instance("goal draft is created from recent history when current prompt is sh
     yield* llm.text("first done")
     yield* prompt.loop({ sessionID: session.id })
 
-    yield* sessions.setGoalState({
-      sessionID: session.id,
-      goalState: {
-        status: "skipped",
-        source: "user",
-        goal: "",
-        dod: [],
-        outOfScope: [],
-        compressed: "",
-        version: 1,
-        updatedAt: Date.now(),
-      },
-    })
+    // The first prompt must leave no contract behind: a plain request is not a contract.
+    const afterFirst = yield* sessions.get(session.id)
+    expect(afterFirst.goalState?.status ?? "skipped").toBe("skipped")
 
     yield* prompt.prompt({
       sessionID: session.id,
@@ -898,21 +888,17 @@ it.instance("goal draft is created from recent history when current prompt is sh
     yield* prompt.loop({ sessionID: session.id })
 
     const updated = yield* sessions.get(session.id)
-    const goalState = updated.goalState
-    expect(goalState).toBeDefined()
-    expect(goalState?.status).toBe("draft")
-    expect(goalState?.goal.length).toBeGreaterThan(0)
-    expect(goalState?.goal.toLowerCase()).not.toContain("continue")
-    expect(goalState?.dod.length).toBeGreaterThan(0)
+    expect(updated.goalState?.status ?? "skipped").toBe("skipped")
 
+    // With no active objective there is nothing to inject as a task contract.
     const inputs = yield* llm.inputs
     const system = JSON.stringify(inputs.at(-1))
     const taskContractMatches = system.match(/<task-contract/g) ?? []
-    expect(taskContractMatches.length).toBe(1)
+    expect(taskContractMatches.length).toBe(0)
   }),
 )
 
-it.instance("goal draft is created on later turn when session has no goal", () =>
+it.instance("a later turn without a goal does not fabricate one", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig(providerCfg)
     const prompt = yield* SessionPrompt.Service
@@ -943,9 +929,7 @@ it.instance("goal draft is created on later turn when session has no goal", () =
     yield* prompt.loop({ sessionID: session.id })
 
     const updated = yield* sessions.get(session.id)
-    expect(updated.goalState).toBeDefined()
-    expect(updated.goalState?.status).toBe("draft")
-    expect(updated.goalState?.dod.length).toBeGreaterThan(0)
+    expect(updated.goalState?.status ?? "skipped").toBe("skipped")
   }),
 )
 

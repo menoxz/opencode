@@ -101,9 +101,9 @@ import { SessionTools } from "./tools"
 import { LLMEvent } from "@opencode-ai/llm"
 import { Question } from "@/question"
 import { skippedGoalState, type GoalState } from "./goal-state"
-import { hasObjective, inferDeliverable, isTerminalStatus } from "./goal-state"
+import { isTerminalStatus } from "./goal-state"
 import { Todo } from "./todo"
-import { compressGoalState, formatGoalContext } from "./compaction"
+import { formatGoalContext } from "./compaction"
 
 // Finish reasons that leave the turn unfinished when the assistant carries no
 // error: a reply truncated by the output-token budget, and a provider reason
@@ -312,25 +312,6 @@ function isValidGoalState(goalState: GoalState | null | undefined): goalState is
   if (!goalState.goal?.trim()) return false
   if (!Array.isArray(goalState.dod)) return false
   return goalState.dod.some((item) => item?.trim().length > 0)
-}
-
-function buildGoalSourceText(input: { msgs: MessageV2.WithParts[]; lastUserID: MessageID }): string {
-  const currentUserMsg = input.msgs.findLast(
-    (candidate) => candidate.info.role === "user" && candidate.info.id === input.lastUserID,
-  )
-  const currentUserText = currentUserMsg ? getUserPromptText(currentUserMsg).trim() : ""
-  const isShortPrompt = currentUserText.length > 0 && currentUserText.length < 40
-  const useFallback = !currentUserText || isShortPrompt || isContinuationPrompt(currentUserText)
-  if (!useFallback) return currentUserText
-
-  const recentUserTexts = input.msgs
-    .filter((m) => m.info.role === "user")
-    .map((m) => getUserPromptText(m).trim())
-    .filter(Boolean)
-    .filter((text) => !isContinuationPrompt(text) || text.length > 40)
-    .slice(-3)
-
-  return recentUserTexts.join("\n") || currentUserText
 }
 
 const log = Log.create({ service: "session.prompt" })
@@ -2758,45 +2739,12 @@ contextSummary.add("skills", skills ? "inject relevant skill summary" : "no rele
         // else: fall through to regeneration from the new prompt below
       }
 
-      const sourceText = buildGoalSourceText({ msgs: input.msgs, lastUserID: input.lastUserID })
-      const draft = generateGoalDraft(sourceText)
-      // The objective is the business goal: persistent across a session. A goal set
-      // by the user must stay sticky and only its DoD (specific objectives/measures)
-      // evolves with new prompts; only an auto-derived goal may be replaced. todos
-      // remain the real-task layer handled separately by todowrite.
-      const stickyUserGoal = existing?.source === "user" && hasObjective(existing)
-      const goal = stickyUserGoal
-        ? existing.goal
-        : draft?.goal?.trim() ||
-          sourceText
-            .split(/\r?\n/)
-            .map((line) => line.trim())
-            .find(Boolean) ||
-          "Continuer la tâche demandée par l'utilisateur"
-      const nextState: GoalState = {
-        status: "draft",
-        source: stickyUserGoal ? "user" : "auto",
-        goal,
-        dod: draft?.dod?.length
-          ? draft.dod
-          : ["Produire une réponse utile et actionnable alignée avec la demande en cours."],
-        outOfScope: stickyUserGoal ? existing.outOfScope : (draft?.outOfScope ?? []),
-        deliverable: existing?.deliverable ?? inferDeliverable(sourceText),
-        compressed: "",
-        anchorUserID: input.lastUserID,
-        version: previousVersion + 1,
-        updatedAt: Date.now(),
-      }
-
-      try {
-        nextState.compressed = compressGoalState(nextState)
-      } catch {
-        // keep non-blocking behavior
-      }
-
-      yield* sessions.setGoalState({ sessionID: input.sessionID, goalState: nextState })
-
-      return nextState
+      // No automatic contract. A plain prompt must not fabricate a goal/DoD — doing
+      // so forced an extra closure turn on trivial requests. The objective belongs to
+      // the agent (via `apply_contract_from_prompt` / `edit_objective`) or to the
+      // user; here we only preserve whatever already exists. `skippedGoalState()` is
+      // inert: never injected, never persisted.
+      return existing ?? skippedGoalState()
     })
 
     const loop: (input: LoopInput) => Effect.Effect<MessageV2.WithParts> = Effect.fn("SessionPrompt.loop")(function* (
@@ -3142,51 +3090,6 @@ const bashRegex = /!`([^`]+)`/g
 const argsRegex = /(?:\[Image\s+\d+\]|"[^"]*"|'[^']*'|[^\s"']+)/gi
 const placeholderRegex = /\$(\d+)/g
 const quoteTrimRegex = /^["']|["']$/g
-
-/**
- * Generate a goal/DoD draft from user text using simple heuristics.
- * Accepts both direct prompt text and enriched text built from recent history.
- * Returns undefined only when no meaningful source text is available.
- */
-function generateGoalDraft(userText: string): { goal: string; dod: string[]; outOfScope: string[] } | undefined {
-  const text = userText.trim()
-  if (!text) return undefined
-
-  const lines = text.split("\n").map(l => l.trim()).filter(Boolean)
-  let goal = ""
-  const dod: string[] = []
-  const oos: string[] = []
-
-  // First meaningful sentence = goal
-  for (const line of lines) {
-    const clean = line.replace(/^[#>\s]*/, "")
-    if (!goal && clean.length > 10 && !clean.startsWith("-") && !clean.startsWith("*")) {
-      const sentence = (clean.split(/[.!?]\s/)[0] ?? clean).slice(0, 200)
-      goal = sentence
-      break
-    }
-  }
-
-  // Bullet items = DoD or OOS
-  for (const line of lines) {
-    if (!line.startsWith("-") && !line.startsWith("*")) continue
-    const item = line.replace(/^[-*\s]+/, "").trim()
-    if (!item || item.length < 3) continue
-    const lower = item.toLowerCase()
-    if (lower.includes("hors scope") || lower.includes("out of scope") || lower.includes("ne pas ") || lower.includes("exclu")) {
-      oos.push(item)
-    } else if (!lower.startsWith("goal") && !lower.startsWith("objectif")) {
-      dod.push(item)
-    }
-  }
-
-  if (!goal) return undefined
-  if (dod.length === 0) {
-    dod.push("Fournir une implémentation/réponse exploitable qui adresse explicitement l'objectif.")
-  }
-
-  return { goal, dod, outOfScope: oos }
-}
 
 /**
  * Images a model without image input cannot consume, for one message part.
