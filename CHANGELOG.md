@@ -7,6 +7,11 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [v2.3.62] - 2026-10-08
+
+### Fixed
+- **Le pied de la barre latérale affiche la branche git du dossier réellement affiché, plus celle du dossier de lancement.** Le dossier montré était celui de la session choisie mais la branche accolée venait du workspace de lancement du TUI (`state.vcs`) : une session vivant dans un dossier ajouté au workspace (un autre worktree git) affichait donc une branche étrangère, souvent la branche par défaut. La branche est désormais résolue pour le dossier affiché via un `vcs.get` porté sur ce dossier (`{ directory }`), avec repli sur la branche du workspace uniquement lorsque le dossier affiché est celui de lancement ; aucun dépôt ⇒ aucune branche affichée.
+
 ## [v2.3.60] - 2026-10-07
 
 ### Added
