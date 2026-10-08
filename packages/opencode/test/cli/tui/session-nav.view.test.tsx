@@ -626,6 +626,60 @@ test("clicking a directory's Read more reveals its extra sessions", async () => 
   expect(app.captureCharFrame()).toContain("Session 3")
 })
 
+test("clicking Read less folds the revealed sessions back", async () => {
+  // A small directory keeps the whole list inside the frame, so the reversible row stays clickable
+  // after the reveal: four sessions fold one behind "Read more (+1)" and show a "Read less" once open.
+  const key = "C:\\work\\opencode-fork"
+  const small: NavSession[] = Array.from({ length: 4 }, (_, index) => ({
+    id: `sm_${index}`,
+    title: `Small ${index}`,
+    directory: key,
+  }))
+  const app = await testRender(() =>
+    withTheme(() => {
+      const [revealed, setRevealed] = createSignal<string[]>([])
+      return (
+        <SessionNavBar
+          sessions={small}
+          activeID="sm_0"
+          selected={0}
+          focused={false}
+          height={24}
+          overrides={{ [key]: false }}
+          revealed={revealed()}
+          frame={0}
+          onMove={() => {}}
+          onOpen={() => {}}
+          onToggleDir={() => {}}
+          onToggleMore={(key) => setRevealed((current) => toggleRevealed(current, key))}
+          onNew={() => {}}
+          onDelete={() => {}}
+          onRename={() => {}}
+          shortcuts={{ new: "alt+n", delete: "ctrl+d", rename: "ctrl+r" }}
+        />
+      )
+    }),
+  )
+  renderers.push(app.renderer)
+  await settled(app)
+  expect(app.captureCharFrame()).toContain("Read more (+1)")
+  expect(app.captureCharFrame()).not.toContain("Small 3")
+
+  const yMore = linesOf(app).findIndex((line) => line.includes("Read more"))
+  expect(yMore).toBeGreaterThanOrEqual(0)
+  await app.mockMouse.click(1, yMore)
+  await settled(app)
+  expect(app.captureCharFrame()).toContain("Small 3")
+  expect(app.captureCharFrame()).toContain("Read less")
+
+  const yLess = linesOf(app).findIndex((line) => line.includes("Read less"))
+  expect(yLess).toBeGreaterThanOrEqual(0)
+  await app.mockMouse.click(1, yLess)
+  await settled(app)
+  expect(app.captureCharFrame()).toContain("Read more (+1)")
+  expect(app.captureCharFrame()).not.toContain("Small 3")
+})
+
 test("the list takes the space left over instead of pushing the footer out of the bar", async () => {
   // The container is 24 rows and the bar fills it, while the list is asked for more rows than that
   // leaves. A fixed list height would overflow the box and clip the footer away; the list has to take

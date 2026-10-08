@@ -429,6 +429,42 @@ describe("TUI session navbar", () => {
     expect(more[0]).toMatchObject({ kind: "more", hidden: 5 - NAV_SESSION_LIMIT })
   })
 
+  test("a directory's Read more turns into a reversible Read less", () => {
+    const key = "C:\\work\\opencode-fork"
+    const crowded: NavSession[] = Array.from({ length: 5 }, (_, index) => ({
+      id: `c${index}`,
+      title: `Crowded ${index}`,
+      directory: key,
+    }))
+    const open = { overrides: { [key]: false }, revealed: [key] }
+    const rows = navRows(crowded, "c0", open)
+    // Everything shows, and the row that revealed them now offers to fold them back.
+    expect(rows.filter((row) => row.kind === "session")).toHaveLength(5)
+    const more = rows.filter((row) => row.kind === "more")
+    expect(more).toHaveLength(1)
+    expect(more[0]).toMatchObject({ kind: "more", expanded: true, hidden: 0 })
+    expect(navMoreRow(0, NAV_WIDTH, 2, true)).toContain("Read less")
+    expect(navMoreRow(0, NAV_WIDTH, 2, true)).not.toContain("Read more")
+    // Toggling the directory out of `revealed` restores the cap and the original row.
+    const folded = navRows(crowded, "c0", { ...open, revealed: toggleRevealed(open.revealed, key) })
+    expect(folded.filter((row) => row.kind === "session")).toHaveLength(NAV_SESSION_LIMIT)
+    const foldedMore = folded.filter((row) => row.kind === "more")
+    expect(foldedMore).toHaveLength(1)
+    expect(foldedMore[0]).toMatchObject({ kind: "more", expanded: false, hidden: 5 - NAV_SESSION_LIMIT })
+    expect(navMoreRow(5 - NAV_SESSION_LIMIT, NAV_WIDTH, 2, false)).toContain("Read more (+2)")
+  })
+
+  test("a search reveals every session without adding a Read less row", () => {
+    const crowded: NavSession[] = Array.from({ length: 5 }, (_, index) => ({
+      id: `c${index}`,
+      title: `Crowded ${index}`,
+      directory: "C:\\work\\opencode-fork",
+    }))
+    const rows = navRows(crowded, "c0", { overrides: {}, revealed: [], reveal: true })
+    expect(rows.filter((row) => row.kind === "session")).toHaveLength(5)
+    expect(rows.filter((row) => row.kind === "more")).toHaveLength(0)
+  })
+
   test("never caps the directories themselves", () => {
     const rows = navRows(grouped, "a1", { overrides: {}, revealed: [] })
     expect(rows.filter((row) => row.kind === "dir")).toHaveLength(navGroups(grouped, "a1").length)

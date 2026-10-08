@@ -43,7 +43,7 @@ export type NavGroup = {
 export type NavRowModel =
   | { kind: "dir"; key: string; label: string; count: number; collapsed: boolean; added: boolean; selected: boolean }
   | { kind: "session"; key: string; id: string; title: string; activity: NavActivity; updated?: number; selected: boolean }
-  | { kind: "more"; key: string; hidden: number; selected: boolean }
+  | { kind: "more"; key: string; hidden: number; expanded: boolean; selected: boolean }
   | { kind: "gap"; key: string; selected: boolean }
 
 /**
@@ -347,8 +347,10 @@ export function navRows(sessions: readonly NavSession[], activeID: string | unde
       selected: false,
     })
     if (collapsed) return
-    // A search reveals every session, and so does the directory's own "Read more".
-    const { shown, hidden } = navVisibleSessions(group.sessions, state.reveal === true || state.revealed.includes(group.key))
+    // A search reveals every session; the directory's own "Read more" reveals them too, but stays
+    // reversible: once everything shows, the same row reads "Read less" and folds the folder back.
+    const expanded = state.reveal !== true && state.revealed.includes(group.key)
+    const { shown, hidden } = navVisibleSessions(group.sessions, state.reveal === true || expanded)
     for (const session of shown) {
       content.push({
         kind: "session",
@@ -360,7 +362,8 @@ export function navRows(sessions: readonly NavSession[], activeID: string | unde
         selected: false,
       })
     }
-    if (hidden > 0) content.push({ kind: "more", key: `more:${group.key}`, hidden, selected: false })
+    if (expanded) content.push({ kind: "more", key: `more:${group.key}`, hidden: 0, expanded: true, selected: false })
+    else if (hidden > 0) content.push({ kind: "more", key: `more:${group.key}`, hidden, expanded: false, selected: false })
   })
   // One convention, applied here and nowhere else: a blank row separates every pair of neighbouring
   // content lines, whatever they are — two directories, a directory and its sessions, two sessions,
@@ -479,9 +482,10 @@ export function navRow(input: NavRowInput): string {
  * hidden sessions, so it carries the same indent as a session row and a glyph in the same column,
  * instead of reading as another section heading flush against the bar's edge.
  */
-export function navMoreRow(hidden: number, width: number, indent = 0): string {
+export function navMoreRow(hidden: number, width: number, indent = 0, expanded = false): string {
   const prefix = `${" ".repeat(Math.max(0, indent))}  · `
-  return `${prefix}${navLabel(`Read more (+${hidden})`, Math.max(1, width - prefix.length))}`
+  const label = expanded ? "Read less" : `Read more (+${hidden})`
+  return `${prefix}${navLabel(label, Math.max(1, width - prefix.length))}`
 }
 
 export type NavFooterShortcuts = { new: string; delete: string; rename: string }

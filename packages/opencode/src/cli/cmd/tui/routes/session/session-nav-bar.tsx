@@ -113,7 +113,7 @@ export function SessionNavBar(props: {
         frame: props.frame,
         pendingDelete: props.pendingDelete === row.id,
       })
-    return navMoreRow(row.hidden, innerWidth(), 2)
+    return navMoreRow(row.hidden, innerWidth(), 2, row.expanded)
   }
 
   const color = (row: NavRowModel, index: number) => {
