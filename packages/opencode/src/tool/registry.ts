@@ -18,6 +18,7 @@ import {
   SuggestObjectifTool,
 } from "./goal-contract"
 import { Session } from "@/session/session"
+import { CompactTool } from "./compact"
 import { QuestionTool } from "./question"
 import { JevTool } from "./jev"
 import { ShellTool } from "./shell"
@@ -210,6 +211,7 @@ export const layer: Layer.Layer<
     const completeObjectif = yield* CompleteObjectifTool
     const completeObjective = yield* CompleteObjectiveTool
     const applyContractFromPrompt = yield* ApplyContractFromPromptTool
+    const compactTool = yield* CompactTool
     const agent = yield* Agent.Service
 
     const state = yield* InstanceState.make<State>(
@@ -366,6 +368,7 @@ export const layer: Layer.Layer<
           complete_objectif: Tool.init(completeObjectif),
           complete_objective: Tool.init(completeObjective),
           apply_contract_from_prompt: Tool.init(applyContractFromPrompt),
+          compact: Tool.init(compactTool),
           patch: Tool.init(patchtool),
           question: Tool.init(question),
           lsp: Tool.init(lsptool),

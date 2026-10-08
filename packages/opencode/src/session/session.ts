@@ -775,13 +775,25 @@ export const layer: Layer.Layer<
       sessionID: SessionID
       goalState: GoalState | null
     }) {
+      // The compaction focus is session-scoped and orthogonal to the objective:
+      // a contract rewrite (create/edit tool or dialog) sends a fresh GoalState and
+      // must not silently drop the focus that steers summarization.
+      const existing = (
+        yield* get(input.sessionID).pipe(
+          Effect.catchIf(NotFoundError.isInstance, () => Effect.succeed(undefined)),
+        )
+      )?.goalState
+      const incoming =
+        input.goalState && !input.goalState.compaction && existing?.compaction
+          ? { ...input.goalState, compaction: existing.compaction }
+          : input.goalState
       yield* patch(input.sessionID, {
         // `compressed` is a derived field: regenerate it here so no client (TUI
         // dialog, web/desktop dialog, tool) can persist a stale contract body.
         goalState:
-          input.goalState && input.goalState.status !== "skipped"
-            ? { ...input.goalState, compressed: compressGoalState(input.goalState) }
-            : input.goalState,
+          incoming && incoming.status !== "skipped"
+            ? { ...incoming, compressed: compressGoalState(incoming) }
+            : incoming,
         time: { updated: Date.now() },
       })
     })

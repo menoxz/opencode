@@ -18,6 +18,21 @@ export const GoalCompletion = Schema.Struct({
   completedAt: Schema.Finite,
 })
 
+/**
+ * Session-level compaction steering, set by the agent through the `compact` tool.
+ * `focus` and `mustKeep` are injected into the summarization prompt as extra
+ * directives; the output template itself stays fixed (see session/compaction.ts).
+ * Persisted on the session so it also applies to automatic compaction.
+ */
+export const CompactionProfile = Schema.Struct({
+  focus: Schema.String,
+  mustKeep: Schema.mutable(Schema.Array(Schema.String)),
+  reason: Schema.optional(Schema.String),
+  version: Schema.Finite,
+  updatedAt: Schema.Finite,
+})
+export type CompactionProfile = Types.DeepMutable<Schema.Schema.Type<typeof CompactionProfile>>
+
 export const GoalState = Schema.Struct({
   status: Schema.Literals(["draft", "pending_user", "approved", "edited", "completed", "skipped", "blocked"]),
   source: Schema.Literals(["auto", "user"]),
@@ -35,6 +50,8 @@ export const GoalState = Schema.Struct({
   anchorUserID: Schema.optional(Schema.String),
   findings: Schema.optional(Schema.Array(GoalFinding)),
   completion: Schema.optional(GoalCompletion),
+  // Session-scoped compaction steering, independent of the objective itself.
+  compaction: Schema.optional(CompactionProfile),
   version: Schema.Finite,
   updatedAt: Schema.Finite,
 }).annotate({ identifier: "GoalState" })
