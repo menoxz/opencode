@@ -2,6 +2,7 @@ import { Effect } from "effect"
 import { HttpClient } from "effect/unstable/http"
 import { JevClient } from "./client"
 import { JevComplexity } from "./complexity"
+import { decide as decideBounded, makeCircuit, DEFAULT_HOOK_TIMEOUT_MS, type Circuit } from "./decide"
 import { JevGuard } from "./guard"
 import { JevIntake } from "./intake"
 import { JevNextAction } from "./next-action"
@@ -52,6 +53,41 @@ export type JevSettings = JevClient.Settings & {
 }
 
 const MAX_ARG_CHARS = 4_000
+
+/**
+ * Bound on every Jev question the post-tool path asks, in milliseconds.
+ *
+ * The guard and the relevance judge already ran under a bound (see `./decide`).
+ * `post` did not: its calls were wrapped in `Effect.catch`, which turns a
+ * *failure* into a fallback but leaves a request that never answers — or one the
+ * ambient transport parks for minutes — holding the tool result, and with it the
+ * whole step, for as long as the transport takes. The value is the shared hook
+ * bound from `./decide`.
+ */
+export const DEFAULT_TIMEOUT_MS = DEFAULT_HOOK_TIMEOUT_MS
+
+/** Consecutive failures shared by every post-tool question in the process. */
+const circuit: Circuit = makeCircuit()
+
+/**
+ * Run one post-tool question under the bound above, returning the fallback on
+ * any failure.
+ *
+ * `E` is erased to `unknown` on purpose: `decide` catches every cause before it
+ * can escape, so the error type is not part of this helper's contract and
+ * spelling it out only makes the call sites repeat what `JevClient.decide`
+ * already declares.
+ */
+function bounded<T>(label: string, run: Effect.Effect<T | undefined, unknown>, fallback: () => T): Effect.Effect<T> {
+  return decideBounded<T>({
+    label,
+    enabled: true,
+    timeoutMs: DEFAULT_TIMEOUT_MS,
+    circuit,
+    run,
+    fallback,
+  }).pipe(Effect.map((outcome) => outcome.value))
+}
 
 export const UNTRUSTED_CONFIRM_THRESHOLD = 0.5
 
@@ -190,12 +226,16 @@ export const post = Effect.fn("JevHooks.post")(function* (
     }
   },
 ) {
-  const untrusted = yield* JevUntrusted.scan(http, settings, {
-    tool: input.tool,
-    output: input.output,
-    confirm: settings?.untrusted?.enabled === true,
-    threshold: settings?.untrusted?.threshold ?? UNTRUSTED_CONFIRM_THRESHOLD,
-  }).pipe(Effect.catch(() => Effect.succeed([] as State.UntrustedHit[])))
+  const untrusted = yield* bounded(
+    "untrusted",
+    JevUntrusted.scan(http, settings, {
+      tool: input.tool,
+      output: input.output,
+      confirm: settings?.untrusted?.enabled === true,
+      threshold: settings?.untrusted?.threshold ?? UNTRUSTED_CONFIRM_THRESHOLD,
+    }),
+    () => [] as State.UntrustedHit[],
+  )
   State.markUntrusted(input.sessionID, untrusted)
 
   const wantsReview = settings?.review?.enabled === true
@@ -237,29 +277,37 @@ export const post = Effect.fn("JevHooks.post")(function* (
   }
   const shared = wantsReview || wantsNextAction || (wantsIntake && !separateIntake)
   const response = shared
-    ? yield* JevClient.decide(
-        http,
-        {
-          state: input.intent
-            ? `Post-execution screening of the ${input.tool} call.\nCURRENT INTENT: ${input.intent.slice(0, JevIntake.MAX_INTENT_CHARS)}`
-            : `Post-execution screening of the ${input.tool} call.`,
-          questions,
-        },
-        settings,
-      ).pipe(Effect.catch(() => Effect.succeed(undefined)))
-    : undefined
-  const intakeResponse =
-    wantsIntake && separateIntake
-      ? yield* JevClient.decide(
+    ? yield* bounded<JevSchema.Response | undefined>(
+        "post",
+        JevClient.decide(
           http,
           {
             state: input.intent
-              ? `Extractive intake of a ${input.tool} result for the current intent: keep what advances it, drop the rest.\nCURRENT INTENT: ${input.intent.slice(0, JevIntake.MAX_INTENT_CHARS)}`
-              : `Extractive intake of a ${input.tool} result: keep what is load-bearing, drop only boilerplate.`,
-            questions: JevIntake.intakeQuestions(blocks, input.intent, intentMode),
+              ? `Post-execution screening of the ${input.tool} call.\nCURRENT INTENT: ${input.intent.slice(0, JevIntake.MAX_INTENT_CHARS)}`
+              : `Post-execution screening of the ${input.tool} call.`,
+            questions,
           },
-          { ...settings, model: intakeSection?.model, base_url: intakeSection?.base_url, endpoint: intakeSection?.endpoint },
-        ).pipe(Effect.catch(() => Effect.succeed(undefined)))
+          settings,
+        ),
+        () => undefined,
+      )
+    : undefined
+  const intakeResponse =
+    wantsIntake && separateIntake
+      ? yield* bounded<JevSchema.Response | undefined>(
+          "intake",
+          JevClient.decide(
+            http,
+            {
+              state: input.intent
+                ? `Extractive intake of a ${input.tool} result for the current intent: keep what advances it, drop the rest.\nCURRENT INTENT: ${input.intent.slice(0, JevIntake.MAX_INTENT_CHARS)}`
+                : `Extractive intake of a ${input.tool} result: keep what is load-bearing, drop only boilerplate.`,
+              questions: JevIntake.intakeQuestions(blocks, input.intent, intentMode),
+            },
+            { ...settings, model: intakeSection?.model, base_url: intakeSection?.base_url, endpoint: intakeSection?.endpoint },
+          ),
+          () => undefined,
+        )
       : response
   if (!response && !intakeResponse) return { untrusted, annotation: undefined, kept: undefined }
   const lines: string[] = []

@@ -2,6 +2,7 @@ import { Effect } from "effect"
 import { HttpClient } from "effect/unstable/http"
 import { JevClient } from "./client"
 import { JevSchema } from "./schema"
+import { decide as decideBounded, makeCircuit, DEFAULT_HOOK_TIMEOUT_MS, type Circuit } from "./decide"
 
 /**
  * Jev tool selector — decides which candidates `tool_search` actually surfaces.
@@ -26,6 +27,20 @@ import { JevSchema } from "./schema"
 
 /** Probability at or above which a candidate tool is deemed worth surfacing. */
 export const DEFAULT_THRESHOLD = 0.5
+
+/**
+ * Bound on the whole selection, in milliseconds. Same reasoning as
+ * `JevSkills.DEFAULT_TIMEOUT_MS`: this selector runs while a tool call is being
+ * answered, so an endpoint that accepts the connection and never replies must
+ * not be able to hold the loop.
+ */
+export const DEFAULT_TIMEOUT_MS = DEFAULT_HOOK_TIMEOUT_MS
+
+/** Consecutive failures shared by every tool selection in the process. */
+const circuit: Circuit = makeCircuit()
+
+/** How many request-sized batches travel at once. See `JevSkills.MAX_CONCURRENT_CALLS`. */
+export const MAX_CONCURRENT_CALLS = 10
 
 /** Characters of a tool's description quoted per question, to keep the call cheap. */
 export const MAX_TOOL_CHARS = 400
@@ -93,36 +108,65 @@ export function decide(response: JevSchema.Response, ids: readonly string[], thr
 }
 
 /**
- * One round-trip shared by every candidate. The caller owns the `catch` that
- * turns a failure into the lexical fallback; this function never invents a
- * verdict.
+ * One request per candidate batch. The caller owns the `catch` that turns a
+ * failure into the lexical fallback; this function never invents a verdict.
+ *
+ * The whole selection runs under `./decide`, so it owns a timeout and a circuit
+ * breaker and can never hold the loop it runs in.
  */
 export const select = Effect.fn("JevTools.select")(function* (
   http: HttpClient.HttpClient,
   settings: JevClient.Settings | undefined,
-  input: { query: string; tools: readonly Candidate[]; threshold?: number },
+  input: {
+    query: string
+    tools: readonly Candidate[]
+    threshold?: number
+    /** Overrides {@link DEFAULT_TIMEOUT_MS}; tests use a short bound. */
+    timeoutMs?: number
+    /** Overrides the process-wide breaker; tests use a fresh one. */
+    circuit?: Circuit
+  },
 ) {
   const { questions: asked, ids } = questions(input.query, input.tools)
   // Same per-call question cap as the skill selector: batch the candidate pool
   // and merge the verdicts, so a wide pool does not turn into HTTP 400 and a
-  // silent fallback to the lexical ranking.
-  const chosen = new Set<string>()
-  let answered = false
-  for (const batch of JevClient.chunks(ids)) {
-    const response = yield* JevClient.decide(
-      http,
-      {
-        state: "Select the tools this request needs.",
-        questions: Object.fromEntries(batch.map((id) => [id, asked[id]!])),
-      },
-      settings,
-    )
-    const decided = decide(response, batch, input.threshold)
-    if (decided === undefined) continue
-    answered = true
-    for (const id of decided) chosen.add(id)
-  }
-  return answered ? [...chosen] : undefined
+  // silent fallback to the lexical ranking. The batches are independent and
+  // travel concurrently; a failing batch aborts the whole selection.
+  const outcome = yield* decideBounded<string[] | undefined>({
+    label: "tools",
+    enabled: true,
+    timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    circuit: input.circuit ?? circuit,
+    run: Effect.forEach(
+      JevClient.chunks(ids),
+      (batch) =>
+        Effect.gen(function* () {
+          const response = yield* JevClient.decide(
+            http,
+            {
+              state: "Select the tools this request needs.",
+              questions: Object.fromEntries(batch.map((id) => [id, asked[id]!])),
+            },
+            settings,
+          )
+          return decide(response, batch, input.threshold)
+        }),
+      { concurrency: MAX_CONCURRENT_CALLS },
+    ).pipe(
+      Effect.map((batches) => {
+        const chosen = new Set<string>()
+        let answered = false
+        for (const decided of batches) {
+          if (decided === undefined) continue
+          answered = true
+          for (const id of decided) chosen.add(id)
+        }
+        return answered ? [...chosen] : undefined
+      }),
+    ),
+    fallback: () => undefined,
+  })
+  return outcome.value
 })
 
 export * as JevTools from "./tools"

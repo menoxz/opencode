@@ -15,7 +15,7 @@ import { Effect } from "effect"
 import { generateText } from "ai"
 import * as Log from "@opencode-ai/core/util/log"
 import type { Interface as MemoryService } from "@/memory"
-import { resolveFreeLanguageModel } from "@/memory/model-picker"
+import { DecisionModel } from "@/decision/model"
 
 const log = Log.create({ category: "memory.reflect-use" })
 
@@ -39,7 +39,7 @@ export const reflectUse = Effect.fnUntraced(function* (
     return new Map<string, ReflectionResult>()
   }
 
-  const resolved = yield* resolveFreeLanguageModel({ override: opts.overrideModel })
+  const resolved = yield* DecisionModel.resolve({ override: opts.overrideModel })
   if (!resolved) {
     log.info("No free model available; skipping memory reflection")
     return new Map(input.memories.map((m) => [m.id, "neutral" as ReflectionResult]))

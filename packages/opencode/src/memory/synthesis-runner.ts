@@ -19,7 +19,8 @@ import { generateText as aiGenerateText } from "ai"
 import * as Log from "@opencode-ai/core/util/log"
 import { Config } from "@/config/config"
 import * as MemoryStore from "./store"
-import { resolveFreeLanguageModel, parseJsonStringArray } from "./model-picker"
+import { parseJsonStringArray } from "./model-picker"
+import { DecisionModel } from "@/decision/model"
 import {
   synthesize,
   defaultSynthesisConfig,
@@ -105,9 +106,10 @@ export const runSynthesis = Effect.fnUntraced(function* (dryRun: boolean = false
     return { candidates: 0, clusters: 0, synthesized: 0, skipped: 0, details: ["disabled"] }
   }
 
-  // Resolve a free language model (DeepSeek V4 Flash Free first).
+  // Resolve the decision model — the central `jev.decision_model` wins, then the
+  // configured synthesis override, then the auto-picked free model.
   const override = cfg?.experimental?.memory?.synthesis_model
-  const picked = yield* resolveFreeLanguageModel({
+  const picked = yield* DecisionModel.resolve({
     override: typeof override === "string" ? override : undefined,
   })
   if (!picked) {

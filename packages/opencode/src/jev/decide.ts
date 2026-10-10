@@ -59,6 +59,19 @@ export const DEFAULT_BREAKER_THRESHOLD = 3
 /** How long the breaker stays open before one probe is allowed through. */
 export const DEFAULT_BREAKER_RESET_MS = 30_000
 
+/**
+ * Default bound on one bounded Jev decision, in milliseconds.
+ *
+ * Sized for the slowest transport that can answer a batch. The System One
+ * endpoint answered a 20-question batch in ~0.7–2 s, but the harness decision
+ * model (`jev.decision_model`, see `@/decision/model`) is a chat completion and
+ * needs more. Under-bounding here silently disables the feature it protects —
+ * measured once already, when a healthy endpoint needed 8 s against a 5 s bound —
+ * so the bound is generous; the circuit breaker, not a tight timeout, is what
+ * keeps a dead endpoint cheap.
+ */
+export const DEFAULT_HOOK_TIMEOUT_MS = 15_000
+
 export function isOpen(circuit: Circuit, threshold = DEFAULT_BREAKER_THRESHOLD, resetMs = DEFAULT_BREAKER_RESET_MS, now = Date.now()): boolean {
   return circuit.openedAt > 0 && now - circuit.openedAt < resetMs && circuit.failures >= threshold
 }

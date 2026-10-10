@@ -17,7 +17,8 @@
 import { Effect } from "effect"
 import { generateText } from "ai"
 import * as Log from "@opencode-ai/core/util/log"
-import { resolveFreeLanguageModel, parseJsonStringArray } from "@/memory/model-picker"
+import { parseJsonStringArray } from "@/memory/model-picker"
+import { DecisionModel } from "@/decision/model"
 
 const log = Log.create({ service: "skill.select" })
 
@@ -51,7 +52,15 @@ export function interpret(text: string, candidates: readonly Candidate[]): strin
 export const select = Effect.fnUntraced(function* (input: { prompt: string; skills: readonly Candidate[] }) {
   if (input.skills.length === 0) return [] as string[]
 
-  const picked = yield* resolveFreeLanguageModel({})
+  // Only a model the user actually chose (`/decision-model`, `jev.decision_model`).
+  // The auto-picked "best free model" used to land on providers this install
+  // cannot serve: measured on a 258-message session, the call to the auto-picked
+  // endpoint stalled for 227 s while burning a full CPU core, and its 20 s Effect
+  // timeout could not fire because the saturated JS thread never ran the timer —
+  // so the step (and with it the TUI's keyboard and every watchdog) was held for
+  // minutes. Without a configured model the caller keeps the deterministic
+  // ranking, which is what an install that says nothing new should get.
+  const picked = yield* DecisionModel.resolve({ requireConfigured: true })
   if (!picked) {
     log.info("no free model available; skill selection keeps the deterministic fallback")
     return undefined

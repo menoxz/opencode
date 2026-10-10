@@ -1,4 +1,5 @@
 import { Schema } from "effect"
+import { ConfigModelID } from "./model-id"
 import { JevClient } from "@/jev/client"
 import { JevComplexity } from "@/jev/complexity"
 import { JevSchema } from "@/jev/schema"
@@ -166,6 +167,9 @@ export const Skills = Schema.Struct({
   threshold: Schema.optional(Schema.Number).annotate({
     description: `Probability (0..1) at or above which a candidate counts as relevant and is injected. Defaults to ${JevSkills.DEFAULT_THRESHOLD}.`,
   }),
+  timeout_ms: Schema.optional(Schema.Number).annotate({
+    description: `Round-trip bound in milliseconds for the whole selection, before the deterministic ranking answers instead. Defaults to ${JevSkills.DEFAULT_TIMEOUT_MS}.`,
+  }),
 }).annotate({ identifier: "JevSkillsConfig" })
 export type Skills = Schema.Schema.Type<typeof Skills>
 
@@ -177,24 +181,40 @@ export const Tools = Schema.Struct({
   threshold: Schema.optional(Schema.Number).annotate({
     description: `Probability (0..1) at or above which a candidate counts as relevant and is surfaced. Defaults to ${JevTools.DEFAULT_THRESHOLD}.`,
   }),
+  timeout_ms: Schema.optional(Schema.Number).annotate({
+    description: `Round-trip bound in milliseconds for the whole selection, before the lexical ranking answers instead. Defaults to ${JevTools.DEFAULT_TIMEOUT_MS}.`,
+  }),
 }).annotate({ identifier: "JevToolsConfig" })
 export type Tools = Schema.Schema.Type<typeof Tools>
 
 export const Info = Schema.Struct({
-  provider: Schema.optional(Schema.Literal(JevClient.PROVIDER)).annotate({
-    description: `Named provider preset setting \`base_url\` and \`model\` together. This build talks to Command Code only, so the sole accepted value is "${JevClient.PROVIDER}" — \`typesafe/jev\` is served nowhere else. The other presets are unreachable from here; an explicit \`base_url\`, \`endpoint\` or \`model\` is accepted only when it already points at ${JevClient.COMMAND_CODE_BASE_URL}.`,
+  provider: Schema.optional(JevClient.Provider).annotate({
+    description: `Named provider preset that sets \`base_url\`, \`model\` and the API-key variable together. Selectable values: ${JevClient.SELECTABLE_PROVIDERS.map(
+      (id) =>
+        `"${id}" (${JevClient.PROVIDERS[id].base_url}, model ${JevClient.PROVIDERS[id].model}, key from ${JevClient.PROVIDER_ENV_KEYS[id]})`,
+    ).join(
+      "; ",
+    )}. Defaults to "${JevClient.PROVIDER}". An explicit \`base_url\` or \`endpoint\` is accepted only when its host is one of those presets, and it then selects that preset's model too, so a host is never called with another host's model id.`,
   }),
   api_key: Schema.optional(Schema.String).annotate({
-    description: `System One API key. Read from the ${JevClient.PROVIDER_ENV_KEY} environment variable first, then this field. No other environment variable is consulted, so a stale key cannot silently win over a working one.`,
+    description: `System One API key. The resolved provider's own environment variable is read first (${JevClient.SELECTABLE_PROVIDERS.map(
+      (id) => `${JevClient.PROVIDER_ENV_KEYS[id]} for "${id}"`,
+    ).join(
+      ", ",
+    )}), then this field. No other environment variable is consulted, so a stale key cannot silently win over a working one.`,
   }),
   base_url: Schema.optional(Schema.String).annotate({
-    description: `API base URL. Defaults to ${JevClient.COMMAND_CODE_BASE_URL} (Command Code Provider API). An explicit value is honoured only when its host is already Command Code; any other host is refused, because \`typesafe/jev\` is served there only.`,
+    description: `API base URL. Defaults to the resolved preset's host (${JevClient.PROVIDERS[JevClient.PROVIDER].base_url} for "${JevClient.PROVIDER}"). An explicit value is honoured only when its host is one of the selectable presets; any other host is refused, and naming a host also selects that host's model.`,
   }),
   endpoint: Schema.optional(Schema.String).annotate({
     description: "Full System One endpoint. Overrides `base_url`. Defaults to `<base_url>/v1/systemone`.",
   }),
   model: Schema.optional(JevSchema.Model).annotate({
-    description: `Default model id. Defaults to ${JevClient.COMMAND_CODE_MODEL} on the locked Command Code host. An explicit value is kept as written, so it is never resolved to another host's preset.`,
+    description: `Default model id. Defaults to the resolved preset's model (${JevClient.PROVIDERS[JevClient.PROVIDER].model} for "${JevClient.PROVIDER}"). An explicit value is kept as written, so it is never resolved to another host's preset.`,
+  }),
+  decision_model: Schema.optional(ConfigModelID).annotate({
+    description:
+      "THE decision model: one harness model, in `providerID/modelID` form, used by every feature that asks a model to decide — the Jev hooks (skills, tools, guard, relevance, intake, review, next action, compaction, route, plan, complexity, untrusted) and every harness scoring pass (skill selection, memory extraction, episodic synthesis, reflection). Set it from the TUI with `/decision-model`. When set, Jev's question batches are answered by that model through the harness and no System One endpoint, key or provider is needed; when unset, everything behaves exactly as before (the System One wire API for the hooks, the best free model for the scoring passes). A model that no longer resolves falls back with a warning rather than disabling the feature.",
   }),
   shadow: Schema.optional(Schema.Boolean).annotate({
     description:

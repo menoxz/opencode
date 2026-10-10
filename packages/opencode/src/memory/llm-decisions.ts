@@ -19,7 +19,8 @@ import { Effect } from "effect"
 import { generateText as aiGenerateText } from "ai"
 import * as Log from "@opencode-ai/core/util/log"
 import { Config } from "@/config/config"
-import { resolveFreeLanguageModel, parseJsonStringArray } from "./model-picker"
+import { parseJsonStringArray } from "./model-picker"
+import { DecisionModel } from "@/decision/model"
 
 const log = Log.create({ service: "memory.llm-decisions" })
 
@@ -50,10 +51,11 @@ export const enrichDecisions = Effect.fnUntraced(function* (input: {
   const enabled = cfg?.experimental?.postmortem?.llm_decisions === true
   if (!enabled) return [] as string[]
 
-  // 2-4. Resolve a free language model (explicit override wins, else auto-pick).
-  // Any failure (no provider, no free model, no language api) => structural-only.
+  // 2-4. Resolve the decision model — the central `jev.decision_model` wins, the
+  // configured per-feature override is the fallback, then the auto-picked free
+  // model. Any failure (no provider, no model, no language api) => structural-only.
   const override = cfg?.experimental?.postmortem?.llm_model
-  const picked = yield* resolveFreeLanguageModel({
+  const picked = yield* DecisionModel.resolve({
     override: typeof override === "string" ? override : undefined,
   })
   if (!picked) {

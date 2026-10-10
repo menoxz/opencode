@@ -38,6 +38,21 @@ export const FREE_PREFERENCE = [
 export type ModelRef = { providerID: string; modelID: string; id: string }
 
 /**
+ * Split a `providerID/modelID` reference. Returns `undefined` when the value is
+ * not a well-formed reference (no slash, empty half), so a caller can tell
+ * "this is not a model ref" from "this ref did not resolve".
+ *
+ * The model id itself may contain slashes (`typesafe/jev`,
+ * `anthropic/claude-sonnet-4`), so only the FIRST slash separates the two halves.
+ */
+export function parseModelRef(ref: string): { providerID: string; modelID: string } | undefined {
+  const trimmed = ref.trim()
+  const index = trimmed.indexOf("/")
+  if (index <= 0 || index === trimmed.length - 1) return undefined
+  return { providerID: trimmed.slice(0, index), modelID: trimmed.slice(index + 1) }
+}
+
+/**
  * Scan every loaded provider, keep only free models (cost.input === 0), and
  * return them sorted by FREE_PREFERENCE. Empty array means "no free model"
  * => caller should skip the LLM entirely.

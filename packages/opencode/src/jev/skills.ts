@@ -2,6 +2,7 @@ import { Effect } from "effect"
 import { HttpClient } from "effect/unstable/http"
 import { JevClient } from "./client"
 import { JevSchema } from "./schema"
+import { decide as decideBounded, makeCircuit, DEFAULT_HOOK_TIMEOUT_MS, type Circuit } from "./decide"
 
 /**
  * Jev skill selector — decides which skills earn a place in the injected catalogue.
@@ -24,6 +25,39 @@ import { JevSchema } from "./schema"
 
 /** Probability at or above which a skill is judged relevant enough to inject. */
 export const DEFAULT_THRESHOLD = 0.5
+
+/**
+ * Bound on the whole selection, in milliseconds.
+ *
+ * `JevSkills.select` sits on the critical path of every step: the system prompt
+ * cannot be assembled until it answers, so an endpoint that accepts the
+ * connection and never replies must not be allowed to hold the turn. Measured on
+ * a live install: a skill selection whose endpoint answered HTTP 400 after
+ * ~126 ms through a bare transport left the step parked for 285 s through the
+ * ambient one, with the process pegged at one core and no log line — the session
+ * looked frozen and the interrupt key reached nothing.
+ *
+ * `JevGuard` and `JevRelevance` already ran under a bound (see `./decide`); the
+ * two selectors were the ones that did not. The value is the shared hook bound
+ * from `./decide`, sized for the slowest transport (the decision model).
+ */
+export const DEFAULT_TIMEOUT_MS = DEFAULT_HOOK_TIMEOUT_MS
+
+/** Consecutive failures shared by every skill selection in the process. */
+const circuit: Circuit = makeCircuit()
+
+/**
+ * How many request-sized batches travel at once.
+ *
+ * The batches are independent questions and the endpoint is stateless, so a
+ * ~200-skill catalogue does not have to be ten sequential round-trips. Serialised,
+ * a healthy Codiv endpoint needed ~8 s for 194 candidates — more than the bound,
+ * which would have silently disabled the selector it was meant to protect.
+ * Measured after: the same catalogue answers inside the bound. `10` lets the
+ * whole catalogue of a real install travel in one wave, which is also what keeps
+ * a chat-model transport (one request per batch) inside its budget.
+ */
+export const MAX_CONCURRENT_CALLS = 10
 
 /** Characters of a skill's own text quoted per question, so the call stays cheap. */
 export const MAX_SKILL_CHARS = 400
@@ -102,37 +136,67 @@ export function decide(
 }
 
 /**
- * The round-trip. One request, all candidates, shared prompt. Any failure keeps
- * its typed error so the caller's `catch` turns it into the fallback; this
- * function never invents a verdict.
+ * The round-trip. One request per request-sized batch, all candidates, shared
+ * prompt. Any failure keeps its typed error so the caller's `catch` turns it
+ * into the fallback; this function never invents a verdict.
+ *
+ * The whole selection runs under `./decide`, so it owns a timeout and a circuit
+ * breaker: a hung, unreachable or failing endpoint costs one bounded wait and
+ * then a period of no waits at all, and never the step.
  */
 export const select = Effect.fn("JevSkills.select")(function* (
   http: HttpClient.HttpClient,
   settings: JevClient.Settings | undefined,
-  input: { prompt: string; skills: readonly Candidate[]; threshold?: number },
+  input: {
+    prompt: string
+    skills: readonly Candidate[]
+    threshold?: number
+    /** Overrides {@link DEFAULT_TIMEOUT_MS}; tests use a short bound. */
+    timeoutMs?: number
+    /** Overrides the process-wide breaker; tests use a fresh one. */
+    circuit?: Circuit
+  },
 ) {
   const { questions: asked, ids } = questions(input.prompt, input.skills)
   // A call carries at most MAX_QUESTIONS_PER_CALL questions, so a large
-  // catalogue is split into batches and the verdicts are merged. A batch that
-  // fails aborts the whole selection (the caller falls back); a partial verdict
-  // is never invented.
-  const chosen = new Set<string>()
-  let answered = false
-  for (const batch of JevClient.chunks(ids)) {
-    const response = yield* JevClient.decide(
-      http,
-      {
-        state: "Select the skills this request needs.",
-        questions: Object.fromEntries(batch.map((id) => [id, asked[id]!])),
-      },
-      settings,
-    )
-    const decided = decide(response, batch, input.threshold)
-    if (decided === undefined) continue
-    answered = true
-    for (const id of decided) chosen.add(id)
-  }
-  return answered ? [...chosen] : undefined
+  // catalogue is split into batches and the verdicts are merged. The batches are
+  // independent and travel concurrently; a batch that fails aborts the whole
+  // selection (the caller falls back) and a partial verdict is never invented.
+  const outcome = yield* decideBounded<string[] | undefined>({
+    label: "skills",
+    enabled: true,
+    timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    circuit: input.circuit ?? circuit,
+    run: Effect.forEach(
+      JevClient.chunks(ids),
+      (batch) =>
+        Effect.gen(function* () {
+          const response = yield* JevClient.decide(
+            http,
+            {
+              state: "Select the skills this request needs.",
+              questions: Object.fromEntries(batch.map((id) => [id, asked[id]!])),
+            },
+            settings,
+          )
+          return decide(response, batch, input.threshold)
+        }),
+      { concurrency: MAX_CONCURRENT_CALLS },
+    ).pipe(
+      Effect.map((batches) => {
+        const chosen = new Set<string>()
+        let answered = false
+        for (const decided of batches) {
+          if (decided === undefined) continue
+          answered = true
+          for (const id of decided) chosen.add(id)
+        }
+        return answered ? [...chosen] : undefined
+      }),
+    ),
+    fallback: () => undefined,
+  })
+  return outcome.value
 })
 
 export * as JevSkills from "./skills"

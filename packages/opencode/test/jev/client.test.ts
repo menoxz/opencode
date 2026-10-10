@@ -118,7 +118,11 @@ describe("jev.client", () => {
     )
     expect(JevClient.resolveModel({ provider: "command-code" }, {})).toBe(JevClient.COMMAND_CODE_MODEL)
     expect(JevClient.resolveModel({ provider: "openjev" }, {})).toBe(JevClient.OPENJEV_MODEL)
-    expect(JevClient.resolveModel({ provider: "typesafe" }, {})).toBe(JevClient.DEFAULT_MODEL)
+    // TypeSafe is documented but NOT selectable (its key measured HTTP 401 on
+    // both hosts), so naming another host can never drag the model off the
+    // preset that serves the host the request actually reaches.
+    expect(JevClient.SELECTABLE_PROVIDERS).not.toContain("typesafe" as never)
+    expect(JevClient.resolveModel({ base_url: JevClient.DEFAULT_BASE_URL }, {})).toBe(JevClient.COMMAND_CODE_MODEL)
     // an explicit value still wins over the preset
     expect(JevClient.baseUrl({ provider: "command-code", base_url: "https://custom.test" }, {})).toBe(
       "https://custom.test",

@@ -35,6 +35,7 @@ import { SyncProviderV2 } from "@tui/context/sync-v2"
 import { LocalProvider, useLocal } from "@tui/context/local"
 import { DialogModel } from "@tui/component/dialog-model"
 import { DialogVisionModel } from "@tui/component/dialog-vision-model"
+import { DialogDecisionModel } from "@tui/component/dialog-decision-model"
 import { useConnected } from "@tui/component/use-connected"
 import { DialogMcp } from "@tui/component/dialog-mcp"
 import { DialogStatus } from "@tui/component/dialog-status"
@@ -540,6 +541,16 @@ function App(props: { onSnapshot?: () => Promise<string[]> }) {
         slashName: "vision-model",
         run: () => {
           dialog.replace(() => <DialogVisionModel />)
+        },
+      },
+      {
+        name: "decision.model",
+        title: "Set the decision model (all Jev features and scoring passes)",
+        suggested: true,
+        category: "Agent",
+        slashName: "decision-model",
+        run: () => {
+          dialog.replace(() => <DialogDecisionModel />)
         },
       },
       {
