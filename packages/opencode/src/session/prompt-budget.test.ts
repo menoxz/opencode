@@ -40,8 +40,12 @@ const worstCaseCatalog = (count: number) =>
 
 describe("core system prompt", () => {
   test("stays within its allowance", () => {
-    // Currently ~363 tokens. Headroom is deliberate but bounded.
-    expect(tokens(PROMPT_CORE)).toBeLessThan(900)
+    // Deliberate ratchet, re-baselined 2026-10-10. The gate had drifted dead: the file
+    // already measured ~1 360 tokens (chars/4) against the old 900 allowance, while this
+    // comment still claimed ~363. The initiative prompt additions (identity, working_style,
+    // asking) brought it to ~1 553. Core.txt is now ~3.8x the size this comment originally
+    // assumed; trim it before raising the ceiling again.
+    expect(tokens(PROMPT_CORE)).toBeLessThan(1_600)
   })
 })
 
