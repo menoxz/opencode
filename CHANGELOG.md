@@ -5,6 +5,11 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v2.3.71] - 2026-10-10
+
+### Changed
+- **Un obstacle dont la remédiation est évidente doit être corrigé, pas rapporté.** `session/prompt/core.txt` : la puce de périmètre précise qu'un obstacle dont le correctif est évident, réversible et peu coûteux s'applique au lieu d'être présenté comme une limite — rapporter un obstacle qu'on pouvait lever est un échec d'initiative ; la phrase redondante de l'identité est retirée (compression : 1 606 → 1 536 tokens, sous le plafond de 1 600). Dans la configuration, `agents/lean.md` reçoit le bloc `<obstacles>` équivalent **et** l'exposition de l'outil natif `compact` (`tools: { compact: true }`), dont ce profil était privé — obstacle à remédiation évidente, corrigé plutôt que documenté.
+
 ## [v2.3.70] - 2026-10-10
 
 ### Added
