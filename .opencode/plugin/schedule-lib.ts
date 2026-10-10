@@ -299,9 +299,23 @@ function subsetMatch(filter: unknown, value: unknown): boolean {
   )
 }
 
+// One bus event can stand for another: a file change made outside the agent (external
+// editor, script) never publishes `file.edited` (agent write tools only) but does publish
+// `file.watcher.updated`. Treating them as equivalent makes file triggers behave as asked.
+export const EVENT_ALIASES: Record<string, string[]> = {
+  "file.edited": ["file.watcher.updated"],
+}
+
+export function eventMatchesName(triggerEvent: string, incomingType: string | undefined): boolean {
+  if (!incomingType) return false
+  if (triggerEvent === incomingType) return true
+  const aliases = EVENT_ALIASES[triggerEvent]
+  return !!aliases && aliases.includes(incomingType)
+}
+
 export function matchEvent(sched: Schedule, event: { type?: string; properties?: unknown }, now: number): boolean {
   if (!sched.enabled || sched.trigger.type !== "event") return false
-  if (event?.type !== sched.trigger.event) return false
+  if (!eventMatchesName(sched.trigger.event, event?.type)) return false
   if (sched.maxRuns !== undefined && sched.runs >= sched.maxRuns) return false
   if (sched.expiresAt !== undefined && now > sched.expiresAt) return false
   // Default anti-rebond: a wake that itself produces events must not re-trigger the same

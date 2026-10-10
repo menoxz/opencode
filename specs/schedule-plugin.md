@@ -143,11 +143,48 @@ manuel immédiat, sans consommer `runs`).
 - Déclencheurs `event` : seulement les événements émis dans le processus du plugin.
 - Pas d'interface TUI : pilotage par l'outil `schedule` ou édition du store à froid.
 
+### 9.1 Événements de fichier : quelles écritures déclenchent quoi
+
+| écriture | événements publiés dans le bus |
+|---|---|
+| outils d'écriture de l'agent (`write`, `edit`, `apply_patch`) | `file.edited` **et** `file.watcher.updated` |
+| `File.write` du serveur (route HTTP d'écriture) | `file.edited` **et** `file.watcher.updated` |
+| écriture **externe** (éditeur, script, autre processus) | `file.watcher.updated` **seulement** |
+
+Conséquence : un plan `on="file.edited"` ne couvrirait pas les écritures externes. Le plugin
+traite donc `file.watcher.updated` comme équivalent de `file.edited` (table d'alias
+`EVENT_ALIASES`, `eventMatchesName`). Vérifié en conditions réelles : un `Set-Content`
+PowerShell externe déclenche bien un plan `file.edited`.
+
+Prérequis du watcher : sur ce fork, le watcher de fichiers est **opt-in**
+(`Flag.OPENCODE_EXPERIMENTAL_FILEWATCHER`, variable `OPENCODE_EXPERIMENTAL_FILEWATCHER=true`;
+désactivation par `OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER`). Sans ce drapeau, aucune
+écriture externe n'émet d'événement — ce n'est pas un défaut du plugin. Les écritures de
+l'agent, elles, émettent toujours.
+
+### 9.2 Robustesse du store
+
+- Une entrée activée à déclencheur temporel **sans `nextAt`** (écrite à la main, par un outil,
+  ou par une version antérieure) est recalculée automatiquement au tick (auto-réparation) :
+  un plan vivant ne reste jamais « muet ».
+- L'anti-rebond d'événement est vérifié **à la mise en file et au moment du tir** : pendant un
+  réveil lent, un second événement ne peut pas provoquer un double tir.
+
+### 9.3 Déploiement
+
+Le composant est un plugin : il est chargé au démarrage du serveur depuis l'entrée de config
+(§3), **aucun rebuild du harnais n'est nécessaire** (vérifié : le binaire installé
+`opencodev2.exe` en 2.3.69 charge le plugin et expose l'outil `schedule`). Prendre une
+modification en compte = redémarrer le serveur.
+
 ## 10. Tests
 
 - Depuis `.opencode` : `bun test tests/schedule.test.ts` — logique pure : parseurs, cron,
   échéances, store, verrou, `wake` avec client simulé, création/validation des plans.
 - `bun test tests/schedule-plugin.test.ts` — intégration fabrique : chargement inerte
   (`enabled:false`), create/list/run via l'outil, erreurs de réveil journalisées.
-- État vérifié le 2026-10-10 : 22 pass / 0 fail (bun 1.4.2).
+- État vérifié le 2026-10-10 : 25 pass / 0 fail (bun 1.4.2), plus banc d'essai live (serveur
+  réel) : chargement + outil, réveil once, interval (répété), cron (avec auto-réparation du
+  `nextAt`), événement `session.created`, événement de fichier (alias), verrou multi-processus,
+  désactivation.
 - Fumée : depuis `.opencode`, `bun -e "import('./plugin/schedule.ts')"` (résolution des imports).

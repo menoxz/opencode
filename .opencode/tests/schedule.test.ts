@@ -13,6 +13,7 @@ import {
   computeNextAt,
   createSchedule,
   dueSchedules,
+  eventMatchesName,
   findSchedule,
   formatList,
   formatSchedule,
@@ -140,6 +141,16 @@ describe("échéances", () => {
     const later = sched({ id: "sch_later", trigger: { type: "once", at: now + 5 }, nextAt: now + 5 })
     const list = dueSchedules({ version: 1, schedules: [later, due] }, now)
     expect(list.map((s) => s.id)).toEqual([due.id])
+  })
+  test("event aliases: file.edited also matches file.watcher.updated", () => {
+    const now = 50_000
+    const s = sched({ trigger: { type: "event", event: "file.edited" } })
+    expect(matchEvent(s, { type: "file.edited", properties: {} }, now)).toBe(true)
+    expect(matchEvent(s, { type: "file.watcher.updated", properties: { file: "a.ts", event: "change" } }, now)).toBe(true)
+    expect(matchEvent(s, { type: "session.idle", properties: {} }, now)).toBe(false)
+    expect(eventMatchesName("file.edited", "file.watcher.updated")).toBe(true)
+    expect(eventMatchesName("file.watcher.updated", "file.edited")).toBe(false)
+    expect(eventMatchesName("file.edited", undefined)).toBe(false)
   })
   test("matchEvent filters by event, where, cooldown", () => {
     const now = 50_000

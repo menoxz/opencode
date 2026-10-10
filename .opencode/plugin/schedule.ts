@@ -120,6 +120,13 @@ async function fireOne(state: State, sched: Schedule, source: Source): Promise<v
     const fresh = await loadStore(state.options.storeDir)
     const entry = fresh.schedules.find((s) => s.id === sched.id)
     if (entry) {
+      // Re-check the event cooldown at FIRE time, not only at enqueue time: while a slow wake
+      // is in flight a second event can already sit in the queue, and enqueue-time matching
+      // alone would let it through (observed: two fires 2s apart with a 5s cooldown).
+      if (source === "event" && entry.trigger.type === "event") {
+        const cooldown = entry.trigger.cooldownMs ?? DEFAULTS.eventCooldownMs
+        if (cooldown > 0 && entry.lastEventAt !== undefined && now - entry.lastEventAt < cooldown) return
+      }
       entry.runs += 1
       entry.lastRunAt = now
       entry.lastStatus = "running"
@@ -232,6 +239,21 @@ async function tick(state: State): Promise<void> {
     state.store = fresh
     state.refreshedAt = now
     if (state.owner) {
+      // Self-heal: an enabled time-based schedule must always carry a nextAt. A store entry
+      // written by hand, by a tool, or by an older version may lack it, which would otherwise
+      // leave the schedule alive but never due.
+      let repaired = false
+      for (const s of fresh.schedules) {
+        if (!s.enabled || s.trigger.type === "event") continue
+        if (s.nextAt !== undefined) continue
+        if (s.maxRuns !== undefined && s.runs >= s.maxRuns) continue
+        if (s.expiresAt !== undefined && now > s.expiresAt) continue
+        const next = computeNextAt(s, now)
+        s.nextAt = next
+        s.updatedAt = now
+        if (next !== undefined) repaired = true
+      }
+      if (repaired) await saveStore(state.options.storeDir, fresh)
       for (const s of dueSchedules(fresh, now)) enqueue(state, { id: s.id, source: "tick" })
     }
     await pump(state)
