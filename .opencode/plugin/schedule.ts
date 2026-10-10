@@ -550,7 +550,7 @@ export default async function schedulePlugin(
   }
   previous?.dispose("reloaded")
   if (!opts.enabled) {
-    console.error("[schedule] disabled (options.enabled=false): no timer, no tool")
+    dbg("disabled (options.enabled=false): no timer, no tool")
     return {}
   }
   const state: State = {
@@ -576,7 +576,7 @@ export default async function schedulePlugin(
     if (state.heartbeat) clearInterval(state.heartbeat)
     if (state.owner) void releaseLock(opts.storeDir, process.pid).catch(() => {})
     if (g[GLOBAL_KEY] === state) delete g[GLOBAL_KEY]
-    console.error(`[schedule] disposed (${reason})`)
+    dbg(`disposed (${reason})`)
   }
   g[GLOBAL_KEY] = state
   state.store = await loadStore(opts.storeDir)
@@ -589,7 +589,7 @@ export default async function schedulePlugin(
       .catch(() => {})
   }, DEFAULTS.lockHeartbeatMs)
   ;(state.heartbeat as any).unref?.()
-  console.error(`[schedule] active: store=${opts.storeDir} tick=${opts.tickSeconds}s pid=${process.pid}`)
+  dbg(`active: store=${opts.storeDir} tick=${opts.tickSeconds}s pid=${process.pid}`)
   void tick(state)
   return {
     event: async ({ event }) => {
