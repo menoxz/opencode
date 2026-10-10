@@ -1,5 +1,5 @@
 import { Duration, Effect, Schedule } from "effect"
-import type { PlatformError } from "effect/PlatformError"
+import * as PlatformError from "effect/PlatformError"
 
 // Windows intermittently refuses to create a child process (`EPERM`/`EACCES`,
 // "Accès refusé"). The process never started, so retrying cannot duplicate or
@@ -74,4 +74,69 @@ export function retryTransientLaunchSync<A>(launch: () => A): A {
   }
 }
 
-export type { PlatformError }
+// The errno lives on `cause`, never on the `PlatformError` envelope
+// (`cross-spawn-spawner.ts` builds it with `_tag`/`module`/`method`/
+// `pathOrDescriptor`/`syscall`/`cause` only), so it has to be walked out the same
+// way `isTransientLaunchFailure` walks it.
+const errnoOf = (error: unknown, seen = new Set<unknown>()): string | undefined => {
+  if (error === null || typeof error !== "object" || seen.has(error)) return undefined
+  seen.add(error)
+  const fields = error as { code?: unknown; cause?: unknown; reason?: unknown; stderr?: unknown }
+  if (typeof fields.code === "string") return fields.code
+  return errnoOf(fields.cause, seen) ?? errnoOf(fields.reason, seen) ?? errnoOf(fields.stderr, seen)
+}
+
+const tagOf = (error: unknown): string | undefined => {
+  const tag = (error as { reason?: { _tag?: unknown } })?.reason?._tag
+  return typeof tag === "string" ? tag : undefined
+}
+
+// `PlatformError.message` is derived from the envelope's fields, so the useful
+// diagnostic is the innermost message: the errno's own text. An empty or
+// non-string message contributes nothing, which keeps an empty
+// `Underlying error:` suffix off the page.
+const detailOf = (error: unknown, seen = new Set<unknown>()): string => {
+  if (error === null || typeof error !== "object" || seen.has(error)) return ""
+  seen.add(error)
+  const fields = error as { message?: unknown; cause?: unknown; reason?: unknown }
+  const inner = detailOf(fields.cause, seen) || detailOf(fields.reason, seen)
+  if (inner) return inner
+  return typeof fields.message === "string" ? fields.message.trim() : ""
+}
+
+/**
+ * The failure a caller surfaces once the launch budget is spent. A refusal
+ * creates no process, so the command never ran and there is nothing to clean up;
+ * what the caller needs instead is the executable, the spent budget and the one
+ * lever that matches *this* denial.
+ */
+export function launchRefused(executable: string, attempts: number, error: unknown): PlatformError.PlatformError {
+  const errno = errnoOf(error) ?? "unknown"
+  const tag = tagOf(error)
+  // `Busy` is lock contention: waiting is the only lever. `PermissionDenied` is a
+  // permission denial: only execution rights help. Same code path, opposite
+  // diagnostics — the fork belongs here, not in the reader's guess.
+  const lever =
+    tag === "Busy"
+      ? `the host was busy (${errno}); wait for the lock to clear, then retry`
+      : tag === "PermissionDenied"
+        ? `the host refused to create "${executable}" (${errno}); grant the executing identity rights on that path`
+        : `the host refused to create "${executable}" (${errno})`
+  const detail = detailOf(error)
+  const suffix = detail ? ` Underlying error: ${detail}` : ""
+  const text =
+    `opencode could not start a process after ${attempts} attempts: ${lever}. No process was ` +
+    `created, so the command never ran and nothing needs cleanup.${suffix}`
+  // `description` is the one field `SystemError.message` renders, so the lever
+  // reaches every message reader; the full sentence rides on `cause`, which
+  // `Cause.pretty` prints and the errno readers already walk.
+  return PlatformError.systemError({
+    _tag: tag === "Busy" ? "Busy" : "PermissionDenied",
+    module: "ChildProcess",
+    method: "spawn",
+    description: lever,
+    pathOrDescriptor: executable,
+    syscall: "uv_spawn",
+    cause: new Error(text),
+  })
+}

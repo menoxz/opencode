@@ -16,8 +16,6 @@ import { testEffect } from "../lib/effect"
 import { provideInstance } from "../fixture/fixture"
 
 const SHELL = /(^|[\\/])(pwsh|powershell|bash|sh|cmd)(\.exe)?$/i
-// one start plus the four retries the shared policy allows
-const LAUNCH_BUDGET = 5
 
 const commandName = (command: ChildProcess.Command) => (command._tag === "StandardCommand" ? command.command : "")
 
@@ -35,22 +33,12 @@ const refused = (command: ChildProcess.Command) =>
     }),
   })
 
-// A permanent start failure: it must never be retried, so the tool is only
-// allowed to surface this one once the refusal budget is spent.
-const permanent = (command: ChildProcess.Command) =>
-  PlatformError.systemError({
-    _tag: "Unknown",
-    module: "ChildProcess",
-    method: "spawn",
-    pathOrDescriptor: commandName(command),
-    syscall: "spawn",
-    cause: new Error("failed to start the shell: the interpreter is not usable"),
-  })
+const starts = { count: 0, last: undefined as ChildProcess.Command | undefined }
 
-const starts = { count: 0 }
-
-// The spawner refuses the launch a fixed number of times, then fails for a real
-// reason: no host process is started, so the assertion is deterministic.
+// Every spawn that reaches this layer is counted, unconditionally. The count is
+// the proof that no retry policy is stacked on the chokepoint any more, so it
+// must not be conditional on the command: a guarded counter lets a real spawn
+// slip underneath it and the proof stops proving anything.
 const refusedLaunches = Layer.effect(
   ChildProcessSpawner,
   Effect.gen(function* () {
@@ -59,9 +47,12 @@ const refusedLaunches = Layer.effect(
       ...real,
       spawn: (command: ChildProcess.Command) =>
         Effect.suspend(() => {
-          if (!SHELL.test(commandName(command))) return real.spawn(command)
           starts.count += 1
-          return starts.count < LAUNCH_BUDGET ? Effect.fail(refused(command)) : Effect.fail(permanent(command))
+          starts.last = command
+          // Only the shell is refused; anything else is forwarded untouched — but
+          // it is still counted, so `toBe(1)` cannot be satisfied by a call the
+          // counter never saw.
+          return SHELL.test(commandName(command)) ? Effect.fail(refused(command)) : real.spawn(command)
         }),
     })
   }),
@@ -91,7 +82,7 @@ const ctx = {
 }
 
 describe("tool.shell transient launch", () => {
-  it.live("spends the whole retry budget on a refused start instead of surfacing it", () =>
+  it.live("surfaces the refusal on the first start without stacking a second retry policy", () =>
     Effect.gen(function* () {
       const info = yield* ShellTool
       const tool = yield* info.init()
@@ -99,8 +90,12 @@ describe("tool.shell transient launch", () => {
         tool.execute({ command: "echo launch-retry-ok", description: "probe the launch retry" }, ctx),
       )
       expect(Exit.isFailure(exit)).toBe(true)
-      // without the retry wiring the first refusal fails the tool immediately
-      expect(starts.count).toBeGreaterThanOrEqual(LAUNCH_BUDGET)
+      // the spawner already owns the budget: one start, one refusal, one message
+      expect(starts.count).toBe(1)
+      // …and that one counted start was the shell, not something the counter skipped
+      expect(SHELL.test(commandName(starts.last!))).toBe(true)
+      // the refusal is named, not surfaced as a bare errno
+      expect(String(exit)).toContain("No process was created")
     }).pipe(provideInstance(process.cwd())),
   )
 })

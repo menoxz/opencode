@@ -89,6 +89,7 @@ export {
   isTransientLaunchFailure,
   LAUNCH_RETRY_ATTEMPTS,
   LAUNCH_RETRY_DELAYS_MS,
+  launchRefused,
   launchRetryDelayMs,
   retryTransientLaunch,
   retryTransientLaunchSync,

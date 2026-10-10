@@ -34,6 +34,12 @@ const toTag = (err: NodeJS.ErrnoException): PlatformError.SystemErrorTag => {
       return "NotFound"
     case "EACCES":
       return "PermissionDenied"
+    case "EPERM":
+      // `EPERM` is what Windows returns for a refused process creation, the very
+      // denial this policy retries: it is a permission denial, not an unknown
+      // failure. `isTransientLaunchFailure` already read it off the errno; this
+      // only makes the tag agree, so a caller can name the lever.
+      return "PermissionDenied"
     case "EEXIST":
       return "AlreadyExists"
     case "EISDIR":

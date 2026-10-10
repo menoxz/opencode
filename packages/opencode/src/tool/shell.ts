@@ -10,7 +10,7 @@ import { lazy } from "@/util/lazy"
 import { Language, type Node } from "web-tree-sitter"
 
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
-import { retryTransientLaunch } from "@opencode-ai/core/process"
+import { isTransientLaunchFailure, LAUNCH_RETRY_ATTEMPTS, launchRefused } from "@opencode-ai/core/process"
 import { fileURLToPath } from "url"
 import { Config } from "@/config/config"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -139,6 +139,35 @@ function commands(node: Node) {
   return node.descendantsOfType("command").filter((child): child is Node => Boolean(child))
 }
 
+// File redirection targets (`> file`, `2> file`, `>> file`, `2>file`) are files
+// the command writes to, but `parts` drops `redirection` and `file_redirect`
+// nodes, so they never reached `argPath` and never triggered the
+// `external_directory` permission. Recover the target word of every
+// `file_redirect`, skipping descriptor redirects (`2>&1`, `<&0`) whose target is
+// a `file_descriptor` rather than a path word, and heredocs whose target is a
+// `heredoc_body`.
+function redirectTargets(node: Node) {
+  const out: string[] = []
+  const skip = new Set(["file_descriptor", "file_redirection_operator", "heredoc_body", "heredoc_start"])
+  const push = (redirect: Node) => {
+    for (let i = 0; i < redirect.namedChildCount; i++) {
+      const child = redirect.namedChild(i)
+      if (!child || skip.has(child.type)) continue
+      const text = child.text.trim()
+      if (!text || text === ">" || text === ">>" || text === "<" || text === ">&" || text === "<&") continue
+      out.push(text)
+    }
+  }
+  // tree-sitter-bash and tree-sitter-cmd wrap a redirect in `file_redirect`;
+  // tree-sitter-powershell uses `redirection` with a `file_redirection_operator`
+  // child. Handle both; descriptor redirects (`2>&1`) and heredocs are skipped
+  // by type so their non-path targets are never resolved as files.
+  for (const type of ["file_redirect", "redirection"]) {
+    for (const redirect of node.descendantsOfType(type)) if (redirect) push(redirect)
+  }
+  return out
+}
+
 function unquote(text: string) {
   if (text.length < 2) return text
   const first = text[0]
@@ -232,9 +261,95 @@ function pathArgs(list: Part[], ps: boolean, cmd = false) {
   return out
 }
 
-function preview(text: string) {
-  if (text.length <= MAX_METADATA_LENGTH) return text
-  return "...\n\n" + text.slice(-MAX_METADATA_LENGTH)
+export type Preview = { text: string; truncated: boolean }
+
+// Share of the budget kept at the head once a preview has to be windowed.
+const HEAD_SHARE = 0.25
+
+// Drops the lone low surrogate a cut would otherwise leave at the head boundary.
+function cutStart(text: string, at: number) {
+  let i = at
+  while (i > 0 && i < text.length) {
+    const code = text.charCodeAt(i)
+    if (code >= 0xdc00 && code <= 0xdfff) i--
+    else break
+  }
+  return text.slice(0, i)
+}
+
+// Mirror of cutStart for the tail boundary: moves the cut forward while it lands
+// on a low surrogate, so a sliding window never ends on half a code point.
+function cutTail(text: string, from: number) {
+  let i = from
+  while (i < text.length) {
+    const code = text.charCodeAt(i)
+    if (code >= 0xdc00 && code <= 0xdfff) i++
+    else break
+  }
+  return text.slice(i)
+}
+
+// The counts describe what the reader actually gets: `first`/`last` are the
+// characters kept at each end, `omitted` the total the stream produced.
+function gap(omitted: number, first: number, last: number) {
+  return `\n\n[... ${omitted} characters omitted — first ${first} and last ${last} shown ...]\n\n`
+}
+
+// Reports the truncation it performs instead of losing it silently.
+export function preview(text: string): Preview {
+  if (text.length <= MAX_METADATA_LENGTH) return { text, truncated: false }
+  const headLength = Math.floor(MAX_METADATA_LENGTH * HEAD_SHARE)
+  const tailLength = MAX_METADATA_LENGTH - headLength
+  const head = cutStart(text, headLength)
+  const tail = cutTail(text, text.length - tailLength)
+  return {
+    text: head + gap(text.length - head.length - tail.length, head.length, tail.length) + tail,
+    truncated: true,
+  }
+}
+
+/**
+ * Sliding window over a stream. Under the budget it holds the exact text; past
+ * it, it keeps the head and a sliding tail while `seen` keeps the total the
+ * command produced. That total is what makes the flag and the omitted count
+ * honest: a truncation applied per chunk discards it, so `seen` becomes
+ * incalculable on a stream and `omitted` under-reports what was really lost.
+ */
+export function previewWindow(maxLength = MAX_METADATA_LENGTH, headShare = HEAD_SHARE) {
+  const headLength = Math.floor(maxLength * headShare)
+  const tailLength = maxLength - headLength
+  let exact = ""
+  let windowed = false
+  let head = ""
+  let tail = ""
+  let seen = 0
+
+  return {
+    push(chunk: string) {
+      seen += chunk.length
+      if (!windowed) {
+        const next = exact + chunk
+        if (next.length <= maxLength) {
+          exact = next
+          return
+        }
+        windowed = true
+        head = cutStart(next, headLength)
+        tail = cutTail(next, next.length - tailLength)
+        exact = ""
+        return
+      }
+      const combined = tail + chunk
+      tail = combined.length > tailLength ? cutTail(combined, combined.length - tailLength) : combined
+    },
+    get(): Preview {
+      if (!windowed) return { text: exact, truncated: false }
+      return {
+        text: head + gap(seen - head.length - tail.length, head.length, tail.length) + tail,
+        truncated: seen > maxLength,
+      }
+    },
+  }
 }
 
 function tail(text: string, maxLines: number, maxBytes: number) {
@@ -416,6 +531,14 @@ export const ShellTool = Tool.define(
           }
         }
 
+        const statement = node.parent?.type === "redirected_statement" ? node.parent : node
+        for (const arg of redirectTargets(statement)) {
+          const resolved = yield* argPath(arg, cwd, ps, shell)
+          if (!resolved || containsPath(resolved, instance)) continue
+          const dir = (yield* fs.isDir(resolved)) ? resolved : path.dirname(resolved)
+          scan.dirs.add(dir)
+        }
+
         if (tokens.length && (!cmd || !CWD.has(cmd))) {
           scan.patterns.add(source(node))
           scan.always.add(BashArity.prefix(tokens).join(" ") + " *")
@@ -451,7 +574,7 @@ export const ShellTool = Tool.define(
       const limits = yield* trunc.limits()
       const keep = limits.maxBytes * 2
       let full = ""
-      let last = ""
+      const window = previewWindow()
       const list: Chunk[] = []
       let used = 0
       let file = ""
@@ -495,7 +618,19 @@ export const ShellTool = Tool.define(
       const code: number | null = yield* Effect.scoped(
         Effect.gen(function* () {
           yield* Effect.addFinalizer(closeSink)
-          const handle = yield* retryTransientLaunch(spawner.spawn(cmd(input.shell, input.command, input.cwd, input.env)))
+          // The spawner already owns the launch-retry budget
+          // (`core/cross-spawn-spawner.ts`), so wrapping the spawn again only
+          // multiplied the attempts for the same final refusal. What is added
+          // here is the message: an exhausted budget is an actionable state, and
+          // the caller needs the executable plus the one lever that matches the
+          // denial — not a bare errno.
+          const handle = yield* spawner.spawn(cmd(input.shell, input.command, input.cwd, input.env)).pipe(
+            Effect.catch((error) =>
+              Effect.fail(
+                isTransientLaunchFailure(error) ? launchRefused(input.shell, LAUNCH_RETRY_ATTEMPTS, error) : error,
+              ),
+            ),
+          )
 
           const streamFiber = yield* Effect.forkScoped(
             Stream.runForEach(Stream.decodeText(handle.all), (chunk) => {
@@ -509,7 +644,7 @@ export const ShellTool = Tool.define(
                 cut = true
               }
 
-              last = preview(last + chunk)
+              window.push(chunk)
 
               if (file) {
                 sink?.write(chunk)
@@ -528,7 +663,7 @@ export const ShellTool = Tool.define(
                     Effect.andThen(
                       ctx.metadata({
                         metadata: {
-                          output: last,
+                          output: window.get().text,
                           description: input.description,
                         },
                       }),
@@ -539,7 +674,7 @@ export const ShellTool = Tool.define(
 
               return ctx.metadata({
                 metadata: {
-                  output: last,
+                  output: window.get().text,
                   description: input.description,
                 },
               })
@@ -584,6 +719,8 @@ export const ShellTool = Tool.define(
         }),
       ).pipe(Effect.orDie)
 
+      const last = window.get()
+      const streamed = last.text.length > 0
       const meta: string[] = []
       if (expired) {
         meta.push(
@@ -611,10 +748,11 @@ export const ShellTool = Tool.define(
       return {
         title: input.description,
         metadata: {
-          output: last || preview(output),
+          output: streamed ? last.text : preview(output).text,
           exit: code,
           description: input.description,
           truncated: cut,
+          previewTruncated: streamed ? last.truncated : preview(output).truncated,
           ...(cut && file ? { outputPath: file } : {}),
         },
         output,
