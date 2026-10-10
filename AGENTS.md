@@ -1,0 +1,5 @@
+# AGENTS.md — opencode-fork (workspace)
+
+- Plugins de projet : `.opencode/plugin/*` n'est **pas auto-découvert** (ignoré par design : « ignoring auto-discovered project plugins », `packages/opencode/src/config/config.ts`) ⇒ activer uniquement par entrée explicite dans la config globale `~/.config/opencodev2/opencode.jsonc` : `["file:///C:/jeanluc/opencode-fork/.opencode/plugin/<nom>.ts", { "enabled": true }]`. Désactiver : `"enabled": false` ou retrait de l'entrée. Redémarrer le serveur après modification (pas de hot-reload de la config).
+- Composant `schedule` (réveil planifié de l'agent : once / interval / cron / event) : plugin `.opencode/plugin/schedule.ts` + `schedule-lib.ts`, outil agent `schedule`, spec `specs/schedule-plugin.md`, tests `.opencode/tests/schedule*.test.ts`, store `~/.local/share/opencodev2/schedule`. Options : `enabled`, `storeDir`, `tickSeconds`, `maxSchedules`, `defaultAgent`, `allowEvents`.
+- Tests sous `.opencode` : lancer **depuis `.opencode`** (`cd .opencode && bun test --timeout 30000 tests/<f>.test.ts`) — depuis la racine, `bunfig.toml` renvoie `do-not-run-tests-from-root`.
