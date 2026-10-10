@@ -174,7 +174,7 @@ l'agent, elles, émettent toujours.
 
 Le composant est un plugin : il est chargé au démarrage du serveur depuis l'entrée de config
 (§3), **aucun rebuild du harnais n'est nécessaire** (vérifié : le binaire installé
-`opencodev2.exe` en 2.3.69 charge le plugin et expose l'outil `schedule`). Prendre une
+`opencodev2.exe` en 2.3.70 (2026-10-10) charge le plugin et expose l'outil `schedule`). Prendre une
 modification en compte = redémarrer le serveur.
 
 Diagnostic : lancer le serveur avec `OPENCODE_SCHEDULE_DEBUG=1` fait tracer sur stderr chaque
