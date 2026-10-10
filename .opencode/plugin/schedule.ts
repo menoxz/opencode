@@ -146,6 +146,8 @@ async function fireOne(state: State, sched: Schedule, source: Source): Promise<v
     state.store = fresh
   } catch (error) {
     console.error("[schedule] claim failed for", sched.id, errorText(error))
+    // Also stop the sweep: a broken claim must not be paired with a wake.
+    if (!claimed) return
   }
   if (!claimed) return
 
@@ -166,6 +168,8 @@ async function fireOne(state: State, sched: Schedule, source: Source): Promise<v
     status = "error"
     detail = errorText(error)
     console.error("[schedule] wake failed for", sched.id, detail)
+    // Only failures reach the host console: informational lines are behind DEBUG,
+    // because anything printed here shows up in the user's TUI (2026-10-10).
   }
 
   try {
@@ -244,7 +248,7 @@ async function tick(state: State): Promise<void> {
       const decision = await acquireLock(state.options.storeDir, lockInfo(), now, alive, staleMsFor(state.options))
       if (decision === "owner") {
         state.owner = true
-        console.error("[schedule] wake-loop owner acquired by pid " + process.pid)
+        dbg("wake-loop owner acquired by pid " + process.pid)
       }
     }
     const fresh = await loadStore(state.options.storeDir)
@@ -536,7 +540,7 @@ export default async function schedulePlugin(
   // The harness may instantiate the plugin more than once per process (once per served
   // instance). Reuse a live state for the same store instead of churning timers and locks.
   if (previous && !previous.disposed && previous.options.storeDir === opts.storeDir) {
-    console.error("[schedule] reused existing state (same store)")
+    dbg("reused existing state (same store)")
     return {
       event: async ({ event }) => {
         await handleEvent(previous, event as { type?: string; properties?: any })
