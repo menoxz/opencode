@@ -5,6 +5,11 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v2.3.74] - 2026-10-10
+
+### Fixed
+- **L'audit JEV d'une compaction ne tronque plus le résumé (faux positifs `missing=`).** `session/compaction.ts` construisait l'état soumis à Jev par `clampState([jevDigest, "SUMMARY:\n" + summary])`, avec un plafond unique de 8 000 caractères. Sur une session longue le digest seul atteint ce plafond (mesuré : digest 13 363 caractères tronqué à 8 000), donc le résumé était entièrement coupé de l'état et Jev réfutait les 12 ancres alors qu'il ne les voyait pas — `anchors=12 missing=[c1..c12]` dans le journal. Mesure en base après compaction réelle : le résumé conservait en fait 18 des 20 ancres et les 12 sections du gabarit. Nouveau helper `JevCompaction.auditState(summary, digest)` : le résumé — l'objet sous test — passe en tête et n'est jamais tronqué, seul le digest (contexte) est plafonné à son propre budget. 4 tests ajoutés dans `test/jev/compaction.test.ts`.
+
 ## [v2.3.73] - 2026-10-10
 
 ### Added
