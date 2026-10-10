@@ -25,6 +25,7 @@ export const DEFAULTS = {
   staleLockMs: 7 * 24 * 3_600_000,
   cronSearchDays: 366 * 5,
   lockHeartbeatMs: 30_000,
+  eventCooldownMs: 5_000,
 } as const
 
 const DAY_MS = 86_400_000
@@ -303,7 +304,9 @@ export function matchEvent(sched: Schedule, event: { type?: string; properties?:
   if (event?.type !== sched.trigger.event) return false
   if (sched.maxRuns !== undefined && sched.runs >= sched.maxRuns) return false
   if (sched.expiresAt !== undefined && now > sched.expiresAt) return false
-  const cooldown = sched.trigger.cooldownMs ?? 0
+  // Default anti-rebond: a wake that itself produces events must not re-trigger the same
+  // schedule in a tight loop. `cooldown` on the trigger overrides it.
+  const cooldown = sched.trigger.cooldownMs ?? DEFAULTS.eventCooldownMs
   if (cooldown > 0 && sched.lastEventAt !== undefined && now - sched.lastEventAt < cooldown) return false
   if (sched.trigger.where && !subsetMatch(sched.trigger.where, event.properties ?? {})) return false
   return true
@@ -401,9 +404,15 @@ export async function readLock(dir: string): Promise<LockInfo | null> {
   }
 }
 
-export async function writeLock(dir: string, info: LockInfo): Promise<void> {
-  await mkdir(dir, { recursive: true })
-  await writeFile(path.join(dir, LOCK_FILE), JSON.stringify(info), "utf8")
+// Never throws: a failed lock write is a lost lock, not a crash.
+export async function writeLock(dir: string, info: LockInfo): Promise<boolean> {
+  try {
+    await mkdir(dir, { recursive: true })
+    await writeFile(path.join(dir, LOCK_FILE), JSON.stringify(info), "utf8")
+    return true
+  } catch {
+    return false
+  }
 }
 
 export async function clearLock(dir: string): Promise<void> {
@@ -427,7 +436,9 @@ export async function acquireLock(
       await writeFile(file, JSON.stringify(info), { flag: "wx" })
       return true
     } catch (error: any) {
-      if (error?.code === "EEXIST") return false
+      // EEXIST = someone holds it. EPERM/EACCES/EBUSY = Windows sharing violation while
+      // another process writes the lock: treat as "not creatable now", never as a crash.
+      if (["EEXIST", "EPERM", "EACCES", "EBUSY"].includes(error?.code)) return false
       throw error
     }
   }
@@ -449,8 +460,7 @@ export async function acquireLock(
 export async function refreshLock(dir: string, info: LockInfo): Promise<boolean> {
   const lock = await readLock(dir)
   if (!lock || lock.pid !== info.pid) return false
-  await writeLock(dir, info)
-  return true
+  return await writeLock(dir, info)
 }
 
 // Drop the lock only if we still hold it.
@@ -500,18 +510,20 @@ export function buildWakeBody(sched: Schedule): Record<string, unknown> {
   return body
 }
 
-export async function wake(client: WakeClient, sched: Schedule): Promise<{ sessionID: string }> {
+export async function wake(client: WakeClient, sched: Schedule): Promise<{ sessionID: string; created: boolean }> {
   let sessionID = sched.freshSession ? undefined : sched.sessionID
+  let created = false
   if (!sessionID) {
-    const created = await client.session.create({ body: { title: `schedule: ${sched.name || sched.id}` } })
-    if (isErrorResult(created)) throw new Error(errorText(created.error))
-    const id = created?.data?.id ?? created?.id
+    const result = await client.session.create({ body: { title: `schedule: ${sched.name || sched.id}` } })
+    if (isErrorResult(result)) throw new Error(errorText(result.error))
+    const id = result?.data?.id ?? result?.id
     if (typeof id !== "string" || !id) throw new Error("session.create returned no id")
     sessionID = id
+    created = true
   }
   const sent = await client.session.prompt({ path: { id: sessionID }, body: buildWakeBody(sched) })
   if (isErrorResult(sent)) throw new Error(errorText(sent.error))
-  return { sessionID }
+  return { sessionID, created }
 }
 
 // ---- Creation from tool input ----

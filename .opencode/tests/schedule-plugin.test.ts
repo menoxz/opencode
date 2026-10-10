@@ -3,7 +3,7 @@
 // Run from .opencode:
 //   cd .opencode && bun test tests/schedule.test.ts tests/schedule-plugin.test.ts
 import { describe, expect, test } from "bun:test"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdtemp, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import schedulePlugin from "../plugin/schedule.ts"
@@ -59,6 +59,32 @@ async function tmp(): Promise<string> {
 
 function firstId(output: string): string {
   return output.match(/sch_[a-z0-9]+/)?.[0] ?? ""
+}
+
+async function waitFor(predicate: () => boolean, timeoutMs = 2000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (predicate()) return true
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+  return predicate()
+}
+
+async function waitForRun(file: string, id: string, timeoutMs: number): Promise<Record<string, unknown> | null> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    try {
+      const text = await readFile(file, "utf8")
+      for (const line of text.split("\n").filter(Boolean)) {
+        try {
+          const parsed = JSON.parse(line)
+          if (parsed?.id === id) return parsed
+        } catch {}
+      }
+    } catch {}
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  return null
 }
 
 describe("plugin schedule (intégration)", () => {
@@ -133,6 +159,53 @@ describe("plugin schedule (intégration)", () => {
       expect(run.output).toContain("boom")
       const history = await hooks.tool.schedule.execute({ action: "history", id }, c)
       expect(history.output).toContain("error")
+      await schedulePlugin(pluginInput(client, dir), { enabled: false, storeDir: dir })
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  test("event trigger on session.created ignores the plugin's own sessions", async () => {
+    const dir = await tmp()
+    try {
+      const { client, calls } = stubClient()
+      const hooks: any = await schedulePlugin(pluginInput(client, dir), { storeDir: dir, tickSeconds: 3600 })
+      const c = ctx("ses_ctx", dir)
+      const created = await hooks.tool.schedule.execute(
+        { action: "create", prompt: "react to new sessions", on: "session.created", freshSession: true },
+        c,
+      )
+      expect(created.output).toContain("sch_")
+      // An external session must wake the schedule.
+      await hooks.event({ event: { type: "session.created", properties: { sessionID: "ses_ext" } } })
+      expect(await waitFor(() => calls.some((x) => x.kind === "prompt"))).toBe(true)
+      const promptsAfterExternal = calls.filter((x) => x.kind === "prompt").length
+      // The session the plugin just created for that wake must NOT re-trigger it.
+      await hooks.event({ event: { type: "session.created", properties: { sessionID: "ses_new" } } })
+      await new Promise((resolve) => setTimeout(resolve, 150))
+      expect(calls.filter((x) => x.kind === "prompt").length).toBe(promptsAfterExternal)
+      await schedulePlugin(pluginInput(client, dir), { enabled: false, storeDir: dir })
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  test("a tick-driven wake is journaled and consumes the run", async () => {
+    const dir = await tmp()
+    try {
+      const { client, calls } = stubClient()
+      const hooks: any = await schedulePlugin(pluginInput(client, dir), { storeDir: dir, tickSeconds: 1 })
+      const c = ctx("ses_ctx", dir)
+      const created = await hooks.tool.schedule.execute(
+        { action: "create", prompt: "tick me", after: "+1s", sessionID: "ses_ctx" },
+        c,
+      )
+      const id = firstId(created.output)
+      expect(id.length).toBeGreaterThan(4)
+      const entry = await waitForRun(path.join(dir, "runs.jsonl"), id, 6000)
+      expect(entry).not.toBeNull()
+      expect((entry as any).status).toBe("ok")
+      expect(calls.some((x) => x.kind === "prompt")).toBe(true)
       await schedulePlugin(pluginInput(client, dir), { enabled: false, storeDir: dir })
     } finally {
       await rm(dir, { recursive: true, force: true })

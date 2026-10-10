@@ -31,6 +31,7 @@ import {
   describeSchedule,
   dueSchedules,
   errorText,
+  eventSessionID,
   findSchedule,
   formatList,
   formatSchedule,
@@ -67,6 +68,7 @@ type State = {
   pumping: boolean
   disposed: boolean
   refreshedAt: number
+  selfSessions: Set<string>
   dispose(reason: string): void
 }
 
@@ -106,32 +108,61 @@ function enqueue(state: State, entry: QueueEntry): void {
 
 async function fireOne(state: State, sched: Schedule, source: Source): Promise<void> {
   const now = Date.now()
+  const target: Schedule = { ...sched }
+  if (!target.agent && state.options.defaultAgent) target.agent = state.options.defaultAgent
+
+  // Claim the due instant BEFORE waking: reload the shared store, consume the run and
+  // recompute nextAt, then persist. A second process (or a re-instantiated plugin) that
+  // reads the store after this sees the run consumed and will not fire again. A crash
+  // mid-wake still consumes the run, matching the documented at-least-once policy.
+  let claimed = false
+  try {
+    const fresh = await loadStore(state.options.storeDir)
+    const entry = fresh.schedules.find((s) => s.id === sched.id)
+    if (entry) {
+      entry.runs += 1
+      entry.lastRunAt = now
+      entry.lastStatus = "running"
+      entry.lastError = undefined
+      if (source === "event") entry.lastEventAt = now
+      entry.updatedAt = now
+      entry.nextAt = computeNextAt(entry, now)
+      await saveStore(state.options.storeDir, fresh)
+      claimed = true
+    }
+    state.store = fresh
+  } catch (error) {
+    console.error("[schedule] claim failed for", sched.id, errorText(error))
+  }
+  if (!claimed) return
+
   let sessionID: string | undefined
   let status: "ok" | "error" = "ok"
   let detail: string | undefined
   try {
-    const target: Schedule = { ...sched }
-    if (!target.agent && state.options.defaultAgent) target.agent = state.options.defaultAgent
     const result = await wake(state.client, target)
     sessionID = result.sessionID
+    if (result.created) {
+      state.selfSessions.add(result.sessionID)
+      if (state.selfSessions.size > 200) {
+        const oldest = state.selfSessions.values().next().value
+        if (oldest) state.selfSessions.delete(oldest)
+      }
+    }
   } catch (error) {
     status = "error"
     detail = errorText(error)
     console.error("[schedule] wake failed for", sched.id, detail)
   }
-  // Reload before mutating: another process may have edited the store meanwhile.
+
   try {
     const fresh = await loadStore(state.options.storeDir)
-    const updated = fresh.schedules.find((s) => s.id === sched.id)
-    if (updated && source !== "manual") {
-      updated.runs += 1
-      updated.lastRunAt = now
-      updated.lastStatus = status
-      updated.lastError = detail
-      if (status === "ok" && sessionID && !updated.freshSession) updated.sessionID = sessionID
-      if (source === "event") updated.lastEventAt = now
-      updated.updatedAt = now
-      updated.nextAt = computeNextAt(updated, now)
+    const entry = fresh.schedules.find((s) => s.id === sched.id)
+    if (entry) {
+      entry.lastStatus = status
+      entry.lastError = detail
+      if (status === "ok" && sessionID && !entry.freshSession) entry.sessionID = sessionID
+      entry.updatedAt = Date.now()
       await saveStore(state.options.storeDir, fresh)
     }
     state.store = fresh
@@ -225,19 +256,28 @@ function scheduleNext(state: State): void {
 async function handleEvent(state: State, event: { type?: string; properties?: any }): Promise<void> {
   if (state.disposed || !state.options.allowEvents) return
   const now = Date.now()
-  // Throttle reloads: bus events can be frequent, the shared store changes rarely.
-  if (now - state.refreshedAt > 5_000) {
-    try {
-      state.store = await loadStore(state.options.storeDir)
-      state.refreshedAt = now
-    } catch (error) {
-      console.error("[schedule] store reload failed:", errorText(error))
-      return
-    }
+  // Read the current store before matching: an event can arrive immediately after the
+  // store changed on disk (tool action, another process, external edit), and the tick's
+  // periodic refresh would otherwise leave a just-created event schedule unseen.
+  try {
+    state.store = await loadStore(state.options.storeDir)
+    state.refreshedAt = now
+  } catch (error) {
+    console.error("[schedule] store reload failed on event:", errorText(error))
+    return
   }
   let found = false
   for (const s of state.store.schedules) {
     if (s.trigger.type !== "event") continue
+    // Feedback-loop guard: a session the plugin just created for a wake must not count as
+    // an external `session.created`, otherwise the schedule would wake itself forever.
+    if (s.trigger.event === "session.created") {
+      const sid = eventSessionID(event)
+      if (sid && state.selfSessions.has(sid)) {
+        state.selfSessions.delete(sid)
+        continue
+      }
+    }
     if (!matchEvent(s, event, now)) continue
     enqueue(state, { id: s.id, source: "event" })
     found = true
@@ -446,6 +486,17 @@ export default async function schedulePlugin(
   const opts = normalizeOptions(options)
   const g = globalThis as Record<string, unknown>
   const previous = g[GLOBAL_KEY] as State | undefined
+  // The harness may instantiate the plugin more than once per process (once per served
+  // instance). Reuse a live state for the same store instead of churning timers and locks.
+  if (previous && !previous.disposed && previous.options.storeDir === opts.storeDir) {
+    console.error("[schedule] reused existing state (same store)")
+    return {
+      event: async ({ event }) => {
+        await handleEvent(previous, event as { type?: string; properties?: any })
+      },
+      tool: { schedule: buildTool(previous) },
+    }
+  }
   previous?.dispose("reloaded")
   if (!opts.enabled) {
     console.error("[schedule] disabled (options.enabled=false): no timer, no tool")
@@ -464,6 +515,7 @@ export default async function schedulePlugin(
     pumping: false,
     disposed: false,
     refreshedAt: 0,
+    selfSessions: new Set<string>(),
     dispose: () => {},
   }
   state.dispose = (reason: string) => {
