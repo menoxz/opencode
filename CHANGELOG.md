@@ -5,6 +5,11 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v2.3.72] - 2026-10-10
+
+### Fixed
+- **L'outil `compact` n'était enregistré dans aucun profil.** `tool/registry.ts` : `CompactTool` était instancié mais absent du tableau `builtin`, donc l'outil n'entrait jamais dans le catalogue résolu (mesuré sur la session réelle : `catalogTools=123 selectedTools=37` sans `compact`, alors que la permission `compact: allow` était bien résolue). L'agent ne pouvait donc pas piloter sa compaction — seul le seuil automatique agissait. Le déclarer dans `always_tools` ou l'autoriser par permission restait sans effet : `always_tools` n'élit qu'un outil déjà présent au catalogue.
+
 ## [v2.3.71] - 2026-10-10
 
 ### Changed

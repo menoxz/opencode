@@ -421,6 +421,7 @@ export const layer: Layer.Layer<
               complete_objective: tool.complete_objective,
               apply_contract_from_prompt: tool.apply_contract_from_prompt,
             }) as Tool.Def[]),
+            tool.compact,
             tool.patch,
             ...(flags.experimentalLspTool ? [tool.lsp] : []),
             ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
