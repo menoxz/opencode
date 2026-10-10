@@ -1011,7 +1011,7 @@ export const layer = Layer.effect(
             ? yield* JevClient.decide(
                 http,
                 {
-                  state: JevCompaction.clampState([jevDigest, `SUMMARY:\n${summary}`]),
+                  state: JevCompaction.auditState(summary, jevDigest),
                   questions: JevCompaction.auditQuestions(jevCandidates),
                 },
                 cfg.jev,

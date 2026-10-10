@@ -45,6 +45,29 @@ describe("JevCompaction.clampState", () => {
   })
 })
 
+describe("JevCompaction.auditState", () => {
+  test("keeps the summary ahead of the digest", () => {
+    const state = JevCompaction.auditState("SUM", "DIGEST")
+    expect(state.startsWith("SUMMARY:\nSUM")).toBe(true)
+    expect(state).toContain("DIGEST")
+  })
+
+  test("never truncates the summary, even past the digest budget", () => {
+    const summary = "S".repeat(JevCompaction.MAX_STATE_CHARS + 500)
+    const state = JevCompaction.auditState(summary, "D".repeat(JevCompaction.MAX_STATE_CHARS))
+    expect(state).toContain(summary)
+  })
+
+  test("clamps the digest to its own budget", () => {
+    const state = JevCompaction.auditState("SUM", "D".repeat(JevCompaction.MAX_STATE_CHARS * 2))
+    expect(state.length).toBe("SUMMARY:\nSUM\n\n".length + JevCompaction.MAX_STATE_CHARS)
+  })
+
+  test("omits the separator when there is no digest", () => {
+    expect(JevCompaction.auditState("SUM", "")).toBe("SUMMARY:\nSUM")
+  })
+})
+
 describe("JevCompaction question batches", () => {
   const candidates = JevCompaction.candidatesFromText(digest, 2)
 

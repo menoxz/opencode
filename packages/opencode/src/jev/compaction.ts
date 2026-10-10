@@ -54,6 +54,18 @@ export function clampState(parts: readonly string[], max = MAX_STATE_CHARS) {
   return parts.join("\n\n").slice(0, max)
 }
 
+/**
+ * Audit state: the summary is the object under test, so it is never truncated —
+ * a truncated summary makes Jev report load-bearing anchors as missing when they
+ * are merely past the cut. The digest is background only and is clamped to its
+ * own budget, so the state stays bounded by the summary length plus that budget.
+ */
+export function auditState(summary: string, digest: string, digestBudget = MAX_STATE_CHARS) {
+  const head = `SUMMARY:\n${summary}`
+  const tail = digestBudget > 0 ? digest.slice(0, digestBudget) : ""
+  return tail ? `${head}\n\n${tail}` : head
+}
+
 function noulOf(answer: JevSchema.Answer | undefined) {
   return answer?.type === "noul" ? answer.noul : undefined
 }
