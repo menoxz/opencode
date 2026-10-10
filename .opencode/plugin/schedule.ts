@@ -74,6 +74,12 @@ type State = {
 
 const GLOBAL_KEY = "__opencodeSchedulePluginState"
 
+// Set OPENCODE_SCHEDULE_DEBUG=1 to trace event delivery and firing decisions on stderr.
+const DEBUG = process.env.OPENCODE_SCHEDULE_DEBUG === "1"
+function dbg(...args: unknown[]): void {
+  if (DEBUG) console.error("[schedule:dbg]", ...args)
+}
+
 // ---- Small runtime helpers ----
 
 function alive(pid: number): boolean {
@@ -202,8 +208,14 @@ async function pump(state: State): Promise<void> {
       }
       state.store = fresh
       const sched = fresh.schedules.find((s) => s.id === entry.id)
-      if (!sched) continue
-      if (!sched.enabled && entry.source !== "manual") continue
+      if (!sched) {
+        dbg("pump skip: schedule gone", entry.id)
+        continue
+      }
+      if (!sched.enabled && entry.source !== "manual") {
+        dbg("pump skip: disabled", entry.id)
+        continue
+      }
       const now = Date.now()
       if (entry.source === "event") {
         const maxReached = sched.maxRuns !== undefined && sched.runs >= sched.maxRuns
@@ -276,7 +288,15 @@ function scheduleNext(state: State): void {
 // observed the event is the only one that can honor it.
 
 async function handleEvent(state: State, event: { type?: string; properties?: any }): Promise<void> {
-  if (state.disposed || !state.options.allowEvents) return
+  if (state.disposed) {
+    dbg("event dropped: state disposed", event?.type)
+    return
+  }
+  if (!state.options.allowEvents) {
+    dbg("event dropped: allowEvents=false", event?.type)
+    return
+  }
+  dbg("bus event", event?.type)
   const now = Date.now()
   // Read the current store before matching: an event can arrive immediately after the
   // store changed on disk (tool action, another process, external edit), and the tick's
@@ -284,6 +304,7 @@ async function handleEvent(state: State, event: { type?: string; properties?: an
   try {
     state.store = await loadStore(state.options.storeDir)
     state.refreshedAt = now
+    dbg("event store reloaded:", state.store.schedules.length, "schedules")
   } catch (error) {
     console.error("[schedule] store reload failed on event:", errorText(error))
     return
@@ -300,7 +321,11 @@ async function handleEvent(state: State, event: { type?: string; properties?: an
         continue
       }
     }
-    if (!matchEvent(s, event, now)) continue
+    if (!matchEvent(s, event, now)) {
+      dbg("no match for", s.id, "trigger=event:", String(s.trigger.event))
+      continue
+    }
+    dbg("matched", s.id, "on", event?.type)
     enqueue(state, { id: s.id, source: "event" })
     found = true
   }
