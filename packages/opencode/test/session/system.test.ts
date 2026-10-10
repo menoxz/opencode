@@ -122,11 +122,15 @@ describe("session.system", () => {
   it.effect("core policy requires targeted inspection, bounded output, and deliberate delegation", () =>
     Effect.sync(() => {
       const core = provider({} as never).join("\n")
-      expect(core).toContain("locate likely files, symbols, keywords, or exact ranges before reading")
-      expect(core).toContain("Keep tool output bounded")
+      // Wording re-baselined 2026-10-10: 837b653d0 restructured and reworded this block
+      // (removed <tool_policy>/<runtime_awareness>/<memory_and_skills>/<user_interaction> and
+      // rewrote the tools and delegation lines) without updating these strings, so the guard
+      // had been dead since then. Assertions pin the current wording, same intent.
+      expect(core).toContain("Locate before reading: search for the relevant file, symbol or passage")
+      expect(core).toContain("Keep outputs bounded")
       expect(core).toContain("Delegate when work is independent")
-      expect(core).toContain("Do not delegate trivial or tightly sequential work")
-      expect(core).toContain("verify critical child claims")
+      expect(core).toContain("Don't delegate trivial or tightly sequential work")
+      expect(core).toContain("Verify any critical claim a sub-agent makes")
     }),
   )
 })
