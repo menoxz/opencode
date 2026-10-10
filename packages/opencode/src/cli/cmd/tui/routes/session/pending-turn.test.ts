@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { queuedUserStatus, visibleFromID, type QueuedStatus } from "./pending-turn"
+import { queuedUserStatus, renderInTranscript, visibleFromID, type QueuedStatus } from "./pending-turn"
 
 // Message ids sort lexicographically in real life (MessageID.ascending); these
 // fixtures preserve that so the `assistant.id > steer.id` comparison is
@@ -197,5 +197,22 @@ describe("TUI user prompt delivery status", () => {
   test("assistant messages are never badged", () => {
     const a = assistant("02", "01", { finish: "tool-calls" })
     expect(status(a, [], [a])).toBeUndefined()
+  })
+
+  test("a queued prompt is withheld; a served or steer prompt renders", () => {
+    const q = user("03")
+    const running = [user("01"), assistant("02", "01", { finish: "tool-calls" }), q]
+    // Waiting behind the served turn: withheld from the transcript.
+    expect(renderInTranscript(status(q, q.parts, running))).toBe(false)
+    // Its own turn served: it renders like any other prompt.
+    const served = [...running, assistant("04", "03", { finish: "stop", time: { created: 1, completed: 2 } })]
+    expect(renderInTranscript(status(q, q.parts, served))).toBe(true)
+    // A steer rides the running run, so it shows immediately.
+    const s = user("03", { steer: true })
+    expect(renderInTranscript(status(s, s.parts, [user("01"), assistant("02", "01", { finish: "tool-calls" }), s]))).toBe(
+      true,
+    )
+    // An idle session has no queue to hide behind.
+    expect(renderInTranscript(status(q, q.parts, [user("01"), q], false))).toBe(true)
   })
 })

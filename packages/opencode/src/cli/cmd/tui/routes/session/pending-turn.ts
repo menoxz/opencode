@@ -152,3 +152,10 @@ export function queuedUserStatus(input: {
   if (steer) return steerServed(input.messages, input.message.id) ? undefined : "steer"
   return turnClosed(input.messages, input.message.id) ? undefined : "queued"
 }
+
+// Whether a user prompt belongs in the transcript at all. A prompt the FIFO has
+// not served yet is still waiting: rendering it would put an unanswered turn on
+// screen, so it is withheld until its own turn is served — it then renders like
+// any other prompt, with no badge. A steer is already being served by the
+// running run, so it shows immediately.
+export const renderInTranscript = (status: QueuedStatus): boolean => status !== "queued"

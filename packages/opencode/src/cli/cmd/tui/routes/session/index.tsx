@@ -40,7 +40,7 @@ import type {
 } from "@opencode-ai/sdk/v2"
 import { useLocal } from "@tui/context/local"
 import { Locale } from "@/util/locale"
-import { queuedUserStatus, visibleFromID } from "./pending-turn"
+import { queuedUserStatus, renderInTranscript, visibleFromID } from "./pending-turn"
 import type { Tool } from "@/tool/tool"
 import type { ReadTool } from "@/tool/read"
 import type { WriteTool } from "@/tool/write"
@@ -1714,28 +1714,36 @@ export function Session() {
                         <></>
                       </Match>
                       <Match when={message.role === "user"}>
-                        <UserMessage
-                          index={index()}
-                          onMouseUp={() => {
-                            if (renderer.getSelection()?.getSelectedText()) return
-                            dialog.replace(() => (
-                              <DialogMessage
-                                messageID={message.id}
-                                sessionID={route.sessionID}
-                                setPrompt={(promptInfo) => prompt?.set(promptInfo)}
-                              />
-                            ))
-                          }}
-                          message={message as UserMessage}
-                          parts={sync.data.part[message.id] ?? []}
-                          status={queuedUserStatus({
+                        {(function () {
+                          const status = queuedUserStatus({
                             message,
                             parts: sync.data.part[message.id] ?? [],
                             messages: messages(),
                             busy: busy(),
                             visibleFrom: visibleFrom(),
-                          })}
-                        />
+                          })
+                          // A prompt the FIFO has not served yet is withheld: an
+                          // unanswered turn must not be shown in the transcript.
+                          if (!renderInTranscript(status)) return <></>
+                          return (
+                            <UserMessage
+                              index={index()}
+                              onMouseUp={() => {
+                                if (renderer.getSelection()?.getSelectedText()) return
+                                dialog.replace(() => (
+                                  <DialogMessage
+                                    messageID={message.id}
+                                    sessionID={route.sessionID}
+                                    setPrompt={(promptInfo) => prompt?.set(promptInfo)}
+                                  />
+                                ))
+                              }}
+                              message={message as UserMessage}
+                              parts={sync.data.part[message.id] ?? []}
+                              status={status}
+                            />
+                          )
+                        })()}
                       </Match>
                       <Match when={message.role === "assistant"}>
                         <AssistantMessage
