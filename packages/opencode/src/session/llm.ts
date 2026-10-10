@@ -510,6 +510,16 @@ const live: Layer.Layer<
             // event arrives within streamTimeoutMs — provider sent a head chunk
             // then stalled — FAIL the stream so the session turn stops instead of
             // hanging. Stream.fail (not empty) is required so runDrain fails.
+            //
+            // Opt-in, and it has to stay that way: tools run *inside* the stream
+            // consumption, so a turn that asks the user a question, waits on a
+            // permission prompt, or runs a slow tool emits no stream event for as
+            // long as that takes. Enabling this by default made a 120s gap while the
+            // user was answering a question fail a healthy turn — measured in this
+            // install's log: `question ... asking`, then permissions and reads, then
+            // 120003ms later `stream produced no event within 120000ms`. The bound
+            // cannot tell "waiting for the user" from "provider stalled", so it only
+            // applies when an operator asks for it explicitly.
             const streamTimeoutMs = flags.streamTimeoutMs
             return streamTimeoutMs === undefined
               ? baseStream
