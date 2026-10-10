@@ -15,6 +15,18 @@ export const COMMAND_CODE_BASE_URL = "https://api.commandcode.ai/provider"
 export const COMMAND_CODE_MODEL = "typesafe/jev"
 
 /**
+ * OpenCode Zen re-exports Jev 1.13 (free tier) behind the same System One API.
+ *
+ * `base_url` is the Zen root, not the full endpoint: `resolveEndpoint` appends
+ * `/v1/systemone`, which is the documented System One URL. Jev is absent from
+ * models.dev, so no Zen chat catalogue lists it and `opencode models` never shows
+ * it — yet the wire API serves it, and the free tier answered a real call
+ * (measured 2026-10-10: `{"model":"jev-1.13-free","answers":{"is_urgent":0.95}}`).
+ */
+export const OPENCODE_ZEN_BASE_URL = "https://opencode.ai/zen"
+export const OPENCODE_ZEN_MODEL = "jev-1.13-free"
+
+/**
  * The provider presets this build may talk to.
  *
  * Each one pins a host, the model that host serves and — through
@@ -31,7 +43,7 @@ export const COMMAND_CODE_MODEL = "typesafe/jev"
  * the Command Code Provider API, and a direct TypeSafe key measured HTTP 401 on
  * both hosts, which turned a loud failure into a silent fallback.
  */
-export const SELECTABLE_PROVIDERS = ["command-code", "openjev"] as const
+export const SELECTABLE_PROVIDERS = ["opencode-zen", "command-code", "openjev"] as const
 
 /** The provider used when configuration names none. */
 export const PROVIDER = "command-code" as const
@@ -43,6 +55,7 @@ export const PROVIDER = "command-code" as const
  * lock must be visible in the diff when it changes.
  */
 export const PROVIDER_ENV_KEYS: Record<Provider, string> = {
+  "opencode-zen": "OPENCODE_GO_API_KEY",
   "command-code": "COMMAND_CODE_API_KEY",
   openjev: "CODIV_API_KEY",
 }
@@ -94,6 +107,7 @@ export const PROVIDERS = {
   typesafe: { base_url: DEFAULT_BASE_URL, model: DEFAULT_MODEL },
   openjev: { base_url: OPENJEV_BASE_URL, model: OPENJEV_MODEL },
   "command-code": { base_url: COMMAND_CODE_BASE_URL, model: COMMAND_CODE_MODEL },
+  "opencode-zen": { base_url: OPENCODE_ZEN_BASE_URL, model: OPENCODE_ZEN_MODEL },
 } as const satisfies Record<string, { base_url: string; model: string }>
 
 /**

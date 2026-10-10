@@ -5,6 +5,11 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v2.3.73] - 2026-10-10
+
+### Added
+- **OpenCode Zen rejoint les hôtes Jev sélectionnables, avec le modèle gratuit `jev-1.13-free`.** `jev/client.ts` : troisième preset (`base_url` `https://opencode.ai/zen`, modèle `jev-1.13-free`, clé `OPENCODE_GO_API_KEY`), donc `jev.provider: "opencode-zen"` suffit à faire tourner les hooks Jev (skills, tools, guard, relevance, intake, review, route, plan, compaction, untrusted) sans abonnement tiers. Zen n'expose pas ce modèle dans son catalogue de chat — il est absent de models.dev, donc `opencode models` ne le liste jamais — mais l'API System One le sert : appel réel mesuré le 2026-10-10 (`{"model":"jev-1.13-free","answers":{"is_urgent":{"type":"noul","noul":0.95}},"usage":{"input_tokens":286,"output_tokens":23}}`, HTTP 200).
+
 ## [v2.3.72] - 2026-10-10
 
 ### Fixed
