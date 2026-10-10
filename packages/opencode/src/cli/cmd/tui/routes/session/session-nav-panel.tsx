@@ -10,6 +10,7 @@ import { usePromptRef } from "../../context/prompt"
 import { useTuiConfig } from "@tui/context/tui-config"
 import { OPENCODE_BASE_MODE, useBindings, useCommandShortcut } from "../../keymap"
 import { openSessionFolder } from "@tui/component/dialog-directory-select"
+import { folderKey } from "@tui/context/session-scope"
 import { DialogSessionRename } from "@tui/component/dialog-session-rename"
 import { SessionNavBar } from "./session-nav-bar"
 import {
@@ -142,7 +143,18 @@ export function SessionNavPanel() {
     if (target) renameSession(target)
   }
 
-  const navToggleDir = (key: string, collapsed: boolean) => setNavOverrides((current) => toggleCollapsed(current, key.slice("dir:".length), collapsed))
+  const navToggleDir = (key: string, collapsed: boolean) => {
+    const folder = key.slice("dir:".length)
+    setNavOverrides((current) => toggleCollapsed(current, folder, collapsed))
+    // Opening a folder is what reads it. Every folder listed is an instance the server has to
+    // bootstrap — config, file watcher, LSP, and now a warmed MCP — so reading the folders the user
+    // is not looking at made them all start at launch. They start when opened instead.
+    if (collapsed) return
+    const directory = [sync.path.directory, ...sync.session.extraDirectories()].find(
+      (candidate) => folderKey(candidate) === folder,
+    )
+    if (directory) void sync.session.loadDirectory(directory)
+  }
   const navToggleMore = (key: string) => setNavRevealed((current) => toggleRevealed(current, key))
 
   const showNavbar = () => {

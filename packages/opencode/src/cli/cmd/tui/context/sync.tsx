@@ -41,7 +41,6 @@ import {
   removeDirectory as removeWatchedDirectory,
   sessionAgeCutoff,
   setExtraDirectories,
-  watchedDirectories,
 } from "./session-scope"
 
 export const { use: useSync, provider: SyncProvider } = createSimpleContext({
@@ -161,38 +160,37 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
 
 
     /**
+     * Sessions for one watched folder. Inside the worktree the server matches the portable `path`,
+     * which also covers the sub-folders; a folder added from outside it can only be named by its
+     * absolute directory.
+     */
+    async function listDirectory(directory: string, cutoff: number) {
+      const relative = directory === currentDirectory() ? scopedPath() : undefined
+      const page = await sdk.client.session.list({
+        start: cutoff,
+        limit: SESSION_FETCH_LIMIT,
+        ...(relative ? { path: relative } : { directory }),
+      })
+      return (page.data ?? []).filter((session) => isRecentSession(session, cutoff))
+    }
+
+    /**
      * The listing the bar shows: the current folder, plus the folders the user added on top of it.
+     *
+     * Only the current folder is read here. Listing a folder is not free on the server: every folder
+     * named is an instance that bootstraps its own config, file watcher, LSP and snapshot, so reading
+     * six folders at launch started six of each for a list the user had not asked to widen yet —
+     * measured as six `bootstrapping` lines and two full sets of MCP connections before the first
+     * prompt was even typed. A folder the user added is read when they open it (`loadDirectory`).
+     *
      * Sessions older than the bound are dropped, and the result stays sorted by id because the store
      * binary-searches it.
      */
     async function listSessions() {
-      const cutoff = sessionAgeCutoff(Date.now())
-
       const current = currentDirectory()
-      const directories = watchedDirectories(current, storedExtraDirectories())
-      if (directories.length === 0) return []
-
-      const pages = await Promise.all(
-        directories.map((directory) => {
-          // Inside the worktree the server matches the portable `path`, which also covers the
-          // sub-folders; a folder added from outside it can only be named by its absolute directory.
-          const relative = directory === current ? scopedPath() : undefined
-          return sdk.client.session.list({
-            start: cutoff,
-            limit: SESSION_FETCH_LIMIT,
-            ...(relative ? { path: relative } : { directory }),
-          })
-        }),
-      )
-
-      const pages_flat = pages.flatMap((page) => page.data ?? [])
-      const seen = new Set<string>()
-      const merged = pages_flat.filter((session) => {
-        if (seen.has(session.id) || !isRecentSession(session, cutoff)) return false
-        seen.add(session.id)
-        return true
-      })
-      return merged.toSorted((a, b) => a.id.localeCompare(b.id))
+      if (!current) return []
+      const sessions = await listDirectory(current, sessionAgeCutoff(Date.now()))
+      return sessions.toSorted((a, b) => a.id.localeCompare(b.id))
     }
 
     event.subscribe((event, { workspace }) => {
@@ -579,7 +577,21 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         },
         async addDirectory(directory: string) {
           kv.set(SESSION_EXTRA_DIRECTORIES_KEY, addWatchedDirectory(storedExtraDirectories(), directory))
-          await result.session.refresh()
+          await result.session.loadDirectory(directory)
+        },
+        /**
+         * Reads one watched folder into the store.
+         *
+         * Called when the user opens a folder, so the folders they are not looking at cost nothing:
+         * the instance behind each one (config, watcher, LSP) only starts when its list is needed.
+         */
+        async loadDirectory(directory: string) {
+          const fetched = await listDirectory(directory, sessionAgeCutoff(Date.now()))
+          const loaded = new Set(fetched.map((session) => session.id))
+          const merged = [...store.session.filter((session) => !loaded.has(session.id)), ...fetched].toSorted(
+            (a, b) => a.id.localeCompare(b.id),
+          )
+          setStore("session", reconcile(merged))
         },
         async removeDirectory(directory: string) {
           kv.set(SESSION_EXTRA_DIRECTORIES_KEY, removeWatchedDirectory(storedExtraDirectories(), directory))

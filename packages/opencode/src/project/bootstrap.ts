@@ -13,6 +13,7 @@ import { Effect, Layer } from "effect"
 import { Config } from "@/config/config"
 import { Service } from "./bootstrap-service"
 import { Reference } from "@/reference/reference"
+import { MCP } from "@/mcp"
 
 export { Service } from "./bootstrap-service"
 export type { Interface } from "./bootstrap-service"
@@ -28,6 +29,7 @@ export const layer = Layer.effect(
     const fileWatcher = yield* FileWatcher.Service
     const format = yield* Format.Service
     const lsp = yield* LSP.Service
+    const mcp = yield* MCP.Service
     const plugin = yield* Plugin.Service
     const project = yield* Project.Service
     const reference = yield* Reference.Service
@@ -49,6 +51,19 @@ export const layer = Layer.effect(
         (s) => s.init().pipe(Effect.catchCause((cause) => Effect.logWarning("init failed", { cause }))),
         { concurrency: "unbounded", discard: true },
       ).pipe(Effect.withSpan("InstanceBootstrap.init"))
+      // MCP clients materialize on first use, which used to be the first prompt's tool resolution:
+      // the prompt then waited for every connection at once — measured 3.2s here, on top of the 5s
+      // the launch directory had already paid while nobody was typing. Warming them here moves that
+      // work under the user's reading time instead.
+      //
+      // Forked on purpose: this bootstrap's completion is what releases the instance, so awaiting
+      // the connections would delay every instance by however long they take.
+      yield* mcp
+        .status()
+        .pipe(
+          Effect.catchCause((cause) => Effect.logWarning("mcp warmup failed", { cause })),
+          Effect.forkDetach,
+        )
     }).pipe(Effect.withSpan("InstanceBootstrap"))
 
     return Service.of({ run })
@@ -63,6 +78,7 @@ export const defaultLayer: Layer.Layer<Service> = layer.pipe(
     FileWatcher.defaultLayer,
     Format.defaultLayer,
     LSP.defaultLayer,
+    MCP.defaultLayer,
     Plugin.defaultLayer,
     Project.defaultLayer,
     Reference.defaultLayer,
