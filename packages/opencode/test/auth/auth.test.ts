@@ -110,4 +110,90 @@ describe("Auth", () => {
       }),
     ),
   )
+
+  // Ordered fallback pool: the head key stays the priority one, `add` appends
+  // without ever clobbering what is already stored. Each case writes its own
+  // provider id: the auth file is process-wide, so sharing an id across cases
+  // would leak one case's pool into the next.
+  describe("api key pool", () => {
+    it.live("add appends keys and keeps the first as priority", () =>
+      provideTmpdirInstance(() =>
+        Effect.gen(function* () {
+          const auth = yield* Auth.Service
+          yield* auth.addApiKey("pool-append", "sk-first")
+          yield* auth.addApiKey("pool-append", "sk-second")
+          expect(yield* auth.listApiKeys("pool-append")).toEqual(["sk-first", "sk-second"])
+
+          const entry = (yield* auth.all())["pool-append"]
+          if (entry?.type !== "api") throw new Error("expected api auth")
+          expect(entry.key).toBe("sk-first")
+          expect(entry.keys).toEqual(["sk-first", "sk-second"])
+        }),
+      ),
+    )
+
+    it.live("add deduplicates and ignores blank keys", () =>
+      provideTmpdirInstance(() =>
+        Effect.gen(function* () {
+          const auth = yield* Auth.Service
+          yield* auth.addApiKey("pool-dedup", "sk-first")
+          yield* auth.addApiKey("pool-dedup", "sk-first")
+          yield* auth.addApiKey("pool-dedup", "   ")
+          expect(yield* auth.listApiKeys("pool-dedup")).toEqual(["sk-first"])
+        }),
+      ),
+    )
+
+    it.live("remove drops exactly the key at its position", () =>
+      provideTmpdirInstance(() =>
+        Effect.gen(function* () {
+          const auth = yield* Auth.Service
+          yield* auth.addApiKey("pool-remove", "sk-a")
+          yield* auth.addApiKey("pool-remove", "sk-b")
+          yield* auth.addApiKey("pool-remove", "sk-c")
+          yield* auth.removeApiKey("pool-remove", 1)
+          expect(yield* auth.listApiKeys("pool-remove")).toEqual(["sk-a", "sk-c"])
+
+          // out-of-range and non-integer positions are no-ops, not crashes
+          yield* auth.removeApiKey("pool-remove", 7)
+          yield* auth.removeApiKey("pool-remove", -1)
+          yield* auth.removeApiKey("pool-remove", Number.NaN)
+          expect(yield* auth.listApiKeys("pool-remove")).toEqual(["sk-a", "sk-c"])
+        }),
+      ),
+    )
+
+    it.live("removing the last key deletes the entry", () =>
+      provideTmpdirInstance(() =>
+        Effect.gen(function* () {
+          const auth = yield* Auth.Service
+          yield* auth.addApiKey("pool-last", "sk-only")
+          yield* auth.removeApiKey("pool-last", 0)
+          expect(yield* auth.listApiKeys("pool-last")).toEqual([])
+          expect((yield* auth.all())["pool-last"]).toBeUndefined()
+        }),
+      ),
+    )
+
+    it.live("legacy single-key entries migrate onto the same pool", () =>
+      provideTmpdirInstance(() =>
+        Effect.gen(function* () {
+          const auth = yield* Auth.Service
+          // pre-pool entry: `key` only, no `keys`
+          yield* auth.set("pool-legacy", { type: "api", key: "sk-legacy" })
+          yield* auth.addApiKey("pool-legacy", "sk-added")
+          expect(yield* auth.listApiKeys("pool-legacy")).toEqual(["sk-legacy", "sk-added"])
+        }),
+      ),
+    )
+
+    it.live("listing a provider with no stored keys is empty", () =>
+      provideTmpdirInstance(() =>
+        Effect.gen(function* () {
+          const auth = yield* Auth.Service
+          expect(yield* auth.listApiKeys("unknown-provider")).toEqual([])
+        }),
+      ),
+    )
+  })
 })

@@ -1483,7 +1483,10 @@ export const layer = Layer.effect(
           const keys = Array.from(new Set(envKeys))
           mergeProvider(providerID, {
             source: "env",
-            key: keys[0],
+            // One declared env var: its value is the provider key. Several declared:
+            // the winner is ambiguous, so `key` stays unset (the merged pool is still
+            // exposed as `keys` for fallback).
+            key: provider.env.length === 1 ? keys[0] : undefined,
             keys,
           })
         }

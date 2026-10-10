@@ -480,6 +480,14 @@ export const ProvidersLoginCommand = effectCmd({
       )
     }
 
+    const existing = yield* authSvc.listApiKeys(provider).pipe(Effect.orDie)
+    if (existing.length > 0) {
+      yield* Prompt.log.info(
+        `${provider} already has ${existing.length} API key(s) stored (${existing
+          .map((item) => Auth.maskApiKey(item))
+          .join(", ")}).\nAdd another below: the stored keys are kept and tried in order.`,
+      )
+    }
     const key = yield* Prompt.password({
       message: "Enter your API key (or several fallback keys separated by commas)",
       validate: (x) => (x && x.length > 0 ? undefined : "Required"),
@@ -493,9 +501,8 @@ export const ProvidersLoginCommand = effectCmd({
           .filter((item) => item.length > 0),
       ),
     )
-    yield* Effect.orDie(
-      authSvc.set(provider, keys.length > 1 ? { type: "api", key: keys[0], keys } : { type: "api", key: keys[0] }),
-    )
+    // Append, never replace: adding a key must not clobber the ones already stored.
+    yield* Effect.orDie(Effect.forEach(keys, (item) => authSvc.addApiKey(provider, item), { discard: true }))
 
     yield* Prompt.outro("Done")
   }),

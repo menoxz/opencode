@@ -342,7 +342,61 @@ interface ApiMethodProps {
   metadata?: Record<string, string>
   custom?: boolean
 }
+// Manage a provider's API keys. Entry point of the "api" auth method: it shows
+// the keys already stored (masked, never in clear) with a per-key remove, plus
+// an "Add a key" entry. Adding appends; it never replaces what is already there.
 function ApiMethod(props: ApiMethodProps) {
+  const dialog = useDialog()
+  const sdk = useSDK()
+  const sync = useSync()
+  const toast = useToast()
+  const [keys, setKeys] = createSignal<{ index: number; masked: string }[]>([])
+
+  const refresh = async () => {
+    const result = await sdk.client.auth.keys.list({ providerID: props.providerID })
+    setKeys(result.data?.keys ?? [])
+  }
+  onMount(() => void refresh())
+
+  return (
+    <DialogSelect
+      title={props.title}
+      options={[
+        ...keys().map((key) => ({
+          title: key.masked,
+          value: `remove:${key.index}`,
+          description: "Remove this key",
+        })),
+        {
+          title: "Add a key",
+          value: "add",
+          description: "Append a key without replacing the ones already stored",
+        },
+      ]}
+      onSelect={async (option) => {
+        if (option.value === "add") {
+          dialog.replace(() => (
+            <ApiKeyPrompt
+              providerID={props.providerID}
+              title={props.title}
+              metadata={props.metadata}
+              custom={props.custom}
+            />
+          ))
+          return
+        }
+        const index = Number(option.value.slice("remove:".length))
+        await sdk.client.auth.keys.remove({ providerID: props.providerID, index: String(index) })
+        await sdk.client.instance.dispose()
+        await sync.bootstrap()
+        await refresh()
+        toast.show({ variant: "info", message: "Key removed" })
+      }}
+    />
+  )
+}
+
+function ApiKeyPrompt(props: ApiMethodProps) {
   const dialog = useDialog()
   const sdk = useSDK()
   const sync = useSync()
@@ -390,15 +444,14 @@ function ApiMethod(props: ApiMethodProps) {
           ),
         )
         if (keys.length === 0) return
-        await sdk.client.auth.set({
-          providerID: props.providerID,
-          auth: {
-            type: "api",
-            key: keys[0],
-            ...(keys.length > 1 ? { keys } : {}),
+        // Append each key: the server merges with the existing pool, it never overwrites.
+        for (const key of keys) {
+          await sdk.client.auth.keys.add({
+            providerID: props.providerID,
+            key,
             ...(props.metadata ? { metadata: props.metadata } : {}),
-          },
-        })
+          })
+        }
         await sdk.client.instance.dispose()
         await sync.bootstrap()
         if (props.custom && !sync.data.provider_next.all.some((provider) => provider.id === props.providerID)) {

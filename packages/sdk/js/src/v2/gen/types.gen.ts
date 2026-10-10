@@ -95,6 +95,7 @@ export type OAuth = {
 export type ApiAuth = {
   type: "api"
   key: string
+  keys?: Array<string>
   metadata?: {
     [key: string]: string
   }
@@ -779,6 +780,13 @@ export type GoalState = {
     }>
     completedAt: number
   }
+  compaction?: {
+    focus: string
+    mustKeep: Array<string>
+    reason?: string
+    version: number
+    updatedAt: number
+  }
   version: number
   updatedAt: number
 }
@@ -1114,6 +1122,7 @@ export type ProviderConfig = {
   discover?: boolean
   options?: {
     apiKey?: string
+    apiKeys?: Array<string>
     baseURL?: string
     enterpriseUrl?: string
     setCacheKey?: boolean
@@ -1122,7 +1131,7 @@ export type ProviderConfig = {
      */
     timeout?: number | false
     chunkTimeout?: number
-    [key: string]: unknown | string | boolean | number | false | number | undefined
+    [key: string]: unknown | string | Array<string> | boolean | number | false | number | undefined
   }
   models?: {
     [key: string]: {
@@ -1241,7 +1250,7 @@ export type ConfigInstructionInjection = {
  */
 export type LayoutConfig = "auto" | "stretch"
 
-export type JevProvider = "typesafe" | "openjev" | "command-code"
+export type JevProvider = "command-code" | "openjev"
 
 export type JevModel = string
 
@@ -1252,6 +1261,22 @@ export type JevGuardConfig = {
    */
   threshold?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   permissions?: Array<string>
+}
+
+export type JevPrefilterConfig = {
+  enabled?: boolean
+}
+
+export type JevAutoPlanConfig = {
+  enabled?: boolean
+  /**
+   * Probability (0..1) at or above which the task is treated as complex. Defaults to 0.5.
+   */
+  auto_plan_at?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  /**
+   * Round-trip bound in milliseconds before the deterministic classifier answers instead. Defaults to 5000.
+   */
+  timeout_ms?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
 }
 
 export type JevRouteConfig = {
@@ -1331,16 +1356,43 @@ export type JevIntakeConfig = {
   endpoint?: string
 }
 
+export type JevSkillsConfig = {
+  enabled?: boolean
+  /**
+   * Probability (0..1) at or above which a candidate counts as relevant and is injected. Defaults to 0.5.
+   */
+  threshold?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  /**
+   * Round-trip bound in milliseconds for the whole selection, before the deterministic ranking answers instead. Defaults to 15000.
+   */
+  timeout_ms?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type JevToolsConfig = {
+  enabled?: boolean
+  /**
+   * Probability (0..1) at or above which a candidate counts as relevant and is surfaced. Defaults to 0.5.
+   */
+  threshold?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  /**
+   * Round-trip bound in milliseconds for the whole selection, before the lexical ranking answers instead. Defaults to 15000.
+   */
+  timeout_ms?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
 export type JevConfig = {
   provider?: JevProvider
   api_key?: string
   base_url?: string
   endpoint?: string
   model?: JevModel
+  decision_model?: string
   shadow?: boolean
   rules?: Array<string>
   profile?: "safe"
   guard?: JevGuardConfig
+  prefilter?: JevPrefilterConfig
+  auto_plan?: JevAutoPlanConfig
   route?: JevRouteConfig
   plan?: JevPlanConfig
   review?: JevReviewConfig
@@ -1349,6 +1401,8 @@ export type JevConfig = {
   relevance?: JevRelevanceConfig
   next_action?: JevNextActionConfig
   intake?: JevIntakeConfig
+  skills?: JevSkillsConfig
+  tools?: JevToolsConfig
 }
 
 export type ImageAttachmentConfig = {
@@ -1655,6 +1709,7 @@ export type Provider = {
   source: "env" | "config" | "custom" | "api"
   env: Array<string>
   key?: string
+  keys?: Array<string>
   options: {
     [key: string]: unknown
   }
@@ -4136,6 +4191,101 @@ export type AuthSetResponses = {
 
 export type AuthSetResponse = AuthSetResponses[keyof AuthSetResponses]
 
+export type AuthKeysListData = {
+  body?: never
+  path: {
+    providerID: string
+  }
+  query?: never
+  url: "/auth/{providerID}/keys"
+}
+
+export type AuthKeysListErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type AuthKeysListError = AuthKeysListErrors[keyof AuthKeysListErrors]
+
+export type AuthKeysListResponses = {
+  /**
+   * Masked list of the provider's stored API keys
+   */
+  200: {
+    keys: Array<{
+      index: number
+      masked: string
+    }>
+  }
+}
+
+export type AuthKeysListResponse = AuthKeysListResponses[keyof AuthKeysListResponses]
+
+export type AuthKeysAddData = {
+  body?: {
+    /**
+     * API key to append to the provider's ordered pool
+     */
+    key: string
+    metadata?: {
+      [key: string]: string
+    }
+  }
+  path: {
+    providerID: string
+  }
+  query?: never
+  url: "/auth/{providerID}/keys"
+}
+
+export type AuthKeysAddErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type AuthKeysAddError = AuthKeysAddErrors[keyof AuthKeysAddErrors]
+
+export type AuthKeysAddResponses = {
+  /**
+   * Successfully appended the API key
+   */
+  200: boolean
+}
+
+export type AuthKeysAddResponse = AuthKeysAddResponses[keyof AuthKeysAddResponses]
+
+export type AuthKeysRemoveData = {
+  body?: never
+  path: {
+    providerID: string
+    index: string
+  }
+  query?: never
+  url: "/auth/{providerID}/keys/{index}"
+}
+
+export type AuthKeysRemoveErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type AuthKeysRemoveError = AuthKeysRemoveErrors[keyof AuthKeysRemoveErrors]
+
+export type AuthKeysRemoveResponses = {
+  /**
+   * Successfully removed the API key
+   */
+  200: boolean
+}
+
+export type AuthKeysRemoveResponse = AuthKeysRemoveResponses[keyof AuthKeysRemoveResponses]
+
 export type AppLogData = {
   body?: {
     /**
@@ -5653,6 +5803,13 @@ export type PluginListResponses = {
    */
   200: {
     version: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    runtime: {
+      source: boolean
+      root?: string
+      entry: string
+      pid: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      upSince: string
+    }
     origins: Array<{
       spec: string
       scope: string
@@ -5693,6 +5850,13 @@ export type PluginAddResponses = {
    */
   200: {
     version: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    runtime: {
+      source: boolean
+      root?: string
+      entry: string
+      pid: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      upSince: string
+    }
     origins: Array<{
       spec: string
       scope: string
@@ -5728,6 +5892,13 @@ export type PluginReloadResponses = {
    */
   200: {
     version: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    runtime: {
+      source: boolean
+      root?: string
+      entry: string
+      pid: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      upSince: string
+    }
     origins: Array<{
       spec: string
       scope: string
@@ -5765,6 +5936,13 @@ export type PluginRemoveResponses = {
    */
   200: {
     version: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    runtime: {
+      source: boolean
+      root?: string
+      entry: string
+      pid: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      upSince: string
+    }
     origins: Array<{
       spec: string
       scope: string

@@ -11,6 +11,12 @@ import type {
   AppSkillsErrors,
   AppSkillsResponses,
   Auth as Auth3,
+  AuthKeysAddErrors,
+  AuthKeysAddResponses,
+  AuthKeysListErrors,
+  AuthKeysListResponses,
+  AuthKeysRemoveErrors,
+  AuthKeysRemoveResponses,
   AuthRemoveErrors,
   AuthRemoveResponses,
   AuthSetErrors,
@@ -341,6 +347,96 @@ class HeyApiRegistry<T> {
   }
 }
 
+export class Keys extends HeyApiClient {
+  /**
+   * List stored API keys
+   *
+   * List the provider's stored API keys, masked (never in clear) and in priority order.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters: {
+      providerID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "providerID" }] }])
+    return (options?.client ?? this.client).get<AuthKeysListResponses, AuthKeysListErrors, ThrowOnError>({
+      url: "/auth/{providerID}/keys",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Append an API key
+   *
+   * Append an API key to the provider's pool without touching the keys already stored.
+   */
+  public add<ThrowOnError extends boolean = false>(
+    parameters: {
+      providerID: string
+      key?: string
+      metadata?: {
+        [key: string]: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "providerID" },
+            { in: "body", key: "key" },
+            { in: "body", key: "metadata" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<AuthKeysAddResponses, AuthKeysAddErrors, ThrowOnError>({
+      url: "/auth/{providerID}/keys",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Remove one API key
+   *
+   * Remove a single API key from the provider's pool by its position.
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters: {
+      providerID: string
+      index: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "providerID" },
+            { in: "path", key: "index" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).delete<AuthKeysRemoveResponses, AuthKeysRemoveErrors, ThrowOnError>({
+      url: "/auth/{providerID}/keys/{index}",
+      ...options,
+      ...params,
+    })
+  }
+}
+
 export class Auth extends HeyApiClient {
   /**
    * Remove auth credentials
@@ -394,6 +490,11 @@ export class Auth extends HeyApiClient {
         ...params.headers,
       },
     })
+  }
+
+  private _keys?: Keys
+  get keys(): Keys {
+    return (this._keys ??= new Keys({ client: this.client }))
   }
 }
 
