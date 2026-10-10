@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="refresh" content="3">
+<title>Suivi - Installation Windows 11</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; font-family:"Segoe UI",Roboto,sans-serif; background:#0f1420; color:#e8eef8;
+         display:flex; min-height:100vh; align-items:center; justify-content:center; }
+  .card { width:min(880px,94vw); background:#161d2e; border:1px solid #26314b; border-radius:16px;
+          padding:26px 30px; box-shadow:0 20px 60px rgba(0,0,0,.5); }
+  h1 { font-size:19px; margin:0 0 4px; font-weight:600; letter-spacing:.3px; }
+  .sub { color:#8b9bb8; font-size:13px; margin-bottom:18px; }
+  .banner { border-radius:12px; padding:16px 18px; font-size:20px; font-weight:700; margin-bottom:20px;
+            display:flex; align-items:center; gap:12px; }
+  .ok   { background:#0c2f1d; color:#5ef2a0; border:1px solid #1d6b41; }
+  .wait { background:#33290a; color:#ffd75e; border:1px solid #7a5f11; }
+  .warn { background:#3a1114; color:#ff8a8a; border:1px solid #8b2a2f; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:6px 24px; }
+  .row { display:flex; justify-content:space-between; gap:14px; padding:8px 0; border-bottom:1px solid #222c44; font-size:14px; }
+  .row span:first-child { color:#93a3c0; }
+  .row span:last-child { font-weight:600; text-align:right; }
+  .wide { grid-column:1 / -1; }
+  .foot { margin-top:18px; font-size:12px; color:#8b9bb8; border-top:1px solid #222c44; padding-top:12px; }
+  .alert { margin-top:14px; padding:10px 14px; border-radius:10px; background:#3a1114; color:#ff8a8a;
+           border:1px solid #8b2a2f; font-size:13px; }
+  .dot { width:11px; height:11px; border-radius:50%; background:currentColor; box-shadow:0 0 12px currentColor; }
+  .pulse { animation:p 1.4s ease-in-out infinite; }
+  @keyframes p { 0%,100% { opacity:1 } 50% { opacity:.25 } }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Suivi de l'installation en place de Windows 11</h1>
+  <div class="sub">Actualisée toutes les 3 secondes &middot; dernière mesure : 09/10/2026 08:05:00</div>
+  <div class="banner ok"><span class="dot pulse"></span><span>ÇA AVANCE — CA AVANCE</span></div>
+  <div class="grid">
+    <div class="row wide"><span>Phase</span><span>Migration / verification des composants (avant redemarrage)</span></div>
+    <div class="row"><span>Composants vérifiés</span><span>29 667</span></div>
+    <div class="row"><span>Rythme</span><span>en cours de mesure...</span></div>
+    <div class="row"><span>Moteur CBS (TiWorker)</span><span>mesure en cours...</span></div>
+    <div class="row"><span>Cœurs occupés</span><span>mesure en cours...</span></div>
+    <div class="row"><span>Activité fichiers</span><span>WinSetupMon écrit il y a 6 min</span></div>
+    <div class="row"><span>Log de setup (setupact)</span><span>setupact.log écrit il y a 8 min</span></div>
+    <div class="row"><span>Nouvelle image préparée</span><span>23.26 Go / 138 710 fichiers</span></div>
+    <div class="row"><span>Espace libre C:</span><span>29.64 Go</span></div>
+    <div class="row wide"><span>Processus de setup</span><span>setup:4412, setupprep:20220, SetupHost:4792, mighost:9784</span></div>
+    <div class="row wide"><span>Dernier mouvement détecté</span><span>0 s</span></div>
+    <div class="row wide"><span>Signaux en mouvement</span><span>composants</span></div>
+  </div>
+  <div class="alert" style="display:none">Aucun mouvement depuis un moment. <b>Ne cliquez pas sur « Annuler »</b> : attendez encore, et si cela dépasse 30 minutes, signalez-le à l'agent.</div>
+  <div class="foot">
+    Rappel : ne pas cliquer sur <b>Annuler</b> dans la fenêtre de setup, ne pas couper l'alimentation.<br>
+    Page régénérée par <code>C:\jeanluc\Suivre-Installation.ps1</code> &middot; historique : <code>C:\jeanluc\installation-trace.csv</code>
+  </div>
+</div>
+</body>
+</html>

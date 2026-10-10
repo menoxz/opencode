@@ -46,3 +46,10 @@ packages/opencode/.bun-cache/
 # local agent task state
 .opencode/tasks.json
 .opencode/tasks-logs/
+
+# local build and diagnostic artifacts (regenerated on demand, never committed)
+.build-*.log
+packages/opencode/watchdog-run.log
+packages/opencode/package.json.bak-*
+packages/sdk/js/openapi.json
+cc_test_*.json
