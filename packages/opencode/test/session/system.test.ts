@@ -105,6 +105,20 @@ describe("session.system", () => {
     }),
   )
 
+  // The catalogue used to state only that a skill exists when a task matches. Measured on an
+  // eval suite: telling the agent to invoke the skill first made it read docs first, anchor on
+  // doc patterns and miss project context; "explore the project first, then invoke" scored far
+  // better. The intro must carry that ordering, not just the availability.
+  it.effect("skills intro tells the agent to explore before loading a skill", () =>
+    Effect.gen(function* () {
+      const prompt = yield* SystemPrompt.Service
+      const output = (yield* prompt.skills(build)) ?? ""
+
+      expect(output).toMatch(/explore[^\n]*first/i)
+      expect(output).toContain("its description")
+    }),
+  )
+
   it.effect("core policy requires targeted inspection, bounded output, and deliberate delegation", () =>
     Effect.sync(() => {
       const core = provider({} as never).join("\n")

@@ -47,6 +47,43 @@ const SKILL_BODY_INDEX_CHARS = 2000
 
 const skillSearchTextCache = new Map<string, string>()
 
+/**
+ * Verdicts of the LLM skill selector, keyed by agent + prompt.
+ *
+ * The verdict is *advisory*: the deterministic ranking below is a correct answer
+ * on its own. It therefore never sits on the step's critical path — a refresh
+ * runs in the background (one flight per key) and the next step picks the result
+ * up. Measured on a 258-message session: awaiting it held a step for 227 s while
+ * the auto-picked endpoint stalled and a full CPU core stayed busy, and because
+ * the saturated thread never ran the timer, neither its 20 s timeout nor any
+ * watchdog could fire — the TUI's keyboard went with it.
+ */
+const skillSelectionCache = new Map<string, string[]>()
+const skillSelectionInflight = new Set<string>()
+
+const skillSelectionKey = (agent: string, prompt: string) =>
+  `${agent}\u0000${createHash("sha1").update(prompt).digest("hex")}`
+
+const skillSelection = {
+  peek(agent: string, prompt: string): string[] | undefined {
+    return skillSelectionCache.get(skillSelectionKey(agent, prompt))
+  },
+  /** Claims a refresh slot. `undefined` means a verdict exists or one is in flight. */
+  begin(agent: string, prompt: string): string | undefined {
+    const key = skillSelectionKey(agent, prompt)
+    if (skillSelectionInflight.has(key) || skillSelectionCache.has(key)) return undefined
+    skillSelectionInflight.add(key)
+    return key
+  },
+  settle(key: string, names: string[] | undefined) {
+    skillSelectionInflight.delete(key)
+    // A failure is not cached: the next step may retry it. Only a real verdict is.
+    if (names === undefined) return
+    if (skillSelectionCache.size > 100) skillSelectionCache.clear()
+    skillSelectionCache.set(key, names)
+  },
+}
+
 function skillSearchText(skill: Skill.Info): string {
   const head = `${skill.name} ${skill.description ?? ""}`
   if (!skill.content) return head
@@ -143,7 +180,9 @@ export const layer = Layer.effect(
         const settings = yield* config.get()
         const rollout = SessionContextRollout.resolve(settings)
 
+        const availableStart = Date.now()
         let list = yield* skill.available(agent)
+        const availableMs = Date.now() - availableStart
         const preloaded = new Set(agent.preloadSkills ?? [])
         list = list.filter((info) => !preloaded.has(info.name))
         if (list.length === 0) return
@@ -155,23 +194,26 @@ export const layer = Layer.effect(
         // outcomes. A disabled, keyless or unreachable Jev yields undefined here
         // (see JevSkills.select) and the lexical fallback below runs unchanged.
         const jev = settings.jev
-        // The session runtime never exposes `HttpClient.HttpClient`: every
-        // `FetchHttpClient.layer` in the composition is attached with
-        // `Layer.provide`, whose output hides the client, and
-        // `Effect.serviceOption` adds nothing to `R`, so no layer is forced to
-        // expose it either. Build the JEV transport from that same layer here so
-        // the selector works whatever the surrounding context happens to hold.
+        // Always build the transport from `FetchHttpClient` here rather than
+        // reusing whatever `HttpClient.HttpClient` the ambient context holds.
+        // The selector is on the critical path of the step — nothing can be sent
+        // to the model until it answers — so it must not inherit middleware it
+        // neither controls nor can bound. Measured on a live install: the same
+        // request answered in ~130 ms on the dedicated transport while the step
+        // through the ambient one was parked for 285 s, one core pegged, no log
+        // line, and the interrupt key reaching nothing.
         const jevHttp =
           lastUserMessage && sessionID && JevSkills.skillsApplies(jev?.skills, list.length)
-            ? (Option.getOrUndefined(yield* Effect.serviceOption(HttpClient.HttpClient)) ??
-               (yield* HttpClient.HttpClient.pipe(Effect.provide(FetchHttpClient.layer))))
+            ? yield* HttpClient.HttpClient.pipe(Effect.provide(FetchHttpClient.layer))
             : undefined
+        const selectStart = Date.now()
         const jevSelected =
           jevHttp && lastUserMessage
             ? yield* JevSkills.select(jevHttp, jev, {
                 prompt: lastUserMessage,
                 skills: list.map((s) => ({ name: s.name, description: s.description, text: skillSearchText(s) })),
                 threshold: jev?.skills?.threshold,
+                timeoutMs: jev?.skills?.timeout_ms,
               }).pipe(
                 // The fallback is silent by design, but a selector that never
                 // succeeds is a defect an operator must see: log the reason so a
@@ -196,6 +238,8 @@ export const layer = Layer.effect(
           candidates: list.length,
           http: jevHttp !== undefined,
           outcome: jevSelected === undefined ? (jevHttp ? "abstain" : "skipped") : jevSelected.length,
+          availableMs,
+          selectMs: Date.now() - selectStart,
         })
 
         if (jevSelected) {
@@ -206,19 +250,27 @@ export const layer = Layer.effect(
           // The lexical BM25 ranking matches wording, not meaning. Skill names and
           // descriptions are written in English while the request may not be, so it
           // both misses relevant skills and over-injects an arbitrary top-N (up to
-          // MAX_RELEVANT_SKILLS) that the model then pays for every turn. A small
-          // free model selects by meaning instead (see SkillSelect); BM25 stays
-          // only as the last resort when no model can be resolved.
-          const llmSelected =
-            lastUserMessage && list.length > 0
-              ? yield* SkillSelect.select({
-                  prompt: lastUserMessage,
-                  skills: list.map((s) => ({ name: s.name, description: s.description ?? "" })),
-                }).pipe(Effect.catch(() => Effect.succeed(undefined)))
-              : undefined
+          // MAX_RELEVANT_SKILLS) that the model then pays for every turn. A model
+          // the user chose selects by meaning instead (see SkillSelect) — but it is
+          // advisory, so it is read from the cache and refreshed off the step's
+          // critical path. BM25 stays as the answer whenever no verdict is ready.
+          const llmSelected = lastUserMessage ? skillSelection.peek(agent.name, lastUserMessage) : undefined
+          if (lastUserMessage && list.length > 0) {
+            const key = skillSelection.begin(agent.name, lastUserMessage)
+            if (key) {
+              const candidates = list.map((s) => ({ name: s.name, description: s.description ?? "" }))
+              yield* Effect.forkDetach(
+                SkillSelect.select({ prompt: lastUserMessage, skills: candidates }).pipe(
+                  Effect.tap((names) => Effect.sync(() => skillSelection.settle(key, names))),
+                  Effect.catch(() => Effect.sync(() => skillSelection.settle(key, undefined))),
+                ),
+              )
+            }
+          }
           log.info("llm skills decision", {
             candidates: list.length,
             outcome: llmSelected === undefined ? "unavailable" : llmSelected.length,
+            cached: llmSelected !== undefined,
           })
           if (llmSelected) {
             const kept = new Set(llmSelected)
@@ -249,7 +301,7 @@ export const layer = Layer.effect(
 
         return [
           "Skills provide specialized instructions and workflows for specific tasks.",
-          "Use the skill tool to load a skill when a task matches its description.",
+          "Explore the project enough to understand its shape first, then use the skill tool to load a skill when a task matches its description.",
           Skill.fmt(list, {
             mode:
               rollout.injectionSkills === "verbose"

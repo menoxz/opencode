@@ -585,6 +585,8 @@ beforeAll(() => {
   state.server = Bun.serve({
     port: 0,
     async fetch(req) {
+      const fs = await import('node:fs')
+      fs.appendFileSync('C:/Users/jeanl/.dsh/watchdog-probe.log', `REQ ${req.method} ${req.url}\n`)
       const next = state.queue.shift()
       if (!next) {
         return new Response("unexpected request", { status: 500 })
@@ -839,6 +841,79 @@ describe("session.llm.stream", () => {
       }),
     },
   )
+
+    it.instance(
+      "service stream watchdog aborts a stalled provider stream when streamTimeoutMs is set",
+      () =>
+        Effect.gen(function* () {
+          const fixture = loadFixture(alibabaQwenFixture.providerID, alibabaQwenFixture.modelID)
+          const pending = waitStreamingRequest("/chat/completions")
+
+          const resolved = yield* Provider.use.getModel(
+            ProviderID.make(alibabaQwenFixture.providerID),
+            ModelID.make(fixture.model.id),
+          )
+          const sessionID = SessionID.make("session-test-watchdog")
+          const agent = {
+            name: "test",
+            mode: "primary",
+            options: {},
+            permission: [{ permission: "*", pattern: "*", action: "allow" }],
+          } satisfies Agent.Info
+          const user = {
+            id: MessageID.make("msg_user-watchdog"),
+            sessionID,
+            role: "user",
+            time: { created: Date.now() },
+            agent: agent.name,
+            model: { providerID: ProviderID.make(alibabaQwenFixture.providerID), modelID: resolved.id },
+          } satisfies MessageV2.User
+
+          // drainWith builds an isolated runtime so the LLM layer fully owns the
+          // service and its RuntimeFlags — the watchdog (streamTimeoutMs) can only
+          // be reached that way, since LLM.defaultLayer wires RuntimeFlags internally.
+          const fiber = yield* drainWith(
+            llmLayerWithExecutor(RequestExecutor.defaultLayer, { streamTimeoutMs: 150 }),
+            {
+              user,
+              sessionID,
+              model: resolved,
+              agent,
+              system: ["You are a helpful assistant."],
+              messages: [{ role: "user", content: "Hello" }],
+              tools: {},
+            },
+          ).pipe(Effect.exit, Effect.forkScoped)
+
+          // Wait until the provider request actually reaches the mock server.
+          yield* Effect.promise(() => Promise.race([pending.request, timeout(3000)]))
+
+          // The drain must fail on its own via the watchdog — not via an interrupt.
+          // Bound Fiber.await so a mis-wired watchdog flops as a test timeout, not a hang.
+          const exit = yield* Fiber.await(fiber).pipe(Effect.timeout(3000))
+          // Fiber.await returns an Exit<Exit<...>>. Unwrap once.
+          const inner = Exit.isSuccess(exit) ? exit.value : exit
+          expect(inner !== undefined).toBe(true)
+          if (inner === undefined) return
+          expect(Exit.isFailure(inner)).toBe(true)
+          if (Exit.isFailure(inner)) {
+            // Must be the watchdog's timeout failure, not an interrupt/cancellation.
+            expect(Cause.hasInterrupts(inner.cause)).toBe(false)
+          }
+
+          yield* Effect.promise(() => Promise.race([pending.responseCanceled, timeout(500)]).catch(() => undefined))
+        }),
+      {
+        config: () => ({
+          enabled_providers: [alibabaQwenFixture.providerID],
+          provider: {
+            [alibabaQwenFixture.providerID]: {
+              options: { apiKey: "test-key", baseURL: `${state.server!.url.origin}/v1` },
+            },
+          },
+        }),
+      },
+    )
 
   it.instance(
     "keeps tools enabled by prompt permissions",

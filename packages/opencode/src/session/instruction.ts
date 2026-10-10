@@ -38,18 +38,41 @@ function extract(messages: MessageV2.WithParts[]) {
   return paths
 }
 
+/**
+ * Character budget for one instruction file rendered in summary mode.
+ *
+ * The previous rule kept the first six non-empty lines and said nothing about the rest, so a
+ * real `AGENTS.md` — which opens with a title and a preamble before its rules — lost every
+ * rule below line six. Measured on `packages/opencode/AGENTS.md`: 136 lines / 7 109 chars
+ * reduced to six lines, with no signal to the reader. What does not fit is now announced
+ * with the path to read, because a silent drop is what makes a ruleset untrustworthy.
+ */
+const SUMMARY_CHAR_BUDGET = 4_000
+
 function renderInstruction(filepath: string, content: string, mode: SessionContextRollout.InjectionInstructionsMode) {
   if (mode === "off") return undefined
   if (mode === "full") return `Instructions from: ${filepath}\n${content}`
-  const lines = content
+  const all = content
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean)
-    .slice(0, 6)
+  const kept: string[] = []
+  let used = 0
+  for (const line of all) {
+    // The "- " prefix and the newline are part of what the model pays for.
+    const cost = line.length + 3
+    if (used + cost > SUMMARY_CHAR_BUDGET) break
+    kept.push(line)
+    used += cost
+  }
+  const omitted = all.length - kept.length
   return [
     `Instructions from: ${filepath}`,
     "<summary>",
-    ...(lines.length ? lines.map((line) => `- ${line}`) : ["- instruction file loaded in summary mode"]),
+    ...(kept.length ? kept.map((line) => `- ${line}`) : ["- instruction file loaded in summary mode"]),
+    ...(omitted > 0
+      ? [`- … truncated: ${omitted} more line${omitted === 1 ? "" : "s"} omitted — read ${filepath} for the rest.`]
+      : []),
     "</summary>",
   ].join("\n")
 }

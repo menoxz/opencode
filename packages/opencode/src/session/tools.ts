@@ -13,7 +13,7 @@ import { Plugin } from "@/plugin"
 import type { TaskPromptOps } from "@/tool/task"
 import type { SecurityMode } from "@/tool/security"
 import { type Tool as AITool, tool, jsonSchema, type ToolExecutionOptions, asSchema } from "ai"
-import { Cause, Effect, Exit, Option } from "effect"
+import { Cause, Effect, Exit } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/unstable/http"
 import { JevHooks } from "@/jev/hooks"
 import { JevRelevance } from "@/jev/relevance"
@@ -369,7 +369,16 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             // The hook above can only rewrite args — it cannot refuse a call. The
             // systematic Jev guard therefore runs here, after the trigger, on every
             // local tool call, and is the only place a denial is enacted.
-            const http = Option.getOrUndefined(yield* Effect.serviceOption(HttpClient.HttpClient))
+            //
+            // Built from `FetchHttpClient` rather than the ambient
+            // `HttpClient.HttpClient`, for the same reason as the skill selector in
+            // `session/system.ts`: the Jev calls happen inside a tool call, so the
+            // transport must be one the Jev layer owns and bounds (see `./jev/decide`)
+            // instead of whatever middleware the surrounding context carries. It also
+            // removes the silent skip this used to have when the ambient client was
+            // absent — `serviceOption` returned none and every guard/relevance/intake
+            // hook quietly did nothing.
+            const http = yield* HttpClient.HttpClient.pipe(Effect.provide(FetchHttpClient.layer))
             const jev = cfg.jev
             const jevShadow = jev?.shadow === true
             const guarded =
@@ -841,17 +850,15 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             // unchanged (see JevTools.select). An empty decision is honoured: the
             // request may genuinely need no extra tool.
             if (cfg.jev?.tools?.enabled === true && matches.length > 0) {
-              // Same as skills(): the session runtime never exposes
-              // `HttpClient.HttpClient`, so fall back to a transport built from
-              // FetchHttpClient.layer here rather than skipping Jev entirely.
-              const jevHttp =
-                Option.getOrUndefined(yield* Effect.serviceOption(HttpClient.HttpClient)) ??
-                (yield* HttpClient.HttpClient.pipe(Effect.provide(FetchHttpClient.layer)))
+              // Transport owned by the Jev layer, as everywhere else it is called:
+              // bounded by `./jev/decide`, and never the ambient client.
+              const jevHttp = yield* HttpClient.HttpClient.pipe(Effect.provide(FetchHttpClient.layer))
               {
                 const choose = yield* JevTools.select(jevHttp, cfg.jev, {
                   query: (value.query ?? "").slice(0, 500),
                   tools: matches.map((match) => ({ id: match.tool.id, description: match.tool.description })),
                   threshold: cfg.jev.tools.threshold,
+                  timeoutMs: cfg.jev.tools.timeout_ms,
                 }).pipe(Effect.catch(() => Effect.succeed(undefined)))
                 if (choose) {
                   const keep = new Set(choose)

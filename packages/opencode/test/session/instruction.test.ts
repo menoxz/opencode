@@ -289,6 +289,54 @@ describe("Instruction.system", () => {
     }),
   )
 
+  // The summary mode kept only the first six non-empty lines and said nothing about the
+  // rest. A real AGENTS.md opens with a title and a preamble, so every rule below line six
+  // was discarded without any signal. These two tests pin the replacement contract: content
+  // survives past line six, and what does not fit is announced rather than silently dropped.
+  it.live("summary injection keeps instruction lines past the sixth", () =>
+    withFiles(
+      {
+        "AGENTS.md": [
+          "# Project Instructions",
+          "",
+          "Preamble one.",
+          "Preamble two.",
+          "Preamble three.",
+          "Preamble four.",
+          "Preamble five.",
+          "RULE-UNDER-TEST: run the quality gate before committing.",
+        ].join("\n"),
+      },
+      (dir) =>
+        Effect.gen(function* () {
+          const svc = yield* Instruction.Service
+          const rendered = (yield* svc.system()).join("\n")
+          expect(rendered).toContain(`Instructions from: ${path.join(dir, "AGENTS.md")}`)
+          expect(rendered).toContain("RULE-UNDER-TEST")
+        }),
+    ),
+  )
+
+  it.live("summary injection announces truncation instead of dropping it silently", () =>
+    withFiles(
+      {
+        "AGENTS.md": [
+          "# Project Instructions",
+          ...Array.from({ length: 300 }, (_, i) => `filler-${i} ${"x".repeat(60)}`),
+          "LAST-LINE-MARKER",
+        ].join("\n"),
+      },
+      (dir) =>
+        Effect.gen(function* () {
+          const svc = yield* Instruction.Service
+          const rendered = (yield* svc.system()).join("\n")
+          expect(rendered).toContain("truncated")
+          expect(rendered).toContain(path.join(dir, "AGENTS.md"))
+          expect(rendered).not.toContain("LAST-LINE-MARKER")
+        }),
+    ),
+  )
+
   it.live("skips project and global CLAUDE.md when Claude Code prompt is disabled", () =>
     Effect.gen(function* () {
       const globalTmp = yield* tmpWithFiles({ ".claude/CLAUDE.md": "# Global Claude" })

@@ -378,4 +378,122 @@ describe("tool.goal-contract", () => {
     }),
   )
 
+  it.instance("refuses a critical residual finding and a DoD rewrite does not unlock closure", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({ title: "dod rewrite cannot unlock closure" })
+      // `deliverable` is what arms the gate at goal-contract.ts:528, so it is
+      // seeded rather than inferred: an omission would make this case pass for
+      // the wrong reason and prove nothing about the finding gate.
+      yield* sessions.setGoalState({
+        sessionID: session.id,
+        goalState: {
+          status: "draft", source: "user", goal: "Ship tenant search",
+          deliverable: "implementation",
+          dod: ["tenant isolation regression verified"],
+          outOfScope: [], version: 1, updatedAt: 1,
+        } as any,
+      })
+      const complete = yield* getTool("complete_objective")
+      const edit = yield* getTool("edit_objective")
+      const evidence = [{ dod: "tenant isolation regression verified", proof: "bun test tenant-isolation: 9 pass, exit 0" }]
+      const findings = [{
+        id: "SEC-777", severity: "critical", status: "residual",
+        summary: "tenant filter leaks rows", evidence: ["src/tool/goal-contract.ts:457"],
+      }]
+
+      const refused = (yield* complete.execute({ summary: "shipped", evidence, findings } as any, mkContext(session.id))).metadata.result
+      expect(refused.status).toBe("error")
+      expect(refused.warnings.join(" ")).toContain("SEC-777")
+
+      // `dod` is documented as "Replace DoD list when provided" and nextGoalState
+      // validates none of its content, so this leg has to name a DoD of
+      // engagement. Without it the retry would be stopped by the DoD proof gate
+      // and the test would prove nothing about the finding gate.
+      yield* edit.execute({ dod: ["Inventorier les constats et documenter l'etat actuel"] } as any, mkContext(session.id))
+
+      const retried = (yield* complete.execute({ summary: "shipped", evidence, findings } as any, mkContext(session.id))).metadata.result
+      expect(retried.status).toBe("error")
+      const stored = (yield* sessions.get(session.id)).goalState as any
+      expect(stored.status).not.toBe("completed")
+      // The legitimate escape hatch survives: a substantive, re-observable
+      // proof is exactly what keeps `residual` from collapsing to `open`.
+      expect(stored.findings[0].status).toBe("residual")
+    }),
+  )
+
+  it.instance("refuses a critical residual finding with the default DoD and no evidence", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({ title: "default DoD cannot skip the finding gate" })
+      const complete = yield* getTool("complete_objective")
+
+      // baseDod falls back to MINIMAL_DOD_ITEM, which evidenceGatedDodItems
+      // filters out, so here the DoD proof gate has nothing to check at all and
+      // only the finding gate can hold the line.
+      yield* sessions.setGoalState({
+        sessionID: session.id,
+        goalState: {
+          status: "draft", source: "user", goal: "Ship tenant search",
+          deliverable: "implementation",
+          dod: ["Produire une réponse utile et actionnable alignée avec la demande en cours."],
+          outOfScope: [], version: 1, updatedAt: 1,
+        } as any,
+      })
+      expect((yield* sessions.get(session.id)).goalState?.dod).toHaveLength(1)
+
+      const refused = (yield* complete.execute({
+        summary: "shipped",
+        findings: [{
+          id: "SEC-888", severity: "critical", status: "residual",
+          summary: "tenant filter leaks rows", evidence: [],
+        }],
+      } as any, mkContext(session.id))).metadata.result
+      expect(refused.status).toBe("error")
+      expect(refused.warnings.join(" ")).toContain("SEC-888")
+      const stored = (yield* sessions.get(session.id)).goalState as any
+      expect(stored.status).not.toBe("completed")
+      // Discriminating: with no proof at all the old merge kept `residual`,
+      // because `incomingEvidence.length > 0` was false on both branches.
+      expect(stored.findings[0].status).toBe("open")
+    }),
+  )
+
+  it.instance("refuses a critical out_of_scope finding whose proof is hollow", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({ title: "out_of_scope needs a re-observable proof" })
+      yield* sessions.setGoalState({
+        sessionID: session.id,
+        goalState: {
+          status: "draft", source: "user", goal: "Ship tenant search",
+          deliverable: "implementation",
+          dod: ["tenant isolation regression verified"],
+          outOfScope: [], version: 1, updatedAt: 1,
+        } as any,
+      })
+      const complete = yield* getTool("complete_objective")
+
+      // `evidence: ["x"]` is the cheapest exit the schema allows: nothing bounds
+      // finding.evidence, so before this change it cleared the merge, was not
+      // `open`, was not `residual`, and closure went through.
+      const refused = (yield* complete.execute({
+        summary: "shipped",
+        evidence: [{ dod: "tenant isolation regression verified", proof: "bun test tenant-isolation: 9 pass, exit 0" }],
+        findings: [{
+          id: "SEC-999", severity: "critical", status: "out_of_scope",
+          summary: "legacy tenant path stays open", evidence: ["x"],
+        }],
+      } as any, mkContext(session.id))).metadata.result
+      // Discriminating: the old merge kept `out_of_scope`, which no gate blocks,
+      // so this returned "ok" and the objective closed over an unreproducible
+      // scope decision.
+      expect(refused.status).toBe("error")
+      expect(refused.warnings.join(" ")).toContain("SEC-999")
+      const stored = (yield* sessions.get(session.id)).goalState as any
+      expect(stored.status).not.toBe("completed")
+      expect(stored.findings[0].status).toBe("open")
+    }),
+  )
+
 })
