@@ -177,6 +177,11 @@ Le composant est un plugin : il est chargé au démarrage du serveur depuis l'en
 `opencodev2.exe` en 2.3.69 charge le plugin et expose l'outil `schedule`). Prendre une
 modification en compte = redémarrer le serveur.
 
+Diagnostic : lancer le serveur avec `OPENCODE_SCHEDULE_DEBUG=1` fait tracer sur stderr chaque
+événement reçu par le hook, la relecture du store, les correspondances et les sauts du pump
+(`[schedule:dbg] …`) — utile pour constater qu'un déclencheur `event` n'a pas d'effet.
+Vérifié en réel : minuterie et fichier déclenchent (`timer_runs=1`, `file_runs=1`).
+
 ## 10. Tests
 
 - Depuis `.opencode` : `bun test tests/schedule.test.ts` — logique pure : parseurs, cron,
