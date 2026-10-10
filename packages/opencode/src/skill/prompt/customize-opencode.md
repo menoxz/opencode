@@ -288,6 +288,11 @@ Hook surface (mutate `output` in place; return `void`):
 Special object-shaped (not callbacks): `tool: { my_tool: { ... } }`,
 `auth: { ... }`, `provider: { ... }`.
 
+This section is a reference, not a build guide. To design, implement, test and ship a **new**
+plugin end-to-end on this fork (spec, pure logic split, harness hooks, agent tool, persistence,
+multi-process lock, live harness test with an isolated config), use the `opencode-plugin-feature`
+skill; to add a **native** feature inside `packages/opencode/src`, use `opencode-fork-feature`.
+
 ## MCP servers
 
 `mcp:` is an object keyed by server name. Each server is discriminated by
