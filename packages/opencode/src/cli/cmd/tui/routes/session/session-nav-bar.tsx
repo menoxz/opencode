@@ -121,6 +121,10 @@ export function SessionNavBar(props: {
     if (row.kind === "session" && props.pendingDelete === row.id) return theme.error
     if (index === props.selected) return theme.text
     if (row.kind === "session" && (row.activity === "busy" || row.activity === "retry")) return theme.accent
+    // A folder the user added is tinted as well as marked: the "+" says what it is, the colour makes
+    // it findable at a glance among the folders the workspace opened on. Selection still wins above,
+    // so the cursor never becomes invisible on a tinted row.
+    if (row.kind === "dir" && row.added) return theme.accent
     if (row.kind === "dir") return theme.text
     if (hover() === index) return theme.text
     return theme.textMuted

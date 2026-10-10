@@ -82,6 +82,7 @@ import {
   navListHeight,
   navRows,
   navSelection,
+  removableDirectories,
   selectionSessionID,
   toggleCollapsed,
   toggleRevealed,
@@ -380,11 +381,16 @@ export function Session() {
         directory: item.directory,
       })),
   )
+  // The added folders, minus the launch folder. Computed once and handed to both the bar and the row
+  // model below: the bar lists an added folder even when it holds no session, and the cursor is an
+  // index into those rows, so the two must see the exact same list or a click acts on another row.
+  const navAdded = createMemo(() => removableDirectories(sync.session.extraDirectories(), sync.path.directory))
   const navList = createMemo(() =>
     navRows(filterNavSessions(navSessions(), navQuery()), route.sessionID, {
       overrides: navOverrides(),
       revealed: navRevealed(),
       reveal: navQuery().length > 0,
+      added: navAdded(),
     }),
   )
   const navSel = createMemo(() => navSelection(navList(), route.sessionID, navSelected()))
@@ -1575,7 +1581,7 @@ export function Session() {
               selected={navSel()}
               focused={navFocused()}
               height={navListHeight(dimensions().height)}
-              added={sync.session.extraDirectories()} origin={sync.path.directory}
+              added={navAdded()} origin={sync.path.directory}
               overrides={navOverrides()}
               revealed={navRevealed()}
               frame={navFrame()}

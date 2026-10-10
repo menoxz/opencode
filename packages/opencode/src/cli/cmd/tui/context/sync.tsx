@@ -37,11 +37,14 @@ import {
   SESSION_EXTRA_DIRECTORIES_KEY,
   SESSION_FETCH_LIMIT,
   addDirectory as addWatchedDirectory,
+  folderKey,
   isRecentSession,
   removeDirectory as removeWatchedDirectory,
   sessionAgeCutoff,
   setExtraDirectories,
+  watchedDirectories,
 } from "./session-scope"
+import { existsSync } from "fs"
 
 export const { use: useSync, provider: SyncProvider } = createSimpleContext({
   name: "Sync",
@@ -160,6 +163,20 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
 
 
     /**
+     * Folder identities already read into the store.
+     *
+     * A folder the user added is read once, at startup, so opening it later does not pay a second
+     * server instance; and a refresh re-reads exactly the folders the list shows instead of
+     * collapsing back to the launch folder, which would silently empty every added one.
+     */
+    const loadedDirectories = new Set<string>()
+
+    /** The folders the list shows: the launch folder, plus the ones the user added. */
+    function watchedDirectoryList(): string[] {
+      return watchedDirectories(currentDirectory(), storedExtraDirectories())
+    }
+
+    /**
      * Sessions for one watched folder. Inside the worktree the server matches the portable `path`,
      * which also covers the sub-folders; a folder added from outside it can only be named by its
      * absolute directory.
@@ -171,17 +188,40 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         limit: SESSION_FETCH_LIMIT,
         ...(relative ? { path: relative } : { directory }),
       })
-      return (page.data ?? []).filter((session) => isRecentSession(session, cutoff))
+      const sessions = (page.data ?? []).filter((session) => isRecentSession(session, cutoff))
+      // Recorded only once the read succeeded: a folder whose instance failed is still left to read.
+      loadedDirectories.add(folderKey(directory))
+      return sessions
+    }
+
+    /** One list out of several folders' pages, ordered by id because the store binary-searches it. */
+    function mergeSessions(pages: readonly (readonly Session[])[]): Session[] {
+      const byID = new Map<string, Session>()
+      for (const page of pages) for (const session of page) byID.set(session.id, session)
+      return [...byID.values()].toSorted((a, b) => a.id.localeCompare(b.id))
+    }
+
+    /**
+     * Reads one folder and merges its sessions into the store, so several folders can be shown at
+     * once: a folder added later must not replace the ones already there.
+     */
+    async function loadDirectory(directory: string) {
+      const fetched = await listDirectory(directory, sessionAgeCutoff(Date.now()))
+      // The user may have removed the folder while this read was in flight: merging it anyway would
+      // put its sessions back after the refresh that took them out.
+      if (!watchedDirectoryList().some((item) => folderKey(item) === folderKey(directory))) return
+      const loaded = new Set(fetched.map((session) => session.id))
+      const merged = [...store.session.filter((session) => !loaded.has(session.id)), ...fetched].toSorted((a, b) =>
+        a.id.localeCompare(b.id),
+      )
+      setStore("session", reconcile(merged))
     }
 
     /**
      * The listing the bar shows: the current folder, plus the folders the user added on top of it.
      *
-     * Only the current folder is read here. Listing a folder is not free on the server: every folder
-     * named is an instance that bootstraps its own config, file watcher, LSP and snapshot, so reading
-     * six folders at launch started six of each for a list the user had not asked to widen yet —
-     * measured as six `bootstrapping` lines and two full sets of MCP connections before the first
-     * prompt was even typed. A folder the user added is read when they open it (`loadDirectory`).
+     * Only the current folder is read here, so the bar paints without waiting for the added ones;
+     * `hydrateAddedDirectories` reads those right after, in the background.
      *
      * Sessions older than the bound are dropped, and the result stays sorted by id because the store
      * binary-searches it.
@@ -189,8 +229,41 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
     async function listSessions() {
       const current = currentDirectory()
       if (!current) return []
-      const sessions = await listDirectory(current, sessionAgeCutoff(Date.now()))
-      return sessions.toSorted((a, b) => a.id.localeCompare(b.id))
+      return mergeSessions([await listDirectory(current, sessionAgeCutoff(Date.now()))])
+    }
+
+    /**
+     * Reads the folders the user added, so their sessions appear whatever folder the TUI was
+     * launched in — a folder added in an earlier run is part of the list, not a row to open first.
+     *
+     * Deliberately detached from the first paint and sequential: naming a folder is not free on the
+     * server (it bootstraps its own instance: config, file watcher, LSP), so the launch folder is
+     * shown first and the added ones land one at a time instead of all at once. A folder that no
+     * longer exists is skipped rather than bootstrapped, and a folder that fails is logged and
+     * leaves the others alone.
+     */
+    let hydrating: Promise<void> | undefined
+    function hydrateAddedDirectories(): Promise<void> {
+      if (hydrating) return hydrating
+      hydrating = (async () => {
+        const current = folderKey(currentDirectory())
+        for (const directory of storedExtraDirectories()) {
+          const key = folderKey(directory)
+          if (!key || key === current || loadedDirectories.has(key)) continue
+          if (!existsSync(directory)) continue
+          try {
+            await loadDirectory(directory)
+          } catch (error) {
+            Log.Default.error("failed to list an added folder", {
+              directory,
+              error: error instanceof Error ? error.message : String(error),
+            })
+          }
+        }
+      })().finally(() => {
+        hydrating = undefined
+      })
+      return hydrating
     }
 
     event.subscribe((event, { workspace }) => {
@@ -508,6 +581,9 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         })
         .then(() => {
           if (store.status !== "complete") setStore("status", "partial")
+          // The bar paints with the launch folder alone; the folders the user added follow in the
+          // background, one at a time (see `hydrateAddedDirectories`).
+          void hydrateAddedDirectories()
           // non-blocking
           void Promise.all([
             ...(args.continue ? [] : [sessionListPromise.then((sessions) => setStore("session", reconcile(sessions)))]),
@@ -582,24 +658,30 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         /**
          * Reads one watched folder into the store.
          *
-         * Called when the user opens a folder, so the folders they are not looking at cost nothing:
-         * the instance behind each one (config, watcher, LSP) only starts when its list is needed.
+         * Called when the user adds or opens a folder; the folders the user already added are read
+         * once at startup by `hydrateAddedDirectories`, so this is a no-op cost-wise for them.
          */
-        async loadDirectory(directory: string) {
-          const fetched = await listDirectory(directory, sessionAgeCutoff(Date.now()))
-          const loaded = new Set(fetched.map((session) => session.id))
-          const merged = [...store.session.filter((session) => !loaded.has(session.id)), ...fetched].toSorted(
-            (a, b) => a.id.localeCompare(b.id),
-          )
-          setStore("session", reconcile(merged))
-        },
+        loadDirectory,
         async removeDirectory(directory: string) {
           kv.set(SESSION_EXTRA_DIRECTORIES_KEY, removeWatchedDirectory(storedExtraDirectories(), directory))
           await result.session.refresh()
         },
+        /**
+         * Re-reads every folder the list shows: the launch folder, plus each added folder already
+         * read. Dropping a folder the user removed from `loadedDirectories` is what takes its
+         * sessions out of the list, without touching the folders that stay.
+         */
         async refresh() {
-          const list = await listSessions()
-          setStore("session", reconcile(list))
+          const current = folderKey(currentDirectory())
+          const watched = watchedDirectoryList().filter(
+            (directory) => folderKey(directory) === current || loadedDirectories.has(folderKey(directory)),
+          )
+          for (const key of [...loadedDirectories.keys()]) {
+            if (!watched.some((directory) => folderKey(directory) === key)) loadedDirectories.delete(key)
+          }
+          const cutoff = sessionAgeCutoff(Date.now())
+          const pages = await Promise.all(watched.map((directory) => listDirectory(directory, cutoff)))
+          setStore("session", reconcile(mergeSessions(pages)))
         },
         status(sessionID: string) {
           const session = result.session.get(sessionID)

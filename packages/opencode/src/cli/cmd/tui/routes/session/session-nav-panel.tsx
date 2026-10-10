@@ -22,6 +22,7 @@ import {
   navSelection,
   navVisible,
   removableDirKey,
+  removableDirectories,
   selectionSessionID,
   toggleCollapsed,
   toggleRevealed,
@@ -77,11 +78,14 @@ export function SessionNavPanel() {
       })),
   )
 
+  // Same list for the bar and for the row model: see the session route, which owns the same pairing.
+  const navAdded = createMemo(() => removableDirectories(sync.session.extraDirectories(), sync.path.directory))
   const navList = createMemo(() =>
     navRows(filterNavSessions(navSessions(), navQuery()), activeID(), {
       overrides: navOverrides(),
       revealed: navRevealed(),
       reveal: navQuery().length > 0,
+      added: navAdded(),
     }),
   )
 
@@ -192,7 +196,7 @@ export function SessionNavPanel() {
         selected={navSel()}
         focused={navFocused()}
         height={navListHeight(dimensions().height)}
-        added={sync.session.extraDirectories()}
+        added={navAdded()}
         origin={sync.path.directory}
         overrides={navOverrides()}
         revealed={navRevealed()}
