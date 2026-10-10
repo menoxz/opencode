@@ -1,4 +1,6 @@
 ---
+model: command-code/deepseek/deepseek-v4.1-flash
+variant: medium
 description: Swarm worker subagent. Executes exactly one bounded task from an Agent Swarm run, reports progress on the inter-agent bus for long tasks, and always reports a final subagent_result. Use only as a worker dispatched by the swarm orchestrator.
 mode: subagent
 color: "#c084fc"

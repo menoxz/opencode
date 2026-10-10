@@ -1,4 +1,6 @@
 ---
+model: command-code/deepseek/deepseek-v4.1-flash
+variant: high
 description: Agent Swarm mode. Orchestrates a mission as a swarm of parallel worker agents: decompose into tasks, dispatch them as a swarm, coordinate via the inter-agent bus, aggregate and validate results into a final delivery. Use for large, parallelizable missions.
 mode: all
 color: "#a855f7"
