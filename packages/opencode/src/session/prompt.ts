@@ -1757,7 +1757,10 @@ export const layer = Layer.effect(
         // `while (true)` step loop; `processor.create` reads it as the
         // pre-mutation base and `step-finish` writes the end-of-step hash back,
         // so one step pays one `git write-tree` instead of two.
-        const carried: { snapshot?: string } = {}
+        // H1: the same carrier accumulates the number of SDK steps chained across
+        // the turn, so the external loop can keep `agent.steps` global to the turn
+        // instead of restarting the budget on every iteration.
+        const carried: { snapshot?: string; steps?: number } = {}
 
         while (true) {
           const contextSummary = createPromptContextSummary(step + 1)
@@ -1839,9 +1842,19 @@ export const layer = Layer.effect(
           // Some providers return "stop" even when the assistant message contains
           // tool calls. Keep the loop running so tool results can be sent back to
           // the model, but ignore cleanup-marked interrupted orphans.
+          // H1: with multi-step continuation the SDK feeds every tool result back to
+          // the model *inside the same* provider call, so a tool part left in
+          // `completed` state is history, not pending work: the loop must not reopen a
+          // provider call for it. Only a part whose execution has not finished still
+          // asks for another provider round (the SDK stops with `tool-calls` then).
           const hasToolCalls =
             lastAssistantMsg?.parts.some(
-              (part) => part.type === "tool" && !part.metadata?.providerExecuted && !isOrphanedInterruptedTool(part),
+              (part) =>
+                part.type === "tool" &&
+                part.state.status !== "completed" &&
+                part.state.status !== "error" &&
+                !part.metadata?.providerExecuted &&
+                !isOrphanedInterruptedTool(part),
             ) ?? false
           if (hasToolCalls) idleContinues = 0
 
@@ -2582,8 +2595,13 @@ contextSummary.add("skills", skills ? "inject relevant skill summary" : "no rele
               toolChoice: format.type === "json_schema" ? "required" : undefined,
             })
             autoContinueInstruction = undefined
+            // H1: one `process` call may have chained several provider steps inside
+            // its single `streamText`. Re-anchor the turn counter on the cumulative
+            // count the processor recorded, so `reachedStepLimit` (and the hard break
+            // below) judges the whole turn, not this external iteration alone.
+            step = carried.steps ?? step
             contextSummary.add("handleProcess", "run provider/model processing", handle.message, Date.now() - handleProcessStart)
-            if (isLastStep && !handle.message.error) {
+            if (!handle.message.error && reachedStepLimit(step, maxSteps)) {
               handle.message.finish = "step-limit"
               yield* sessions.updateMessage(handle.message)
             }

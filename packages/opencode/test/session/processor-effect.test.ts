@@ -714,7 +714,11 @@ it.live("session.processor effect tests complete AI SDK tool calls when native f
         const call = parts.find((part): part is MessageV2.ToolPart => part.type === "tool")
 
         expect(value).toBe("continue")
-        expect(yield* llm.calls).toBe(1)
+        // H1: a single tool round now chains its follow-up step inside one
+        // orchestrated `streamText` call. The SDK still issues one HTTP request per
+        // step (the tool call, then the completion over its result), so the fake
+        // server sees 2 where the single-step default saw 1.
+        expect(yield* llm.calls).toBe(2)
         expect(call?.callID).toBe("call_1")
         expect(call?.tool).toBe("lookup")
         expect(call?.state.status).toBe("completed")

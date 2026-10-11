@@ -80,7 +80,10 @@ type Input = {
   // hold the end-of-step hash across steps; the caller owns this mutable slot.
   // `create` reads it as the pre-mutation base and `step-finish` writes it back,
   // so one step pays one capture instead of two.
-  carrier?: { snapshot?: string }
+  // H1: the same slot also carries the number of SDK steps already consumed by
+  // this turn, so the multi-step continuation stays within the turn's budget of
+  // `agent.steps` (which the external loop trusts `create` to respect).
+  carrier?: { snapshot?: string; steps?: number }
 }
 
 export interface Interface {
@@ -162,6 +165,10 @@ export const layer = Layer.effect(
         needsCompaction: false,
         currentText: undefined,
         reasoningMap: {},
+        // H1: the turn-scoped carrier is owned by the caller (prompt.ts) and must be
+        // shared by reference, so the cumulative SDK-step count written on drain is
+        // visible to the external loop and the next `create` call.
+        carrier: input.carrier,
       }
       let aborted = false
       const slog = log.clone().tag("session.id", input.sessionID).tag("messageID", input.assistantMessage.id)
@@ -984,13 +991,29 @@ export const layer = Layer.effect(
             ctx.reasoningMap = {}
             yield* status.set(ctx.sessionID, { type: "busy" })
             const streamStart = Date.now()
-            const stream = llm.stream(streamInput)
+            // H1: chain tool rounds inside a single provider invocation. The turn's
+            // step budget (`agent.steps`) is consumed cumulatively across the external
+            // loop through the turn-scoped carrier, so a multi-step stream cannot
+            // overshoot it: each `process` call only hands the SDK the *remaining*
+            // budget (`agent.steps` is optional, so an unbounded agent falls back to
+            // the LLM-level default).
+            const consumed = ctx.carrier?.steps ?? 0
+            const remaining =
+              streamInput.agent.steps === undefined
+                ? streamInput.maxSteps
+                : Math.max(1, streamInput.agent.steps - consumed)
+            let chainedSteps = 0
+            const stream = llm.stream({ ...streamInput, maxSteps: remaining })
 
             yield* stream.pipe(
-              Stream.tap((event) => handleEvent(event)),
+              Stream.tap((event) => {
+                if (event.type === "step-finish") chainedSteps++
+                return handleEvent(event)
+              }),
               Stream.takeUntil(() => ctx.needsCompaction),
               Stream.runDrain,
             )
+            if (ctx.carrier) ctx.carrier.steps = consumed + chainedSteps
             slog.info("stream.drained", {
               duration: duration(streamStart),
               events: streamEventCounts,

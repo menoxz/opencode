@@ -3,7 +3,7 @@ import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import * as Log from "@opencode-ai/core/util/log"
 import { Context, Effect, Layer } from "effect"
 import * as Stream from "effect/Stream"
-import { streamText, wrapLanguageModel, type ModelMessage, type Tool } from "ai"
+import { stepCountIs, streamText, wrapLanguageModel, type ModelMessage, type Tool } from "ai"
 import type { LLMEvent } from "@opencode-ai/llm"
 import { LLMClient, RequestExecutor, WebSocketExecutor } from "@opencode-ai/llm/route"
 import type { LLMClientService } from "@opencode-ai/llm/route"
@@ -37,6 +37,14 @@ import { InstanceState } from "@/effect/instance-state"
 
 const log = Log.create({ service: "llm" })
 export const OUTPUT_TOKEN_MAX = ProviderTransform.OUTPUT_TOKEN_MAX
+/**
+ * H1: bounded ceiling for the SDK's native multi-step continuation. The `ai` SDK
+ * defaults to a single step (`stopWhen = stepCountIs(1)`), so a turn with N tool
+ * rounds reopens one orchestrated `streamText` per round. Passing a bound > 1 lets
+ * the SDK chain the rounds inside one provider invocation; keep it finite so a
+ * runaway tool loop still terminates.
+ */
+export const DEFAULT_MAX_PROVIDER_STEPS = 8
 
 /** Raised when a provider accepts the request but then stalls: the stream watchdog fires. */
 class StreamTimeoutError extends Error {
@@ -76,6 +84,13 @@ export type StreamInput = {
    * legacy behaviour (render the contract), so non-turn callers are unaffected.
    */
   includeContract?: boolean
+  /**
+   * H1: upper bound on the SDK's native multi-step continuation within this one
+   * orchestrated `streamText` call, so N tool rounds are chained by the SDK instead
+   * of reopening a provider invocation per round. Undefined falls back to
+   * DEFAULT_MAX_PROVIDER_STEPS; always clamped to >= 1 (the SDK default).
+   */
+  maxSteps?: number
 }
 
 export type StreamRequest = StreamInput & {
@@ -412,6 +427,25 @@ const live: Layer.Layer<
         headers: prepared.headers,
         maxRetries: input.retries ?? 0,
         messages: prepared.messages,
+        // H1: chain tool rounds inside this single provider invocation instead of
+        // letting the SDK stop at its default single step (`stepCountIs(1)`).
+        stopWhen: stepCountIs(Math.max(1, input.maxSteps ?? DEFAULT_MAX_PROVIDER_STEPS)),
+        // H1: `prepared.messages` ends with the volatile working-state card. Within
+        // one provider invocation the SDK appends each step's assistant and
+        // tool-result messages *after* that card, so it would drift into the middle
+        // of the next step's prompt — replaying volatile state into the cached
+        // history. Re-attach it as the last message of every step.
+        prepareStep: ({ messages: stepMessages }) => {
+          const tail = prepared.messages.at(-1)
+          if (
+            tail === undefined ||
+            tail.role !== "user" ||
+            typeof tail.content !== "string" ||
+            !tail.content.includes(WorkingState.MARKER)
+          )
+            return { messages: stepMessages }
+          return { messages: [...stepMessages.filter((message) => message !== tail), tail] }
+        },
         model: wrapLanguageModel({
           model: language,
           middleware: [

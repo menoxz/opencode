@@ -427,10 +427,16 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             // round-trip and adds no second copy to the context. The gate is
             // deterministic: it fires only for a read-only target, never suppresses a
             // call that can mutate, and leaves `read` to its own digest-level ledger.
-            // One step, one observation per target: a read-only call repeated inside
-            // the same assistant message coalesces into the first one instead of
-            // paying a second round-trip and adding a second copy of the same bytes.
-            if (ContextLedger.coalesces(ctx.sessionID, input.processor.message.id, { tool: item.id, args: inputArgs })) {
+            // One step, one observation per target: a read-only call repeated within
+            // a single step coalesces into the first one instead of paying a second
+            // round-trip and adding a second copy of the same bytes.
+            // H1: several SDK steps now share one assistant message, so the message
+            // id no longer identifies a step. Key the claim on the turn id plus the
+            // number of messages the provider saw for this step: it strictly grows
+            // between the steps of a turn and is identical for the parallel calls of
+            // one step.
+            const stepKey = `${input.processor.message.id}:${options.messages.length}`
+            if (ContextLedger.coalesces(ctx.sessionID, stepKey, { tool: item.id, args: inputArgs })) {
               log.info("read-only call coalesced", {
                 sessionID: ctx.sessionID,
                 messageID: input.processor.message.id,
