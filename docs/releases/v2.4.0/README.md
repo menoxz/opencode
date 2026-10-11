@@ -47,6 +47,7 @@ mesure, il ne décide pas.
 | 0 | Cadrage & baseline | `BASELINE.md` rempli, mesures figées et datées | **G0** baseline figée |
 | 1 | Spécification | 8 fiches `items/H*.md` complètes (10 sections) | **G1** toutes spec'd |
 | 2 | Validation indépendante | une ligne de statut par item dans `PROGRESS.md` | **G2** ≥ 1 item `PASS` |
+| 3 | Phase 3a — correction des fiches | objections CRITIQUE levées, `Required changes` appliqués aux fiches | **G3a** aucune objection CRITIQUE ouverte |
 | 3 | Implémentation | correctif + test par item, par vagues | **G3** typecheck exit 0 + tests verts |
 | 4 | Mesure du gain | delta chiffré vs `BASELINE.md`, consigné dans `PROGRESS.md` | **G4** gain ≥ seuil de l'item |
 | 5 | Build & déploiement | binaire `2.4.0` déployé, `--version` vérifié | **G5** accord explicite de l'opérateur |

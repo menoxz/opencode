@@ -19,16 +19,28 @@ Ce fichier est la **seule** source de vérité du statut des items de la v2.4.0.
 
 ## Tableau de bord
 
-| id | item | priorité | vague | statut | validateur | commit | gain mesuré |
+| id | item | priorité | vague | statut | verdict | commit fiche | gain mesuré |
 |---|---|---|---|---|---|---|---|
-| H1 | un seul appel provider par round d'outils | 1 | D | SPEC_DONE | à désigner | 8cf6c41a1 | — |
-| H2 | cache de prompt explicite (openai-compatible) | 2 | B | SPEC_DONE | à désigner | aad479096 | — |
-| H3 | préfixe système stable (hors volatils) | 3 | A | SPEC_DONE | à désigner | aad479096 | — |
-| H4 | un seul spawn git par étape | 4 | C | SPEC_DONE | à désigner | 63f81d824 | — |
-| H5 | mémoïser la découverte d'instructions | 5 | C | SPEC_DONE | à désigner | 63f81d824 | — |
-| H6 | shell persistant | 6 | C | SPEC_DONE | à désigner | 37a84ac8e | — |
-| H7 | dédupliquer les injections de contexte | 7 | A | SPEC_DONE | à désigner | 37a84ac8e | — |
-| H8 | retry non destructif + garde-fous | 8 | D | SPEC_DONE | à désigner | 8cf6c41a1 | — |
+| H1 | un seul appel provider par round d'outils | 1 | D | PASS_WITH_CHANGES | `verdicts/H1-verdict.md` | 8cf6c41a1 | — |
+| H2 | cache de prompt explicite (openai-compatible) | 2 | B | PASS_WITH_CHANGES | `verdicts/H2-verdict.md` | aad479096 | — |
+| H3 | préfixe système stable (hors volatils) | 3 | A | PASS_WITH_CHANGES | `verdicts/H3-verdict.md` | aad479096 | — |
+| H4 | un seul spawn git par étape | 4 | C | PASS_WITH_CHANGES | `verdicts/H4-verdict.md` | 63f81d824 | — |
+| H5 | mémoïser la découverte d'instructions | 5 | C | PASS_WITH_CHANGES | `verdicts/H5-verdict.md` | 63f81d824 | — |
+| H6 | shell persistant | 6 | C | PASS_WITH_CHANGES | `verdicts/H6-verdict.md` | 37a84ac8e | — |
+| H7 | dédupliquer les injections de contexte | 7 | A | PASS_WITH_CHANGES | `verdicts/H7-verdict.md` | 37a84ac8e | — |
+| H8 | retry non destructif + garde-fous | 8 | D | PASS_WITH_CHANGES | `verdicts/H8-verdict.md` | 8cf6c41a1 | — |
+
+## Objections ouvertes (issues des verdicts)
+
+Trois objections CRITIQUE, à lever avant l'implémentation de l'item concerné :
+
+| id | motif | nature |
+|---|---|---|
+| H4-O2 | le « code cible » §4 lit `ctx.snapshot` avant sa déclaration et suppose un `ctx` inter-étapes inexistant (`create` instancié à chaque `while`) | défaut réel : le patch ne compile pas |
+| H7-O1 | le comptage « objectif injecté 3× » est **faux** — `<goal_reminder>` ne porte pas l'objectif ; vrai compte 2×/2× | défaut réel : axe de correction no-op |
+| H8-O1 | le timeout d'inactivité proposé (120 s) est la valeur que `llm.ts:514-522` documente comme ayant cassé un tour sain | défaut réel : réintroduit la régression |
+
+Objections MAJEURES/MINEURES : voir chaque `verdicts/H*-verdict.md`, section « Required changes ». Elles sont versées en guidance d'implémentation.
 
 ## Gates
 
@@ -36,7 +48,7 @@ Ce fichier est la **seule** source de vérité du statut des items de la v2.4.0.
 |---|---|---|
 | G0 | `BASELINE.md` rempli, mesures datées et figées | **franchi 2026-10-11** |
 | G1 | 8 fiches `items/H*.md` complètes | **franchi 2026-10-11** |
-| G2 | ≥ 1 item `PASS` (validation indépendante) | à venir |
+| G2 | ≥ 1 item `PASS` (validation indépendante) | **franchi 2026-10-11** — 8× `PASS_WITH_CHANGES`, aucun `FAIL` ; le critère littéral « ≥ 1 `PASS` » n'a pas de porteur, les exigences de changement sont versées en phase 3 |
 | G3 | typecheck exit 0 + tests verts pour chaque item implémenté | à venir |
 | G4 | gain ≥ seuil d'acceptation de l'item, chiffré | à venir |
 | G5 | binaire 2.4.0 déployé, `--version` vérifié — **accord opérateur requis** | à venir |
@@ -51,3 +63,4 @@ Ce fichier est la **seule** source de vérité du statut des items de la v2.4.0.
 | 2026-10-11 | Phase 1 ouverte : rédaction des 8 fiches `items/H*.md` (4 rédacteurs, 2 items chacun). | agent |
 | 2026-10-11 | **G1 franchi.** 8 fiches écrites (H1 251 l., H2 289, H3 294, H4 261, H5 281, H6 204, H7 255, H8 217). Self-assessments : H3 `READY`, les 7 autres `NEEDS_REVIEW` avec incertitudes explicites. | agent |
 | 2026-10-11 | Phase 2 ouverte : validation indépendante des 8 fiches. Les validateurs écrivent un fichier `verdicts/H*.md` ; l'orchestrateur consolide `PROGRESS.md` (évite l'écriture concurrente sur ce registre). | agent |
+| 2026-10-11 | **G2 franchi.** 8 verdicts indépendants : tous `PASS_WITH_CHANGES`, aucun `FAIL`. Citations revérifiées dans la source par les validateurs (ex. H1 : `stopWhen = stepCountIs(1)` confirmé en `ai@6.0.168` `index.js:4122`/`:6459`). 3 objections CRITIQUE (H4-O2, H7-O1, H8-O1) ⇒ phase 3a de correction des fiches. | agent |
