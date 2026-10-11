@@ -47,12 +47,13 @@ export const OUTPUT_TOKEN_MAX = ProviderTransform.OUTPUT_TOKEN_MAX
 export const DEFAULT_MAX_PROVIDER_STEPS = 8
 
 /**
- * H8: default bound for the stream idle watchdog. It measures *inter-chunk*
- * inactivity only — it is armed after the first event, so a turn that waits on
- * the user (question, permission, slow tool) before the provider emits anything
- * is never cut. Kept well above a typical human response time; an operator can
- * shorten it with OPENCODE_EXPERIMENTAL_STREAM_TIMEOUT_MS or disable the
- * watchdog entirely with OPENCODE_DISABLE_STREAM_TIMEOUT.
+ * H8: suggested bound (ms) for the stream idle watchdog. The watchdog is OFF by
+ * default — opt in with OPENCODE_EXPERIMENTAL_STREAM_TIMEOUT_MS. Armed by
+ * default it cannot tell a stalled provider from a harness waiting on the
+ * operator: a `question` tool call is itself a stream event, so the answer time
+ * that follows is an ordinary inter-chunk gap. Measured here as a healthy turn
+ * killed by `stream produced no event within 300000ms` while the operator was
+ * answering. OPENCODE_DISABLE_STREAM_TIMEOUT stays an absolute kill switch.
  */
 export const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300_000
 
@@ -562,23 +563,19 @@ const live: Layer.Layer<
             // instead of hanging. Stream.fail (not empty) is required so runDrain
             // fails.
             //
-            // H8: armed AFTER the first event, on purpose. Tools run *inside* the
-            // stream consumption, so a turn that asks the user a question, waits on
-            // a permission prompt, or runs a slow tool emits no stream event for as
-            // long as that takes. An always-on bound measured a 120s gap while the
-            // user was answering a question and failed a healthy turn (this
-            // install's log: `question ... asking`, then permissions and reads, then
-            // 120003ms later `stream produced no event within 120000ms`). The bound
-            // cannot tell "waiting for the user" from "provider stalled", so it only
-            // starts measuring once the provider has emitted something: the
-            // pre-first-event wait is exempt, inter-chunk gaps are bounded.
+            // H8: OFF by default (opt-in). Arming it after the first event was not
+            // enough: the `question` tool call is itself a stream event, so the
+            // operator's thinking time that follows is an ordinary inter-chunk gap.
+            // Measured here: a healthy turn failed with `stream produced no event
+            // within 300000ms` while the operator was answering a question. The
+            // bound cannot tell "waiting for the user" from "provider stalled", so
+            // it is only armed when an operator asks for it explicitly.
             //
-            // `idleTimeoutMs` defaults to DEFAULT_STREAM_IDLE_TIMEOUT_MS (bounded),
-            // is overridable with OPENCODE_EXPERIMENTAL_STREAM_TIMEOUT_MS, and is
-            // defeatable with OPENCODE_DISABLE_STREAM_TIMEOUT.
+            // `idleTimeoutMs` comes from OPENCODE_EXPERIMENTAL_STREAM_TIMEOUT_MS
+            // only, and stays defeatable with OPENCODE_DISABLE_STREAM_TIMEOUT.
             const idleTimeoutMs = flags.disableStreamTimeout
               ? undefined
-              : (flags.streamTimeoutMs ?? DEFAULT_STREAM_IDLE_TIMEOUT_MS)
+              : flags.streamTimeoutMs
             return idleTimeoutMs === undefined
               ? baseStream
               : withIdleTimeout(baseStream, idleTimeoutMs)

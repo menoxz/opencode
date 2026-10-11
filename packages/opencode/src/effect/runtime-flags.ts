@@ -66,8 +66,11 @@ export class Service extends ConfigService.Service<Service>()("@opencode/Runtime
   outputTokenMax: positiveInteger("OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX"),
   bashDefaultTimeoutMs: positiveInteger("OPENCODE_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS"),
   streamTimeoutMs: positiveInteger("OPENCODE_EXPERIMENTAL_STREAM_TIMEOUT_MS"),
-  // H8: the stream idle watchdog is on by default (bounded, armed after the
-  // first event); set OPENCODE_DISABLE_STREAM_TIMEOUT to turn it off entirely.
+  // H8: the stream idle watchdog is OFF by default — opt in with
+  // OPENCODE_EXPERIMENTAL_STREAM_TIMEOUT_MS. Armed by default it killed healthy
+  // turns that were waiting on the operator (a `question` tool call is itself a
+  // stream event, so the answer time counts as an inter-chunk gap).
+  // OPENCODE_DISABLE_STREAM_TIMEOUT stays the absolute kill switch.
   disableStreamTimeout: bool("OPENCODE_DISABLE_STREAM_TIMEOUT"),
   experimentalNativeLlm: bool("OPENCODE_EXPERIMENTAL_NATIVE_LLM"),
   client: Config.string("OPENCODE_CLIENT").pipe(Config.withDefault("cli")),
