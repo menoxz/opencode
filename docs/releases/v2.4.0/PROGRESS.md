@@ -21,7 +21,7 @@ Ce fichier est la **seule** source de vérité du statut des items de la v2.4.0.
 
 | id | item | priorité | vague | statut | verdict | commit fiche | gain mesuré |
 |---|---|---|---|---|---|---|---|
-| H1 | un seul appel provider par round d'outils | 1 | D | PASS_WITH_CHANGES | `verdicts/H1-verdict.md` | 8cf6c41a1 | — |
+| H1 | un seul appel provider par round d'outils | 1 | D | TODO (partiel annulé) | `verdicts/H1-verdict.md` | 8cf6c41a1 | — |
 | H2 | cache de prompt explicite (openai-compatible) | 2 | B | IMPL_DONE | `verdicts/H2-verdict.md` | aad479096 | à mesurer (rejeu live en attente) |
 | H3 | préfixe système stable (hors volatils) | 3 | A | IMPL_DONE | `verdicts/H3-verdict.md` | aad479096 | à mesurer |
 | H4 | un seul spawn git par étape | 4 | C | IMPL_DONE | `verdicts/H4-verdict.md` | 63f81d824 | à mesurer |
@@ -50,7 +50,7 @@ Objections MAJEURES/MINEURES : voir chaque `verdicts/H*-verdict.md`, section « 
 | G1 | 8 fiches `items/H*.md` complètes | **franchi 2026-10-11** |
 | G2 | ≥ 1 item `PASS` (validation indépendante) | **franchi 2026-10-11** — 8× `PASS_WITH_CHANGES`, aucun `FAIL` ; le critère littéral « ≥ 1 `PASS` » n'a pas de porteur, les exigences de changement sont versées en phase 3 |
 | G3a | aucune objection CRITIQUE ouverte | **franchi 2026-10-11** — H4-O2, H7-O1, H8-O1 levées par les correcteurs |
-| G3 | typecheck exit 0 + tests verts pour chaque item implémenté | partiel : H3, H4, H5, H6, H7 verts (5/8) |
+| G3 | typecheck exit 0 + tests verts pour chaque item implémenté | partiel : H2, H3, H4, H5, H6, H7 verts (6/8) ; H1 et H8 restants |
 | G4 | gain ≥ seuil d'acceptation de l'item, chiffré | à venir |
 | G5 | binaire 2.4.0 déployé, `--version` vérifié — **accord opérateur requis** | à venir |
 
@@ -73,3 +73,4 @@ Objections MAJEURES/MINEURES : voir chaque `verdicts/H*-verdict.md`, section « 
 | 2026-10-11 | Vague B (H2) non lancée lors de la vague C — lancée maintenant, avec H1 (vague D) en parallèle sous propriété de fichiers disjointe. | agent |
 | 2026-10-11 | **H2 implémenté.** Point de cache explicite émis pour la famille openai-compatible (garde bornée `api.npm === "@ai-sdk/openai-compatible" && api.id.includes("deepseek")`, `transform.ts:1117-1131`) ; clé strictement `input.sessionID` ; `applyCaching` intact. Tests fournisseur 232 pass / 0 fail, typecheck exit 0. **Rejeu live §7.2 NON exécuté** : aucune entrée `opencode-go` dans la config locale (providers présents : github-copilot, command-code) ⇒ commande différée à l'opérateur. Tant que `cached_tokens` n'est pas mesuré > 0, H2 reste « à mesurer ». | agent |
 | 2026-10-11 | **H1 : ÉCHEC DE LANCEMENT.** L'implémenteur a épuisé son budget d'étapes sans rapport final. Son travail partiel (`llm.ts`, `processor.ts`) **casse le typecheck** : 4 erreurs dans `processor.ts` (998 : handler retournant `void` au lieu d'un `Effect` ; 1075/1079 : `Effect<Result, never, unknown>` au lieu de `never`). Travail non committé, à reprendre ou à annuler. Aucun autre item n'est affecté. | agent |
+| 2026-10-11 | **H1 : partiel ANNULÉ** (`git checkout` de `llm.ts` et `processor.ts`, retour à `270867d87`). Deux défauts réels constatés à la lecture, au-delà de l'erreur de type : (1) `Stream.tap` exige un retour `Effect`, or le handler retournait `void` ; (2) plus grave, `Stream.takeUntil(() => ctx.needsCompaction \|\| stopAtStepLimit)` avec `DEFAULT_MAX_PROVIDER_STEPS = 1` **coupe le flux au premier `step-start`** — `takeUntil` consomme l'élément qui satisfait le prédicat puis termine, donc tous les événements suivants (texte, outils) sont droppés. Le correctif était inerte au mieux, tronquant au pire. La leçon est reportée dans la tâche de reprise : le budget d'étapes doit agir par `stopWhen` (côté SDK), pas par un `takeUntil` qui tronque le flux. | agent |
