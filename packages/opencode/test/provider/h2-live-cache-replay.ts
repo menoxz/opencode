@@ -92,7 +92,14 @@ async function call(withKey: boolean, tag: string): Promise<Probe> {
 
   const res = await fetch(`${baseURL}/chat/completions`, {
     method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${apiKey}`,
+      // L'endpoint opencode-go exige cet en-tête : sans lui la requête est rejetée en
+      // HTTP 400 `MissingSessionID` AVANT toute évaluation du champ de cache, ce qui
+      // rendait le rejeu muet (constaté 2026-10-11).
+      "x-opencode-session": sessionID,
+    },
     body: JSON.stringify(body),
   })
   const text = await res.text()
@@ -132,13 +139,25 @@ const b2 = await call(true, "B2-with-key")
 const uncached = (p: Probe) => p.prompt - p.cached
 const rejected = [a1, a2, b1, b2].find((p) => p.status === 400)
 
+// Le verdict se juge contre le CONTRÔLE NÉGATIF A (sans clé), pas contre la seule
+// progression de B : si A atteint déjà le même cache, la clé n'apporte rien et le
+// critère « uncached_2 < uncached_1 » de B ne peut pas distinguer les deux cas
+// (mesuré 2026-10-11 : A2 = B2 = 3072 cachés, 37 non cachés).
 if (rejected) {
   console.log("# §7.2 : REJETÉ (HTTP 400) — la voie « émettre un champ de cache » est fermée ⇒ H2 se réduit à H3.")
-} else if (b2.cached > 0 && uncached(b2) < uncached(b1)) {
-  console.log(`# §7.2 : OUI — cache mord (cached_2=${b2.cached} > 0, uncached_2=${uncached(b2)} < uncached_1=${uncached(b1)})`)
+} else if (b2.cached > 0 && a2.cached === 0) {
+  console.log(
+    `# §7.2 : OUI — la clé de cache est ce qui fait mordre le cache (A2=0 sans clé, B2=${b2.cached} avec clé).`,
+  )
+} else if (a2.cached > 0) {
+  console.log(
+    `# §7.2 : NEUTRE — le serveur cache le préfixe AUTOMATIQUEMENT : le contrôle négatif sans clé atteint le même ` +
+      `cache (A2=${a2.cached} cachés) que le patch (B2=${b2.cached}). La clé explicite n'apporte aucune mesure ` +
+      `positive ⇒ H2 se réduit à H3, mais pour cette raison mesurée, pas faute de cache.`,
+  )
 } else {
   console.log(
-    `# §7.2 : NON — cached_tokens reste à 0 (cached_2=${b2.cached}) ⇒ requalifier §7.2 en cached_2===0 et H2 se réduit à H3.`,
+    `# §7.2 : NON — aucun cache des deux côtés (A2=${a2.cached}, B2=${b2.cached}) ⇒ H2 se réduit à H3.`,
   )
 }
 console.log(`# contrôle négatif A (sans clé) : cached_1=${a1.cached} cached_2=${a2.cached}`)

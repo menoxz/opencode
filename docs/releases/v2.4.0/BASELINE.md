@@ -93,6 +93,20 @@ Comparaison directe avec les mesures ci-dessus. Chaque ligne a un test nommé co
 | H7 | injections de l'objectif / de la DoD par tour | 2 × / 2 × | **1 × / 1 ×** | `context-dedup.test.ts` (7 pass) |
 | H8 | ouverture du stream sur erreur transitoire après émission | relancé depuis zéro (refacturé) | **1 seule ouverture**, texte `partial` conservé | `retry-non-destructive.test.ts` (4 pass) |
 
+### Mesures en session réelle (artefact déployé 2.4.0, 2026-10-11)
+
+Session headless `opencodev2 run` sur le binaire déployé (SHA `50FF265E…`, modèle
+`opencode-go/deepseek-v4.1-flash`, 23,4 s, exit 0).
+
+| item | grandeur | mesure réelle | verdict |
+|---|---|---|---|
+| H1 | invocations provider par tour à 3 rounds d'outils | **1 seul `stream.drained`** portant `step-start:3`, `tool-call:3`, `tool-result:3`, `step-finish:3`, `finish:1` | **CONFIRMÉ** — la boucle externe produisait trois invocations |
+| H2 | cache de préfixe serveur | **3 072 / 3 109 tokens cachés**, identique avec et sans clé de cache | **clé NEUTRE** — le cache est automatique |
+| H4 | processus `git write-tree` par tour à 3 étapes | **6 captures** (motif 2N) alors que le critère promet ≤ N+1 = 4 | **CONTREDIT** — écart ouvert, cause à mesurer (le câblage est présent) |
+
+Chaque ligne `tracking` du journal suit immédiatement un `git write-tree` réel
+(`snapshot/index.ts:321-323`) : le comptage de 6 correspond donc bien à 6 spawns.
+
 **Agrégat** — suite ciblée `goal-contract + registry + parameters` :
 baseline **86 pass / 8 fail en 38,57 s** ⇒ après **92 pass / 4 fail en 28,3 s**.
 
@@ -104,8 +118,13 @@ assertions préexistantes (`goal-contract` : `create_objectif` réponse structur
 manquant) — hors périmètre v2.4.0.
 
 **Non mesuré, assumé** :
-- H2 : rejeu live impossible sans credentials `opencode-go` (config locale : github-copilot,
-  command-code). Commande de mesure dans `items/H2.md` §7.2, à lancer par l'opérateur.
+- H2 : **rejeu live EXÉCUTÉ le 2026-10-11** contre `https://opencode.ai/zen/go/v1` avec
+  `opencode-go/deepseek-v4.1-flash`. Le cache de préfixe du serveur est **automatique** : le
+  contrôle négatif sans clé atteint le même résultat que le patch (A2 = B2 = **3 072 cachés /
+  37 non cachés** sur 3 109). La clé explicite est donc **neutre** — H2 se réduit à H3, non
+  faute de cache mais faute de gain mesurable. Prérequis découvert : l'endpoint exige
+  l'en-tête `x-opencode-session`, sinon HTTP 400 `MissingSessionID` (ce qui rendait le rejeu
+  muet et faisait conclure à tort que la voie était fermée).
 - H3 / H7 : pas de comptage de tokens (le budget de tokens n'est pas instrumenté ici) ;
   l'effet est prouvé par identité d'octets et par compte d'injections.
 - H1 : la preuve *individuelle* des quatre sites (`turn_plan`, `continuation`, `stall-watch`,
