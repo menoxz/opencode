@@ -45,16 +45,37 @@ hook `beforeEach` en timeout) — **ne pas les confondre avec une régression**.
 | coût d'une invalidation de bloc de cache | 202k tokens re-facturés/tour ($1,05) | commentaire `message-v2.ts:405-416` |
 | coût d'une compaction (256k ctx) | ≈ 2,50 $, amorti après ~40 tours | commentaire `overflow.ts:15-20` |
 
-## Latence locale (à instrumenter — phase 0)
+## Latence locale (mesurée — phase 0, 2026-10-11)
 
-Ces mesures ne sont **pas** encore prises : la phase 0 doit les produire avant G0.
+Mesures prises sur cette machine, workdir `C:\jeanluc\opencode-fork`, 5 échantillons,
+`Measure-Command`. La locale système sépare les décimales par une virgule ; les valeurs
+sont normalisées en pointe ci-dessous.
 
 | mesure | méthode | valeur |
 |---|---|---|
-| processus spawnés par tour à N étapes (`git`, shell) | compteur process / trace | à mesurer |
-| temps mur de 5 commandes shell triviales (`pwsh`) | chrono | à mesurer |
-| appels provider par round d'outils | journal session | à mesurer (attendu 1/round) |
-| temps synchrone pré-provider d'un step | trace `SessionProcessor` | à mesurer |
+| démarrage interpréteur `pwsh` | `pwsh -NoLogo -NoProfile -NonInteractive -Command "exit 0"` ×5 | **272,6 ms** (287,3 · 251,7 · 246,3 · 280,4 · 297,2) |
+| démarrage interpréteur `cmd` | `cmd /d /c "exit 0"` ×5 | **20,7 ms** (32,4 · 16,6 · 17,1 · 19,4 · 18,1) |
+| `git status --porcelain=v1` | ×5 dans le worktree | **75,7 ms** (90,3 · 77,1 · 68,3 · 69,1 · 73,9) |
+| `git rev-parse HEAD` | ×5 | **42,1 ms** (50,4 · 40,7 · 40,9 · 38,5 · 39,8) |
+| appels provider par round d'outils | par construction (`stopWhen = stepCountIs(1)`) | 1 par round (cible H1 : 1 pour N rounds) |
+| base de session | `~/.local/share/opencodev2/opencode.db` | **1,65 Go** (11/10/2026 10:04), WAL 32 o au repos |
+
+### Lecture
+
+- Une commande shell paie **~272 ms** de démarrage pwsh contre ~21 ms pour cmd (13×).
+  Référence de **H6** (shell persistant) : la rafale de 5 commandes vaut ~1,4 s de pur
+  démarrage.
+- Un `step` paie **deux** spawns git (75,7 + 42,1 ≈ **118 ms**) avant l'appel modèle.
+  Référence de **H4** (un seul spawn git par étape).
+- `opencode.db` pèse 1,65 Go : signal de rétention (cf. `docs/harness-audit` P08), hors
+  périmètre v2.4.0 mais à surveiller.
+
+### Non mesuré (assumé)
+
+- **Temps synchrone pré-provider d'un step** : non instrumenté ; dérivable seulement d'une
+  trace `SessionProcessor`. À instrumenter si un item le réclame (H5/H7 s'en passent).
+- **Processus spawnés par tour à N étapes** : déduit de la lecture du code (2 spawns git +
+  1 par commande shell), non compté dynamiquement.
 
 ## I/O base (hors périmètre initial, à surveiller)
 

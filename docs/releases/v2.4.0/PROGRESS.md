@@ -21,20 +21,20 @@ Ce fichier est la **seule** source de vérité du statut des items de la v2.4.0.
 
 | id | item | priorité | vague | statut | validateur | commit | gain mesuré |
 |---|---|---|---|---|---|---|---|
-| H1 | un seul appel provider par round d'outils | 1 | D | TODO | — | — | — |
-| H2 | cache de prompt explicite (openai-compatible) | 2 | B | TODO | — | — | — |
-| H3 | préfixe système stable (hors volatils) | 3 | A | TODO | — | — | — |
-| H4 | un seul spawn git par étape | 4 | C | TODO | — | — | — |
-| H5 | mémoïser la découverte d'instructions | 5 | C | TODO | — | — | — |
-| H6 | shell persistant | 6 | C | TODO | — | — | — |
-| H7 | dédupliquer les injections de contexte | 7 | A | TODO | — | — | — |
-| H8 | retry non destructif + garde-fous | 8 | D | TODO | — | — | — |
+| H1 | un seul appel provider par round d'outils | 1 | D | SPEC | — | — | — |
+| H2 | cache de prompt explicite (openai-compatible) | 2 | B | SPEC | — | — | — |
+| H3 | préfixe système stable (hors volatils) | 3 | A | SPEC | — | — | — |
+| H4 | un seul spawn git par étape | 4 | C | SPEC | — | — | — |
+| H5 | mémoïser la découverte d'instructions | 5 | C | SPEC | — | — | — |
+| H6 | shell persistant | 6 | C | SPEC | — | — | — |
+| H7 | dédupliquer les injections de contexte | 7 | A | SPEC | — | — | — |
+| H8 | retry non destructif + garde-fous | 8 | D | SPEC | — | — | — |
 
 ## Gates
 
 | gate | critère | état |
 |---|---|---|
-| G0 | `BASELINE.md` rempli, mesures datées et figées | ouvert |
+| G0 | `BASELINE.md` rempli, mesures datées et figées | **franchi 2026-10-11** |
 | G1 | 8 fiches `items/H*.md` complètes | à venir |
 | G2 | ≥ 1 item `PASS` (validation indépendante) | à venir |
 | G3 | typecheck exit 0 + tests verts pour chaque item implémenté | à venir |
@@ -47,3 +47,5 @@ Ce fichier est la **seule** source de vérité du statut des items de la v2.4.0.
 |---|---|---|
 | 2026-10-11 | Création du programme. Ordre des vagues fixé : H3/H7 → H2 → H4/H5/H6 → H1/H8. H1 en dernier (plus fort gain, plus fort risque). | agent |
 | 2026-10-11 | Gel des écritures SQLite par événement hors périmètre tant que la phase 4 ne les désigne pas comme coût dominant. | agent |
+| 2026-10-11 | **G0 franchi.** Mesures de phase 0 prises : pwsh 272,6 ms vs cmd 20,7 ms ; git status 75,7 ms ; git rev-parse 42,1 ms ; `opencode.db` 1,65 Go. | agent |
+| 2026-10-11 | Phase 1 ouverte : rédaction des 8 fiches `items/H*.md` (4 rédacteurs, 2 items chacun). | agent |
