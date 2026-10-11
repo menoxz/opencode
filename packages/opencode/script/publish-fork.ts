@@ -54,8 +54,19 @@ for (const rawPath of new Bun.Glob("opencode-*/package.json").scanSync({ cwd: ".
     console.log(`[dry-run] publish ${name}@${version} (${tgz})`)
     continue
   }
-  await $`npm publish ${tgz} --access public --tag latest`.cwd(`./dist/${folder}`)
-  console.log(`published ${name}@${version}`)
+  // Idempotent: a re-run after a partial/interrupted publish must resume, not abort.
+  // npm rejects republishing an existing version with 403 EPUBLISHCONFLICT.
+  const res = await $`npm publish ${tgz} --access public --tag latest`.cwd(`./dist/${folder}`).nothrow().quiet()
+  if (res.exitCode === 0) {
+    console.log(`published ${name}@${version}`)
+  } else {
+    const out = `${res.stdout}${res.stderr}`
+    if (/cannot publish over|EPUBLISHCONFLICT|previously published/i.test(out)) {
+      console.log(`skip ${name}@${version}: already published`)
+    } else {
+      throw new Error(`publish failed for ${name}@${version}\n${out}`)
+    }
+  }
 }
 
 // Meta package
@@ -101,6 +112,15 @@ if (!metaTgz) throw new Error("pack failed for meta package")
 if (dryRun) {
   console.log(`[dry-run] publish ${scope}@${version} (${metaTgz})`)
 } else {
-  await $`npm publish ${metaTgz} --access public --tag latest`.cwd(meta)
-  console.log(`published ${scope}@${version}`)
+  const res = await $`npm publish ${metaTgz} --access public --tag latest`.cwd(meta).nothrow().quiet()
+  if (res.exitCode === 0) {
+    console.log(`published ${scope}@${version}`)
+  } else {
+    const out = `${res.stdout}${res.stderr}`
+    if (/cannot publish over|EPUBLISHCONFLICT|previously published/i.test(out)) {
+      console.log(`skip ${scope}@${version}: already published`)
+    } else {
+      throw new Error(`publish failed for ${scope}@${version}\n${out}`)
+    }
+  }
 }

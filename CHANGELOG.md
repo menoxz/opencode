@@ -5,6 +5,15 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v2.4.3] - 2026-10-11
+
+### Fixed
+- **La publication npm du fork n'est plus partielle sous Windows.** `script/build.ts` faisait `rename(src → dist/bin/opencode.exe)` pour la rotation : le binaire de la plateforme hôte quittait `dist/<paquet>/bin/`, et `publish-fork.ts` saute alors ce paquet (garde `binExists`) — d'où la release 2.4.2 publiée à 11/13 le 2026-10-11 (`windows-x64` et `-baseline` manquants, méta `latest` alors inutilisable sur Windows x64 : `script/postinstall.mjs:129` lit `optionalDependencies[name]` et sort si absent). La rotation sauvegarde l'ancien binaire puis **copie** (jamais déplace) le nouveau. Unix utilisait déjà `copyFile`, la CI n'était donc pas affectée.
+- **`publish-fork.ts` reprend après une interruption au lieu d'échouer.** `npm publish` refuse de republier une version existante (403 `EPUBLISHCONFLICT`) ; le script traite désormais ce cas comme « déjà publié » et poursuit la boucle, au lieu de l'abandonner. Une relance après coupure réseau ou dépassement du délai du terminal termine la publication (cas réel : 8/13 publiés, relance ⇒ 13/13).
+
+### Changed
+- Version 2.4.3. `latest` de `@lux-tech/opencode-ai` pointe dessus (la méta 2.4.2, incomplète, n'est plus servie par défaut). Contrôle positif : installation dans un préfixe propre, binaire 243 Mo résolu par `postinstall.mjs`, `opencodev2 --version` → `2.4.3`.
+
 ## [v2.4.2] - 2026-10-11
 
 ### Changed

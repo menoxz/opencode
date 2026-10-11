@@ -322,7 +322,12 @@ for (const item of targets) {
         for (let attempt = 0; attempt < 10; attempt++) {
           try {
             await fs.promises.rename(dest, backup).catch(() => {})
-            await fs.promises.rename(src, dest)
+            // COPY, not rename: the per-package binary must stay in
+            // dist/<name>/bin/ so the npm publisher can pack it. Renaming it out
+            // left the host platform's folder empty on Windows, so
+            // publish-fork.ts skipped it ("no binary") and shipped a partial
+            // release. Unix already copies (see the else branch).
+            await fs.promises.copyFile(src, dest)
             rotated = true
             break
           } catch (error) {
