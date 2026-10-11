@@ -75,7 +75,9 @@ par point, que chaque mécanisme reste exercé.
 
 - **Rédacteur** (1 par item) : produit la fiche, n'implémente pas.
 - **Validateur** (1 par item, indépendant) : statue `PASS` / `PASS_WITH_CHANGES` /
-  `FAIL`, écrit les objections numérotées, met à jour `PROGRESS.md`.
+  `FAIL`, écrit les objections numérotées dans `verdicts/<ID>.md`. Il **ne modifie pas**
+  `PROGRESS.md` (écriture concurrente interdite) : l'orchestrateur consolide ce registre
+  depuis les verdicts.
 - **Implémenteur** : applique la fiche validée + son test, par vague.
 - **Measurer** : instrumente et chiffre le delta vs `BASELINE.md`.
 
