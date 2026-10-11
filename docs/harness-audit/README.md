@@ -49,3 +49,11 @@ en correctifs implémentés.
 | 2 | validation indépendante des 20 propositions | à venir |
 | 3 | correction des propositions non PASS | à venir |
 | 4 | implémentation des propositions validées | à venir |
+
+## Suite de ce programme
+
+La remédiation des 20 failles ci-dessus traite la **justesse et le coût de contexte**.
+Elle est distincte du chantier de **performance d'exécution** (goulots indépendants de la
+vitesse du modèle : conflits de requêtes, travail synchrone, cache de prompt, I/O), qui vit
+dans [`../releases/v2.4.0/`](../releases/v2.4.0/README.md) — 8 items `H1..H8`, mêmes règles
+de livraison par artefact et de validation indépendante.
