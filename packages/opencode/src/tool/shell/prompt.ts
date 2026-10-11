@@ -253,7 +253,7 @@ function profile(name: string, platform: NodeJS.Platform, limits: Limits, defaul
   }
   if (isPowerShell) {
     return {
-      intro: `Executes a given ${shellDisplayName(name)} command with optional timeout, ensuring proper handling and security measures.`,
+      intro: `Executes a given ${shellDisplayName(name)} command in a persistent shell process with optional timeout, ensuring proper handling and security measures. The process is reused between calls, but each command runs in its own child scope: variables you set, environment changes and the working directory do not survive from one command to the next.`,
       workdirSection:
         "All commands run in the current working directory by default. Use the `workdir` parameter if you need to run a command in a different directory. AVOID changing directories inside the command - use `workdir` instead.",
       commandSection: powershellCommandSection(
@@ -275,7 +275,7 @@ function profile(name: string, platform: NodeJS.Platform, limits: Limits, defaul
   }
   return {
     intro:
-      "Executes a given bash command in a persistent shell session with optional timeout, ensuring proper handling and security measures.",
+      "Executes a given bash command in a persistent shell process with optional timeout, ensuring proper handling and security measures. The process is reused between calls, but each command runs in its own subshell: variables you set, environment changes and the working directory do not survive from one command to the next.",
     workdirSection:
       "All commands run in the current working directory by default. Use the `workdir` parameter if you need to run a command in a different directory. AVOID using `cd <directory> && <command>` patterns - use `workdir` instead.",
     commandSection: bashCommandSection(chain, limits, defaultTimeoutMs),

@@ -24,9 +24,9 @@ Ce fichier est la **seule** source de vérité du statut des items de la v2.4.0.
 | H1 | un seul appel provider par round d'outils | 1 | D | PASS_WITH_CHANGES | `verdicts/H1-verdict.md` | 8cf6c41a1 | — |
 | H2 | cache de prompt explicite (openai-compatible) | 2 | B | PASS_WITH_CHANGES | `verdicts/H2-verdict.md` | aad479096 | — |
 | H3 | préfixe système stable (hors volatils) | 3 | A | IMPL_DONE | `verdicts/H3-verdict.md` | aad479096 | à mesurer |
-| H4 | un seul spawn git par étape | 4 | C | PASS_WITH_CHANGES | `verdicts/H4-verdict.md` | 63f81d824 | — |
-| H5 | mémoïser la découverte d'instructions | 5 | C | PASS_WITH_CHANGES | `verdicts/H5-verdict.md` | 63f81d824 | — |
-| H6 | shell persistant | 6 | C | PASS_WITH_CHANGES | `verdicts/H6-verdict.md` | 37a84ac8e | — |
+| H4 | un seul spawn git par étape | 4 | C | IMPL_DONE | `verdicts/H4-verdict.md` | 63f81d824 | à mesurer |
+| H5 | mémoïser la découverte d'instructions | 5 | C | IMPL_DONE | `verdicts/H5-verdict.md` | 63f81d824 | à mesurer |
+| H6 | shell persistant | 6 | C | IMPL_DONE | `verdicts/H6-verdict.md` | 37a84ac8e | à mesurer |
 | H7 | dédupliquer les injections de contexte | 7 | A | IMPL_DONE | `verdicts/H7-verdict.md` | 37a84ac8e | à mesurer |
 | H8 | retry non destructif + garde-fous | 8 | D | PASS_WITH_CHANGES | `verdicts/H8-verdict.md` | 8cf6c41a1 | — |
 

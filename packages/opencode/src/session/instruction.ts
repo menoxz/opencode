@@ -120,6 +120,10 @@ export const layer: Layer.Layer<
           claims: new Map<MessageID, Set<string>>(),
           // Cache file reads only when size/mtime prove the content is unchanged.
           reads: new Map<string, { signature: string; content: string }>(),
+          // Cache the discovered path LIST keyed by a cheap sentinel: the discovery walks the
+          // filesystem (findUp over every ancestor × instruction target) on each step, so it is
+          // memoised until a directory that could hold an instruction file changes.
+          paths: undefined as { key: string; value: Set<string> } | undefined,
         }),
       ),
     )
@@ -257,8 +261,57 @@ export const layer: Layer.Layer<
       return paths
     })
 
+    // Cheap sentinel primitives. `dirStamp` is one `stat` per directory; `chainStamp` walks the
+    // same ancestor chain `findUp` scans (directory → worktree). Together they detect the only
+    // events that can change the discovered path list: a directory that may hold an instruction
+    // file gains or loses an entry (its mtime moves). This is O(depth + configured targets) work,
+    // against O(depth × targets) for a full rediscovery — and it runs once per step, not per call.
+    const dirStamp = Effect.fnUntraced(function* (dir: string) {
+      const stat = yield* fs.stat(dir).pipe(Effect.catch(() => Effect.succeed(undefined)))
+      if (!stat) return "0"
+      const mtime = stat.mtime.pipe(
+        Option.map((time) => time.getTime()),
+        Option.getOrElse(() => 0),
+      )
+      return `${mtime}`
+    })
+
+    const chainStamp = Effect.fnUntraced(function* (start: string, stop: string) {
+      const stamps: string[] = []
+      let current = start
+      while (true) {
+        stamps.push(yield* dirStamp(current))
+        if (stop === current) break
+        const parent = path.dirname(current)
+        if (parent === current) break
+        current = parent
+      }
+      return stamps.join(",")
+    })
+
     const systemPaths = Effect.fn("Instruction.systemPaths")(function* () {
-      return yield* discoverSystemPaths()
+      const ctx = yield* InstanceState.context
+      const config = yield* cfg.get()
+      const s = yield* InstanceState.get(state)
+      // Host directories of local config instructions: an added/removed file there changes the
+      // directory mtime. Remote (http/https) entries have no directory and are read elsewhere.
+      const configDirs = (config.instructions ?? [])
+        .filter((raw) => !raw.startsWith("http://") && !raw.startsWith("https://"))
+        .map((raw) => path.dirname(raw.startsWith("~/") ? path.join(global.home, raw.slice(2)) : raw))
+      const sentinel = [
+        ctx.directory,
+        ctx.worktree,
+        Flag.OPENCODE_DISABLE_PROJECT_CONFIG ? "disabled" : "enabled",
+        yield* chainStamp(ctx.directory, ctx.worktree), // project tree scanned by findUp
+        yield* dirStamp(global.config), // globalFiles[0]: <config>/AGENTS.md
+        yield* dirStamp(path.join(global.home, ".claude")), // globalFiles[1]: ~/.claude/CLAUDE.md
+        ...(yield* Effect.forEach(configDirs, (dir) => dirStamp(dir))), // config.instructions hosts
+      ].join("\0")
+      const cached = s.paths
+      if (cached?.key === sentinel) return cached.value
+      const value = yield* discoverSystemPaths()
+      s.paths = { key: sentinel, value }
+      return value
     })
 
     const system = Effect.fn("Instruction.system")(function* () {

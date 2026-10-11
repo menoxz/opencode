@@ -16,6 +16,7 @@ import { Config } from "@/config/config"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Shell } from "@/shell/shell"
 import { ShellID } from "./shell/id"
+import { ShellSessions } from "./shell/session"
 
 import * as Truncate from "./truncate"
 import { Plugin } from "@/plugin"
@@ -615,9 +616,86 @@ export const ShellTool = Tool.define(
         },
       })
 
+      const consume = (chunk: string) => {
+        const size = Buffer.byteLength(chunk, "utf-8")
+        list.push({ text: chunk, size })
+        used += size
+        while (used > keep && list.length > 1) {
+          const item = list.shift()
+          if (!item) break
+          used -= item.size
+          cut = true
+        }
+
+        window.push(chunk)
+
+        if (file) {
+          sink?.write(chunk)
+        } else {
+          full += chunk
+          if (Buffer.byteLength(full, "utf-8") > limits.maxBytes) {
+            return trunc.write(full).pipe(
+              Effect.andThen((next) =>
+                Effect.sync(() => {
+                  file = next
+                  cut = true
+                  sink = createWriteStream(next, { flags: "a" })
+                  full = ""
+                }),
+              ),
+              Effect.andThen(
+                ctx.metadata({
+                  metadata: {
+                    output: window.get().text,
+                    description: input.description,
+                  },
+                }),
+              ),
+            )
+          }
+        }
+
+        return ctx.metadata({
+          metadata: {
+            output: window.get().text,
+            description: input.description,
+          },
+        })
+      }
+
       const code: number | null = yield* Effect.scoped(
         Effect.gen(function* () {
           yield* Effect.addFinalizer(closeSink)
+
+          // H6: when the shell can host a stdin loop, one process is kept per
+          // session and commands are written to it — no per-command spawn. The
+          // framing (cwd reset, child scope, random end-marker) lives in
+          // `shell/session.ts`.
+          if (ShellSessions.supports(input.shell)) {
+            const result = yield* ShellSessions.run(
+              spawner,
+              {
+                sessionID: ctx.sessionID,
+                shell: input.shell,
+                cwd: input.cwd,
+                env: input.env,
+                command: input.command,
+                timeout: input.timeout,
+                abort: ctx.abort,
+              },
+              consume,
+            ).pipe(
+              Effect.catch((error) =>
+                Effect.fail(
+                  isTransientLaunchFailure(error) ? launchRefused(input.shell, LAUNCH_RETRY_ATTEMPTS, error) : error,
+                ),
+              ),
+            )
+            aborted = result.aborted
+            expired = result.expired
+            return result.code
+          }
+
           // The spawner already owns the launch-retry budget
           // (`core/cross-spawn-spawner.ts`), so wrapping the spawn again only
           // multiplied the attempts for the same final refusal. What is added
@@ -632,54 +710,7 @@ export const ShellTool = Tool.define(
             ),
           )
 
-          const streamFiber = yield* Effect.forkScoped(
-            Stream.runForEach(Stream.decodeText(handle.all), (chunk) => {
-              const size = Buffer.byteLength(chunk, "utf-8")
-              list.push({ text: chunk, size })
-              used += size
-              while (used > keep && list.length > 1) {
-                const item = list.shift()
-                if (!item) break
-                used -= item.size
-                cut = true
-              }
-
-              window.push(chunk)
-
-              if (file) {
-                sink?.write(chunk)
-              } else {
-                full += chunk
-                if (Buffer.byteLength(full, "utf-8") > limits.maxBytes) {
-                  return trunc.write(full).pipe(
-                    Effect.andThen((next) =>
-                      Effect.sync(() => {
-                        file = next
-                        cut = true
-                        sink = createWriteStream(next, { flags: "a" })
-                        full = ""
-                      }),
-                    ),
-                    Effect.andThen(
-                      ctx.metadata({
-                        metadata: {
-                          output: window.get().text,
-                          description: input.description,
-                        },
-                      }),
-                    ),
-                  )
-                }
-              }
-
-              return ctx.metadata({
-                metadata: {
-                  output: window.get().text,
-                  description: input.description,
-                },
-              })
-            }),
-          )
+          const streamFiber = yield* Effect.forkScoped(Stream.runForEach(Stream.decodeText(handle.all), consume))
 
           const abort = Effect.callback<void>((resume) => {
             if (ctx.abort.aborted) return resume(Effect.void)

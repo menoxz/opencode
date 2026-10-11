@@ -76,6 +76,11 @@ type Input = {
   assistantMessage: MessageV2.Assistant
   sessionID: SessionID
   model: Provider.Model
+  // H4: turn-scoped carrier. `create` is re-invoked per step, so `ctx` cannot
+  // hold the end-of-step hash across steps; the caller owns this mutable slot.
+  // `create` reads it as the pre-mutation base and `step-finish` writes it back,
+  // so one step pays one capture instead of two.
+  carrier?: { snapshot?: string }
 }
 
 export interface Interface {
@@ -141,7 +146,11 @@ export const layer = Layer.effect(
       // Pre-capture snapshot before the LLM stream starts. The AI SDK
       // may execute tools internally before emitting start-step events,
       // so capturing inside the event handler can be too late.
-      const initialSnapshot = yield* trackSnapshot
+      // Steps >= 2 reuse the previous step's end hash (carrier): nothing
+      // mutates the worktree between a step-finish and the next step's start,
+      // so that hash is the same pre-mutation tree and a fresh `write-tree`
+      // would be a redundant spawn.
+      const initialSnapshot = input.carrier?.snapshot ?? (yield* trackSnapshot)
       const ctx: ProcessorContext = {
         assistantMessage: input.assistantMessage,
         sessionID: input.sessionID,
@@ -706,6 +715,8 @@ export const layer = Layer.effect(
           case "step-finish": {
             const stepFinishStart = Date.now()
             const completedSnapshot = yield* trackSnapshot
+            // Publish the end-of-step hash as the next step's base.
+            if (input.carrier) input.carrier.snapshot = completedSnapshot
             yield* Effect.forEach(Object.keys(ctx.reasoningMap), finishReasoning)
             const usage = Session.getUsage({
               model: ctx.model,

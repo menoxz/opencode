@@ -1753,6 +1753,11 @@ export const layer = Layer.effect(
         // into the next provider request.
         let idleContinues = 0
         let autoContinueInstruction: string | undefined
+        // H4: single git capture per step. This mutable carrier spans the
+        // `while (true)` step loop; `processor.create` reads it as the
+        // pre-mutation base and `step-finish` writes the end-of-step hash back,
+        // so one step pays one `git write-tree` instead of two.
+        const carried: { snapshot?: string } = {}
 
         while (true) {
           const contextSummary = createPromptContextSummary(step + 1)
@@ -2104,6 +2109,7 @@ export const layer = Layer.effect(
               assistantMessage: msg,
               sessionID,
               model,
+              carrier: carried,
             })
             .pipe(Effect.onInterrupt(() => finalizeInterruptedAssistant))
 
