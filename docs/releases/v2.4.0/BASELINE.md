@@ -102,10 +102,14 @@ Session headless `opencodev2 run` sur le binaire déployé (SHA `50FF265E…`, m
 |---|---|---|---|
 | H1 | invocations provider par tour à 3 rounds d'outils | **1 seul `stream.drained`** portant `step-start:3`, `tool-call:3`, `tool-result:3`, `step-finish:3`, `finish:1` | **CONFIRMÉ** — la boucle externe produisait trois invocations |
 | H2 | cache de préfixe serveur | **3 072 / 3 109 tokens cachés**, identique avec et sans clé de cache | **clé NEUTRE** — le cache est automatique |
-| H4 | processus `git write-tree` par tour à 3 étapes | **6 captures** (motif 2N) alors que le critère promet ≤ N+1 = 4 | **CONTREDIT** — écart ouvert, cause à mesurer (le câblage est présent) |
+| H4 | processus `git write-tree` par tour | 3 étapes → **6 captures** (2N) | 2 étapes → **3 captures** (N+1) ; unitaire : 4 étapes → 5 | **CONFIRMÉ après correctif** — le défaut (2N) est reproduit puis corrigé, `processor.ts:706` consulte désormais le porteur |
 
 Chaque ligne `tracking` du journal suit immédiatement un `git write-tree` réel
-(`snapshot/index.ts:321-323`) : le comptage de 6 correspond donc bien à 6 spawns.
+(`snapshot/index.ts:321-323`) : le comptage correspond donc bien à des spawns.
+
+Artefacts : premier déploiement SHA `50FF265E…` (contenait le défaut H4) ; après correctif
+`eb1fdbea8`, rebuild SHA `3746C8A2AFA324B7417860FB73394D80111B321FE89A5DE1267B94184CDC0FE`,
+redéployé et revérifié en session réelle.
 
 **Agrégat** — suite ciblée `goal-contract + registry + parameters` :
 baseline **86 pass / 8 fail en 38,57 s** ⇒ après **92 pass / 4 fail en 28,3 s**.
