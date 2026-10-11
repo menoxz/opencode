@@ -469,6 +469,25 @@ export function globalConfigFile() {
   return candidates[0]
 }
 
+/**
+ * True when a global config patch only touches keys a live instance picks up by dropping its
+ * config cache, without being rebuilt.
+ *
+ * `jev` qualifies: every Jev decision re-reads `Config.get()` — the decision model in
+ * `src/decision/model.ts`, the hook settings in `src/session/tools.ts` and
+ * `src/session/llm/request.ts` — so invalidating the per-instance state is enough. Any other key
+ * takes the historical path, `disposeAllInstances`, because nothing else is known to re-read.
+ *
+ * This is what makes `/decision-model` usable: disposing every instance aborted the turn in
+ * flight, and before the TUI relearned its folders it also emptied the whole session list.
+ * Pure, so the classification is testable without a server.
+ */
+export function hotReloadablePatch(patch: unknown): boolean {
+  if (!patch || typeof patch !== "object" || Array.isArray(patch)) return false
+  const keys = Object.keys(patch).filter((key) => key !== "$schema" && key !== "plugin_origins")
+  return keys.length > 0 && keys.every((key) => key === "jev")
+}
+
 function patchJsonc(input: string, patch: unknown, path: string[] = []): string {
   if (!isRecord(patch)) {
     const edits = modify(input, path, patch, {
@@ -492,6 +511,9 @@ function writableGlobal(info: Info) {
   const next = writable(info)
   // When a user changes config from a value back to default in the Desktop app, we don't want to leave a blank `"shell": "",` key
   if ("shell" in next && next.shell === "") return { ...next, shell: undefined }
+  // A blank `decision_model` means "no decision model": the picker sends "" when the user selects
+  // a System One model over a chat model, and the key is removed rather than left blank.
+  if (next.jev?.decision_model === "") return { ...next, jev: ConfigJev.writableDecisionModel(next.jev) }
   return next
 }
 

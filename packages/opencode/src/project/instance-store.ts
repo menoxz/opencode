@@ -20,6 +20,14 @@ export interface Interface {
   readonly reload: (input: LoadInput) => Effect.Effect<InstanceContext>
   readonly dispose: (ctx: InstanceContext) => Effect.Effect<void>
   readonly disposeAll: () => Effect.Effect<void>
+  /**
+   * The directories with a live instance, without creating one.
+   *
+   * A caller that must refresh per-instance state (the global config route reloading the Jev
+   * settings) needs the list of instances to reach; `load` would create the ones that are not
+   * there, which is not what a refresh should do.
+   */
+  readonly directories: () => readonly string[]
   readonly provide: <A, E, R>(input: LoadInput, effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>
 }
 
@@ -186,6 +194,7 @@ export const layer: Layer.Layer<Service, never, Project.Service | InstanceBootst
       reload,
       dispose,
       disposeAll,
+      directories: () => [...cache.keys()],
       provide,
     })
   }),

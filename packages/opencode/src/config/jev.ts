@@ -269,4 +269,20 @@ export function resolve<T extends Info>(info: T | undefined): T | undefined {
   }
 }
 
+/**
+ * The `jev` block a caller wants written, with a blank `decision_model` turned into a removal.
+ *
+ * A blank value is how a caller says "no decision model": JSON cannot carry `undefined`, so the
+ * picker sends `""` when the user selects a System One model over a chat model, and `patchJsonc`
+ * removes the key when the value it walks is `undefined`. Leaving `""` behind would put a dead
+ * key in the file and hide which transport is actually live — the confusion this whole area is
+ * trying to end. Mirrors `shell` in `writableGlobal`.
+ *
+ * Pure, so the rule is testable without a config file.
+ */
+export function writableDecisionModel<T extends Info>(jev: T): T {
+  if (jev.decision_model !== "") return jev
+  return { ...jev, decision_model: undefined }
+}
+
 export * as ConfigJev from "./jev"

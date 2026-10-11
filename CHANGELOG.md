@@ -5,6 +5,17 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [Unreleased]
+
+### Added
+- **Les modèles de décision JEV sont enfin sélectionnables.** `GET /global/jev/models` (nouveau : `groups/global.ts`, `handlers/global.ts`) sert le catalogue System One de l'hôte Jev configuré — la liste `/v1/models` de l'hôte quand il répond, les modèles documentés du preset sinon, avec la raison dans `error` quand l'hôte n'a pas répondu (`src/jev/catalogue.ts`). Le sélecteur `/decision-model` ouvre une section « Jev decision models (…, System One) » avant les modèles de chat : choisir un modèle System One épingle `jev.provider`/`jev.model` et **vide** `jev.decision_model`, c'est-à-dire le seul état où JEV est réellement interrogé. Mesuré le 2026-10-11 avec la clé Codiv : `POST /v1/systemone` + `openjev-latest` ⇒ HTTP 200 (`openjev-0.1`), là où `POST /v1/chat/completions` + `openjev-latest` ⇒ HTTP 404 (« Available: diffusiongemma-26b ») — un hôte Jev n'est pas un provider de chat, donc `provider.list` ne pouvait structurellement pas le montrer.
+- **Un modèle de chat choisi remplace JEV : confirmation explicite.** Quand un hôte Jev est authentifié, sélectionner un modèle de chat demande confirmation (`DialogConfirm`) au lieu d'écarter le transport System One en silence ; et un hôte sans clé affiche une ligne « Jev (System One): no key in CODIV_API_KEY » sélectionnable, au lieu du repli silencieux qui a masqué un endpoint mort pendant des semaines.
+
+### Fixed
+- **Définir le modèle de décision ne démonte plus le harnais.** `PATCH /global/config` appelait `disposeAllInstances` pour tout changement : les instances étaient reconstruites, le tour en cours avorté (`error=Aborted process`, journal du 2026-10-11 à 10:07:59) et la liste des sessions vidée. Un patch qui ne touche que `jev` (`Config.hotReloadablePatch`) invalide désormais le cache de config de chaque instance en place (`InstanceStore.directories()` + `Config.invalidate`), ce qui suffit — chaque décision relit `Config.get()`. Aucun autre chemin ne change.
+- **La liste des sessions ne se vide plus après un `server.instance.disposed`.** `context/sync.tsx` : `loadedDirectories` n'était jamais vidé, donc `hydrateAddedDirectories` sautait les dossiers déjà lus alors que `bootstrap` venait de remplacer le store par le seul dossier de lancement. Mesuré : `+/opencode-fork 0` dans la barre alors que `opencodev2 session list` en listait 82, et le panneau vide pour la session reprise.
+- **Un `decision_model` vidé est supprimé du fichier, pas laissé vide.** `ConfigJev.writableDecisionModel` transforme `""` en suppression (`patchJsonc` retire la clé), comme `shell` le fait déjà.
+
 ## [v2.3.74] - 2026-10-10
 
 ### Fixed

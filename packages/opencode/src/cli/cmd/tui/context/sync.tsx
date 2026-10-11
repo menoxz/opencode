@@ -243,23 +243,48 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
      * leaves the others alone.
      */
     let hydrating: Promise<void> | undefined
+    let rehydrate = false
+
+    /**
+     * Forgets which folders were read, so the next hydration reads them again.
+     *
+     * The server rebuilds its per-directory caches on `server.instance.disposed` (any global
+     * config change disposes every instance), and `bootstrap` then replaces the session store
+     * with the launch folder alone. Keeping the read marks made every added folder stay at zero
+     * sessions for the rest of the TUI's life — measured: `+/opencode-fork 0` while the server
+     * listed 82 sessions for it, and the resumed session's pane empty because its folder was
+     * never re-read.
+     */
+    function forgetReadFolders() {
+      loadedDirectories.clear()
+    }
+
     function hydrateAddedDirectories(): Promise<void> {
-      if (hydrating) return hydrating
+      if (hydrating) {
+        // A pass is in flight: it has to run again for the folders it has not reached, and for
+        // the ones a disposal put back in the queue. Serialised rather than forked so two passes
+        // never rebuild the session store from the same stale copy.
+        rehydrate = true
+        return hydrating
+      }
       hydrating = (async () => {
-        const current = folderKey(currentDirectory())
-        for (const directory of storedExtraDirectories()) {
-          const key = folderKey(directory)
-          if (!key || key === current || loadedDirectories.has(key)) continue
-          if (!existsSync(directory)) continue
-          try {
-            await loadDirectory(directory)
-          } catch (error) {
-            Log.Default.error("failed to list an added folder", {
-              directory,
-              error: error instanceof Error ? error.message : String(error),
-            })
+        do {
+          rehydrate = false
+          const current = folderKey(currentDirectory())
+          for (const directory of storedExtraDirectories()) {
+            const key = folderKey(directory)
+            if (!key || key === current || loadedDirectories.has(key)) continue
+            if (!existsSync(directory)) continue
+            try {
+              await loadDirectory(directory)
+            } catch (error) {
+              Log.Default.error("failed to list an added folder", {
+                directory,
+                error: error instanceof Error ? error.message : String(error),
+              })
+            }
           }
-        }
+        } while (rehydrate)
       })().finally(() => {
         hydrating = undefined
       })
@@ -269,6 +294,9 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
     event.subscribe((event, { workspace }) => {
       switch (event.type) {
         case "server.instance.disposed":
+          // The instance that answered the last read is gone, and `bootstrap` is about to rebuild
+          // the session store from the launch folder alone: re-read the added folders too.
+          forgetReadFolders()
           void bootstrap()
           break
         case "permission.replied": {

@@ -1,6 +1,7 @@
 import { Config } from "@/config/config"
 import { BusEvent } from "@/bus/bus-event"
 import { SyncEvent } from "@/sync"
+import { JevClient } from "@/jev/client"
 import "@/server/event"
 import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
@@ -33,12 +34,38 @@ const GlobalUpgradeResult = Schema.Union([
   }),
 ])
 
+export const GlobalJevModel = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  description: Schema.optional(Schema.String),
+})
+
+/**
+ * The System One decision models the configured Jev host serves.
+ *
+ * The `/decision-model` picker lists harness chat models only (`provider.list`), which is why a
+ * Jev host's own models — `openjev-latest` and friends — could never appear there. This is the
+ * second catalogue: the host's `/v1/models` listing when it answers, the preset's documented
+ * models otherwise. `source` says which, so the picker can be honest about it.
+ */
+export const GlobalJevModels = Schema.Struct({
+  provider: JevClient.Provider,
+  base_url: Schema.String,
+  endpoint: Schema.String,
+  default_model: Schema.String,
+  authenticated: Schema.Boolean,
+  source: Schema.Literals(["host", "preset"]),
+  models: Schema.Array(GlobalJevModel),
+  error: Schema.optional(Schema.String),
+}).annotate({ identifier: "GlobalJevModels" })
+
 export const GlobalPaths = {
   health: "/global/health",
   event: "/global/event",
   config: "/global/config",
   dispose: "/global/dispose",
   upgrade: "/global/upgrade",
+  jevModels: "/global/jev/models",
 } as const
 
 export const GlobalApi = HttpApi.make("global").add(
@@ -80,6 +107,16 @@ export const GlobalApi = HttpApi.make("global").add(
           identifier: "global.config.update",
           summary: "Update global configuration",
           description: "Update global OpenCode configuration settings and preferences.",
+        }),
+      ),
+      HttpApiEndpoint.get("jevModels", GlobalPaths.jevModels, {
+        success: described(GlobalJevModels, "Decision models the configured Jev host serves"),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "global.jev.models",
+          summary: "List Jev decision models",
+          description:
+            "The System One decision models the configured Jev host serves: the host's own /v1/models listing when it answers, the preset's documented models otherwise.",
         }),
       ),
       HttpApiEndpoint.post("dispose", GlobalPaths.dispose, {
