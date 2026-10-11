@@ -1,7 +1,7 @@
 import { Provider } from "@/provider/provider"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import * as Log from "@opencode-ai/core/util/log"
-import { Context, Effect, Layer } from "effect"
+import { Context, Duration, Effect, Layer } from "effect"
 import * as Stream from "effect/Stream"
 import { stepCountIs, streamText, wrapLanguageModel, type ModelMessage, type Tool } from "ai"
 import type { LLMEvent } from "@opencode-ai/llm"
@@ -45,6 +45,16 @@ export const OUTPUT_TOKEN_MAX = ProviderTransform.OUTPUT_TOKEN_MAX
  * runaway tool loop still terminates.
  */
 export const DEFAULT_MAX_PROVIDER_STEPS = 8
+
+/**
+ * H8: default bound for the stream idle watchdog. It measures *inter-chunk*
+ * inactivity only — it is armed after the first event, so a turn that waits on
+ * the user (question, permission, slow tool) before the provider emits anything
+ * is never cut. Kept well above a typical human response time; an operator can
+ * shorten it with OPENCODE_EXPERIMENTAL_STREAM_TIMEOUT_MS or disable the
+ * watchdog entirely with OPENCODE_DISABLE_STREAM_TIMEOUT.
+ */
+export const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300_000
 
 /** Raised when a provider accepts the request but then stalls: the stream watchdog fires. */
 class StreamTimeoutError extends Error {
@@ -547,27 +557,31 @@ const live: Layer.Layer<
               ),
             )
 
-            // Watchdog (belt-and-suspenders on top of ctrl.abort() above): if no
-            // event arrives within streamTimeoutMs — provider sent a head chunk
-            // then stalled — FAIL the stream so the session turn stops instead of
-            // hanging. Stream.fail (not empty) is required so runDrain fails.
+            // Watchdog: if no event arrives for `idleTimeoutMs` — provider sent a
+            // head chunk then stalled — FAIL the stream so the session turn stops
+            // instead of hanging. Stream.fail (not empty) is required so runDrain
+            // fails.
             //
-            // Opt-in, and it has to stay that way: tools run *inside* the stream
-            // consumption, so a turn that asks the user a question, waits on a
-            // permission prompt, or runs a slow tool emits no stream event for as
-            // long as that takes. Enabling this by default made a 120s gap while the
-            // user was answering a question fail a healthy turn — measured in this
+            // H8: armed AFTER the first event, on purpose. Tools run *inside* the
+            // stream consumption, so a turn that asks the user a question, waits on
+            // a permission prompt, or runs a slow tool emits no stream event for as
+            // long as that takes. An always-on bound measured a 120s gap while the
+            // user was answering a question and failed a healthy turn (this
             // install's log: `question ... asking`, then permissions and reads, then
-            // 120003ms later `stream produced no event within 120000ms`. The bound
+            // 120003ms later `stream produced no event within 120000ms`). The bound
             // cannot tell "waiting for the user" from "provider stalled", so it only
-            // applies when an operator asks for it explicitly.
-            const streamTimeoutMs = flags.streamTimeoutMs
-            return streamTimeoutMs === undefined
+            // starts measuring once the provider has emitted something: the
+            // pre-first-event wait is exempt, inter-chunk gaps are bounded.
+            //
+            // `idleTimeoutMs` defaults to DEFAULT_STREAM_IDLE_TIMEOUT_MS (bounded),
+            // is overridable with OPENCODE_EXPERIMENTAL_STREAM_TIMEOUT_MS, and is
+            // defeatable with OPENCODE_DISABLE_STREAM_TIMEOUT.
+            const idleTimeoutMs = flags.disableStreamTimeout
+              ? undefined
+              : (flags.streamTimeoutMs ?? DEFAULT_STREAM_IDLE_TIMEOUT_MS)
+            return idleTimeoutMs === undefined
               ? baseStream
-              : Stream.timeoutOrElse(baseStream, {
-                  duration: streamTimeoutMs,
-                  orElse: () => Stream.fail(new StreamTimeoutError(streamTimeoutMs)),
-                })
+              : withIdleTimeout(baseStream, idleTimeoutMs)
           }),
         ),
       )
@@ -575,6 +589,36 @@ const live: Layer.Layer<
     return Service.of({ stream })
   }),
 )
+
+/**
+ * H8: cap *inter-chunk* inactivity. The first pull is unbounded, so a turn that
+ * waits on the user before the provider emits anything is never cut; every
+ * subsequent gap fails the stream with `StreamTimeoutError` after `ms`.
+ */
+function withIdleTimeout<A, E, R>(
+  self: Stream.Stream<A, E, R>,
+  ms: number,
+): Stream.Stream<A, E | StreamTimeoutError, R> {
+  return Stream.unwrap(
+    Effect.gen(function* () {
+      const pull = yield* Stream.toPull(self)
+      let first = true
+      const guarded = Effect.suspend(() => {
+        if (first) {
+          first = false
+          return pull
+        }
+        return pull.pipe(
+          Effect.timeoutOrElse({
+            duration: Duration.millis(ms),
+            orElse: () => Effect.fail(new StreamTimeoutError(ms)),
+          }),
+        )
+      })
+      return Stream.fromPull(Effect.succeed(guarded))
+    }),
+  )
+}
 
 export const layer = live.pipe(
   Layer.provide(Permission.defaultLayer),

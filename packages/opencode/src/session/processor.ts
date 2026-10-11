@@ -106,6 +106,11 @@ interface ProcessorContext extends Input {
   needsCompaction: boolean
   currentText: MessageV2.TextPart | undefined
   reasoningMap: Record<string, MessageV2.ReasoningPart>
+  // H8: set once any content has streamed for the current step (first text-delta
+  // or tool-call) and reset only at the step entry. Unlike `currentText` it is
+  // NOT cleared when a text block closes, so the retry guard below still sees
+  // "work already billed" for an error raised after a block ended.
+  streamed: boolean
 }
 
 type StreamEvent = LLMEvent
@@ -165,6 +170,7 @@ export const layer = Layer.effect(
         needsCompaction: false,
         currentText: undefined,
         reasoningMap: {},
+        streamed: false,
         // H1: the turn-scoped carrier is owned by the caller (prompt.ts) and must be
         // shared by reference, so the cumulative SDK-step count written on drain is
         // visible to the external loop and the next `create` call.
@@ -431,6 +437,10 @@ export const layer = Layer.effect(
 
       const handleEvent = Effect.fnUntraced(function* (value: StreamEvent) {
         streamEventCounts[value.type] = (streamEventCounts[value.type] ?? 0) + 1
+        // H8: once any content has streamed this step, the session retry must not
+        // reopen the stream from zero (that would discard and re-bill the text
+        // already received). Consumed by the retry guard in `process`.
+        if (value.type === "text-delta" || value.type === "tool-call") ctx.streamed = true
         switch (value.type) {
           case "reasoning-start":
             if (value.id in ctx.reasoningMap) return
@@ -989,6 +999,7 @@ export const layer = Layer.effect(
           yield* Effect.gen(function* () {
             ctx.currentText = undefined
             ctx.reasoningMap = {}
+            ctx.streamed = false
             yield* status.set(ctx.sessionID, { type: "busy" })
             const streamStart = Date.now()
             // H1: chain tool rounds inside a single provider invocation. The turn's
@@ -1032,8 +1043,14 @@ export const layer = Layer.effect(
               (cause) => !Cause.hasInterruptsOnly(cause),
               (cause) => Effect.fail(Cause.squash(cause)),
             ),
-            Effect.retry(
-              SessionRetry.policy({
+            // H8: only retry while nothing has streamed for this step. A retry
+            // reopens `llm.stream` from the beginning (`ctx.currentText` is reset
+            // above), so once text/tool content has been billed a transient error
+            // is surfaced through `halt` below instead of restarting and re-billing
+            // the prefix. The pre-first-chunk case stays retryable.
+            Effect.retry({
+              while: () => !ctx.streamed,
+              schedule: SessionRetry.policy({
                 provider: input.model.providerID,
                 parse,
                 set: (info) => {
@@ -1062,7 +1079,7 @@ export const layer = Layer.effect(
                   )
                 },
               }),
-            ),
+            }),
             Effect.catch(halt),
             Effect.ensuring(cleanup()),
           )

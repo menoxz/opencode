@@ -28,7 +28,7 @@ Ce fichier est la **seule** source de vérité du statut des items de la v2.4.0.
 | H5 | mémoïser la découverte d'instructions | 5 | C | IMPL_DONE | `verdicts/H5-verdict.md` | 63f81d824 | à mesurer |
 | H6 | shell persistant | 6 | C | IMPL_DONE | `verdicts/H6-verdict.md` | 37a84ac8e | à mesurer |
 | H7 | dédupliquer les injections de contexte | 7 | A | IMPL_DONE | `verdicts/H7-verdict.md` | 37a84ac8e | à mesurer |
-| H8 | retry non destructif + garde-fous | 8 | D | PASS_WITH_CHANGES | `verdicts/H8-verdict.md` | 8cf6c41a1 | — |
+| H8 | retry non destructif + garde-fous | 8 | D | IMPL_DONE (axe 3 résiduel) | `verdicts/H8-verdict.md` | 8cf6c41a1 | 4 tests verts ; axe 3 non traité |
 
 ## Objections ouvertes (issues des verdicts)
 
@@ -50,7 +50,9 @@ Objections MAJEURES/MINEURES : voir chaque `verdicts/H*-verdict.md`, section « 
 | G1 | 8 fiches `items/H*.md` complètes | **franchi 2026-10-11** |
 | G2 | ≥ 1 item `PASS` (validation indépendante) | **franchi 2026-10-11** — 8× `PASS_WITH_CHANGES`, aucun `FAIL` ; le critère littéral « ≥ 1 `PASS` » n'a pas de porteur, les exigences de changement sont versées en phase 3 |
 | G3a | aucune objection CRITIQUE ouverte | **franchi 2026-10-11** — H4-O2, H7-O1, H8-O1 levées par les correcteurs |
-| G3 | typecheck exit 0 + tests verts pour chaque item implémenté | partiel : H1, H2, H3, H4, H5, H6, H7 verts (7/8) ; H8 restant |
+| G3 | typecheck exit 0 + tests verts pour chaque item implémenté | **8/8 implémentés** — H1..H8 tous livrés ; réserves : H2 (rejeu live), H8 (axe 3), H1 (preuve des 4 sites) |
+| G4 | gain ≥ seuil d'acceptation de l'item, chiffré | à consigner (mesures obtenues sur H4, H5, H6, H1) |
+| G5 | binaire 2.4.0 déployé, `--version` vérifié — **accord opérateur requis** | en attente d'accord |
 | G4 | gain ≥ seuil d'acceptation de l'item, chiffré | à venir |
 | G5 | binaire 2.4.0 déployé, `--version` vérifié — **accord opérateur requis** | à venir |
 
@@ -77,3 +79,5 @@ Objections MAJEURES/MINEURES : voir chaque `verdicts/H*-verdict.md`, section « 
 | 2026-10-11 | Décision : une **dernière** tentative (4), bornée aux 2 correctifs nommés ci-dessus + le test de survie. Gate binaire : `prompt.test.ts` ≤ 5 échecs (baseline) ET typecheck exit 0 ET test de survie écrit. Non atteint ⇒ H1 annulé et marqué `BLOCKED`, programme clos sur 7 items. | agent |
 | 2026-10-11 | **H1 livré (tentative 4).** Gate atteint et vérifié indépendamment par l'orchestrateur : `prompt.test.ts` **55 pass / 5 fail** (baseline exact retrouvé, les 2 échecs H1 résorbés), test de survie `single-provider-call.test.ts` **1 pass / 0 fail**, `processor-effect.test.ts` **18 pass / 0 fail**, typecheck **exit 0**. Correctifs : clé de coalescing des slots de contexte re-clée par step (`tools.ts`), working-state ré-attaché par step via `prepareStep` (`llm.ts`). Mesure : `llm.calls == 3` pour N=3 steps chaînés et `assistantCount == 1` — une invocation `streamText` produit un seul message assistant, là où la boucle externe en produisait un par round. | agent |
 | 2026-10-11 | **Finding résiduel H1-four-site-proof** : la preuve *individuelle* que `turn_plan`, `continuation`, `stall-watch` et compaction restent exercés n'est pas écrite. Le test de survie couvre le comptage, pas les quatre sites. À traiter en phase 4 (mesure) ou en item de suivi — non bloquant pour le gate, mais **ne pas présenter H1 comme prouvé sur ce point**. | agent |
+| 2026-10-11 | **H8 livré (palier 1), vérifié indépendamment.** Retry non destructif : drapeau `ctx.streamed` posé au premier `text-delta`/`tool-call` et remis à zéro à l'entrée du step ; `Effect.retry({ while: () => !ctx.streamed })` ⇒ un stream ayant déjà émis n'est plus relancé depuis zéro. Timeout d'inactivité armé **après le premier événement** (1er pull illimité), défaut **300 000 ms**, débrayable par `OPENCODE_DISABLE_STREAM_TIMEOUT` (`effect/runtime-flags.ts`). Preuves : `retry-non-destructive.test.ts` **4 pass / 0 fail** (prouvé par mutation : stream ouvert 1 fois, texte `"partial"` conservé) ; `prompt.test.ts` **55 pass / 5 fail** ; typecheck **exit 0**. | agent |
+| 2026-10-11 | **Axe 3 de H8 NON traité** : le doublon de couches retry (`llm/route/executor.ts` × `session/retry.ts`) n'est pas résorbé. Le changement local était iso-comportemental (donc inutile), et borner réellement le produit exige un budget partagé entre `packages/llm` et `packages/opencode` — hors budget. À traiter en item de suivi. **Ne pas présenter H8 comme complet.** | agent |
