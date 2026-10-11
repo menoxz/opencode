@@ -22,7 +22,7 @@ Ce fichier est la **seule** source de vérité du statut des items de la v2.4.0.
 | id | item | priorité | vague | statut | verdict | commit fiche | gain mesuré |
 |---|---|---|---|---|---|---|---|
 | H1 | un seul appel provider par round d'outils | 1 | D | PASS_WITH_CHANGES | `verdicts/H1-verdict.md` | 8cf6c41a1 | — |
-| H2 | cache de prompt explicite (openai-compatible) | 2 | B | PASS_WITH_CHANGES | `verdicts/H2-verdict.md` | aad479096 | — |
+| H2 | cache de prompt explicite (openai-compatible) | 2 | B | IMPL_DONE | `verdicts/H2-verdict.md` | aad479096 | à mesurer (rejeu live en attente) |
 | H3 | préfixe système stable (hors volatils) | 3 | A | IMPL_DONE | `verdicts/H3-verdict.md` | aad479096 | à mesurer |
 | H4 | un seul spawn git par étape | 4 | C | IMPL_DONE | `verdicts/H4-verdict.md` | 63f81d824 | à mesurer |
 | H5 | mémoïser la découverte d'instructions | 5 | C | IMPL_DONE | `verdicts/H5-verdict.md` | 63f81d824 | à mesurer |
@@ -50,7 +50,7 @@ Objections MAJEURES/MINEURES : voir chaque `verdicts/H*-verdict.md`, section « 
 | G1 | 8 fiches `items/H*.md` complètes | **franchi 2026-10-11** |
 | G2 | ≥ 1 item `PASS` (validation indépendante) | **franchi 2026-10-11** — 8× `PASS_WITH_CHANGES`, aucun `FAIL` ; le critère littéral « ≥ 1 `PASS` » n'a pas de porteur, les exigences de changement sont versées en phase 3 |
 | G3a | aucune objection CRITIQUE ouverte | **franchi 2026-10-11** — H4-O2, H7-O1, H8-O1 levées par les correcteurs |
-| G3 | typecheck exit 0 + tests verts pour chaque item implémenté | partiel : H3, H7 verts |
+| G3 | typecheck exit 0 + tests verts pour chaque item implémenté | partiel : H3, H4, H5, H6, H7 verts (5/8) |
 | G4 | gain ≥ seuil d'acceptation de l'item, chiffré | à venir |
 | G5 | binaire 2.4.0 déployé, `--version` vérifié — **accord opérateur requis** | à venir |
 
@@ -68,3 +68,8 @@ Objections MAJEURES/MINEURES : voir chaque `verdicts/H*-verdict.md`, section « 
 | 2026-10-11 | **G3a franchi.** 8 fiches corrigées (271 à 354 lignes), 3 objections CRITIQUE levées. H7-O1 confirme que le comptage « 3× » était faux : vrai compte objectif 2× / DoD 2×. | agent |
 | 2026-10-11 | **Vague A implémentée (H3 + H7).** H3 : `Today's date` et la ligne MCP sortis du segment système vers un champ `volatile` ; test `system-prefix-stability` (2 pass / 0 fail, identité d'octets prouvée). H7 : capsule de rétention unique, `holdings-capsule.ts` supprimé ; test `context-dedup` (7 pass / 0 fail). Typecheck exit 0. Vérifiés indépendamment par l'orchestrateur. | agent |
 | 2026-10-11 | H3 et H7 partagent un même commit : `prompt.ts` et `llm.ts` portent les deux items, impossible de les séparer par pathspec. | agent |
+| 2026-10-11 | **Vague C implémentée (H4 + H5 + H6).** H4 : porteur `carrier` inter-étapes, une seule capture `write-tree` par tour (`≤ N+1`), tests `step-git-spawn` (3 pass) et `revert-after-single-capture`. H5 : sentinelle étendue (`~/.claude/CLAUDE.md`, hôtes de `config.instructions`), découverte disque 160→76 appels, test `instruction-discovery-cache` (5 pass). H6 : session shell persistante (process gardé, `cwd` hors clé), rafale de 5 commandes 1933-2360 ms → **75,6 ms**, test `shell-session` (6 pass). Typecheck exit 0. Vérifiés indépendamment par l'orchestrateur. Commit `b6caf54ea`. | agent |
+| 2026-10-11 | Note honnête : `prompt.test.ts` conserve **5 échecs** (55 pass / 5 fail). Les implémenteurs H4 et H5 l'ont prouvé préexistant par run différentiel (`instruction.ts` et le carrier désactivés, hash restauré byte-exact ⇒ mêmes 5 échecs). Ce sont des tests `config.reference` et subtask/timing, hors périmètre v2.4.0. | agent |
+| 2026-10-11 | Vague B (H2) non lancée lors de la vague C — lancée maintenant, avec H1 (vague D) en parallèle sous propriété de fichiers disjointe. | agent |
+| 2026-10-11 | **H2 implémenté.** Point de cache explicite émis pour la famille openai-compatible (garde bornée `api.npm === "@ai-sdk/openai-compatible" && api.id.includes("deepseek")`, `transform.ts:1117-1131`) ; clé strictement `input.sessionID` ; `applyCaching` intact. Tests fournisseur 232 pass / 0 fail, typecheck exit 0. **Rejeu live §7.2 NON exécuté** : aucune entrée `opencode-go` dans la config locale (providers présents : github-copilot, command-code) ⇒ commande différée à l'opérateur. Tant que `cached_tokens` n'est pas mesuré > 0, H2 reste « à mesurer ». | agent |
+| 2026-10-11 | **H1 : ÉCHEC DE LANCEMENT.** L'implémenteur a épuisé son budget d'étapes sans rapport final. Son travail partiel (`llm.ts`, `processor.ts`) **casse le typecheck** : 4 erreurs dans `processor.ts` (998 : handler retournant `void` au lieu d'un `Effect` ; 1075/1079 : `Effect<Result, never, unknown>` au lieu de `never`). Travail non committé, à reprendre ou à annuler. Aucun autre item n'est affecté. | agent |

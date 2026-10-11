@@ -1116,7 +1116,17 @@ export function options(input: {
     }
   }
 
-  if (input.model.providerID === "openai" || input.providerOptions?.setCacheKey) {
+  // H2 — the served provider runs on the default npm `@ai-sdk/openai-compatible`
+  // (provider.ts:1151) and that family already recognises deepseek (provider.ts:1441).
+  // Emit the per-session cache key for that family too, under an explicit, bounded gate.
+  // Never a shared key: the value stays strictly `input.sessionID` (no cross-session leak).
+  const openaiCompatibleCacheKey =
+    input.model.api.npm === "@ai-sdk/openai-compatible" && input.model.api.id.includes("deepseek")
+  if (
+    input.model.providerID === "openai" ||
+    input.providerOptions?.setCacheKey ||
+    openaiCompatibleCacheKey
+  ) {
     result["promptCacheKey"] = input.sessionID
   }
 
