@@ -5,6 +5,14 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v2.4.4] - 2026-10-11
+
+### Fixed
+- **Modifier `opencode.jsonc` recharge les serveurs MCP sans redémarrer le daemon.** Le veilleur de configuration MCP était armé depuis le constructeur de la couche, mais ses racines venaient de `Config.directories()`, qui exige un `InstanceRef` actif : l'appel échouait, `catchCause` avalait l'échec, et **aucun veilleur n'existait**. Mesuré sur les 12 journaux de daemon de la journée : pas une seule ligne « MCP config watchers active », et l'entrée `mcp` ajoutée à `opencode.jsonc` n'était prise en compte qu'après un redémarrage complet (le serveur `agent-tools` est apparu ainsi, jamais rechargé à chaud). Les racines incluent désormais `Global.Path.config`, un échec d'armement est journalisé au lieu d'être tu, et l'armement est **paresseux** — re-tenté au premier usage réel et ré-armé quand le jeu de racines change — exactement le motif des modules agent et skill, ce qui explique que leur rechargement à chaud fonctionnait déjà, `.opencode` d'un dépôt local compris.
+
+### Added
+- Test de régression dans `test/mcp/lifecycle.test.ts` : un serveur **ajouté** au fichier de configuration est connecté après rechargement, sans redémarrage. Seul le cas « serveur existant modifié » était couvert.
+
 ## [v2.4.3] - 2026-10-11
 
 ### Fixed

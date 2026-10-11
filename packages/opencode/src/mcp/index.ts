@@ -26,9 +26,10 @@ import { BusEvent } from "../bus/bus-event"
 import { Bus } from "@/bus"
 import { TuiEvent } from "@/cli/cmd/tui/event"
 import open from "open"
-import { Effect, Exit, Layer, Option, Context, Schema, Semaphore, Stream, Schedule, Duration } from "effect"
+import { Effect, Exit, Layer, Option, Context, Schema, Semaphore, Stream, Schedule, Duration, Cause } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { InstanceState } from "@/effect/instance-state"
+import { Global } from "@opencode-ai/core/global"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { isConfigFile } from "@/hotreload"
@@ -911,7 +912,19 @@ export const layer = Layer.effect(
       return s.status[name]
     })
 
+    const ensureWatching = Effect.fnUntraced(function* () {
+      const wanted = [...(yield* resolveRoots())].sort()
+      const watched = [...mcpWatcherRoots].sort()
+      if (watched.length > 0 && watched.join("\n") === wanted.join("\n")) return
+      yield* setupMcpWatchers(wanted).pipe(
+        Effect.catchCause((cause) =>
+          Effect.sync(() => log.error("MCP config watcher setup failed", { cause: Cause.pretty(cause) })),
+        ),
+      )
+    })
+
     const status = Effect.fn("MCP.status")(function* () {
+      yield* ensureWatching()
       const s = yield* InstanceState.get(state)
 
       const cfg = yield* cfgSvc.get()
@@ -1013,12 +1026,35 @@ export const layer = Layer.effect(
 
     // --- Config file watcher for hot-reload ---
     let mcpWatcherCleanup: (() => void) | null = null
+    // The exact directories currently watched. Arming needs
+    // Config.directories(), which requires an active InstanceRef: from the layer
+    // constructor the project-local `.opencode` roots of the repo are not known
+    // yet, so the set is compared on first use and the watcher re-armed once it
+    // grows — the same lazy pattern the agent and skill modules use.
+    let mcpWatcherRoots: string[] = []
 
-    const setupMcpWatchers = Effect.fnUntraced(function* () {
+    // Roots to watch: the global config directory (where an MCP server is
+    // normally added) plus the per-instance config roots, which include the
+    // project-local `.opencode` of a local repo. Measured 2026-10-11: relying on
+    // Config.directories() alone meant nothing was ever watched — no
+    // "MCP config watchers active" line in any daemon log, and an `mcp` entry
+    // edited into the global opencode.jsonc was only picked up after a restart.
+    const resolveRoots = Effect.fnUntraced(function* () {
+      const roots = new Set<string>([Global.Path.config])
+      // A missing InstanceRef surfaces as a defect, not a typed failure, so this
+      // must catch causes: status()/tools() run in contexts without an active
+      // instance (OAuth callback tests, global routes) and must keep working —
+      // there the watcher simply stays unarmed.
+      const cfgDirs = yield* cfgSvc
+        .directories()
+        .pipe(Effect.catchCause(() => Effect.succeed([] as string[])))
+      for (const dir of cfgDirs) roots.add(dir)
+      return [...roots].filter((dir) => fs.existsSync(dir))
+    })
+
+    const setupMcpWatchers = Effect.fnUntraced(function* (allDirs: string[]) {
       if (mcpWatcherCleanup) { mcpWatcherCleanup(); mcpWatcherCleanup = null }
-
-      const cfgDirs = yield* cfgSvc.directories()
-      const allDirs = [...new Set(cfgDirs)]
+      mcpWatcherRoots = []
 
       const watchers: fs.FSWatcher[] = []
       const timers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -1059,11 +1095,22 @@ export const layer = Layer.effect(
         timers.clear()
       }
 
-      if (allDirs.length > 0) log.info("MCP config watchers active", { dirs: allDirs.length })
+      if (watchers.length > 0) {
+        mcpWatcherRoots = allDirs
+        log.info("MCP config watchers active", { dirs: watchers.length, roots: allDirs })
+      } else {
+        log.warn("MCP config watcher armed on no directory", { roots: allDirs })
+      }
     })
 
     // Initial watcher setup (resilient: InstanceRef may not be available yet)
-    yield* setupMcpWatchers().pipe(Effect.catchCause(() => Effect.void))
+    yield* setupMcpWatchers(yield* resolveRoots()).pipe(
+      // Never swallow this silently: the watcher not being armed is exactly the
+      // failure that made config hot-reload invisible (see setupMcpWatchers).
+      Effect.catchCause((cause) =>
+        Effect.sync(() => log.error("MCP config watcher setup failed", { cause: Cause.pretty(cause) })),
+      ),
+    )
 
     const reloadUnsafe = Effect.fn("MCP.reloadUnsafe")(function* (options?: { reconnect?: boolean }) {
       log.info("reloading MCP servers from config")
@@ -1134,7 +1181,13 @@ export const layer = Layer.effect(
       }
 
       // Re-establish config watchers
-      yield* setupMcpWatchers().pipe(Effect.catchCause(() => Effect.void))
+      yield* setupMcpWatchers(yield* resolveRoots()).pipe(
+      // Never swallow this silently: the watcher not being armed is exactly the
+      // failure that made config hot-reload invisible (see setupMcpWatchers).
+      Effect.catchCause((cause) =>
+        Effect.sync(() => log.error("MCP config watcher setup failed", { cause: Cause.pretty(cause) })),
+      ),
+    )
       log.info("MCP reload complete")
       return Object.fromEntries(
         Object.entries(s.status).map(([name, status]) => [name, { status, toolCount: s.defs[name]?.length ?? 0 }]),
@@ -1146,6 +1199,7 @@ export const layer = Layer.effect(
     })
 
     const tools = Effect.fn("MCP.tools")(function* () {
+      yield* ensureWatching()
       const result: Record<string, Tool> = {}
       const s = yield* InstanceState.get(state)
 

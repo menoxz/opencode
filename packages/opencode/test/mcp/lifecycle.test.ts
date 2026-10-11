@@ -313,6 +313,45 @@ it.instance(
   },
 )
 
+// The config-file watcher is what makes an `mcp` entry added to opencode.jsonc
+// take effect without restarting the daemon. Only the changed-server case was
+// covered before, and never "a server that did not exist yet".
+it.instance(
+  "a server added to the config file is connected after reload, without a restart",
+  () =>
+    MCP.Service.use((mcp: MCPNS.Interface) =>
+      Effect.gen(function* () {
+        lastCreatedClientName = "static-server"
+        expect(Object.keys(yield* mcp.clients())).toEqual(["static-server"])
+        const beforeVersion = yield* mcp.catalogVersion!()
+        const configFile = path.join(yield* InstanceState.directory, "opencode.json")
+
+        yield* Effect.promise(() =>
+          fs.writeFile(
+            configFile,
+            JSON.stringify({
+              mcp: {
+                "static-server": { type: "local", command: ["echo", "static"] },
+                "added-server": { type: "local", command: ["echo", "added"] },
+              },
+            }),
+          ),
+        )
+        yield* mcp.reload()
+
+        expect(Object.keys(yield* mcp.clients())).toContain("added-server")
+        expect((yield* mcp.status())["added-server"]).toEqual({ status: "connected" })
+        expect(yield* mcp.catalogVersion!()).toBeGreaterThan(beforeVersion)
+      }),
+    ),
+  {
+    config: {
+      mcp: { "static-server": { type: "local", command: ["echo", "static"] } },
+    },
+  },
+)
+
+
 it.instance(
   "forced reload reconnects an unchanged server and refreshes its tools",
   () =>
