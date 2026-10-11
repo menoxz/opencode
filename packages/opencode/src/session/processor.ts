@@ -703,7 +703,14 @@ export const layer = Layer.effect(
             throw new Error(value.message)
 
           case "step-start":
-            if (!ctx.snapshot) ctx.snapshot = yield* trackSnapshot
+            // H4: reuse the carrier's end-of-previous-step hash before paying a
+            // capture. `create` already does this for the pre-capture (`:161`), but
+            // `step-finish` clears `ctx.snapshot` after the patch (`:787`), so
+            // without consulting the carrier here every step >= 2 paid a fresh
+            // `git write-tree` on an identical tree — 2N captures per turn instead
+            // of N+1. The worktree cannot change between a step-finish and the next
+            // step-start, so the carried hash is the correct pre-mutation base.
+            if (!ctx.snapshot) ctx.snapshot = input.carrier?.snapshot ?? (yield* trackSnapshot)
             if (!ctx.assistantMessage.summary) {
               // TODO(v2): Temporary dual-write while migrating session messages to v2 events.
               if (flags.experimentalEventSystem) {
