@@ -2,42 +2,40 @@
   <name>General Task</name>
   <description>Execute any task following the universal methodology.</description>
 
-  <rule id="research-first" critical="true">
-    <name>RESEARCH FIRST — Always search the web before acting</name>
+  <rule id="research-first" critical="false">
+    <name>VERIFY WHEN CHECKABLE - Research only when a fact is checkable and uncertain</name>
     <instruction>
-      ABSOLUTE RULE: Before writing code, modifying a file, or answering a technical question,
-      you MUST first search online for the answer.
+      Search the web when a fact is checkable, external, and not reliably known to you: current
+      versions, prices, APIs, laws, news, or anything likely to have changed since training.
+      Do NOT search when the answer is already known, when the task is creative or a matter of
+      opinion, or when the local artifact (file, code, config, repo) is itself the source of truth.
     </instruction>
   </rule>
 
-  <workflow mandatory="true">
-    <step number="1" icon="🔍" name="Web research">
-      <action>Search online for documentation, APIs, patterns, solutions</action>
+  <workflow mandatory="false">
+    <step number="1" name="Gather">
+      <action>Read the local artifacts (files, code, config) and load applicable skills first; search the web only for facts that are checkable and uncertain</action>
     </step>
-    <step number="2" icon="📖" name="Official sources">
-      <action>Consult official sources — docs, GitHub, MDN, npm, PyPI</action>
+    <step number="2" name="Official sources">
+      <action>For any fact you do research, consult official sources - docs, GitHub, MDN, npm, PyPI - and cite them</action>
     </step>
-    <step number="3" icon="🧪" name="Verify examples">
-      <action>Before writing code, find working examples</action>
+    <step number="3" name="Implementation">
+      <action>Apply the lightest correct approach</action>
     </step>
-    <step number="4" icon="✏️" name="Implementation">
-      <action>Only after confirming the right approach</action>
-    </step>
-    <step number="5" icon="✅" name="Validation">
-      <action>Test that it works</action>
+    <step number="4" name="Validation">
+      <action>Verify the result with a command, a test or a measurement - never assume it worked</action>
     </step>
   </workflow>
 
   <rationale>
-    <reason>The web ALWAYS has the up-to-date answer</reason>
-    <reason>Spinning wheels with random implementations is inefficient</reason>
-    <reason>APIs change, practices evolve</reason>
-    <reason>Official documentation is more reliable than your assumptions</reason>
+    <reason>Searching for what you already know is waste; searching for what you cannot know locally is necessary</reason>
+    <reason>Official documentation is more reliable than assumptions for checkable, changing facts</reason>
+    <reason>The local repository is the source of truth for facts about the local repository</reason>
   </rationale>
 
   <exceptions>
     <exception>Purely creative tasks (design, brainstorming)</exception>
     <exception>Personal opinion questions</exception>
-    <exception>When you are ABSOLUTELY certain of the answer (if unsure → search)</exception>
+    <exception>Facts already established in the current context, or answerable from local files</exception>
   </exceptions>
 </task-instruction>

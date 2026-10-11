@@ -5,6 +5,11 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v2.4.2] - 2026-10-11
+
+### Changed
+- **La règle « recherche web d'abord » du prompt général devient conditionnelle.** `session/prompt/task-specific/general.txt` portait une règle absolue (`critical="true"` : « ABSOLUTE RULE: Before writing code, modifying a file, or answering a technical question, you MUST first search online ») qu'un agent généraliste ne peut pas suivre sans gaspiller : elle s'applique même quand la réponse est connue, locale ou d'opinion — et elle portait déjà ses propres exceptions, donc elle se contredisait. Remplacée par une politique conditionnelle : chercher le web **seulement** quand le fait est vérifiable, externe et incertain (versions, prix, API, lois, actualité), jamais quand le dépôt local est la source de vérité. Le workflow passe à `mandatory="false"` (lire les artefacts locaux et charger les compétences d'abord, valider par test/mesure à la fin) et la règle n'est plus `critical`. `research.txt` (type de tâche « research ») reste inchangé : y chercher le web est le métier de la tâche. Preuve de déploiement : sonde A/B sur les binaires 2.4.1/2.4.2 (`VERIFY WHEN CHECKABLE` : présent/absent ; `ABSOLUTE RULE` : absent/présent).
+
 ## [v2.4.1] - 2026-10-11
 
 ### Fixed
