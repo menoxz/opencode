@@ -5,6 +5,12 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v2.4.1] - 2026-10-11
+
+### Fixed
+- **Le watchdog d'inactivité de stream ne tue plus un tour sain pendant qu'une question attend la réponse de l'opérateur.** Livré en 2.4.0 **armé par défaut** (300 000 ms, mesuré à partir du premier événement), il supposait que l'attente d'un humain se produit « avant le premier événement ». C'est faux : l'appel d'outil `question` est lui-même un événement du stream, donc le temps de réflexion qui suit est un trou inter-chunk comme un autre — constaté ici, un tour sain est mort sur `stream produced no event within 300000ms` pendant que l'opérateur répondait. La borne ne peut pas distinguer « attend l'utilisateur » de « fournisseur bloqué » : le watchdog est désormais **opt-in** (`OPENCODE_EXPERIMENTAL_STREAM_TIMEOUT_MS`), et `OPENCODE_DISABLE_STREAM_TIMEOUT` reste le coupe-circuit absolu. **Impact : une borne explicitement voulue doit maintenant être armée à la main.** C'est exactement le risque que l'objection `H8-O1` des verdicts v2.4.0 annonçait.
+- **`packages/enterprise/src/custom-elements.d.ts` ne bloque plus le hook `pre-push` sur un clone Windows.** Le fichier était versionné en **symlink** (mode 120000) ; quand `core.symlinks=false`, git le matérialise en fichier texte contenant le chemin cible, d'où `TS1128` et l'échec de `bun typecheck` dans `pre-push` — tout `git push` sans `--no-verify` était refusé depuis ce poste. Remplacé par une référence portable (`/// <reference path>` + `export {}`), équivalente pour le typage.
+
 ## [v2.4.0] - 2026-10-11
 
 ### Changed
