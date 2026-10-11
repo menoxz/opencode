@@ -77,6 +77,41 @@ sont normalisées en pointe ci-dessous.
 - **Processus spawnés par tour à N étapes** : déduit de la lecture du code (2 spawns git +
   1 par commande shell), non compté dynamiquement.
 
+## Mesures après implémentation (2026-10-11, items H1..H8 livrés)
+
+Comparaison directe avec les mesures ci-dessus. Chaque ligne a un test nommé comme source.
+
+| item | grandeur | avant | après | source |
+|---|---|---|---|---|
+| H1 | invocations `streamText` par tour à N rounds d'outils | N | **1** | `single-provider-call.test.ts` : `llm.calls == 3` pour N=3 steps chaînés, `assistantCount == 1` |
+| H1 | requêtes HTTP proxy par tour | 3 (boucle) · 4 (hard-stop) | **2** · **2** | `processor-effect.test.ts` |
+| H2 | point de cache explicite émis (provider openai-compatible) | aucun | **émis** | `prompt-cache-openai-compatible.test.ts` (232 pass) — **mock**, rejeu live non exécuté |
+| H3 | identité du préfixe système entre deux tours | instable (horodatage + état MCP) | **octet-identique** | `system-prefix-stability.test.ts` (2 pass) |
+| H4 | captures `write-tree` par tour à N étapes | ~2N | **≤ N+1** | `step-git-spawn.test.ts` (3 pass) · revert vérifié `revert-after-single-capture.test.ts` |
+| H5 | appels disque de découverte des instructions | **160** | **76** | `instruction-discovery-cache.test.ts` (5 pass) |
+| H6 | rafale de 5 commandes shell triviales | **1966 / 1933 / 2360 ms** | **75,6 ms** (test) · 325 ms (boucle) | `shell-session.test.ts` (6 pass) |
+| H7 | injections de l'objectif / de la DoD par tour | 2 × / 2 × | **1 × / 1 ×** | `context-dedup.test.ts` (7 pass) |
+| H8 | ouverture du stream sur erreur transitoire après émission | relancé depuis zéro (refacturé) | **1 seule ouverture**, texte `partial` conservé | `retry-non-destructive.test.ts` (4 pass) |
+
+**Agrégat** — suite ciblée `goal-contract + registry + parameters` :
+baseline **86 pass / 8 fail en 38,57 s** ⇒ après **92 pass / 4 fail en 28,3 s**.
+
+Les 4 échecs résorbés étaient des échecs *par timeout* ; les accélérations les font passer.
+Origine du delta **vérifiée** : les trois fichiers de cette suite ont un **diff vide** depuis
+`89917b853` ⇒ aucun test n'a été affaibli ni supprimé. Les 4 échecs restants sont des
+assertions préexistantes (`goal-contract` : `create_objectif` réponse structurée,
+`edit_objectif` champs partiels ; `parameters` : `task` forme wire, `task` rejet de prompt
+manquant) — hors périmètre v2.4.0.
+
+**Non mesuré, assumé** :
+- H2 : rejeu live impossible sans credentials `opencode-go` (config locale : github-copilot,
+  command-code). Commande de mesure dans `items/H2.md` §7.2, à lancer par l'opérateur.
+- H3 / H7 : pas de comptage de tokens (le budget de tokens n'est pas instrumenté ici) ;
+  l'effet est prouvé par identité d'octets et par compte d'injections.
+- H1 : la preuve *individuelle* des quatre sites (`turn_plan`, `continuation`, `stall-watch`,
+  compaction) reste un finding ouvert (`H1-four-site-proof`).
+- H8 : axe 3 (doublon des couches retry) non traité.
+
 ## I/O base (hors périmètre initial, à surveiller)
 
 | grandeur | valeur | source |
