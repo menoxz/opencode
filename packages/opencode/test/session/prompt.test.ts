@@ -1179,6 +1179,10 @@ it.instance("keeps volatile harness blocks out of the cached system segment", ()
       "<context_slots",
       "<environment_state",
       "<progress_state",
+      // H3: the day stamp and the live MCP readiness line are volatile too — they
+      // must not ride inside the cached system segment.
+      "Today's date",
+      "<unavailable_tools",
     ]
     const hits = yield* llm.hits
     expect(hits.length).toBeGreaterThanOrEqual(2)

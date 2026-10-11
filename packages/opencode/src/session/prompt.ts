@@ -11,7 +11,6 @@ import { AUTO_CONTINUE_INSTRUCTION, decideRunDecision, type DeclaredIntent } fro
 import { SessionWorkPlan } from "./work-plan"
 import { StallWatch } from "./stall-watch"
 import { capsuleFor, environmentStateEnabled, ledgerFor } from "./environment"
-import { contextHoldingsCapsule } from "./holdings-capsule"
 import { progressCapsule } from "./progress"
 import { contextCapsule, noteSkillRevision, setSkillSlots } from "./context-ledger"
 import * as TurnPlan from "./turn-plan"
@@ -2238,7 +2237,7 @@ export const layer = Layer.effect(
             // Track the fixed system fragments so the context summary covers the
             // FULL system prompt, not only the variable sections.
             contextSummary.add("core", "base agent prompt (PROMPT_CORE or agent.prompt)", agent.prompt ?? PROMPT_CORE, 0)
-            contextSummary.add("env", "inject environment info", [env.stable, env.runtime], 0)
+            contextSummary.add("env", "inject environment info", [env.stable, env.runtime, env.volatile], 0)
             contextSummary.add("instructions", "inject AGENTS.md instruction files", instructions, 0)
             const modelMessageConversionStart = Date.now()
             const modelMsgs = yield* MessageV2.toModelMessagesEffect(preparedMsgs, model, {
@@ -2320,22 +2319,14 @@ export const layer = Layer.effect(
               { cached: cachedToolList.cached },
             )
 
-            system.push([...instructions, env.stable, preloadedSkills, toolList, unavailableLine].filter((entry) => entry).join("\n"))
+            system.push([...instructions, env.stable, preloadedSkills, toolList].filter((entry) => entry).join("\n"))
             system.push(env.runtime)
+            // H3: the day stamp and the live MCP readiness line change on their own.
+            // They must not enter the cached system segment — one changed byte there
+            // re-bills the whole history — so they ride the volatile tail instead.
+            if (env.volatile) volatile.push(env.volatile)
+            if (unavailableLine) volatile.push(unavailableLine)
             if (plan) volatile.push(plan)
-            // What the model already holds, stated before it acts. A repeated
-            // read is answered from the ledger, but only after costing a turn;
-            // this capsule lets the model skip the read instead of discovering
-            // it was unnecessary.
-            const holdingsStart = Date.now()
-            const holdings = contextHoldingsCapsule(sessionID)
-            if (holdings) volatile.push(holdings)
-            contextSummary.add(
-              "holdings",
-              holdings ? "inject file ranges already held in context" : "no file range held in context yet",
-              holdings,
-              Date.now() - holdingsStart,
-            )
             // The skills list is stable for the whole turn and can be large: unlike the
             // per-step progress blocks below, it belongs to the cached prefix.
             if (skills) system.push(skills)
@@ -2359,7 +2350,7 @@ contextSummary.add("skills", skills ? "inject relevant skill summary" : "no rele
               {
                 section: "env",
                 label: "environment",
-                text: [env.stable, env.runtime].filter(Boolean).join("\n\n"),
+                text: [env.stable, env.runtime, env.volatile].filter(Boolean).join("\n\n"),
               },
               {
                 section: "instructions",
@@ -2418,6 +2409,15 @@ contextSummary.add("skills", skills ? "inject relevant skill summary" : "no rele
                 { cached: cachedGoal.cached },
               )
             }
+
+            // H7 — one canonical contract surface per turn. `<task-contract>` above is the
+            // single copy of Goal/DoD; the `<working-state>` card must not render a second
+            // one. The card is built later (llm.ts), so the decision travels with the
+            // request. The union spans `system` AND `volatile` because the contract rides
+            // the injected tail, never the cached system segment.
+            const hasContract =
+              system.some((entry) => entry.includes("<task-contract")) ||
+              volatile.some((entry) => entry.includes("<task-contract"))
 
             // Inject the normalized environment state for computer-use tasks. It is
             // rebuilt from harness observations, not from the model's memory, so a
@@ -2571,6 +2571,7 @@ contextSummary.add("skills", skills ? "inject relevant skill summary" : "no rele
               ],
               tools,
               model,
+              includeContract: !hasContract,
               firstStep: step === 1,
               toolChoice: format.type === "json_schema" ? "required" : undefined,
             })

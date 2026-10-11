@@ -103,7 +103,7 @@ function skillSearchText(skill: Skill.Info): string {
 }
 
 export interface Interface {
-  readonly environment: (model: Provider.Model) => Effect.Effect<{ stable: string; runtime: string }>
+  readonly environment: (model: Provider.Model) => Effect.Effect<{ stable: string; runtime: string; volatile: string }>
   readonly preloadedSkills: (agent: Agent.Info) => Effect.Effect<string | undefined>
   readonly skills: (agent: Agent.Info, lastUserMessage?: string, sessionID?: string) => Effect.Effect<string | undefined>
   /** Adaptive system prompt composed by PromptComposer module based on detected task type. */
@@ -141,9 +141,12 @@ export const layer = Layer.effect(
             `  Workspace root folder: ${ctx.worktree}`,
             `  Is directory a git repo: ${ctx.project.vcs === "git" ? "yes" : "no"}`,
             `  Platform: ${process.platform}`,
-            `  Today's date: ${new Date().toDateString()}`,
             `</env>`,
           ].join("\n"),
+          // Live-by-nature values are exposed separately so the caller keeps them
+          // out of the cached system segment: the date flips at midnight and one
+          // changed byte there would re-bill the whole conversation.
+          volatile: `Today's date: ${new Date().toDateString()}`,
           // Usage guidance now lives in the tool definitions (shell, tasks);
           // only the runtime environment block stays in the system prompt.
           stable: "",

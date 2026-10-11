@@ -16,6 +16,9 @@ export const current = Effect.fn("WorkingState.current")(function* (
   // `context_rollout.goal_dod = off` disables the Goal/DoD feature wholesale, so the
   // card must not surface the persisted contract either. Callers resolve the rollout.
   goalDodEnabled = true,
+  // H7: false when the turn already carries `<task-contract>`; the card then omits the
+  // contract copy. Defaults true so non-turn callers keep the legacy card.
+  includeContract = true,
 ) {
   const sessions = yield* Session.Service
   const todos = yield* Todo.Service
@@ -25,10 +28,21 @@ export const current = Effect.fn("WorkingState.current")(function* (
     userID,
     goal: goalDodEnabled ? session.value.goalState : undefined,
     todos: yield* todos.get(SessionID.make(sessionID)),
+    includeContract,
   })
 })
 
-export function render(input: { userID: string; goal?: GoalState; todos: readonly Todo.Info[] }) {
+export function render(input: {
+  userID: string
+  goal?: GoalState
+  todos: readonly Todo.Info[]
+  /**
+   * H7: when false the turn already carries the canonical `<task-contract>`, so the
+   * card must not render a second contract copy (goal/dod/out_of_scope) and stays
+   * purely ephemeral application state (status, active todo, evidence refs).
+   */
+  includeContract?: boolean
+}) {
   // The card must agree with the injected `<task-contract>` (prompt.ts): an active
   // (nonterminal) contract spans turns, so it stays surfaced even when it was anchored
   // to an earlier user message — a new_topic turn keeps the contract without
@@ -57,9 +71,13 @@ export function render(input: { userID: string; goal?: GoalState; todos: readonl
     "Keep the current agent's task (including compaction); this card does not start a new user turn.",
     `user_ref: ${quote(input.userID, 256)}`,
     `contract_status: ${quote(goal?.status ?? "unavailable or stale; reconcile with latest user", 128)}`,
-    `goal: ${quote(goal?.goal ?? "", 900)}`,
-    `dod: ${list(goal?.dod ?? [], 2000)}`,
-    `out_of_scope: ${list(goal?.outOfScope ?? [], 1600)}`,
+    ...(input.includeContract === false
+      ? []
+      : [
+          `goal: ${quote(goal?.goal ?? "", 900)}`,
+          `dod: ${list(goal?.dod ?? [], 2000)}`,
+          `out_of_scope: ${list(goal?.outOfScope ?? [], 1600)}`,
+        ]),
     `active_todo: ${quote(active ? `${active.status}: ${active.content}` : todoAnchored ? "none" : "unavailable/unanchored: no matching nonterminal goal", 900)}`,
     `critical_evidence_refs: ${list(evidence, 1400)}`,
     "</working-state>",

@@ -242,4 +242,36 @@ describe("context ledger capsule", () => {
     expect(ContextLedger.related(session, call("bash", { command: "git status --short" }))).toHaveLength(0)
     expect(ContextLedger.related(session, call("webfetch", { url: "https://x.test" }))).toHaveLength(0)
   })
+
+  // Migrated from the deleted holdings-capsule.test.ts (H7): read holdings now ride the
+  // single `<context_slots>` capsule, so its bounds and its reset semantics are pinned here.
+  test("stays bounded when the session holds many targets", () => {
+    for (let i = 0; i < 200; i++)
+      ContextLedger.observe(session, {
+        tool: "read",
+        args: { filePath: `src/file-${i}.ts`, offset: 1, limit: 200 },
+        step: i + 1,
+        at: 1_000 + i,
+        truth: "observed",
+        output: `export const v${i} = ${i}`,
+      })
+    const capsule = ContextLedger.contextCapsule(session)
+    expect(capsule).toContain("<context_slots>")
+    expect(Buffer.byteLength(capsule)).toBeLessThan(2_000)
+    expect(capsule.split("\n").length).toBeLessThan(50)
+  })
+
+  test("is empty again after the allocation is reset (a compaction drops the bytes)", () => {
+    ContextLedger.observe(session, {
+      tool: "read",
+      args: { filePath: "src/a.ts", offset: 1, limit: 200 },
+      step: 1,
+      at: 1_000,
+      truth: "observed",
+      output: "export const a = 1",
+    })
+    expect(ContextLedger.contextCapsule(session)).toContain("src/a.ts")
+    ContextLedger.reset(session)
+    expect(ContextLedger.contextCapsule(session)).toBe("")
+  })
 })

@@ -70,6 +70,12 @@ export type StreamInput = {
   firstStep?: boolean
   /** Compaction uses a synthetic parent; retain the real request's state anchor. */
   workingStateUserID?: string
+  /**
+   * H7: the turn already carries the canonical `<task-contract>`, so the
+   * `<working-state>` card must not re-render Goal/DoD. Undefined keeps the card's
+   * legacy behaviour (render the contract), so non-turn callers are unaffected.
+   */
+  includeContract?: boolean
 }
 
 export type StreamRequest = StreamInput & {
@@ -170,6 +176,7 @@ const live: Layer.Layer<
           input.sessionID,
           input.workingStateUserID ?? input.user.id,
           SessionContextRollout.resolve(yield* config.get()).goalDod !== "off",
+          input.includeContract !== false,
         ).pipe(
           Effect.provideService(Session.Service, sessions),
           Effect.provideService(Todo.Service, todos),
