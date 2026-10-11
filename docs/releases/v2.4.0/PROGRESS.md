@@ -21,14 +21,14 @@ Ce fichier est la **seule** source de vérité du statut des items de la v2.4.0.
 
 | id | item | priorité | vague | statut | verdict | commit fiche | gain mesuré |
 |---|---|---|---|---|---|---|---|
-| H1 | un seul appel provider par round d'outils | 1 | D | IMPL_DONE | `verdicts/H1-verdict.md` | 8cf6c41a1 | **1 invocation `streamText` pour N rounds** (vs N) ; `llm.calls` 3→2 et 4→2 |
-| H2 | cache de prompt explicite (openai-compatible) | 2 | B | IMPL_DONE (neutre, mesuré) | `verdicts/H2-verdict.md` | aad479096 | **rejeu live : le serveur cache automatiquement** (A2 sans clé = B2 = 3 072/3 109 cachés) ⇒ clé **neutre**, H2 se réduit à H3 |
-| H3 | préfixe système stable (hors volatils) | 3 | A | IMPL_DONE | `verdicts/H3-verdict.md` | aad479096 | préfixe **octet-identique** entre tours (2 tests) |
-| H4 | un seul spawn git par étape | 4 | C | IMPL_DONE (**corrigé + vérifié en réel**) | `verdicts/H4-verdict.md` | 63f81d824 | réel : **6 captures / 3 étapes (2N)** → correctif → **3 captures / 2 étapes (N+1)** |
-| H5 | mémoïser la découverte d'instructions | 5 | C | IMPL_DONE | `verdicts/H5-verdict.md` | 63f81d824 | appels disque de découverte **160 → 76** |
-| H6 | shell persistant | 6 | C | IMPL_DONE | `verdicts/H6-verdict.md` | 37a84ac8e | rafale de 5 commandes **1966 ms → 75,6 ms** |
-| H7 | dédupliquer les injections de contexte | 7 | A | IMPL_DONE | `verdicts/H7-verdict.md` | 37a84ac8e | objectif/DoD **2× → 1×** (7 tests) |
-| H8 | retry non destructif + garde-fous | 8 | D | IMPL_DONE (axe 3 résiduel) | `verdicts/H8-verdict.md` | 8cf6c41a1 | stream **ouvert 1 fois** au lieu d'un retry depuis zéro |
+| H1 | un seul appel provider par round d'outils | 1 | D | MERGED (preuve four-site résiduelle) | `verdicts/H1-verdict.md` | 8cf6c41a1 | **1 invocation `streamText` pour N rounds** (vs N) ; `llm.calls` 3→2 et 4→2 |
+| H2 | cache de prompt explicite (openai-compatible) | 2 | B | MERGED (clé neutre, mesuré) | `verdicts/H2-verdict.md` | aad479096 | **rejeu live : le serveur cache automatiquement** (A2 sans clé = B2 = 3 072/3 109 cachés) ⇒ clé **neutre**, H2 se réduit à H3 |
+| H3 | préfixe système stable (hors volatils) | 3 | A | MERGED | `verdicts/H3-verdict.md` | aad479096 | préfixe **octet-identique** entre tours (2 tests) |
+| H4 | un seul spawn git par étape | 4 | C | MERGED (**corrigé + vérifié en réel**) | `verdicts/H4-verdict.md` | 63f81d824 | réel : **6 captures / 3 étapes (2N)** → correctif → **3 captures / 2 étapes (N+1)** |
+| H5 | mémoïser la découverte d'instructions | 5 | C | MERGED | `verdicts/H5-verdict.md` | 63f81d824 | appels disque de découverte **160 → 76** |
+| H6 | shell persistant | 6 | C | MERGED | `verdicts/H6-verdict.md` | 37a84ac8e | rafale de 5 commandes **1966 ms → 75,6 ms** |
+| H7 | dédupliquer les injections de contexte | 7 | A | MERGED | `verdicts/H7-verdict.md` | 37a84ac8e | objectif/DoD **2× → 1×** (7 tests) |
+| H8 | retry non destructif + garde-fous | 8 | D | MERGED (axe 3 résiduel) | `verdicts/H8-verdict.md` | 8cf6c41a1 | stream **ouvert 1 fois** au lieu d'un retry depuis zéro |
 
 ## Objections ouvertes (issues des verdicts)
 
@@ -52,9 +52,17 @@ Objections MAJEURES/MINEURES : voir chaque `verdicts/H*-verdict.md`, section « 
 | G3a | aucune objection CRITIQUE ouverte | **franchi 2026-10-11** — H4-O2, H7-O1, H8-O1 levées par les correcteurs |
 | G3 | typecheck exit 0 + tests verts pour chaque item implémenté | **franchi 2026-10-11** — 8/8 livrés, typecheck exit 0, suite ciblée **92 pass / 4 fail** (mieux que la baseline 86/8) ; réserves tracées plus bas |
 | G4 | gain ≥ seuil d'acceptation de l'item, chiffré | **franchi 2026-10-11** — H1, H4, H5, H6, H7, H8 chiffrés ; H2 mesuré par mock (rejeu live différé), H3 mesuré par identité d'octets ; voir `BASELINE.md` § Mesures après implémentation |
-| G5 | binaire 2.4.0 déployé, `--version` vérifié — **accord opérateur requis** | en attente d'accord |
-| G4 | gain ≥ seuil d'acceptation de l'item, chiffré | à venir |
-| G5 | binaire 2.4.0 déployé, `--version` vérifié — **accord opérateur requis** | à venir |
+| G5 | binaire 2.4.0 déployé, `--version` vérifié — **accord opérateur requis** | **franchi 2026-10-11** — 2.4.0 déployé (SHA `3746C8A2…`, post-correctif H4), session réelle `opencodev2 run` exit 0, processus relancé après déploiement ⇒ le binaire en mémoire est bien la 2.4.0 corrigée |
+
+## Résidus ouverts (hors périmètre v2.4.0 — à ouvrir en item de suivi)
+
+| id | résidu | preuve |
+|---|---|---|
+| H1-four-site-proof | la preuve *individuelle* que `turn_plan`, `continuation`, `stall-watch` et compaction restent exercés n'est pas écrite (le test de survie ne couvre que le comptage `llm.calls`/`assistantCount`) | `BASELINE.md` § Non mesuré |
+| H8-axe3 | doublon des couches retry (`llm/route/executor.ts` × `session/retry.ts`) non résorbé : borner le produit exige un budget partagé entre `packages/llm` et `packages/opencode` | `BASELINE.md` § Non mesuré |
+
+Non bloquants pour la v2.4.0 : ils n'invalident aucun gain mesuré. Interdiction de présenter
+H1 comme prouvé sur les quatre sites, ni H8 comme complet.
 
 ## Journal des décisions
 
@@ -90,3 +98,5 @@ Objections MAJEURES/MINEURES : voir chaque `verdicts/H*-verdict.md`, section « 
 | 2026-10-11 | **H4 CONTREDIT en conditions réelles — écart ouvert.** Session réelle : **6 lignes `tracking` pour 3 rounds d'outils** (motif 2N), alors que le critère promet ≤ N+1 = 4. `snapshot/index.ts:321-323` établit qu'une ligne `tracking` suit immédiatement un `git write-tree` réel : ce sont donc bien 6 spawns. Le câblage est pourtant présent (`prompt.ts:1763` porteur déclaré hors boucle, `:2125` transmis, `processor.ts:161` court-circuite sur hash présent, `:736` réécrit le hash en fin d'étape). Le test unitaire `step-git-spawn.test.ts` passe pourtant (4 étapes, `track == steps+1`). La cause n'est donc **pas** le câblage : elle doit être mesurée, ce qui exige un rebuild. **Ne pas présenter H4 comme vérifié en réel.** | agent |
 | 2026-10-11 | **H4 : cause trouvée, correctif appliqué, vérifié en réel.** Cause : `processor.ts:787` remettait `ctx.snapshot = undefined` après le patch de fin d'étape, et le handler `step-start` (`:706`) ne testait que `ctx.snapshot` sans jamais consulter le porteur ⇒ chaque étape ≥ 2 repayait un `git write-tree` sur un arbre identique. Budget = 1 (`:161`) + (N−1) (`:706`) + N (`:734`) = **2N**. Le commit H1 `864e15988` a rendu le défaut actif : en chaînant tout le tour dans un seul `processor.create` (`creates=1`), il a exposé `:706` qui dormait tant que la boucle externe appelait `create` une fois par étape. **Correctif** (`eb1fdbea8`) : `step-start` consulte `input.carrier?.snapshot` avant de capturer, comme le fait déjà `:161`. **Preuves** : `step-git-spawn` 2 pass · `h4-nonmutant-capture` 3 pass (`track=5` pour 4 étapes = N+1) · session réelle **3 captures pour 2 étapes = N+1** (avant : 6 pour 3). Rebuild `3746C8A2AFA324B7417860FB73394D80111B321FE89A5DE1267B94184CDC0FE`, redéployé et revérifié. | agent |
 | 2026-10-11 | **Leçon de méthode.** Le défaut H4 était visible dès l'implémentation : `step-git-spawn.test.ts` échouait (8 > 5). Ma vérification après H1 avait lancé `prompt`, `single-provider-call`, `processor-effect` et la suite ciblée — **pas** ce test. La session réelle a rattrapé ce que la vérification avait manqué : après chaque vague, relancer *tous* les tests que la vague voisine a écrits, pas seulement la suite ciblée. | agent |
+| 2026-10-11 | **Phase 6 (clôture).** Règle durable consignée dans `AGENTS.md` : relancer les tests des items voisins après chaque vague (commit `02795c00b`). Tag `v2.4.0` réaligné sur `12702ec89`, c'est-à-dire sur le commit qui porte le correctif H4 vérifié en réel — il ne pointe plus sur le build défectueux `50FF265E…`. Programme clos sur 8/8, G0→G5 franchis. | agent |
+| 2026-10-11 | **Registre réconcilié.** Le tableau des gates portait deux lignes fantômes (G4 et G5 « à venir ») contredisant G4/G5 franchis et le journal : supprimées. Statuts des 8 items passés `IMPL_DONE` → `MERGED` (mesurés puis committés sur `dev`). Les deux résidus (`H1-four-site-proof`, `H8-axe3`) extraits dans une section dédiée pour qu'ils ne soient plus lisibles comme des items ouverts à tort ni comme des items prouvés. | agent |
