@@ -13,7 +13,7 @@ Convention héritée de `docs/releases/v2.4.0/`.
 |---|---|---|---|
 | **P0** cadrage & surface API | **FAIT** | G0 ✅ | surface gelée ci-dessous |
 | **P1** runtime sans build | **FAIT** (A1-A3 faits) | G1 ✅ | `RUNTIME-ARTIFACTS.md` §1-§3 |
-| **P2** squelette UI | à faire | G2 | — |
+| **P2** squelette UI | **FAIT** | G2 ✅ | `packages/webui`, preuve navigateur ci-dessous |
 | **P3** sessions & projets | à faire | G3 | — |
 | **P4** outils & permissions | à faire | G4 | — |
 | **P5** poids & robustesse | à faire | G5 | — |
@@ -79,6 +79,49 @@ une base vide. Piège associé : le fichier `.db` ne fait que 4096 o à l'arrêt
 | A3 | ✅ **Fait** — documenté : M2 exige un `bun install` complet, les wasm viennent de `node_modules` | P1 | **fait** |
 | A4 | Trancher le sort de `@opencode-ai/ui` (imports audio TUI) pour le paquet M2 | P2 | à faire |
 | A5 | Surveiller la mort du serveur après une sonde SSE longue (port 4701) | P3 | à faire |
+
+---
+
+## P2 — squelette UI (G2 ✅)
+
+Nouveau package `packages/webui` : Vite + SolidJS, client du SDK uniquement. Aucun import de
+`@opencode-ai/ui` ni de `packages/app` — c'est la garde anti-dérive annoncée dans
+`WORKFLOW.md` §7, et elle résout **A4** par conception : la question du sort des imports audio
+de `@opencode-ai/ui` ne se pose pas, ce package n'est pas une dépendance de l'UI.
+
+| fichier | rôle |
+|---|---|
+| `vite.config.ts` | proxy dev vers le backend, **pas** d'appel direct |
+| `src/client.ts` | `createOpencodeClient`, résolution de l'URL serveur (env → localStorage → même origine) |
+| `src/events.ts` | abonnement SSE `/event` via `EventSource`, état connecté/reconnexions |
+| `src/app.tsx` | 3 zones : sessions, fil, flux d'événements |
+| `src/styles.css` | thème sombre, tokens locaux |
+
+**Choix structurant — proxy plutôt que CORS.** Le CORS du serveur est opt-in
+(`server/cors.ts:19`, `opts?.cors?.includes(origin)`), donc une UI servie sur un autre port
+serait refusée. Plutôt que d'ajouter une origine autorisée côté serveur — ce qui ferait entrer
+l'UI dans la config du backend, contrairement à `WORKFLOW.md` §2 — le dev passe par un proxy
+Vite : le navigateur ne parle qu'à `127.0.0.1:5180`, et le backend ignore l'existence de l'UI.
+
+**Preuve G2 (navigateur, 2026-10-12)** — serveur source sur `4096`, UI dev sur `5180` :
+
+- la page se charge, `#root` présent, `src/index.tsx` servi (200, 1561 o) ;
+- `/global/health` **à travers le proxy** renvoie `{"healthy":true,"version":"local"}` ;
+- l'UI affiche « SSE connecté », et le flux reçoit `server.connected` ;
+- clic sur « Nouvelle session » : la session `ses_ecf758ef` apparaît dans la liste **et** le flux
+  enregistre en direct `session.created` puis `session.updated` portant cet identifiant, avec des
+  `server.heartbeat` intercalés — **sans rechargement de page**.
+
+Le tour synthétique de G2 est donc franchi : les données viennent du SDK et les mises à jour
+arrivent par SSE. Le composer s'affiche une fois une session sélectionnée.
+
+**Réserves P2** :
+
+- `EventSource` ne peut pas porter d'en-têtes : un serveur authentifié
+  (`OPENCODE_SERVER_PASSWORD`) n'est pas supporté. Limite assumée, à traiter avant P6.
+- Les types du SDK v2 sont aplatis (`{ sessionID, parts }`, pas de `path`/`body`) : trois appels
+  ont dû être corrigés après le premier typecheck. À retenir pour P3/P4.
+- Aucun test automatisé dans ce package : la vérification est manuelle et navigateur.
 
 ---
 

@@ -768,6 +768,21 @@
         "typescript": "catalog:",
       },
     },
+    "packages/webui": {
+      "name": "@opencode-ai/webui",
+      "version": "0.0.0",
+      "dependencies": {
+        "@opencode-ai/sdk": "workspace:*",
+        "solid-js": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "@typescript/native-preview": "catalog:",
+        "typescript": "catalog:",
+        "vite": "catalog:",
+        "vite-plugin-solid": "catalog:",
+      },
+    },
   },
   "trustedDependencies": [
     "esbuild",
@@ -1647,6 +1662,8 @@
     "@opencode-ai/ui": ["@opencode-ai/ui@workspace:packages/ui"],
 
     "@opencode-ai/web": ["@opencode-ai/web@workspace:packages/web"],
+
+    "@opencode-ai/webui": ["@opencode-ai/webui@workspace:packages/webui"],
 
     "@openrouter/ai-sdk-provider": ["@openrouter/ai-sdk-provider@2.8.1", "", { "peerDependencies": { "ai": "^6.0.0", "zod": "^3.25.0 || ^4.0.0" } }, "sha512-Y6j3yivgoEUf/kutD/k5GX/mzZfioRFoSx0gbQ+mIOzMaH/vJv1rCkztiuvlLw5xRYQil7oxHUZvmSfXqOx1NQ=="],
 
