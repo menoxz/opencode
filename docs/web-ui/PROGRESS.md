@@ -516,9 +516,45 @@ vitest run  -> 3 fichiers, 36 tests, exit 0   (14 sur l'authentification)
 tsgo --noEmit -> exit 0
 ```
 
-### Réserve honnête
+### Vérification contre un serveur réel (réserve levée)
 
-Les helpers sont testés, le câblage est vérifié par typecheck et par les tests existants — mais
-**je n'ai pas fait tourner un serveur avec `OPENCODE_SERVER_PASSWORD` pour observer l'échange
-réel** (401 sans identifiants, 200 avec). C'est la vérification qui manque, et elle est simple à
-faire ; elle n'a pas été faite ici.
+Serveur lancé avec `OPENCODE_SERVER_PASSWORD=secret` et `OPENCODE_SERVER_USERNAME=tester`,
+sur le port 4098. Mesures :
+
+| requête | statut |
+|---|---|
+| `GET /global/health` sans identifiants | **401** |
+| `GET /global/health` en-tête Basic correct | **200** |
+| `GET /global/health` mauvais mot de passe | **401** |
+| `GET /global/health?auth_token=…` | **200** |
+| `GET /event` sans jeton | **401** |
+| `GET /event` avec en-tête Basic | **200 `text/event-stream`** |
+| `GET /event?auth_token=…` | **200 `text/event-stream`** |
+| `GET /` (UI) sans identifiants | **401** |
+| `GET /` (UI) avec identifiants | **200** |
+| `GET /assets/index-*.js` sans identifiants | **401** |
+
+Le 401 porte `www-authenticate: Basic realm="Secure Area"` : c'est bien le serveur qui le pose.
+
+### Ce que cette mesure apprend — et qui n'était pas anticipé
+
+**1. Le flux SSE accepte aussi l'en-tête Basic.** Le repli `auth_token` n'est donc pas le seul
+canal pour le flux. Il reste nécessaire dans un cas précis, voir ci-dessous.
+
+**2. La page de l'UI elle-même exige l'authentification** — `GET /` et les assets renvoient 401.
+Conséquence directe : le formulaire d'identifiants **de l'UI n'est pas atteignable** quand le
+serveur est authentifié, puisqu'il faut déjà être authentifié pour charger la page qui le contient.
+Le navigateur, lui, affiche sa propre invite Basic en voyant le 401 (le `realm` est posé), et met
+ensuite les identifiants en cache pour l'origine : c'est le chemin réel en même origine.
+
+**3. Le formulaire sert donc le cas inter-origines**, qui est le seul où il est atteignable et le
+seul où il est indispensable : UI servie depuis une origine A, backend visé sur une origine B via
+`VITE_OPENCODE_SERVER_URL` ou le champ « même origine ». Là, l'invite Basic du navigateur ne se
+déclenche jamais pour B, et les deux canaux du code deviennent nécessaires — l'en-tête pour le SDK,
+le jeton pour le SSE, puisque `EventSource` ne peut pas porter d'en-tête.
+
+**Le code était donc juste, mais pour une raison que la documentation ne disait pas.** C'est
+maintenant écrit.
+
+**Ce qui reste non testé** : l'échange dans un vrai navigateur, en inter-origines, avec le
+formulaire. La mesure ci-dessus est faite en ligne de commande.
