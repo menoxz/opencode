@@ -597,29 +597,35 @@ GET  /session/{id}/message
 **Le serveur accepte la partie et l'attribue lui-même son `id`** — ce qui confirme que le choix de
 ne pas en envoyer côté client était le bon, et pas seulement plausible.
 
-### Réserve — ce qui n'a PAS pu être observé, et pourquoi
+### Vérification du parcours d'envoi — observée par CDP (réserve levée)
 
-**Le parcours d'envoi depuis l'interface (bouton, `FileReader`, liste en attente, clic sur
-Envoyer) n'a pas été observé dans un navigateur.** Le blocage est caractérisé, ce n'est pas une
-supposition :
+**Le parcours complet a été observé dans un vrai navigateur**, sur le Chrome isolé, en pilotant
+l'instance **directement par le protocole CDP** (`Runtime.evaluate` sur le WebSocket de l'onglet) —
+le pilote MCP du harnais restant verrouillé sur le navigateur réel de l'utilisateur, et
+`browser_use` n'étant pas exposé dans cette session. Le détour par CDP est consigné dans
+`AGENTS.md`.
 
-- le pilote navigateur est connecté à **Brave sur le port 9223** — le navigateur **réel de
-  l'utilisateur**, avec ses 23 onglets et sa session ;
-- `browser_ensure` ignore le profil demandé dès qu'un CDP est actif (fait déjà consigné dans
-  `AGENTS.md`) ;
-- la parade habituelle est `browser_use target=<port>` pour basculer sur une instance isolée —
-  **or `browser_use` n'est pas exposé dans cette session** (vérifié : l'appel échoue,
-  « unavailable tool »).
+| étape | observation |
+|---|---|
+| sélection d'une session | le composeur apparaît : `composerPresent: true`, `attachInputPresent: true`, `attachLabelPresent: true`, bouton Envoyer désactivé (rien à envoyer) |
+| pose du fichier | `File` construit dans la page puis `change` déclenché |
+| liste en attente | `pendingCount: 1`, texte « pj-probe.png 70 o », **vignette présente**, aucune erreur, **bouton Envoyer désormais actif** |
+| envoi | clic effectué |
+| fil | `pendingCount: 0` (liste vidée), **`filePartsInThread: ["pj-probe.png"]`**, aucune erreur |
 
-J'ai lancé une instance Chrome isolée sur 9222 (elle fonctionne, CDP vérifié), mais **aucun outil
-disponible ne permet de pointer le pilote dessus**. Reste l'option d'ouvrir un onglet dans le
-navigateur réel de l'utilisateur : **je ne l'ai pas fait**, parce que sa préférence exprimée est le
-profil isolé, et parce que l'application écrit dans son magasin de sessions réel.
+**Un détail qui confirme le code** : l'étape de pose rapporte `0 élément(s)` dans `input.files`.
+Ce n'est pas un échec — c'est **mon handler qui remet `input.value` à zéro** pour permettre de
+rattacher deux fois le même fichier, ce qui vide `.files`. La liste en attente prouve que le
+fichier avait bien été capturé avant.
 
-**Ce qui est donc établi** : le contrat (contre le serveur), les décisions pures (52 tests), le
-câblage (typecheck et build verts). **Ce qui manque** : l'observation visuelle du parcours.
-À rejouer quand `browser_use` sera exposé, ou sur une machine où aucun CDP n'est déjà actif au
-démarrage.
+**Ce qui n'est pas exercé** : le sélecteur de fichiers natif du navigateur. Le `File` est construit
+dans la page ; tout le code applicatif (`onChange` → validation → `FileReader` → liste → envoi) est
+exercé, mais le dialogue natif ne l'est pas — et il n'est pas notre code.
+
+**Effet de bord, nettoyé** : l'envoi a injecté un message de test dans une session réelle. Le tour
+qu'il a déclenché a été interrompu (`abort`), le message utilisateur et la réponse partielle
+supprimés (`DELETE` 200), la session rendue à **0 message**. Le refus initial (409
+`SessionBusyError`) est ce qui a imposé l'interruption préalable.
 
 ---
 
@@ -675,12 +681,40 @@ vite build     -> exit 0
 Poids : **78,20 ko brut / 19,51 ko compressés** (JS) + 1,99 ko (CSS) = **21,5 ko compressés**,
 contre un budget de 150 ko. Ce lot coûte ~1,4 ko compressés.
 
-### Réserve
+### Vérification du rendu — observée par CDP (réserve levée)
 
-**Aucun rendu n'a été observé dans un navigateur** — même obstacle qu'au lot précédent, caractérisé
-plus bas : le pilote est verrouillé sur le navigateur réel de l'utilisateur. Les helpers sont
-testés, le câblage est vérifié par typecheck et build, mais l'apparence des onglets et du panneau
-Statut n'a pas été vue.
+Le DOM a été lu dans le Chrome isolé, par le protocole CDP (voir la section du lot précédent pour
+la méthode). Résultat brut :
+
+```
+onglet cible : http://127.0.0.1:4096/ | opencodev2
+--- état initial ---
+{"title":"opencodev2","tabs":["Événements","Permissions","Statut"],"activeTab":"Événements",
+ "sse":"SSE connecté","composerPresent":false,"attachInputPresent":false,
+ "sessionRows":19,"errorText":null}
+--- clic sur l'onglet Statut ---
+{"activeTab":"Statut",
+ "statusLines":["Serveurjoignable (local)","Modèleopencode-go/deepseek-v4.1-flash",
+                "Agents29","MCP6/7 connectés"],
+ "mcpRows":["agent-toolsconnecté","computer-useconnecté","llm-memory-toolconnecté",
+            "mcp-terminalconnecté","sandboxdésactivé","secret-vaultconnecté",
+            "web-browserconnecté"]}
+--- onglet Permissions ---
+{"activeTab":"Permissions","body":"Aucune permission en attente."}
+```
+
+**Ce que cela établit** : les trois onglets existent et le clic bascule bien (`activeTab` suit) ;
+le panneau Statut affiche les **vraies** valeurs — serveur joignable, modèle résolu depuis la
+config, **29 agents déclarés**, **6 serveurs MCP sur 7 connectés** — et la liste MCP nomme chaque
+serveur avec son état. `sandbox` apparaît **désactivé** en tonalité neutre, ce qui est précisément
+la distinction voulue : un serveur désactivé n'est pas une panne.
+
+**Ce que cela confirme aussi** : le composeur est absent tant qu'aucune session n'est sélectionnée
+(`composerPresent: false`), ce qui est le comportement attendu — et c'est ce qui a imposé de
+sélectionner une session pour vérifier les pièces jointes.
+
+**Non exercé** : l'onglet Permissions avec une demande réellement en attente (il n'y en avait
+aucune) ; seul son état vide est observé.
 
 ---
 
