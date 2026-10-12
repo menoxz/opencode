@@ -125,10 +125,31 @@ Or les `exports` du SDK pointent vers les **sources** :
 "./v2/client": "./src/v2/client.ts",
 ```
 
-`INFERE:` `bun pm pack` respecte `files`, donc un tarball du SDK publié aujourd'hui contient
-`dist/` mais pas `src/` — et ses `exports` pointent alors sur des fichiers absents. C'est
-indépendant de l'initiative web et doit être **vérifié par un `bun pm pack --dry-run` avant
-d'engager M2** : si le SDK est inutilisable une fois publié, toute l'UI qui en dépend l'est aussi.
+### 3.1 Vérification A1 — `bun pm pack --dry-run` (2026-10-12)
+
+Commande exécutée dans `packages/sdk/js`, **exit 0** :
+
+```
+packed 0.90KB    package.json
+packed 2.65KB    dist/v2/client.js
+packed 206B      dist/v2/gen/client.gen.js
+packed 97.77KB   dist/v2/gen/sdk.gen.js
+packed 173.68KB  dist/v2/gen/types.gen.d.ts
+packed 65B       dist/v2/gen/types.gen.js
+packed 3.30KB    dist/v2/server.js
+
+Total files: 7
+Unpacked size: 0.28MB
+```
+
+**Fait mesuré, plus une inférence :** aucun `src/*.ts` n'est packé. Comme les `exports` du
+paquet pointent vers `./src/*.ts`, l'inférence est qu'un `import` du SDK installé échoue sur une
+résolution de fichier absent. Cette seconde partie est `INFERE:` (elle suppose un installateur
+respectant `exports` + `files`, non testé ici) ; la première partie est un fait de sortie de
+commande.
+
+**Portée** : ce défaut est **antérieur à l'initiative web** et indépendant d'elle. Il rend
+toutefois M2 inutilisable tant qu'il n'est pas tranché, puisque l'UI se connecte par ce client.
 
 ---
 
@@ -136,7 +157,7 @@ d'engager M2** : si le SDK est inutilisable une fois publié, toute l'UI qui en 
 
 | # | action | phase |
 |---|---|---|
-| A1 | Vérifier par `bun pm pack --dry-run` le contenu réel du tarball SDK (§3) | P1 |
+| A1 | ✅ **Fait** — `bun pm pack --dry-run` : 7 fichiers, `dist/` seul, aucun `src/` (§3.1) | P1 |
 | A2 | Exiger `migration/**` dans le paquet M2 et **compter les migrations appliquées** dans la gate, pas seulement la santé | P1 |
 | A3 | Documenter que M2 implique un `bun install` complet (wasm depuis `node_modules`) | P1 |
 | A4 | Trancher le sort de `@opencode-ai/ui` pour le paquet M2 (§2.4) | P2 |
@@ -144,6 +165,9 @@ d'engager M2** : si le SDK est inutilisable une fois publié, toute l'UI qui en 
 
 ## 5. Verdict de gate
 
-**G1 franchie** pour l'essentiel : le serveur démarre sans build et répond. **G1 n'est pas
-clôturée** tant que A1 et A2 ne sont pas faits — un démarrage « sain » avec une base sans
-migration n'est pas un démarrage valide.
+**G1 franchie pour l'essentiel** : le serveur démarre sans build et répond sur toute la surface
+gelée en P0, SSE compris.
+
+**G1 n'est pas clôturée.** A1 est fait et confirme le blocage SDK (§3.1) ; A2 reste ouvert : tant
+que la gate ne compte pas les migrations appliquées, elle accepte un serveur « sain » dont la
+base est vide — un échec silencieux, le pire pour une base de données.

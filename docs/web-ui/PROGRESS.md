@@ -56,9 +56,11 @@ Deux réserves qui pèsent sur la conception de l'UI :
 sans build et sert l'API. SSE `/event` et `/global/event` deliver `text/event-stream` avec
 l'événement `server.connected`. Détail et réserves : `RUNTIME-ARTIFACTS.md`.
 
-**Bloquant découvert** : `packages/sdk/js/package.json:20-22` déclare `"files": ["dist"]` alors
-que ses `exports` pointent vers `./src/*.ts`. Un tarball du SDK publié aujourd'hui serait donc
-inutilisable — et toute l'UI en dépend. À vérifier par `bun pm pack --dry-run` (A1).
+**Bloquant découvert et confirmé (A1 fait)** : `packages/sdk/js/package.json:20-22` déclare
+`"files": ["dist"]` alors que ses `exports` pointent vers `./src/*.ts`. Mesuré par
+`bun pm pack --dry-run` dans `packages/sdk/js` (exit 0) : **7 fichiers, tous sous `dist/`,
+aucun `src/`**. Le client que l'UI utilisera ne serait donc pas résolvable une fois installé.
+Défaut antérieur à l'initiative web ; il bloque M2 tant qu'il n'est pas tranché.
 
 **Réserve de sûreté** : les migrations SQL sont lues **depuis le disque** au runtime
 (`storage/db.ts:223-241`), 24 fichiers pour 12 032 octets. Un paquet de sources sans
@@ -69,7 +71,7 @@ migrations appliquées, pas seulement lire `healthy:true` (A2).
 
 | # | action | phase | statut |
 |---|---|---|---|
-| A1 | `bun pm pack --dry-run` sur le SDK, vérifier `src/` vs `dist/` | P1 | à faire |
+| A1 | ✅ **Fait** — `bun pm pack --dry-run` : 7 fichiers, `dist/` seul, aucun `src/` | P1 | **fait** |
 | A2 | Exiger `migration/**` et compter les migrations appliquées dans la gate | P1 | à faire |
 | A3 | Documenter que M2 exige un `bun install` complet (wasm depuis `node_modules`) | P1 | à faire |
 | A4 | Trancher le sort de `@opencode-ai/ui` (imports audio TUI) pour le paquet M2 | P2 | à faire |
