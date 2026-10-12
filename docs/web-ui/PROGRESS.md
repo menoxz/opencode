@@ -219,17 +219,19 @@ Contre-épreuve sur données réelles : la session `ses_f1df9427cffez2wIJPDPTdwZ
 7 parties outil dont un `question` en `error` et un `turn_plan` en `completed` — le cas mixte
 visé par le rendu.
 
-### Réserve — ce qui n'est PAS prouvé
+### État au moment de P4 — et sa résolution
 
-**L'aller-retour live d'une permission (demande affichée → refus → accord) n'a pas été observé.**
-La base ne contenait aucune permission en attente (`GET /permission` → 0), et le navigateur de
-pilotage est resté **bloqué par le dialogue natif** laissé par le code P3 (voir la réserve P3) :
-`navigate`, `press_key` et `take_snapshot` échouent tous avec « A dialog is open ». Le pilotage
-navigateur est donc indisponible depuis cette session.
+**Au moment de P4, l'aller-retour live d'une permission (demande affichée → refus → accord) n'avait
+pas été observé.** La base ne contenait aucune permission en attente (`GET /permission` → 0), et le
+navigateur de pilotage était **bloqué par le dialogue natif** laissé par le code P3 :
+`navigate`, `press_key` et `take_snapshot` échouaient tous avec « A dialog is open ».
 
-Ce qui est prouvé : le contrat des événements, la logique de décision (par test), et le rendu des
-outils sur des données réelles (par l'API). Ce qui ne l'est pas : l'affichage effectif du panneau
-de permission et le clic sur ses boutons.
+Ce qui était établi alors : le contrat des événements, la logique de décision (par test), et le
+rendu des outils sur des données réelles (par l'API).
+
+**Résolu en P5** — l'aller-retour complet a été observé sur navigateur isolé, refus puis accord,
+avec propagation dans le fil. Voir la section « G4 — l'aller-retour de permission, enfin observé ».
+Ce paragraphe est conservé comme trace de l'état initial, pas comme réserve ouverte.
 
 **G4 est désormais franchie** : l'aller-retour live a été observé en P5, sur un navigateur
 isolé (voir la section P5). Ce qui suit décrit l'état au moment de P4 et la cause du blocage.
@@ -280,9 +282,10 @@ reconnexion ; le proxy Vite masquait en outre la rupture côté `EventSource`.
 **Correctif** : sur transition déconnecté → connecté, l'UI relit `/permission` et la liste des
 sessions (`app.tsx`, handler `onState`). Un événement manqué pendant la coupure est ainsi rattrapé.
 
-**Réserve honnête** : la correction est vérifiée par lecture du code et par le fait que le
-montage relit bien `/permission` (observé), mais **le scénario coupure → reconnexion automatique
-n'a pas été rejoué après le correctif**. À faire avant P6.
+**Vérifié en P6** : le scénario coupure → reconnexion automatique a été rejoué après le correctif,
+sur le serveur unique (l'UI est servie par le serveur, plus de proxy). Serveur tué → « SSE
+déconnecté » et « serveur injoignable » ; serveur redémarré → « SSE connecté » avec un **nouvel**
+événement `server.connected`, sans rechargement. La réserve est levée ; détail en section P6.
 
 ### G4 — l'aller-retour de permission, enfin observé
 
