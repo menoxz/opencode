@@ -14,7 +14,7 @@ Convention héritée de `docs/releases/v2.4.0/`.
 | **P0** cadrage & surface API | **FAIT** | G0 ✅ | surface gelée ci-dessous |
 | **P1** runtime sans build | **FAIT** (A1-A3 faits) | G1 ✅ | `RUNTIME-ARTIFACTS.md` §1-§3 |
 | **P2** squelette UI | **FAIT** | G2 ✅ | `packages/webui`, preuve navigateur ci-dessous |
-| **P3** sessions & projets | **FAIT** (réserve navigateur) | G3 ✅ | `packages/webui/src/app.tsx`, preuves ci-dessous |
+| **P3** sessions & projets | **FAIT** | G3 ✅ | `packages/webui/src/app.tsx` ; suppression vérifiée par CDP |
 | **P4** outils & permissions | **FAIT** | G4 ✅ | rendu testé ; aller-retour live observé en P5 |
 | **P5** poids & robustesse | **FAIT** | G5 ✅ | mesures et verdict de reconnexion ci-dessous |
 | **P6** livraison | **FAIT** | G6 ✅ | commande unique + mode hors checkout vérifié |
@@ -168,9 +168,40 @@ Correctif appliqué : confirmation **en ligne** (deux clics sur la ligne : « �
 le bon choix d'interface : un modal natif ne se style pas, ne s'internationalise pas et bloque
 tout pilotage automatisé — y compris les tests e2e de P5.
 
-**Conséquence honnête** : le parcours de suppression de bout en bout au navigateur n'a pas été
-observé ; il est vérifié au niveau API. À rejouer au navigateur en P5, la cause du blocage ayant
-disparu du code.
+**Conséquence à l'époque** : le parcours de suppression de bout en bout au navigateur n'avait pas
+été observé ; il était vérifié au niveau API seulement.
+
+**Vérifié depuis, par CDP** (voir la section « Vérifications par CDP » plus bas) : le parcours
+complet est observé, et il confirme que le dialogue natif n'existe plus.
+
+### Vérifications par CDP — méthode
+
+Le pilote navigateur du harnais se connecte au CDP **déjà actif**, c'est-à-dire au navigateur réel
+de l'utilisateur, et `browser_use` — l'outil qui permettrait de le basculer sur une instance
+isolée — n'est pas exposé dans toutes les sessions. Plutôt que de renoncer ou de polluer le
+navigateur de l'utilisateur, l'instance isolée est pilotée **directement par le protocole CDP** :
+`fetch http://127.0.0.1:9222/json/list` → `webSocketDebuggerUrl` de l'onglet → WebSocket →
+`Runtime.evaluate`. Consigné dans `AGENTS.md`.
+
+Deux pièges rencontrés : `DOM.getDocument` est refusé par cette instance (⇒ construire un `File`
+dans la page et déclencher `change`), et le composeur n'existe qu'une fois une session sélectionnée
+(⇒ sélectionner d'abord, sinon `composerPresent: false`).
+
+### Parcours de suppression de session — observé (dernier point de P3 fermé)
+
+Session de test créée avec un titre identifiable, puis parcours rejoué dans le navigateur :
+
+| étape | observation |
+|---|---|
+| liste chargée | la session de test y figure (20 lignes) |
+| clic sur la ligne | sélection effectuée |
+| **clic sur ✕** | **aucun dialogue natif** ; les boutons `confirmer` et `annuler` apparaissent en ligne |
+| clic sur « confirmer » | session retirée : 20 → 19 lignes, `stillThere: false`, aucune erreur |
+| contrôle serveur | `GET /session/{id}` → absente |
+
+**Le blocage de P3 est définitivement levé** : ce qui bloquait n'était pas la suppression mais le
+dialogue natif, et la confirmation en ligne le remplace sans perte d'ergonomie. Aucune réserve ne
+subsiste sur ce parcours.
 
 ---
 
