@@ -17,7 +17,7 @@ Convention héritée de `docs/releases/v2.4.0/`.
 | **P3** sessions & projets | **FAIT** (réserve navigateur) | G3 ✅ | `packages/webui/src/app.tsx`, preuves ci-dessous |
 | **P4** outils & permissions | **FAIT** | G4 ✅ | rendu testé ; aller-retour live observé en P5 |
 | **P5** poids & robustesse | **FAIT** | G5 ✅ | mesures et verdict de reconnexion ci-dessous |
-| **P6** livraison | **FAIT (partiel)** | G6 ⚠️ | commande unique OK ; mode hors checkout non livré |
+| **P6** livraison | **FAIT** | G6 ✅ | commande unique + mode hors checkout vérifié |
 
 ---
 
@@ -74,11 +74,11 @@ une base vide. Piège associé : le fichier `.db` ne fait que 4096 o à l'arrêt
 
 | # | action | phase | statut |
 |---|---|---|---|
-| A1 | ✅ **Fait** — `bun pm pack --dry-run` : 7 fichiers, `dist/` seul, aucun `src/` | P1 | **fait** |
+| A1 | ✅ **Fait et corrigé** — `files` inclut `src` ; import vérifié hors dépôt | P1 | **fait** |
 | A2 | ✅ **Fait** — base neuve : 24 migrations appliquées, 19 tables créées | P1 | **fait** |
 | A3 | ✅ **Fait** — documenté : M2 exige un `bun install` complet, les wasm viennent de `node_modules` | P1 | **fait** |
-| A4 | Trancher le sort de `@opencode-ai/ui` (imports audio TUI) pour le paquet M2 | P2 | à faire |
-| A5 | Surveiller la mort du serveur après une sonde SSE longue (port 4701) | P3 | à faire |
+| A4 | ✅ **Résolu par conception** — l'UI n'importe pas `@opencode-ai/ui` ; M2 livre tout le workspace, donc les imports audio TUI restent intacts | P2 | **fait** |
+| A5 | ✅ **Résolu** — la « mort » du serveur était le shell expiré qui emportait son arbre de processus, pas un défaut serveur (confirmé en P5) | P3 | **fait** |
 
 ---
 
@@ -375,16 +375,58 @@ Scénario rejoué, serveur unique (l'UI est servie par le serveur, plus de proxy
 
 L'UI se réabonne seule et resynchronise. La réserve de P5 est levée.
 
-### Réserve — G6 n'est pas franchie entièrement
+### A1 — corrigé, et la correction est prouvée
 
-`WORKFLOW.md` demande que `opencode-web` démarre backend + UI **sans checkout**. Ce qui est
-livré : une commande unique qui construit et sert l'UI depuis ce dépôt (`bun run web`). Ce qui
-ne l'est pas : le mode **M2** (paquet de sources installable hors dépôt).
+`packages/sdk/js/package.json` déclarait `"files": ["dist"]` alors que ses `exports` pointent vers
+`./src/*.ts` : le tarball publié ne contenait pas ce que ses propres `exports` annonçaient.
 
-Raison : M2 dépend du paquet SDK, et A1 a établi qu'il est **inutilisable une fois publié**
-(`files: ["dist"]` alors que les `exports` pointent vers `./src/*.ts`). Livrer M2 avant de
-trancher A1 produirait un paquet qui ne s'installe pas. **A1 est donc le préalable bloquant de
-G6**, et c'est un défaut antérieur à l'initiative web.
+Correction : `files` inclut désormais `src`. Vérifié que `src` est autonome — aucun import vers
+`@opencode-ai/*` ni remontée hors de `src` (seule dépendance externe : `cross-spawn`, déclarée).
+
+Preuve, par `bun pm pack` puis installation **hors du dépôt** :
+
+```
+Total files: 46  (src/** inclus)      Packed size: 112,33 KB
+$ bun add opencode-ai-sdk-1.15.10.tgz --cwd <temp>
+installed @opencode-ai/sdk@…tgz — 7 packages installed
+$ bun run probe.ts
+IMPORT OK, createOpencodeClient = function
+```
+
+Avant la correction, cet import échouait. Le défaut était antérieur à l'initiative web.
+
+### M2 — le mode hors checkout, vérifié
+
+`WORKFLOW.md` §3 supposait qu'un paquet de sources suffirait. **C'est faux, et c'est mesuré** :
+`packages/opencode` est `"private": true` et dépend de six paquets internes en `workspace:*`
+(`core`, `llm`, `plugin`, `sdk`, `ui`, `script`). Le publier seul est impossible — aucun de ces
+paquets n'est publié. M2 passe donc par une **copie complète des sources**, pas par un paquet.
+
+Procédure vérifiée de bout en bout, hors du dépôt git :
+
+```
+robocopy <dépôt> <cible> /E /XD node_modules .git dist .artifacts
+bun install --cwd <cible>      -> 2305 packages installed, exit 0, 153 s
+bun run script/web.ts          -> construit l'UI sur place, puis sert
+```
+
+Résultat observé sur la copie (port 4097) :
+
+```
+HEALTH M2 OK {"healthy":true,"version":"local"}
+[web] interface servie depuis …\opencode-web-m2\packages\webui\dist
+GET / => 200  text/html  393 o   (#root présent)
+```
+
+Le serveur démarre et sert l'UI **sans dépôt git** : c'est le critère de G6. Coût mesuré : 153 s
+d'installation, ~3,1 Go pour la copie complète — à savoir avant de promettre M2 comme léger.
+
+**G6 est franchie.** Ce qui suit décrit l'état antérieur, conservé pour la trace.
+
+### Historique — pourquoi M2 était bloqué
+
+A1 rendait le SDK inutilisable une fois publié, donc tout paquet qui en dépendait. Traiter A1
+était le préalable ; c'est fait, et M2 est livré par copie de sources.
 
 ---
 

@@ -18,7 +18,8 @@
     "./v2/server": "./src/v2/server.ts"
   },
   "files": [
-    "dist"
+    "dist",
+    "src"
   ],
   "devDependencies": {
     "@hey-api/openapi-ts": "0.90.10",
