@@ -150,9 +150,6 @@ button.primary:disabled {
 }
 
 .sessions li {
-  display: flex;
-  flex-direction: column;
-  padding: 7px 9px;
   border: 1px solid var(--line);
   border-radius: 6px;
   cursor: pointer;
@@ -162,9 +159,88 @@ button.primary:disabled {
   border-color: var(--accent);
 }
 
+.sessions .row {
+  display: flex;
+  flex-direction: column;
+  padding: 7px 9px;
+  gap: 2px;
+  position: relative;
+}
+
 .sessions .id {
   color: var(--muted);
   font-size: 11px;
+}
+
+.sessions .actions {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.sessions li:hover .actions,
+.sessions li.selected .actions {
+  opacity: 1;
+}
+
+button.icon {
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--muted);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  padding: 3px 5px;
+}
+
+button.icon:hover {
+  color: var(--fg);
+  border-color: var(--fg);
+}
+
+button.icon.danger:hover {
+  color: var(--err);
+  border-color: var(--err);
+}
+
+input.search,
+input.rename {
+  width: 100%;
+  margin-top: 10px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+}
+
+input.rename {
+  margin: 0;
+}
+
+.dirfield {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.dirfield input {
+  width: 260px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
 }
 
 .message {

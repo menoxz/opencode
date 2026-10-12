@@ -14,7 +14,7 @@ Convention héritée de `docs/releases/v2.4.0/`.
 | **P0** cadrage & surface API | **FAIT** | G0 ✅ | surface gelée ci-dessous |
 | **P1** runtime sans build | **FAIT** (A1-A3 faits) | G1 ✅ | `RUNTIME-ARTIFACTS.md` §1-§3 |
 | **P2** squelette UI | **FAIT** | G2 ✅ | `packages/webui`, preuve navigateur ci-dessous |
-| **P3** sessions & projets | à faire | G3 | — |
+| **P3** sessions & projets | **FAIT** (réserve navigateur) | G3 ✅ | `packages/webui/src/app.tsx`, preuves ci-dessous |
 | **P4** outils & permissions | à faire | G4 | — |
 | **P5** poids & robustesse | à faire | G5 | — |
 | **P6** livraison | à faire | G6 | — |
@@ -122,6 +122,55 @@ arrivent par SSE. Le composer s'affiche une fois une session sélectionnée.
 - Les types du SDK v2 sont aplatis (`{ sessionID, parts }`, pas de `path`/`body`) : trois appels
   ont dû être corrigés après le premier typecheck. À retenir pour P3/P4.
 - Aucun test automatisé dans ce package : la vérification est manuelle et navigateur.
+
+---
+
+## P3 — sessions & projets (G3 ✅, avec réserve)
+
+Quatre opérations ajoutées à `packages/webui/src/app.tsx` : recherche, renommage, suppression,
+changement de répertoire de travail.
+
+**Point d'architecture favorable** : chaque méthode du SDK accepte `directory` en paramètre de
+requête (`sdk.gen.ts:3329,3371,3455,3519`) — changer de répertoire ne demande donc **pas** de
+reconstruire le client. Le scope est passé à chaque appel (`scope()`), ce qui évite le piège
+classique du client figé sur une origine.
+
+### Preuves navigateur (serveur 4096, UI 5180)
+
+| opération | preuve |
+|---|---|
+| création | session `ses_ecf6e0d4` apparaît dans la liste ; flux : `session.created` + `session.updated` |
+| renommage | titre passé à « P3 renommage verifie », visible dans la liste ; flux : `session.updated` |
+| recherche | `search=renommage` ne laisse qu'**une** ligne sur 17 — filtrage côté serveur |
+
+### Preuves API (mêmes endpoints que l'UI)
+
+Le bouton de suppression n'a **pas** pu être vérifié au navigateur — voir la réserve ci-dessous —
+donc le chemin est prouvé sur l'API, que l'UI appelle à l'identique :
+
+```
+GET  /session/ses_ecf6e0d4…          -> titre="P3 renommage verifie"   (le renommage a persisté)
+GET  /session?directory=C%3A%5Cjeanluc%5Copencode-fork -> 4 sessions   (le paramètre agit)
+DELETE /session/ses_ecf6e0d4…        -> 200
+GET  /session/ses_ecf6e0d4…          -> absente
+GET  /session?search=renommage       -> 0 résultat
+```
+
+### Réserve : `window.confirm` bloquait l'automatisation
+
+La première version demandait confirmation par `window.confirm`. Le clic a ouvert un dialogue
+natif que l'outil de pilotage n'a pas pu fermer (`handle_dialog` n'était pas exposé dans cette
+session) : l'onglet est resté **bloqué**, y compris après rechargement, navigation vers
+`about:blank`, `Entrée` et `Échap`. Le dialogue survit au changement de page.
+
+Correctif appliqué : confirmation **en ligne** (deux clics sur la ligne : « ✕ » puis
+« confirmer » / « annuler »), sans dialogue natif. Ce n'est pas un contournement de test, c'est
+le bon choix d'interface : un modal natif ne se style pas, ne s'internationalise pas et bloque
+tout pilotage automatisé — y compris les tests e2e de P5.
+
+**Conséquence honnête** : le parcours de suppression de bout en bout au navigateur n'a pas été
+observé ; il est vérifié au niveau API. À rejouer au navigateur en P5, la cause du blocage ayant
+disparu du code.
 
 ---
 
