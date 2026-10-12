@@ -26,7 +26,7 @@ const API_PREFIXES = [
   "/skill",
 ]
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [solid()],
   server: {
     host: "127.0.0.1",
@@ -37,6 +37,8 @@ export default defineConfig({
   build: {
     target: "esnext",
     outDir: "dist",
-    sourcemap: true,
+    // Measured in P5: a source map adds 392 kB next to a 67 kB bundle — six times the payload,
+    // for a file no user needs. Kept out of production builds; Vite still maps in dev.
+    sourcemap: mode !== "production",
   },
-})
+}))

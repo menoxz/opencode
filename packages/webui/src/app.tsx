@@ -196,6 +196,9 @@ export default function App() {
       searchTimer = setTimeout(() => void loadSessions(), 250)
     })
 
+    // Tracks transitions so a recovered stream can re-sync what it missed while down.
+    let wasConnected = false
+
     const unsubscribe = subscribeEvents({
       onEvent: (event) => {
         setEvents((current) => [event, ...current].slice(0, MAX_EVENTS))
@@ -208,7 +211,18 @@ export default function App() {
         const sessionID = active()
         if (sessionID && JSON.stringify(event.properties ?? {}).includes(sessionID)) refreshFor(sessionID)
       },
-      onState: (state) => setStream(state),
+      onState: (state) => {
+        setStream(state)
+        // A dropped stream means events were missed while it was down. Without this re-sync, a
+        // permission asked during the outage would never surface — observed in P5: the pill read
+        // "SSE connecté" while a pending request stayed invisible until a manual reload.
+        if (state.connected && !wasConnected) {
+          wasConnected = true
+          void loadPermissions()
+          void loadSessions()
+        }
+        if (!state.connected) wasConnected = false
+      },
     })
 
     onCleanup(() => {

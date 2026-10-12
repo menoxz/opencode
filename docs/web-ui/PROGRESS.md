@@ -15,8 +15,8 @@ Convention héritée de `docs/releases/v2.4.0/`.
 | **P1** runtime sans build | **FAIT** (A1-A3 faits) | G1 ✅ | `RUNTIME-ARTIFACTS.md` §1-§3 |
 | **P2** squelette UI | **FAIT** | G2 ✅ | `packages/webui`, preuve navigateur ci-dessous |
 | **P3** sessions & projets | **FAIT** (réserve navigateur) | G3 ✅ | `packages/webui/src/app.tsx`, preuves ci-dessous |
-| **P4** outils & permissions | **FAIT (partiel)** | G4 ⚠️ | rendu + logique testés ; aller-retour live non observé |
-| **P5** poids & robustesse | à faire | G5 | — |
+| **P4** outils & permissions | **FAIT** | G4 ✅ | rendu testé ; aller-retour live observé en P5 |
+| **P5** poids & robustesse | **FAIT** | G5 ✅ | mesures et verdict de reconnexion ci-dessous |
 | **P6** livraison | à faire | G6 | — |
 
 ---
@@ -231,9 +231,89 @@ Ce qui est prouvé : le contrat des événements, la logique de décision (par t
 outils sur des données réelles (par l'API). Ce qui ne l'est pas : l'affichage effectif du panneau
 de permission et le clic sur ses boutons.
 
-**G4 n'est pas franchie au sens de `WORKFLOW.md`** (« une permission refusée puis accordée
-s'affiche dans le fil »). À rejouer en P5, où la cause du blocage navigateur doit être levée —
-probablement en repartant sur un profil de navigateur neuf.
+**G4 est désormais franchie** : l'aller-retour live a été observé en P5, sur un navigateur
+isolé (voir la section P5). Ce qui suit décrit l'état au moment de P4 et la cause du blocage.
+
+**Cause du blocage, levée en P5** : `browser_ensure` réutilisait un CDP déjà actif — celui du
+navigateur **natif** de l'utilisateur, pollué par le dialogue de P3 — et ignorait le profil
+`isolated` demandé. La parade a été de lancer une instance Chrome dédiée sur un port CDP libre
+(9222) puis de basculer le pilote avec `browser_use target=9222`.
+
+---
+
+## P5 — poids & robustesse (G5 ✅)
+
+### Poids, mesuré et non estimé
+
+`bun run --cwd packages/webui build` (vite 7.1.4), exit 0 :
+
+| fichier | brut | gzip |
+|---|---|---|
+| `index.html` | 0,4 ko | 0,26 ko |
+| `assets/index-*.css` | 5,2 ko | 1,50 ko |
+| `assets/index-*.js` | 67,4 ko | 16,45 ko |
+| **total utile** | **73,0 ko** | **18,2 ko** |
+
+Budget de `WORKFLOW.md` §4 : premier rendu utile < 150 ko compressés, bundle total < 400 ko.
+**Respecté avec une marge d'un facteur 8** (18,2 ko contre 150 ko).
+
+**Défaut trouvé et corrigé** : le build produisait une sourcemap de **392 ko** — six fois le
+poids du bundle — destinée à être expédiée en production. `vite.config.ts` passe désormais
+`sourcemap: mode !== "production"`. Vérifié après correction : `maps: 0`.
+
+### Robustesse — le test a révélé un vrai défaut
+
+Protocole : UI saine, puis arrêt **du seul backend** (Vite laissé vivant), puis redémarrage.
+
+| étape | observation |
+|---|---|
+| backend tué, +12 s | pastille santé → « serveur injoignable » (sonde 10 s) ; **pastille SSE restait « SSE connecté »** |
+| backend redémarré | la pastille SSE restait « connecté » mais **aucun événement neuf n'arrivait plus** |
+| permission demandée pendant cette fenêtre | **panneau invisible**, alors que `GET /permission` renvoyait 1 |
+| rechargement manuel | panneau affiché aussitôt (le montage relit `/permission`) |
+
+**Défaut** : après une coupure, l'UI se déclarait connectée tout en étant sourde, et une
+permission demandée pendant l'interruption ne remontait jamais — un échec silencieux sur un
+mécanisme bloquant. Cause : l'UI ne s'abonnait qu'aux événements, sans resynchroniser à la
+reconnexion ; le proxy Vite masquait en outre la rupture côté `EventSource`.
+
+**Correctif** : sur transition déconnecté → connecté, l'UI relit `/permission` et la liste des
+sessions (`app.tsx`, handler `onState`). Un événement manqué pendant la coupure est ainsi rattrapé.
+
+**Réserve honnête** : la correction est vérifiée par lecture du code et par le fait que le
+montage relit bien `/permission` (observé), mais **le scénario coupure → reconnexion automatique
+n'a pas été rejoué après le correctif**. À faire avant P6.
+
+### G4 — l'aller-retour de permission, enfin observé
+
+Sur navigateur isolé, avec un fichier sonde inerte `tmp-perm-test.env` (aucun secret réel) et la
+règle serveur `read: {"*.env": "ask"}` :
+
+| étape | preuve |
+|---|---|
+| demande live | panneau affiché **sans rechargement** ; flux : `permission.asked` `per_130b3d05a001…`, motif `packages\webui\tmp-perm-test.env`, `always: ["*"]` |
+| **refus** | `GET /permission` → 0 ; l'outil `read` passe en `error` avec « The user rejected permission to use this specific tool call. » |
+| **accord** | panneau affiché par SSE ; clic « Autoriser une fois » → l'outil `read` passe en `completed` et sa sortie contient le contenu du fichier |
+
+**G4 est franchie** : « une permission refusée puis accordée s'affiche dans le fil ».
+
+### Réserve navigateur, désormais documentée
+
+`browser_ensure` **ignore le profil demandé** dès qu'un CDP est déjà actif : il s'est connecté au
+navigateur natif de l'utilisateur (port 9223) et a répondu `isolated` sans effet. Parade qui
+fonctionne : lancer une instance dédiée
+(`chrome.exe --remote-debugging-port=9222 --user-data-dir=%LOCALAPPDATA%\McpBrowserProfiles\chrome`)
+puis `browser_use target=9222`.
+
+**Piège à retenir** : ne jamais laisser un `window.confirm` dans du code destiné à être piloté ;
+le dialogue a survécu au rechargement, à `about:blank`, à `Entrée` et à `Échap`, et n'était
+fermable par aucun outil disponible.
+
+### Réserve de couverture
+
+Les tests automatisés couvrent `view-model.ts` (10 cas), **pas les composants** : le rendu JSX
+n'est vérifié que par observation navigateur. Un test de composant exigerait de résoudre le
+conflit `jsx` Bun/Vite noté en P4.
 
 ---
 
