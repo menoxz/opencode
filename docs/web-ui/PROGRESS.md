@@ -309,11 +309,36 @@ puis `browser_use target=9222`.
 le dialogue a survécu au rechargement, à `about:blank`, à `Entrée` et à `Échap`, et n'était
 fermable par aucun outil disponible.
 
-### Réserve de couverture
+### Couverture de test — réserve levée
 
-Les tests automatisés couvrent `view-model.ts` (10 cas), **pas les composants** : le rendu JSX
-n'est vérifié que par observation navigateur. Un test de composant exigerait de résoudre le
-conflit `jsx` Bun/Vite noté en P4.
+La réserve initiale était : les tests couvraient `view-model.ts` mais **pas les composants**.
+Elle est levée. État final : **22 tests, 2 fichiers, exit 0** — 10 sur la logique de décision,
+12 sur le rendu réel des composants (montage dans un DOM jsdom).
+
+Deux obstacles ont dû être franchis, et les deux sont mesurés :
+
+**1. Bun ne peut pas exécuter de JSX ici.** Bun exige `jsx: "react-jsx"`, Vite exige
+`jsx: "preserve"` ; les deux ne partagent pas un `tsconfig`. J'ai tenté
+`bun test --tsconfig-override tsconfig.test.json`, deux fois, avec un fichier en `extends` puis
+autonome : Bun signale un « directory mismatch » sur l'override et continue de résoudre
+`react/jsx-dev-runtime`. **Bun ignore donc l'override pour le source JSX.** D'où le passage à
+**Vitest**, qui réutilise le transform JSX de Vite et fait disparaître le conflit par
+construction — c'est aussi l'outil standard pour un projet Vite.
+
+**2. `vite-plugin-solid` seul casse la suite.** Bissection : config minimale → 10 tests passent ;
+même config **plus `plugins: [solid()]`** → échec sur
+`Cannot find module '@testing-library/jest-dom/vitest'`, **même pour un fichier sans JSX ni DOM**.
+Le plugin attend ce paquet : l'installer satisfait l'import (`@testing-library/jest-dom@7.0.1`),
+et fournit au passage les matchers DOM.
+
+**3. Le HMR de Solid casse le rendu.** Une fois le point 2 réglé :
+`TypeError: … Received 'file:///@solid-refresh'` — solid-refresh injecte un module que le runner
+ne peut pas résoudre comme nom de fichier. Corrigé par `solid({ hot: mode !== "test" })` :
+le rafraîchissement à chaud reste actif en développement, désactivé sous Vitest.
+
+Les composants ont été extraits dans `src/components.tsx` (`ToolCall`, `PermissionPanel`) —
+présentationnels, sans accès au client ni aux signaux — précisément pour être testables.
+`app.tsx` ne fait plus que les câbler.
 
 ---
 

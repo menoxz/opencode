@@ -1,13 +1,10 @@
 import { createEffect, createSignal, For, Show, onCleanup, onMount } from "solid-js"
 import { client, fetchHealth, serverUrl, type Health } from "./client"
+import { PermissionPanel, ToolCall } from "./components"
 import { subscribeEvents, type ServerEvent, type EventStreamState } from "./events"
 import {
   dropPermission,
-  permissionActions,
   reducePermissions,
-  toolDetail,
-  toolStatusLabel,
-  toolTitle,
   type PermissionReply,
   type PermissionRequest,
   type ToolState,
@@ -24,12 +21,6 @@ type Message = { info: { id: string; role: string }; parts: Part[] }
 
 const MAX_EVENTS = 60
 const DIR_KEY = "oc.webui.directory"
-
-const REPLY_LABEL: Record<PermissionReply, string> = {
-  once: "Autoriser une fois",
-  always: "Toujours autoriser",
-  reject: "Refuser",
-}
 
 export default function App() {
   const [health, setHealth] = createSignal<Health | undefined>()
@@ -237,25 +228,13 @@ export default function App() {
     if (part.type !== "tool") return <p class="part">{part.type}</p>
 
     const toolPart = part as Extract<Part, { type: "tool" }>
-    const state = toolPart.state
-    const open = () => Boolean(expanded()[toolPart.id])
-
     return (
-      <div class={`tool ${state.status}`}>
-        <button class="toolhead" onClick={() => toggle(toolPart.id)}>
-          <span class="toolname">{toolPart.tool}</span>
-          <span class={`badge ${state.status}`}>{toolStatusLabel(state)}</span>
-          <Show when={toolTitle(state)}>{(title) => <span class="tooltitle">{title()}</span>}</Show>
-          <span class="chevron">{open() ? "▾" : "▸"}</span>
-        </button>
-        <Show when={open()}>
-          <div class="tooldetail">
-            <Show when={toolDetail(state).input}>{(input) => <pre class="io">{input()}</pre>}</Show>
-            <Show when={toolDetail(state).output}>{(output) => <pre class="io out">{output()}</pre>}</Show>
-            <Show when={toolDetail(state).error}>{(error) => <pre class="io err">{error()}</pre>}</Show>
-          </div>
-        </Show>
-      </div>
+      <ToolCall
+        tool={toolPart.tool}
+        state={toolPart.state}
+        open={Boolean(expanded()[toolPart.id])}
+        onToggle={() => toggle(toolPart.id)}
+      />
     )
   }
 
@@ -382,28 +361,7 @@ export default function App() {
 
         <For each={permissions()}>
           {(request) => (
-            <div class="permission">
-              <div class="ptitle">
-                Permission demandée : <strong>{request.permission}</strong>
-              </div>
-              <Show when={request.patterns.length > 0}>
-                <ul class="patterns">
-                  <For each={request.patterns}>{(pattern) => <li>{pattern}</li>}</For>
-                </ul>
-              </Show>
-              <div class="pactions">
-                <For each={permissionActions(request)}>
-                  {(action) => (
-                    <button
-                      class={action === "reject" ? "danger" : "primary"}
-                      onClick={() => void replyPermission(request, action)}
-                    >
-                      {REPLY_LABEL[action]}
-                    </button>
-                  )}
-                </For>
-              </div>
-            </div>
+            <PermissionPanel request={request} onReply={(reply) => void replyPermission(request, reply)} />
           )}
         </For>
 
