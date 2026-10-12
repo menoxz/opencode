@@ -1,4 +1,12 @@
 import { createEffect, createSignal, For, Show, onCleanup, onMount } from "solid-js"
+import {
+  buildFilePart,
+  filePartLabel,
+  fileSizeLabel,
+  isImageMime,
+  validateAttachment,
+  type Attachment,
+} from "./attachments"
 import { client, credentials, fetchHealth, rememberCredentials, serverUrl, type Health } from "./client"
 import { PermissionPanel, ToolCall } from "./components"
 import { subscribeEvents, type ServerEvent, type EventStreamState } from "./events"
@@ -15,6 +23,7 @@ type SessionInfo = { id: string; title?: string; time?: { updated?: number } }
 type Part =
   | { type: "text"; text?: string }
   | { type: "tool"; id: string; tool: string; state: ToolState }
+  | { type: "file"; mime?: string; filename?: string; url?: string }
   | { type: string; text?: string }
 
 type Message = { info: { id: string; role: string }; parts: Part[] }
@@ -46,6 +55,9 @@ export default function App() {
   const [authOpen, setAuthOpen] = createSignal(false)
   const [authUser, setAuthUser] = createSignal(credentials?.username ?? "")
   const [authPass, setAuthPass] = createSignal(credentials?.password ?? "")
+
+  const [attachments, setAttachments] = createSignal<Attachment[]>([])
+  const [attachError, setAttachError] = createSignal<string | undefined>()
 
   const [permissions, setPermissions] = createSignal<PermissionRequest[]>([])
   const [expanded, setExpanded] = createSignal<Record<string, boolean>>({})
@@ -145,14 +157,63 @@ export default function App() {
     if (sessionID) await loadMessages(sessionID)
   }
 
+  /**
+   * Lit un fichier en data URL — la forme que `FilePartInput.url` attend, relevée dans le SDK et
+   * confirmée par l'usage de l'app existante (`build-request-parts.ts:190`, `url: attachment.dataUrl`).
+   */
+  const readAsDataUrl = (file: File, mime: string) =>
+    new Promise<string>((resolve) => {
+      const reader = new FileReader()
+      reader.addEventListener("error", () => resolve(""))
+      reader.addEventListener("load", () => {
+        const value = typeof reader.result === "string" ? reader.result : ""
+        const separator = value.indexOf(",")
+        resolve(separator === -1 ? "" : `data:${mime};base64,${value.slice(separator + 1)}`)
+      })
+      reader.readAsDataURL(file)
+    })
+
+  const addFiles = async (files: FileList | null) => {
+    if (!files?.length) return
+    setAttachError(undefined)
+    const accepted: Attachment[] = []
+    for (const file of Array.from(files)) {
+      const mime = file.type || "application/octet-stream"
+      const problem = validateAttachment({ size: file.size, mime, filename: file.name })
+      if (problem) {
+        setAttachError(problem)
+        continue
+      }
+      const dataUrl = await readAsDataUrl(file, mime)
+      if (!dataUrl) {
+        setAttachError(`Lecture impossible : « ${file.name} »`)
+        continue
+      }
+      accepted.push({
+        id: `${file.name}:${file.size}:${accepted.length}`,
+        mime,
+        filename: file.name,
+        dataUrl,
+        size: file.size,
+      })
+    }
+    if (accepted.length) setAttachments((current) => [...current, ...accepted])
+  }
+
+  const removeAttachment = (id: string) => setAttachments((current) => current.filter((item) => item.id !== id))
+
   const send = async (event: SubmitEvent) => {
     event.preventDefault()
     const sessionID = active()
     const text = draft().trim()
-    if (!sessionID || !text) return
+    const files = attachments()
+    if (!sessionID || (!text && files.length === 0)) return
     setDraft("")
+    setAttachments([])
+    setAttachError(undefined)
+    const parts = [...(text ? [{ type: "text" as const, text }] : []), ...files.map(buildFilePart)]
     const result = await client.session
-      .promptAsync({ sessionID, parts: [{ type: "text", text }], ...scope() })
+      .promptAsync({ sessionID, parts, ...scope() })
       .catch((cause: unknown) => {
         setError(String(cause))
         return undefined
@@ -231,6 +292,18 @@ export default function App() {
 
   const renderPart = (part: Part) => {
     if (part.type === "text") return <p class="part text">{part.text ?? ""}</p>
+    if (part.type === "file") {
+      const file = part as Extract<Part, { type: "file" }>
+      const label = filePartLabel(file)
+      return (
+        <div class="part file">
+          <Show when={isImageMime(file.mime ?? "") && file.url} fallback={<span class="fileicon">▤</span>}>
+            <img class="attach-preview" src={file.url} alt={label} />
+          </Show>
+          <span class="fname">{label}</span>
+        </div>
+      )
+    }
     if (part.type !== "tool") return <p class="part">{part.type}</p>
 
     const toolPart = part as Extract<Part, { type: "tool" }>
@@ -423,15 +496,56 @@ export default function App() {
             )}
           </For>
           <form class="composer" onSubmit={send}>
-            <textarea
-              rows="3"
-              placeholder="Écris ton message…"
-              value={draft()}
-              onInput={(event) => setDraft(event.currentTarget.value)}
-            />
-            <button class="primary" type="submit" disabled={!draft().trim()}>
-              Envoyer
-            </button>
+            <div class="composer-main">
+              <textarea
+                rows="3"
+                placeholder="Écris ton message…"
+                value={draft()}
+                onInput={(event) => setDraft(event.currentTarget.value)}
+              />
+              <Show when={attachments().length > 0}>
+                <ul class="pending">
+                  <For each={attachments()}>
+                    {(item) => (
+                      <li>
+                        <Show when={isImageMime(item.mime)} fallback={<span class="fileicon">▤</span>}>
+                          <img class="thumb" src={item.dataUrl} alt={item.filename} />
+                        </Show>
+                        <span class="fname">{item.filename}</span>
+                        <span class="fsize">{fileSizeLabel(item.size)}</span>
+                        <button
+                          class="icon danger"
+                          type="button"
+                          title="Retirer"
+                          onClick={() => removeAttachment(item.id)}
+                        >
+                          ✕
+                        </button>
+                      </li>
+                    )}
+                  </For>
+                </ul>
+              </Show>
+              <Show when={attachError()}>{(message) => <p class="error">{message()}</p>}</Show>
+            </div>
+            <div class="composer-actions">
+              <label class="icon attach" title="Joindre des fichiers">
+                +
+                <input
+                  class="hidden-input"
+                  type="file"
+                  multiple
+                  onChange={(event) => {
+                    void addFiles(event.currentTarget.files)
+                    // Remis à zéro pour qu'attacher deux fois le même fichier soit possible.
+                    event.currentTarget.value = ""
+                  }}
+                />
+              </label>
+              <button class="primary" type="submit" disabled={!draft().trim() && attachments().length === 0}>
+                Envoyer
+              </button>
+            </div>
           </form>
         </Show>
       </main>

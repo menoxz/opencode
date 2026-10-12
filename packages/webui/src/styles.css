@@ -296,12 +296,17 @@ input.rename {
 .composer {
   margin-top: auto;
   display: flex;
+  flex-direction: column;
   gap: 8px;
-  align-items: flex-end;
+}
+
+.composer-main {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .composer textarea {
-  flex: 1;
   resize: vertical;
   padding: 8px 10px;
   border-radius: 6px;
@@ -311,9 +316,89 @@ input.rename {
   font: inherit;
 }
 
-.composer button {
+.composer-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.composer-actions button.primary {
   width: auto;
   white-space: nowrap;
+  margin-left: auto;
+}
+
+/* L'input fichier reste dans le DOM (un `display: none` piloté par une classe, pas par un
+   attribut) : c'est ce qui permet de le remplir depuis un test ou un outil de pilotage. */
+.hidden-input {
+  display: none;
+}
+
+label.attach {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 26px;
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.pending {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pending li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 6px;
+  background: var(--panel);
+  font-size: 12px;
+  max-width: 100%;
+}
+
+.thumb {
+  width: 28px;
+  height: 28px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+
+.fileicon {
+  color: var(--muted);
+}
+
+.fname {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+}
+
+.fsize {
+  color: var(--muted);
+}
+
+.part.file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.attach-preview {
+  max-width: 260px;
+  max-height: 200px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
 }
 
 .empty,

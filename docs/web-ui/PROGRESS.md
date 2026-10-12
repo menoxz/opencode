@@ -537,6 +537,53 @@ sont signalés pour qu'ils ne soient pas attribués à ce chantier plus tard.
 
 ---
 
+## Lot suivant — pièces jointes (livré)
+
+Le manque identifié pour qu'un agent généraliste soit utilisable au quotidien. Contrat **relevé**,
+pas inventé : une pièce est une partie de message `{ type: "file", mime, filename, url }`
+(`packages/sdk/js/src/v2/gen/types.gen.ts:2126`), et `url` porte une **data URL** — c'est ce que
+fait l'app existante (`packages/app/src/components/prompt-input/build-request-parts.ts:188-192`,
+`url: attachment.dataUrl`, construite par `FileReader.readAsDataURL`).
+
+### Ce qui a été livré
+
+| fichier | rôle |
+|---|---|
+| `src/attachments.ts` | décisions **pures** : bornes par type, validation, libellés de taille, construction de la partie |
+| `src/attachments.test.ts` | 16 cas sur ces décisions |
+| `src/app.tsx` | lecture des fichiers (`FileReader`), liste des pièces en attente, retrait, envoi, rendu dans le fil |
+| `src/styles.css` | vignettes, tailles, input fichier masqué |
+
+**Choix de conception** : la partie pure est isolée du DOM, comme `view-model.ts` en P4. `FileReader`
+reste dans le composant ; tout ce qui décide (borne applicable, refus, libellé) est testable sans
+navigateur.
+
+**Détail qui aurait cassé un test** : l'input fichier est masqué par une **classe** (`.hidden-input`)
+et non par un attribut `style="display:none"`. Un input absent du rendu n'est pas remplissable par
+un outil de pilotage — c'est exactement le piège qui avait bloqué P4 avec `window.confirm`.
+
+**Autre détail** : `input.value` est remis à zéro après chaque sélection, sinon attacher deux fois
+le même fichier ne déclenche aucun `change` et la seconde pièce n'apparaît jamais.
+
+### Preuve
+
+```
+vitest run     -> 4 fichiers, 52 tests, exit 0   (+16 pour ce lot)
+tsgo --noEmit  -> exit 0
+vite build     -> exit 0
+```
+
+Poids après ce lot : **74,15 ko brut / 18,32 ko compressés** pour le JS, 1,74 ko pour le CSS —
+soit **20,1 ko compressés** au total, contre un budget de 150 ko. Le lot coûte ~1,9 ko compressés.
+
+### Réserve
+
+**Le parcours d'envoi n'a pas été observé dans un navigateur** — seul le chemin pur est testé, et
+le câblage est vérifié par typecheck et build. Un envoi réel avec un fichier reste à faire, comme
+la vérification inter-origines l'a été pour l'authentification.
+
+---
+
 ## Réserves ouvertes
 
 Aucune. Les trois réserves précédentes sont closes, chacune par une mesure :
