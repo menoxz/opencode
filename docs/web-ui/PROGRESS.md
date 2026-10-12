@@ -790,6 +790,73 @@ sélecteur est trop large, pas l'affichage fautif.
 
 ---
 
+## Refonte visuelle — système de design repris de DSH (livré)
+
+Demande de l'utilisateur : « recopie ou inspire-toi de celui de dsh, actuellement en local ».
+DSH = **DeepSeek Harness**, présent localement dans `C:\jeanluc\` : `dsh-anchored-standard` (dépôt),
+`dsh-plugins` (`dsh-identite`, `dsh-ux`, `DSH-better-sidebar`, `dsh-TUI`…), et trois artefacts de
+design directement exploitables.
+
+### Sources relevées
+
+| artefact | ce qu'il contient |
+|---|---|
+| `dsh-identite-visuelle.html` | le système complet : jetons, typographies, composants (barre de titre, sidebar, onglets, carte modèle) |
+| `dsh-sidebar-proposition.html` | la structure de sidebar : arborescence workspace → sessions, pastille d'état, compteurs |
+| `dsh-plugins/dsh-identite/design-2026-08/RECOMMANDATIONS.md` | la refonte **validée** : « bord à bord », et une correction de contraste WCAG chiffrée |
+
+### Trois décisions reprises
+
+**1. Les jetons DSH, à l'identique** — palette bleu-nuit (`#06070b` → `#141926`), marque indigo
+`#4d7cfe` → violet `#7c5cff`, accent cyan `#22d3ee`, dégradés `--grad-brand` / `--grad-active`.
+Typographies Space Grotesk / Inter / JetBrains Mono, chargées comme DSH le fait.
+
+**2. « Bord à bord »** — `RECOMMANDATIONS.md` rejette explicitement les « cartes flottantes »
+(gouttière 8 px, rayon 10 px, bordure en verre) au profit de panneaux occupant toute leur piste,
+séparés par un filet d'1 px. Appliqué : `--radius-panel: 0px` sur sidebar, conversation et
+panneaux ; les commandes gardent leur arrondi.
+
+**3. La leçon de contraste, PAS la valeur.** C'est le point qui compte, et je ne l'ai pas recopié
+à l'aveugle : DSH a mesuré que **son propre** texte tertiaire échouait au WCAG AA (3,55:1) et l'a
+relevé à 4,73:1. Sa valeur d'origine, `--text-3: #5d6679`, donne **3,41:1 sur `--bg-1`** — donc
+insuffisante. Reprendre la valeur aurait reproduit le défaut que DSH documente comme corrigé.
+La valeur retenue est `#6f7a92`, calculée à **4,54:1** sur `--bg-1`.
+
+### Vérification — styles calculés, pas présence dans le fichier
+
+Un jeton peut être déclaré et écrasé ; une règle peut ne matcher aucun élément. Le contrôle porte
+donc sur le style **calculé**, lu par CDP :
+
+```
+--bg-0: #06070b   --brand-1: #4d7cfe   --brand-3: #22d3ee
+--text-1: #e9edf6  --text-3: #6f7a92   --radius-panel: 0px
+--grad-active: linear-gradient(90deg, rgba(77,124,254,.16), rgba(124,92,255,.07))
+
+rayon calculé : sidebar 0px | panels 0px | thread 0px
+charpente     : 264px 615px 320px          (264px = largeur de sidebar DSH)
+polices       : Inter / Space Grotesk / JetBrains Mono, toutes trois chargées (font.check)
+halo d'ambiance : radial-gradient présent sur body
+session active : dégradé horizontal + filet 2px #4d7cfe + titre blanc
+```
+
+### Ce que la refonte ne fait pas
+
+Elle ne change **aucune structure** : les classes, le composant et la logique sont intacts —
+`styles.css` et `index.html` seulement. Les 74 tests passent sans modification, ce qui est le
+signe que rien de fonctionnel n'a bougé.
+
+### Réserve
+
+Les **typographies viennent de Google Fonts**, donc d'un accès réseau. C'est ce que fait DSH, mais
+pour un outil local c'est une dépendance à assumer : hors ligne, les piles de repli déclarées
+(system-ui, Segoe UI, Consolas) prennent le relais sans casser la mise en page. À arbitrer si
+l'interface doit fonctionner en réseau coupé.
+
+**Le rendu n'a pas été jugé à l'œil** — il a été mesuré. Les valeurs sont conformes aux jetons
+DSH, mais l'appréciation esthétique appartient à l'utilisateur, qui a la fenêtre ouverte.
+
+---
+
 ## Réserves ouvertes
 
 Aucune. Les trois réserves précédentes sont closes, chacune par une mesure :
