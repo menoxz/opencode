@@ -174,7 +174,7 @@ disparu du code.
 
 ---
 
-## P4 — outils & permissions (G4 ⚠️ partiel)
+## P4 — outils & permissions (G4 ✅)
 
 Deux ajouts : le rendu des appels d'outils dans le fil, et le panneau d'accord/refus de
 permission.
@@ -342,7 +342,7 @@ présentationnels, sans accès au client ni aux signaux — précisément pour �
 
 ---
 
-## P6 — livraison (G6 ⚠️ partiel)
+## P6 — livraison (G6 ✅)
 
 ### Ce qui a été construit
 

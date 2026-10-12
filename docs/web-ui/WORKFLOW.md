@@ -69,25 +69,30 @@ Règles de câblage :
 | **M2 — hors checkout** | paquet npm de sources + lanceur | **aucun** | au redémarrage du processus | usage « opencodev2 web » sur une machine sans dépôt |
 | **M3 — embarqué** | binaire compilé | oui (bundle UI au build) | non | distribution existante, inchangée |
 
-### M2 en détail (le point délicat)
+### M2 en détail — vérifié le 2026-10-12
 
-`packages/opencode/package.json` publie déjà ses sources (`exports "./*": "./src/*.ts"`) et
-declare des conditions `node` pour la base et le PTY. **INFERE :** un paquet de sources
-exécutable par `bun` (et possiblement `node`) est techniquement cohérent avec la structure
-actuelle ; le point à valider est la liste complète des artefacts non-TS requis à l'exécution
-(`.node`, wasm, SQL de migration embarqués).
+**L'hypothèse initiale de ce document était fausse et elle est corrigée ici.** Il supposait qu'un
+paquet de sources suffirait. La mesure dit l'inverse : `packages/opencode` est `"private": true`
+et dépend de six paquets internes en `workspace:*` (`core`, `llm`, `plugin`, `sdk`, `ui`,
+`script`), dont aucun n'est publié. Le publier seul est impossible.
 
-Travail M2 :
+M2 passe donc par une **copie complète des sources**, pas par un paquet. Procédure vérifiée :
 
-1. vérifier l'inventaire des artefacts runtime non-TS (voir §7,gate P1) ;
-2. produire un paquet de sources et un lanceur minimal (`opencode-web`) qui appelle le serveur
-   via l'entrée TS, sans build de binaire ;
-3. faire servir l'UI par le serveur lui-même (fichiers statiques), donc un seul port et une
-   seule commande pour l'utilisateur ;
-4. le lanceur doit refuser de démarrer si l'UI n'est pas compilée, avec le message exact de la
-   commande de build.
+```
+robocopy <dépôt> <cible> /E /XD node_modules .git dist .artifacts
+bun install --cwd <cible>      -> 2305 packages, exit 0, 153 s
+bun run script/web.ts          -> construit l'UI sur place, puis sert
+```
 
-Priorité : **M1 d'abord** (il rend M2 possible et le valide au quotidien), M2 ensuite.
+Coût mesuré : 153 s d'installation, ~3,1 Go pour la copie. Le lanceur `script/web.ts` construit
+l'UI si `dist/index.html` est absent (ou sur `--rebuild`) et sert le serveur avec
+`OPENCODE_WEB_UI_DIR`. Une seule commande, un seul port, aucune configuration CORS.
+
+Prérequis qui a dû être levé : le paquet SDK déclarait `"files": ["dist"]` alors que ses `exports`
+pointent vers `./src/*.ts` — le tarball publié était donc inutilisable. Corrigé (A1) et vérifié
+par installation hors dépôt.
+
+Priorité confirmée : **M1 d'abord** (développement au quotidien), M2 ensuite pour la distribution.
 
 ---
 
