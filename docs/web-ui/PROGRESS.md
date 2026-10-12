@@ -489,6 +489,54 @@ A1 rendait le SDK inutilisable une fois publié, donc tout paquet qui en dépend
 
 ---
 
+## Non-régression large — vérifiée, échecs antérieurs prouvés
+
+`AGENTS.md` impose de relancer **toutes** les suites voisines après une vague d'implémentation, pas
+seulement la suite ciblée (précédent v2.4.0 : H1 avait rendu actif un défaut dormant de H4, visible
+seulement dans `step-git-spawn.test.ts`). Ce chantier avait modifié `server/shared/ui.ts`,
+`effect/runtime-flags.ts` et le routeur httpapi ; je n'avais lancé que `httpapi-ui.test.ts`.
+
+### Mesure
+
+```
+bun test --timeout 30000 test/server test/flag
+-> 288 tests, 256 pass, 17 skip, 15 fail   (165 s)
+```
+
+### Les échecs ne sont pas de ce chantier — prouvé, pas supposé
+
+Les 15 échecs touchaient le middleware d'autorisation, le middleware d'erreur, mcp, provider et
+`project.initGit` — aucun fichier que j'ai modifié. Une impression ne suffit pas, donc :
+
+1. **Relance isolée** des 4 fichiers concernés : les échecs persistent hors parallélisme
+   (7 échecs ; les 8 autres du lot étaient donc des effets d'ordonnancement).
+2. **Retour temporaire** de mes trois fichiers serveur au commit parent `3929a26eb`
+   (`git checkout 3929a26eb -- <fichiers>`), puis relance des mêmes 4 fichiers :
+
+| fichier | avec mes modifications | sans mes modifications |
+|---|---|---|
+| `httpapi-authorization.test.ts` | 8 pass / 1 fail | **8 pass / 1 fail** |
+| `httpapi-error-middleware.test.ts` | 0 pass / 4 fail | **0 pass / 4 fail** |
+| `httpapi-instance-context.test.ts` | 7 pass / 1 fail | **7 pass / 1 fail** |
+| `project-init-git.test.ts` | 1 pass / 1 fail | **1 pass / 1 fail** |
+
+**Comptes identiques.** Les modifications ont ensuite été restaurées (`git checkout HEAD --`),
+arbre de travail propre. Conclusion : **aucune régression introduite par ce chantier.**
+
+### Ce que sont ces échecs antérieurs
+
+Ils sont **dépendants de l'environnement**, pas du code. Indice net relevé dans
+`project-init-git.test.ts` : l'endpoint renvoie `worktree: "C:\Users\jeanl"` et `id: "global"`
+là où le test attend un bac à sable temporaire et un identifiant dérivé — l'isolation du test ne
+tient pas dans cet environnement. `httpapi-error-middleware.test.ts` échoue 4 fois sur 4, ce qui
+suggère une dépendance structurelle du même ordre.
+
+**Ils ne sont pas traités ici** : ce sont des défauts préexistants du dépôt, hors du périmètre de
+l'initiative web, et les corriger demanderait de comprendre leur dépendance d'environnement. Ils
+sont signalés pour qu'ils ne soient pas attribués à ce chantier plus tard.
+
+---
+
 ## Réserves ouvertes
 
 Aucune. Les trois réserves précédentes sont closes, chacune par une mesure :
