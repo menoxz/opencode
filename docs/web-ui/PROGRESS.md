@@ -749,6 +749,47 @@ aucune) ; seul son état vide est observé.
 
 ---
 
+## Surface « Conversation » vérifiée sur données réelles (par CDP)
+
+C'était la surface la plus importante et la moins vérifiée : la liste des sessions, les onglets, le
+panneau Statut, l'attachement et la suppression l'étaient, mais **qu'un fil réel s'affiche** ne
+l'était pas — alors que c'est précisément ce sur quoi porte l'arbitrage.
+
+Session réelle sélectionnée dans l'interface (`ses_f1df9427…`, celle qui contient un appel d'outil
+en erreur et un abouti), puis lecture du DOM :
+
+```
+messageCount : 8
+roles        : user, assistant, user, user, assistant, user, assistant, user
+textParts    : 6
+toolParts    : 2
+toolNames    : question, turn_plan
+toolBadges   : erreur, terminé
+toolClasses  : "tool error", "tool completed"
+composerPresent : true
+emptyMessage : null
+```
+
+Puis dépliage du premier appel d'outil :
+
+```
+details   : 1
+preBlocks : 2      (entrée + erreur)
+chevron   : ▾      (l'état replié était ▸)
+```
+
+**Ce que cela établit** : les messages se rendent avec leurs rôles, le texte s'affiche, les appels
+d'outils apparaissent **avec le bon badge d'état** — `erreur` sur un `question` en échec, `terminé`
+sur un `turn_plan` abouti, la classe CSS suivant le statut — et le panneau de détail s'ouvre au
+clic avec ses blocs. C'est le contrat de P4 vérifié non plus par test unitaire mais **sur des
+données réelles, dans le navigateur**.
+
+**Note de méthode** : le relevé contient `error: "questionerreur▸"`. Ce n'est **pas** une erreur du
+fil — mon sélecteur `.thread .error` a matché l'élément `.badge.error` de l'outil en échec. Le
+sélecteur est trop large, pas l'affichage fautif.
+
+---
+
 ## Réserves ouvertes
 
 Aucune. Les trois réserves précédentes sont closes, chacune par une mesure :
