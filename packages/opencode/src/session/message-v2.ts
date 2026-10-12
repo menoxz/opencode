@@ -189,6 +189,10 @@ export const CompactionPart = Schema.Struct({
   ...partBase,
   type: Schema.Literal("compaction"),
   auto: Schema.Boolean,
+  // True when the compaction was requested by the agent mid-turn rather than by
+  // the user or the threshold: such a compaction must hand a continue message
+  // back to the run, or the agent silently drops the turn it was working on.
+  autocontinue: Schema.optional(Schema.Boolean),
   overflow: Schema.optional(Schema.Boolean),
   tail_start_id: Schema.optional(MessageID),
 }).annotate({ identifier: "CompactionPart" })

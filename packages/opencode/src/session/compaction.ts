@@ -395,6 +395,7 @@ export interface Interface {
     messages: MessageV2.WithParts[]
     sessionID: SessionID
     auto: boolean
+    autocontinue?: boolean
     overflow?: boolean
   }) => Effect.Effect<"continue" | "stop">
   readonly create: (input: {
@@ -402,6 +403,7 @@ export interface Interface {
     agent: string
     model: { providerID: ProviderID; modelID: ModelID }
     auto: boolean
+    autocontinue?: boolean
     overflow?: boolean
   }) => Effect.Effect<void>
 }
@@ -656,6 +658,7 @@ export const layer = Layer.effect(
       messages: MessageV2.WithParts[]
       sessionID: SessionID
       auto: boolean
+      autocontinue?: boolean
       overflow?: boolean
     }) {
       const parent = input.messages.findLast((m) => m.info.id === input.parentID)
@@ -897,7 +900,7 @@ export const layer = Layer.effect(
         })
       }
 
-      if (result === "continue" && input.auto) {
+      if (result === "continue" && (input.auto || input.autocontinue)) {
         if (replay) {
           const original = replay.info
           const replayMsg = yield* session.updateMessage({
@@ -1056,6 +1059,7 @@ export const layer = Layer.effect(
       agent: string
       model: { providerID: ProviderID; modelID: ModelID }
       auto: boolean
+      autocontinue?: boolean
       overflow?: boolean
     }) {
       const msg = yield* session.updateMessage({
@@ -1072,6 +1076,7 @@ export const layer = Layer.effect(
         sessionID: msg.sessionID,
         type: "compaction",
         auto: input.auto,
+        autocontinue: input.autocontinue,
         overflow: input.overflow,
       })
       if (flags.experimentalEventSystem) {

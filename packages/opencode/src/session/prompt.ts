@@ -1974,6 +1974,7 @@ export const layer = Layer.effect(
               parentID: PromptQueue.compactionTaskParentID(task),
               sessionID,
               auto: task.auto,
+              autocontinue: task.autocontinue,
               overflow: task.overflow,
             })
             if (result === "stop") break

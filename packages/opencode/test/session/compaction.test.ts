@@ -1213,6 +1213,82 @@ describe("session.compaction.process", () => {
     }),
   )
 
+  it.instance(
+    "adds synthetic continue prompt when autocontinue is set even though auto is false",
+    Effect.gen(function* () {
+      const ssn = yield* SessionNs.Service
+      const session = yield* ssn.create({})
+      const msg = yield* createUserMessage(session.id, "hello")
+      const msgs = yield* ssn.messages({ sessionID: session.id })
+
+      yield* SessionCompaction.use.create({
+        sessionID: session.id,
+        agent: "build",
+        model: ref,
+        auto: false,
+        autocontinue: true,
+      })
+
+      const withCompaction = yield* ssn.messages({ sessionID: session.id })
+      const parent = withCompaction.findLast((item) => item.parts.some((p) => p.type === "compaction"))!
+      const result = yield* SessionCompaction.use.process({
+        parentID: parent.info.id,
+        messages: withCompaction,
+        sessionID: session.id,
+        auto: false,
+        autocontinue: true,
+      })
+
+      const all = yield* ssn.messages({ sessionID: session.id })
+      const last = all.at(-1)
+
+      expect(result).toBe("continue")
+      expect(last?.info.role).toBe("user")
+      expect(last?.parts[0]).toMatchObject({
+        type: "text",
+        synthetic: true,
+        metadata: { compaction_continue: true },
+      })
+    }),
+  )
+
+  it.instance(
+    "keeps the turn stopped when neither auto nor autocontinue is set",
+    Effect.gen(function* () {
+      const ssn = yield* SessionNs.Service
+      const session = yield* ssn.create({})
+      const msg = yield* createUserMessage(session.id, "hello")
+      const msgs = yield* ssn.messages({ sessionID: session.id })
+
+      yield* SessionCompaction.use.create({
+        sessionID: session.id,
+        agent: "build",
+        model: ref,
+        auto: false,
+      })
+
+      const withCompaction = yield* ssn.messages({ sessionID: session.id })
+      const parent = withCompaction.findLast((item) => item.parts.some((p) => p.type === "compaction"))!
+      const before = withCompaction.length
+      const result = yield* SessionCompaction.use.process({
+        parentID: parent.info.id,
+        messages: withCompaction,
+        sessionID: session.id,
+        auto: false,
+      })
+
+      const all = yield* ssn.messages({ sessionID: session.id })
+      expect(result).toBe("continue")
+      // No continue message: the run ends and waits for the user, as a manual
+      // compaction must.
+      expect(all.length).toBe(before + 1)
+      expect(all.some((item) => item.parts.some((p) => p.type === "text" && p.metadata?.compaction_continue === true))).toBe(
+        false,
+      )
+      void msg
+    }),
+  )
+
   itCompaction.instance(
     "persists tail_start_id for retained recent turns",
     Effect.gen(function* () {

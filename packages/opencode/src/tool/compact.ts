@@ -117,12 +117,17 @@ export const CompactTool = Tool.define(
             sessionID: ctx.sessionID,
             agent: ctx.agent,
             model: { providerID: session.model.providerID, modelID: session.model.id },
+            // This tool is called by the agent from inside a turn. `auto: false`
+            // keeps the part non-auto (the threshold did not fire), but without
+            // `autocontinue` the run would end here and the agent would abandon
+            // the very turn it compacted to protect.
             auto: false,
+            autocontinue: true,
           })
 
           return reply(
             true,
-            `Compaction focus saved (v${version}) and a compaction was queued; the summary will honor it.`,
+            `Compaction focus saved (v${version}) and a compaction was queued; the summary will honor it. Your turn resumes automatically once the summary lands — do not ask the user to continue.`,
             version,
           )
         }),
