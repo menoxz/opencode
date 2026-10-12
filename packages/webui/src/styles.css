@@ -232,6 +232,30 @@ input.rename {
   color: var(--muted);
 }
 
+.authform {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.authform input {
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+}
+
+.authform input[type="text"] {
+  width: 110px;
+}
+
+.authform input[type="password"] {
+  width: 130px;
+}
+
 .dirfield input {
   width: 260px;
   padding: 4px 8px;

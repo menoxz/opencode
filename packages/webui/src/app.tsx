@@ -1,5 +1,5 @@
 import { createEffect, createSignal, For, Show, onCleanup, onMount } from "solid-js"
-import { client, fetchHealth, serverUrl, type Health } from "./client"
+import { client, credentials, fetchHealth, rememberCredentials, serverUrl, type Health } from "./client"
 import { PermissionPanel, ToolCall } from "./components"
 import { subscribeEvents, type ServerEvent, type EventStreamState } from "./events"
 import {
@@ -40,6 +40,12 @@ export default function App() {
   // Inline confirmation instead of window.confirm: a native dialog blocks automation and cannot
   // be styled. Two clicks on the same row, no modal.
   const [confirming, setConfirming] = createSignal<string | undefined>()
+
+  // Credentials are read once at boot: the SDK client and the SSE connection are both built with
+  // them, so saving reloads the page (see `rememberCredentials`).
+  const [authOpen, setAuthOpen] = createSignal(false)
+  const [authUser, setAuthUser] = createSignal(credentials?.username ?? "")
+  const [authPass, setAuthPass] = createSignal(credentials?.password ?? "")
 
   const [permissions, setPermissions] = createSignal<PermissionRequest[]>([])
   const [expanded, setExpanded] = createSignal<Record<string, boolean>>({})
@@ -252,6 +258,48 @@ export default function App() {
           <span class="pill warn">{permissions().length} permission(s) en attente</span>
         </Show>
         <span class="spacer" />
+        <Show
+          when={authOpen()}
+          fallback={
+            <button
+              class="icon"
+              title="Identifiants du serveur (OPENCODE_SERVER_USERNAME / PASSWORD)"
+              onClick={() => setAuthOpen(true)}
+            >
+              {credentials ? "auth ✓" : "auth"}
+            </button>
+          }
+        >
+          <form
+            class="authform"
+            onSubmit={(event) => {
+              event.preventDefault()
+              rememberCredentials({ username: authUser(), password: authPass() })
+            }}
+          >
+            <input
+              type="text"
+              placeholder="utilisateur"
+              value={authUser()}
+              onInput={(event) => setAuthUser(event.currentTarget.value)}
+            />
+            <input
+              type="password"
+              placeholder="mot de passe"
+              value={authPass()}
+              onInput={(event) => setAuthPass(event.currentTarget.value)}
+            />
+            <button class="icon" type="submit">
+              appliquer
+            </button>
+            <button class="icon" type="button" onClick={() => rememberCredentials(undefined)}>
+              effacer
+            </button>
+            <button class="icon" type="button" onClick={() => setAuthOpen(false)}>
+              fermer
+            </button>
+          </form>
+        </Show>
         <label class="dirfield">
           <span>Dossier</span>
           <input

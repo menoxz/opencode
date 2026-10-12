@@ -1,4 +1,5 @@
-import { serverUrl } from "./client"
+import { withAuthToken } from "./auth"
+import { credentials, serverUrl } from "./client"
 
 /** Shape observed on the wire: `{"id":"evt_…","type":"server.connected","properties":{}}`. */
 export type ServerEvent = {
@@ -23,9 +24,8 @@ type Handlers = {
  * Subscribes to the instance event stream.
  *
  * `EventSource` is used deliberately: it reconnects on its own, which is what the SSE contract
- * needs. It cannot send custom headers, so an authenticated server
- * (`OPENCODE_SERVER_PASSWORD`) is not supported yet — that limitation is recorded in
- * docs/web-ui/PROGRESS.md rather than silently ignored.
+ * needs. It cannot send custom headers, so authentication goes through the query fallback the
+ * server provides for exactly that case (`?auth_token=`, see `auth.ts`).
  */
 export function subscribeEvents({ onEvent, onState }: Handlers): () => void {
   const state: EventStreamState = { connected: false, reconnects: 0 }
@@ -36,7 +36,7 @@ export function subscribeEvents({ onEvent, onState }: Handlers): () => void {
 
   const open = () => {
     if (stopped) return
-    source = new EventSource(`${serverUrl}/event`)
+    source = new EventSource(withAuthToken(`${serverUrl}/event`, credentials))
 
     source.onopen = () => {
       state.connected = true

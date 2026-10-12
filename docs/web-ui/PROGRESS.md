@@ -460,7 +460,65 @@ A1 rendait le SDK inutilisable une fois publié, donc tout paquet qui en dépend
 
 ## Réserves ouvertes
 
-- **F1** (P1, medium) : hypothèse « sources publiées exécutables » non vérifiée pour M2.
-  Inventaire fait, exécution dans un paquet hors checkout pas encore faite.
-- **F2** (P5, low) : budget de poids non mesuré. `/agent` à 1,27 Mo impose une stratégie.
-- **F3** (P3, low) : cause de la mort du serveur sur 4701 après sonde SSE non établie.
+Aucune. Les trois réserves précédentes sont closes, chacune par une mesure :
+
+- **F1** (P1, medium) — « hypothèse sources publiées exécutables non vérifiée pour M2 » :
+  **close**. M2 a été exécuté de bout en bout hors du dépôt git (copie des sources, `bun install`
+  2 305 paquets en 153 s, serveur démarré, UI servie). L'hypothèse du workflow était d'ailleurs
+  fausse : ce n'est pas un paquet mais une copie qui fonctionne. Voir la section P6.
+- **F2** (P5, low) — « budget de poids non mesuré » : **close**. Mesuré : 73 ko brut,
+  **18,2 ko compressés** (JS + CSS + HTML), contre un budget de 150 ko. `/agent` (1,27 Mo) est un
+  souci serveur, pas client : l'UI ne l'appelle pas.
+- **F3** (P3, low) — « cause de la mort du serveur après sonde SSE » : **close**. L'expiration du
+  shell emporte son arbre de processus ; un serveur lancé par `Start-Process` depuis ce shell meurt
+  avec lui. Ce n'était pas un défaut du serveur. Consigné dans `AGENTS.md`.
+
+---
+
+## Lot suivant — authentification du serveur (livré)
+
+**La limite déclarée en P2 est levée.** Elle disait : « `EventSource` ne peut pas porter
+d'en-têtes, donc un serveur authentifié n'est pas supporté ». C'était vrai du canal, pas de la
+capacité — le serveur prévoit un repli.
+
+### Contrat relevé
+
+| élément | source | fait |
+|---|---|---|
+| exigence | `server/auth.ts:24-25` | authentification requise ssi `OPENCODE_SERVER_PASSWORD` est défini et non vide |
+| vérification | `server/auth.ts:28-32` | `username` (défaut `opencode`) **et** mot de passe doivent correspondre |
+| format | `server/auth.ts:41` | `Basic ${base64(username:password)}` |
+| canal principal | `authorization.ts:78-79` | en-tête `Authorization: Basic …` |
+| **repli** | `authorization.ts:74-83` | `?auth_token=<base64>` — commentaire du code : « the query fallback exists for clients that cannot set headers (app bootstrap, PTY WebSocket) » |
+
+Le repli par requête est exactement prévu pour `EventSource`. Il est employé **pour le SSE
+uniquement** : un identifiant en paramètre d'URL finit dans les journaux d'accès, ce n'est pas un
+canal à généraliser.
+
+### Ce qui a été livré
+
+`src/auth.ts` — helpers purs : `toBase64`, `basicToken`, `hasCredentials`, `authHeaders`,
+`withAuthToken`. `client.ts` passe les en-têtes au SDK et à la sonde de santé ; `events.ts` ajoute
+`auth_token` à l'URL du flux ; l'UI expose un formulaire d'identifiants dans la barre supérieure.
+
+**Piège traité** : `btoa` seul lève une `InvalidCharacterError` dès qu'un caractère sort de
+Latin-1 — un mot de passe accentué aurait cassé l'authentification sans message clair. `toBase64`
+encode donc en UTF-8 avant `btoa`, et un test vérifie que `é` produit bien les octets `0xC3 0xA9`.
+
+**Choix assumé** : enregistrer des identifiants recharge la page. Le client SDK et la connexion
+SSE sont tous deux construits au démarrage avec ces valeurs ; un rechargement est plus honnête et
+plus simple que reconstruire deux connexions vivantes en place.
+
+### Preuve
+
+```
+vitest run  -> 3 fichiers, 36 tests, exit 0   (14 sur l'authentification)
+tsgo --noEmit -> exit 0
+```
+
+### Réserve honnête
+
+Les helpers sont testés, le câblage est vérifié par typecheck et par les tests existants — mais
+**je n'ai pas fait tourner un serveur avec `OPENCODE_SERVER_PASSWORD` pour observer l'échange
+réel** (401 sans identifiants, 200 avec). C'est la vérification qui manque, et elle est simple à
+faire ; elle n'a pas été faite ici.
