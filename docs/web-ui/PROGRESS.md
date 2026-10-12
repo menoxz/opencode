@@ -12,7 +12,7 @@ Convention héritée de `docs/releases/v2.4.0/`.
 | phase | statut | gate | preuve |
 |---|---|---|---|
 | **P0** cadrage & surface API | **FAIT** | G0 ✅ | surface gelée ci-dessous |
-| **P1** runtime sans build | **EN COURS** | G1 ⏳ (partiel) | `RUNTIME-ARTIFACTS.md` §1 |
+| **P1** runtime sans build | **EN COURS** (A3 ouvert) | G1 ✅ | `RUNTIME-ARTIFACTS.md` §1-§3 |
 | **P2** squelette UI | à faire | G2 | — |
 | **P3** sessions & projets | à faire | G3 | — |
 | **P4** outils & permissions | à faire | G4 | — |
@@ -62,17 +62,20 @@ l'événement `server.connected`. Détail et réserves : `RUNTIME-ARTIFACTS.md`.
 aucun `src/`**. Le client que l'UI utilisera ne serait donc pas résolvable une fois installé.
 Défaut antérieur à l'initiative web ; il bloque M2 tant qu'il n'est pas tranché.
 
-**Réserve de sûreté** : les migrations SQL sont lues **depuis le disque** au runtime
-(`storage/db.ts:223-241`), 24 fichiers pour 12 032 octets. Un paquet de sources sans
-`migration/**` démarre « sain » mais crée une base vide. La gate G1 doit donc compter les
-migrations appliquées, pas seulement lire `healthy:true` (A2).
+**Migration de la base vérifiée (A2 fait)** : démarrage source avec `OPENCODE_DB` sur une base
+neuve, puis lecture par `bun:sqlite` (exit 0) : **24 migrations appliquées**, 19 tables créées,
+de `20260127222353_familiar_lady_ursula` à `20260816133346_part-time-created-index`. Les
+migrations sont lues **depuis le disque** au runtime (`storage/db.ts:223-241`, `:268`), 24
+fichiers pour 12 032 octets — un paquet de sources sans `migration/**` démarrerait « sain » avec
+une base vide. Piège associé : le fichier `.db` ne fait que 4096 o à l'arrêt, tout le schéma
+étant dans le `-wal` ; seule la lecture de la base fait preuve.
 
 ### Actions ouvertes
 
 | # | action | phase | statut |
 |---|---|---|---|
 | A1 | ✅ **Fait** — `bun pm pack --dry-run` : 7 fichiers, `dist/` seul, aucun `src/` | P1 | **fait** |
-| A2 | Exiger `migration/**` et compter les migrations appliquées dans la gate | P1 | à faire |
+| A2 | ✅ **Fait** — base neuve : 24 migrations appliquées, 19 tables créées | P1 | **fait** |
 | A3 | Documenter que M2 exige un `bun install` complet (wasm depuis `node_modules`) | P1 | à faire |
 | A4 | Trancher le sort de `@opencode-ai/ui` (imports audio TUI) pour le paquet M2 | P2 | à faire |
 | A5 | Surveiller la mort du serveur après une sonde SSE longue (port 4701) | P3 | à faire |

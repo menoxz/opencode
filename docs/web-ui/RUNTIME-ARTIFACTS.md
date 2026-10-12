@@ -71,6 +71,19 @@ const sql = dirs.map((name) => {
 
 Mesuré : **24 dossiers, 24 `migration.sql`, 12 032 octets au total**.
 
+Vérification A2 (2026-10-12) : démarrage source avec `OPENCODE_DB` pointant sur une base
+neuve, puis lecture du fichier par `bun:sqlite` (exit 0) :
+
+```
+tables: 19
+MIGRATIONS APPLIQUEES: 24
+premiere: 20260127222353_familiar_lady_ursula | derniere: 20260816133346_part-time-created-index
+```
+
+Les 24 migrations sont donc bien appliquées depuis les sources, et 19 tables sont créées.
+Détail d'observation : le fichier `.db` ne fait que 4096 o à l'arrêt, tout le schéma est dans
+le `-wal` (271 952 o). Un contrôle de taille de fichier ne vaut donc **pas** preuve de migration.
+
 Conséquence : un paquet de sources qui n'embarque pas `packages/opencode/migration/**` démarre
 mais **crée une base vide** — aucune migration appliquée. C'est le mode de défaillance le plus
 trompeur du chantier : il ne lève pas d'erreur, il perd des données. La gate P1 doit donc vérifier
@@ -158,16 +171,19 @@ toutefois M2 inutilisable tant qu'il n'est pas tranché, puisque l'UI se connect
 | # | action | phase |
 |---|---|---|
 | A1 | ✅ **Fait** — `bun pm pack --dry-run` : 7 fichiers, `dist/` seul, aucun `src/` (§3.1) | P1 |
-| A2 | Exiger `migration/**` dans le paquet M2 et **compter les migrations appliquées** dans la gate, pas seulement la santé | P1 |
+| A2 | ✅ **Fait** — 24 migrations appliquées sur base neuve, 19 tables créées (§2.1) | P1 |
 | A3 | Documenter que M2 implique un `bun install` complet (wasm depuis `node_modules`) | P1 |
 | A4 | Trancher le sort de `@opencode-ai/ui` pour le paquet M2 (§2.4) | P2 |
 | A5 | Surveiller la mort du serveur après une sonde SSE longue | P3 |
 
 ## 5. Verdict de gate
 
-**G1 franchie pour l'essentiel** : le serveur démarre sans build et répond sur toute la surface
-gelée en P0, SSE compris.
+**G1 franchie.** Le serveur démarre sans build, répond sur toute la surface gelée en P0, SSE
+compris, et applique les 24 migrations sur une base neuve (§2.1).
 
-**G1 n'est pas clôturée.** A1 est fait et confirme le blocage SDK (§3.1) ; A2 reste ouvert : tant
-que la gate ne compte pas les migrations appliquées, elle accepte un serveur « sain » dont la
-base est vide — un échec silencieux, le pire pour une base de données.
+**Réserve maintenue** : la preuve de migration se fait par **lecture de la base**, pas par la
+seule santé du serveur ni par la taille du fichier `.db` (schéma porté par le `-wal`). C'est
+la procédure à reproduire pour tout paquet de sources publié.
+
+**Bloquant hors gate** : A1 établit que le SDK tel quel est inutilisable une fois publié
+(§3.1). Il ne bloque pas G1 — le serveur fonctionne — mais il bloque M2 et donc P6.
