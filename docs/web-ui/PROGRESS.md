@@ -423,6 +423,37 @@ IMPORT OK, createOpencodeClient = function
 
 Avant la correction, cet import échouait. Le défaut était antérieur à l'initiative web.
 
+### A1 — correction d'une affirmation trop rapide sur la publication
+
+J'ai d'abord écrit que « tant que le paquet SDK n'est pas republié sur npm, un consommateur externe
+installera l'ancienne version cassée », en laissant entendre que le fork disposait d'un chemin de
+publication pour ce paquet. **C'est faux, et la lecture le montre.**
+
+`packages/opencode/script/publish-fork.ts` publie exclusivement le scope `@lux-tech/opencode-ai` :
+
+| ce qu'il publie | source |
+|---|---|
+| `@lux-tech/opencode-ai-<plateforme>` | `dist/opencode-*/` contenant un binaire (lignes 27-70) |
+| `@lux-tech/opencode-ai` (méta) | `dist/opencode/` (lignes 72-126) |
+
+Les seuls `npm publish` du dépôt sont à ses lignes 59 et 115, tous deux dans ce scope. Le SDK
+s'appelle `@opencode-ai/sdk` — **un autre scope**, jamais mentionné par le script, consommé
+uniquement en `workspace:*` par `packages/opencode`, `packages/webui` et la racine.
+
+**Conséquence, en trois points :**
+
+1. **A1 n'a jamais affecté la publication de ce fork** : le défaut était réel dans le dépôt
+   (le paquet était incohérent avec ses propres `exports`), mais aucun flux de ce dépôt ne
+   publiait ce paquet.
+2. **La correction n'exige donc aucune action de publication de notre part.** Il n'y a pas de
+   « republier le SDK » à attendre : ce dépôt ne l'a jamais publié.
+3. **Ce qui reste hors de notre contrôle** : si `@opencode-ai/sdk` est publié, c'est en amont,
+   par le projet d'origine. Notre correction est locale à ce dépôt.
+
+**Ce que cela change pour l'initiative web** : rien sur le fond — M2 passe par une copie de
+sources, pas par le SDK publié. Le tableau de bord est simplement plus exact : il n'y a pas de
+dette de publication à traiter ici.
+
 ### M2 — le mode hors checkout, vérifié
 
 `WORKFLOW.md` §3 supposait qu'un paquet de sources suffirait. **C'est faux, et c'est mesuré** :
