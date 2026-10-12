@@ -576,11 +576,50 @@ vite build     -> exit 0
 Poids après ce lot : **74,15 ko brut / 18,32 ko compressés** pour le JS, 1,74 ko pour le CSS —
 soit **20,1 ko compressés** au total, contre un budget de 150 ko. Le lot coûte ~1,9 ko compressés.
 
-### Réserve
+### Vérification du contrat contre le serveur réel (faite)
 
-**Le parcours d'envoi n'a pas été observé dans un navigateur** — seul le chemin pur est testé, et
-le câblage est vérifié par typecheck et build. Un envoi réel avec un fichier reste à faire, comme
-la vérification inter-origines l'a été pour l'authentification.
+Le contrat est la partie que j'avais **déduite en lisant le code** — donc la plus susceptible
+d'être fausse. Vérifiée contre le serveur réel, session de test créée puis supprimée :
+
+```
+POST /session                                    -> 204 session créée
+POST /session/{id}/prompt_async
+  parts = [ {type:"text",…}, {type:"file", mime:"image/png",
+             filename:"pj-test.png", url:"data:image/png;base64,…"} ]
+                                                 -> 204
+GET  /session/{id}/message
+  partie stockée : type=file mime=image/png filename=pj-test.png
+                   url commence par « data:image/png;base64, » : True
+                   url longueur 118 (préservée à l'octet près)
+                   id attribué par le SERVEUR : prt_1311fb3b9001UuGi66PWN0m10T
+```
+
+**Le serveur accepte la partie et l'attribue lui-même son `id`** — ce qui confirme que le choix de
+ne pas en envoyer côté client était le bon, et pas seulement plausible.
+
+### Réserve — ce qui n'a PAS pu être observé, et pourquoi
+
+**Le parcours d'envoi depuis l'interface (bouton, `FileReader`, liste en attente, clic sur
+Envoyer) n'a pas été observé dans un navigateur.** Le blocage est caractérisé, ce n'est pas une
+supposition :
+
+- le pilote navigateur est connecté à **Brave sur le port 9223** — le navigateur **réel de
+  l'utilisateur**, avec ses 23 onglets et sa session ;
+- `browser_ensure` ignore le profil demandé dès qu'un CDP est actif (fait déjà consigné dans
+  `AGENTS.md`) ;
+- la parade habituelle est `browser_use target=<port>` pour basculer sur une instance isolée —
+  **or `browser_use` n'est pas exposé dans cette session** (vérifié : l'appel échoue,
+  « unavailable tool »).
+
+J'ai lancé une instance Chrome isolée sur 9222 (elle fonctionne, CDP vérifié), mais **aucun outil
+disponible ne permet de pointer le pilote dessus**. Reste l'option d'ouvrir un onglet dans le
+navigateur réel de l'utilisateur : **je ne l'ai pas fait**, parce que sa préférence exprimée est le
+profil isolé, et parce que l'application écrit dans son magasin de sessions réel.
+
+**Ce qui est donc établi** : le contrat (contre le serveur), les décisions pures (52 tests), le
+câblage (typecheck et build verts). **Ce qui manque** : l'observation visuelle du parcours.
+À rejouer quand `browser_use` sera exposé, ou sur une machine où aucun CDP n'est déjà actif au
+démarrage.
 
 ---
 
