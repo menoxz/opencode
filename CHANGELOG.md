@@ -5,6 +5,14 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v2.4.5] - 2026-10-12
+
+### Fixed
+- **Une compaction demandée par l'agent ne termine plus son propre tour.** L'outil `compact` créait sa part avec `auto: false`, et `session/compaction.ts` n'émettait le message de reprise synthétique (`compaction_continue`) que si `result === "continue" && input.auto`. Un agent qui compactait son contexte en plein chantier abandonnait donc le tour qu'il venait de protéger, et la session restait inerte jusqu'à une saisie humaine — mesuré le 2026-10-11 : résumé écrit à 00:05:16, session vide jusqu'à 00:06:45. Un flag `autocontinue` est désormais porté par `MessageV2.CompactionPart`, propagé `create()` → part → `prompt.ts` → `process()`, où il est traité comme équivalent à `auto` pour l'émission de la reprise. Une compaction demandée par l'utilisateur ou déclenchée par le seuil reste `auto: false` et attend toujours l'utilisateur.
+
+### Added
+- Deux tests de régression dans `test/session/compaction.test.ts` : `autocontinue` relance le tour même avec `auto: false`, et une compaction sans ce flag n'émet toujours aucun message de reprise.
+
 ## [v2.4.4] - 2026-10-11
 
 ### Fixed
