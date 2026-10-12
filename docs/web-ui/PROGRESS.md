@@ -12,7 +12,7 @@ Convention héritée de `docs/releases/v2.4.0/`.
 | phase | statut | gate | preuve |
 |---|---|---|---|
 | **P0** cadrage & surface API | **FAIT** | G0 ✅ | surface gelée ci-dessous |
-| **P1** runtime sans build | **EN COURS** (A3 ouvert) | G1 ✅ | `RUNTIME-ARTIFACTS.md` §1-§3 |
+| **P1** runtime sans build | **FAIT** (A1-A3 faits) | G1 ✅ | `RUNTIME-ARTIFACTS.md` §1-§3 |
 | **P2** squelette UI | à faire | G2 | — |
 | **P3** sessions & projets | à faire | G3 | — |
 | **P4** outils & permissions | à faire | G4 | — |
@@ -76,7 +76,7 @@ une base vide. Piège associé : le fichier `.db` ne fait que 4096 o à l'arrêt
 |---|---|---|---|
 | A1 | ✅ **Fait** — `bun pm pack --dry-run` : 7 fichiers, `dist/` seul, aucun `src/` | P1 | **fait** |
 | A2 | ✅ **Fait** — base neuve : 24 migrations appliquées, 19 tables créées | P1 | **fait** |
-| A3 | Documenter que M2 exige un `bun install` complet (wasm depuis `node_modules`) | P1 | à faire |
+| A3 | ✅ **Fait** — documenté : M2 exige un `bun install` complet, les wasm viennent de `node_modules` | P1 | **fait** |
 | A4 | Trancher le sort de `@opencode-ai/ui` (imports audio TUI) pour le paquet M2 | P2 | à faire |
 | A5 | Surveiller la mort du serveur après une sonde SSE longue (port 4701) | P3 | à faire |
 
