@@ -556,5 +556,24 @@ le jeton pour le SSE, puisque `EventSource` ne peut pas porter d'en-tête.
 **Le code était donc juste, mais pour une raison que la documentation ne disait pas.** C'est
 maintenant écrit.
 
-**Ce qui reste non testé** : l'échange dans un vrai navigateur, en inter-origines, avec le
-formulaire. La mesure ci-dessus est faite en ligne de commande.
+### Vérification inter-origines dans un navigateur (dernier point ouvert, fermé)
+
+Montage : backend **4098** avec `OPENCODE_SERVER_PASSWORD=secret`, `OPENCODE_SERVER_USERNAME=tester`
+et `--cors http://127.0.0.1:5180` ; UI servie par Vite sur **5180** avec
+`VITE_OPENCODE_SERVER_URL=http://127.0.0.1:4098`. Le navigateur parle donc au backend en
+inter-origines, sans passer par le proxy de développement.
+
+| étape | observation |
+|---|---|
+| UI chargée, aucun identifiant | « SSE déconnecté », « serveur injoignable », « connexion perdue » |
+| préflight CORS depuis 5180 | `204`, `access-control-allow-origin: http://127.0.0.1:5180`, `access-control-allow-headers: authorization` |
+| formulaire `auth` rempli (`tester` / `secret`) puis « appliquer » | rechargement |
+| après rechargement | **« SSE connecté »**, **« serveur joignable »**, **« auth ✓ »**, **19 sessions** listées, `server.connected` dans le flux |
+
+**Conclusion** : les deux canaux fonctionnent en inter-origines — l'en-tête `Basic` pour le client
+SDK (les 19 sessions), le jeton `auth_token` pour le flux SSE. C'est le cas qui rend le formulaire
+nécessaire, et il est vérifié.
+
+Point de configuration à retenir : le CORS du serveur est une **correspondance exacte d'origine**
+(`cors.ts:19`, `opts?.cors?.includes(input)`) — pas de joker. L'origine de l'UI doit être listée
+telle quelle, sinon le préflight échoue et l'UI reste sur « serveur injoignable ».
