@@ -623,6 +623,67 @@ démarrage.
 
 ---
 
+## Lot suivant — surface « Statut » et panneaux à onglets (livré)
+
+Deux manques comblés d'un coup, et ils venaient du même endroit.
+
+**1. La charte prévoyait cinq surfaces, quatre existaient.** La cinquième —
+« Statut : modèles/providers, MCP, watchers, santé serveur — visible en un clic » — n'avait jamais
+été construite. Elle est livrée.
+
+**2. La disposition demandée par l'utilisateur prévoit *plusieurs* panneaux à droite** ; il n'y
+avait qu'un flux d'événements occupant toute la colonne. Le panneau de droite est désormais à
+**onglets** : Événements · Permissions · Statut.
+
+### Contrat relevé pour la surface Statut
+
+| élément | source | forme |
+|---|---|---|
+| statut MCP | `types.gen.ts:1976-2002` | 5 états : `connected`, `disabled`, `failed`, `needs_auth`, `needs_client_registration` |
+| appel | `sdk.gen.ts:2255` | `client.mcp.status({ directory? })` |
+| config | `sdk.gen.ts:751` | `client.config.get({ directory? })` — porte `model`, `agent`, `mcp` |
+
+### Ce qui a été livré
+
+| fichier | rôle |
+|---|---|
+| `src/status.ts` | décisions **pures** : libellés, tonalités, comptages, composition des lignes |
+| `src/status.test.ts` | 22 cas |
+| `src/components.tsx` | `StatusPanel` (présentationnel) |
+| `src/app.tsx` | onglets, chargement du statut, bascule automatique |
+| `src/styles.css` | onglets, lignes de statut, liste MCP |
+
+**Décision de conception qui compte** : un serveur MCP `disabled` a la tonalité `off` et **non**
+`error`. Un serveur volontairement désactivé n'est pas une panne ; les confondre ferait crier
+l'interface pour rien, et une interface qui crie pour rien n'est plus lue.
+
+**Une permission en attente devient une ligne du statut, et elle vient en second** — juste après le
+serveur. C'est bloquant, donc ça se voit même depuis un autre onglet.
+
+**La demande de permission ouvre son onglet automatiquement.** Le panneau complet a été **retiré du
+fil** (le chat reste au milieu, comme demandé) ; sans cette bascule, une demande bloquante aurait pu
+attendre dans un onglet fermé. Le compteur reste visible sur l'onglet et dans la barre supérieure.
+
+### Preuve
+
+```
+vitest run     -> 5 fichiers, 74 tests, exit 0   (+22 pour ce lot)
+tsgo --noEmit  -> exit 0
+vite build     -> exit 0
+```
+
+Poids : **78,20 ko brut / 19,51 ko compressés** (JS) + 1,99 ko (CSS) = **21,5 ko compressés**,
+contre un budget de 150 ko. Ce lot coûte ~1,4 ko compressés.
+
+### Réserve
+
+**Aucun rendu n'a été observé dans un navigateur** — même obstacle qu'au lot précédent, caractérisé
+plus bas : le pilote est verrouillé sur le navigateur réel de l'utilisateur. Les helpers sont
+testés, le câblage est vérifié par typecheck et build, mais l'apparence des onglets et du panneau
+Statut n'a pas été vue.
+
+---
+
 ## Réserves ouvertes
 
 Aucune. Les trois réserves précédentes sont closes, chacune par une mesure :

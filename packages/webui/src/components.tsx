@@ -8,6 +8,7 @@ import {
   type PermissionRequest,
   type ToolState,
 } from "./view-model"
+import type { StatusLine, StatusTone } from "./status"
 
 export const REPLY_LABEL: Record<PermissionReply, string> = {
   once: "Autoriser une fois",
@@ -72,6 +73,44 @@ export function PermissionPanel(props: {
           )}
         </For>
       </div>
+    </div>
+  )
+}
+
+/**
+ * Panneau « Statut » — surface n°5 de la charte : santé du serveur, modèle, agents, serveurs MCP.
+ * Présentationnel : les lignes et leurs tonalités sont décidées par `status.ts`, testé à part.
+ */
+export function StatusPanel(props: {
+  lines: StatusLine[]
+  rows: Array<{ name: string; label: string; tone: StatusTone; error?: string }>
+}) {
+  return (
+    <div class="status">
+      <ul class="statuslines">
+        <For each={props.lines}>
+          {(line) => (
+            <li class={`statusline ${line.tone}`}>
+              <span class="slabel">{line.label}</span>
+              <span class="svalue">{line.value}</span>
+            </li>
+          )}
+        </For>
+      </ul>
+      <Show when={props.rows.length > 0}>
+        <h3>Serveurs MCP</h3>
+        <ul class="mcprows">
+          <For each={props.rows}>
+            {(row) => (
+              <li>
+                <span class="mname">{row.name}</span>
+                <span class={`badge ${row.tone}`}>{row.label}</span>
+                <Show when={row.error}>{(error) => <span class="merror">{error()}</span>}</Show>
+              </li>
+            )}
+          </For>
+        </ul>
+      </Show>
     </div>
   )
 }

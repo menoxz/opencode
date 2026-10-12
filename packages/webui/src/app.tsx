@@ -8,8 +8,9 @@ import {
   type Attachment,
 } from "./attachments"
 import { client, credentials, fetchHealth, rememberCredentials, serverUrl, type Health } from "./client"
-import { PermissionPanel, ToolCall } from "./components"
+import { PermissionPanel, StatusPanel, ToolCall } from "./components"
 import { subscribeEvents, type ServerEvent, type EventStreamState } from "./events"
+import { mcpRows, summarizeStatus, type McpStatus } from "./status"
 import {
   dropPermission,
   reducePermissions,
@@ -59,6 +60,12 @@ export default function App() {
   const [attachments, setAttachments] = createSignal<Attachment[]>([])
   const [attachError, setAttachError] = createSignal<string | undefined>()
 
+  // Panneaux annexes, à droite : la disposition demandée prévoit plusieurs panneaux, donc des
+  // onglets plutôt qu'un seul flux d'événements.
+  const [rightTab, setRightTab] = createSignal<"events" | "permissions" | "status">("events")
+  const [mcp, setMcp] = createSignal<Record<string, McpStatus>>({})
+  const [config, setConfig] = createSignal<{ model?: string; agent?: Record<string, unknown> } | undefined>()
+
   const [permissions, setPermissions] = createSignal<PermissionRequest[]>([])
   const [expanded, setExpanded] = createSignal<Record<string, boolean>>({})
 
@@ -97,6 +104,18 @@ export default function App() {
     const result = await client.permission.list(scope()).catch(() => undefined)
     const data = (result as { data?: PermissionRequest[] } | undefined)?.data
     if (Array.isArray(data)) setPermissions(data)
+  }
+
+  /** Alimente le panneau Statut : serveurs MCP et configuration (modèle, agents déclarés). */
+  const loadStatus = async () => {
+    const [mcpResult, configResult] = await Promise.all([
+      client.mcp.status(scope()).catch(() => undefined),
+      client.config.get(scope()).catch(() => undefined),
+    ])
+    const mcpData = (mcpResult as { data?: Record<string, McpStatus> } | undefined)?.data
+    if (mcpData && typeof mcpData === "object") setMcp(mcpData)
+    const configData = (configResult as { data?: { model?: string; agent?: Record<string, unknown> } } | undefined)?.data
+    if (configData) setConfig(configData)
   }
 
   const selectSession = async (sessionID: string) => {
@@ -231,6 +250,7 @@ export default function App() {
     void loadPath()
     void loadSessions()
     void loadPermissions()
+    void loadStatus()
   }
 
   const toggle = (id: string) => setExpanded((current) => ({ ...current, [id]: !current[id] }))
@@ -244,6 +264,7 @@ export default function App() {
     await loadPath()
     await loadSessions()
     await loadPermissions()
+    await loadStatus()
 
     const healthTimer = setInterval(async () => setHealth(await fetchHealth()), 10_000)
     // Debounced search: the list endpoint takes `search`, so the server does the filtering.
@@ -263,6 +284,8 @@ export default function App() {
 
         if (event.type === "permission.asked" || event.type === "permission.replied") {
           setPermissions((current) => reducePermissions(current, event))
+          // Une demande est bloquante : elle ouvre son onglet plutôt que d'attendre d'être trouvée.
+          if (event.type === "permission.asked") setRightTab("permissions")
         }
         if (event.type === "session.created" || event.type === "session.deleted") void loadSessions()
 
@@ -480,12 +503,6 @@ export default function App() {
           <p class="error">{error()}</p>
         </Show>
 
-        <For each={permissions()}>
-          {(request) => (
-            <PermissionPanel request={request} onReply={(reply) => void replyPermission(request, reply)} />
-          )}
-        </For>
-
         <Show when={active()} fallback={<p class="empty">Choisis ou crée une session.</p>}>
           <For each={messages()}>
             {(message) => (
@@ -550,23 +567,78 @@ export default function App() {
         </Show>
       </main>
 
-      <aside class="events">
-        <h2>Flux d'événements</h2>
-        <Show when={stream().lastError}>
-          <p class="error">{stream().lastError}</p>
+      <aside class="panels">
+        <div class="tabs" role="tablist">
+          <button
+            class="tab"
+            classList={{ active: rightTab() === "events" }}
+            onClick={() => setRightTab("events")}
+          >
+            Événements
+          </button>
+          <button
+            class="tab"
+            classList={{ active: rightTab() === "permissions" }}
+            onClick={() => setRightTab("permissions")}
+          >
+            Permissions
+            <Show when={permissions().length > 0}>
+              <span class="count">{permissions().length}</span>
+            </Show>
+          </button>
+          <button class="tab" classList={{ active: rightTab() === "status" }} onClick={() => setRightTab("status")}>
+            Statut
+          </button>
+        </div>
+
+        <Show when={rightTab() === "events"}>
+          <div class="panelbody">
+            <Show when={stream().lastError}>
+              <p class="error">{stream().lastError}</p>
+            </Show>
+            <ul class="eventlist">
+              <For each={events()}>
+                {(event) => (
+                  <li>
+                    <code>{event.type}</code>
+                    <Show when={event.properties && Object.keys(event.properties).length > 0}>
+                      <span class="props">{JSON.stringify(event.properties).slice(0, 120)}</span>
+                    </Show>
+                  </li>
+                )}
+              </For>
+            </ul>
+          </div>
         </Show>
-        <ul>
-          <For each={events()}>
-            {(event) => (
-              <li>
-                <code>{event.type}</code>
-                <Show when={event.properties && Object.keys(event.properties).length > 0}>
-                  <span class="props">{JSON.stringify(event.properties).slice(0, 120)}</span>
-                </Show>
-              </li>
-            )}
-          </For>
-        </ul>
+
+        <Show when={rightTab() === "permissions"}>
+          <div class="panelbody">
+            <Show
+              when={permissions().length > 0}
+              fallback={<p class="empty">Aucune permission en attente.</p>}
+            >
+              <For each={permissions()}>
+                {(request) => (
+                  <PermissionPanel request={request} onReply={(reply) => void replyPermission(request, reply)} />
+                )}
+              </For>
+            </Show>
+          </div>
+        </Show>
+
+        <Show when={rightTab() === "status"}>
+          <div class="panelbody">
+            <StatusPanel
+              lines={summarizeStatus({
+                health: health(),
+                config: config(),
+                mcp: mcp(),
+                pendingPermissions: permissions().length,
+              })}
+              rows={mcpRows(mcp())}
+            />
+          </div>
+        </Show>
       </aside>
     </div>
   )
