@@ -1,13 +1,35 @@
 import { createEffect, createSignal, For, Show, onCleanup, onMount } from "solid-js"
 import { client, fetchHealth, serverUrl, type Health } from "./client"
 import { subscribeEvents, type ServerEvent, type EventStreamState } from "./events"
+import {
+  dropPermission,
+  permissionActions,
+  reducePermissions,
+  toolDetail,
+  toolStatusLabel,
+  toolTitle,
+  type PermissionReply,
+  type PermissionRequest,
+  type ToolState,
+} from "./view-model"
 
 type SessionInfo = { id: string; title?: string; time?: { updated?: number } }
-type Part = { type: string; text?: string; tool?: string; state?: { status?: string } }
+
+type Part =
+  | { type: "text"; text?: string }
+  | { type: "tool"; id: string; tool: string; state: ToolState }
+  | { type: string; text?: string }
+
 type Message = { info: { id: string; role: string }; parts: Part[] }
 
 const MAX_EVENTS = 60
 const DIR_KEY = "oc.webui.directory"
+
+const REPLY_LABEL: Record<PermissionReply, string> = {
+  once: "Autoriser une fois",
+  always: "Toujours autoriser",
+  reject: "Refuser",
+}
 
 export default function App() {
   const [health, setHealth] = createSignal<Health | undefined>()
@@ -27,6 +49,9 @@ export default function App() {
   // Inline confirmation instead of window.confirm: a native dialog blocks automation and cannot
   // be styled. Two clicks on the same row, no modal.
   const [confirming, setConfirming] = createSignal<string | undefined>()
+
+  const [permissions, setPermissions] = createSignal<PermissionRequest[]>([])
+  const [expanded, setExpanded] = createSignal<Record<string, boolean>>({})
 
   /**
    * Every SDK method takes `directory` as a query parameter, so switching the working directory
@@ -57,6 +82,12 @@ export default function App() {
     const result = await client.session.messages({ sessionID, ...scope() }).catch(() => undefined)
     const data = (result as { data?: Message[] } | undefined)?.data
     setMessages(Array.isArray(data) ? data : [])
+  }
+
+  const loadPermissions = async () => {
+    const result = await client.permission.list(scope()).catch(() => undefined)
+    const data = (result as { data?: PermissionRequest[] } | undefined)?.data
+    if (Array.isArray(data)) setPermissions(data)
   }
 
   const selectSession = async (sessionID: string) => {
@@ -103,6 +134,20 @@ export default function App() {
     await loadSessions()
   }
 
+  const replyPermission = async (request: PermissionRequest, reply: PermissionReply) => {
+    // Optimistic removal: the server also emits `permission.replied`, which is authoritative.
+    setPermissions((current) => dropPermission(current, request.id))
+    const result = await client.permission
+      .reply({ requestID: request.id, reply, ...scope() })
+      .catch((cause: unknown) => {
+        setError(String(cause))
+        return undefined
+      })
+    if (!result) await loadPermissions()
+    const sessionID = active()
+    if (sessionID) await loadMessages(sessionID)
+  }
+
   const send = async (event: SubmitEvent) => {
     event.preventDefault()
     const sessionID = active()
@@ -127,12 +172,20 @@ export default function App() {
     setMessages([])
     void loadPath()
     void loadSessions()
+    void loadPermissions()
+  }
+
+  const toggle = (id: string) => setExpanded((current) => ({ ...current, [id]: !current[id] }))
+
+  const refreshFor = (sessionID: string) => {
+    void loadMessages(sessionID)
   }
 
   onMount(async () => {
     setHealth(await fetchHealth())
     await loadPath()
     await loadSessions()
+    await loadPermissions()
 
     const healthTimer = setInterval(async () => setHealth(await fetchHealth()), 10_000)
     // Debounced search: the list endpoint takes `search`, so the server does the filtering.
@@ -146,11 +199,14 @@ export default function App() {
     const unsubscribe = subscribeEvents({
       onEvent: (event) => {
         setEvents((current) => [event, ...current].slice(0, MAX_EVENTS))
-        const sessionID = active()
-        if (sessionID && JSON.stringify(event.properties ?? {}).includes(sessionID)) {
-          void loadMessages(sessionID)
+
+        if (event.type === "permission.asked" || event.type === "permission.replied") {
+          setPermissions((current) => reducePermissions(current, event))
         }
         if (event.type === "session.created" || event.type === "session.deleted") void loadSessions()
+
+        const sessionID = active()
+        if (sessionID && JSON.stringify(event.properties ?? {}).includes(sessionID)) refreshFor(sessionID)
       },
       onState: (state) => setStream(state),
     })
@@ -162,10 +218,31 @@ export default function App() {
     })
   })
 
-  const partText = (part: Part) => {
-    if (part.type === "text") return part.text ?? ""
-    if (part.type === "tool") return `outil ${part.tool ?? "?"} — ${part.state?.status ?? "?"}`
-    return part.type
+  const renderPart = (part: Part) => {
+    if (part.type === "text") return <p class="part text">{part.text ?? ""}</p>
+    if (part.type !== "tool") return <p class="part">{part.type}</p>
+
+    const toolPart = part as Extract<Part, { type: "tool" }>
+    const state = toolPart.state
+    const open = () => Boolean(expanded()[toolPart.id])
+
+    return (
+      <div class={`tool ${state.status}`}>
+        <button class="toolhead" onClick={() => toggle(toolPart.id)}>
+          <span class="toolname">{toolPart.tool}</span>
+          <span class={`badge ${state.status}`}>{toolStatusLabel(state)}</span>
+          <Show when={toolTitle(state)}>{(title) => <span class="tooltitle">{title()}</span>}</Show>
+          <span class="chevron">{open() ? "▾" : "▸"}</span>
+        </button>
+        <Show when={open()}>
+          <div class="tooldetail">
+            <Show when={toolDetail(state).input}>{(input) => <pre class="io">{input()}</pre>}</Show>
+            <Show when={toolDetail(state).output}>{(output) => <pre class="io out">{output()}</pre>}</Show>
+            <Show when={toolDetail(state).error}>{(error) => <pre class="io err">{error()}</pre>}</Show>
+          </div>
+        </Show>
+      </div>
+    )
   }
 
   return (
@@ -178,6 +255,9 @@ export default function App() {
         <span class={`pill ${health()?.healthy ? "ok" : "down"}`}>
           {health()?.healthy ? "serveur joignable" : "serveur injoignable"}
         </span>
+        <Show when={permissions().length > 0}>
+          <span class="pill warn">{permissions().length} permission(s) en attente</span>
+        </Show>
         <span class="spacer" />
         <label class="dirfield">
           <span>Dossier</span>
@@ -285,12 +365,40 @@ export default function App() {
         <Show when={error()}>
           <p class="error">{error()}</p>
         </Show>
+
+        <For each={permissions()}>
+          {(request) => (
+            <div class="permission">
+              <div class="ptitle">
+                Permission demandée : <strong>{request.permission}</strong>
+              </div>
+              <Show when={request.patterns.length > 0}>
+                <ul class="patterns">
+                  <For each={request.patterns}>{(pattern) => <li>{pattern}</li>}</For>
+                </ul>
+              </Show>
+              <div class="pactions">
+                <For each={permissionActions(request)}>
+                  {(action) => (
+                    <button
+                      class={action === "reject" ? "danger" : "primary"}
+                      onClick={() => void replyPermission(request, action)}
+                    >
+                      {REPLY_LABEL[action]}
+                    </button>
+                  )}
+                </For>
+              </div>
+            </div>
+          )}
+        </For>
+
         <Show when={active()} fallback={<p class="empty">Choisis ou crée une session.</p>}>
           <For each={messages()}>
             {(message) => (
               <article class={`message ${message.info.role}`}>
                 <header>{message.info.role}</header>
-                <For each={message.parts}>{(part) => <p class={`part ${part.type}`}>{partText(part)}</p>}</For>
+                <For each={message.parts}>{(part) => renderPart(part)}</For>
               </article>
             )}
           </For>

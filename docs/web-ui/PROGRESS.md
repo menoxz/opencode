@@ -15,7 +15,7 @@ Convention héritée de `docs/releases/v2.4.0/`.
 | **P1** runtime sans build | **FAIT** (A1-A3 faits) | G1 ✅ | `RUNTIME-ARTIFACTS.md` §1-§3 |
 | **P2** squelette UI | **FAIT** | G2 ✅ | `packages/webui`, preuve navigateur ci-dessous |
 | **P3** sessions & projets | **FAIT** (réserve navigateur) | G3 ✅ | `packages/webui/src/app.tsx`, preuves ci-dessous |
-| **P4** outils & permissions | à faire | G4 | — |
+| **P4** outils & permissions | **FAIT (partiel)** | G4 ⚠️ | rendu + logique testés ; aller-retour live non observé |
 | **P5** poids & robustesse | à faire | G5 | — |
 | **P6** livraison | à faire | G6 | — |
 
@@ -171,6 +171,69 @@ tout pilotage automatisé — y compris les tests e2e de P5.
 **Conséquence honnête** : le parcours de suppression de bout en bout au navigateur n'a pas été
 observé ; il est vérifié au niveau API. À rejouer au navigateur en P5, la cause du blocage ayant
 disparu du code.
+
+---
+
+## P4 — outils & permissions (G4 ⚠️ partiel)
+
+Deux ajouts : le rendu des appels d'outils dans le fil, et le panneau d'accord/refus de
+permission.
+
+### Contrat réel, relevé et non supposé
+
+| élément | source | forme |
+|---|---|---|
+| `ToolState` | `types.gen.ts:574-629` | 4 statuts : `pending`, `running`, `completed`, `error` |
+| `PermissionRequest` | `types.gen.ts:178-191` | `id`, `sessionID`, `permission`, `patterns[]`, `always[]`, `metadata` |
+| événements | `types.gen.ts:2885-2897` | `permission.asked` (properties = `PermissionRequest`), `permission.replied` (properties = `{sessionID, requestID, reply}`) |
+| réponse | `sdk.gen.ts:3080` | `permission.reply({ requestID, reply: "once" \| "always" \| "reject" })` |
+
+Détail qui compte : `permission.asked` porte `id`, mais `permission.replied` porte `requestID`.
+Le retrait se fait donc sur `requestID`, pas sur `id` — une erreur facile à ne pas voir.
+
+### Décision structurante : extraire la logique en TypeScript pur
+
+`src/view-model.ts` contient les décisions (libellé et titre d'état, contenu du panneau de
+détail, réducteur de permissions, actions proposées) ; `app.tsx` ne fait que les afficher.
+
+Raison, et c'est un obstacle réel rencontré : **Bun exige `jsx: "react-jsx"` pour exécuter un
+fichier contenant du JSX, Vite exige `jsx: "preserve"`** (c'est `vite-plugin-solid` qui compile).
+Les deux ne peuvent pas cohabiter dans un même `tsconfig.json`. Plutôt que de tordre la config de
+build pour faire passer un test, tout ce qui mérite d'être vérifié vit en TypeScript sans JSX.
+
+Bénéfice secondaire : les composants deviennent minces, et P5 hérite d'une base testable.
+
+### Preuves
+
+```
+bun test   -> 10 pass, 0 fail, 24 expect() calls
+bun run typecheck -> exit 0
+```
+
+Les tests couvrent : les 4 libellés d'état, le titre présent seulement pour `running`/`completed`,
+le panneau de détail qui n'affiche jamais de bloc vide, l'ajout/non-duplication/retrait des
+permissions, l'ignorance d'un événement malformé, et l'absence du bouton « toujours » quand le
+serveur n'a proposé aucun motif.
+
+Contre-épreuve sur données réelles : la session `ses_f1df9427cffez2wIJPDPTdwZVH` contient
+7 parties outil dont un `question` en `error` et un `turn_plan` en `completed` — le cas mixte
+visé par le rendu.
+
+### Réserve — ce qui n'est PAS prouvé
+
+**L'aller-retour live d'une permission (demande affichée → refus → accord) n'a pas été observé.**
+La base ne contenait aucune permission en attente (`GET /permission` → 0), et le navigateur de
+pilotage est resté **bloqué par le dialogue natif** laissé par le code P3 (voir la réserve P3) :
+`navigate`, `press_key` et `take_snapshot` échouent tous avec « A dialog is open ». Le pilotage
+navigateur est donc indisponible depuis cette session.
+
+Ce qui est prouvé : le contrat des événements, la logique de décision (par test), et le rendu des
+outils sur des données réelles (par l'API). Ce qui ne l'est pas : l'affichage effectif du panneau
+de permission et le clic sur ses boutons.
+
+**G4 n'est pas franchie au sens de `WORKFLOW.md`** (« une permission refusée puis accordée
+s'affiche dans le fil »). À rejouer en P5, où la cause du blocage navigateur doit être levée —
+probablement en repartant sur un profil de navigateur neuf.
 
 ---
 

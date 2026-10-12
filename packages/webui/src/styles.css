@@ -300,3 +300,152 @@ input.rename {
 .error {
   color: var(--err);
 }
+
+/* --- tool calls ------------------------------------------------------- */
+
+.tool {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  margin: 6px 0;
+  overflow: hidden;
+}
+
+.tool.running {
+  border-color: var(--warn);
+}
+
+.tool.error {
+  border-color: var(--err);
+}
+
+.toolhead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 9px;
+  background: transparent;
+  border: 0;
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.toolname {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+
+.badge {
+  font-size: 11px;
+  border-radius: 999px;
+  padding: 1px 8px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.badge.running {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+.badge.completed {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.badge.error {
+  color: var(--err);
+  border-color: var(--err);
+}
+
+.tooltitle {
+  color: var(--muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.chevron {
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.tooldetail {
+  border-top: 1px solid var(--line);
+  padding: 8px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+pre.io {
+  margin: 0;
+  padding: 8px;
+  border-radius: 4px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+pre.io.out {
+  color: var(--fg);
+}
+
+pre.io.err {
+  color: var(--err);
+}
+
+/* --- permission requests ---------------------------------------------- */
+
+.permission {
+  border: 1px solid var(--warn);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--panel);
+}
+
+.ptitle {
+  margin-bottom: 6px;
+}
+
+.patterns {
+  margin: 0 0 10px;
+  padding-left: 18px;
+  color: var(--muted);
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+
+.pactions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pactions button {
+  width: auto;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font: inherit;
+  cursor: pointer;
+  background: transparent;
+}
+
+.pactions button.primary {
+  border: 1px solid var(--accent);
+  color: var(--accent);
+}
+
+.pactions button.danger {
+  border: 1px solid var(--err);
+  color: var(--err);
+}
