@@ -7,6 +7,11 @@ const positiveInteger = (name: string) =>
     Config.map((value) => (Number.isInteger(value) && value > 0 ? value : undefined)),
     Config.orElse(() => Config.succeed(undefined)),
   )
+const optionalString = (name: string) =>
+  Config.string(name).pipe(
+    Config.option,
+    Config.map((value) => Option.getOrElse(value, () => undefined)),
+  )
 const experimental = bool("OPENCODE_EXPERIMENTAL")
 const enabledByExperimental = (name: string) =>
   Config.all({ experimental, enabled: Config.boolean(name).pipe(Config.option) }).pipe(
@@ -19,6 +24,9 @@ export class Service extends ConfigService.Service<Service>()("@opencode/Runtime
   disableDefaultPlugins: bool("OPENCODE_DISABLE_DEFAULT_PLUGINS"),
   disableChannelDb: bool("OPENCODE_DISABLE_CHANNEL_DB"),
   disableEmbeddedWebUi: bool("OPENCODE_DISABLE_EMBEDDED_WEB_UI"),
+  // Serve a locally built web UI (e.g. packages/webui/dist) instead of the embedded bundle or the
+  // upstream proxy. This is what makes a single command enough to run the web version.
+  webUiDir: optionalString("OPENCODE_WEB_UI_DIR"),
   disableExternalSkills: bool("OPENCODE_DISABLE_EXTERNAL_SKILLS"),
   disableLspDownload: bool("OPENCODE_DISABLE_LSP_DOWNLOAD"),
   skipMigrations: bool("OPENCODE_SKIP_MIGRATIONS"),

@@ -2,6 +2,7 @@ import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { Effect, Stream } from "effect"
 import { HttpBody, HttpClient, HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { createHash } from "node:crypto"
+import path from "node:path"
 import { ProxyUtil } from "../proxy-util"
 
 let embeddedUIPromise: Promise<Record<string, string> | null> | undefined
@@ -75,18 +76,78 @@ export function serveEmbeddedUIEffect(
   )
 }
 
+/**
+ * Resolves a request path inside `dir`, refusing anything that escapes it.
+ * Returns null when the path traverses outside the root (e.g. `/../../etc/passwd`).
+ */
+function resolveWithinRoot(dir: string, requestPath: string): string | null {
+  const root = path.resolve(dir)
+  let decoded: string
+  try {
+    decoded = decodeURIComponent(requestPath)
+  } catch {
+    return null
+  }
+  const resolved = path.resolve(root, decoded.replace(/^\/+/, ""))
+  if (resolved !== root && !resolved.startsWith(root + path.sep)) return null
+  return resolved
+}
+
+/**
+ * Serves a locally built web UI (e.g. `packages/webui/dist`) from disk.
+ *
+ * Two behaviours worth stating: an unknown path falls back to `index.html`, because a client-side
+ * route is not a missing file; and a request that escapes the root is answered with the same 404 as
+ * a missing file, so the root cannot be probed.
+ */
+export function serveDirectoryUIEffect(requestPath: string, fs: AppFileSystem.Interface, dir: string) {
+  return Effect.gen(function* () {
+    const root = path.resolve(dir)
+    const index = path.join(root, "index.html")
+
+    // Never let a read failure escape as a defect: any unreadable path falls back to index.html,
+    // and an unreadable index.html is a 404. A directory is not a file — `/` resolves to `root`,
+    // and reading it would otherwise throw.
+    const readOrUndefined = (file: string) =>
+      fs.readFile(file).pipe(Effect.catch(() => Effect.succeed(undefined as Uint8Array | undefined)))
+
+    const candidate = resolveWithinRoot(dir, requestPath)
+    if (candidate && candidate !== root) {
+      const isDir = yield* fs.isDir(candidate).pipe(Effect.catch(() => Effect.succeed(false)))
+      if (!isDir) {
+        const body = yield* readOrUndefined(candidate)
+        if (body) return embeddedUIResponse(candidate, body)
+      }
+    }
+
+    const body = yield* readOrUndefined(index)
+    if (!body) return notFound()
+    return embeddedUIResponse(index, body)
+  })
+}
+
 export function serveUIEffect(
   request: HttpServerRequest.HttpServerRequest,
-  services: { fs: AppFileSystem.Interface; client: HttpClient.HttpClient; disableEmbeddedWebUi: boolean },
+  services: {
+    fs: AppFileSystem.Interface
+    client: HttpClient.HttpClient
+    disableEmbeddedWebUi: boolean
+    webUiDir?: string
+  },
 ) {
   return Effect.gen(function* () {
-    const embeddedWebUI = yield* Effect.promise(() => embeddedUI(services.disableEmbeddedWebUi))
-    const path = new URL(request.url, "http://localhost").pathname
+    const pathname = new URL(request.url, "http://localhost").pathname
 
-    if (embeddedWebUI) return yield* serveEmbeddedUIEffect(path, services.fs, embeddedWebUI)
+    // An explicitly configured directory wins over both the embedded bundle and the proxy: it is
+    // the operator's stated intent, and it is what makes a single command enough to run the web UI.
+    if (services.webUiDir) return yield* serveDirectoryUIEffect(pathname, services.fs, services.webUiDir)
+
+    const embeddedWebUI = yield* Effect.promise(() => embeddedUI(services.disableEmbeddedWebUi))
+
+    if (embeddedWebUI) return yield* serveEmbeddedUIEffect(pathname, services.fs, embeddedWebUI)
 
     const response = yield* services.client.execute(
-      HttpClientRequest.make(request.method)(upstreamURL(path), {
+      HttpClientRequest.make(request.method)(upstreamURL(pathname), {
         headers: ProxyUtil.headers(request.headers, { host: UI_UPSTREAM.host }),
         body: requestBody(request),
       }),

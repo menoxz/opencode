@@ -17,7 +17,7 @@ Convention héritée de `docs/releases/v2.4.0/`.
 | **P3** sessions & projets | **FAIT** (réserve navigateur) | G3 ✅ | `packages/webui/src/app.tsx`, preuves ci-dessous |
 | **P4** outils & permissions | **FAIT** | G4 ✅ | rendu testé ; aller-retour live observé en P5 |
 | **P5** poids & robustesse | **FAIT** | G5 ✅ | mesures et verdict de reconnexion ci-dessous |
-| **P6** livraison | à faire | G6 | — |
+| **P6** livraison | **FAIT (partiel)** | G6 ⚠️ | commande unique OK ; mode hors checkout non livré |
 
 ---
 
@@ -314,6 +314,77 @@ fermable par aucun outil disponible.
 Les tests automatisés couvrent `view-model.ts` (10 cas), **pas les composants** : le rendu JSX
 n'est vérifié que par observation navigateur. Un test de composant exigerait de résoudre le
 conflit `jsx` Bun/Vite noté en P4.
+
+---
+
+## P6 — livraison (G6 ⚠️ partiel)
+
+### Ce qui a été construit
+
+Le serveur ne savait servir que les assets embarqués au build ou **un proxy vers `UI_UPSTREAM`**
+(`ui.ts:78-108`) : aucun moyen de servir une UI locale. Trois ajouts :
+
+| fichier | ajout |
+|---|---|
+| `src/effect/runtime-flags.ts` | drapeau `webUiDir` ← `OPENCODE_WEB_UI_DIR` |
+| `src/server/shared/ui.ts` | `serveDirectoryUIEffect` + `resolveWithinRoot` |
+| `src/server/routes/instance/httpapi/server.ts:188` | passe `webUiDir` à `serveUIEffect` |
+| `script/web.ts` | lanceur : construit l'UI si absente, puis démarre le serveur |
+| `package.json` | `bun run web` (et `--rebuild`) |
+
+Précédence : dossier explicite > assets embarqués > proxy. Un dossier demandé est une intention
+explicite de l'opérateur ; il ne doit pas être silencieusement ignoré.
+
+### Preuves
+
+```
+GET /                        -> 200  text/html      393 o   (#root présent)
+GET /assets/index-*.js       -> 200  text/javascript 68 996 o
+GET /une/route/inconnue      -> 200  index.html     (repli SPA)
+GET /assets                  -> 200  index.html     (un dossier n'est pas un fichier)
+```
+
+Traversée de chemin, trois formes encodées, testées avec `curl --path-as-is` :
+
+```
+/%2e%2e%2f%2e%2e%2fWindows/win.ini -> 200 393 o | fuite=False
+/..%2f..%2fWindows%2fwin.ini       -> 200 393 o | fuite=False
+/%2e%2e/%2e%2e/Windows/win.ini     -> 200 393 o | fuite=False
+```
+
+Les trois retombent sur `index.html` : la traversée est refusée, et le contenu de `win.ini`
+n'apparaît jamais. Le 200 est le repli SPA, pas une fuite — c'est vérifié sur le corps, pas sur
+le code de statut.
+
+### Bug trouvé et corrigé pendant la livraison
+
+Première version : `GET /` renvoyait **500 sans corps ni trace**. Cause : pour `/`, le chemin
+résolu est le dossier `dist` lui-même ; `existsSafe` renvoie vrai (un dossier existe), puis
+`readFile` sur un dossier produit un défaut non typé. Corrigé en traitant les dossiers comme
+« pas un fichier » et en garantissant qu'aucune lecture ne peut plus remonter en 500 : toute
+lecture impossible retombe sur `index.html`, et un `index.html` illisible donne un 404.
+
+### Réserve de P5 levée : reconnexion SSE observée
+
+Scénario rejoué, serveur unique (l'UI est servie par le serveur, plus de proxy) :
+
+| étape | observation |
+|---|---|
+| serveur tué, +15 s | « SSE déconnecté », « serveur injoignable », « connexion perdue, nouvelle tentative… » |
+| serveur redémarré, +20 s | **« SSE connecté »** et un **nouvel** `server.connected` dans le flux, sans rechargement |
+
+L'UI se réabonne seule et resynchronise. La réserve de P5 est levée.
+
+### Réserve — G6 n'est pas franchie entièrement
+
+`WORKFLOW.md` demande que `opencode-web` démarre backend + UI **sans checkout**. Ce qui est
+livré : une commande unique qui construit et sert l'UI depuis ce dépôt (`bun run web`). Ce qui
+ne l'est pas : le mode **M2** (paquet de sources installable hors dépôt).
+
+Raison : M2 dépend du paquet SDK, et A1 a établi qu'il est **inutilisable une fois publié**
+(`files: ["dist"]` alors que les `exports` pointent vers `./src/*.ts`). Livrer M2 avant de
+trancher A1 produirait un paquet qui ne s'installe pas. **A1 est donc le préalable bloquant de
+G6**, et c'est un défaut antérieur à l'initiative web.
 
 ---
 

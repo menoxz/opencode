@@ -282,7 +282,7 @@ export default function App() {
             onChange={(event) => applyDirectory(event.currentTarget.value)}
           />
         </label>
-        <code class="url">{serverUrl || "même origine (proxy dev)"}</code>
+        <code class="url">{serverUrl || "même origine"}</code>
       </header>
 
       <aside class="sidebar">
