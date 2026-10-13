@@ -2284,3 +2284,385 @@ textarea {
 .sheet-list li:focus-within .ghost {
   opacity: 1;
 }
+
+/* =============================================================================
+   Densité, couleur, markdown, médias — CIBLE.md §9 à §12.
+   ============================================================================= */
+
+/* ---- La couleur par famille d'outil (§11) ----
+
+   Elle teinte l'**icône** et un filet, jamais un fond : un fond coloré par ligne transforme une
+   liste en mosaïque et rend la lecture plus difficile, pas plus facile. Les familles sont celles de
+   `tool-icons.ts`, donc la couleur ne peut pas diverger de l'icône. */
+
+:root {
+  --fam-read: #4d7cfe;
+  --fam-write: #f7ad31;
+  --fam-shell: #3fb950;
+  --fam-search: #22d3ee;
+  --fam-web: #a371f7;
+  --fam-subagent: #2dd4bf;
+  --fam-ask: #7c5cff;
+  --fam-plan: #8b949e;
+  --fam-skill: #f778ba;
+  --fam-goal: #ff8f40;
+  --fam-todo: #6f7a92;
+  --fam-generic: #6f7a92;
+}
+
+.fam-read { --fam: var(--fam-read); }
+.fam-write { --fam: var(--fam-write); }
+.fam-shell { --fam: var(--fam-shell); }
+.fam-search { --fam: var(--fam-search); }
+.fam-web { --fam: var(--fam-web); }
+.fam-subagent { --fam: var(--fam-subagent); }
+.fam-ask { --fam: var(--fam-ask); }
+.fam-plan { --fam: var(--fam-plan); }
+.fam-skill { --fam: var(--fam-skill); }
+.fam-goal { --fam: var(--fam-goal); }
+.fam-todo { --fam: var(--fam-todo); }
+.fam-generic { --fam: var(--fam-generic); }
+
+/* Pas de bordure sur une ligne d'action. Elle transformait la liste en colonne de bandes et
+   n'ajoutait rien : l'icône teintée dit déjà la famille. Mesuré comme rejeté à l'usage. */
+.tool .tool-icon {
+  color: var(--fam, var(--text-3));
+}
+
+/* Une erreur reste rouge : la famille dit ce que fait l'outil, elle ne dit pas s'il a échoué. */
+.tool.failed .tool-icon {
+  color: var(--danger);
+}
+
+/* ---- Le travail est un flux, pas un repli (§9.2 révisé) ----
+
+   Le repli cachait **tout** : on croyait alléger, on avait supprimé. Le travail défile donc en
+   continu, une ligne par fait, sans bordure ni séparateur — c'est un flux, pas une pile de blocs.
+   Le détail d'une entrée reste accessible en la dépliant elle-même. */
+
+.work-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* ---- Les documents de la réponse (§12.3) ---- */
+
+.docs {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-1);
+}
+
+.docs-head {
+  font-size: var(--fs-meta);
+  color: var(--text-3);
+  text-transform: lowercase;
+}
+
+.docs-list {
+  list-style: none;
+  margin: 7px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.docs-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: var(--fs-note);
+  color: var(--text-2);
+}
+
+.docs-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.docs-list li .copy {
+  opacity: 0;
+}
+
+.docs-list li:hover .copy,
+.docs-list li:focus-within .copy {
+  opacity: 1;
+}
+
+/* ---- Les statistiques (§10) — exactement ce que le fil n'affiche plus ---- */
+
+.stats {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 12px 4px;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 5px 14px;
+  margin: 0;
+}
+
+.stats-grid dt {
+  font-size: var(--fs-note);
+  color: var(--text-3);
+}
+
+.stats-grid dd {
+  margin: 0;
+  font-size: var(--fs-note);
+  color: var(--text-1);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-steps {
+  list-style: none;
+  margin: 0;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--line-1);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--fs-meta);
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Les onglets du tiroir (§10) ---- */
+
+.side-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line-1);
+}
+
+.side-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: var(--fs-note);
+  color: var(--text-3);
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+}
+
+.side-tab:hover {
+  background: #ffffff08;
+  color: var(--text-2);
+}
+
+.side-tab.active {
+  background: var(--grad-active);
+  color: var(--text-1);
+}
+
+.side-close {
+  margin-left: auto;
+  padding: 2px 8px;
+  font-size: var(--fs-note);
+  color: var(--text-3);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+}
+
+.side-close:hover {
+  background: #ffffff08;
+  color: var(--text-2);
+}
+
+.pill-count {
+  padding: 0 5px;
+  font-size: var(--fs-meta);
+  color: var(--bg-0);
+  background: var(--attention);
+  border-radius: 999px;
+}
+
+/* La porte des statistiques, quand le tiroir est ouvert. */
+.foot-row .ghost.active {
+  color: var(--text-1);
+  background: var(--grad-active);
+}
+
+/* ---- Le markdown (§12.1) ----
+
+   La couleur sert la **structure**, pas la décoration : les titres baissent en taille et en
+   contraste avec leur niveau, et rien d'autre ne change de couleur que ce qui doit être vu. */
+
+.md {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.md-p {
+  margin: 0;
+  font-size: var(--fs-base);
+  line-height: 1.6;
+  color: var(--text-1);
+}
+
+.md-h {
+  margin: 0;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.md-h1 {
+  font-size: var(--fs-title);
+  color: var(--text-1);
+}
+
+.md-h2 {
+  font-size: var(--fs-base);
+  color: var(--text-1);
+}
+
+.md-h3 {
+  font-size: var(--fs-note);
+  color: var(--text-2);
+}
+
+.md-h4 {
+  font-size: var(--fs-note);
+  color: var(--text-3);
+}
+
+.md-list {
+  margin: 0;
+  padding-left: 20px;
+  font-size: var(--fs-base);
+  line-height: 1.6;
+  color: var(--text-1);
+}
+
+.md-list li {
+  margin: 3px 0;
+}
+
+.md-code {
+  padding: 1px 5px;
+  font-family: var(--font-mono, ui-monospace, "JetBrains Mono", Consolas, monospace);
+  font-size: 0.92em;
+  color: var(--brand-3);
+  background: var(--bg-0);
+  border: 1px solid var(--line-1);
+  border-radius: 5px;
+}
+
+.md-block {
+  overflow: hidden;
+  background: var(--bg-0);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+}
+
+.md-lang {
+  display: block;
+  padding: 4px 10px;
+  font-size: var(--fs-meta);
+  color: var(--text-3);
+  border-bottom: 1px solid var(--line-1);
+}
+
+.md-pre {
+  margin: 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  font-size: var(--fs-note);
+  line-height: 1.55;
+}
+
+.md-pre code {
+  font-family: var(--font-mono, ui-monospace, "JetBrains Mono", Consolas, monospace);
+}
+
+.md-quote {
+  margin: 0;
+  padding: 2px 0 2px 12px;
+  font-size: var(--fs-base);
+  color: var(--text-2);
+  border-left: 2px solid var(--line-2);
+}
+
+.md-rule {
+  margin: 2px 0;
+  border: 0;
+  border-top: 1px solid var(--line-1);
+}
+
+.md-link {
+  color: var(--brand-1);
+  text-decoration: none;
+}
+
+.md-link:hover {
+  text-decoration: underline;
+}
+
+.md-image {
+  display: block;
+  max-width: 100%;
+  border-radius: 8px;
+}
+
+.md-table-wrap {
+  overflow-x: auto;
+}
+
+.md-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-note);
+}
+
+.md-table th,
+.md-table td {
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--line-1);
+}
+
+.md-table th {
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.md-left { text-align: left; }
+.md-center { text-align: center; }
+.md-right { text-align: right; }
+
+/* ---- Les médias (§12.2) ---- */
+
+.media {
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.media-image,
+.media-video {
+  display: block;
+  max-width: 100%;
+  max-height: 460px;
+  background: var(--bg-0);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+}
+
+.media figcaption {
+  margin-top: 4px;
+  font-size: var(--fs-meta);
+  color: var(--text-3);
+}

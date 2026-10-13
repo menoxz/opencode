@@ -318,12 +318,24 @@ export function formatCost(cost: number | undefined): string | undefined {
   return `$${cost.toFixed(4)}`
 }
 
-/** `31k`, `1.2k`, `840` — la même échelle que les tailles de fichier ailleurs dans l'écran. */
+/**
+ * `31k`, `1.2k`, `840`, `1.2M` — la même échelle que les tailles de fichier ailleurs dans l'écran.
+ *
+ * Le million est nécessaire, et pas par principe : les jetons d'une session le dépassent facilement
+ * (145k sur **une** étape, mesuré). Sans lui, un total de 1 200 000 s'écrivait « 1200k » — un nombre
+ * qu'on ne lit pas. Un test l'a rattrapé.
+ */
 export function formatCount(value: number | undefined): string | undefined {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return undefined
-  if (value < 1000) return String(Math.round(value))
-  const thousands = (value / 1000).toFixed(1)
-  return `${thousands.endsWith(".0") ? thousands.slice(0, -2) : thousands}k`
+  const scaled = (unit: number, suffix: string) => {
+    const rounded = Math.round((value / unit) * 10) / 10
+    const text = rounded.toFixed(1)
+    return `${text.endsWith(".0") ? text.slice(0, -2) : text}${suffix}`
+  }
+  // Le seuil est décalé : 999 999 doit donner « 1M », pas « 1000k ».
+  if (value >= 999_950) return scaled(1_000_000, "M")
+  if (value >= 1000) return scaled(1000, "k")
+  return String(Math.round(value))
 }
 
 export function formatDuration(ms: number | undefined): string | undefined {
@@ -660,3 +672,194 @@ export function copyableOutput(state: ToolState | undefined): string | undefined
   if (!state || state.status !== "completed") return undefined
   return state.output && state.output.length > 0 ? state.output : undefined
 }
+
+/* =============================================================================
+   Les statistiques — elles ont quitté le fil pour une section (CIBLE.md §9.3, §10).
+
+   Le fil ne porte plus un seul nombre de ce registre ; tout est agrégé ici, une fois, pour la
+   section « Session ». `stepSummary` (déjà écrite) devient la ligne de chaque étape **dans cette
+   section** — exactement la ligne que le fil n'affiche plus.
+   ============================================================================= */
+
+export type StepStat = { turn: number; step: StepView }
+
+export type SessionStats = {
+  turns: number
+  steps: number
+  actions: number
+  /** Somme des durées mesurées ; `undefined` si aucune étape n'a de borne de fin. */
+  durationMs: number | undefined
+  tokens: number
+  cost: number
+  /** Le détail, dans l'ordre : c'est le contenu de la section, pas du fil. */
+  perStep: StepStat[]
+}
+
+export function sessionStats(turns: TurnView[]): SessionStats {
+  const perStep: StepStat[] = []
+  let actions = 0
+  let tokens = 0
+  let cost = 0
+  let durationMs = 0
+  let timed = false
+
+  turns.forEach((turn, turnIndex) => {
+    for (const step of turn.steps) {
+      perStep.push({ turn: turnIndex + 1, step })
+      actions += step.actions
+      tokens += step.tokens
+      cost += step.cost
+      if (typeof step.durationMs === "number") {
+        durationMs += step.durationMs
+        timed = true
+      }
+    }
+  })
+
+  return {
+    turns: turns.length,
+    steps: perStep.length,
+    actions,
+    durationMs: timed ? durationMs : undefined,
+    tokens,
+    cost,
+    perStep,
+  }
+}
+
+/* =============================================================================
+   Les médias — « on rend quand on a les octets, on nomme quand on ne les a pas » (CIBLE.md §12.2).
+
+   Mesuré : `/file/content` rend `{"type":"text","content":""}` sur une image — il lit du texte, il
+   ne sert pas d'octets. Un média n'est donc affichable que si la **partie** en porte déjà : une data
+   URL (`file`, ou `tool.state.attachments` — 25 parties mesurées).
+   ============================================================================= */
+
+export type MediaKind = "image" | "video"
+
+const IMAGE_EXT = /\.(png|jpe?g|gif|webp|avif|bmp|svg)$/i
+const VIDEO_EXT = /\.(mp4|webm|mov|m4v|ogv|ogg)$/i
+
+/**
+ * Le type de média d'une source, déduit du **mime** d'abord, de l'**extension** ensuite.
+ *
+ * L'ordre compte : un mime explicite est une déclaration, l'extension une supposition. Un serveur qui
+ * dit `image/png` ne se trompe pas ; un `.php` qui ressemble à une image, si.
+ */
+export function mediaKind(source: { mime?: string; url?: string } | undefined): MediaKind | undefined {
+  if (!source) return undefined
+  const mime = (source.mime ?? "").toLowerCase()
+  if (mime.startsWith("image/")) return "image"
+  if (mime.startsWith("video/")) return "video"
+  const url = (source.url ?? "").split(/[?#]/)[0] ?? ""
+  if (IMAGE_EXT.test(url)) return "image"
+  if (VIDEO_EXT.test(url)) return "video"
+  return undefined
+}
+
+/**
+ * Les médias portés par des **parties** — jamais par un chemin.
+ *
+ * `tool.state.attachments` a la même forme qu'une partie `file` (`{mime, url}`) : le serveur y joint
+ * lui-même les octets. C'est la seule voie par laquelle une lecture d'image peut s'afficher.
+ */
+export function partMedia(part: Part): Array<{ kind: MediaKind; mime?: string; url: string; name: string; from: string }> {
+  const out: Array<{ kind: MediaKind; mime?: string; url: string; name: string; from: string }> = []
+  const push = (source: { mime?: string; url?: string; filename?: string } | undefined, name: string, from: string) => {
+    const kind = mediaKind(source)
+    const url = source?.url
+    if (!kind || typeof url !== "string" || url.length === 0) return
+    out.push({ kind, mime: source?.mime, url, name: source?.filename ?? name, from })
+  }
+
+  if (part.type === "file") push({ mime: part.mime, url: part.url, filename: part.filename }, "attachment", "file")
+  if (part.type === "tool") {
+    const state = part.state as ToolState | undefined
+    const attachments = (state as { attachments?: Array<{ mime?: string; url?: string }> } | undefined)?.attachments
+    if (Array.isArray(attachments)) {
+      attachments.forEach((item, index) =>
+        push(item, `${part.tool ?? "tool"}-${index + 1}`, String(part.tool ?? "tool")),
+      )
+    }
+  }
+  return out
+}
+
+/* =============================================================================
+   Les documents de la réponse — le bilan, à la fin du dernier step (CIBLE.md §12.3).
+
+   « Contenu, pas performance » : un nom, des ±lignes, un chemin. Aucune statistique.
+   ============================================================================= */
+
+export type DocumentRef = { path: string; additions?: number; deletions?: number }
+
+/** Outils dont le titre **est** le chemin (même règle que `copyableText`, pour la même raison). */
+const PATH_TOOLS = new Set(["read", "write", "edit"])
+
+function documentOf(tool: string, state: ToolState | undefined): DocumentRef | undefined {
+  if (!state) return undefined
+  const diff = fileDiff(state)
+  if (diff) {
+    const file = state.metadata?.["filediff"]
+    const path = file && typeof file === "object" ? (file as { file?: unknown }).file : undefined
+    if (typeof path === "string" && path.length > 0) {
+      return { path, additions: diff.additions, deletions: diff.deletions }
+    }
+  }
+  if (!PATH_TOOLS.has(tool)) return undefined
+  const title = "title" in state ? state.title : undefined
+  if (typeof title === "string" && title.trim().length > 0) return { path: title }
+  return undefined
+}
+
+/**
+ * Les documents produits ou touchés par une **réponse** : les fichiers des patches, et ceux des
+ * écritures (`metadata.filediff`).
+ *
+ * Dédupliqué par chemin, le dernier passage gagnant — un même fichier modifié trois fois dans le tour
+ * est **un** document, et ses ±lignes sont celles du dernier passage, pas la somme (qui ne décrirait
+ * rien de réel).
+ */
+export function answerDocuments(turn: TurnView | undefined): DocumentRef[] {
+  if (!turn) return []
+  const byPath = new Map<string, DocumentRef>()
+  for (const step of turn.steps) {
+    for (const item of step.items) {
+      if (item.type === "patch") {
+        for (const file of item.files ?? []) {
+          if (typeof file === "string" && file.length > 0 && !byPath.has(file)) byPath.set(file, { path: file })
+        }
+        continue
+      }
+      if (item.type !== "tool") continue
+      const found = documentOf(String(item.tool ?? ""), item.state as ToolState | undefined)
+      if (found) byPath.set(found.path, found)
+    }
+  }
+  return [...byPath.values()]
+}
+
+/**
+ * Le dernier tour **qui a produit du travail** — celui dont on montre le bilan.
+ *
+ * On ne peut pas filtrer sur `role` : `groupTurns` rattache la réponse de l'agent au tour **ouvert par
+ * le prompt**, donc `turn.role` vaut `"user"` sur tout tour qui porte des étapes. Chercher un tour de
+ * rôle `assistant` ne trouverait donc **jamais** rien — c'est l'erreur qu'un test a rattrapée. Ce qui
+ * identifie le travail, ce sont les **étapes**.
+ */
+export function lastWorkingTurn(turns: TurnView[]): TurnView | undefined {
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index]
+    if (turn && turn.steps.length > 0) return turn
+  }
+  return undefined
+}
+
+/* =============================================================================
+   Le travail est un **flux** (CIBLE.md §9.2 révisé).
+
+   Il n'y a plus de « répartition » prose/travail à calculer : un repli qui cachait tout le travail
+   ne montrait plus rien, et la répartition n'existait que pour l'alimenter. Le rendu parcourt donc
+   simplement les étapes dans l'ordre — la prose au corps de lecture, le travail en une ligne — ce qui
+   est aussi l'ordre des faits.
+   ============================================================================= */

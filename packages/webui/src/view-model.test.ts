@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest"
 import {
   answersComplete,
+  answerDocuments,
   canAlways,
   boundLines,
   copyableOutput,
@@ -18,6 +19,8 @@ import {
   groupTurns,
   isSelected,
   isVisiblePart,
+  lastWorkingTurn,
+  mediaKind,
   OUTPUT_PREVIEW_LINES,
   patchLabel,
   permissionActions,
@@ -25,6 +28,7 @@ import {
   reducePermissions,
   reduceQuestions,
   reduceThread,
+  sessionStats,
   setCustomAnswer,
   stepSummary,
   toggleAnswer,
@@ -36,6 +40,7 @@ import {
   type PermissionRequest,
   type QuestionRequest,
   type ToolState,
+  type TurnView,
 } from "./view-model"
 
 const pending: ToolState = { status: "pending", input: { command: "ls" }, raw: "ls" }
@@ -273,6 +278,11 @@ describe("formatage", () => {
     expect(formatCount(840)).toBe("840")
     expect(formatCount(1200)).toBe("1.2k")
     expect(formatCount(31_000)).toBe("31k")
+    // Le million est nécessaire : un total de session le dépasse couramment.
+    expect(formatCount(1_200_000)).toBe("1.2M")
+    expect(formatCount(2_000_000)).toBe("2M")
+    // 999 999 ne doit pas s'écrire « 1000k », qui ne se lit pas.
+    expect(formatCount(999_999)).toBe("1M")
   })
 
   test("une durée absente ou nulle ne s'écrit pas", () => {
@@ -591,5 +601,178 @@ describe("copier — la seule action de lecture du fil", () => {
     expect(copyableOutput({ status: "running", input: {}, time: { start: 1 } })).toBeUndefined()
     expect(copyableOutput({ status: "error", input: {}, error: "x", time: { start: 1, end: 2 } })).toBeUndefined()
     expect(copyableOutput(undefined)).toBeUndefined()
+  })
+})
+
+describe("les statistiques de session — ce que le fil n'affiche plus", () => {
+  const text = (id: string, value: string) => ({ type: "text", id, text: value })
+  const tool = (id: string, time: { start: number; end: number }) => ({
+    type: "tool",
+    id,
+    tool: "bash",
+    state: { status: "completed" as const, input: {}, output: "", title: "", time },
+  })
+  const finish = (cost: number, total: number) => ({
+    type: "step-finish",
+    cost,
+    tokens: { total, input: total, output: 0, reasoning: 0 },
+  })
+
+  const turns: Message[] = [
+    { info: { id: "m1", role: "user" }, parts: [text("u1", "salut")] },
+    {
+      info: { id: "m2", role: "assistant" },
+      parts: [
+        { type: "step-start" },
+        text("a1", "un"),
+        tool("t1", { start: 100, end: 1100 }),
+        finish(0.01, 1000),
+        { type: "step-start" },
+        text("a2", "deux"),
+        tool("t2", { start: 2000, end: 2500 }),
+        finish(0.02, 2000),
+      ],
+    },
+  ]
+
+  test("les agrégats se calculent sur les tours et les étapes", () => {
+    const stats = sessionStats(groupTurns(turns))
+    expect(stats.turns).toBe(1)
+    expect(stats.steps).toBe(2)
+    expect(stats.actions).toBe(2)
+    expect(stats.durationMs).toBe(1500) // 1000 + 500
+    expect(stats.tokens).toBe(3000)
+    expect(stats).toMatchObject({ cost: 0.03 })
+  })
+
+  test("le détail par étape porte la ligne que le fil n'affiche plus", () => {
+    const stats = sessionStats(groupTurns(turns))
+    expect(stats.perStep).toHaveLength(2)
+    expect(stepSummary(stats.perStep[0]!.step)).toContain("step 1")
+    expect(stepSummary(stats.perStep[0]!.step)).toContain("$0.01")
+    expect(stats.perStep[0]!.turn).toBe(1)
+  })
+
+  test("une session sans étape ne prétend pas avoir une durée", () => {
+    const stats = sessionStats(groupTurns([{ info: { id: "m1", role: "user" }, parts: [text("u1", "seul")] }]))
+    expect(stats.steps).toBe(0)
+    expect(stats.durationMs).toBeUndefined()
+    expect(stats.cost).toBe(0)
+  })
+})
+
+describe("le type d'un média", () => {
+  test("le mime d'abord : c'est une déclaration", () => {
+    expect(mediaKind({ mime: "image/png" })).toBe("image")
+    expect(mediaKind({ mime: "video/mp4" })).toBe("video")
+    // Un mime explicite l'emporte sur une extension trompeuse.
+    expect(mediaKind({ mime: "image/webp", url: "https://a.b/x.mp4" })).toBe("image")
+  })
+
+  test("l'extension ensuite", () => {
+    expect(mediaKind({ url: "https://a.b/x.png" })).toBe("image")
+    expect(mediaKind({ url: "https://a.b/x.JPEG" })).toBe("image")
+    expect(mediaKind({ url: "https://a.b/clip.webm" })).toBe("video")
+    // Les paramètres d'URL ne doivent pas cacher l'extension.
+    expect(mediaKind({ url: "https://a.b/x.mp4?token=1&a=2" })).toBe("video")
+  })
+
+  test("ce qui n'est ni l'un ni l'autre n'est pas deviné", () => {
+    expect(mediaKind({ url: "https://a.b/page" })).toBeUndefined()
+    expect(mediaKind({ url: "https://a.b/archive.zip" })).toBeUndefined()
+    expect(mediaKind({})).toBeUndefined()
+    expect(mediaKind(undefined)).toBeUndefined()
+  })
+})
+
+describe("les documents d'une réponse", () => {
+  const patch = (files: string[]) => ({ type: "patch", id: "p", files })
+  const write = (id: string, file: string, additions: number, deletions: number) => ({
+    type: "tool",
+    id,
+    tool: "edit",
+    state: {
+      status: "completed" as const,
+      input: {},
+      output: "",
+      title: file,
+      time: { start: 1, end: 2 },
+      metadata: { filediff: { file, patch: "", additions, deletions } },
+    },
+  })
+
+  const turn = (items: unknown[]): TurnView => ({ id: "m", role: "assistant", prompt: [], steps: [{ index: 1, items: items as never, actions: 0, cost: 0, tokens: 0, durationMs: undefined }] })
+
+  test("un patch apporte ses fichiers, une écriture ses ±lignes", () => {
+    const docs = answerDocuments(turn([patch(["a.ts", "b.ts"]), write("t", "c.ts", 12, 3)]))
+    expect(docs.map((doc) => doc.path)).toEqual(["a.ts", "b.ts", "c.ts"])
+    expect(docs[2]).toEqual({ path: "c.ts", additions: 12, deletions: 3 })
+  })
+
+  test("le même fichier touché deux fois est un seul document, au dernier passage", () => {
+    // La somme des ±lignes ne décrirait rien de réel : c'est le dernier état qui compte.
+    const docs = answerDocuments(turn([write("t1", "a.ts", 5, 1), write("t2", "a.ts", 9, 2)]))
+    expect(docs).toHaveLength(1)
+    expect(docs[0]).toEqual({ path: "a.ts", additions: 9, deletions: 2 })
+  })
+
+  test("sans patch ni écriture, il n'y a aucun document", () => {
+    expect(answerDocuments(turn([{ type: "text", id: "x", text: "du texte" }]))).toEqual([])
+    expect(answerDocuments(undefined)).toEqual([])
+  })
+
+  test("la dernière réponse de l'agent est celle dont on montre le bilan", () => {
+    const turns = groupTurns([
+      { info: { id: "u1", role: "user" }, parts: [{ type: "text", id: "x", text: "a" }] },
+      { info: { id: "a1", role: "assistant" }, parts: [{ type: "step-start" }, { type: "text", id: "y", text: "un" }] },
+      { info: { id: "u2", role: "user" }, parts: [{ type: "text", id: "z", text: "b" }] },
+    ])
+    expect(lastWorkingTurn(turns)?.id).toBe("u1")
+    expect(lastWorkingTurn([])).toBeUndefined()
+  })
+})
+
+describe("le flux — l'ordre des faits", () => {
+  const text = (id: string, value: string) => ({ type: "text", id, text: value })
+  const tool = (id: string) => ({
+    type: "tool",
+    id,
+    tool: "bash",
+    state: { status: "completed" as const, input: {}, output: "", title: "", time: { start: 1, end: 2 } },
+  })
+  const patch = (id: string) => ({ type: "patch", id, files: ["a.ts"] })
+
+  test("les étapes portent leurs items dans l'ordre où ils se sont produits", () => {
+    // C'est tout ce dont le rendu du flux a besoin : déplier ne cachant plus rien, il n'y a plus de
+    // répartition à calculer — donc plus de helper à tester. On garde la garantie d'ordre.
+    const turn = groupTurns([
+      { info: { id: "m1", role: "user" }, parts: [text("u1", "fais-le")] },
+      {
+        info: { id: "m2", role: "assistant" },
+        parts: [
+          { type: "step-start" },
+          text("a1", "je commence"),
+          tool("t1"),
+          { type: "step-start" },
+          text("a2", "c'est fait"),
+          patch("p1"),
+        ],
+      },
+    ])[0]!
+
+    expect(turn.steps).toHaveLength(2)
+    expect(turn.steps[0]!.items.map((item) => item.id)).toEqual(["a1", "t1"])
+    expect(turn.steps[1]!.items.map((item) => item.id)).toEqual(["a2", "p1"])
+    // Le parcours du rendu, à plat : prose et travail mêlés, dans l'ordre des faits.
+    const flat = turn.steps.flatMap((step) => step.items.map((item) => item.id))
+    expect(flat).toEqual(["a1", "t1", "a2", "p1"])
+  })
+
+  test("une étape sans texte n'existe pas moins : elle porte son travail", () => {
+    const workOnly = groupTurns([
+      { info: { id: "m1", role: "user" }, parts: [text("u1", "fais-le")] },
+      { info: { id: "m2", role: "assistant" }, parts: [{ type: "step-start" }, tool("t1")] },
+    ])[0]!
+    expect(workOnly.steps[0]!.items.map((item) => item.id)).toEqual(["t1"])
   })
 })

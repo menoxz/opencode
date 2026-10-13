@@ -20,16 +20,18 @@ import {
 import {
   Boundary,
   ContextInjections,
+  Documents,
   FileChip,
+  Media,
   PatchLine,
   PermissionSheet,
   PluginButton,
   Prose,
   QuestionSheet,
   Reasoning,
+  SessionPanel,
   SessionRow,
   ShowMore,
-  StepBlock,
   ToolLine,
   Turn,
   UserPrompt,
@@ -93,13 +95,17 @@ import { SESSION_LIMIT, groupByDirectory, sessionDetails, splitSessions, type Se
 import { subscribeEvents, type EventStreamState } from "./events"
 import { sessionTimestamp } from "./time"
 import {
+  answerDocuments,
   dropPermission,
   dropQuestion,
   emptyAnswers,
   groupTurns,
+  lastWorkingTurn,
+  partMedia,
   reducePermissions,
   reduceQuestions,
   reduceThread,
+  sessionStats,
   setCustomAnswer,
   toggleAnswer,
   type Message,
@@ -130,6 +136,16 @@ export default function App() {
   const [working, setWorking] = createSignal(false)
   /** Le fil se lit par **tour**, et chaque tour par **étape** — jamais par message brut. */
   const turns = createMemo(() => groupTurns(messages()))
+  /** Les statistiques de la session : agrégées **une fois**, pour la section — jamais pour le fil. */
+  const stats = createMemo(() => sessionStats(turns()))
+  /**
+   * Le tiroir droit et ses onglets.
+   *
+   * Il gagne une seconde raison d'exister : la **consultation** (§10). Il s'ouvre toujours de
+   * lui-même sur une décision bloquante — ça, ça ne change pas.
+   */
+  const [drawerOpen, setDrawerOpen] = createSignal(false)
+  const [drawerTab, setDrawerTab] = createSignal<"session" | "decisions">("session")
   /**
    * La question de l'agent : la **seule** écriture du fil. Elle est bloquante — tant qu'elle n'a pas
    * de réponse, la conversation est arrêtée — donc elle n'est pas rangée dans un panneau : elle
@@ -1071,6 +1087,13 @@ export default function App() {
       onEvent: (event) => {
         if (event.type === "permission.asked" || event.type === "permission.replied") {
           setPermissions((current) => reducePermissions(current, event))
+          // Une décision bloquante ouvre le tiroir d'elle-même : elle ne doit jamais attendre dans un
+          // onglet fermé. C'est la règle d'avant, et elle ne change pas — le tiroir a juste gagné une
+          // seconde raison d'exister.
+          if (event.type === "permission.asked") {
+            setDrawerTab("decisions")
+            setDrawerOpen(true)
+          }
         }
         // La question arrive par le même canal, mais elle vit dans le fil : c'est une écriture là où
         // les permissions sont une décision de côté.
@@ -1155,13 +1178,19 @@ export default function App() {
       )
     }
     if (part.type === "tool") {
+      // Ce qu'un outil a joint est un **média réel** : `state.attachments` porte des data URLs
+      // (25 parties mesurées). On le montre sous la ligne d'action, jamais un chemin nu.
+      const media = partMedia(part)
       return (
-        <ToolLine
-          tool={part.tool ?? ""}
-          state={part.state as ToolState}
-          open={Boolean(expanded()[id])}
-          onToggle={() => toggle(id)}
-        />
+        <>
+          <ToolLine
+            tool={part.tool ?? ""}
+            state={part.state as ToolState}
+            open={Boolean(expanded()[id])}
+            onToggle={() => toggle(id)}
+          />
+          <For each={media}>{(item) => <Media kind={item.kind} url={item.url} name={item.name} />}</For>
+        </>
       )
     }
     if (part.type === "patch") {
@@ -1180,6 +1209,12 @@ export default function App() {
       const mime = typeof part.mime === "string" ? part.mime : ""
       const filename = typeof part.filename === "string" ? part.filename : undefined
       const url = typeof part.url === "string" ? part.url : undefined
+      // Une image s'affiche — c'est la pièce jointe qu'on veut voir. Tout autre fichier reste une
+      // pastille nommée : un `.zip` n'a rien à montrer.
+      const media = partMedia(part)
+      if (media.length > 0) {
+        return <For each={media}>{(item) => <Media kind={item.kind} url={item.url} name={item.name} />}</For>
+      }
       return <FileChip label={filePartLabel({ filename, mime })} thumb={isImageMime(mime) ? url : undefined} />
     }
     // Type inconnu : un nom de type interne n'est pas une information — mieux vaut ne rien montrer.
@@ -1207,16 +1242,17 @@ export default function App() {
       </Show>
       <Show when={turn.steps.length > 0}>
         <Turn role="assistant">
+          {/* Le **flux**, dans l'ordre des faits : la prose au corps de lecture, le travail en une
+              ligne chacune, sans repli. Un repli qui cache tout ne montrait plus rien (§9.2 révisé) ;
+              le détail reste accessible en dépliant **l'entrée elle-même**. */}
           <For each={turn.steps}>
-            {(step: StepView) => {
-              const key = `step:${turn.id}:${step.index}`
-              return (
-                <StepBlock step={step} open={Boolean(expanded()[key])} onToggle={() => toggle(key)}>
-                  <For each={step.items}>{(part) => renderItem(part)}</For>
-                </StepBlock>
-              )
-            }}
+            {(step: StepView) => <For each={step.items}>{(part) => renderItem(part)}</For>}
           </For>
+
+          {/* Le bilan de la dernière réponse : ses documents, à la fin de son dernier step (§12.3). */}
+          <Show when={turn.id === lastWorkingTurn(turns())?.id}>
+            <Documents docs={answerDocuments(turn)} />
+          </Show>
         </Turn>
       </Show>
     </>
@@ -1408,6 +1444,20 @@ export default function App() {
               permanents, c'est-à-dire de la place pour rien. Même règle que le dossier de travail,
               dans l'autre sens : lui est quotidien, donc il reste. */}
           <span class="foot-row">
+            {/* La porte des statistiques. Elle est **ici** parce que c'est ici que s'ouvrent les
+                panneaux dans cet écran, et elle est **toujours** là : « accès facile et visible »
+                exclut un panneau qui n'apparaît que quand quelque chose bloque. */}
+            <button
+              class="ghost"
+              classList={{ active: drawerOpen() }}
+              title="Session statistics: turns, steps, time, tokens, cost"
+              onClick={() => {
+                setDrawerTab("session")
+                setDrawerOpen((open) => !open)
+              }}
+            >
+              stats
+            </button>
             <button class="ghost" title="Settings: defaults, providers, agents, MCP" onClick={openConfig}>
               settings
             </button>
@@ -1522,13 +1572,40 @@ export default function App() {
         </Show>
       </main>
 
-      <aside class="side" classList={{ open: permissions().length > 0 }}>
+      <aside class="side" classList={{ open: drawerOpen() }}>
         <div class="side-inner">
-          <For each={permissions()}>
-            {(request) => (
-              <PermissionSheet request={request} onReply={(reply) => void replyPermission(request, reply)} />
-            )}
-          </For>
+          <div class="side-tabs">
+            <button
+              class="side-tab"
+              classList={{ active: drawerTab() === "session" }}
+              onClick={() => setDrawerTab("session")}
+            >
+              Session
+            </button>
+            <Show when={permissions().length > 0}>
+              <button
+                class="side-tab"
+                classList={{ active: drawerTab() === "decisions" }}
+                onClick={() => setDrawerTab("decisions")}
+              >
+                Decisions
+                <span class="pill-count">{permissions().length}</span>
+              </button>
+            </Show>
+            <button class="side-close" title="Close" onClick={() => setDrawerOpen(false)}>
+              ✕
+            </button>
+          </div>
+          <Show when={drawerTab() === "session"}>
+            <SessionPanel stats={stats()} />
+          </Show>
+          <Show when={drawerTab() === "decisions"}>
+            <For each={permissions()}>
+              {(request) => (
+                <PermissionSheet request={request} onReply={(reply) => void replyPermission(request, reply)} />
+              )}
+            </For>
+          </Show>
         </div>
       </aside>
 

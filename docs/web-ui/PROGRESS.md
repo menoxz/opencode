@@ -2358,3 +2358,90 @@ de mon fait, pas du code :
    état propre et en rendant le dépliage **idempotent**.
 
 Aucune réserve ne subsiste sur ce lot.
+
+---
+
+## Lot — densité, couleur, markdown, médias et statistiques (livré)
+
+Quatre demandes, et un principe qui les tient ensemble : **par défaut rien de technique, et la
+richesse n'apparaît que quand elle porte du contenu**.
+
+### 1. La densité — révisée deux fois, la seconde par l'usage
+
+Le fil ne pèse que **10,6 % de texte** (823 parts sur 7 782) : le lire tel quel, c'est lire 90 % de
+matériel de vérification.
+
+**Première tentative, rejetée.** Replier tout le travail derrière un contrôle unique « work ».
+Verdict de l'intéressé : *« tu as fait en sorte d'afficher peu mais au final tu n'affiches rien du
+tout »*. Le repli n'allégeait pas le fil, il le **vidait**. Et la **bordure gauche** ajoutée aux
+lignes d'action a été rejetée dans le même mouvement : une bordure par ligne transforme la liste en
+colonne de bandes.
+
+**Version retenue — le flux.** Le travail défile **en continu, une ligne par fait**, toujours visible,
+dans l'ordre des faits ; le détail se déplie sur **l'entrée elle-même**. Ce qui allège n'est pas de
+cacher, c'est de **tenir en une ligne** — et le travail *était déjà* une ligne : le repli n'ajoutait
+rien qu'une disparition. C'est la leçon la plus utile de ce lot, et elle est écrite dans §9.2.
+
+### 2. Les statistiques déménagent — §9.3
+
+`stepSummary` (« step 3 · 6 actions · 2.8s · $0.0008 · 48.6k tokens ») **quitte le fil**. Tout le
+registre — nombre de tours, temps, jetons, coût — vit dans **le tiroir droit, onglet « Session »**,
+ouvert par un bouton `stats` **toujours présent** dans le pied du rail. La ligne d'étape rejetée du
+fil **est** le contenu de cette section.
+
+Distinction qui gouverne le tri : `+12 −3` décrit le fichier (**reste**), `$0.0008` décrit la facture
+(**part**).
+
+### 3. La couleur — une grammaire, pas une décoration — §11
+
+Les **douze familles** de `tool-icons.ts` reçoivent chacune une teinte, appliquée à l'**icône**
+seulement : `fam-read` bleu, `fam-write` ambre, `fam-shell` vert, `fam-search` cyan, `fam-web` violet,
+`fam-subagent` turquoise, `fam-ask` indigo, `fam-plan` ardoise, `fam-skill` rose, `fam-goal` orange,
+`fam-todo` gris-bleu, `fam-generic` gris. La couleur ne peut pas diverger de l'icône : même source.
+Une erreur reste rouge — la famille dit ce que fait l'outil, pas s'il a échoué.
+
+### 4. Markdown, médias, documents — §12
+
+- **Markdown** rendu par un analyseur **maison** (`markdown.ts`) qui produit un **arbre**, jamais du
+  HTML : titres, listes, code clôturé avec sa langue, citations, tableaux, filets, et en ligne code /
+  gras / italique / liens / images. **Sûr par construction** : tout le texte passe par Solid, donc il
+  est échappé ; un `<img onerror=…>` dans une réponse reste du texte. Les destinations sont filtrées
+  (`safeHref`) : `javascript:`, `data:text/html`, `vbscript:`, `file:` sont refusés ; les adresses
+  relatives passent, et une `data:image/…` n'est acceptée **que** pour une image.
+- **Médias** : « on rend quand on a les octets, on nomme quand on ne les a pas ». Les parties qui
+  portent une **data URL** s'affichent (images, vidéos) — `state.attachments` en porte 25, mesuré.
+  Un **chemin** seul ne peut pas s'afficher, et c'est une **limite mesurée** : `GET /file/content`
+  rend `{"type":"text","content":""}` sur une image — il lit du texte, il ne sert pas d'octets.
+- **Documents** : à la fin du dernier step de la dernière réponse, les fichiers des patches et des
+  écritures (`metadata.filediff`), avec leurs ±lignes et la copie du chemin. Vide ⇒ il n'existe pas.
+
+### Preuve
+
+```
+vitest run     -> 17 fichiers, 389 tests, exit 0
+tsgo --noEmit  -> exit 0
+vite build     -> exit 0
+```
+
+Navigateur (Chrome isolé → webui 5181 → serveur 4097 sur la copie), DOM lu par CDP :
+
+```
+sessions portant un media rendable : 29, dans 6 sessions (mesure sur 60 sessions, 20 309 parties)
+markdown rendu                     : 1 108 paragraphes sur une session
+familles appliquées                : fam-plan, fam-goal, fam-shell, fam-read (24 lignes d'action)
+documents rendus                   : .docs = 1
+densité et bordure (après révision):
+  toolLinesAtRest    = 2          workToggles = 0
+  toolLineBorderLeft = "0px none" toolHostBorderLeft = "0px"
+  statsInThread      = false
+```
+
+### Réserves, exactement
+
+1. **Les médias ne sont pas observés au navigateur.** 29 parties rendables existent (mesuré), mais
+   aucune session scannée — 26 sessions, tous replis ouverts, 100 lignes de rail — ne les a rendues,
+   et **créer une session d'essai échoue** : une partie `file` dans un message utilisateur **ne
+   persiste pas** (`messages: 0`, deux routes essayées, `prompt_async` compris). Le chemin est donc
+   couvert par les tests et par la forme mesurée, pas par une observation d'écran.
+2. **Le rendu n'a pas été jugé par l'utilisateur** après la révision : les mesures ci-dessus disent
+   que le travail est visible et que la bordure est partie, pas que le résultat plaît.

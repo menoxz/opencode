@@ -1,4 +1,4 @@
-import { createSignal, For, onCleanup, Show } from "solid-js"
+import { createMemo, createSignal, For, onCleanup, Show } from "solid-js"
 import {
   answersComplete,
   boundLines,
@@ -7,6 +7,7 @@ import {
   customValue,
   diffLabel,
   fileDiff,
+  formatCost,
   formatCount,
   formatDuration,
   isSelected,
@@ -19,16 +20,21 @@ import {
   toolOutputLines,
   toolStatusLabel,
   toolTitle,
+  type DocumentRef,
+  type MediaKind,
   type PermissionReply,
   type PermissionRequest,
   type QuestionAnswers,
   type QuestionRequest,
+  type SessionStats,
   type StepView,
   type ToolState,
 } from "./view-model"
+import { parseMarkdown, safeHref, type MdBlock, type MdInline } from "./markdown"
 import { writeClipboard } from "./clipboard"
 import { formatChars, injectionLabel, share, sourceLabel, type Injections } from "./injections"
 import { ChevronIcon, FolderIcon, PluginIcon, SessionIcon, ToolIcon, toolHint } from "./icons"
+import { toolIcon } from "./tool-icons"
 import { relativeTime } from "./time"
 
 export const REPLY_LABEL: Record<PermissionReply, string> = {
@@ -332,7 +338,7 @@ export function ToolLine(props: { tool: string; state: ToolState; open: boolean;
   const output = () => boundLines(detail().output ?? "", OUTPUT_PREVIEW_LINES)
   const bounded = () => output().hidden > 0
   return (
-    <div class="tool" classList={{ failed: props.state.status === "error", open: props.open }}>
+    <div class={`tool fam-${toolIcon(props.tool)}`} classList={{ failed: props.state.status === "error", open: props.open }}>
       <button class="tool-line" title={toolHint(props.tool)} onClick={() => props.onToggle()}>
         <ToolIcon tool={props.tool} />
         <span class="tool-name">{props.tool}</span>
@@ -421,12 +427,14 @@ export function Prose(props: { text: string; synthetic?: boolean; ignored?: bool
       <Show when={kind()}>
         {(value) => <span class="prose-tag">{value() === "synthetic" ? "injected" : "not sent"}</span>}
       </Show>
-      <p class="part text">{props.text}</p>
+      <Markdown text={props.text} />
     </div>
   )
 }
 
-/** Nombre de fichiers d'un patch montrés avant le « +N more ». */
+/**
+ * Nombre de fichiers d'un patch montrés avant le « +N more ».
+ */
 const PATCH_PREVIEW_FILES = 8
 
 /** Un chemin long se lit par sa fin : `web-ui/CIBLE.md`, pas `C:\jeanluc\…\…\…`. */
@@ -487,26 +495,14 @@ export function Boundary(props: { label: string }) {
 }
 
 /**
- * Une étape — l'unité de lecture.
+ * Une étape — un regroupement du flux, sans en-tête ni bordure.
  *
- * Sa ligne d'en-tête porte **son prix** : coût, jetons, durée, nombre d'actions. `cost` et `tokens`
- * sont là 1 440 fois dans le relevé et ne s'affichaient jamais ; « combien a coûté ce travail » est
- * une question de lecteur, pas de comptable.
- *
- * Le repli porte sur le **travail** (outils, raisonnement, patches), jamais sur la prose : ce qu'on
- * vérifie se replie, ce qu'on lit reste. `step-start` n'est jamais rendu — 1 447 occurrences, aucun
- * contenu propre.
+ * Elle ne porte **aucune statistique** (§9.3) : la ligne « step 3 · 6 actions · 2.8s · $0.0008 ·
+ * 31k tokens » n'est plus dans le fil, elle est dans `SessionPanel`. Ici une étape n'est qu'une
+ * **suite du flux** : rien à annoncer, rien à encadrer.
  */
-export function StepBlock(props: { step: StepView; open: boolean; onToggle: () => void; children?: unknown }) {
-  return (
-    <div class="step" classList={{ open: props.open }}>
-      <button class="step-head" onClick={() => props.onToggle()}>
-        <span class="step-summary">{stepSummary(props.step)}</span>
-        <span class="tool-chev">{props.open ? "▾" : "▸"}</span>
-      </button>
-      <div class="step-body">{props.children as never}</div>
-    </div>
-  )
+export function StepBlock(props: { step: StepView; children?: unknown }) {
+  return <div class="step">{props.children as never}</div>
 }
 
 export function PermissionSheet(props: { request: PermissionRequest; onReply: (reply: PermissionReply) => void }) {
@@ -601,6 +597,216 @@ export function QuestionSheet(props: {
           Dismiss
         </button>
       </div>
+    </div>
+  )
+}
+
+/* =============================================================================
+   Le markdown — CIBLE.md §12.1.
+
+   On ne rend **jamais** de HTML : l'analyseur (`markdown.ts`) produit un arbre, et l'on construit les
+   balises ici. Solid échappe le texte par défaut, donc la sûreté tient par construction — la prose
+   d'un modèle est une donnée, jamais du balisage de confiance.
+   ============================================================================= */
+
+/** Le texte en ligne : c'est ici que le contenu d'un modèle est posé, donc ici que rien ne s'exécute. */
+function Inline(props: { nodes: MdInline[] }) {
+  return (
+    <>
+      {props.nodes.map((node) => {
+        if (node.kind === "text") return node.text
+        if (node.kind === "code") return <code class="md-code">{node.text}</code>
+        if (node.kind === "strong") return <strong><Inline nodes={node.children} /></strong>
+        if (node.kind === "em") return <em><Inline nodes={node.children} /></em>
+        if (node.kind === "image") {
+          // Une image accepte sa data URL (c'est une pièce jointe) — pas une data URL quelconque.
+          const src = safeHref(node.src, true)
+          if (!src) return node.alt
+          return <img class="md-image" src={src} alt={node.alt} loading="lazy" />
+        }
+        const href = safeHref(node.href)
+        // Une destination refusée ne casse pas le texte : on garde le libellé, on jette le lien.
+        if (!href) return <Inline nodes={node.children} />
+        return (
+          <a class="md-link" href={href} target="_blank" rel="noreferrer noopener">
+            <Inline nodes={node.children} />
+          </a>
+        )
+      })}
+    </>
+  )
+}
+
+function MdBlockView(props: { block: MdBlock }) {
+  const block = props.block
+
+  if (block.kind === "heading") {
+    // Décalé de deux niveaux : le fil a déjà sa structure, un `#` de l'agent n'est pas un `h1` de page.
+    const children = <Inline nodes={block.children} />
+    if (block.level === 1) return <h3 class="md-h md-h1">{children}</h3>
+    if (block.level === 2) return <h4 class="md-h md-h2">{children}</h4>
+    if (block.level === 3) return <h5 class="md-h md-h3">{children}</h5>
+    return <h6 class="md-h md-h4">{children}</h6>
+  }
+
+  if (block.kind === "paragraph") return <p class="md-p"><Inline nodes={block.children} /></p>
+
+  if (block.kind === "code") {
+    return (
+      <div class="md-block">
+        <Show when={block.lang}>{(lang) => <span class="md-lang">{lang()}</span>}</Show>
+        <pre class="md-pre"><code>{block.text}</code></pre>
+      </div>
+    )
+  }
+
+  if (block.kind === "quote") {
+    return <blockquote class="md-quote"><Inline nodes={block.children} /></blockquote>
+  }
+
+  if (block.kind === "rule") return <hr class="md-rule" />
+
+  if (block.kind === "list") {
+    const items = block.items.map((item) => (
+      <li>
+        <Inline nodes={item.children} />
+        <Show when={item.sub}>{(sub) => <MdBlockView block={sub()} />}</Show>
+      </li>
+    ))
+    return block.ordered ? <ol class="md-list">{items}</ol> : <ul class="md-list">{items}</ul>
+  }
+
+  if (block.kind === "table") {
+    return (
+      <div class="md-table-wrap">
+        <table class="md-table">
+          <thead>
+            <tr>
+              {block.header.map((cell, index) => (
+                <th class={`md-${block.align[index] ?? "left"}`}><Inline nodes={cell} /></th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {block.rows.map((row) => (
+              <tr>
+                {row.map((cell, index) => (
+                  <td class={`md-${block.align[index] ?? "left"}`}><Inline nodes={cell} /></td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )
+  }
+
+  return null
+}
+
+/** La prose de l'agent, rendue. Le markdown est analysé une fois par texte, pas à chaque rendu. */
+export function Markdown(props: { text: string }) {
+  const blocks = createMemo(() => parseMarkdown(props.text))
+  return (
+    <div class="md">
+      <For each={blocks()}>{(block) => <MdBlockView block={block} />}</For>
+    </div>
+  )
+}
+
+/* =============================================================================
+   Les médias — CIBLE.md §12.2. « On rend quand on a les octets, on nomme quand on ne les a pas. »
+   ============================================================================= */
+
+export function Media(props: { kind: MediaKind; url: string; name: string }) {
+  const src = () => safeHref(props.url, true)
+  return (
+    <Show when={src()}>
+      {(source) => (
+        <figure class="media">
+          <Show
+            when={props.kind === "image"}
+            fallback={<video class="media-video" src={source()} controls preload="metadata" />}
+          >
+            <img class="media-image" src={source()} alt={props.name} loading="lazy" />
+          </Show>
+          <figcaption>{props.name}</figcaption>
+        </figure>
+      )}
+    </Show>
+  )
+}
+
+/* =============================================================================
+   Les documents de la réponse — CIBLE.md §12.3. Le bilan, à la fin du dernier step.
+   Contenu (un nom, des ±lignes), jamais performance.
+   ============================================================================= */
+
+export function Documents(props: { docs: DocumentRef[] }) {
+  return (
+    <Show when={props.docs.length > 0}>
+      <div class="docs">
+        <span class="docs-head">documents</span>
+        <ul class="docs-list">
+          <For each={props.docs}>
+            {(doc) => (
+              <li title={doc.path}>
+                <span class="docs-path">{shortPath(doc.path)}</span>
+                <Show when={doc.additions !== undefined && doc.deletions !== undefined}>
+                  <span class="tool-diff">{diffLabel(doc.additions ?? 0, doc.deletions ?? 0)}</span>
+                </Show>
+                <CopyButton text={doc.path} label="Copy path" />
+              </li>
+            )}
+          </For>
+        </ul>
+      </div>
+    </Show>
+  )
+}
+
+/* =============================================================================
+   Le travail est un **flux**, pas un repli — §9.2 révisé.
+
+   Un repli qui cache tout ne laisse rien à lire : ce n'est pas de la densité, c'est une absence.
+   Le travail s'affiche donc en continu, une ligne par fait. `ToolLine`, `Reasoning` et `PatchLine`
+   sont déjà cette ligne ; chaque entrée se déplie **elle-même** pour son détail.
+   ============================================================================= */
+
+/* =============================================================================
+   Les statistiques — CIBLE.md §10. Exactement ce que le fil n'affiche plus.
+   ============================================================================= */
+
+export function SessionPanel(props: { stats: SessionStats }) {
+  const aggregates = () => {
+    const stats = props.stats
+    return [
+      { label: "turns", value: String(stats.turns) },
+      { label: "steps", value: String(stats.steps) },
+      { label: "actions", value: String(stats.actions) },
+      { label: "time", value: formatDuration(stats.durationMs) ?? "none" },
+      { label: "tokens", value: formatCount(stats.tokens) ?? "none" },
+      { label: "cost", value: formatCost(stats.cost) ?? "none" },
+    ]
+  }
+  return (
+    <div class="stats">
+      <dl class="stats-grid">
+        <For each={aggregates()}>
+          {(row) => (
+            <>
+              <dt>{row.label}</dt>
+              <dd>{row.value}</dd>
+            </>
+          )}
+        </For>
+      </dl>
+      <Show when={props.stats.perStep.length > 0}>
+        <ol class="stats-steps">
+          {/* La ligne d'étape rejetée du fil est ici : sa place est là où on la cherche. */}
+          <For each={props.stats.perStep}>{(entry) => <li>{stepSummary(entry.step)}</li>}</For>
+        </ol>
+      </Show>
     </div>
   )
 }

@@ -3,16 +3,20 @@ import { render } from "solid-js/web"
 import {
   Boundary,
   CopyButton,
+  Documents,
+  Markdown,
+  Media,
   PatchLine,
   PermissionSheet,
   Prose,
   QuestionSheet,
   Reasoning,
   REPLY_LABEL,
+  SessionPanel,
   StepBlock,
   ToolLine,
 } from "./components"
-import type { PermissionRequest, QuestionAnswers, QuestionRequest, ToolState } from "./view-model"
+import type { DocumentRef, PermissionRequest, QuestionAnswers, QuestionRequest, ToolState } from "./view-model"
 
 /** Monte un composant dans un conteneur neuf et renvoie le HTML produit. */
 function mount(component: () => unknown): { html: string; container: HTMLElement; dispose: () => void } {
@@ -290,34 +294,189 @@ describe("Boundary", () => {
   })
 })
 
-describe("StepBlock", () => {
+describe("StepBlock — plus aucune statistique", () => {
   const step = { index: 3, items: [], actions: 12, cost: 0.1234, tokens: 31_000, durationMs: 8400 }
 
-  test("la ligne d'étape porte son prix en entier", () => {
-    const { container, dispose } = mount(() => <StepBlock step={step} open onToggle={() => {}} />)
-    expect(container.textContent).toContain("step 3")
-    expect(container.textContent).toContain("12 actions")
-    expect(container.textContent).toContain("8.4s")
-    expect(container.textContent).toContain("$0.123")
-    expect(container.textContent).toContain("31k tokens")
-    dispose()
-  })
-
-  test("la prose de l'étape n'est jamais repliée", () => {
+  test("une étape rend son contenu et rien du registre de la performance", () => {
+    // §9.3 : la ligne « step 3 · 6 actions · 2.8s · $0.0008 · 31k tokens » n'est plus dans le fil.
     const { container, dispose } = mount(() => (
-      <StepBlock step={step} open onToggle={() => {}}>
+      <StepBlock step={step}>
         <Prose text="La suite est en place." />
       </StepBlock>
     ))
-    expect(container.textContent).toContain("La suite est en place.")
+    const text = container.textContent ?? ""
+    expect(text).toContain("La suite est en place.")
+    for (const gone of ["$0.123", "31k", "12 actions", "8.4s", "step 3"]) {
+      expect(text).not.toContain(gone)
+    }
+    dispose()
+  })
+})
+
+describe("le flux — rien n'est caché, et rien n'est encadré", () => {
+  const done: ToolState = {
+    status: "completed",
+    input: { command: "ls" },
+    output: "a\nb",
+    title: "List files",
+    time: { start: 1, end: 2 },
+  }
+
+  test("une ligne d'action porte sa famille en classe, pas en bordure", () => {
+    // Verdict d'usage : une bordure par ligne transforme la liste en colonne de bandes. La famille
+    // reste dite — par l'icône — donc la classe est là, la bordure non.
+    const { container, dispose } = mount(() => <ToolLine tool="bash" state={done} open={false} onToggle={() => {}} />)
+    const tool = container.querySelector(".tool")
+    expect(tool?.className).toContain("fam-shell")
+    expect(container.querySelector(".tool-line")).not.toBeNull()
     dispose()
   })
 
-  test("le clic demande le repli du travail", () => {
-    const onToggle = vi.fn()
-    const { container, dispose } = mount(() => <StepBlock step={step} open={false} onToggle={onToggle} />)
-    container.querySelector("button")?.click()
-    expect(onToggle).toHaveBeenCalledTimes(1)
+  test("l'action est visible sans rien déplier : c'est un flux, pas un repli", () => {
+    const { container, dispose } = mount(() => <ToolLine tool="bash" state={done} open={false} onToggle={() => {}} />)
+    // Le libellé et le titre sont là au repos — l'inverse de la version repliée.
+    expect(container.textContent).toContain("bash")
+    expect(container.textContent).toContain("List files")
+    dispose()
+  })
+
+  test("le détail reste accessible en dépliant l'entrée elle-même", () => {
+    const { container, dispose } = mount(() => <ToolLine tool="bash" state={done} open onToggle={() => {}} />)
+    expect(container.querySelector(".tool-detail")).not.toBeNull()
+    expect(container.querySelector(".copy")).not.toBeNull()
+    dispose()
+  })
+})
+
+describe("Markdown — rendu, jamais interprété", () => {
+  test("les blocs sortent en balises", () => {
+    const { container, dispose } = mount(() => <Markdown text={"# Titre\n\nun paragraphe\n\n- a\n- b"} />)
+    expect(container.querySelector("h3")?.textContent).toBe("Titre")
+    expect(container.querySelector(".md-p")?.textContent).toBe("un paragraphe")
+    expect(container.querySelectorAll(".md-list li")).toHaveLength(2)
+    dispose()
+  })
+
+  test("le code clôturé garde sa langue et son texte", () => {
+    const { container, dispose } = mount(() => <Markdown text={"```ts\nconst a = **x**\n```"} />)
+    expect(container.querySelector(".md-lang")?.textContent).toBe("ts")
+    expect(container.querySelector(".md-pre")?.textContent).toBe("const a = **x**")
+    dispose()
+  })
+
+  test("le HTML de la prose n'est jamais interprété", () => {
+    // Le cas qui compte : la prose vient d'un modèle, c'est une donnée.
+    const { container, dispose } = mount(() => <Markdown text={"<img src=x onerror=alert(1)>\n\n<script>alert(2)</script>"} />)
+    expect(container.querySelector("img")).toBeNull()
+    expect(container.querySelector("script")).toBeNull()
+    expect(container.textContent).toContain("<img src=x onerror=alert(1)>")
+    dispose()
+  })
+
+  test("un lien exécutable est neutralisé : le libellé reste, le lien non", () => {
+    const { container, dispose } = mount(() => <Markdown text={"[clique](javascript:alert(1))"} />)
+    expect(container.querySelector("a")).toBeNull()
+    expect(container.textContent).toContain("clique")
+    dispose()
+  })
+
+  test("un lien légitime est rendu, ouvert sans donner la main à la page", () => {
+    const { container, dispose } = mount(() => <Markdown text={"[docs](https://a.b/c)"} />)
+    const link = container.querySelector("a")
+    expect(link?.getAttribute("href")).toBe("https://a.b/c")
+    expect(link?.getAttribute("rel")).toContain("noopener")
+    dispose()
+  })
+})
+
+describe("Media", () => {
+  test("une image se rend, avec son texte de remplacement", () => {
+    const { container, dispose } = mount(() => <Media kind="image" url="https://a.b/x.png" name="x.png" />)
+    const img = container.querySelector("img")
+    expect(img?.getAttribute("src")).toBe("https://a.b/x.png")
+    expect(img?.getAttribute("alt")).toBe("x.png")
+    dispose()
+  })
+
+  test("une vidéo se rend avec ses contrôles", () => {
+    const { container, dispose } = mount(() => <Media kind="video" url="https://a.b/c.mp4" name="c.mp4" />)
+    expect(container.querySelector("video")?.hasAttribute("controls")).toBe(true)
+    dispose()
+  })
+
+  test("une source refusée ne produit rien", () => {
+    const { container, dispose } = mount(() => <Media kind="image" url="javascript:alert(1)" name="x" />)
+    expect(container.querySelector("img")).toBeNull()
+    expect(container.querySelector("video")).toBeNull()
+    dispose()
+  })
+})
+
+describe("Documents — le bilan de la réponse", () => {
+  const docs: DocumentRef[] = [
+    { path: "C:\\jeanluc\\opencode-fork\\packages\\webui\\src\\app.tsx", additions: 12, deletions: 3 },
+    { path: "docs/web-ui/CIBLE.md" },
+  ]
+
+  test("il nomme chaque document, avec ses ±lignes quand il en a", () => {
+    const { container, dispose } = mount(() => <Documents docs={docs} />)
+    expect(container.textContent).toContain("documents")
+    expect(container.textContent).toContain("webui/src/app.tsx")
+    expect(container.textContent).toContain("+12 −3")
+    // Un document sans ±lignes (un patch) ne montre pas de faux chiffres.
+    expect(container.querySelectorAll(".docs-list li")).toHaveLength(2)
+    dispose()
+  })
+
+  test("sans document, il n'existe pas", () => {
+    // §8 : pas d'état vide garni pour ne pas laisser de place.
+    const { container, dispose } = mount(() => <Documents docs={[]} />)
+    expect(container.querySelector(".docs")).toBeNull()
+    expect(container.textContent).toBe("")
+    dispose()
+  })
+})
+
+describe("SessionPanel — ce que le fil n'affiche plus", () => {
+  const stats = {
+    turns: 4,
+    steps: 31,
+    actions: 57,
+    durationMs: 372_000,
+    tokens: 1_200_000,
+    cost: 0.42,
+    perStep: [],
+  }
+
+  test("il porte les agrégats demandés", () => {
+    const { container, dispose } = mount(() => <SessionPanel stats={stats} />)
+    const text = container.textContent ?? ""
+    for (const expected of ["turns", "4", "steps", "31", "time", "6m12s", "tokens", "1.2M", "cost", "$0.42"]) {
+      expect(text).toContain(expected)
+    }
+    dispose()
+  })
+
+  test("il ne prétend pas avoir une durée quand il n'y en a pas", () => {
+    const { container, dispose } = mount(() => (
+      <SessionPanel stats={{ ...stats, durationMs: undefined, tokens: 0, cost: 0 }} />
+    ))
+    expect(container.textContent).toContain("none")
+    dispose()
+  })
+
+  test("il détaille chaque étape avec la ligne rejetée du fil", () => {
+    const { container, dispose } = mount(() => (
+      <SessionPanel
+        stats={{
+          ...stats,
+          perStep: [{ turn: 1, step: { index: 1, items: [], actions: 6, cost: 0.0008, tokens: 48_600, durationMs: 2800 } }],
+        }}
+      />
+    ))
+    expect(container.querySelectorAll(".stats-steps li")).toHaveLength(1)
+    expect(container.textContent).toContain("step 1")
+    expect(container.textContent).toContain("$0.0008")
     dispose()
   })
 })

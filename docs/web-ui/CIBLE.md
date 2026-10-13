@@ -107,6 +107,8 @@ step 3 · 12 actions · 8,4 s · $0.12 · 31k tokens
 
 - **La ligne d'étape porte son prix.** `cost` et `tokens` sont là 1 440 fois et ne s'affichent jamais :
   « combien a coûté ce travail » est une question de lecteur, pas de comptable.
+  → **Révisé en §9.3** : le prix quitte le fil et rejoint la section statistiques. Cette puce décrit
+  l'état antérieur ; la règle en vigueur est en §9.3.
 - **Le raisonnement donne sa durée** (`reasoning.time`, 1 404 occurrences), pas son volume.
 - **Un patch est un contenu** (fichiers, ±lignes) ; un `snapshot` n'en est pas un — c'est une référence
   d'état. Le premier s'affiche, le second jamais.
@@ -392,3 +394,175 @@ Deux corollaires qui coûtent cher quand on les oublie :
 1. **L'API n'est pas la cible.** Ce qui n'est pas fait tous les jours ne s'affiche pas au repos : un
    skill s'injecte, il ne se consulte pas ; un catalogue ne se parcourt pas tous les jours.
 2. **Un principe appris s'applique à tout l'écran**, pas au seul composant où il a été appris.
+
+---
+
+## 9. La densité — peu par défaut, tout à la demande
+
+**Le fil n'est pas un journal technique, c'est une conversation.** Un agent généraliste produit
+surtout du matériel de vérification : 29 % d'outils, 19 % de bornes d'étape, 18 % de raisonnement,
+5 % de patches — pour **10,6 % de texte** (mesuré, §3.2). Le lire tel quel, c'est lire 90 % de choses
+qu'on ne lit pas.
+
+### 9.1 Ce qui s'affiche — le flux
+
+Le fil est un **flux**, dans l'ordre des faits :
+
+1. **Le prompt de l'utilisateur** — sa surface, son texte tel quel.
+2. **La prose de l'agent** — au corps de lecture, en markdown rendu (§12).
+3. **Le travail** — **une ligne par fait**, en continu : icône de famille, libellé, contenu.
+
+Rien n'est replié, rien n'est caché.
+
+### 9.2 Pourquoi un flux, et pas un repli
+
+> **Révision, mesurée à l'usage.** La version précédente repliait tout le travail derrière un
+> contrôle unique nommé « work ». Le verdict de l'intéressé : *« tu as fait en sorte d'afficher peu
+> mais au final tu n'affiches rien du tout »*. Le repli n'allégeait pas le fil, il le **vidait** — et
+> un fil vidé n'est pas un fil discret, c'est un fil absent.
+
+Ce qui allège, ce n'est pas de cacher, c'est de **tenir en une ligne**. D'où le flux :
+
+- **Une ligne par fait** — un appel d'outil, une réflexion, un patch. C'est déjà la forme de
+  `ToolLine`, `Reasoning` et `PatchLine` : le travail était *déjà* une ligne, le repli n'ajoutait rien
+  qu'une disparition.
+- **Le détail se déplie sur l'entrée elle-même**, jamais sur un conteneur qui emporterait ses voisines.
+- **Aucune bordure, aucun séparateur, aucun encadré.** Une bordure par ligne transforme la liste en
+  colonne de bandes et gêne la lecture — verdict d'usage, retiré.
+- **Aucune statistique** (§9.3) : le flux porte le *contenu*, jamais le *prix*.
+- **Rien ne déplace ce qu'on lit** (§3.7) : le flux s'ajoute à la fin, il ne se réordonne pas.
+
+**Ce qui reste, et pourquoi** — la distinction est le cœur de cette section :
+
+| registre | exemples | sort |
+|---|---|---|
+| **contenu** — ce qui a changé, ce qui a été produit | `+12 −3`, `14 lines`, `2 files` | **reste** |
+| **performance** — ce que ça a coûté | `2.8s`, `$0.0008`, `48.6k tokens`, `6 actions` | **part** |
+
+Un « +12 −3 » décrit le fichier ; un « $0.0008 » décrit la facture. Le premier se lit, le second se
+consulte.
+
+### 9.3 Les statistiques déménagent
+
+> **Révision de §3.5.** La ligne d'étape portait son prix (« step 3 · 6 actions · 2.8s · $0.0008 ·
+> 48.6k tokens »). Mesuré puis jugé : c'est un registre de comptable, pas de lecteur, et un agent
+> généraliste n'en fait pas son sujet.
+
+**Toute** information statistique — **nombre de tours, temps d'exécution, jetons, coût** — quitte le
+fil et vit dans **la section de §10**. Le fil n'affiche plus un seul nombre de ce registre. Le fil
+devient ainsi **plus pauvre** que le lot précédent : c'est voulu, et c'est le sens de la demande.
+
+---
+
+## 10. Les statistiques — une section, pas le fil
+
+**Une porte toujours au même endroit, un contenu qui ne bouge pas.**
+
+- **La porte** : un bouton discret dans la tête du fil, **toujours présent** — parce que « d'accès
+  facile et visible » exclut un panneau qui n'apparaît que quand quelque chose bloque.
+- **Le contenu** : le tiroir droit, **en onglets**.
+
+> **Révision de §2.** Le tiroir droit n'était ouvert que par une permission en attente. Il gagne une
+> seconde raison d'exister : la consultation. Il **s'ouvre toujours de lui-même** sur une décision
+> bloquante — ça ne change pas.
+
+| onglet | contenu | quand |
+|---|---|---|
+| **Session** | les agrégats, puis le détail **par étape** | toujours |
+| **Decisions** | les demandes en attente (permission) | seulement s'il y en a une |
+
+**Le contenu de « Session »** — l'information ne disparaît pas, elle déménage :
+
+```
+turns      4
+steps      31
+time       6m 12s
+tokens     1.2M  (in 1.1M · out 96k)
+cost       $0.42
+───────────────
+step 1  6 actions  2.8 s  $0.0008  48.6k
+step 2  2 actions  1.1 s  $0.0004  31.0k
+…
+```
+
+La ligne d'étape rejetée du fil **est** le contenu de cette section : sa place naturelle est là où on
+la cherche, pas là où on lit.
+
+---
+
+## 11. La couleur — une grammaire, pas une décoration
+
+Couleur **sémantique par famille d'outil** — les douze familles existent déjà (`tool-icons.ts`), donc
+la couleur suit la même grammaire que l'icône et ne peut pas diverger d'elle.
+
+| famille | teinte | pourquoi celle-là |
+|---|---|---|
+| `read` | bleu | information **lue** — la couleur la plus neutre après le gris |
+| `write` | ambre | ce qui **modifie** — la teinte d'avertissement, sans être l'alarme |
+| `shell` | vert | ce qui **s'exécute** |
+| `search` | cyan | ce qui **cherche** |
+| `web` | violet | ce qui vient **d'ailleurs** |
+| `subagent` | turquoise | un **autre agent** a travaillé |
+| `ask` | indigo | la **marque** : l'agent s'adresse à vous |
+| `plan` | ardoise | déclarer un **engagement** n'est pas agir |
+| `skill` | rose | ce qui **s'injecte** |
+| `goal` | orange | l'**objectif** |
+| `todo` | gris-bleu | du **suivi**, sans relief |
+| `generic` | gris | l'inconnu ne se déguise pas |
+
+**Trois règles d'application**, sans quoi la couleur devient du bruit :
+
+1. Elle teinte l'**icône** et un **filet de 2 px** — **jamais un fond**. Un fond coloré par ligne
+   transforme une liste en mosaïque et rend la lecture plus difficile, pas plus facile.
+2. Elle **ne porte jamais seule** une information : le libellé reste, le contraste tient sans elle.
+3. **Rien de neuf n'apparaît au repos** (§8) : une ligne d'action repliée reste discrète ; la couleur
+   se voit quand on ouvre le travail.
+
+Le reste du fil suit la même sobriété : prose **neutre**, raisonnement **assourdi**, patch **ambre**,
+borne **neutre**, erreur **rouge** (`--danger`), question **accent**.
+
+---
+
+## 12. Le markdown et les médias
+
+### 12.1 Le markdown, rendu — et rendu **sûr**
+
+La prose de l'agent est écrite en markdown : la rendre en texte brut oblige à lire des `**` et des
+`#`. Le rendu couvre le sous-ensemble qui sert vraiment : titres `#` à `####`, paragraphes, listes
+(ordonnées, non ordonnées, un niveau d'imbrication), blocs de code **avec leur langue**, code en
+ligne, gras, italique, liens, citations, tableaux, filets.
+
+**Rendu sûr par construction** : tout le texte est **échappé**, et seules les balises que le moteur
+construit lui-même sont émises. Le markdown ne peut donc pas injecter de HTML — la sortie d'un modèle
+est une donnée, jamais du balisage de confiance.
+
+**La couleur sert la structure, pas la décoration** : les titres baissent en taille et en contraste
+avec leur niveau, le code a un fond `--bg-0` et sa langue en marge, le code en ligne est teinté, les
+liens prennent `--brand-1`, les citations un filet gauche, les tableaux un filet horizontal — et rien
+d'autre.
+
+### 12.2 Images et vidéos
+
+**On rend quand on a les octets, on nomme quand on ne les a pas** — et on le dit :
+
+| source | rendu |
+|---|---|
+| un lien markdown ou une URL http(s) vers une image | **image inline** |
+| une URL http(s) vers une vidéo (`.mp4`, `.webm`, `.mov`, `.ogv`) | **lecteur inline** |
+| une partie `file` portant une **data URL** (pièce jointe) | **image ou vidéo inline** |
+| `tool.state.attachments` — le serveur joint lui-même les octets (**mesuré : 25 parties**, forme `{mime, url: "data:image/png;base64,…"}`) | **image ou vidéo inline** |
+| un **chemin** seul, sans octets | **nommé**, pas rendu |
+
+La dernière ligne est une **limite mesurée, pas un oubli** : `GET /file/content` rend
+`{"type":"text","content":""}` sur une image — il lit du texte, il ne sert pas d'octets. Un
+`read shot.png` ne peut donc pas s'afficher ; il devient une entrée de §12.3, ce qui est exact.
+
+### 12.3 Les documents de la réponse
+
+**À la fin du dernier step de la dernière réponse de l'agent**, un composant liste les **documents
+produits ou touchés** : les fichiers des patches (`files[]`) et des écritures (`metadata.filediff`),
+avec leur nom, leurs ±lignes, et la copie du chemin.
+
+- Vide ⇒ **il n'existe pas** (§8 : pas d'état vide garni).
+- Il porte le **contenu**, pas la performance : un nom, des ±lignes, un chemin — aucune statistique.
+- Il ne se répète pas sur chaque tour : c'est le **bilan** de la réponse, à sa fin.
