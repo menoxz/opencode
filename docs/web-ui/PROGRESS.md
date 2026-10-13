@@ -857,6 +857,77 @@ DSH, mais l'appréciation esthétique appartient à l'utilisateur, qui a la fen�
 
 ---
 
+## Reproduction des composants DSH (livré)
+
+Correction d'une erreur de ma part, signalée par l'utilisateur : « la consigne n'était pas juste de
+recopier les valeurs mais aussi de reproduire les composantes de l'interface ». Le lot précédent
+avait repris le **vocabulaire** (les jetons) sans la **grammaire** (les composants). C'est réparé.
+
+### Ce qui a été reproduit, et d'où
+
+Chaque composant correspond à une classe du balisage de référence — `dsh-identite-visuelle.html`
+et `dsh-sidebar-proposition.html` — pour que la structure suive la même grammaire, pas seulement
+la même palette.
+
+| composant | source | structure reproduite |
+|---|---|---|
+| `TitleBar` | `.titlebar` | 3 feux, logo SVG à dégradé, produit, badge de version, séparateur, contexte |
+| pastille d'environnement | `.env` + `.pulse` | LED colorée selon l'état (connecté / interrompu / injoignable) |
+| `Brand` | `.brand` + `.brand-name small` | logo, nom, signature courte en capitales espacées |
+| `SectionLabel` | `.sectionHeader` | libellé capitalisé + filet qui court jusqu'au bord |
+| `FolderRow` | `.folderRow` | chevron rotatif, écusson dossier SVG, nom, compteur |
+| `SessionRow` | `.sessionRow` | pastille d'état, titre, **temps relatif**, actions au survol |
+| guide d'arborescence | `.tree-a .sessions::before` | filet vertical 1px en dégradé + tirets par ligne |
+| `ModelCard` | `.model-card` | LED, nom du modèle, sous-ligne d'informations |
+| `ChatMessage` | `.chat-msg` + `.avatar` + `.bubble` | avatar, bulle, rôle porté par la classe |
+| `StatusBar` | `.statusbar` + `.s-item` + `.s-right` | éléments à gauche, poussés à droite |
+| charpente | `.app` | 3 rangées : barre de titre / contenu / barre d'état |
+| motif signature | `motif: 'node-grid'` | grille de nœuds en fond de conversation |
+
+### Un composant a dû être construit, pas copié
+
+Les **temps relatifs** (« now », « 23h », « 1d ») n'existaient pas dans le code. `src/time.ts`,
+pur et testé (9 cas). Un défaut y a été trouvé **par le test** : à exactement 7 jours, ma condition
+`<` renvoyait une date alors que le commentaire disait « au-delà d'une semaine ». Corrigé dans le
+code, pas dans le test — le test avait raison.
+
+### Vérification — rendu dans le DOM, pas présence dans le CSS
+
+Un sélecteur peut exister dans la feuille de style sans qu'aucun élément ne le porte. Le contrôle
+porte donc sur le DOM, lu par CDP :
+
+```
+barre de titre : titlebar=true, feux=3, logo=true, produit="opencodev2",
+                 version="local", separateur="—", contexte="opencode-fork",
+                 pastille="session locale · connecté", LED=true
+sidebar        : brand=true, signature="agent généraliste",
+                 newSession="+ Nouvelle session", sectionLabel="Sessions 19",
+                 folderRow=true (chevron, écusson SVG, "opencode-fork", count=19),
+                 sessionRow=19, première : pastille + « 6h »
+guide          : ::before → width 1px, linear-gradient(…)      ← l'arborescence est dessinée
+carte modèle   : "opencode-go/deepseek-v4.1-flash" / "mcp 6/7 · agents 29", LED=true
+fil            : 8 bulles, avatars ["MOI","OC",…], 2 outils, badges ["erreur","terminé"]
+barre de saisie: ci-model="opencode-go/deepseek-v4.1-flash", textarea, joindre, "Envoyer"
+barre d'état   : présente, éléments gauche et droite
+charpente      : rows "46px 519px 26px", areas "top top top" / "side thread panels" / "status status status"
+```
+
+### Fausse alerte, signalée
+
+Le premier relevé donnait `bulles: 0`. J'ai failli conclure que les bulles ne se rendaient pas —
+en réalité j'avais cliqué **la session que j'avais vidée** lors du nettoyage du test de pièces
+jointes. Vérifié sur une session avec du contenu : 8 bulles. C'est la seconde fois dans la session
+qu'une cible mal choisie produit un faux négatif ; c'est exactement le genre d'erreur qui fait
+« corriger » ce qui marche.
+
+### Non reproduit, et pourquoi
+
+Les composants de DSH sans équivalent ici : barre d'onglets de fichiers, bloc de code colorisé,
+et les cartes de sa « boîte à outils » (palette, typographie, principes) — ces dernières sont des
+planches de présentation, pas des composants d'application.
+
+---
+
 ## Réserves ouvertes
 
 Aucune. Les trois réserves précédentes sont closes, chacune par une mesure :
