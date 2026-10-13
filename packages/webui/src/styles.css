@@ -1366,7 +1366,7 @@ textarea {
   padding: 6px 9px;
   border-radius: 6px;
   color: var(--text-3);
-  font-size: var(--fs-label);
+  font-size: var(--fs-note);
   text-align: left;
 }
 
@@ -1425,7 +1425,7 @@ textarea {
 
 .set-label {
   color: var(--text-1);
-  font-size: var(--fs-label);
+  font-size: var(--fs-base);
 }
 
 .set-desc {
@@ -1446,7 +1446,7 @@ textarea {
   border-radius: 7px;
   background: #0000001a;
   color: var(--text-1);
-  font-size: var(--fs-label);
+  font-size: var(--fs-base);
 }
 
 .set-input::placeholder {
@@ -1524,21 +1524,136 @@ textarea {
   border-color: var(--text-2);
 }
 
-/* ---- Une liste de choix, pour une énumération ----
-   Le libellé de chaque choix est un mot d'écran (« demander avant »), jamais la valeur technique
-   (`manual`) : c'est la même règle que pour les modes d'agent et les clés d'injection. */
+/* ---- Un contrôle de choix : cherchable, et sa liste défile avec notre barre ----
 
-.set-select {
+   Un `<select>` natif ne peut pas obéir : sa liste est dessinée par le système, donc ni champ de
+   filtre ni barre de défilement à nous. Ce composant le remplace — quatre listes dans `General`,
+   puis celles de `Providers`. */
+
+.pick {
+  position: relative;
+  display: inline-block;
+  max-width: min(440px, 44vw);
+}
+
+.pick-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
   padding: 6px 9px;
   border: 1px solid var(--line-1);
   border-radius: 7px;
   background: #0000001a;
   color: var(--text-1);
-  font-size: var(--fs-label);
+  font-size: var(--fs-base);
+  text-align: left;
 }
 
-.set-select:focus {
+.pick-trigger:hover {
   border-color: var(--line-2);
+}
+
+.pick-trigger:focus-visible,
+.pick-trigger[aria-expanded="true"] {
+  border-color: var(--line-2);
+  outline: 2px solid var(--line-2);
+  outline-offset: 1px;
+}
+
+.pick-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Le popup est positionné en `fixed` depuis le rectangle du déclencheur : ancré en `absolute`, il
+   serait rogné par le premier ancêtre scrollable du panneau. */
+.pick-pop {
+  position: fixed;
+  z-index: 60;
+  border: 1px solid var(--line-2);
+  border-radius: 9px;
+  background: var(--bg-1);
+  box-shadow: 0 14px 36px #000000a6;
+}
+
+.pick-filter {
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-bottom: 1px solid var(--line-1);
+  background: transparent;
+  color: var(--text-1);
+  font-size: var(--fs-note);
+}
+
+.pick-filter:focus {
+  outline: none;
+}
+
+.pick-list {
+  max-height: 15rem;
+  overflow-y: auto;
+  padding: 4px;
+  scrollbar-color: var(--bluish-700) transparent;
+  scrollbar-width: thin;
+}
+
+.pick-list::-webkit-scrollbar {
+  width: 10px;
+}
+
+.pick-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.pick-list::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: var(--bluish-700);
+  background-clip: content-box;
+}
+
+.pick-list::-webkit-scrollbar-thumb:hover {
+  background: var(--bluish-600);
+  background-clip: content-box;
+}
+
+.pick-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  color: var(--text-2);
+  font-size: var(--fs-base);
+  cursor: default;
+}
+
+.pick-row.is-active {
+  background: var(--bg-2);
+  color: var(--text-1);
+}
+
+.pick-row.is-current::after {
+  content: "✓";
+  margin-left: auto;
+  color: var(--text-3);
+}
+
+.pick-row-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pick-empty {
+  margin: 0;
+  padding: 10px 8px;
+  color: var(--text-3);
+  font-size: var(--fs-note);
 }
 
 /* Un champ de saisie large : la recherche d'agents, l'ajout d'un plugin. */
@@ -1562,17 +1677,14 @@ textarea {
   max-width: min(440px, 44vw);
   overflow: hidden;
   color: var(--text-2);
-  font-size: var(--fs-label);
+  font-size: var(--fs-note);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Un `select` alimenté par le serveur porte des libellés longs
-   (`DeepSeek V4.1 Flash · Command Code GOAT`) : il lui faut la place de se lire en entier, sinon le
-   nom du fournisseur — la partie qui lève l'ambiguïté — est la première coupée. */
-.set-select {
-  max-width: min(440px, 44vw);
-}
+/* La largeur d'un choix alimenté par le serveur — et sa raison, qui survit à son ancien support : des
+   libellés longs (`DeepSeek V4.1 Flash · Command Code GOAT`) ont besoin de la place de se lire en
+   entier, sinon le nom du fournisseur, qui lève l'ambiguïté, est le premier coupé. Portée par `.pick`. */
 
 .set-wide .set-input {
   flex: 1;
@@ -1598,7 +1710,7 @@ textarea {
   width: 100%;
   padding: 9px 0;
   color: var(--text-1);
-  font-size: var(--fs-label);
+  font-size: var(--fs-base);
   text-align: left;
 }
 

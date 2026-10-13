@@ -1,7 +1,8 @@
-import { createEffect, For, Show } from "solid-js"
+import { For, Show } from "solid-js"
 import { mcpTone, modeLabel, type AgentRow, type McpProblem } from "./config"
 import { ChevronIcon, PluginIcon, SettingIcon } from "./icons"
 import type { PluginEntry } from "./nav"
+import { Picker } from "./picker"
 import {
   isFormFillable,
   methodFields,
@@ -140,17 +141,12 @@ export function SettingWide(props: {
  *
  * Le type d'un réglage ne change pas : l'aiguillage se fait une fois, à la construction.
  */
-/**
- * Les choix d'un `select` — une liste plate.
- *
- * Pas d'`optgroup` : le libellé porte déjà le fournisseur (« DeepSeek V4.1 Flash · OpenCode Go »), donc
- * un titre de groupe redirait au-dessus de chaque ligne ce que la ligne dit déjà. Et une barre de
- * sélection native ne cherche **pas** les titres de groupe au clavier, seulement les libellés : grouper
- * rendrait `orcarouter` introuvable à la frappe.
- */
-function Options(props: { choices: Choice[] }) {
-  return <For each={props.choices}>{(choice) => <option value={choice.value}>{choice.label}</option>}</For>
-}
+/*
+   La liste est **plate**, et cette règle a déménagé avec le rendu : le libellé porte déjà son
+   fournisseur (« DeepSeek V4.1 Flash · OpenCode Go »), donc un `optgroup` redirait au-dessus de chaque
+   ligne ce que la ligne dit déjà. Les choix sont maintenant rendus par `Picker`, qui y ajoute ce
+   qu'un `<select>` natif ne peut pas porter : le champ de filtre et notre barre de défilement.
+*/
 
 export function SettingControl(props: {
   spec: SettingSpec
@@ -186,48 +182,33 @@ export function SettingControl(props: {
   }
 
   if (props.spec.kind === "select") {
-    /** Les choix viennent du serveur quand `source` est déclaré — sinon ils sont fixes. */
-    const choices = () => (props.spec.source ? withValue(props.choices ?? [], props.value) : [])
+    /**
+     * Les choix viennent du serveur quand `source` est déclaré — sinon ils sont fixes.
+     *
+     * La valeur n'est plus **posée** sur un contrôle : elle est **lue** à chaque rendu, par le
+     * `Picker`. C'est ce qui supprime la classe de défaut qu'on avait corrigée sur le `<select>` : un
+     * contrôle natif garde son propre état, donc une valeur donnée avant ses options se perd ; ici il
+     * n'y a pas d'état à perdre.
+     *
+     * L'entrée vide reste **explicite** dans la liste : vide est un **état**, pas une absence — il
+     * remet le réglage au défaut du serveur, qui retire la clé quand la valeur écrite est la chaîne
+     * vide (`config.ts:513`). Un `placeholder` ne suffirait pas : il se lit, il ne se choisit pas.
+     */
+    const choices = () => {
+      if (!props.spec.source) return props.spec.options ?? []
+      const source = withValue(props.choices ?? [], props.value)
+      return [{ value: "", label: props.spec.placeholder ?? "server default" }, ...source]
+    }
     return (
       <SettingRow label={props.spec.label} desc={props.spec.desc}>
-        {/*
-          La valeur est posée **dans un effet**, pas par l'attribut `value`.
-
-          Un `<select>` à qui l'on donne une valeur qu'aucune `<option>` ne porte encore **retombe
-          sur la première** — et il n'y revient plus. Or c'est exactement la séquence réelle : la
-          page s'ouvre, `Config` arrive, les listes arrivent après (49 ms pour 696 modèles). Mesuré
-          au CDP : `domValue: ""` et `selectedIndex: 0` sur les quatre listes, alors que le modèle
-          configuré figurait bien parmi les 697 options. L'écran affichait « server default » sur une
-          configuration renseignée — un mensonge, et précisément sur ce qu'on venait d'ajouter.
-
-          Lire `groups()` **dans** l'effet est le correctif : quand les choix changent, la valeur est
-          réappliquée. Le test ne pouvait pas l'attraper par un simple montage (jsdom insère les
-          options avant que la valeur soit posée : il passait sur le code fautif) — il vise donc le
-          mécanisme, et le navigateur reste l'oracle.
-        */}
-        <select
-          class="set-select"
-          ref={(element: HTMLSelectElement) => {
-            createEffect(() => {
-              const wanted = props.value
-              if (props.spec.source) choices()
-              if (element.value !== wanted) element.value = wanted
-            })
-          }}
+        <Picker
+          choices={choices()}
+          value={props.value}
+          placeholder={props.spec.placeholder}
+          label={props.spec.label}
           disabled={props.busy}
-          onChange={(event) => props.onCommit(event.currentTarget.value)}
-        >
-          <Show
-            when={props.spec.source}
-            fallback={<Options choices={props.spec.options ?? []} />}
-          >
-            {/* L'option vide est un **état**, pas un texte grisé : elle remet le réglage au défaut du
-                serveur, qui retire la clé quand la valeur écrite est la chaîne vide. Son libellé vient
-                du `placeholder` — un `select` alimenté par une source n'a pas de choix statiques. */}
-            <option value="">{props.spec.placeholder ?? "server default"}</option>
-            <Options choices={choices()} />
-          </Show>
-        </select>
+          onChange={(value) => props.onCommit(value)}
+        />
       </SettingRow>
     )
   }

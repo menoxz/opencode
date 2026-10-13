@@ -100,13 +100,13 @@ describe("la page General", () => {
     dispose()
   })
 
-  test("les quatre réglages à ensemble fini sont des `select`, pas des champs", () => {
+  test("les quatre réglages à ensemble fini se choisissent, ils ne se saisissent pas", () => {
     // C'est la correction : un champ de texte pour un modèle oblige à aller chercher
     // `opencode-go/deepseek-v4.1-flash` ailleurs et à le recopier sans faute.
     const { container, dispose } = mount(page)
     const rows = [...container.querySelectorAll(".set-row")]
     const control = (label: string) =>
-      rows.find((row) => row.querySelector(".set-label")?.textContent === label)?.querySelector(".set-control input, .set-control select")
+      rows.find((row) => row.querySelector(".set-label")?.textContent === label)?.querySelector(".set-control")
     expect(GENERAL_SETTINGS.filter((spec) => spec.kind === "select").map((spec) => spec.label)).toEqual([
       "Default model",
       "Small model",
@@ -114,62 +114,77 @@ describe("la page General", () => {
       "Shell",
     ])
     for (const label of ["Default model", "Small model", "Default agent", "Shell"]) {
-      expect(control(label)?.tagName).toBe("SELECT")
+      // Le contrôle est un **bouton** qui ouvre une liste : il n'y a rien à recopier, donc rien à
+      // recopier faux. Et rien à saisir, donc aucun champ au repos.
+      expect(control(label)?.querySelector(".pick-trigger")?.tagName).toBe("BUTTON")
+      expect(control(label)?.querySelector("input")).toBeNull()
     }
     // Le seul champ restant : l'identité, qui n'a pas d'ensemble fini.
-    expect(control("Username")?.tagName).toBe("INPUT")
+    expect(control("Username")?.querySelector("input")?.tagName).toBe("INPUT")
     dispose()
   })
 
-  test("les modèles viennent de la source, leur libellé porte le fournisseur", () => {
-    // Une liste **plate** : le libellé dit tout, l'`optgroup` ne ferait que redire au-dessus de
-    // chaque ligne ce que la ligne dit, et une barre de sélection native ne cherche pas les titres de
-    // groupe au clavier — seule la ligne compte.
+  /** Ouvre le contrôle de choix d'une ligne : c'est le seul moyen de voir ses entrées. */
+  const open = (container: HTMLElement, label: string) => {
+    const row = [...container.querySelectorAll(".set-row")].find(
+      (entry) => entry.querySelector(".set-label")?.textContent === label,
+    )
+    const trigger = row?.querySelector(".pick-trigger") as HTMLButtonElement
+    trigger.click()
+    return {
+      labels: [...(row?.querySelectorAll(".pick-row-label") ?? [])].map((node) => node.textContent),
+      rows: [...(row?.querySelectorAll(".pick-row") ?? [])] as HTMLElement[],
+    }
+  }
+
+  test("les modèles viennent de la source, et le libellé porte le fournisseur", () => {
+    // Une liste **plate** : le libellé dit tout. Un titre de groupe redirait au-dessus de chaque ligne
+    // ce que la ligne dit déjà, et le filtre ne cherche que les libellés — un titre de groupe serait
+    // donc introuvable à la frappe.
     const { container, dispose } = mount(() => page(() => "opencode-go/kimi-k2"))
-    const select = container.querySelector("select.set-select") as HTMLSelectElement
-    expect(select.querySelector("optgroup")).toBeNull()
-    const options = [...select.options].slice(1) // la première est l'option vide
-    expect(options.map((option) => option.value)).toEqual([
-      "opencode-go/deepseek-v4.1-flash",
-      "opencode-go/kimi-k2",
-    ])
-    expect(options.map((option) => option.textContent)).toEqual([
-      "DeepSeek V4.1 Flash · OpenCode Go",
-      "Kimi K2 · OpenCode Go",
-    ])
+    expect(container.querySelector("optgroup")).toBeNull()
+    const { labels } = open(container, "Default model")
+    expect(labels).toEqual(["server default", "DeepSeek V4.1 Flash · OpenCode Go", "Kimi K2 · OpenCode Go"])
     dispose()
   })
 
-  test("l'option vide porte « server default » : vide est un état, pas une absence", () => {
-    // Mesuré : `config.ts:513` retire la clé quand la valeur écrite est la chaîne vide. L'option
-    // vide remet donc réellement le réglage au défaut du serveur.
-    const { container, dispose } = mount(page)
-    const first = container.querySelector("select.set-select option")
-    expect(first?.getAttribute("value")).toBe("")
-    expect(first?.textContent).toBe("server default")
+  test("l'entrée vide est un état, et il se choisit", () => {
+    // Mesuré : `config.ts:513` retire la clé quand la valeur écrite est la chaîne vide. L'entrée vide
+    // remet donc réellement le réglage au défaut du serveur — et elle doit se **choisir**, pas
+    // seulement s'afficher : un `placeholder` se lit, il ne se clique pas.
+    const committed: string[] = []
+    const { container, dispose } = mount(() => (
+      <GeneralSection
+        blocks={settingGroups(GENERAL_SETTINGS)}
+        {...BASE}
+        draftOf={() => "opencode-go/kimi-k2"}
+        onCommit={(...args: unknown[]) => committed.push(String(args.at(-1)))}
+      />
+    ))
+    const { labels, rows } = open(container, "Default model")
+    expect(labels[0]).toBe("server default")
+    rows[0].click()
+    expect(committed).toEqual([""])
     dispose()
   })
 
   test("une valeur configurée hors de la liste s'affiche quand même", () => {
-    // Sinon le contrôle montrerait **une autre valeur que celle réellement écrite**.
+    // Sinon le contrôle montrerait **une autre valeur que celle réellement écrite**. Elle se lit sans
+    // même ouvrir la liste : c'est ce que le `select` ne faisait pas.
     const { container, dispose } = mount(() => page(() => "autre-fournisseur/modele-maison"))
-    const values = [...container.querySelectorAll("select.set-select option")].map((o) => o.getAttribute("value"))
-    expect(values).toContain("autre-fournisseur/modele-maison")
+    const shown = [...container.querySelectorAll(".pick-label")].map((node) => node.textContent)
+    expect(shown).toContain("autre-fournisseur/modele-maison")
     dispose()
   })
 
-  test("la liste réapplique la valeur configurée quand ses options changent", () => {
-    // Le défaut mesuré **au CDP** (le seul oracle, ici) : `domValue: ""` et `selectedIndex: 0` sur
-    // les quatre listes, alors que `opencode-go/deepseek-v4.1-flash` figurait bien dans les 697
-    // options. Un `<select>` à qui l'on donne une valeur qu'aucune option ne porte **encore** reste
-    // sur la première : la valeur est posée avant que les options soient insérées, et le contrôle
-    // affichait « server default » sur une configuration renseignée — un mensonge à l'écran.
+  test("la valeur s'affiche même quand les choix arrivent après elle", () => {
+    // Le défaut mesuré **au CDP** sur le `<select>` : une valeur donnée avant ses options y retombait
+    // sur la première, et l'écran annonçait « server default » sur une configuration renseignée.
     //
-    // jsdom ne rejoue pas cette course : il insère les options avant que la valeur soit posée, donc
-    // un test « monte puis vérifie » passe même sur le code fautif (mesuré). Celui-ci vise le
-    // **mécanisme** : on simule la sélection perdue (ce que fait le navigateur), puis on laisse les
-    // options changer — et la valeur doit revenir d'elle-même.
-    const [choices, setChoices] = createSignal<Choice[]>(MODELS)
+    // Le contrôle de choix n'a pas d'état à perdre — le libellé se **lit** à chaque rendu. Ce test
+    // vérifie donc les deux temps de la course (avant les choix, puis après) au lieu de simuler une
+    // perte de sélection qui ne peut plus se produire : le mécanisme fautif n'existe plus.
+    const [choices, setChoices] = createSignal<Choice[]>([])
     const { container, dispose } = mount(() => (
       <GeneralSection
         blocks={settingGroups(GENERAL_SETTINGS)}
@@ -180,13 +195,16 @@ describe("la page General", () => {
         onCommit={() => {}}
       />
     ))
-    const select = container.querySelector("select.set-select") as HTMLSelectElement
-    expect(select.value).toBe("opencode-go/kimi-k2")
+    const shown = () =>
+      [...container.querySelectorAll(".set-row")]
+        .find((row) => row.querySelector(".set-label")?.textContent === "Default model")
+        ?.querySelector(".pick-label")?.textContent
 
-    select.value = "" // ce que produit la course : la valeur n'a pas trouvé son option
-    setChoices([...MODELS, { value: "autre/a", label: "a · Autre" }])
-
-    expect(select.value).toBe("opencode-go/kimi-k2")
+    // Avant les choix : la valeur brute, telle qu'elle est écrite — surtout pas celle d'un autre.
+    expect(shown()).toBe("opencode-go/kimi-k2")
+    setChoices(MODELS)
+    // Après : le libellé de la liste, qui porte le fournisseur.
+    expect(shown()).toBe("Kimi K2 · OpenCode Go")
     dispose()
   })
 
@@ -197,30 +215,35 @@ describe("la page General", () => {
     dispose()
   })
 
-  test("sans liste déclarée, un `select` aux choix fixes se rend normalement", () => {    // `behavior` se sert du même composant : ses options sont dans la donnée, pas dans une source.
-    const { container } = (() => {
-      const mounted = mount(() => (
-        <GeneralSection
-          blocks={settingGroups([
-            {
-              key: "share",
-              label: "Session sharing",
-              desc: "d",
-              kind: "select",
-              options: [
-                { value: "manual", label: "ask first" },
-                { value: "auto", label: "publish automatically" },
-              ],
-            },
-          ])}
-          {...BASE}
-        />
-      ))
-      return mounted
-    })()
-    const options = [...container.querySelectorAll("select option")].map((o) => o.getAttribute("value"))
-    // Pas d'option vide : un `select` aux choix fixes n'a pas d'état « défaut du serveur ».
-    expect(options).toEqual(["manual", "auto"])
+  test("sans liste déclarée, les choix fixes viennent de la donnée", () => {
+    // `behavior` se sert du même composant : ses options sont dans la donnée, pas dans une source.
+    const { container, dispose } = mount(() => (
+      <GeneralSection
+        blocks={settingGroups([
+          {
+            key: "share",
+            label: "Session sharing",
+            desc: "d",
+            kind: "select",
+            options: [
+              { value: "manual", label: "ask first" },
+              { value: "auto", label: "publish automatically" },
+            ],
+          },
+        ])}
+        {...BASE}
+        draftOf={() => "manual"}
+      />
+    ))
+    // Le libellé est un mot d'écran (« ask first »), jamais la valeur technique (`manual`).
+    expect(container.querySelector(".pick-label")?.textContent).toBe("ask first")
+    const { labels, rows } = open(container, "Session sharing")
+    expect(labels).toEqual(["ask first", "publish automatically"])
+    // Pas d'entrée vide : des choix fixes n'ont pas d'état « défaut du serveur ». Et la ligne
+    // courante se marque, ce qui est la seule chose que le contrôle fermé ne peut pas dire.
+    expect(rows.length).toBe(2)
+    expect(rows[0].classList.contains("is-current")).toBe(true)
+    dispose()
   })
 })
 
