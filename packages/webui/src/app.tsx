@@ -325,8 +325,10 @@ export default function App() {
       })
     setSettingsBusy(undefined)
     if (result) {
-      setSettingsNotice(`${label} enregistré`)
+      // Le rechargement **avant** la notice : `loadSettings` commence par effacer les messages, donc
+      // poser la notice d'abord la faisait disparaître aussitôt — un succès qui ne se voyait jamais.
       await loadSettings("general")
+      setSettingsNotice(`${label} enregistré`)
     }
   }
 
