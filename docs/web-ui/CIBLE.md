@@ -365,3 +365,53 @@ suffisent** ; au-delà, l'œil ne distingue plus une hiérarchie, il voit du bru
 
 Définies une fois comme jetons (`--fs-label`, `--fs-note`, `--fs-meta`) et employées **partout** dans
 le panneau. Une taille écrite à la main dans une règle est une taille qu'on ne pourra plus changer.
+
+---
+
+## 14. L'échelle typographique (2026-10-13)
+
+Reproche : « les tailles de police sont trop petites, as-tu pensé au choix de taille par rapport à la
+taille de la page ? »
+
+### La question, retournée
+
+Faire grossir le texte avec la largeur de l'écran (`vw`) est un **contre-modèle** pour une interface
+dense. Le même outil doit se lire pareil en 1440 et en 2560 ; agrandir la fenêtre ne rend pas un
+12,5 px plus lisible — ça change le nombre de lignes qu'on voit. Le mécanisme correct pour «
+s'adapter » n'est pas la largeur, c'est **`rem`**, qui suit le **réglage de taille de police de
+l'utilisateur**.
+
+### Le défaut mesuré
+
+`body` était en `14px`, mais presque tout le contenu était **en dessous** :
+
+| mesure | valeur |
+|---|---|
+| déclarations `font-size` | **56** |
+| valeurs `px` distinctes | **8** (10,5 · 11 · 11,5 · 12 · 12,5 · 13 · 14 · 16) |
+| base de fait | **12,5 px** (17 occurrences) |
+| plus petit texte | **10,5 px** (`.rail-label`) |
+| en `rem` | **zéro** — le réglage du navigateur était ignoré partout |
+
+⇒ Ce n'était pas une échelle trop petite, c'était **l'absence d'échelle** : j'avais rétréci la base
+au lieu d'en concevoir une.
+
+### L'échelle
+
+| jeton | valeur (racine 16 px) | rôle |
+|---|---|---|
+| `--fs-title` | `1rem` — 16 | titres de section, nom du produit |
+| `--fs-base` | `0.875rem` — 14 | **primaire** : sessions, lignes d'outils, chips, corps du message |
+| `--fs-note` | `0.8125rem` — 13 | descriptions, chemins, libellés secondaires |
+| `--fs-meta` | `0.75rem` — 12 | compteurs, horodatages, libellés en capitales |
+
+Deux règles, et elles sont la justification :
+
+1. **Le contenu primaire vaut exactement la taille du `body`.** Au-delà de quatre niveaux, l'œil ne
+   distingue plus une hiérarchie, il voit du bruit.
+2. **Un rôle, un jeton — jamais une valeur.** Les 43 déclarations converties ont été attribuées
+   selon leur **rôle**, pas selon leur valeur : une substitution mécanique aurait rendu le nom d'un
+   agent en secondaire et un compteur en primaire.
+
+Le panneau de réglages **redéfinissait** `--fs-*` localement, en px : supprimé. Une échelle locale
+est une échelle qui diverge — celle du §13, encore.

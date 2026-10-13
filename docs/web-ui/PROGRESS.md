@@ -1445,3 +1445,70 @@ Le commit `6e98b8f34` est passé avec un **typecheck en échec** : le garde test
 après le build, donc le code du build, pas celui du typecheck. Corrigé (`82f090956`), et le garde
 vérifie désormais **les trois codes**. Même classe de défaut que ceux qu'on traque : un contrôle qui
 ne contrôle pas ce qu'il prétend.
+
+---
+
+## Lot suivant — l'échelle typographique (livré)
+
+Reproche : « les tailles de police sont trop petites, as-tu pensé au choix de taille **par rapport à
+la taille de la page** ? »
+
+### Le défaut, mesuré
+
+`body` était en `14px`, mais presque tout le contenu était **en dessous** : base de fait **12,5 px**
+(17 occurrences), plus petit texte **10,5 px**, **8** valeurs `px` distinctes sur **56** déclarations,
+**zéro** `rem`. Ce n'était pas une échelle trop petite, c'était **l'absence d'échelle** — et tout
+était en `px` fixes, donc le réglage de taille de police du navigateur était ignoré partout.
+
+### La question, retournée
+
+Faire grossir le texte avec la largeur (`vw`) est un **contre-modèle** pour une interface dense : le
+même outil doit se lire pareil en 1440 et en 2560. Le mécanisme correct est **`rem`**, qui suit le
+réglage de l'utilisateur.
+
+### L'échelle posée
+
+`--fs-title 1rem` · `--fs-base 0.875rem` · `--fs-note 0.8125rem` · `--fs-meta 0.75rem`.
+**Le contenu primaire vaut exactement la taille du `body`.** Les 43 déclarations converties ont été
+attribuées par **rôle**, pas par valeur — une substitution mécanique aurait rendu un nom d'agent en
+secondaire et un compteur en primaire. La redéfinition locale des jetons dans le panneau (en `px`)
+est supprimée : une échelle locale est une échelle qui diverge.
+
+### Preuve
+
+```
+vitest run      -> 12 fichiers, 189 tests, exit 0
+tsgo --noEmit   -> exit 0
+vite build      -> 107,94 ko brut / 28,80 ko compressés
+```
+
+| mesure | valeur | jeton |
+|---|---|---|
+| racine par défaut | 16 px | — |
+| **fenêtre 1440 px** | corps 14 · onglet 14 · libellé 14 · description 13 · titre 16 | — |
+| **fenêtre 2560 px** | **identique** | la taille ne dépend pas de la largeur |
+| **racine portée à 20 px** | libellé **17,5 px** (×1,25 exact) | elle suit le réglage du navigateur |
+| corps, nom de session, dossier, ligne plugin, nouveau | **14 px** | `--fs-base` |
+| heure de session | **13 px** | `--fs-note` |
+| étiquette en capitales | **12 px** | `--fs-meta` |
+| nom du produit, titre de feuille | **16 px** | `--fs-title` |
+
+### Incident extérieur, diagnostiqué puis levé
+
+En rejouant la mesure, le rail est venu **vide** : quatre sélecteurs en `ABSENT`. Ce n'était pas la
+typographie.
+
+| route | avant | après redémarrage |
+|---|---|---|
+| `/session`, `/session?directory`, `/session/{id}` | **499**, 0 octet | **200**, 23 319 octets, 19 sessions |
+| `/agent` | **499**, 0 octet | **200**, 34 agents |
+| `/mcp`, `/find` | **499**, 0 octet | — |
+| `/global/config`, `/global/health` | 200 | 200 |
+
+⇒ Toutes les routes **scopées à l'instance** échouaient ; les routes **globales** marchaient. Le
+journal du serveur ne contenait **aucune erreur** pour ces requêtes, et `499` signifie « le client a
+coupé » : la requête n'atteignait aucun gestionnaire. Redémarrage du serveur ⇒ tout est revenu.
+
+**Méthode** : devant un état vide, ne pas suspecter son interface — vérifier `route par route`, puis
+la santé des deux serveurs. Une mesure à zéro qui ressemble à un défaut de rendu peut être une panne
+de service, et « corriger » une interface qui marche coûte un commit de plus.
