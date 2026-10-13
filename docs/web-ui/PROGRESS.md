@@ -944,9 +944,12 @@ par une mesure :
 - **F3** (P3, low) — « cause de la mort du serveur après sonde SSE » : **close**. L'expiration du
   shell emporte son arbre de processus ; un serveur lancé par `Start-Process` depuis ce shell meurt
   avec lui. Ce n'était pas un défaut du serveur. Consigné dans `AGENTS.md`.
-- **F4** (refonte, medium) — « la cible de l'écran n'est pas validée par l'utilisateur » : **ouverte**.
-  `CIBLE.md` est ma proposition, et le code la suit : si elle est fausse, le code l'est aussi. Le
-  rendu n'a été jugé par personne. C'est la seule réserve qui ne se lève pas par une mesure technique.
+- **F4** (refonte, medium) — « la cible de l'écran n'est pas validée par l'utilisateur » : **close**.
+  La cible a été revue **section par section** avec l'utilisateur, qui en a validé la structure (7
+  sections, normatives) et tranché deux points : la cible se purge des comptes rendus de lot, et
+  `packages/webui` remplace `packages/app` comme interface embarquée. Ce qui subsiste n'est plus une
+  réserve de conception mais une appréciation : **le rendu n'a pas encore été jugé à l'œil** par
+  l'utilisateur — les captures ont servi à ma vérification, pas à la sienne.
 
 ---
 

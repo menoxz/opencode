@@ -1,417 +1,140 @@
 # Cible — interface web d'opencodev2
 
-> Document de **cible**, pas de statut (le statut vit dans `PROGRESS.md`).
-> Corrige-le directement : c'est le contrat dont je repars, et rien ne se construit avant.
+> Une **cible**, pas un statut : ce que l'écran doit être. Les comptes rendus de lot, avec leurs
+> mesures et leurs dates, sont dans `PROGRESS.md`. Corrige ce fichier directement — il se juge contre
+> le réel, jamais contre l'historique.
 
 ## 1. En une phrase
 
 Un écran : la conversation. Tout le reste est un tiroir.
 
-## 2. L'écran, de haut en bas — cinq zones, pas plus
+## 2. L'écran
+
+Quatre zones permanentes, **un** tiroir conditionnel, et rien d'autre à l'écran.
 
 | # | Zone | Contenu | Par défaut |
 |---|------|---------|------------|
-| 1 | Barre haute | nom du produit à gauche ; l'état de connexion = un point de couleur, sans texte | visible |
-| 2 | Tiroir gauche | liste des sessions ; recherche ; un bouton « nouveau » | visible, repliable |
-| 3 | Centre | le fil : messages utilisateur et agent. Rien d'autre | visible |
-| 4 | Bas du centre | saisie : un champ, un bouton envoyer, un bouton joindre | visible |
-| 5 | Tiroir droit | détail d'un appel d'outil, ou demande de permission | fermé |
-
-## 3. Style
-
-- Monochrome sombre. Couleur d'accent : **aucune**.
-- Une seule police. Deux tailles : texte, et petit.
-- Bordures fines translucides. Pas de cartes empilées, pas d'ombres, pas de dégradés décoratifs.
-- Le vide fait partie du dessin.
-
-## 4. Ce qui ne doit PAS apparaître
-
-- Tout indicateur qui ne change pas une décision de l'utilisateur.
-- Barre de statut permanente. Panneau « Statut ». Carte de modèle.
-- Badge, compteur, pastille, icône décorative.
-- Titre de section qui redit son contenu.
-- Plus d'une action visible par élément.
-
-## 5. Règle d'arbitrage
-
-En cas de doute : **on enlève**. Un élément ne revient que si son absence a gêné quelqu'un — et on l'écrit ici, avec la raison.
-
-## 6. Existant
-
-Je ne rafistole pas l'écran actuel. Je repars du centre (zones 3 et 4), je le finis proprement, puis je n'ajoute 2 et 5 qu'ensuite. Les composants hors cible (barre de statut, panneau statut, carte de modèle, pastilles) sont retirés, pas laissés « au cas où ».
-
-## 7. À corriger (toi)
-
-- …
-
-## 8. Inventaire de l'existant — ce qui sort de la cible
-
-Constaté dans `packages/webui/src/app.tsx`, `components.tsx` et `styles.css` (état actuel du dépôt).
-
-| Élément actuel | Zone | Verdict |
-|---|---|---|
-| `StatusBar` + `.statusbar .dot` (ok/warn/error) | aucune | retirer — barre permanente |
-| `StatusPanel` + onglet « status » | 5 | retirer |
-| Onglet « events » (journal brut) | 5 | retirer — debug, pas UX |
-| `ModelCard` | 2 | retirer |
-| `.badge` — 6 tonalités (running/completed/ok/error/warn/off) | partout | retirer |
-| `.pill.warn` | 4 | retirer |
-| `.sessionRow .dot.run` | 2 | retirer |
-| `.tab .t-dot` | 5 | retirer |
-| `FolderRow` compteur | 2 | retirer le compteur |
-| `TitleBar` badge `env` : `.pulse` + libellé « SSE connecté » | 1 | point seul, sans texte |
-| `TitleBar` pastilles `traffic` (3 `<i/>`), `version`, `context` | 1 | retirer — décor de fenêtre |
-| `Brand` — redit « opencodev2 » + tagline « agent généraliste » | 2 | retirer — le nom est déjà en zone 1 |
-| `SectionLabel` compteur (`trailing`) | 2 | retirer |
-| Panneau d'authentification | aucune | garder, mais hors écran (s'ouvre à la demande) |
-
-Après soustraction, il reste exactement : `SessionRow` (sans pastille), `ChatMessage`, `ToolCall`, `PermissionPanel`, la saisie et les pièces jointes.
-
----
-
-## 9. Détail des zones (livré 2026-10-13)
-
-Six zones traitées, chacune à partir de **données relevées sur le serveur** — jamais d'une supposition.
-
-### 1. Le prompt de l'utilisateur
-
-C'est le seul texte de l'écran qu'il a écrit lui-même : il se reconnaît au premier regard. Surface à lui,
-dans la largeur de lecture, texte conservé tel quel — un prompt est souvent structuré, et le reformater
-efface sa mise en forme. L'agent, lui, reste en texte nu : la dissymétrie dit qui a parlé.
-
-### 2. Les injections de contexte
-
-Le serveur joint au message une partie `synthetic` qui décrit ce qui a été injecté. **Deux formes
-coexistent**, toutes deux relevées :
-
-```
-Context injections · 3 section(s)          Instruction injections · 2 source(s)
-- core: system prompt (PROMPT_CORE) · …    Instructions from: …\opencodev2\AGENTS.md
-- env: environment · 391 chars              Instructions from: …\packages\opencode\AGENTS.md
-- instructions: instruction files · …
-```
-
-La seconde s'affichait **comme si l'utilisateur l'avait écrite** : corrigé. Les deux sont lues comme une
-structure — une ligne par section, son volume, sa part du total, la troncature signalée — et repliées par
-défaut. C'est la seule surface qui répond à « qu'est-ce qui consomme ma fenêtre ? ».
-
-### 3. Les actions de l'agent
-
-Une **icône par famille**, pas par outil : `read`/`list`/`glob` font la même chose du point de vue de qui
-lit. Familles : lecture, écriture, commande, recherche, sous-agent, question, plan, tâches, compétence,
-web, objectif — et une générique pour l'inconnu, jamais un carré vide. Dessinées en primitives SVG : un
-glyphe Unicode dépend de la police du système, une primitive non. Une ligne, pas une carte ; le détail
-s'ouvre sur place.
-
-### 4. Le rail : sessions par dossier
-
-Le regroupement n'est pas décoratif : sur 19 sessions, **16 sous `packages/opencode`, 3 à la racine**. Le
-libellé est le chemin **relatif**, l'absolu reste en infobulle. Un dossier se replie (ouvert par défaut :
-on replie pour dégager, on ne déplie pas pour découvrir).
-
-### 5. La ligne de session : plus ou moins d'informations
-
-Chaque ligne s'ouvre sur son détail, lu depuis les champs réels de la session : `agent`, `model`, `tokens`
-(entrée / sortie / cache), `cost`, `summary` (fichiers changés). « aucun changement » plutôt que
-« +0 −0 · 0 fichier », qui se lit comme un résultat.
-
-### 6. La configuration
-
-Une **feuille posée sur la conversation**, ouverte à la demande depuis le rail, refermée par Échap, le
-bouton ou le voile. Trois sections : général (modèle, petit modèle, utilisateur), agents (34 sur ce
-serveur, les `hidden` écartés), serveurs MCP — dont seuls les **non-connectés** sont nommés.
-
-Deux décisions :
-
-- **Elle consulte, elle n'édite pas.** Aucun point d'écriture n'a été relevé côté serveur : un
-  interrupteur inerte serait un mensonge.
-- **Pas de catalogue.** `GET /provider` rend **6,7 Mo** (228 fournisseurs, 8 775 modèles) pour deux
-  nombres qui ne changent aucune décision. Mesuré : c'est lui qui gelait l'ouverture. Section et appel
-  retirés.
-
-### Ce que ça change dans la cible
-
-Le §2 disait cinq zones. Il y en a **quatre permanentes plus un bandeau conditionnel**, et la
-configuration s'ajoute en feuille — pas en sixième zone. Un panneau qui ne sert pas tous les jours n'a
-pas à occuper l'écran tous les jours.
-
----
-
-## 10. Le rail, en trois parties (2026-10-13) — **supersédé par le §11**
-
-Le rail n'avait qu'une responsabilité de fait : lister des sessions. Il en porte maintenant trois, et
-chacune répond à une question différente.
-
-| # | Partie | Question à laquelle elle répond | Contenu | Défilement |
-|---|--------|--------------------------------|---------|-----------|
-| A | Menus | « Que peut faire le harnais, hors session ? » | menus par provenance ; plugins ; réglages ; identifiants | non — figée en haut |
-| B | Workspaces | « Où ai-je travaillé, et sur quoi ? » | dossiers ajoutés, repliables, contenant leurs sessions | **oui — la seule qui défile** |
-| C | Pied | « Où est-ce que je travaille ? » | le dossier de travail | non — figée en bas |
-
-### A. Menus — ce qui n'est pas une session
-
-Mesuré : `GET /command` rend **210 entrées**, chacune avec sa provenance ; `GET /plugin` rend un
-**objet** `{ version, runtime, origins, hooks }` et **4 origines**. Trois provenances réelles se
-séparent : `command` (les tiennes), `mcp` (apportées par un serveur), `skill` (apportées par une
-compétence).
-
-- **210 entrées ne se déplient pas.** La partie est repliée par défaut. C'est un menu, pas un contenu.
-- **La provenance est l'information utile**, pas le nombre. Confondre les trois sources effacerait la
-  seule chose qui aide à retrouver une entrée.
-- **Une entrée n'existe que si elle agit.** Une commande s'exécute sur la session active
-  (`POST /session/{id}/command`) ; sans session active, elle est inerte et le dit.
-- **719 ko compressés, donc pas au montage.** Mesuré : `GET /command` pèse 736 669 octets gzip
-  (1,99 Mo décodé) — 210 entrées dont la plupart portent un gabarit inutile à un menu. Chargé au
-  **premier dépliage**, jamais à l'ouverture de l'écran : c'est la règle de `/provider` (6,7 Mo) à
-  une autre échelle. Conséquence assumée : avant le premier clic, la section n'affiche pas de compte
-  — un nombre qu'on ne connaît pas ne s'invente pas.
-- **Le proxy doit lister la route.** Défaut réel : `/command` absent de `API_PREFIXES`
-  (`vite.config.ts`) faisait servir `index.html` avec un **status 200** ; le SDK croyait recevoir du
-  JSON, échouait à le parser, et la section restait vide **sans erreur visible**.
-
-### B. Workspaces — dossiers et sessions
-
-Un **workspace** est un dossier ajouté. Il contient ses sessions, repliées ou dépliées à souhait.
-
-- **Icônes** : un dossier et une session se distinguent par une **primitive SVG**, pas par un glyphe
-  (`▾`, `▸`) dont le rendu dépend de la police du système.
-- **Indentation** : une session se lit *sous* son dossier, pas au même niveau — la hiérarchie se voit.
-- **Interlignage serré** : une liste de navigation se parcourt, elle ne se lit pas ; l'air se gagne
-  dans les titres, pas entre les lignes.
-- **Survol qui ne déplace rien.** Le défaut réel : `display: none → flex` sur les actions faisait
-  changer la grille, donc la colonne du titre rétrécissait et **toute la ligne bougeait**. Les actions
-  occupent désormais leur place en permanence et se révèlent par l'opacité ; le padding ne change pas
-  au survol.
-
-### C. Pied — le dossier de travail
-
-Il **définit** ce que la partie B affiche. C'est le seul endroit où l'on écrit un chemin.
-
-### Ce qui ne revient pas
-
-Un compteur sur chaque dossier (le compte se lit dans le pli), une icône décorative, un titre de
-section qui redit son contenu, une action visible au repos.
-
----
-
-## 11. Le rail, réordonné par fréquence d'usage (2026-10-13)
-
-**Ce paragraphe remplace le §10.** Le §10 avait construit le rail à partir de ce que le serveur
-exposait — 210 commandes parce que `GET /command` les rendait. C'est l'erreur : **l'API n'est pas la
-cible**. L'utilisateur est en conversation ; il ne consulte pas son catalogue tous les jours. L'ordre
-suit donc la **fréquence d'usage**, pas la disponibilité technique.
-
-| ordre | partie | question | contenu | par défaut |
-|---|---|---|---|---|
-| 1 | **Nouvelle session** | « je veux parler » | un bouton | toujours visible |
-| 2 | **Plugins** | « quel accès ajouté ? » | un bouton par plugin | **vide s'il n'y a aucun plugin** |
-| 3 | **Workspaces** | « où ai-je travaillé ? » | dossiers + sessions, **4 visibles** | replié à 4 |
-| 4 | **Settings** | « configurer » | un bouton → feuille en sections | fermé |
-
-### Ce qui disparaît
-
-- **La section « menus »** (210 entrées : 12 commandes, 198 compétences). Elle n'existait que parce
-  que la route existait. Un skill ne se **consulte** pas, il s'**injecte** — le rendre navigable était
-  une erreur de nature, pas de présentation.
-- **Le chargement de `/command`** (736 669 octets gzip). Plus rien à charger, donc plus de chargement
-  paresseux à gérer.
-
-### 1. Nouvelle session — en premier
-
-L'usage le plus fréquent, donc le premier élément et sans clic. Il ouvre une conversation vide.
-
-### 2. Plugins — des boutons d'accès, pas un catalogue
-
-Un plugin ajouté = **un bouton portant son nom** (`schedule`, `failure-journal`…). La section est
-**vide s'il n'y a aucun plugin** : pas de titre orphelin, pas de « 0 », pas de repli décoratif.
-Mesuré : `GET /plugin` pèse **708 octets** — le charger au montage ne coûte rien, contrairement aux
-719 ko de `/command`.
-
-### 3. Workspaces — la lisibilité avant l'affordance
-
-- Dossier et session se distinguent par une **indentation franche** (les sessions nettement en
-  retrait) et par leur icône. Aujourd'hui 16 px ne suffisent pas : les deux se confondent.
-- **4 sessions visibles au maximum**, puis « voir plus » ; « voir moins » pour replier. Un dossier de
-  19 sessions ne charge plus l'interface — l'utilisateur n'a pas besoin de tout voir à la fois.
-- **Le libellé est l'information.** Les actions (renommer, supprimer) apparaissent **au survol, en
-  superposition sur la ligne du nom** — donc sans consommer de place au repos — et l'infobulle porte
-  le nom complet **et** l'activité de la session. Aujourd'hui les actions tiennent une colonne de la
-  grille et rognent le titre : c'est ce qui le rend illisible.
-
-### 4. Settings — gérer, pas seulement consulter
-
-Le §9 disait « elle consulte, elle n'édite pas », au motif qu'aucun point d'écriture n'existait.
-**C'était faux, et c'est mesuré** : je n'avais regardé que les routes GET que je consommais.
-
-| route | corps | usage |
-|---|---|---|
-| `PATCH /config` | `Config` | configuration du projet |
-| `PATCH /global/config` | `Config` | configuration globale |
-| `PUT /auth/{providerID}` | `Auth` | identifiants d'un fournisseur |
-| `POST /auth/{providerID}/keys` | — | ajouter une clé |
-| `POST /plugin`, `DELETE /plugin/{spec}`, `POST /plugin/reload` | `{ spec }` | plugins |
-
-311 schémas disponibles (`AgentConfig`, `ProviderConfig`, `McpLocalConfig`, `PermissionConfig`,
-`LayoutConfig`…). **Le composant gère donc réellement** : providers, modèles, agents, MCP, plugins —
-**en sections séparées, chargées à la demande**, pour ne pas payer toute la configuration à
-l'ouverture.
-
-### Nom et marque — noté, non décidé
-
-`opencodev2` évoque un agent de **codage**, pas un généraliste. « open agent » a été proposé.
-Décision utilisateur ; rien n'est changé tant qu'elle n'est pas prise.
-
----
-
-## 12. Les réglages — un composant qui gère (2026-10-13)
-
-Le §9 disait : « elle consulte, elle n'édite pas », au motif qu'aucun point d'écriture n'existait.
-**C'était faux.** Je n'avais regardé que les routes GET que je consommais. L'utilisateur attend un
-composant de réglages au sens conventionnel : **il configure providers, modèles et agents.**
-
-### Le contrat d'écriture, mesuré
-
-| route | corps | usage |
-|---|---|---|
-| `PATCH /config` | `Config` — **37 clés** | configuration du projet |
-| `PATCH /global/config` | `Config` | configuration globale |
-| `PUT /auth/{providerID}` | `Auth` | identifiants d'un fournisseur |
-| `POST /auth/{providerID}/keys` | — | ajouter une clé |
-| `DELETE /auth/{providerID}/keys/{index}` | — | retirer une clé |
-| `POST /mcp/{name}/auth` (+ `callback`) | — | authentifier un serveur MCP |
-| `POST /plugin` / `DELETE /plugin/{spec}` | `{ spec }` | ajouter / retirer un plugin |
-
-`GET /provider/auth` rend, pour **8 fournisseurs**, les méthodes réellement disponibles avec leurs
-champs — par exemple `gitlab` : `oauth` (GitLab OAuth) et `api` (« GitLab Personal Access Token »,
-champ `token`, `placeholder: glpat-…`). Les formulaires se **déduisent** de cette réponse : on
-n'invente pas les champs, le serveur les donne.
-
-### Les sections — le modèle conventionnel
-
-| section | contenu | écrit |
-|---|---|---|
-| **général** | modèle, petit modèle, utilisateur, agent par défaut | `PATCH /config` |
-| **fournisseurs** | les 8 fournisseurs, méthodes et champs réels | `PUT /auth/{id}` |
-| **agents** | les 34 agents : modèle, mode, température, désactivation | `PATCH /config` |
-| **MCP** | les 7 serveurs : statut, authentification | `POST /mcp/{n}/auth` |
-| **plugins** | les plugins chargés : ajouter, retirer | `POST` / `DELETE /plugin` |
-
-### La règle de chargement
-
-**Une section ne charge ses données qu'à sa sélection.** C'est ce que demande l'utilisateur — « éviter
-de charger la page de settings » — et c'est la même règle qu'au §9 : `GET /provider` rend **6,7 Mo**,
-il n'est **jamais** appelé ; `/provider/auth` (petit) suffit pour les méthodes.
-
-### Ce qui reste vrai du §9
-
-- **Ce qui est sain ne s'annonce pas.** Six serveurs MCP connectés sur sept ne produisent qu'une
-  ligne : seuls les défauts sont nommés.
-- **Aucun catalogue.** Le poids d'un écran ne se paie pas pour un nombre qui ne change aucune
-  décision.
-
----
-
-## 13. Le panneau de réglages — le composant, pas son contenu (2026-10-13)
-
-**Ce paragraphe existe à cause d'un échec de méthode, pas d'un défaut de finition.** L'utilisateur
-m'avait appris quatre principes — l'API n'est pas la cible, on enlève, la lisibilité prime, le
-fréquent passe devant. Je les ai appliqués **au rail**, le composant dont il parlait, et j'ai
-recommencé l'erreur exacte dans les réglages, **parce qu'il n'en avait pas parlé**.
-
-⇒ **Un principe appris s'applique à tout l'écran, pas au composant où il a été appris.** Le non-dit
-ne porte pas sur le contenu : il porte sur le composant entier — navigation, disposition,
-typographie. « Je ne vais pas tout expliquer » : ce qui est expliqué une fois vaut partout.
-
-### Ce que j'avais fait, et pourquoi c'était faux
-
-| défaut | pourquoi |
-|---|---|
-| navigation **horizontale** (onglets, `flex-wrap`) | je n'ai rien décidé, j'ai pris des onglets. Tient à 5 sections, **casse à 12** : `flex-wrap` produit deux rangées, l'en-tête grossit, le contenu descend. |
-| contenu = ce que l'API rend | j'ai exposé `model`, `username`, les 8 fournisseurs, les 34 agents — **dans l'ordre du serveur**. Pas dans l'ordre où l'utilisateur agit. |
-| **six tailles** de police ad-hoc | 14, 13, 12.5, 12, 11.5, 10.5 — aucune échelle, donc aucune hiérarchie lisible. |
-
-### La navigation : verticale
-
-C'est la convention des panneaux de réglages — Réglages Système (macOS), VS Code, GitHub, Linear,
-Notion, Slack : **une colonne de sections à gauche**, le contenu à droite. La barre horizontale est
-réservée aux **onglets**, quand il y en a peu et qu'ils ne grandissent pas.
-
-Une colonne verticale **ne change pas** quand une section s'ajoute : elle s'allonge et défile.
-⇒ **Ce qui peut croître se dessine pour croître.** Une disposition qui tient à cinq et casse à douze
-n'est pas finie.
-
-### Le contenu, par section — ce que l'utilisateur y **fait**
-
-| section | ce qu'on y fait | disposition |
-|---|---|---|
-| **général** | choisir le modèle des nouvelles sessions, son nom | formulaire : libellé, contrôle, description sous le libellé |
-| **fournisseurs** | poser une clé, ouvrir une connexion | liste de fournisseurs **repliables**, un ouvert à la fois |
-| **agents** | donner un modèle à un agent | liste **cherchable** (34 agents) |
-| **serveurs MCP** | lire l'état, authentifier | liste ; seuls les défauts sont nommés |
-| **plugins** | ajouter, retirer | liste + champ d'ajout |
-
-Deux règles de disposition, valables partout dans le panneau :
-
-- **Un libellé à gauche, son contrôle à droite, sa description dessous.** C'est la grammaire d'un
-  formulaire de réglages ; l'utilisateur balaie une colonne de libellés, pas un tas de champs.
+| 1 | Rail gauche | nom du produit, « nouvelle session », plugins, workspaces | visible, repliable |
+| 2 | Centre — le fil | le message de l'utilisateur, la réponse de l'agent, les actions | visible |
+| 3 | Bas du centre | la saisie et les pièces jointes | visible |
+| 4 | Pied du rail | le dossier de travail, les identifiants, l'accès aux réglages | visible |
+
+Ni barre haute, ni bandeau d'état, ni barre de statut : l'état de la connexion est un point, sans
+texte. **Une feuille n'est pas une zone** — les réglages s'ouvrent par-dessus la conversation et se
+referment par Échap, le bouton ou le voile.
+
+**Le tiroir droit n'existe que sur une permission en attente.** Il n'y a pas de panneau de détail
+d'action permanent à ouvrir : le détail d'une action s'ouvre **sur place**, dans le fil.
+
+### Ce qui se lit dans le fil
+
+- Le message de **l'utilisateur** est rendu dans sa surface, texte conservé tel quel : un prompt est
+  souvent structuré, et le reformater efface sa mise en forme. **L'agent reste en texte nu** — la
+  dissymétrie dit qui a parlé. C'est le seul texte de l'écran écrit par l'utilisateur lui-même.
+- Les **injections de contexte** sont repliées par défaut et lues comme une structure : une ligne par
+  source, son volume, sa part du total, la troncature signalée. C'est la seule surface qui répond à
+  « qu'est-ce qui consomme ma fenêtre ? ».
+- Une **action de l'agent** est une ligne, jamais une carte. Une **icône par famille** — lecture,
+  écriture, commande, recherche, sous-agent, question, plan, tâches, compétence, web, objectif — pas
+  par outil : `read`, `list` et `glob` font la même chose pour qui les lit. Dessinées en **primitives
+  SVG** : un glyphe Unicode dépend de la police du système, une primitive non. L'inconnu a une icône
+  générique, jamais un carré vide.
+- Le détail d'une session s'ouvre sur sa ligne, lu dans ses champs réels : agent, modèle, jetons,
+  coût, fichiers changés. **« aucun changement »** plutôt que « +0 −0 · 0 fichier », qui se lit comme
+  un résultat.
+
+## 3. Le rail
+
+**L'ordre suit la fréquence d'usage, pas la disponibilité technique.** C'est la règle qui gouverne
+ce document : une donnée exposée par le serveur n'est pas une raison de l'afficher.
+
+| ordre | partie | question | contenu |
+|---|---|---|---|
+| 1 | Nouvelle session | « je veux parler » | un bouton, premier élément, sans clic |
+| 2 | Plugins | « quel accès ajouté ? » | un bouton par plugin — **vide s'il n'y en a aucun** |
+| 3 | Workspaces | « où ai-je travaillé ? » | dossiers repliables, **4 sessions visibles** |
+| 4 | Pied | « où est-ce que je travaille ? » | dossier, identifiants, réglages |
+
+- **Le libellé est l'information.** Les actions d'une ligne (renommer, supprimer) apparaissent **au
+  survol, en superposition sur le libellé** — elles ne consomment aucune place au repos. L'infobulle
+  porte le nom complet et l'activité.
+- **Une session se lit *sous* son dossier**, par une indentation franche. Le libellé est le chemin
+  **relatif** ; l'absolu reste en infobulle.
+- **Un dossier se replie**, ouvert par défaut : on replie pour dégager, on ne déplie pas pour
+  découvrir. Au-delà de **4 sessions**, « voir plus » ; « voir moins » pour replier.
+- **Le survol ne déplace rien.** Une action qui apparaît en modifiant la grille fait bouger toute la
+  ligne : elle occupe sa place en permanence et se révèle par l'opacité.
+- Un plugin est **un bouton d'accès, pas un catalogue**. Une compétence ne se consulte pas, elle
+  s'injecte : la rendre navigable serait une erreur de nature, pas de présentation.
+
+## 4. Les réglages — une feuille qui gère
+
+Un panneau de réglages sert à **configurer**, pas à consulter. Un interrupteur inerte est un
+mensonge : si la feuille est ouverte, elle écrit.
+
+- **Navigation verticale** : une colonne de sections à gauche, le contenu à droite. C'est la
+  convention (Réglages Système, VS Code, GitHub, Linear, Notion, Slack). La barre horizontale est
+  réservée aux onglets, quand ils sont peu et qu'ils ne grandissent pas. **Ce qui peut croître se
+  dessine pour croître** : une disposition qui tient à cinq sections et casse à douze n'est pas
+  finie.
+- **Une section ne charge ses données qu'à sa sélection.** `/provider` rend 6,7 Mo et n'est jamais
+  appelé ; `/provider/auth` suffit. **Aucun catalogue** : le poids d'un écran ne se paie pas pour un
+  nombre qui ne change aucune décision.
+- **Grammaire d'une ligne** : le libellé à gauche, son contrôle à droite, sa description dessous.
+  L'utilisateur balaie une colonne de libellés, pas un tas de champs.
 - **Ce qui se replie se replie.** Huit fournisseurs ouverts d'un coup, c'est huit formulaires
   concurrents ; un seul ouvert à la fois, c'est une décision à la fois.
+- **Ce qui est sain ne s'annonce pas.** Six serveurs MCP connectés sur sept ne produisent qu'une
+  ligne : seuls les défauts sont nommés.
+- Le contenu est rangé dans **l'ordre où l'on agit**, pas dans celui du serveur.
+- Un contrôle porte **des mots d'écran** : une énumération affiche « demander avant », jamais
+  `manual` ; un interrupteur affiche « partagé », jamais `true`. Une valeur technique n'est pas un mot.
 
-### La typographie : trois tailles, justifiées
+## 5. Le style
 
-Un panneau de réglages porte **trois niveaux d'information** : ce qu'on lit d'abord (le libellé), ce
-qui l'explique (la description), ce qui le qualifie (l'état ou le compteur). **Trois tailles
-suffisent** ; au-delà, l'œil ne distingue plus une hiérarchie, il voit du bruit.
+**Monochrome sombre. Aucune couleur d'accent**, sauf une couleur d'attention réservée à une demande
+d'accord et une couleur d'échec. Bordures fines translucides ; pas de cartes empilées, pas d'ombres,
+pas de dégradés décoratifs. Le vide fait partie du dessin.
 
-Définies une fois comme jetons (`--fs-label`, `--fs-note`, `--fs-meta`) et employées **partout** dans
-le panneau. Une taille écrite à la main dans une règle est une taille qu'on ne pourra plus changer.
-
----
-
-## 14. L'échelle typographique (2026-10-13)
-
-Reproche : « les tailles de police sont trop petites, as-tu pensé au choix de taille par rapport à la
-taille de la page ? »
-
-### La question, retournée
-
-Faire grossir le texte avec la largeur de l'écran (`vw`) est un **contre-modèle** pour une interface
-dense. Le même outil doit se lire pareil en 1440 et en 2560 ; agrandir la fenêtre ne rend pas un
-12,5 px plus lisible — ça change le nombre de lignes qu'on voit. Le mécanisme correct pour «
-s'adapter » n'est pas la largeur, c'est **`rem`**, qui suit le **réglage de taille de police de
-l'utilisateur**.
-
-### Le défaut mesuré
-
-`body` était en `14px`, mais presque tout le contenu était **en dessous** :
-
-| mesure | valeur |
-|---|---|
-| déclarations `font-size` | **56** |
-| valeurs `px` distinctes | **8** (10,5 · 11 · 11,5 · 12 · 12,5 · 13 · 14 · 16) |
-| base de fait | **12,5 px** (17 occurrences) |
-| plus petit texte | **10,5 px** (`.rail-label`) |
-| en `rem` | **zéro** — le réglage du navigateur était ignoré partout |
-
-⇒ Ce n'était pas une échelle trop petite, c'était **l'absence d'échelle** : j'avais rétréci la base
-au lieu d'en concevoir une.
-
-### L'échelle
+### La typographie est une échelle de quatre, en `rem`
 
 | jeton | valeur (racine 16 px) | rôle |
 |---|---|---|
 | `--fs-title` | `1rem` — 16 | titres de section, nom du produit |
-| `--fs-base` | `0.875rem` — 14 | **primaire** : sessions, lignes d'outils, chips, corps du message |
+| `--fs-base` | `0.875rem` — 14 | **primaire** : sessions, actions, corps du message |
 | `--fs-note` | `0.8125rem` — 13 | descriptions, chemins, libellés secondaires |
-| `--fs-meta` | `0.75rem` — 12 | compteurs, horodatages, libellés en capitales |
-
-Deux règles, et elles sont la justification :
+| `--fs-meta` | `0.75rem` — 12 | horodatages, libellés en capitales |
 
 1. **Le contenu primaire vaut exactement la taille du `body`.** Au-delà de quatre niveaux, l'œil ne
    distingue plus une hiérarchie, il voit du bruit.
-2. **Un rôle, un jeton — jamais une valeur.** Les 43 déclarations converties ont été attribuées
-   selon leur **rôle**, pas selon leur valeur : une substitution mécanique aurait rendu le nom d'un
-   agent en secondaire et un compteur en primaire.
+2. **Un rôle, un jeton — jamais une valeur.** Une taille écrite à la main est une taille qu'on ne
+   pourra plus changer.
+3. **`rem`, jamais `px` ni `vw`.** En `px` fixes, le réglage de taille de police du navigateur est
+   ignoré partout ; en `vw`, le même outil ne se lit pas pareil en 1440 et en 2560. Le mécanisme
+   correct est `rem`.
+4. **La taille signale l'importance ; la casse et l'interlettrage signalent le chrome.** Le chrome
+   n'est pas plus grand que le contenu — il est moins contrasté et plus espacé.
 
-Le panneau de réglages **redéfinissait** `--fs-*` localement, en px : supprimé. Une échelle locale
-est une échelle qui diverge — celle du §13, encore.
+### Le contraste se mesure, il ne se suppose pas
+
+Tout texte passe **4,5:1** sur les trois fonds. Un jeton corrigé chez une autre source doit être
+**remesuré sur ses propres fonds** : la même valeur passe sur un fond et échoue sur l'autre.
+
+## 6. Ce qui ne doit PAS apparaître
+
+- Tout indicateur qui ne change pas une décision de l'utilisateur.
+- Badge, compteur, pastille, icône décorative, halo d'ambiance.
+- Titre de section qui redit son contenu ; action visible au repos ; colonne d'actions.
+- Barre de statut, panneau « statut », carte de modèle, journal d'événements.
+- Un état vide garni pour ne pas laisser de place : vide s'il n'y a rien, tel quel.
+
+## 7. Règle d'arbitrage
+
+En cas de doute : **on enlève**. Un élément ne revient que si son absence a gêné quelqu'un — et on
+l'écrit ici, avec la raison.
+
+Deux corollaires qui coûtent cher quand on les oublie :
+
+1. **L'API n'est pas la cible.** Ce qui n'est pas fait tous les jours ne s'affiche pas au repos : un
+   skill s'injecte, il ne se consulte pas ; un catalogue ne se parcourt pas tous les jours.
+2. **Un principe appris s'applique à tout l'écran**, pas au seul composant où il a été appris.
