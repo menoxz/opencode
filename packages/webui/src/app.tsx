@@ -35,7 +35,7 @@ import {
   McpSection,
   PluginsSection,
   ProviderBlock,
-  SettingsField,
+  SettingRow,
   SettingsSheet,
 } from "./settings-sheet"
 import {
@@ -54,7 +54,7 @@ import {
   agentCounts,
   agentRows,
   agentSummary,
-  generalLines,
+  filterAgents,
   mcpConnectedCount,
   mcpProblems,
   modelLabel,
@@ -139,6 +139,10 @@ export default function App() {
   const [settingsBusy, setSettingsBusy] = createSignal<string | undefined>()
   /** Les modèles saisis par agent, avant enregistrement. */
   const [agentDrafts, setAgentDrafts] = createSignal<Record<string, string>>({})
+  /** La recherche d'agents : 34 lignes ne se parcourent pas, l'utilisateur sait ce qu'il cherche. */
+  const [agentQuery, setAgentQuery] = createSignal("")
+  /** Un seul fournisseur ouvert à la fois : huit formulaires concurrents, c'est huit décisions. */
+  const [providerOpen, setProviderOpen] = createSignal<string | undefined>()
 
   // Plugins : les seuls accès hors session. Lus au montage — 708 octets, donc sans coût.
   const [plugins, setPlugins] = createSignal<PluginList | undefined>()
@@ -1046,46 +1050,57 @@ export default function App() {
         >
           <Show when={settingsSection() === "general"}>
             <section class="sheet-section">
-              <SettingsField
-                label="modèle par défaut"
-                hint="Le modèle qu'utilise une nouvelle session"
-                value={generalModel()}
-                placeholder={modelLabel(config().model)}
-                busy={settingsBusy() === "modèle"}
-                onInput={setGeneralModel}
-                onSubmit={() => void saveConfig({ model: generalModel().trim() }, "modèle")}
-              />
-              <SettingsField
-                label="utilisateur"
-                hint="Le nom qui signe les messages"
-                value={generalUsername()}
-                busy={settingsBusy() === "utilisateur"}
-                onInput={setGeneralUsername}
-                onSubmit={() => void saveConfig({ username: generalUsername().trim() }, "utilisateur")}
-              />
-              <dl class="sheet-lines">
-                <For each={generalLines(config())}>
-                  {(line) => (
-                    <>
-                      <dt>{line.label}</dt>
-                      <dd>{line.value}</dd>
-                    </>
-                  )}
-                </For>
-              </dl>
+              <SettingRow label="modèle par défaut" desc="le modèle qu'utilise une nouvelle session">
+                <input
+                  class="set-input"
+                  placeholder={modelLabel(config().model)}
+                  value={generalModel()}
+                  onInput={(event) => setGeneralModel(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") void saveConfig({ model: generalModel().trim() }, "modèle")
+                  }}
+                />
+                <button
+                  class="ghost bordered"
+                  disabled={settingsBusy() === "modèle"}
+                  onClick={() => void saveConfig({ model: generalModel().trim() }, "modèle")}
+                >
+                  {settingsBusy() === "modèle" ? "…" : "enregistrer"}
+                </button>
+              </SettingRow>
+
+              <SettingRow label="utilisateur" desc="le nom qui signe les messages">
+                <input
+                  class="set-input"
+                  value={generalUsername()}
+                  onInput={(event) => setGeneralUsername(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") void saveConfig({ username: generalUsername().trim() }, "utilisateur")
+                  }}
+                />
+                <button
+                  class="ghost bordered"
+                  disabled={settingsBusy() === "utilisateur"}
+                  onClick={() => void saveConfig({ username: generalUsername().trim() }, "utilisateur")}
+                >
+                  {settingsBusy() === "utilisateur" ? "…" : "enregistrer"}
+                </button>
+              </SettingRow>
             </section>
           </Show>
 
           <Show when={settingsSection() === "providers"}>
             <Show
               when={providerIDs(providerAuth()).length > 0}
-              fallback={<p class="sheet-note">chargement des fournisseurs…</p>}
+              fallback={<p class="set-note">chargement des fournisseurs…</p>}
             >
               <For each={providerIDs(providerAuth())}>
                 {(id) => (
                   <ProviderBlock
                     id={id}
                     methods={authMethods(providerAuth(), id)}
+                    open={providerOpen() === id}
+                    onToggle={() => setProviderOpen(providerOpen() === id ? undefined : id)}
                     values={providerValues()}
                     busy={settingsBusy() === `provider:${id}`}
                     onInput={(key, value) => setProviderValues((current) => ({ ...current, [key]: value }))}
@@ -1098,8 +1113,11 @@ export default function App() {
 
           <Show when={settingsSection() === "agents"}>
             <AgentsSection
-              agents={agentRows(agents())}
+              agents={filterAgents(agentRows(agents()), agentQuery())}
+              total={agentRows(agents()).length}
               summary={agentSummary(agentCounts(agentRows(agents())))}
+              query={agentQuery()}
+              onQuery={setAgentQuery}
               modelOf={agentModelOf}
               disabledOf={agentDisabledOf}
               drafts={agentDrafts()}

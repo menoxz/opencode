@@ -1302,23 +1302,52 @@ textarea {
 }
 
 
-/* ---- Réglages : sections à gauche, contenu à droite ----
+/* =============================================================================
+   Le panneau de réglages — deux colonnes, et une échelle typographique.
 
-   Une seule section est montée à la fois, et elle ne charge ses données qu'à sa sélection. */
+   La navigation est **verticale** : c'est la convention des panneaux de réglages (Réglages Système,
+   VS Code, GitHub, Linear, Notion), et c'est la seule forme qui **ne change pas** quand une section
+   s'ajoute. Une barre horizontale tiendrait à cinq sections et casserait à douze : `flex-wrap`
+   produit deux rangées, l'en-tête grossit, le contenu descend. Ce qui peut croître se dessine pour
+   croître (CIBLE §13).
+   ============================================================================= */
+
+.sheet.settings {
+  /* Trois tailles, pas six. Un panneau de réglages porte trois niveaux d'information : ce qu'on lit
+     d'abord, ce qui l'explique, ce qui le qualifie. Déclarées une fois — une taille écrite à la main
+     dans une règle est une taille qu'on ne pourra plus changer. */
+  --fs-label: 12.5px;
+  --fs-note: 11.5px;
+  --fs-meta: 10.5px;
+  /* Deux colonnes ne tiennent pas dans la largeur d'une feuille simple. */
+  width: min(760px, calc(100vw - 48px));
+}
+
+/* La rangée qui porte les deux colonnes. L'en-tête reste au-dessus, sur toute la largeur. */
+.sheet-main {
+  display: grid;
+  grid-template-columns: 184px minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+}
 
 .sheet-nav {
   display: flex;
-  flex-wrap: wrap;
-  gap: 2px;
-  padding: 0 18px 10px;
-  border-bottom: 1px solid var(--line-1);
+  flex-direction: column;
+  gap: 1px;
+  padding: 10px 8px;
+  border-right: 1px solid var(--line-1);
+  overflow-y: auto;
 }
 
 .sheet-tab {
-  padding: 5px 10px;
+  display: block;
+  width: 100%;
+  padding: 6px 9px;
   border-radius: 6px;
   color: var(--text-3);
-  font-size: 12.5px;
+  font-size: var(--fs-label);
+  text-align: left;
 }
 
 .sheet-tab:hover {
@@ -1331,34 +1360,61 @@ textarea {
   background: var(--bg-2);
 }
 
-/* Un champ de réglage : le libellé porte l'information, l'action est à droite. */
-.set-field {
+/* Le corps de la section active : c'est lui qui défile, jamais la colonne de navigation. */
+.sheet.settings .sheet-body {
+  padding: 14px 18px 18px;
+}
+
+/* ---- La grammaire du contenu : un libellé, son contrôle, sa description ----
+
+   L'utilisateur balaie une **colonne de libellés**, pas un tas de champs. Le libellé est à gauche et
+   porte l'information ; le contrôle est à droite et s'aligne ; la description tient sous le libellé,
+   parce qu'elle explique le libellé, pas le contrôle. */
+
+.set-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line-1);
+}
+
+.set-row:last-child {
+  border-bottom: 0;
+}
+
+.set-text {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  padding: 8px 0;
+  gap: 2px;
+  min-width: 0;
 }
 
 .set-label {
-  color: var(--text-2);
-  font-size: 12.5px;
+  color: var(--text-1);
+  font-size: var(--fs-label);
 }
 
-.set-row {
+.set-desc {
+  color: var(--text-3);
+  font-size: var(--fs-note);
+}
+
+.set-control {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
 .set-input {
-  flex: 1;
   min-width: 0;
   padding: 6px 9px;
   border: 1px solid var(--line-1);
   border-radius: 7px;
   background: #0000001a;
   color: var(--text-1);
-  font-size: 12.5px;
+  font-size: var(--fs-label);
 }
 
 .set-input::placeholder {
@@ -1369,41 +1425,88 @@ textarea {
   border-color: var(--line-2);
 }
 
-/* Un fournisseur et ses méthodes : chaque méthode dit ce qu'elle attend. */
-.set-block {
-  padding: 6px 0 10px;
+.set-note {
+  color: var(--text-3);
+  font-size: var(--fs-note);
+}
+
+/* Un champ de saisie large : la recherche d'agents, l'ajout d'un plugin. */
+.set-wide {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0;
+}
+
+.set-wide .set-input {
+  flex: 1;
+}
+
+/* ---- Un fournisseur : repliable, un seul ouvert à la fois ----
+
+   Huit fournisseurs ouverts d'un coup, c'est huit formulaires concurrents ; un seul ouvert, c'est
+   une décision à la fois. */
+
+.provider {
   border-bottom: 1px solid var(--line-1);
 }
 
-.set-block:last-child {
-  border-bottom: none;
+.provider:last-child {
+  border-bottom: 0;
 }
 
-.set-block-title {
-  margin: 0 0 4px;
-  color: var(--text-1);
-  font-family: var(--mono);
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.set-method {
+.provider-head {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 3px 0;
+  width: 100%;
+  padding: 9px 0;
+  color: var(--text-1);
+  font-size: var(--fs-label);
+  text-align: left;
 }
 
-.set-method-label {
+.provider-head:hover {
+  color: var(--text-1);
+}
+
+.provider-head .glyph {
   flex: 0 0 auto;
-  min-width: 0;
   color: var(--text-3);
-  font-size: 12px;
 }
 
-.set-note {
+.provider-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+}
+
+.provider-count {
   color: var(--text-3);
-  font-size: 11.5px;
+  font-size: var(--fs-meta);
+  font-variant-numeric: tabular-nums;
+}
+
+.provider-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 2px 0 12px 20px;
+}
+
+.provider-method {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.provider-method-label {
+  color: var(--text-2);
+  font-size: var(--fs-note);
 }
 
 .sheet-ok,
@@ -1411,7 +1514,7 @@ textarea {
   margin: 0 0 8px;
   padding: 5px 8px;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: var(--fs-note);
 }
 
 .sheet-ok {
@@ -1423,34 +1526,67 @@ textarea {
   color: var(--danger);
 }
 
-.sheet-plugins {
+/* ---- Une ligne de liste : plugins, serveurs MCP ----
+   Le nom porte l'information ; l'action se révèle au survol, sur la ligne du nom. */
+
+.sheet-list {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  margin: 0 0 6px;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.sheet-plugins li {
+.sheet-list li {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 0;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line-1);
+  font-size: var(--fs-label);
 }
 
-.pl-icon {
-  display: flex;
+.sheet-list li:last-child {
+  border-bottom: 0;
+}
+
+.sheet-list .glyph {
   flex: 0 0 auto;
   color: var(--text-3);
 }
 
-.pl-name {
+.pl-name,
+.mcp-name {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-2);
-  font-size: 12.5px;
+  font-size: var(--fs-label);
+}
+
+.mcp-name {
+  font-family: var(--mono);
+}
+
+.mcp-state {
+  color: var(--text-3);
+  font-size: var(--fs-meta);
+}
+
+.mcp-state.bad {
+  color: var(--danger);
+}
+
+/* La ligne de liste révèle son action au survol — mais sa place est réservée (opacité, jamais
+   display), sinon le nom se rétrécit à l'apparition et toute la ligne bouge. */
+.sheet-list li .ghost {
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.sheet-list li:hover .ghost,
+.sheet-list li:focus-within .ghost {
+  opacity: 1;
 }

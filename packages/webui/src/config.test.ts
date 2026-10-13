@@ -3,7 +3,7 @@ import {
   agentCounts,
   agentRows,
   agentSummary,
-  generalLines,
+  filterAgents,
   mcpConnectedCount,
   mcpProblems,
   mcpTone,
@@ -11,6 +11,7 @@ import {
   modelLabel,
   truncate,
   type Agent,
+  type AgentRow,
 } from "./config"
 
 /** Relevé tel quel sur `GET /agent` — les quatre premiers agents de ce serveur. */
@@ -118,35 +119,37 @@ describe("modèle", () => {
   })
 })
 
-describe("lignes générales", () => {
-  test("le modèle est toujours là, les autres seulement s'ils existent", () => {
-    const lines = generalLines({ model: "opencode-go/deepseek-v4.1-flash" })
-    expect(lines).toEqual([{ label: "modèle", value: "opencode-go/deepseek-v4.1-flash" }])
+describe("recherche d'agent", () => {
+  // Trente-quatre agents : la liste ne se parcourt pas, elle se cherche.
+  const ROWS: AgentRow[] = [
+    { name: "build", mode: "principal", description: "Écrit le code", full: "build" },
+    { name: "plan", mode: "principal", description: "Planifie", full: "plan" },
+    { name: "linkedin-content-creation", mode: "sous-agent", description: "Rédige des posts", full: "linkedin" },
+  ]
+
+  test("la recherche porte sur le nom", () => {
+    expect(filterAgents(ROWS, "build").map((row) => row.name)).toEqual(["build"])
   })
 
-  test("petit modèle, utilisateur et instructions apparaissent quand ils sont renseignés", () => {
-    const lines = generalLines({
-      model: "gros",
-      small_model: "petit",
-      username: "jeanl",
-      instructions: ["a.md", "b.md"],
-    })
-    expect(lines.map((line) => line.label)).toEqual(["modèle", "petit modèle", "utilisateur", "instructions"])
-    expect(lines[3]?.value).toBe("2 sources")
+  test("la recherche porte aussi sur la description", () => {
+    // « posts » n'est que dans la description : l'utilisateur ne connaît pas toujours le nom exact.
+    expect(filterAgents(ROWS, "posts").map((row) => row.name)).toEqual(["linkedin-content-creation"])
   })
 
-  test("une source unique se dit au singulier", () => {
-    expect(generalLines({ model: "x", instructions: ["a.md"] })[1]?.value).toBe("1 source")
+  test("la casse et les espaces n'ont pas d'importance", () => {
+    expect(filterAgents(ROWS, "  BUILD  ").map((row) => row.name)).toEqual(["build"])
   })
 
-  test("zéro source ne produit pas de ligne « 0 source »", () => {
-    // Vu à l'écran : `/config` renvoie `instructions: []`, et la ligne annonçait « 0 source » —
-    // un indicateur qui ne dit rien, exactement ce que cette refonte retire.
-    expect(generalLines({ model: "x", instructions: [] }).map((line) => line.label)).toEqual(["modèle"])
+  test("une recherche vide rend tout, sans filtrer", () => {
+    expect(filterAgents(ROWS, "   ")).toHaveLength(3)
   })
 
-  test("une chaîne vide n'est pas une valeur", () => {
-    expect(generalLines({ model: "x", username: "" }).map((line) => line.label)).toEqual(["modèle"])
+  test("aucun résultat rend une liste vide, jamais une erreur", () => {
+    expect(filterAgents(ROWS, "zzz")).toEqual([])
+  })
+
+  test("une description absente ne fait pas échouer la recherche", () => {
+    expect(filterAgents([{ name: "nu", mode: "principal", full: "nu" }], "nu")).toHaveLength(1)
   })
 })
 

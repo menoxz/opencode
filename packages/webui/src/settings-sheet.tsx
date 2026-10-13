@@ -1,19 +1,25 @@
 import { For, Show } from "solid-js"
 import { mcpTone, modeLabel, type AgentRow, type McpProblem } from "./config"
-import { PluginIcon } from "./icons"
+import { ChevronIcon, PluginIcon } from "./icons"
 import type { PluginEntry } from "./nav"
-import { methodFields, methodLabel, isFormFillable, type AuthMethod, type SettingsSection, type SettingsSectionKey } from "./settings"
+import {
+  isFormFillable,
+  methodFields,
+  methodLabel,
+  type AuthMethod,
+  type SettingsSection,
+  type SettingsSectionKey,
+} from "./settings"
 
 /**
- * Le composant de réglages — il **gère** la configuration.
+ * Le panneau de réglages — il **gère** la configuration.
  *
- * Modèle conventionnel : des sections à gauche, la section active à droite. **Une section ne charge
- * ses données qu'à sa sélection** — c'est ce que demande l'utilisateur (« éviter de charger la page
- * de settings »), et c'est la même règle qui vaut depuis le début : `GET /provider` pèse 6,7 Mo, il
- * n'est jamais appelé.
+ * Deux colonnes : les sections à gauche, leur contenu à droite. La navigation est **verticale**
+ * (cf. `CIBLE.md` §13) : c'est la convention des panneaux de réglages, et la seule forme qui ne
+ * change pas quand une section s'ajoute. Une barre horizontale tiendrait à cinq et **casserait à
+ * douze**.
  *
- * Il est séparé de `components.tsx` parce que c'est une préoccupation à part : le fil, le rail et
- * les permissions racontent une conversation ; celui-ci modifie la machine.
+ * Une section ne charge ses données qu'à sa sélection — `GET /provider` (6,7 Mo) n'est jamais appelé.
  */
 
 export function SettingsSheet(props: {
@@ -24,14 +30,13 @@ export function SettingsSheet(props: {
   /** Ce qui vient d'être écrit — affiché une fois, jamais en permanence. */
   notice?: string
   error?: string
-  /** Section en cours d'écriture : `provider:gitlab`, `plugin:…`. */
   busy?: string
   children?: unknown
 }) {
   return (
     <>
       <div class="sheet-scrim" onClick={() => props.onClose()} />
-      <aside class="sheet" role="dialog" aria-label="réglages">
+      <aside class="sheet settings" role="dialog" aria-label="réglages">
         <header class="sheet-head">
           <span class="sheet-title">réglages</span>
           <button class="ghost" title="Fermer (Échap)" onClick={() => props.onClose()}>
@@ -39,139 +44,161 @@ export function SettingsSheet(props: {
           </button>
         </header>
 
-        <nav class="sheet-nav">
-          <For each={props.sections}>
-            {(section) => (
-              <button
-                class="sheet-tab"
-                classList={{ active: section.key === props.active }}
-                title={section.hint}
-                onClick={() => props.onSelect(section.key)}
-              >
-                {section.label}
-              </button>
-            )}
-          </For>
-        </nav>
+        <div class="sheet-main">
+          <nav class="sheet-nav">
+            <For each={props.sections}>
+              {(section) => (
+                <button
+                  class="sheet-tab"
+                  classList={{ active: section.key === props.active }}
+                  title={section.hint}
+                  onClick={() => props.onSelect(section.key)}
+                >
+                  {section.label}
+                </button>
+              )}
+            </For>
+          </nav>
 
-        <div class="sheet-body">
-          <Show when={props.notice}>
-            <p class="sheet-ok">{props.notice}</p>
-          </Show>
-          <Show when={props.error}>
-            <p class="sheet-err">{props.error}</p>
-          </Show>
-          {props.children as never}
+          <div class="sheet-body">
+            <Show when={props.notice}>
+              <p class="sheet-ok">{props.notice}</p>
+            </Show>
+            <Show when={props.error}>
+              <p class="sheet-err">{props.error}</p>
+            </Show>
+            {props.children as never}
+          </div>
         </div>
       </aside>
     </>
   )
 }
 
-/** Un champ de réglage : un libellé, une valeur, et le bouton qui l'écrit. */
-export function SettingsField(props: {
-  label: string
-  value: string
-  placeholder?: string
-  hint?: string
-  secret?: boolean
-  busy?: boolean
-  disabled?: boolean
-  onInput: (value: string) => void
-  onSubmit: () => void
-}) {
+/**
+ * Une ligne de réglage — la grammaire du panneau.
+ *
+ * Le libellé est à gauche et porte l'information ; le contrôle est à droite et s'aligne ; la
+ * description tient **sous le libellé**, parce qu'elle explique le libellé, pas le contrôle.
+ * L'utilisateur balaie ainsi une colonne de libellés, pas un tas de champs.
+ */
+export function SettingRow(props: { label: string; desc?: string; children?: unknown }) {
   return (
-    <div class="set-field">
-      <label class="set-label" title={props.hint}>
-        {props.label}
-      </label>
-      <div class="set-row">
-        <input
-          class="set-input"
-          type={props.secret ? "password" : "text"}
-          value={props.value}
-          placeholder={props.placeholder}
-          disabled={props.disabled}
-          onInput={(event) => props.onInput(event.currentTarget.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") props.onSubmit()
-          }}
-        />
-        <button class="ghost bordered" disabled={props.busy || props.disabled} onClick={() => props.onSubmit()}>
-          {props.busy ? "…" : "enregistrer"}
-        </button>
+    <div class="set-row">
+      <div class="set-text">
+        <span class="set-label">{props.label}</span>
+        <Show when={props.desc}>
+          <span class="set-desc">{props.desc}</span>
+        </Show>
       </div>
+      <div class="set-control">{props.children as never}</div>
+    </div>
+  )
+}
+
+/** Un champ large : la recherche d'agents, l'ajout d'un plugin. */
+export function SettingWide(props: { placeholder: string; value: string; note?: string; onInput: (v: string) => void; children?: unknown }) {
+  return (
+    <div class="set-wide">
+      <input
+        class="set-input"
+        type="search"
+        placeholder={props.placeholder}
+        value={props.value}
+        onInput={(event) => props.onInput(event.currentTarget.value)}
+      />
+      <Show when={props.note}>
+        <span class="set-note">{props.note}</span>
+      </Show>
+      {props.children as never}
     </div>
   )
 }
 
 /**
- * Un fournisseur et ses méthodes **réelles**.
+ * Un fournisseur — **repliable, un seul ouvert à la fois**.
  *
- * Le formulaire se déduit de `GET /provider/auth` : on ne devine pas les champs. Une méthode `oauth`
- * n'en a aucun — elle se **connecte**, elle ne se remplit pas.
+ * Huit fournisseurs ouverts d'un coup, c'est huit formulaires concurrents ; un seul ouvert, c'est
+ * une décision à la fois. Le compte des méthodes est dans l'en-tête, donc il n'y a pas de titre de
+ * section à redire.
+ *
+ * Une méthode `oauth` **ne se remplit pas** : elle se connecte. Le composant le dit au lieu de
+ * montrer un champ inerte.
  */
 export function ProviderBlock(props: {
   id: string
   methods: AuthMethod[]
+  open: boolean
+  onToggle: () => void
   values: Record<string, string>
   busy?: boolean
   onInput: (key: string, value: string) => void
   onSubmit: (method: AuthMethod) => void
 }) {
   return (
-    <section class="set-block">
-      <h4 class="set-block-title">{props.id}</h4>
-      <For each={props.methods}>
-        {(method) => (
-          <div class="set-method">
-            <span class="set-method-label">{methodLabel(method)}</span>
-            <Show
-              when={isFormFillable(method)}
-              fallback={<span class="set-note">connexion à ouvrir depuis le navigateur — aucune saisie</span>}
-            >
-              <div class="set-row">
-                <For each={methodFields(method)}>
-                  {(field) => (
-                    <input
-                      class="set-input"
-                      type={field.secret ? "password" : "text"}
-                      placeholder={field.placeholder ?? field.label}
-                      title={field.label}
-                      value={props.values[field.key] ?? ""}
-                      onInput={(event) => props.onInput(field.key, event.currentTarget.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") props.onSubmit(method)
-                      }}
-                    />
-                  )}
-                </For>
-                <button class="ghost bordered" disabled={props.busy} onClick={() => props.onSubmit(method)}>
-                  {props.busy ? "…" : "enregistrer"}
-                </button>
+    <div class="provider">
+      <button class="provider-head" onClick={() => props.onToggle()}>
+        <ChevronIcon size={12} open={props.open} />
+        <span class="provider-name">{props.id}</span>
+        <span class="provider-count">{props.methods.length}</span>
+      </button>
+
+      <Show when={props.open}>
+        <div class="provider-body">
+          <For each={props.methods}>
+            {(method) => (
+              <div class="provider-method">
+                <span class="provider-method-label">{methodLabel(method)}</span>
+                <Show
+                  when={isFormFillable(method)}
+                  fallback={<span class="set-note">connexion à ouvrir depuis le navigateur — aucune saisie</span>}
+                >
+                  <div class="set-control">
+                    <For each={methodFields(method)}>
+                      {(field) => (
+                        <input
+                          class="set-input"
+                          type={field.secret ? "password" : "text"}
+                          placeholder={field.placeholder ?? field.label}
+                          title={field.label}
+                          value={props.values[field.key] ?? ""}
+                          onInput={(event) => props.onInput(field.key, event.currentTarget.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") props.onSubmit(method)
+                          }}
+                        />
+                      )}
+                    </For>
+                    <button class="ghost bordered" disabled={props.busy} onClick={() => props.onSubmit(method)}>
+                      {props.busy ? "…" : "enregistrer"}
+                    </button>
+                  </div>
+                </Show>
               </div>
-            </Show>
-          </div>
-        )}
-      </For>
-    </section>
+            )}
+          </For>
+        </div>
+      </Show>
+    </div>
   )
 }
 
 /**
- * Les agents — les **configurer**, pas seulement les lister.
+ * Les agents — **cherchables**, parce qu'ils sont 34.
  *
- * Deux gestes : donner un modèle à un agent, et le désactiver. Le bouton « enregistrer » n'existe
- * **que si un brouillon a été saisi** — un formulaire de 34 lignes couvert de boutons inutiles
- * serait du bruit, et le bruit fait perdre de vue ce qu'on est venu régler.
+ * Trente-quatre lignes ne se parcourent pas : l'utilisateur sait quel agent il veut. Le compteur
+ * « n / 34 » est le seul endroit qui donne l'échelle, et il ne s'affiche qu'une fois la recherche
+ * commencée — au repos, il n'apprend rien.
  */
 export function AgentsSection(props: {
   agents: AgentRow[]
+  total: number
+  /** Ce que le serveur déclare : « 29 principaux · 5 sous-agents ». Donne l'échelle d'un coup d'œil. */
   summary: string
-  /** Le modèle déjà déclaré pour cet agent, ou une chaîne vide. */
+  query: string
+  onQuery: (value: string) => void
   modelOf: (name: string) => string
   disabledOf: (name: string) => boolean
-  /** Les saisies en cours, par nom d'agent. */
   drafts: Record<string, string>
   busy?: string
   onDraft: (name: string, value: string) => void
@@ -180,59 +207,62 @@ export function AgentsSection(props: {
 }) {
   return (
     <section class="sheet-section">
-      <p class="sheet-note">{props.summary}</p>
-      <ul class="sheet-agents editable">
-        <For each={props.agents}>
-          {(agent) => (
-            <li class="agent-row" classList={{ off: props.disabledOf(agent.name) }}>
-              <div class="agent-head">
-                <span class="sa-name" title={agent.full}>
-                  {agent.name}
-                </span>
-                <span class="sa-mode">{modeLabel(agent.mode)}</span>
-                <Show when={props.disabledOf(agent.name)}>
-                  <span class="sa-off">désactivé</span>
-                </Show>
-              </div>
-              <div class="set-row">
-                <input
-                  class="set-input"
-                  placeholder={props.modelOf(agent.name) || "modèle par défaut"}
-                  title="Modèle de cet agent. Un champ vidé n'est pas un retour au défaut : le serveur fusionne, donc vider n'annule rien."
-                  value={props.drafts[agent.name] ?? ""}
-                  onInput={(event) => props.onDraft(agent.name, event.currentTarget.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") props.onSave(agent.name)
-                  }}
-                />
-                {/* Le bouton n'apparaît que s'il y a quelque chose à enregistrer. */}
-                <Show when={(props.drafts[agent.name] ?? "").trim() !== ""}>
-                  <button
-                    class="ghost bordered"
-                    disabled={props.busy === `agent:${agent.name}`}
-                    onClick={() => props.onSave(agent.name)}
-                  >
-                    {props.busy === `agent:${agent.name}` ? "…" : "enregistrer"}
-                  </button>
-                </Show>
-                <button
-                  class="ghost agent-toggle"
-                  title={props.disabledOf(agent.name) ? "Réactiver cet agent" : "Désactiver cet agent"}
-                  disabled={props.busy === `agent:${agent.name}`}
-                  onClick={() => props.onToggle(agent.name, !props.disabledOf(agent.name))}
+      <p class="set-note">{props.summary}</p>
+      <SettingWide
+        placeholder="Rechercher un agent"
+        value={props.query}
+        note={props.query.trim() ? `${props.agents.length} / ${props.total}` : undefined}
+        onInput={props.onQuery}
+      />
+
+      <Show
+        when={props.agents.length > 0}
+        fallback={<p class="set-note">aucun agent ne correspond à « {props.query} ».</p>}
+      >
+        <ul class="sheet-agents editable">
+          <For each={props.agents}>
+            {(agent) => (
+              <li class="agent-row" classList={{ off: props.disabledOf(agent.name) }}>
+                <SettingRow
+                  label={agent.name}
+                  desc={[modeLabel(agent.mode), props.disabledOf(agent.name) ? "désactivé" : undefined, agent.description]
+                    .filter(Boolean)
+                    .join(" · ")}
                 >
-                  {props.disabledOf(agent.name) ? "activer" : "désactiver"}
-                </button>
-              </div>
-              <Show when={agent.description}>
-                <span class="sa-desc" title={agent.full}>
-                  {agent.description}
-                </span>
-              </Show>
-            </li>
-          )}
-        </For>
-      </ul>
+                  <input
+                    class="set-input"
+                    placeholder={props.modelOf(agent.name) || "modèle par défaut"}
+                    title="Modèle de cet agent. Un champ vidé n'est pas un retour au défaut : le serveur fusionne."
+                    value={props.drafts[agent.name] ?? ""}
+                    onInput={(event) => props.onDraft(agent.name, event.currentTarget.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") props.onSave(agent.name)
+                    }}
+                  />
+                  {/* Le bouton n'existe que s'il y a quelque chose à enregistrer. */}
+                  <Show when={(props.drafts[agent.name] ?? "").trim() !== ""}>
+                    <button
+                      class="ghost bordered"
+                      disabled={props.busy === `agent:${agent.name}`}
+                      onClick={() => props.onSave(agent.name)}
+                    >
+                      {props.busy === `agent:${agent.name}` ? "…" : "enregistrer"}
+                    </button>
+                  </Show>
+                  <button
+                    class="ghost agent-toggle"
+                    title={props.disabledOf(agent.name) ? "Réactiver cet agent" : "Désactiver cet agent"}
+                    disabled={props.busy === `agent:${agent.name}`}
+                    onClick={() => props.onToggle(agent.name, !props.disabledOf(agent.name))}
+                  >
+                    {props.disabledOf(agent.name) ? "activer" : "désactiver"}
+                  </button>
+                </SettingRow>
+              </li>
+            )}
+          </For>
+        </ul>
+      </Show>
     </section>
   )
 }
@@ -241,21 +271,21 @@ export function AgentsSection(props: {
 export function McpSection(props: { total: number; connected: number; problems: McpProblem[] }) {
   return (
     <section class="sheet-section">
-      <p class="sheet-note">
+      <p class="set-note">
         {props.connected} serveur{props.connected > 1 ? "s" : ""} connecté{props.connected > 1 ? "s" : ""} sur{" "}
         {props.total}
         {props.problems.length === 0 ? " — aucun défaut" : ""}
       </p>
       <Show when={props.problems.length > 0}>
-        <ul class="sheet-mcp">
+        <ul class="sheet-list">
           <For each={props.problems}>
             {(server) => (
               <li>
                 <span class={`dot ${mcpTone(server.status)}`} />
-                <span class="mcp-name">{server.name}</span>
-                <span class="mcp-status" title={server.error}>
-                  {server.status}
+                <span class="mcp-name" title={server.error}>
+                  {server.name}
                 </span>
+                <span class={`mcp-state ${mcpTone(server.status)}`}>{server.status}</span>
               </li>
             )}
           </For>
@@ -276,17 +306,12 @@ export function PluginsSection(props: {
 }) {
   return (
     <section class="sheet-section">
-      <Show
-        when={props.plugins.length > 0}
-        fallback={<p class="sheet-note">aucun plugin chargé.</p>}
-      >
-        <ul class="sheet-plugins">
+      <Show when={props.plugins.length > 0} fallback={<p class="set-note">aucun plugin chargé.</p>}>
+        <ul class="sheet-list">
           <For each={props.plugins}>
             {(plugin) => (
               <li>
-                <span class="pl-icon">
-                  <PluginIcon size={13} />
-                </span>
+                <PluginIcon size={13} />
                 <span class="pl-name" title={plugin.hint}>
                   {plugin.label}
                 </span>
@@ -304,25 +329,20 @@ export function PluginsSection(props: {
         </ul>
       </Show>
 
-      <div class="set-field">
-        <label class="set-label" title="Chemin local, URL de fichier, ou nom de paquet npm">
-          ajouter un plugin
-        </label>
-        <div class="set-row">
-          <input
-            class="set-input"
-            placeholder="chemin, file:// ou paquet npm"
-            value={props.spec}
-            onInput={(event) => props.onSpec(event.currentTarget.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") props.onAdd()
-            }}
-          />
-          <button class="ghost bordered" disabled={props.busy || !props.spec.trim()} onClick={() => props.onAdd()}>
-            {props.busy ? "…" : "ajouter"}
-          </button>
-        </div>
-      </div>
+      <SettingRow label="ajouter un plugin" desc="chemin local, URL de fichier, ou nom de paquet npm">
+        <input
+          class="set-input"
+          placeholder="chemin, file:// ou paquet npm"
+          value={props.spec}
+          onInput={(event) => props.onSpec(event.currentTarget.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") props.onAdd()
+          }}
+        />
+        <button class="ghost bordered" disabled={props.busy || !props.spec.trim()} onClick={() => props.onAdd()}>
+          {props.busy ? "…" : "ajouter"}
+        </button>
+      </SettingRow>
     </section>
   )
 }

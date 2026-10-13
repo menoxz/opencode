@@ -308,3 +308,60 @@ il n'est **jamais** appelé ; `/provider/auth` (petit) suffit pour les méthodes
   ligne : seuls les défauts sont nommés.
 - **Aucun catalogue.** Le poids d'un écran ne se paie pas pour un nombre qui ne change aucune
   décision.
+
+---
+
+## 13. Le panneau de réglages — le composant, pas son contenu (2026-10-13)
+
+**Ce paragraphe existe à cause d'un échec de méthode, pas d'un défaut de finition.** L'utilisateur
+m'avait appris quatre principes — l'API n'est pas la cible, on enlève, la lisibilité prime, le
+fréquent passe devant. Je les ai appliqués **au rail**, le composant dont il parlait, et j'ai
+recommencé l'erreur exacte dans les réglages, **parce qu'il n'en avait pas parlé**.
+
+⇒ **Un principe appris s'applique à tout l'écran, pas au composant où il a été appris.** Le non-dit
+ne porte pas sur le contenu : il porte sur le composant entier — navigation, disposition,
+typographie. « Je ne vais pas tout expliquer » : ce qui est expliqué une fois vaut partout.
+
+### Ce que j'avais fait, et pourquoi c'était faux
+
+| défaut | pourquoi |
+|---|---|
+| navigation **horizontale** (onglets, `flex-wrap`) | je n'ai rien décidé, j'ai pris des onglets. Tient à 5 sections, **casse à 12** : `flex-wrap` produit deux rangées, l'en-tête grossit, le contenu descend. |
+| contenu = ce que l'API rend | j'ai exposé `model`, `username`, les 8 fournisseurs, les 34 agents — **dans l'ordre du serveur**. Pas dans l'ordre où l'utilisateur agit. |
+| **six tailles** de police ad-hoc | 14, 13, 12.5, 12, 11.5, 10.5 — aucune échelle, donc aucune hiérarchie lisible. |
+
+### La navigation : verticale
+
+C'est la convention des panneaux de réglages — Réglages Système (macOS), VS Code, GitHub, Linear,
+Notion, Slack : **une colonne de sections à gauche**, le contenu à droite. La barre horizontale est
+réservée aux **onglets**, quand il y en a peu et qu'ils ne grandissent pas.
+
+Une colonne verticale **ne change pas** quand une section s'ajoute : elle s'allonge et défile.
+⇒ **Ce qui peut croître se dessine pour croître.** Une disposition qui tient à cinq et casse à douze
+n'est pas finie.
+
+### Le contenu, par section — ce que l'utilisateur y **fait**
+
+| section | ce qu'on y fait | disposition |
+|---|---|---|
+| **général** | choisir le modèle des nouvelles sessions, son nom | formulaire : libellé, contrôle, description sous le libellé |
+| **fournisseurs** | poser une clé, ouvrir une connexion | liste de fournisseurs **repliables**, un ouvert à la fois |
+| **agents** | donner un modèle à un agent | liste **cherchable** (34 agents) |
+| **serveurs MCP** | lire l'état, authentifier | liste ; seuls les défauts sont nommés |
+| **plugins** | ajouter, retirer | liste + champ d'ajout |
+
+Deux règles de disposition, valables partout dans le panneau :
+
+- **Un libellé à gauche, son contrôle à droite, sa description dessous.** C'est la grammaire d'un
+  formulaire de réglages ; l'utilisateur balaie une colonne de libellés, pas un tas de champs.
+- **Ce qui se replie se replie.** Huit fournisseurs ouverts d'un coup, c'est huit formulaires
+  concurrents ; un seul ouvert à la fois, c'est une décision à la fois.
+
+### La typographie : trois tailles, justifiées
+
+Un panneau de réglages porte **trois niveaux d'information** : ce qu'on lit d'abord (le libellé), ce
+qui l'explique (la description), ce qui le qualifie (l'état ou le compteur). **Trois tailles
+suffisent** ; au-delà, l'œil ne distingue plus une hiérarchie, il voit du bruit.
+
+Définies une fois comme jetons (`--fs-label`, `--fs-note`, `--fs-meta`) et employées **partout** dans
+le panneau. Une taille écrite à la main dans une règle est une taille qu'on ne pourra plus changer.

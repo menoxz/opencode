@@ -120,6 +120,20 @@ export function mcpConnectedCount(mcp: Record<string, McpState>): number {
 }
 
 /**
+ * Filtre les agents sur leur nom et leur description.
+ *
+ * Trente-quatre lignes ne se parcourent pas : l'utilisateur sait quel agent il veut. Insensible à la
+ * casse et aux espaces, comme la recherche des sessions — chercher « build » doit trouver `build`.
+ */
+export function filterAgents(rows: AgentRow[], query: string): AgentRow[] {
+  const needle = query.trim().toLowerCase()
+  if (!needle) return rows
+  return rows.filter(
+    (row) => row.name.toLowerCase().includes(needle) || (row.description ?? "").toLowerCase().includes(needle),
+  )
+}
+
+/**
  * Serveurs en défaut. `disabled` est un état **voulu** — le serveur est éteint à la demande — mais
  * il reste digne d'être vu : c'est ce qui explique qu'un outil manque. Un serveur connecté, lui,
  * ne produit rien.
@@ -149,27 +163,4 @@ export function modelLabel(value: unknown): string {
     if (object.id) return object.id
   }
   return "défaut du serveur"
-}
-
-/**
- * Lignes de la section « général ». Une clé absente ne produit pas de ligne vide : `small_model`
- * n'existe pas sur tous les serveurs, et une ligne « small_model : — » ne dirait rien.
- */
-export function generalLines(config: {
-  model?: unknown
-  small_model?: unknown
-  username?: unknown
-  instructions?: unknown
-}): Array<{ label: string; value: string }> {
-  const lines: Array<{ label: string; value: string }> = []
-  lines.push({ label: "modèle", value: modelLabel(config.model) })
-  if (config.small_model) lines.push({ label: "petit modèle", value: modelLabel(config.small_model) })
-  if (typeof config.username === "string" && config.username) {
-    lines.push({ label: "utilisateur", value: config.username })
-  }
-  if (Array.isArray(config.instructions) && config.instructions.length > 0) {
-    const count = config.instructions.length
-    lines.push({ label: "instructions", value: `${count} source${count > 1 ? "s" : ""}` })
-  }
-  return lines
 }
