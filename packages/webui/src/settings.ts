@@ -13,10 +13,14 @@
  *
  * `GET /provider/auth` rend, pour chaque fournisseur, ses méthodes **réellement** disponibles avec
  * leurs champs. Les formulaires se déduisent de cette réponse : on n'invente pas les champs.
+ *
+ * **Langue** : les libellés d'écran sont en anglais (c'est la langue source de la copie d'interface,
+ * cf. la commande `translate`) ; les commentaires restent en français, comme le reste du dépôt.
  */
 
+import type { SettingIconName } from "./icons"
+
 export type SettingsSectionKey =
-  | "models"
   | "general"
   | "behavior"
   | "tools"
@@ -29,39 +33,50 @@ export type SettingsSection = {
   key: SettingsSectionKey
   label: string
   hint: string
+  icon: SettingIconName
 }
 
 /**
  * L'ordre suit la fréquence d'usage, comme le rail : on change de modèle bien plus souvent qu'on
  * n'ajoute un plugin.
  *
- * Huit sections — et c'est possible **parce que** la navigation est verticale : une colonne
- * s'allonge sans rien casser, là où une barre horizontale aurait produit deux rangées (CIBLE §13).
+ * **`models` a disparu** — sa clé, sa section, sa branche de chargement. Ce n'était pas une
+ * catégorie mais un **objet** : `model`, `small_model` et `default_agent` ne règlent pas « les
+ * modèles », ils règlent **ce qu'une nouvelle session prend par défaut**. Une section nommée d'après
+ * la chose au lieu du moment range le réglage à côté de la question qu'il répond ; les trois clés
+ * vivent maintenant dans `general`, sous « Defaults ».
+ *
+ * Six sections + `general` — et c'est possible **parce que** la navigation est verticale : une
+ * colonne s'allonge sans rien casser, là où une barre horizontale aurait produit deux rangées
+ * (CIBLE §13).
  */
 export const SETTINGS_SECTIONS: SettingsSection[] = [
-  { key: "models", label: "modèles", hint: "les modèles des sessions et des tâches courtes" },
-  { key: "general", label: "général", hint: "identité et environnement" },
-  { key: "behavior", label: "comportement", hint: "ce que le harnais fait sans demander" },
-  { key: "tools", label: "outils", hint: "formateur et serveur de langage" },
-  { key: "providers", label: "fournisseurs", hint: "clés et connexions des fournisseurs de modèles" },
-  { key: "agents", label: "agents", hint: "modèle et état de chaque agent" },
-  { key: "mcp", label: "serveurs MCP", hint: "état et authentification" },
-  { key: "plugins", label: "plugins", hint: "ajouter ou retirer un plugin" },
+  { key: "general", icon: "general", label: "General", hint: "defaults, workspace, identity" },
+  { key: "behavior", icon: "behavior", label: "Behavior", hint: "what the harness does without asking" },
+  { key: "tools", icon: "tools", label: "Tools", hint: "formatter and language server" },
+  { key: "providers", icon: "providers", label: "Providers", hint: "model provider keys and connections" },
+  { key: "agents", icon: "agents", label: "Agents", hint: "model and state of each agent" },
+  { key: "mcp", icon: "mcp", label: "MCP servers", hint: "status and authentication" },
+  { key: "plugins", icon: "plugins", label: "Plugins", hint: "add or remove a plugin" },
 ]
 
 /* =============================================================================
    Les réglages, **déclarés comme données**.
 
-   Pourquoi des données et pas du JSX : un réglage se décrit par quatre choses — sa clé dans
-   `Config`, son libellé d'écran, ce qu'il fait, et le contrôle qui le porte. Écrit en JSX, chacun
-   de ces quatre points se re-décide à chaque ligne, et les libellés divergent. Écrit en données, ils
-   se relisent d'un coup, et le composant ne fait que rendre.
+   Pourquoi des données et pas du JSX : un réglage se décrit par cinq choses — sa clé dans
+   `Config`, son libellé d'écran, ce qu'il fait, le contrôle qui le porte, et le bloc où il se lit.
+   Écrit en JSX, chacun de ces points se re-décide à chaque ligne, et les libellés divergent. Écrit
+   en données, ils se relisent d'un coup, et le composant ne fait que rendre.
 
-   Mesuré : `Config` a **37 clés**. Onze sont réglables simplement (chaîne, booléen, nombre, liste)
+   Mesuré : `Config` a **37 clés**. Quelques-unes sont réglables simplement (chaîne, booléen, liste)
    et quelques-unes sont des énumérations. Les autres sont des structures (cartes d'agents, de
    fournisseurs, de serveurs MCP) — elles ont leur propre section, parce qu'elles ne se règlent pas
    sur une ligne. `logLevel` et `experimental` ne sont **pas** exposés : ce sont des réglages de
    diagnostic, et les exposer sans les expliquer serait exactement le défaut qu'on corrige.
+
+   `group` est ce qui donne une forme lisible à `general`, qui porte désormais cinq réglages de trois
+   natures : deux lignes de suite sans titre se lisent comme une liste, trois blocs nommés se lisent
+   comme une page.
    ============================================================================= */
 
 export type SettingKind = "text" | "toggle" | "select"
@@ -72,52 +87,64 @@ export type SettingSpec = {
   label: string
   desc: string
   kind: SettingKind
+  /** Bloc d'appartenance. Des réglages consécutifs de même `group` se rendent sous un seul titre. */
+  group?: string
   /** Pour un `select` : les choix, avec leur libellé d'écran. */
   options?: Array<{ value: string; label: string }>
   /** Ce qui s'affiche quand la clé est absente — jamais un champ vide sans repère. */
   placeholder?: string
 }
 
-/** Les modèles : trois clés, une seule question — « avec quoi travailler ». */
-export const MODEL_SETTINGS: SettingSpec[] = [
+/**
+ * Le général — l'identité, l'environnement, et **les défauts**.
+ *
+ * `model`, `small_model` et `default_agent` viennent de l'ancienne section « models ». Le premier
+ * bloc est donc « Defaults » : c'est la question qu'ils répondent tous les trois, et c'est aussi ce
+ * qu'on touche le plus souvent dans tout le panneau.
+ *
+ * `username` et `shell` sont des chaînes qui ne changent presque jamais : ils viennent après, et
+ * leur description dit à quoi ils servent, parce que leur nom seul ne le dit pas.
+ */
+export const GENERAL_SETTINGS: SettingSpec[] = [
   {
     key: "model",
-    label: "modèle par défaut",
-    desc: "le modèle qu'utilise une nouvelle session",
+    group: "Defaults",
+    label: "Default model",
+    desc: "the model a new session starts with",
     kind: "text",
-    placeholder: "provider/modèle",
+    placeholder: "provider/model",
   },
   {
     key: "small_model",
-    label: "petit modèle",
-    desc: "les tâches courtes : titres, résumés, recherches",
+    group: "Defaults",
+    label: "Small model",
+    desc: "short tasks: titles, summaries, search",
     kind: "text",
-    placeholder: "défaut du serveur",
+    placeholder: "server default",
   },
   {
     key: "default_agent",
-    label: "agent par défaut",
-    desc: "l'agent qu'incarne une nouvelle session",
+    group: "Defaults",
+    label: "Default agent",
+    desc: "the agent a new session runs as",
     kind: "text",
-    placeholder: "défaut du serveur",
+    placeholder: "server default",
   },
-]
-
-/** L'identité et l'environnement. */
-export const GENERAL_SETTINGS: SettingSpec[] = [
   {
     key: "username",
-    label: "utilisateur",
-    desc: "le nom qui signe les messages",
+    group: "Identity",
+    label: "Username",
+    desc: "the name that signs your messages",
     kind: "text",
-    placeholder: "non renseigné",
+    placeholder: "not set",
   },
   {
     key: "shell",
-    label: "interpréteur",
-    desc: "le shell qui exécute les commandes",
+    group: "Environment",
+    label: "Shell",
+    desc: "the shell that runs commands",
     kind: "text",
-    placeholder: "défaut du système",
+    placeholder: "system default",
   },
 ]
 
@@ -129,36 +156,36 @@ export const GENERAL_SETTINGS: SettingSpec[] = [
 export const BEHAVIOR_SETTINGS: SettingSpec[] = [
   {
     key: "share",
-    label: "partage des sessions",
-    desc: "publier une conversation, ou demander avant",
+    label: "Session sharing",
+    desc: "publish a conversation, or ask first",
     kind: "select",
     options: [
-      { value: "manual", label: "demander avant" },
-      { value: "auto", label: "publier automatiquement" },
-      { value: "disabled", label: "ne jamais publier" },
+      { value: "manual", label: "ask first" },
+      { value: "auto", label: "publish automatically" },
+      { value: "disabled", label: "never publish" },
     ],
   },
   {
     key: "autoshare",
-    label: "partage automatique",
-    desc: "publier dès qu'une session est créée",
+    label: "Auto-share",
+    desc: "publish as soon as a session is created",
     kind: "toggle",
   },
   {
     key: "autoupdate",
-    label: "mise à jour",
-    desc: "installer les nouvelles versions",
+    label: "Updates",
+    desc: "install new versions",
     kind: "select",
     options: [
-      { value: "true", label: "installer automatiquement" },
-      { value: "notify", label: "seulement prévenir" },
-      { value: "false", label: "ne pas vérifier" },
+      { value: "true", label: "install automatically" },
+      { value: "notify", label: "notify only" },
+      { value: "false", label: "do not check" },
     ],
   },
   {
     key: "snapshot",
-    label: "instantanés",
-    desc: "enregistrer l'état des fichiers avant modification, pour pouvoir revenir",
+    label: "Snapshots",
+    desc: "record file state before a change, so it can be undone",
     kind: "toggle",
   },
 ]
@@ -167,24 +194,41 @@ export const BEHAVIOR_SETTINGS: SettingSpec[] = [
 export const TOOL_SETTINGS: SettingSpec[] = [
   {
     key: "formatter",
-    label: "formateur",
-    desc: "mettre en forme le code écrit",
+    label: "Formatter",
+    desc: "format code as it is written",
     kind: "toggle",
   },
   {
     key: "lsp",
-    label: "serveur de langage",
-    desc: "analyse du code : erreurs, définitions, références",
+    label: "Language server",
+    desc: "code analysis: errors, definitions, references",
     kind: "toggle",
   },
 ]
 
 /** Toutes les lignes simples, par section — ce que le composant rend. */
 export const SETTING_SPECS: Partial<Record<SettingsSectionKey, SettingSpec[]>> = {
-  models: MODEL_SETTINGS,
   general: GENERAL_SETTINGS,
   behavior: BEHAVIOR_SETTINGS,
   tools: TOOL_SETTINGS,
+}
+
+/**
+ * Découpe une liste de réglages en blocs consécutifs de même `group`.
+ *
+ * Consécutifs, et non triés : l'ordre du fichier est l'ordre d'écran, et un regroupement qui
+ * réordonnerait ferait remonter « Environment » au-dessus de « Defaults ». Un réglage sans groupe
+ * forme son propre bloc sans titre — c'est ce que fait `behavior` et `tools`, où un titre ne
+ * séparerait rien.
+ */
+export function settingGroups(specs: SettingSpec[]): Array<{ title?: string; specs: SettingSpec[] }> {
+  const blocks: Array<{ title?: string; specs: SettingSpec[] }> = []
+  for (const spec of specs) {
+    const last = blocks[blocks.length - 1]
+    if (last && last.title === spec.group) last.specs.push(spec)
+    else blocks.push({ title: spec.group, specs: [spec] })
+  }
+  return blocks
 }
 
 /**
@@ -241,7 +285,7 @@ export type AuthField = {
 
 /** `oauth` | `api` | autre — c'est ce qui décide si l'on remplit un formulaire ou si l'on connecte. */
 export function methodKind(method: AuthMethod): string {
-  return (method.type ?? "").trim() || "inconnu"
+  return (method.type ?? "").trim() || "unknown"
 }
 
 /**
@@ -256,7 +300,7 @@ export function isFormFillable(method: AuthMethod): boolean {
 export function methodLabel(method: AuthMethod): string {
   const label = method.label?.trim()
   if (label) return label
-  return isFormFillable(method) ? "clé d'API" : "se connecter"
+  return isFormFillable(method) ? "API key" : "Connect"
 }
 
 /**
@@ -280,7 +324,7 @@ export function methodFields(method: AuthMethod): AuthField[] {
     }))
   }
   if (isFormFillable(method)) {
-    return [{ key: "key", label: "clé d'API", secret: true }]
+    return [{ key: "key", label: "API key", secret: true }]
   }
   return []
 }

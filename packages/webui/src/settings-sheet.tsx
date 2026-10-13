@@ -1,6 +1,6 @@
 import { For, Show } from "solid-js"
 import { mcpTone, modeLabel, type AgentRow, type McpProblem } from "./config"
-import { ChevronIcon, PluginIcon } from "./icons"
+import { ChevronIcon, PluginIcon, SettingIcon } from "./icons"
 import type { PluginEntry } from "./nav"
 import {
   isFormFillable,
@@ -21,7 +21,12 @@ import {
  * douze**.
  *
  * Une section ne charge ses données qu'à sa sélection — `GET /provider` (6,7 Mo) n'est jamais appelé.
+ *
+ * **Langue** : les libellés d'écran sont en anglais, les commentaires en français.
  */
+
+/** Un bloc de la page : un titre, ses réglages. Le titre est absent quand il ne séparerait rien. */
+export type SettingBlock = { title?: string; specs: SettingSpec[] }
 
 export function SettingsSheet(props: {
   sections: SettingsSection[]
@@ -37,10 +42,10 @@ export function SettingsSheet(props: {
   return (
     <>
       <div class="sheet-scrim" onClick={() => props.onClose()} />
-      <aside class="sheet settings" role="dialog" aria-label="réglages">
+      <aside class="sheet settings" role="dialog" aria-label="settings">
         <header class="sheet-head">
-          <span class="sheet-title">réglages</span>
-          <button class="ghost" title="Fermer (Échap)" onClick={() => props.onClose()}>
+          <span class="sheet-title">settings</span>
+          <button class="ghost" title="Close (Esc)" onClick={() => props.onClose()}>
             ✕
           </button>
         </header>
@@ -53,9 +58,11 @@ export function SettingsSheet(props: {
                   class="sheet-tab"
                   classList={{ active: section.key === props.active }}
                   title={section.hint}
+                  aria-current={section.key === props.active ? "page" : undefined}
                   onClick={() => props.onSelect(section.key)}
                 >
-                  {section.label}
+                  <SettingIcon name={section.icon} />
+                  <span class="sheet-tab-label">{section.label}</span>
                 </button>
               )}
             </For>
@@ -98,7 +105,13 @@ export function SettingRow(props: { label: string; desc?: string; children?: unk
 }
 
 /** Un champ large : la recherche d'agents, l'ajout d'un plugin. */
-export function SettingWide(props: { placeholder: string; value: string; note?: string; onInput: (v: string) => void; children?: unknown }) {
+export function SettingWide(props: {
+  placeholder: string
+  value: string
+  note?: string
+  onInput: (v: string) => void
+  children?: unknown
+}) {
   return (
     <div class="set-wide">
       <input
@@ -181,9 +194,161 @@ export function SettingControl(props: {
         }}
       />
       <button class="ghost bordered" disabled={props.busy} onClick={() => props.onCommit(props.value)}>
-        {props.busy ? "…" : "enregistrer"}
+        {props.busy ? "…" : "Save"}
       </button>
     </SettingRow>
+  )
+}
+
+/** Un bloc déclaré : son titre, puis ses lignes. Un bloc sans titre se rend nu. */
+function Block(props: {
+  title?: string
+  specs: SettingSpec[]
+  draftOf: (spec: SettingSpec) => string
+  checkedOf: (spec: SettingSpec) => boolean
+  busy?: string
+  onInput: (spec: SettingSpec, value: string) => void
+  onCommit: (spec: SettingSpec, raw: string | boolean) => void
+}) {
+  return (
+    <section class="sheet-section">
+      <Show when={props.title}>
+        <h2>{props.title}</h2>
+      </Show>
+      <For each={props.specs}>
+        {(spec) => (
+          <SettingControl
+            spec={spec}
+            value={props.draftOf(spec)}
+            checked={props.checkedOf(spec)}
+            busy={props.busy === spec.label}
+            onInput={(value) => props.onInput(spec, value)}
+            onCommit={(raw) => props.onCommit(spec, raw)}
+          />
+        )}
+      </For>
+    </section>
+  )
+}
+
+/* =============================================================================
+   La page **General**.
+
+   Ce qu'elle est : la page qui répond à « dans quel monde est-ce que je travaille ? ». Identité,
+   défauts, lieu de travail, environnement. C'est la première de la colonne parce que c'est celle
+   qu'on ouvre sans savoir ce qu'on cherche.
+
+   Ce qu'elle n'est pas : un rendu de `Config`. L'ordre des blocs suit la **fréquence d'usage** —
+   on change de modèle bien plus souvent qu'on ne relit son nom d'utilisateur — et non l'ordre des
+   clés dans le schéma.
+
+   Le bloc **Workspace** n'est pas un réglage de `Config` : c'est la portée locale du client, celle
+   qui décide ce que le rail montre. Il vit ici parce que c'est une décision générale, et parce
+   qu'ailleurs il est invisible : jusqu'ici il n'existait qu'en champ **sans libellé** au pied du
+   rail, et rien ne disait ce qu'y écrire ni ce qui arrive quand on s'y trompe (un dossier inconnu
+   rend un rail vide **sans erreur**, le serveur répondant 200 avec zéro session).
+
+   `afterGroup` dit où il se glisse — après le dernier défaut, avant l'identité. Le reste de la page
+   reste piloté par les données : ajouter un réglage simple reste une ligne dans `GENERAL_SETTINGS`.
+   ============================================================================= */
+
+export function GeneralSection(props: {
+  blocks: SettingBlock[]
+  draftOf: (spec: SettingSpec) => string
+  checkedOf: (spec: SettingSpec) => boolean
+  busy?: string
+  onInput: (spec: SettingSpec, value: string) => void
+  onCommit: (spec: SettingSpec, raw: string | boolean) => void
+  /** Le bloc « Workspace » : absent, la page reste un simple rendu de blocs (`behavior`, `tools`). */
+  workspace?: {
+    value: string
+    known: string[]
+    onInput: (value: string) => void
+    onCommit: () => void
+  }
+  /** Le titre du bloc après lequel le dossier de travail se glisse. */
+  afterGroup?: string
+  /** Où les réglages sont écrits, et quelle version les sert — deux faits, une ligne. */
+  footnote?: string
+}) {
+  /** Ce que chaque bloc reçoit de la page — le rendu des lignes ne dépend pas de la section. */
+  const shared = {
+    draftOf: props.draftOf,
+    checkedOf: props.checkedOf,
+    busy: props.busy,
+    onInput: props.onInput,
+    onCommit: props.onCommit,
+  }
+
+  /** Le dossier de travail, s'il est déclaré **et** si c'est après ce bloc-ci. */
+  const workspaceAfter = (title: string | undefined) =>
+    props.workspace && title === props.afterGroup ? props.workspace : undefined
+
+  return (
+    <>
+      <For each={props.blocks}>
+        {(block) => (
+          <>
+            <Block title={block.title} specs={block.specs} {...shared} />
+            <Show when={workspaceAfter(block.title)}>{(ws) => <WorkspaceBlock {...ws()} />}</Show>
+          </>
+        )}
+      </For>
+
+      <Show when={props.footnote}>
+        <p class="set-footnote">{props.footnote}</p>
+      </Show>
+    </>
+  )
+}
+
+/**
+ * Le dossier de travail — la portée du rail.
+ *
+ * Le champ porte la valeur, et `datalist` porte la complétion : le serveur connaît déjà les
+ * workspaces (`GET /project`, quinze ici). Une liste déroulante ou une liste de lignes occuperait
+ * de la place en permanence pour une information qu'on ne lit qu'en écrivant ; la complétion native
+ * ne coûte rien au repos et n'oblige à rien.
+ *
+ * Le nombre de workspaces connus est écrit, lui : sans cela, on ne saurait pas que la complétion
+ * ait quelque chose à proposer.
+ */
+export function WorkspaceBlock(props: {
+  value: string
+  known: string[]
+  onInput: (value: string) => void
+  onCommit: () => void
+}) {
+  return (
+    <section class="sheet-section">
+      <h2>Workspace</h2>
+      <SettingRow
+        label="Working directory"
+        desc="where the rail looks for sessions; empty means the server's own directory"
+      >
+        <input
+          class="set-input wide"
+          list="oc-known-workspaces"
+          placeholder="server directory"
+          value={props.value}
+          onInput={(event) => props.onInput(event.currentTarget.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") props.onCommit()
+          }}
+        />
+        <datalist id="oc-known-workspaces">
+          <For each={props.known}>{(path) => <option value={path} />}</For>
+        </datalist>
+        <button class="ghost bordered" onClick={() => props.onCommit()}>
+          Switch
+        </button>
+      </SettingRow>
+      <Show when={props.known.length > 0}>
+        <p class="set-note">
+          the server knows {props.known.length} workspace{props.known.length > 1 ? "s" : ""} — type to complete
+        </p>
+      </Show>
+    </section>
   )
 }
 
@@ -223,7 +388,7 @@ export function ProviderBlock(props: {
                 <span class="provider-method-label">{methodLabel(method)}</span>
                 <Show
                   when={isFormFillable(method)}
-                  fallback={<span class="set-note">connexion à ouvrir depuis le navigateur — aucune saisie</span>}
+                  fallback={<span class="set-note">connect in the browser — nothing to type here</span>}
                 >
                   <div class="set-control">
                     <For each={methodFields(method)}>
@@ -242,7 +407,7 @@ export function ProviderBlock(props: {
                       )}
                     </For>
                     <button class="ghost bordered" disabled={props.busy} onClick={() => props.onSubmit(method)}>
-                      {props.busy ? "…" : "enregistrer"}
+                      {props.busy ? "…" : "Save"}
                     </button>
                   </div>
                 </Show>
@@ -265,7 +430,7 @@ export function ProviderBlock(props: {
 export function AgentsSection(props: {
   agents: AgentRow[]
   total: number
-  /** Ce que le serveur déclare : « 29 principaux · 5 sous-agents ». Donne l'échelle d'un coup d'œil. */
+  /** Ce que le serveur déclare : « 29 primary · 5 subagents ». Donne l'échelle d'un coup d'œil. */
   summary: string
   query: string
   onQuery: (value: string) => void
@@ -281,7 +446,7 @@ export function AgentsSection(props: {
     <section class="sheet-section">
       <p class="set-note">{props.summary}</p>
       <SettingWide
-        placeholder="Rechercher un agent"
+        placeholder="Search agents"
         value={props.query}
         note={props.query.trim() ? `${props.agents.length} / ${props.total}` : undefined}
         onInput={props.onQuery}
@@ -289,7 +454,7 @@ export function AgentsSection(props: {
 
       <Show
         when={props.agents.length > 0}
-        fallback={<p class="set-note">aucun agent ne correspond à « {props.query} ».</p>}
+        fallback={<p class="set-note">no agent matches “{props.query}”.</p>}
       >
         <ul class="sheet-agents editable">
           <For each={props.agents}>
@@ -297,14 +462,14 @@ export function AgentsSection(props: {
               <li class="agent-row" classList={{ off: props.disabledOf(agent.name) }}>
                 <SettingRow
                   label={agent.name}
-                  desc={[modeLabel(agent.mode), props.disabledOf(agent.name) ? "désactivé" : undefined, agent.description]
+                  desc={[modeLabel(agent.mode), props.disabledOf(agent.name) ? "disabled" : undefined, agent.description]
                     .filter(Boolean)
                     .join(" · ")}
                 >
                   <input
                     class="set-input"
-                    placeholder={props.modelOf(agent.name) || "modèle par défaut"}
-                    title="Modèle de cet agent. Un champ vidé n'est pas un retour au défaut : le serveur fusionne."
+                    placeholder={props.modelOf(agent.name) || "server default"}
+                    title="This agent's model. An emptied field is not a reset — the server merges agent entries."
                     value={props.drafts[agent.name] ?? ""}
                     onInput={(event) => props.onDraft(agent.name, event.currentTarget.value)}
                     onKeyDown={(event) => {
@@ -318,16 +483,16 @@ export function AgentsSection(props: {
                       disabled={props.busy === `agent:${agent.name}`}
                       onClick={() => props.onSave(agent.name)}
                     >
-                      {props.busy === `agent:${agent.name}` ? "…" : "enregistrer"}
+                      {props.busy === `agent:${agent.name}` ? "…" : "Save"}
                     </button>
                   </Show>
                   <button
                     class="ghost agent-toggle"
-                    title={props.disabledOf(agent.name) ? "Réactiver cet agent" : "Désactiver cet agent"}
+                    title={props.disabledOf(agent.name) ? "Re-enable this agent" : "Disable this agent"}
                     disabled={props.busy === `agent:${agent.name}`}
                     onClick={() => props.onToggle(agent.name, !props.disabledOf(agent.name))}
                   >
-                    {props.disabledOf(agent.name) ? "activer" : "désactiver"}
+                    {props.disabledOf(agent.name) ? "enable" : "disable"}
                   </button>
                 </SettingRow>
               </li>
@@ -344,9 +509,8 @@ export function McpSection(props: { total: number; connected: number; problems: 
   return (
     <section class="sheet-section">
       <p class="set-note">
-        {props.connected} serveur{props.connected > 1 ? "s" : ""} connecté{props.connected > 1 ? "s" : ""} sur{" "}
-        {props.total}
-        {props.problems.length === 0 ? " — aucun défaut" : ""}
+        {props.connected} of {props.total} server{props.total > 1 ? "s" : ""} connected
+        {props.problems.length === 0 ? " — no problems" : ""}
       </p>
       <Show when={props.problems.length > 0}>
         <ul class="sheet-list">
@@ -378,7 +542,7 @@ export function PluginsSection(props: {
 }) {
   return (
     <section class="sheet-section">
-      <Show when={props.plugins.length > 0} fallback={<p class="set-note">aucun plugin chargé.</p>}>
+      <Show when={props.plugins.length > 0} fallback={<p class="set-note">no plugin loaded.</p>}>
         <ul class="sheet-list">
           <For each={props.plugins}>
             {(plugin) => (
@@ -389,11 +553,11 @@ export function PluginsSection(props: {
                 </span>
                 <button
                   class="ghost"
-                  title={`Retirer ${plugin.label}`}
+                  title={`Remove ${plugin.label}`}
                   disabled={props.busy}
                   onClick={() => props.onRemove(plugin.hint.split(" · ")[0])}
                 >
-                  retirer
+                  remove
                 </button>
               </li>
             )}
@@ -401,10 +565,10 @@ export function PluginsSection(props: {
         </ul>
       </Show>
 
-      <SettingRow label="ajouter un plugin" desc="chemin local, URL de fichier, ou nom de paquet npm">
+      <SettingRow label="Add a plugin" desc="local path, file URL, or npm package name">
         <input
           class="set-input"
-          placeholder="chemin, file:// ou paquet npm"
+          placeholder="path, file:// or npm package"
           value={props.spec}
           onInput={(event) => props.onSpec(event.currentTarget.value)}
           onKeyDown={(event) => {
@@ -412,7 +576,7 @@ export function PluginsSection(props: {
           }}
         />
         <button class="ghost bordered" disabled={props.busy || !props.spec.trim()} onClick={() => props.onAdd()}>
-          {props.busy ? "…" : "ajouter"}
+          {props.busy ? "…" : "Add"}
         </button>
       </SettingRow>
     </section>

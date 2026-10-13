@@ -187,3 +187,80 @@ export function PluginIcon(props: { size?: number }) {
     </Glyph>
   )
 }
+
+/* =============================================================================
+   Icônes de section — les entrées du panneau de réglages.
+
+   Pourquoi en ajouter : dans une colonne de sept libellés, l'œil cherche une **forme** avant de lire
+   un mot. Les sections se distinguaient par leur seule position, ce qui oblige à relire la colonne
+   entière pour retrouver « Providers » ; une forme se reconnaît sans être lue. C'est la même raison
+   qui a donné un dossier et une conversation au rail — la reconnaissance avant la lecture.
+
+   Ce qui les contraint : à 13 px, un dessin de plus de trois éléments devient de la bouillie. Chaque
+   section tient donc en une ou trois primitives, trait 1,6 comme partout ailleurs. La forme dit la
+   **nature** de ce qu'on règle, jamais l'objet : `tools` montre du code (ce que le formateur et le
+   serveur de langage traitent), pas une clé à molette — une clé à molette dirait « outils » comme un
+   panneau dirait « choses ».
+
+   `plugins` reprend exactement le dessin de `PluginIcon` : la même chose porte la même forme au rail
+   et dans le panneau.
+   ============================================================================= */
+
+export type SettingIconName = "general" | "behavior" | "tools" | "providers" | "agents" | "mcp" | "plugins"
+
+const SETTING_SHAPES: Record<SettingIconName, () => JSX.Element> = {
+  /** Général : deux réglages — la forme universelle des préférences. */
+  general: () => (
+    <>
+      <path d="M4 8h16M4 16h16" />
+      <circle cx="9" cy="8" r="2.3" />
+      <circle cx="15" cy="16" r="2.3" />
+    </>
+  ),
+  /** Comportement : ce que le harnais fait sans demander — l'éclair dit « de lui-même ». */
+  behavior: () => <path d="M13 3L6 13h5l-1 8 7-10h-5z" />,
+  /** Outils : du code, ce que le formateur et le serveur de langage traitent. */
+  tools: () => (
+    <>
+      <path d="M9 7l-5 5 5 5" />
+      <path d="M15 7l5 5-5 5" />
+    </>
+  ),
+  /** Fournisseurs : une clé — ce qu'on y dépose. */
+  providers: () => (
+    <>
+      <circle cx="8" cy="8" r="4.5" />
+      <path d="M11.5 11.5L20 20" />
+      <path d="M20 20v-3.5h-3.5" />
+    </>
+  ),
+  /** Agents : la tête d'un exécutant — creux, antenne, deux yeux. */
+  agents: () => (
+    <>
+      <rect x="4" y="8" width="16" height="11" rx="3" />
+      <path d="M12 4.5v3.5" />
+      <path d="M9.5 13.5h.01M14.5 13.5h.01" />
+    </>
+  ),
+  /** Serveurs MCP : deux baies empilées, à la manière d'une machine. */
+  mcp: () => (
+    <>
+      <rect x="3" y="4.5" width="18" height="6.5" rx="2" />
+      <rect x="3" y="13" width="18" height="6.5" rx="2" />
+      <path d="M7 7.75h.01M7 16.25h.01" />
+    </>
+  ),
+  /** Plugins : le même dessin que `PluginIcon`, pour que la chose garde sa forme. */
+  plugins: () => (
+    <>
+      <path d="M9 3v6M15 3v6" />
+      <path d="M6 9h12v2a6 6 0 0 1-12 0z" />
+      <path d="M12 17v4" />
+    </>
+  ),
+}
+
+/** L'icône d'une section du panneau de réglages. */
+export function SettingIcon(props: { name: SettingIconName; size?: number }) {
+  return <Glyph size={props.size ?? 13}>{SETTING_SHAPES[props.name]()}</Glyph>
+}

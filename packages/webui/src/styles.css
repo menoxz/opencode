@@ -1195,9 +1195,14 @@ textarea {
   border-bottom: 0;
 }
 
+/* Le titre d'un **bloc** — « Defaults », « Workspace », « Identity ».
+   Il se lit comme `--fs-meta` (12) et pas comme `--fs-title` (16) : la feuille porte déjà un titre
+   (« settings », 14, `--fs-base`), et un sous-titre plus grand que celui qu'il sous-titre retourne
+   la hiérarchie. C'est la règle du chrome de CIBLE §5 — moins contrasté, plus espacé, jamais plus
+   grand que le contenu qu'il encadre. Même traitement que `.rail-label`. */
 .sheet-section h2 {
   margin: 0 0 8px;
-  font-size: var(--fs-title);
+  font-size: var(--fs-meta);
   font-weight: 500;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1370,14 +1375,30 @@ textarea {
   overflow-y: auto;
 }
 
+/* Une entrée de section : une **forme** puis un mot. L'icône ne rétrécit jamais (elle porte la
+   reconnaissance), le libellé prend la place qui reste et se coupe s'il déborde. */
 .sheet-tab {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   width: 100%;
   padding: 6px 9px;
   border-radius: 6px;
   color: var(--text-3);
   font-size: var(--fs-label);
   text-align: left;
+}
+
+.sheet-tab .glyph {
+  flex: 0 0 auto;
+}
+
+.sheet-tab-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sheet-tab:hover {
@@ -1545,6 +1566,19 @@ textarea {
   align-items: center;
   gap: 6px;
   padding: 8px 0;
+}
+
+/* Un champ large : le dossier de travail est un chemin, il a besoin de la place du contrôle.
+   Les autres champs se mesurent à leur contenu (« build », un nom de modèle). */
+.set-input.wide {
+  width: min(420px, 46vw);
+}
+
+/* La dernière ligne d'une page : un fait qui vaut d'être su, jamais une action. */
+.set-footnote {
+  margin: 12px 0 0;
+  color: var(--text-3);
+  font-size: var(--fs-meta);
 }
 
 .set-wide .set-input {

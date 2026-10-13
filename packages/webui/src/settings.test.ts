@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest"
 import {
+  GENERAL_SETTINGS,
   SETTINGS_SECTIONS,
   SETTING_SPECS,
   agentDisabled,
@@ -12,6 +13,7 @@ import {
   methodLabel,
   providerIDs,
   settingDisplay,
+  settingGroups,
   settingValue,
   type AuthMethod,
   type ProviderAuth,
@@ -38,11 +40,12 @@ const AUTH: ProviderAuth = {
 }
 
 describe("sections", () => {
-  test("huit sections, dans l'ordre de fréquence d'usage", () => {
-    // Huit — et c'est possible **parce que** la navigation est verticale : une colonne s'allonge
-    // sans rien casser, là où une barre horizontale aurait produit deux rangées.
+  test("sept sections, dans l'ordre de fréquence d'usage", () => {
+    // **Sept**, et non huit : `models` n'est plus une section. Ce n'était pas une catégorie mais un
+    // objet — les trois clés qu'elle portait règlent ce qu'une nouvelle session prend par défaut,
+    // donc elles vivent dans `general`. Une section nommée d'après la chose range le réglage à côté
+    // de la question qu'il répond.
     expect(SETTINGS_SECTIONS.map((section) => section.key)).toEqual([
-      "models",
       "general",
       "behavior",
       "tools",
@@ -58,6 +61,18 @@ describe("sections", () => {
       expect(section.label.length).toBeGreaterThan(0)
       expect(section.hint.length).toBeGreaterThan(0)
     }
+  })
+
+  test("chaque section porte une icône, et deux sections ne partagent pas la même", () => {
+    // Sept libellés dans une colonne se retrouvent en relisant la colonne ; sept formes se
+    // reconnaissent sans être lues. Une icône dupliquée annulerait exactement ce gain.
+    const icons = SETTINGS_SECTIONS.map((section) => section.icon)
+    expect(icons).toEqual(["general", "behavior", "tools", "providers", "agents", "mcp", "plugins"])
+    expect(new Set(icons).size).toBe(icons.length)
+  })
+
+  test("les libellés d'écran sont en anglais — c'est la langue de l'interface", () => {
+    for (const section of SETTINGS_SECTIONS) expect(section.label).not.toMatch(/[àâäéèêëîïôöùûüç]/i)
   })
 })
 
@@ -82,8 +97,8 @@ describe("méthodes d'authentification", () => {
   })
 
   test("sans libellé du serveur, on en donne un qui dit ce qui se passe", () => {
-    expect(methodLabel({ type: "api" })).toBe("clé d'API")
-    expect(methodLabel({ type: "oauth" })).toBe("se connecter")
+    expect(methodLabel({ type: "api" })).toBe("API key")
+    expect(methodLabel({ type: "oauth" })).toBe("Connect")
   })
 })
 
@@ -107,7 +122,7 @@ describe("formulaires", () => {
   test("un serveur muet n'est pas deviné : le contrat dit le champ", () => {
     // openai : « Manually enter API Key » ne déclare aucun prompt ; ApiAuth attend `key`.
     const fields = methodFields(AUTH.openai[2])
-    expect(fields).toEqual([{ key: "key", label: "clé d'API", secret: true }])
+    expect(fields).toEqual([{ key: "key", label: "API key", secret: true }])
   })
 
   test("un nom d'utilisateur ne se masque pas, un jeton si", () => {
@@ -267,7 +282,55 @@ describe("réglages déclarés", () => {
     }
   })
 
-  test("les quatre sections à réglages simples sont couvertes", () => {
-    expect(Object.keys(SETTING_SPECS).sort()).toEqual(["behavior", "general", "models", "tools"])
+  test("les trois sections à réglages simples sont couvertes", () => {
+    expect(Object.keys(SETTING_SPECS).sort()).toEqual(["behavior", "general", "tools"])
+  })
+})
+
+describe("la page General", () => {
+  test("elle a absorbé les trois réglages de l'ancienne section « models »", () => {
+    // L'exigence, telle qu'elle a été posée : tout ce qui était dans Models vit dans General.
+    const keys = GENERAL_SETTINGS.map((spec) => spec.key)
+    expect(keys).toEqual(expect.arrayContaining(["model", "small_model", "default_agent"]))
+  })
+
+  test("les trois défauts forment le premier bloc, sous un seul titre", () => {
+    // En tête de page : c'est ce qu'on vient changer le plus souvent dans tout le panneau.
+    const blocks = settingGroups(GENERAL_SETTINGS)
+    expect(blocks[0].title).toBe("Defaults")
+    expect(blocks[0].specs.map((spec) => spec.key)).toEqual(["model", "small_model", "default_agent"])
+  })
+
+  test("settingGroups garde l'ordre du fichier et ne fusionne que des voisins", () => {
+    const specs: SettingSpec[] = [
+      { key: "a", label: "A", desc: "d", kind: "text", group: "One" },
+      { key: "b", label: "B", desc: "d", kind: "text", group: "One" },
+      { key: "c", label: "C", desc: "d", kind: "text", group: "Two" },
+      { key: "d", label: "D", desc: "d", kind: "text" },
+    ]
+    const blocks = settingGroups(specs)
+    expect(blocks.map((block) => block.title)).toEqual(["One", "Two", undefined])
+    expect(blocks[0].specs.map((spec) => spec.key)).toEqual(["a", "b"])
+    expect(blocks[2].specs.map((spec) => spec.key)).toEqual(["d"])
+  })
+
+  test("un groupe qui réapparaît plus loin ne remonte pas : l'ordre d'écran est celui du fichier", () => {
+    // Trier par groupe ferait passer « Environment » au-dessus de « Defaults ».
+    const specs: SettingSpec[] = [
+      { key: "a", label: "A", desc: "d", kind: "text", group: "One" },
+      { key: "b", label: "B", desc: "d", kind: "text", group: "Two" },
+      { key: "c", label: "C", desc: "d", kind: "text", group: "One" },
+    ]
+    expect(settingGroups(specs).map((block) => block.title)).toEqual(["One", "Two", "One"])
+  })
+
+  test("tout libellé affiché est en anglais", () => {
+    for (const specs of Object.values(SETTING_SPECS)) {
+      for (const spec of specs ?? []) {
+        expect(spec.label).not.toMatch(/[àâäéèêëîïôöùûüç]/i)
+        expect(spec.desc).not.toMatch(/[àâäéèêëîïôöùûüç]/i)
+        for (const option of spec.options ?? []) expect(option.label).not.toMatch(/[àâäéèêëîïôöùûüç]/i)
+      }
+    }
   })
 })

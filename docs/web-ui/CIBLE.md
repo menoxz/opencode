@@ -14,7 +14,7 @@ Quatre zones permanentes, **un** tiroir conditionnel, et rien d'autre à l'écra
 
 | # | Zone | Contenu | Par défaut |
 |---|------|---------|------------|
-| 1 | Rail gauche | nom du produit, « nouvelle session », plugins, workspaces | visible, repliable |
+| 1 | Rail gauche | nom du produit, « New session », plugins, workspaces | visible, repliable |
 | 2 | Centre — le fil | le message de l'utilisateur, la réponse de l'agent, les actions | visible |
 | 3 | Bas du centre | la saisie et les pièces jointes | visible |
 | 4 | Pied du rail | le dossier de travail, les identifiants, l'accès aux réglages | visible |
@@ -61,7 +61,7 @@ ce document : une donnée exposée par le serveur n'est pas une raison de l'affi
 - **Une session se lit *sous* son dossier**, par une indentation franche. Le libellé est le chemin
   **relatif** ; l'absolu reste en infobulle.
 - **Un dossier se replie**, ouvert par défaut : on replie pour dégager, on ne déplie pas pour
-  découvrir. Au-delà de **4 sessions**, « voir plus » ; « voir moins » pour replier.
+  découvrir. Au-delà de **4 sessions**, « show more » ; « show less » pour replier.
 - **Le survol ne déplace rien.** Une action qui apparaît en modifiant la grille fait bouger toute la
   ligne : elle occupe sa place en permanence et se révèle par l'opacité.
 - Un plugin est **un bouton d'accès, pas un catalogue**. Une compétence ne se consulte pas, elle
@@ -72,11 +72,31 @@ ce document : une donnée exposée par le serveur n'est pas une raison de l'affi
 Un panneau de réglages sert à **configurer**, pas à consulter. Un interrupteur inerte est un
 mensonge : si la feuille est ouverte, elle écrit.
 
+**La copie d'écran est en anglais** (`General`, `Ask first`, `Save`, `MCP servers`) ; la prose de ce
+document, comme les commentaires du code, reste en français. Une valeur technique n'est pas un mot
+d'écran : une énumération affiche « Ask first », jamais `manual` ; un interrupteur affiche « on »,
+jamais `true`.
+
+- **Chaque section porte une icône, à droite de rien — à gauche de son libellé.** Dans une colonne de
+  sept entrées, l'œil cherche une forme avant de lire un mot ; sans elle il faut relire la colonne
+  entière pour retrouver `Providers`. La forme dit la **nature** de ce qu'on règle, jamais l'objet.
+- **La feuille a une taille de fenêtre, pas de contenu.** Largeur `min(1120px, 100vw - 64px)`,
+  hauteur `min(86vh, 880px)`, `max-height: none`. Un `max-height` seul laisse la feuille prendre la
+  hauteur de la section affichée : « Models » tient en trois lignes, « Providers » en porte 228, et
+  changer de section redimensionnerait la fenêtre sous le curseur. C'est la règle de la navigation
+  verticale, appliquée à l'autre axe.
 - **Navigation verticale** : une colonne de sections à gauche, le contenu à droite. C'est la
   convention (Réglages Système, VS Code, GitHub, Linear, Notion, Slack). La barre horizontale est
   réservée aux onglets, quand ils sont peu et qu'ils ne grandissent pas. **Ce qui peut croître se
   dessine pour croître** : une disposition qui tient à cinq sections et casse à douze n'est pas
   finie.
+- **Une section est un moment, pas un objet.** `General` a absorbé `Models` : `model`, `small_model`
+  et `default_agent` ne règlent pas « les modèles », ils règlent **ce qu'une nouvelle session prend
+  par défaut**. Une section nommée d'après la chose range le réglage à côté de la question qu'il
+  répond.
+- **Une page longue se lit en blocs nommés**, dans l'ordre de **fréquence d'usage** : `Defaults`
+  (ce qu'on change le plus souvent), `Workspace` (où l'on travaille), `Identity`, `Environment`. Un
+  titre est du chrome : 12 px, capitales, moins contrasté que le contenu — jamais plus grand que lui.
 - **Une section ne charge ses données qu'à sa sélection.** `/provider` rend 6,7 Mo et n'est jamais
   appelé ; `/provider/auth` suffit. **Aucun catalogue** : le poids d'un écran ne se paie pas pour un
   nombre qui ne change aucune décision.
@@ -86,9 +106,15 @@ mensonge : si la feuille est ouverte, elle écrit.
   concurrents ; un seul ouvert à la fois, c'est une décision à la fois.
 - **Ce qui est sain ne s'annonce pas.** Six serveurs MCP connectés sur sept ne produisent qu'une
   ligne : seuls les défauts sont nommés.
-- Le contenu est rangé dans **l'ordre où l'on agit**, pas dans celui du serveur.
-- Un contrôle porte **des mots d'écran** : une énumération affiche « demander avant », jamais
-  `manual` ; un interrupteur affiche « partagé », jamais `true`. Une valeur technique n'est pas un mot.
+- **Ce qui vit ailleurs se déclare ici.** Le dossier de travail n'était qu'un champ **sans libellé**
+  au pied du rail : rien ne disait ce qu'on y écrit, ni qu'un dossier inconnu rend un rail vide
+  **sans erreur** (le serveur répond 200 avec zéro session). Il se règle donc dans `General`, sous
+  `Workspace`, avec un libellé, sa conséquence écrite, et une complétion alimentée par
+  `GET /project` (962 octets) — jamais une liste déroulante, qui occuperait la place en permanence.
+- **Deux faits valent d'être dits, en pied de page** : où les réglages sont réellement écrits, et
+  quelle version du serveur les sert. « Enregistré » sans dire **où** est le défaut qui coûte une
+  heure de recherche — le fichier est `opencode.jsonc`, parce que le `.jsonc` gagne sur le `.json`
+  quel que soit le mtime.
 
 ## 5. Le style
 

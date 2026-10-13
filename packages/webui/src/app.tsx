@@ -32,10 +32,10 @@ import {
 } from "./components"
 import {
   AgentsSection,
+  GeneralSection,
   McpSection,
   PluginsSection,
   ProviderBlock,
-  SettingControl,
   SettingsSheet,
 } from "./settings-sheet"
 import {
@@ -48,6 +48,7 @@ import {
   authMethods,
   providerIDs,
   settingDisplay,
+  settingGroups,
   settingValue,
   type AuthMethod,
   type ProviderAuth,
@@ -107,6 +108,12 @@ export default function App() {
 
   const [directory, setDirectory] = createSignal(localStorage.getItem(DIR_KEY) ?? "")
   const [serverPath, setServerPath] = createSignal<string | undefined>()
+  /** Le dossier de configuration du serveur — c'est là que les réglages sont réellement écrits. */
+  const [configPath, setConfigPath] = createSignal<string | undefined>()
+  /** Le brouillon du dossier de travail : lu par la page General, appliqué par « Switch ». */
+  const [workspaceDraft, setWorkspaceDraft] = createSignal("")
+  /** Les workspaces que le serveur connaît déjà — la complétion du dossier de travail. */
+  const [projects, setProjects] = createSignal<string[]>([])
   const [query, setQuery] = createSignal("")
   const [renaming, setRenaming] = createSignal<string | undefined>()
   const [renameDraft, setRenameDraft] = createSignal("")
@@ -227,8 +234,9 @@ export default function App() {
   const loadPath = async () => {
     const result = await client.path.get(scope()).catch(() => undefined)
     // Observed shape: { home, state, config, worktree, directory } — not `cwd`/`root`.
-    const data = (result as { data?: { directory?: string; worktree?: string } } | undefined)?.data
+    const data = (result as { data?: { directory?: string; worktree?: string; config?: string } } | undefined)?.data
     setServerPath(data?.directory ?? data?.worktree)
+    setConfigPath(data?.config)
   }
 
   const loadSessions = async () => {
@@ -273,13 +281,34 @@ export default function App() {
     setSettingsNotice(undefined)
     setSettingsError(undefined)
 
-    if (section === "models" || section === "general" || section === "behavior" || section === "tools") {
-      const result = await client.global.config.get().catch(() => undefined)
-      const data = (result as { data?: Record<string, unknown> } | undefined)?.data
+    /**
+     * Les sections déclarées — `general`, `behavior`, `tools`. Elles ne lisent que la configuration.
+     *
+     * `general` lit **en plus** la carte des projets : c'est elle qui alimente la complétion du
+     * dossier de travail. `GET /project` pèse **962 octets** (six projets sur ce serveur) — le payer
+     * à l'ouverture de la page, et non au montage, c'est ne le payer que si l'on ouvre la page.
+     *
+     * `models` a disparu de cette liste avec la section : ses trois clés vivent dans `general`.
+     */
+    if (section === "general" || section === "behavior" || section === "tools") {
+      const [configResult, projectResult] = await Promise.all([
+        client.global.config.get().catch(() => undefined),
+        section === "general" ? client.project.list({}).catch(() => undefined) : Promise.resolve(undefined),
+      ])
+      const data = (configResult as { data?: Record<string, unknown> } | undefined)?.data
       if (data) {
         setConfig(data)
         // Les saisies en cours sont abandonnées : la config relue est la vérité.
         setSpecDrafts({})
+      }
+      if (section === "general") {
+        const list = (projectResult as { data?: Array<{ worktree?: string }> } | undefined)?.data
+        if (Array.isArray(list)) {
+          // `/` est un projet maison du serveur, pas un lieu de travail : il n'aide pas la saisie.
+          setProjects(list.map((project) => project.worktree).filter((path): path is string => Boolean(path) && path !== "/"))
+        }
+        // Le champ part de la portée courante : ce qui est affiché est ce qui est appliqué.
+        setWorkspaceDraft(directory())
       }
       return
     }
@@ -346,7 +375,7 @@ export default function App() {
     if (result) {
       setAgentDrafts((current) => ({ ...current, [name]: "" }))
       await loadSettings("agents")
-      setSettingsNotice(`${label} enregistré`)
+      setSettingsNotice(`${label} saved`)
     }
   }
 
@@ -373,6 +402,23 @@ export default function App() {
     setSpecDrafts((current) => ({ ...current, [key]: value }))
   const commitSpec = (spec: SettingSpec, raw: string | boolean) =>
     void saveConfig({ [spec.key]: settingValue(spec, raw) }, spec.label)
+
+  /**
+   * Le pied de la page General — **deux faits** qu'aucun autre écran ne donne : où les réglages sont
+   * réellement écrits, et quelle version du serveur les sert.
+   *
+   * Le fichier est `opencode.jsonc` et non `config.json` : mesuré, c'est le `.jsonc` qui gagne sur le
+   * `.json`, quel que soit le mtime (`config.ts:578-580`), et c'est là que le TUI écrit. Dire
+   * « enregistré » sans dire où est exactement le défaut qui coûte une heure de recherche.
+   */
+  const generalFootnote = () => {
+    const facts: string[] = []
+    const dir = configPath()
+    const version = health()?.version
+    if (dir) facts.push(`written to ${dir}\\opencode.jsonc`)
+    if (version) facts.push(`server ${version}`)
+    return facts.length > 0 ? facts.join(" · ") : undefined
+  }
 
   /**
    * Écrire la configuration — **globale**, et en forme **imbriquée**.
@@ -402,7 +448,7 @@ export default function App() {
       // Le rechargement **avant** la notice : `loadSettings` commence par effacer les messages, donc
       // poser la notice d'abord la faisait disparaître aussitôt — un succès qui ne se voyait jamais.
       await loadSettings("general")
-      setSettingsNotice(`${label} enregistré`)
+      setSettingsNotice(`${label} saved`)
     }
   }
 
@@ -415,7 +461,7 @@ export default function App() {
   const saveProvider = async (providerID: string, method: AuthMethod) => {
     const body = authBody(method, providerValues())
     if (!body) {
-      setSettingsError("champ vide — rien n'a été écrit")
+      setSettingsError("empty field — nothing was written")
       return
     }
     setSettingsBusy(`provider:${providerID}`)
@@ -427,7 +473,7 @@ export default function App() {
     })
     setSettingsBusy(undefined)
     if (result) {
-      setSettingsNotice(`${providerID} enregistré`)
+      setSettingsNotice(`${providerID} saved`)
       setProviderValues({})
     }
   }
@@ -445,7 +491,7 @@ export default function App() {
     })
     setSettingsBusy(undefined)
     if (result) {
-      setSettingsNotice("plugin ajouté")
+      setSettingsNotice("plugin added")
       setPluginSpec("")
       await loadPlugins()
     }
@@ -462,7 +508,7 @@ export default function App() {
     })
     setSettingsBusy(undefined)
     if (result) {
-      setSettingsNotice("plugin retiré")
+      setSettingsNotice("plugin removed")
       await loadPlugins()
     }
   }
@@ -741,8 +787,8 @@ export default function App() {
    * disparaît dès que c'est réparé — l'absence est le meilleur indicateur.
    */
   const notice = () => {
-    if (!health()?.healthy) return { text: "serveur injoignable", bad: true }
-    if (!stream().connected) return { text: "flux interrompu", bad: false }
+    if (!health()?.healthy) return { text: "server unreachable", bad: true }
+    if (!stream().connected) return { text: "stream interrupted", bad: false }
     return undefined
   }
 
@@ -759,9 +805,9 @@ export default function App() {
 
         {/* 1 — Le geste le plus fréquent, donc en premier et sans clic. */}
         <div class="rail-new">
-          <button class="new-session" title="Ouvrir une conversation vide" onClick={() => void createSession()}>
+          <button class="new-session" title="Start an empty conversation" onClick={() => void createSession()}>
             <span class="new-session-plus">+</span>
-            <span>Nouvelle session</span>
+            <span>New session</span>
           </button>
         </div>
 
@@ -780,7 +826,7 @@ export default function App() {
           <input
             class="search"
             type="search"
-            placeholder="Rechercher"
+            placeholder="Search"
             value={query()}
             onInput={(event) => setQuery(event.currentTarget.value)}
           />
@@ -805,9 +851,9 @@ export default function App() {
                         when={renaming() === session.id}
                         fallback={
                           <SessionRow
-                            title={session.title || "(sans titre)"}
+                            title={session.title || "(untitled)"}
                             hint={[
-                              session.title || "(sans titre)",
+                              session.title || "(untitled)",
                               ...sessionDetails(session).map((line) => `${line.label} : ${line.value}`),
                             ].join("\n")}
                             time={sessionTimestamp(session)}
@@ -821,7 +867,7 @@ export default function App() {
                             <span class="row-actions">
                               <button
                                 class="ghost"
-                                title="Renommer"
+                                title="Rename"
                                 onClick={(event) => {
                                   event.stopPropagation()
                                   startRename(session)
@@ -834,7 +880,7 @@ export default function App() {
                                 fallback={
                                   <button
                                     class="ghost"
-                                    title="Supprimer"
+                                    title="Delete"
                                     onClick={(event) => {
                                       event.stopPropagation()
                                       setConfirming(session.id)
@@ -846,23 +892,23 @@ export default function App() {
                               >
                                 <button
                                   class="ghost"
-                                  title="Confirmer la suppression"
+                                  title="Confirm delete"
                                   onClick={(event) => {
                                     event.stopPropagation()
                                     void removeSession(session)
                                   }}
                                 >
-                                  supprimer
+                                  delete
                                 </button>
                                 <button
                                   class="ghost"
-                                  title="Annuler"
+                                  title="Cancel"
                                   onClick={(event) => {
                                     event.stopPropagation()
                                     setConfirming(undefined)
                                   }}
                                 >
-                                  annuler
+                                  cancel
                                 </button>
                               </Show>
                             </span>
@@ -899,11 +945,11 @@ export default function App() {
 
         {/* 4 — Settings : le dossier de travail, et l'accès à la configuration. */}
         <div class="rail-foot">
-          <label class="folder" title="Dossier de travail">
+          <label class="folder" title="Working directory">
             <span>⌂</span>
             <input
               type="text"
-              placeholder={serverPath() ?? "répertoire du serveur"}
+              placeholder={serverPath() ?? "server directory"}
               value={directory()}
               onChange={(event) => applyDirectory(event.currentTarget.value)}
             />
@@ -912,11 +958,11 @@ export default function App() {
             when={authOpen()}
             fallback={
               <span class="foot-row">
-                <button class="ghost" title="Configuration : fournisseurs, modèles, agents, MCP" onClick={openConfig}>
-                  configuration
+                <button class="ghost" title="Settings: defaults, providers, agents, MCP" onClick={openConfig}>
+                  settings
                 </button>
-                <button class="ghost" title={serverUrl || "même origine"} onClick={() => setAuthOpen(true)}>
-                  {credentials ? "identifiants ✓" : "identifiants"}
+                <button class="ghost" title={serverUrl || "same origin"} onClick={() => setAuthOpen(true)}>
+                  {credentials ? "credentials ✓" : "credentials"}
                 </button>
               </span>
             }
@@ -930,25 +976,25 @@ export default function App() {
             >
               <input
                 type="text"
-                placeholder="utilisateur"
+                placeholder="username"
                 value={authUser()}
                 onInput={(event) => setAuthUser(event.currentTarget.value)}
               />
               <input
                 type="password"
-                placeholder="mot de passe"
+                placeholder="password"
                 value={authPass()}
                 onInput={(event) => setAuthPass(event.currentTarget.value)}
               />
               <div class="auth-row">
                 <button class="ghost bordered" type="submit">
-                  appliquer
+                  apply
                 </button>
                 <button class="ghost" type="button" onClick={() => rememberCredentials(undefined)}>
-                  effacer
+                  clear
                 </button>
                 <button class="ghost" type="button" onClick={() => setAuthOpen(false)}>
-                  fermer
+                  close
                 </button>
               </div>
             </form>
@@ -960,7 +1006,7 @@ export default function App() {
         <Show when={columns().sidebar === 0 || notice()}>
           <div class="thread-head">
             <Show when={columns().sidebar === 0}>
-              <button class="ghost" title="Afficher les sessions" onClick={toggleSidebar}>
+              <button class="ghost" title="Show sessions" onClick={toggleSidebar}>
                 ☰
               </button>
             </Show>
@@ -974,7 +1020,7 @@ export default function App() {
           </div>
         </Show>
 
-        <Show when={active()} fallback={<p class="empty">Choisis une session, ou crée-en une.</p>}>
+        <Show when={active()} fallback={<p class="empty">Pick a session, or start one.</p>}>
           <div class="scroll" ref={scroller}>
             <div class="transcript">
               <Show when={error()}>
@@ -1011,7 +1057,7 @@ export default function App() {
               <Show when={attachError()}>{(message) => <p class="error">{message()}</p>}</Show>
               <textarea
                 rows="2"
-                placeholder="Décrire une tâche, coller un contexte, joindre un fichier…"
+                placeholder="Describe a task, paste context, attach a file…"
                 value={draft()}
                 onInput={(event) => setDraft(event.currentTarget.value)}
                 onKeyDown={(event) => {
@@ -1022,7 +1068,7 @@ export default function App() {
                 }}
               />
               <div class="composer-bar">
-                <label class="attach" title="Joindre des fichiers">
+                <label class="attach" title="Attach files">
                   +
                   <input
                     class="hidden-input"
@@ -1037,7 +1083,7 @@ export default function App() {
                 </label>
                 <span class="spacer" />
                 <button class="primary" type="submit" disabled={!draft().trim() && attachments().length === 0}>
-                  Envoyer
+                  Send
                 </button>
               </div>
             </div>
@@ -1065,29 +1111,37 @@ export default function App() {
           error={settingsError()}
           busy={settingsBusy()}
         >
-          {/* Les réglages **déclarés** — modèles, général, comportement, outils — d'un seul bloc.
-              Ajouter un réglage, c'est ajouter une entrée dans `SETTING_SPECS`, pas une ligne ici. */}
+          {/* Les réglages **déclarés** — general, behavior, tools — d'un seul bloc.
+              Ajouter un réglage, c'est ajouter une entrée dans `SETTING_SPECS`, pas une ligne ici.
+              `general` reçoit en plus le dossier de travail et le pied de page : c'est la seule page
+              qui porte autre chose que des clés de `Config`. */}
           <Show when={SETTING_SPECS[settingsSection()]}>
-            <section class="sheet-section">
-              <For each={SETTING_SPECS[settingsSection()] ?? []}>
-                {(spec) => (
-                  <SettingControl
-                    spec={spec}
-                    value={specDraft(spec)}
-                    checked={config()[spec.key] === true}
-                    busy={settingsBusy() === spec.label}
-                    onInput={(value) => setSpecDraft(spec.key, value)}
-                    onCommit={(raw) => commitSpec(spec, raw)}
-                  />
-                )}
-              </For>
-            </section>
+            <GeneralSection
+              blocks={settingGroups(SETTING_SPECS[settingsSection()] ?? [])}
+              afterGroup={settingsSection() === "general" ? "Defaults" : undefined}
+              draftOf={specDraft}
+              checkedOf={(spec) => config()[spec.key] === true}
+              busy={settingsBusy()}
+              onInput={(spec, value) => setSpecDraft(spec.key, value)}
+              onCommit={commitSpec}
+              workspace={
+                settingsSection() === "general"
+                  ? {
+                      value: workspaceDraft(),
+                      known: projects(),
+                      onInput: setWorkspaceDraft,
+                      onCommit: () => applyDirectory(workspaceDraft()),
+                    }
+                  : undefined
+              }
+              footnote={settingsSection() === "general" ? generalFootnote() : undefined}
+            />
           </Show>
 
           <Show when={settingsSection() === "providers"}>
             <Show
               when={providerIDs(providerAuth()).length > 0}
-              fallback={<p class="set-note">chargement des fournisseurs…</p>}
+              fallback={<p class="set-note">loading providers…</p>}
             >
               <For each={providerIDs(providerAuth())}>
                 {(id) => (

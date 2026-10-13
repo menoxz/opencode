@@ -1657,3 +1657,59 @@ capture settings-big.png, clip 1180×860, 141 ko
 
 La feuille est centrée à taille fixe ; elle ne se réordonne pas à 1024 px de large (le contenu passe
 sous la navigation avant que le média-query ne s'applique) — non observé, non mesuré.
+
+## Lot suivant — la page General, les icônes de section, et l'interface en anglais (livré)
+
+Quatre demandes : une icône par entrée du menu, une page `General`, **tout ce qui est dans Models mis
+dans General**, et l'interface en anglais. Plus la consigne qui décide du reste — « penser à tout ce
+que je n'ai pas dit ».
+
+### Ce que le non-dit a ajouté, et pourquoi
+
+| ajout | ce qu'il évite |
+|---|---|
+| blocs nommés `Defaults` / `Workspace` / `Identity` / `Environment` | cinq réglages de trois natures empilés se lisent comme une liste, pas comme une page |
+| le dossier de travail **étiqueté**, dans `General` | il n'existait qu'en champ **sans libellé** au pied du rail ; un dossier inconnu rend un rail vide **sans erreur** (200, zéro session) et rien ne le disait |
+| complétion par `GET /project` (962 octets) | une liste déroulante occuperait la place en permanence pour une information qu'on ne lit qu'en écrivant |
+| pied de page : `written to …opencode.jsonc · server local` | « enregistré » sans dire **où** ; le `.jsonc` gagne sur le `.json` quel que soit le mtime |
+| une icône par section | sept libellés se retrouvent en relisant la colonne ; sept formes se reconnaissent sans être lues |
+
+### La décision qui n'était pas dans la demande
+
+`Models` n'est plus une section. Ce n'était pas une catégorie mais un **objet** : `model`,
+`small_model` et `default_agent` ne règlent pas « les modèles », ils règlent **ce qu'une nouvelle
+session prend par défaut**. Une section nommée d'après la chose range le réglage à côté de la question
+qu'il répond. La clé `models` a donc disparu du type, de la liste, de la branche de chargement et des
+tests — pas seulement de l'écran.
+
+### Mesures
+
+```
+sections : 8 -> 7 ; clés de `SETTINGS_SPECS` : behavior, general, models, tools -> behavior, general, tools
+GENERAL_SETTINGS : 2 réglages -> 5, en 3 blocs (Defaults 3 · Identity 1 · Environment 1)
+feuille : 760 x 380 -> 1120 x 813 (viewport 1920x945) ; nav 184 ; corps 934 x 753
+icônes : 7, toutes distinctes ; `GET /project` 962 octets, 6 projets -> 5 après retrait de `/`
+```
+
+### Preuve
+
+```
+vitest run -> 13 fichiers, 203 tests, exit 0
+tsgo --noEmit -> exit 0
+git show --stat 3fcea21a1 -> 17 fichiers, copie d'interface en anglais
+
+CDP, onglet 5180 : .sheet.settings 1120x813 ; 7 .sheet-tab dont 7 .glyph
+  h2 des blocs : Defaults | Workspace | Identity | Environment
+  pied : "written to C:\Users\jeanl\.config\opencodev2\opencode.jsonc · server local"
+  capture general2.png, clip 1180x880, 130 ko
+```
+
+### Limite, écrite
+
+`formatCost(0.0123)` rend `$0.01` et non `$0.0123` : le seuil de quatre décimales est à **0,01**, et
+le déplacer aurait changé le comportement. La traduction n'a touché que la langue du format, pas son
+seuil.
+
+**Méthode** : une section porte le nom du **moment**, pas celui de l'objet qu'elle règle. Le reste du
+non-dit s'est déduit d'un seul geste — chercher, pour chaque réglage, ce qui n'était dit nulle part
+ailleurs dans l'interface.
