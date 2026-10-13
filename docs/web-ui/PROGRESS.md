@@ -1512,3 +1512,46 @@ coupé » : la requête n'atteignait aucun gestionnaire. Redémarrage du serveur
 **Méthode** : devant un état vide, ne pas suspecter son interface — vérifier `route par route`, puis
 la santé des deux serveurs. Une mesure à zéro qui ressemble à un défaut de rendu peut être une panne
 de service, et « corriger » une interface qui marche coûte un commit de plus.
+
+## Lot suivant — le texte tertiaire passe le seuil AA (livré)
+
+Défaut trouvé en mesurant la couleur **calculée** du texte tertiaire, pas sa déclaration : `--text-3`
+pointait sur `bluish-600 #81858c`, la valeur relevée chez DSH.
+
+### Le défaut, mesuré
+
+| texte | bg-0 | bg-1 | bg-2 | AA (4,5:1) |
+|---|---|---|---|---|
+| `text-1` `#f9fafb` | 17,45 | 15,03 | 13,34 | passe |
+| `text-2` `#adb2b8` | 8,54 | 7,36 | 6,53 | passe |
+| `text-3` `#81858c` (avant) | 4,92 | **4,24** | **3,76** | **échec** |
+| `text-3` `#8c9697` (après) | 6,01 | 5,18 | **4,60** | passe |
+
+Le seuil de 3:1 (grand texte) ne s'applique nulle part : **aucun texte de l'interface n'atteint 24 px**.
+
+### Le même piège, une seconde fois
+
+`PROGRESS.md` consigne déjà, en « décision 3 » du lot de refonte, que **la leçon de contraste, PAS la
+valeur** : DSH avait lui-même mesuré son texte tertiaire à 3,55:1 et l'avait relevé à 4,73:1 ; sa
+valeur d'origine donnait 3,41:1 sur son `--bg-1`. La webui a recopié la valeur **après** correction de
+DSH, donc sur un fond différent du sien — et l'a raté à son tour. **Copier un jeton corrigé chez un
+autre ne dispense pas de le remesurer sur ses propres fonds.**
+
+`bluish-650 #8c9697` est un pas interpolé dans la **même famille** bleu-gris (entre `bluish-600`
+`#81858c` et `bluish-700` `#61666b`) : la correction ne change pas de famille, elle change de valeur.
+`--bluish-600` reste déclaré, avec sa valeur relevée, pour rester comparable.
+
+### Preuve
+
+```
+vitest run -> 12 fichiers, 189 tests, exit 0
+tsgo --noEmit -> exit 0
+vite build  -> 107,94 ko brut / 28,80 ko compressés, exit 0
+
+CDP, styles calculés :  --text-3 #8c9697 | --bg-1 #232324 | --bg-2 #2c2c2e
+éléments dont color == rgb(140,150,151) : 6 (rail-label, sheet-tab, empty, new-session-plus…)
+capture webui-21-contraste.png, clip 1060x700, 68 ko
+```
+
+**Méthode** : un jeton qui passe le contraste sur le fond d'origine ne le passe pas sur un autre fond.
+La mesure se fait sur les **trois** fonds de l'interface, pas sur celui de la source.
