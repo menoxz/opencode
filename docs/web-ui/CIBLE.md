@@ -126,6 +126,15 @@ jamais `true`.
   remet le réglage au défaut du serveur (`config.ts:513` retire la clé quand la valeur est la chaîne
   vide). Et une valeur que le serveur accepte mais ne publie pas s'affiche **quand même** — sinon le
   contrôle montrerait autre chose que ce qui est écrit.
+- **Un libellé de choix doit identifier sa valeur à lui seul.** Fermé, un `<select>` n'affiche que lui :
+  si deux modèles portent le même nom chez deux fournisseurs, le contrôle affiche deux fois la même
+  chose pour deux valeurs différentes, et l'utilisateur ne peut pas dire ce qu'il a choisi — le défaut
+  même qu'on retire du champ de texte. Mesuré : **696 modèles pour 509 libellés distincts**, 141
+  libellés portés par plusieurs modèles. D'où la forme `Nom · Fournisseur`, **toujours** — un libellé
+  qui change de forme selon ses voisins se balaie moins vite qu'un libellé un peu plus long. Corollaire
+  de forme : la liste est **plate**, sans `optgroup`. Le titre de groupe redirait au-dessus de chaque
+  ligne ce que la ligne dit déjà, et une barre de sélection native ne cherche **pas** les titres de
+  groupe au clavier — grouper rendrait `orcarouter` introuvable à la frappe.
 - **Une charge utile qui porte des secrets se projette, jamais ne se stocke.** `GET /config/providers`
   rend 7 champs `key`/`apiKey` **en clair** ; `/api/model` en rend 580 — la route « sans secrets »
   n'existe pas, et c'est une limite du serveur, pas un choix d'écran. La projection ne lit que

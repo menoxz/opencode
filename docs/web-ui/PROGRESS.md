@@ -1775,6 +1775,20 @@ changer — pour qu'il échoue (`expected '' to be 'opencode-go/kimi-k2'`), et c
 tranché. Leçon : quand un défaut vient d'un **ordre d'arrivée**, jsdom ne peut pas l'attraper, et un
 test vert sur du code fautif est pire qu'aucun test.
 
+### Défaut 4 — deux modèles, un seul libellé
+
+Trouvé sur la capture de vérification du défaut 3. `Default model` et `Small model` étaient deux
+valeurs différentes — `command-code/deepseek/deepseek-v4.1-flash` et
+`opencode-go/deepseek-v4.1-flash` — et les deux s'affichaient « DeepSeek V4.1 Flash ».
+
+Mesure : **696 modèles pour 509 libellés distincts** ; 141 libellés sont portés par plusieurs modèles
+(187 options en trop), et les deux modèles configurés partageaient tous deux leur libellé avec trois
+autres. Fermé, un `<select>` n'affiche que le libellé : cinq valeurs s'écrivaient pareil.
+
+Le libellé est désormais `Nom · Fournisseur`, toujours, et la liste est plate. Mesure après :
+« DeepSeek V4.1 Flash · Command Code GOAT » et « DeepSeek V4.1 Flash · OpenCode Go », 697 options,
+**0** `optgroup`, `select` à 440 px — la partie qui lève l'ambiguïté n'est pas la première coupée.
+
 ### Ce que la projection évite, et ce qu'elle ne peut pas éviter
 
 `GET /config/providers` **rend les clés des fournisseurs en clair** : 7 champs `key`/`apiKey`,
