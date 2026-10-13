@@ -110,9 +110,12 @@ pre,
    Charpente : titre / (sidebar · conversation · panneaux) / barre d'état
    ============================================================================= */
 
+/* Largeurs contractuelles de DSH (`dsh-client-ui-layout/lib/types/client/columns.d.ts`) :
+   SIDEBAR_DEFAULT 280 (264–420), CENTER_MIN 640, DETAILS_DEFAULT 360 (300–520).
+   Ce sont les valeurs de repos ; la chaîne de concession est résolue par `columns.ts`. */
 .layout {
   display: grid;
-  grid-template-columns: 264px minmax(0, 1fr) 320px;
+  grid-template-columns: 280px minmax(640px, 1fr) 360px;
   grid-template-rows: 46px minmax(0, 1fr) 26px;
   grid-template-areas:
     "top top top"
