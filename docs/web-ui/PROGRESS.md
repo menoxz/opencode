@@ -3,7 +3,8 @@
 Seule autorité de statut du programme. `WORKFLOW.md` décrit, ce fichier constate.
 Convention héritée de `docs/releases/v2.4.0/`.
 
-État au 2026-10-12.
+État au 2026-10-13. L'écran a été reconstruit après un constat d'échec de conception : voir la
+dernière section.
 
 ---
 
@@ -930,7 +931,8 @@ planches de présentation, pas des composants d'application.
 
 ## Réserves ouvertes
 
-Aucune. Les trois réserves précédentes sont closes, chacune par une mesure :
+Une seule, ouverte par la refonte de l'écran. Les trois réserves précédentes sont closes, chacune
+par une mesure :
 
 - **F1** (P1, medium) — « hypothèse sources publiées exécutables non vérifiée pour M2 » :
   **close**. M2 a été exécuté de bout en bout hors du dépôt git (copie des sources, `bun install`
@@ -942,6 +944,9 @@ Aucune. Les trois réserves précédentes sont closes, chacune par une mesure :
 - **F3** (P3, low) — « cause de la mort du serveur après sonde SSE » : **close**. L'expiration du
   shell emporte son arbre de processus ; un serveur lancé par `Start-Process` depuis ce shell meurt
   avec lui. Ce n'était pas un défaut du serveur. Consigné dans `AGENTS.md`.
+- **F4** (refonte, medium) — « la cible de l'écran n'est pas validée par l'utilisateur » : **ouverte**.
+  `CIBLE.md` est ma proposition, et le code la suit : si elle est fausse, le code l'est aussi. Le
+  rendu n'a été jugé par personne. C'est la seule réserve qui ne se lève pas par une mesure technique.
 
 ---
 
@@ -1047,3 +1052,85 @@ nécessaire, et il est vérifié.
 Point de configuration à retenir : le CORS du serveur est une **correspondance exacte d'origine**
 (`cors.ts:19`, `opts?.cors?.includes(input)`) — pas de joker. L'origine de l'UI doit être listée
 telle quelle, sinon le préflight échoue et l'UI reste sur « serveur injoignable ».
+
+---
+
+## Refonte de l'écran — cinq zones pour un agent généraliste (livré)
+
+**Le constat, et sa cause.** L'interface livrée jusque-là a été jugée non livrable : composants
+inutiles, indicateurs partout, aucune pensée d'usage. La cause n'était pas un manque de finition mais
+un manque de **cible** : « inspiré de DSH » désigne une référence — d'où venir — pas une destination.
+Faute de destination, l'espace a été rempli.
+
+**La cible est écrite, pas devinée.** `CIBLE.md` : un écran, la conversation ; cinq zones ; une liste
+de soustraction ; une règle de doute (« on enlève »). C'est un document de cible, pas de statut.
+
+### Ce qui a été retiré, et pourquoi
+
+| élément retiré | raison |
+|---|---|
+| barre de titre | décor de fenêtre : feux `traffic`, version, contexte, badge `env` avec texte |
+| barre de statut | sept indicateurs permanents, aucun ne change une décision |
+| panneau « Statut » et ses onglets (événements, permissions, statut) | le journal d'événements est un outil de mise au point |
+| carte modèle | information sans usage dans l'écran |
+| `.badge` (6 tonalités), `.pill`, `.dot`, compteurs | l'état s'écrit là où il sert, ou ne s'écrit pas |
+| `status.ts` + `status.test.ts` | devenus morts par la soustraction — supprimés, pas laissés « au cas où » |
+
+### Ce qui reste
+
+Quatre zones permanentes, plus un bandeau conditionnel :
+
+1. **rail des sessions** — recherche, nouvelle session, renommer/supprimer, dossier de travail, identifiants ;
+2. **fil** — le tour de l'utilisateur est une surface, celui de l'agent du texte nu ;
+3. **saisie** — Entrée envoie, `Maj+Entrée` passe à la ligne, pièces jointes ;
+4. **tiroir droit** — **n'existe que si une permission est en attente** (piste à `0px` sinon) ;
+5. bandeau de notice — **conditionnel** : n'apparaît que si le serveur est injoignable ou le flux rompu.
+
+Renommages : `ToolCall` → `ToolLine` (une ligne, pas une carte), `PermissionPanel` →
+`PermissionSheet`. Le nom décrit la forme, pas la fonction.
+
+Règles tenues dans le CSS : monochrome, une seule couleur d'attention (`#f7ad31`) réservée à une
+demande d'accord, une seule couleur d'échec (`#f25a5a`) ; **ce qui est sain ne s'affiche pas** ;
+bord à bord.
+
+### Preuve
+
+```
+vitest run      -> 6 fichiers, 80 tests, exit 0
+tsgo --noEmit   -> exit 0
+vite build      -> 76,49 ko brut / 19,22 ko compressés
+```
+
+Mesures par CDP, profil isolé, 1440×900, serveur 4096 :
+
+| mesure | valeur |
+|---|---|
+| `grid-template-columns` | `280px 1145px 0px` — tiroir fermé quand rien n'est attendu |
+| éléments interdits présents | `[]` — `statusbar`, `badge`, `pill`, `modelCard`, `tabs`, `sessionRow`, `chatMsg`, `folderRow`, `titlebar`, `brand`, `sectionLabel` |
+| fond | `rgb(21, 21, 23)` = `--bluish-950` |
+| session « Test 4 étapes avec erreurs injectées » | **7 tours** (1 utilisateur, 6 agent), **5 appels d'outil**, 19 parties, aucune erreur |
+
+### Deux défauts trouvés par la mesure, corrigés
+
+1. **Filet de 1px au bord droit alors que le tiroir est fermé.** La piste vaut `0px`, mais
+   `border-left` dessinait quand même — mesuré : `.side` large de **1px** pour une piste à `0px`.
+   Corrigé : le filet passe par `.side.open`.
+2. **Onze tests de composants cassés par les renommages.** Cause de la casse : un glob
+   `src/*.test.ts` avait manqué `components.test.tsx`. Les tests ont été adaptés au nouveau
+   vocabulaire, pas supprimés.
+
+### Une fausse alerte, signalée comme telle
+
+La première sonde a conclu « le fil ne se rend pas : 0 tour ». C'était faux : la sonde cliquait la
+**première** session de la liste, qui n'a aucun message (vérifié : `legacy=0`). Sur 19 sessions,
+**14 ont un transcript**. Le défaut n'existait pas. Les deux chemins ont été relevés au passage :
+`/session/:id/message` (legacy, celui qu'appelle le SDK) et `/api/session/:id/message` (v2, qui rend
+`{cursor, items}` d'événements de session).
+
+### Ce que cette refonte ne fait pas
+
+- `CIBLE.md` est une **proposition** : le code la suit, donc si elle est fausse, le code l'est aussi
+  (réserve **F4**).
+- Le rendu n'a pas été jugé par l'utilisateur.
+- L'arbitrage « ce que le binaire embarque » (`build.ts` sert `packages/app/dist`, pas `webui`)
+  reste ouvert, hors de ce lot.
