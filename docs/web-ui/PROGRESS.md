@@ -1132,8 +1132,8 @@ La première sonde a conclu « le fil ne se rend pas : 0 tour ». C'était faux 
 - `CIBLE.md` est une **proposition** : le code la suit, donc si elle est fausse, le code l'est aussi
   (réserve **F4**).
 - Le rendu n'a pas été jugé par l'utilisateur.
-- L'arbitrage « ce que le binaire embarque » (`build.ts` sert `packages/app/dist`, pas `webui`)
-  reste ouvert, hors de ce lot.
+- L'arbitrage « ce que le binaire embarque » (`build.ts` servait `packages/app/dist`, pas `webui`)
+  a été tranché depuis : **la webui remplace `packages/app`** comme interface embarquée.
 
 ---
 
@@ -1555,3 +1555,63 @@ capture webui-21-contraste.png, clip 1060x700, 68 ko
 
 **Méthode** : un jeton qui passe le contraste sur le fond d'origine ne le passe pas sur un autre fond.
 La mesure se fait sur les **trois** fonds de l'interface, pas sur celui de la source.
+## Lot suivant — la webui devient l'interface embarquée (livré)
+
+Décision de l'utilisateur : « **elle remplace `packages/app`** ». L'arbitrage était ouvert depuis le
+lot de refonte de l'écran ; il n'était pas une incertitude technique, c'est une décision de produit.
+
+### Ce que le code disait
+
+`build.ts` s'appelle `createEmbeddedWebUIBundle` mais pointait sur `../../app` :
+
+```
+build.ts:77   const appDir = path.join(import.meta.dirname, "../../app")
+```
+
+⇒ le binaire embarquait et servait **`packages/app`**. La webui, seize commits plus tard, n'était
+atteignable que par le serveur Vite de dev. Une seule ligne était en cause : `build.ts:77` est le seul
+endroit du dépôt qui référence `packages/app` comme source du bundle (le reste n'en parle que dans un
+commentaire, `app-server.ts:4`).
+
+### La chaîne, lue avant de changer
+
+Le chemin d'exécution n'est pas qu'un dossier à pointer ; il faut savoir ce que le serveur fait du
+fichier une fois embarqué (`src/server/shared/ui.ts`) :
+
+| étape | ligne | comportement |
+|---|---|---|
+| import dynamique du module généré | `ui.ts:49` | `import("opencode-web-ui.gen.ts")`, `.catch(() => null)` ⇒ **silencieux si absent** |
+| réponse d'un asset embarqué | `ui.ts:70` | `embeddedUI[chemin]`, sinon repli sur `index.html` (route cliente) |
+| CSP appliquée au HTML | `ui.ts:60` | `cspForHtml` : `script-src 'self'` |
+| dossier explicite qui gagne | `ui.ts:143` | `OPENCODE_WEB_UI_DIR` (`runtime-flags.ts:29`) bat le bundle embarqué |
+
+Le build émet `dist/opencode-<plateforme>/` contenant un binaire : un build partiel produit une
+release partielle — c'est pourquoi `--skip-embed-web-ui` et `--reuse-web-ui` existent et doivent rester
+des options, pas des valeurs par défaut.
+
+### Preuve
+
+Le chemin d'exécution a été proved **avant** le changement, parce que `webUiDir` sert le même code que
+le bundle embarqué (`serveDirectoryUIEffect`) : le prouver par le dossier prouve le lecteur, pas
+seulement le dossier.
+
+```
+serve --port 4099 avec OPENCODE_WEB_UI_DIR=packages/webui/dist
+
+GET /                     -> 200  text/html        1 107 octets   title "opencodev2"
+GET /assets/index-*.js    -> 200  text/javascript  107 940 octets
+GET /assets/index-*.css   -> 200                    19 001 octets
+```
+
+Layout du build webui compatible avec le mapping embarqué : `index.html` + `assets/**`, sans `.map`,
+ce que `createEmbeddedWebUIBundle` exige.
+
+### Ce qui reste
+
+La substitution de `appDir` est écrite et prouvée sur le **lecteur**. L'embarquage lui-même (bun
+`--compile` multi-cible) n'a pas été rejoué : il demande un build complet, et le premier build après ce
+changement est celui qui publiera la release.
+
+**Méthode** : quand un chemin d'exécution est partagé par deux sources (bundle embarqué et dossier
+explicite), prouver le lecteur une fois prouve les deux — au lieu de payer un build complet pour une
+ligne de chemin.

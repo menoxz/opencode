@@ -74,7 +74,9 @@ const reuseWebUi = process.argv.includes("--reuse-web-ui")
 
 const createEmbeddedWebUIBundle = async (rebuild: boolean) => {
   console.log(rebuild ? `Building Web UI to embed in the binary` : `Reusing the existing Web UI bundle`)
-  const appDir = path.join(import.meta.dirname, "../../app")
+  // The embedded Web UI is packages/webui. packages/app used to be it; the decision is that the
+  // general agent's interface is the webui, and the app is the legacy surface.
+  const appDir = path.join(import.meta.dirname, "../../webui")
   const dist = path.join(appDir, "dist")
   if (rebuild) {
     process.env.OPENCODE_CHANNEL = Script.channel
