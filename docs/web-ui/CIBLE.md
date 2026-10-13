@@ -158,6 +158,82 @@ jamais `true`.
   quelle version du serveur les sert. « Enregistré » sans dire **où** est le défaut qui coûte une
   heure de recherche — le fichier est `opencode.jsonc`, parce que le `.jsonc` gagne sur le `.json`
   quel que soit le mtime.
+- **Un écran de réglages est une collection, puis le détail d'un de ses éléments — jamais une liste de
+  formulaires.** Une liste plate de huit formulaires repliables ne montre pas la relation qui donne sa
+  raison d'être à l'objet : un fournisseur existe **pour ses modèles**, et aucun modèle n'était
+  visible. La règle générale : une section décompose sa donnée en **1 → n**, la collection se cherche,
+  le détail se règle. Elle vaut pour chaque menu, pas seulement pour `Providers` : agents → le modèle
+  d'un agent, serveurs MCP → l'état d'un serveur, plugins → la source d'un plugin.
+- **Le contrôle de choix est cherchable, et sa liste défile avec notre barre.** Un `<select>` natif ne
+  peut pas obéir : sa liste est dessinée par le système d'exploitation, donc ni champ de filtre ni
+  barre de défilement stylisée — la barre par défaut est une barre d'application dans une interface
+  qui n'en a pas. C'est un composant maison, et c'est une décision, pas une préférence. Quatre règles :
+  le champ de filtre est la **première ligne de la liste ouverte** (il n'existe pas au repos, donc il
+  ne coûte rien tant qu'on ne choisit pas), le filtre porte sur le **libellé** (jamais sur un titre de
+  groupe, qui rendrait `orcarouter` introuvable à la frappe), le clavier est complet (↑↓ `Home` `End`
+  `Entrée` `Échap`, `Tab` ferme), et la liste est bornée en hauteur — au-delà, elle défile. Un
+  composant de choix qui ne s'utilise qu'à la souris est un composant en panne.
+
+### La page `Providers` — la grille, puis le détail
+
+Le fournisseur est le « 1 », ses modèles sont le « n ». Décidé **avant** de sonder l'API, parce qu'un
+écran dessiné à partir de ce que la route rend finit par montrer la route au lieu du besoin.
+
+```
+┌ Providers ───────────────────────────────────────────────────────────────┐
+│  [ search 228 providers                                    ]  7 ready     │
+│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐                      │
+│  │ ✳ OpenCode Go│ │ ✳ DeepSeek   │ │ ✳ OpenRouter │   ← la GRILLE (le n) │
+│  │ 104 models   │ │ 12 models    │ │ 366 models   │                      │
+│  │ ● ready      │ │ ● ready      │ │ ○ no key     │                      │
+│  └──────────────┘ └──────────────┘ └──────────────┘                      │
+└──────────────────────────────────────────────────────────────────────────┘
+                     clic sur une tuile → le détail remplace la grille
+┌ ← Providers / OpenCode Go ───────────────────────────────────────────────┐
+│  THE PROVIDER (le 1)                                                     │
+│    API keys   1  ••••••••••••  [ remove ]            Base URL [       ]  │
+│               2  ••••••••••••  [ remove ]      ● ready   [ Save ]        │
+│  ITS MODELS (le n)                          [ search 122 models      ]   │
+│    ┌────────────────────────────────────────────────────────────────┐    │
+│    │ ✓  grok/grok-4.3                              · default         │    │
+│    │ ✓  deepseek-v4.1-flash                        ·                 │    │
+│    │ –  kimi-k2                                    ·                 │    │
+│    └────────────────────────────────────────────────────────────────┘    │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+**Trois choses que ce dessin tranche.** La grille montre **vos** fournisseurs au repos (sept), et le
+filtre cherche dans **tout** le catalogue (228) : un contrôle, deux états, aucun clic de plus — la
+règle de fréquence veut que le rare se replie, pas que le fréquent coûte un clic. Le détail **remplace**
+la grille au lieu de s'ajouter à côté : le rail vertical est déjà une colonne, une deuxième en ferait
+trois. Chaque tuile dit son état en un mot **et** un point — un état qui ne se lit qu'en couleur ne se
+lit pas.
+
+**Ce que la mesure a changé** (routes et schéma relevés le 2026-10-13) :
+
+| | Le besoin | Le verdict |
+|---|---|---|
+| R1 | lister les modèles d'**un** fournisseur | **tenu** — `models` est une carte dans `GET /config/providers` : 122 pour `orcarouter`, chaque entrée portant `name`, `cost`, `limit`, `capabilities`, `variants`. Aucun appel de plus. |
+| R2 | écrire la clé et l'URL de base | **tenu, mais deux magasins.** La clé est un **identifiant** (`PUT /auth/{providerID}`, et `POST /auth/{id}/keys` pour une liste) ; `baseURL` est de la **configuration** (`provider.<id>.options.baseURL`, par `PATCH /global/config`). Un seul bouton `Save` écrit donc à deux endroits : c'est une chose à dire à l'écran, pas à cacher. |
+| R3 | un modèle par défaut **par fournisseur** | **tombe.** Il n'existe pas : `Config.model` est **global** (`provider/modèle`). Le contrôle reste, mais il s'appelle « default for new sessions » et sa portée est nommée — sinon il promet un réglage que le fichier ne porte pas. |
+| R4 | activer/désactiver un modèle, le régler | **tenu** — `whitelist` / `blacklist` sur le fournisseur décident des modèles disponibles, et `models.<id>` surcharge un modèle (`name`, `limit`, `cost`, `options`, `variants.<v>.disabled`). Par `PATCH /global/config` : `PATCH /config` matérialise un `config.json` **à la racine du dépôt** — mesuré. |
+
+**Trois capacités que la cible ignorait, et qui la rendent meilleure.** Le serveur porte **plusieurs
+clés par fournisseur, ordonnées, avec bascule automatique** sur `401/402/403/429` — le champ unique
+actuel rate une fonction du serveur : la liste des clés remplace le champ, l'ordre est l'ordre de
+bascule. `POST /provider/{id}/oauth/authorize` + `/oauth/callback` sont un vrai flux, donc `Connect`
+peut exister au lieu du texte inerte d'aujourd'hui. Et `discover` fait chercher la liste des modèles
+sur `{baseURL}/models` : un interrupteur qui répond à « mes modèles n'apparaissent pas ».
+
+**Le catalogue ne se paie que si on le demande.** La grille au repos lit `GET /config/providers`
+(531 ko, 49 ms) ; chercher dans les 228 paie `GET /provider` (6,7 Mo, 1 198 ms) **au premier caractère
+tapé**, une fois par session. `GET /api/provider/{id}` ne sert à rien ici : 319 octets mais 1 086 ms,
+et il **ne porte pas** la liste des modèles.
+
+**Ce qui ne s'affiche pas** : le nombre de méthodes d'authentification au repos (une propriété de la
+surface du serveur, pas une décision — il descend dans le détail s'il sert), aucun formulaire ouvert
+au repos, aucune colonne d'actions (le libellé d'un modèle est l'information, ses actions se révèlent
+au survol de la ligne), et jamais un état par la couleur seule.
 
 ## 5. Le style
 
