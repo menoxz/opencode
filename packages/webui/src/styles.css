@@ -24,26 +24,52 @@
    ============================================================================= */
 
 :root {
-  --bg-0: #06070b;
-  --bg-1: #0a0c12;
-  --bg-2: #0f121a;
-  --bg-3: #141926;
+  /* ---- Jetons RÉELS de DSH, extraits de @deepseek-ai/dsh-client-ui-theme ----
+     Source : lib/client.js (80 ko), paquets installés sous
+     %APPDATA%\npm\node_modules\@deepseek-ai\dsh\node_modules\@deepseek-ai\
+     Le thème DSH est MONOCHROME : son `brand-primary` est bluish-50, un quasi-blanc.
+     Les valeurs précédentes venaient de la maquette d'un plugin, pas du produit. */
 
-  --line-1: #1c2230;
-  --line-2: #293042;
+  /* Échelle `neutral-bluish` de DSH, 19 paliers (relevée telle quelle) */
+  --bluish-50: #f9fafb;
+  --bluish-200: #e1e5ee;
+  --bluish-400: #adb2b8;
+  --bluish-600: #81858c;
+  --bluish-700: #61666b;
+  --bluish-800: #353638;
+  --bluish-850: #2c2c2e;
+  --bluish-875: #232324;
+  --bluish-900: #1b1b1c;
+  --bluish-950: #151517;
+  --bluish-1000: #0f1115;
 
-  --text-1: #e9edf6; /* 15,3:1 sur --bg-1 */
-  --text-2: #9aa3b8; /* 7,4:1  */
-  --text-3: #6f7a92; /* 4,54:1 — relevé depuis #5d6679 (3,41:1, insuffisant) */
+  /* Alias du thème sombre : bg-base → 950, layer-1 → 875, layer-2 → 850, layer-3 → 800 */
+  --bg-0: var(--bluish-950);
+  --bg-1: var(--bluish-875);
+  --bg-2: var(--bluish-850);
+  --bg-3: var(--bluish-800);
 
-  --brand-1: #4d7cfe;
-  --brand-2: #7c5cff;
-  --brand-3: #22d3ee;
+  /* Bordures : blanc TRANSLUCIDE chez DSH, pas des hex opaques */
+  --line-1: #ffffff0f; /* border-l1 — 6 % de blanc */
+  --line-2: #ffffff1f; /* border-l2 — 12 % de blanc */
 
-  --ok: #34d399;
-  --warn: #fbbf24;
+  /* label-primary → bluish-50 ; label-caption → bluish-600 */
+  --text-1: var(--bluish-50);
+  --text-2: var(--bluish-400);
+  --text-3: var(--bluish-600);
+
+  /* Marque monochrome : DSH n'a pas d'accent coloré dans son thème sombre */
+  --brand-1: var(--bluish-50);
+  --brand-2: var(--bluish-200);
+  --brand-3: var(--bluish-400);
+
+  /* États : familles amber / green / red de la palette statique DSH.
+     amber-400 #f7ad31 et amber-500 #f59e0b sont relevés ; les deux autres
+     restent à extraire de `--dsw-static-{green,red}-*`. */
+  --ok: #4ade80;
+  --warn: #f59e0b;
   --danger: #f87171;
-  --ember: #ff8a3d;
+  --ember: #f7ad31;
 
   --grad-brand: linear-gradient(135deg, #4d7cfe 0%, #6a5cff 55%, #8b5cf6 100%);
   --grad-signal: linear-gradient(90deg, #22d3ee, #4d7cfe);
