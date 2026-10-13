@@ -723,7 +723,9 @@ textarea {
   gap: 8px;
   width: 100%;
   text-align: left;
-  padding: 3px 6px;
+  /* Même grammaire que `.tool-line` et `.reasoning-line` : c'est la même ligne repliable, donc la
+     même densité. Elle était restée à 3px alors que ses deux jumelles sont passées à 1px. */
+  padding: 1px 6px;
   margin-left: -6px;
   border-radius: 6px;
   color: var(--text-3);
