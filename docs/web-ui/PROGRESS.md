@@ -2445,3 +2445,39 @@ densité et bordure (après révision):
    couvert par les tests et par la forme mesurée, pas par une observation d'écran.
 2. **Le rendu n'a pas été jugé par l'utilisateur** après la révision : les mesures ci-dessus disent
    que le travail est visible et que la bordure est partie, pas que le résultat plaît.
+
+---
+
+## Lot — l'interligne du flux (livré)
+
+Demande : *« réduit les interlignes entre les appels d'outil, cela occupe de la place inutilement »*.
+
+L'espace venait de **trois** endroits, et un seul n'était pas évident :
+
+| source | avant | après |
+|---|---|---|
+| `padding` vertical d'une ligne d'action (`padding: 3px`) | 3 + 3 px | `padding: 1px` → 1 + 1 px |
+| `padding` vertical d'une ligne de réflexion | 3 + 3 px | 1 + 1 px |
+| `gap` de l'étape (entre items d'un même travail) | 2 px | 0 |
+| **`gap` du tour** (entre deux étapes voisines) | 8 px | **6 px, puis 0** |
+
+Le quatrième était le vrai coupable : après avoir resserré les trois autres, la mesure donnait encore
+**30,4 px** entre deux lignes pour une hauteur de ligne de **24,4 px** — donc 6 px d'air venus du
+`gap` du tour, qui sépare les étapes. Or ce `gap` servait **aussi** à séparer la prose du travail.
+
+**La solution n'est pas de supprimer l'air, mais de le déplacer.** La prose (`.prose`) et les
+documents (`.docs`) portent déjà leurs propres marges ⇒ le tour peut passer à `gap: 0` : les appels
+d'outil se touchent, la prose respire, et rien n'a été perdu.
+
+```
+avant  deltasTopToTop = 30.4px   (lineHeight 24.4 + 6 d'air)
+après  deltasTopToTop = 24.4px   (la ligne seule)
+contrôles : paddingTop/Bottom = 1px, parentGap = normal, borderLeftWidth = 0px
+```
+
+`vite build` exit 0, `tsgo --noEmit` exit 0, 389 tests. Au passage, `.work-body` — CSS mort du repli
+retiré au lot précédent — est supprimé.
+
+**Leçon de méthode** : un `gap` sur un conteneur de flux ne sépare pas « les blocs » comme on le croit,
+il sépare **chaque enfant**. Quand un conteneur mêle des blocs et des lignes, la séparation doit être
+portée par les blocs, pas par le conteneur.

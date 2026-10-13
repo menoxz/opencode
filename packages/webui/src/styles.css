@@ -683,7 +683,11 @@ textarea {
 .turn {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  /* Aucun écart entre les entrées du flux. L'air qui sépare les **blocs** (la prose, les documents)
+     est porté par ces blocs eux-mêmes, via leurs marges : un `gap` ici ajoutait de l'air entre
+     **chaque** appel d'outil, y compris deux appels qui se suivent dans deux étapes voisines.
+     Mesuré avant : 30,4 px entre deux lignes pour une hauteur de ligne de 24,4 px. */
+  gap: 0;
 }
 
 .part {
@@ -862,7 +866,9 @@ textarea {
   gap: 8px;
   width: 100%;
   text-align: left;
-  padding: 3px 6px;
+  /* 1px et non 3px : le flux est fait de lignes qui se suivent, et l'air autour de chacune se paie
+     à chaque entrée. Mesuré : 3+3+2 = 8px entre deux appels, ramenés à 2px. */
+  padding: 1px 6px;
   margin-left: -6px;
   border-radius: 6px;
   color: var(--text-2);
@@ -921,7 +927,7 @@ textarea {
 }
 
 .tool-detail {
-  margin: 4px 0 10px;
+  margin: 2px 0 6px;
   padding-left: 12px;
   border-left: 1px solid var(--line-2);
 }
@@ -963,7 +969,7 @@ textarea {
   gap: 8px;
   width: 100%;
   text-align: left;
-  padding: 3px 6px;
+  padding: 1px 6px;
   margin-left: -6px;
   border-radius: 6px;
   color: var(--text-3);
@@ -976,7 +982,7 @@ textarea {
 }
 
 .reasoning-text {
-  margin: 4px 0 10px;
+  margin: 2px 0 6px;
   padding-left: 12px;
   border-left: 1px solid var(--line-2);
   color: var(--text-3);
@@ -993,7 +999,9 @@ textarea {
 .step {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  /* Aucun écart : les lignes d'un même travail se suivent, et le padding de chacune suffit à les
+     séparer. Un `gap` ici ajoutait de l'air entre **chaque** appel d'outil. */
+  gap: 0;
 }
 
 .step-head {
@@ -1097,9 +1105,9 @@ textarea {
 .patch-files {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   list-style: none;
-  margin: 4px 0 10px;
+  margin: 2px 0 6px;
   padding-left: 12px;
   border-left: 1px solid var(--line-2);
 }
@@ -2340,11 +2348,7 @@ textarea {
    continu, une ligne par fait, sans bordure ni séparateur — c'est un flux, pas une pile de blocs.
    Le détail d'une entrée reste accessible en la dépliant elle-même. */
 
-.work-body {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
+/* (`.work-body` a été retiré : le repli « work » n'existe plus, cf. §9.2 révisé.) */
 
 /* ---- Les documents de la réponse (§12.3) ---- */
 

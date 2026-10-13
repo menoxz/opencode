@@ -429,6 +429,10 @@ Ce qui allège, ce n'est pas de cacher, c'est de **tenir en une ligne**. D'où l
 - **Le détail se déplie sur l'entrée elle-même**, jamais sur un conteneur qui emporterait ses voisines.
 - **Aucune bordure, aucun séparateur, aucun encadré.** Une bordure par ligne transforme la liste en
   colonne de bandes et gêne la lecture — verdict d'usage, retiré.
+- **Aucun écart entre les lignes non plus.** L'air qui sépare les **blocs** (la prose, les documents)
+  est porté par ces blocs, via leurs marges — jamais par un `gap` entre les entrées, qui ajoutait de
+  l'air entre **chaque** appel d'outil, y compris deux appels qui se suivent. Mesuré : 30,4 px entre
+  deux lignes pour une hauteur de ligne de 24,4 px, ramenés à 24,4 px — c'est-à-dire la ligne seule.
 - **Aucune statistique** (§9.3) : le flux porte le *contenu*, jamais le *prix*.
 - **Rien ne déplace ce qu'on lit** (§3.7) : le flux s'ajoute à la fin, il ne se réordonne pas.
 
