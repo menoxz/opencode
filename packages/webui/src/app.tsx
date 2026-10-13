@@ -8,9 +8,22 @@ import {
   type Attachment,
 } from "./attachments"
 import { client, credentials, fetchHealth, rememberCredentials, serverUrl, type Health } from "./client"
-import { PermissionPanel, StatusPanel, ToolCall } from "./components"
+import {
+  Brand,
+  ChatMessage,
+  FolderRow,
+  ModelCard,
+  PermissionPanel,
+  SectionLabel,
+  SessionRow,
+  StatusBar,
+  StatusPanel,
+  TitleBar,
+  ToolCall,
+} from "./components"
 import { subscribeEvents, type ServerEvent, type EventStreamState } from "./events"
-import { mcpRows, summarizeStatus, type McpStatus } from "./status"
+import { agentCount, currentModel, mcpCounts, mcpRows, summarizeStatus, type McpStatus } from "./status"
+import { sessionTimestamp } from "./time"
 import {
   dropPermission,
   reducePermissions,
@@ -19,7 +32,7 @@ import {
   type ToolState,
 } from "./view-model"
 
-type SessionInfo = { id: string; title?: string; time?: { updated?: number } }
+type SessionInfo = { id: string; title?: string; time?: { updated?: number; created?: number } }
 
 type Part =
   | { type: "text"; text?: string }
@@ -50,6 +63,7 @@ export default function App() {
   // Inline confirmation instead of window.confirm: a native dialog blocks automation and cannot
   // be styled. Two clicks on the same row, no modal.
   const [confirming, setConfirming] = createSignal<string | undefined>()
+  const [workspaceOpen, setWorkspaceOpen] = createSignal(true)
 
   // Credentials are read once at boot: the SDK client and the SSE connection are both built with
   // them, so saving reloads the page (see `rememberCredentials`).
@@ -60,20 +74,27 @@ export default function App() {
   const [attachments, setAttachments] = createSignal<Attachment[]>([])
   const [attachError, setAttachError] = createSignal<string | undefined>()
 
-  // Panneaux annexes, à droite : la disposition demandée prévoit plusieurs panneaux, donc des
-  // onglets plutôt qu'un seul flux d'événements.
+  // Panneaux annexes, à droite : la disposition prévoit plusieurs panneaux, donc des onglets.
   const [rightTab, setRightTab] = createSignal<"events" | "permissions" | "status">("events")
   const [mcp, setMcp] = createSignal<Record<string, McpStatus>>({})
   const [config, setConfig] = createSignal<{ model?: string; agent?: Record<string, unknown> } | undefined>()
 
-  const [permissions, setPermissions] = createSignal<PermissionRequest[]>([])
-  const [expanded, setExpanded] = createSignal<Record<string, boolean>>({})
+  /** Horloge figée par rendu : évite que chaque ligne recalcule un temps différent. */
+  const now = () => Date.now()
 
   /**
    * Every SDK method takes `directory` as a query parameter, so switching the working directory
    * needs no client rebuild — the value is threaded into each call instead.
    */
   const scope = () => (directory().trim() ? { directory: directory().trim() } : {})
+
+  /** Nom du workspace affiché dans l'arborescence : le dossier de travail, ou son défaut serveur. */
+  const workspaceName = () => {
+    const value = directory().trim() || serverPath() || ""
+    if (!value) return "workspace"
+    const parts = value.split(/[\\/]/).filter(Boolean)
+    return parts[parts.length - 1] ?? value
+  }
 
   const loadPath = async () => {
     const result = await client.path.get(scope()).catch(() => undefined)
@@ -106,7 +127,7 @@ export default function App() {
     if (Array.isArray(data)) setPermissions(data)
   }
 
-  /** Alimente le panneau Statut : serveurs MCP et configuration (modèle, agents déclarés). */
+  /** Alimente le panneau Statut et la carte modèle : MCP et configuration. */
   const loadStatus = async () => {
     const [mcpResult, configResult] = await Promise.all([
       client.mcp.status(scope()).catch(() => undefined),
@@ -255,10 +276,6 @@ export default function App() {
 
   const toggle = (id: string) => setExpanded((current) => ({ ...current, [id]: !current[id] }))
 
-  const refreshFor = (sessionID: string) => {
-    void loadMessages(sessionID)
-  }
-
   onMount(async () => {
     setHealth(await fetchHealth())
     await loadPath()
@@ -290,7 +307,7 @@ export default function App() {
         if (event.type === "session.created" || event.type === "session.deleted") void loadSessions()
 
         const sessionID = active()
-        if (sessionID && JSON.stringify(event.properties ?? {}).includes(sessionID)) refreshFor(sessionID)
+        if (sessionID && JSON.stringify(event.properties ?? {}).includes(sessionID)) void loadMessages(sessionID)
       },
       onState: (state) => {
         setStream(state)
@@ -312,6 +329,9 @@ export default function App() {
       unsubscribe()
     })
   })
+
+  const [expanded, setExpanded] = createSignal<Record<string, boolean>>({})
+  const [permissions, setPermissions] = createSignal<PermissionRequest[]>([])
 
   const renderPart = (part: Part) => {
     if (part.type === "text") return <p class="part text">{part.text ?? ""}</p>
@@ -340,20 +360,27 @@ export default function App() {
     )
   }
 
+  const envTone = () => (!health()?.healthy ? "error" : stream().connected ? "ok" : "warn")
+  const envLabel = () =>
+    !health()?.healthy ? "serveur injoignable" : stream().connected ? "session locale · connecté" : "flux interrompu"
+
+  const mcpSummary = () => {
+    const { connected, total } = mcpCounts(mcp())
+    if (total === 0) return "aucun serveur MCP"
+    return `mcp ${connected}/${total} · agents ${agentCount(config())}`
+  }
+
   return (
     <div class="layout">
-      <header class="topbar">
-        <strong>opencodev2</strong>
-        <span class={`pill ${stream().connected ? "ok" : "down"}`}>
-          {stream().connected ? "SSE connecté" : "SSE déconnecté"}
-        </span>
-        <span class={`pill ${health()?.healthy ? "ok" : "down"}`}>
-          {health()?.healthy ? "serveur joignable" : "serveur injoignable"}
-        </span>
+      <TitleBar
+        version={health()?.version ?? "—"}
+        context={workspaceName()}
+        envLabel={envLabel()}
+        envTone={envTone() as "ok" | "warn" | "error"}
+      >
         <Show when={permissions().length > 0}>
-          <span class="pill warn">{permissions().length} permission(s) en attente</span>
+          <span class="pill warn">{permissions().length} permission(s)</span>
         </Show>
-        <span class="spacer" />
         <Show
           when={authOpen()}
           fallback={
@@ -397,7 +424,7 @@ export default function App() {
           </form>
         </Show>
         <label class="dirfield">
-          <span>Dossier</span>
+          <span>dossier</span>
           <input
             type="text"
             placeholder={serverPath() ?? "répertoire du serveur"}
@@ -406,96 +433,125 @@ export default function App() {
           />
         </label>
         <code class="url">{serverUrl || "même origine"}</code>
-      </header>
+      </TitleBar>
 
       <aside class="sidebar">
-        <button class="primary" onClick={createSession}>
-          Nouvelle session
+        <Brand name="opencodev2" tagline="agent généraliste" />
+
+        <button class="newSession" onClick={createSession}>
+          <span class="plus">+</span> Nouvelle session
         </button>
+
         <input
           class="search"
           type="search"
-          placeholder="Rechercher…"
+          placeholder="⌕ Rechercher une session…"
           value={query()}
           onInput={(event) => setQuery(event.currentTarget.value)}
         />
-        <ul class="sessions">
-          <For each={sessions()}>
-            {(session) => (
-              <li classList={{ selected: session.id === active() }}>
-                <Show
-                  when={renaming() === session.id}
-                  fallback={
-                    <div class="row" onClick={() => void selectSession(session.id)}>
-                      <span class="title">{session.title || "(sans titre)"}</span>
-                      <code class="id">{session.id.slice(0, 12)}</code>
-                      <span class="actions">
-                        <button
-                          class="icon"
-                          title="Renommer"
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            startRename(session)
-                          }}
+
+        <SectionLabel label="Sessions" trailing={String(sessions().length)} />
+
+        <div class="ws">
+          <div class="wsGroup">
+            <FolderRow
+              name={workspaceName()}
+              count={sessions().length}
+              open={workspaceOpen()}
+              onToggle={() => setWorkspaceOpen((value) => !value)}
+            />
+            <Show when={workspaceOpen()}>
+              <div class="sessions">
+                <For each={sessions()}>
+                  {(session) => (
+                    <Show
+                      when={renaming() === session.id}
+                      fallback={
+                        <SessionRow
+                          title={session.title || "(sans titre)"}
+                          time={sessionTimestamp(session)}
+                          now={now()}
+                          active={session.id === active()}
+                          running={false}
+                          onSelect={() => void selectSession(session.id)}
                         >
-                          ✎
-                        </button>
-                        <Show
-                          when={confirming() === session.id}
-                          fallback={
+                          <span class="rowActions">
                             <button
-                              class="icon danger"
-                              title="Supprimer"
+                              class="icon"
+                              title="Renommer"
                               onClick={(event) => {
                                 event.stopPropagation()
-                                setConfirming(session.id)
+                                startRename(session)
                               }}
                             >
-                              ✕
+                              ✎
                             </button>
-                          }
-                        >
-                          <button
-                            class="icon danger"
-                            title="Confirmer la suppression"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              void removeSession(session)
-                            }}
-                          >
-                            confirmer
-                          </button>
-                          <button
-                            class="icon"
-                            title="Annuler"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              setConfirming(undefined)
-                            }}
-                          >
-                            annuler
-                          </button>
-                        </Show>
-                      </span>
-                    </div>
-                  }
-                >
-                  <input
-                    class="rename"
-                    autofocus
-                    value={renameDraft()}
-                    onInput={(event) => setRenameDraft(event.currentTarget.value)}
-                    onBlur={commitRename}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") void commitRename()
-                      if (event.key === "Escape") setRenaming(undefined)
-                    }}
-                  />
-                </Show>
-              </li>
-            )}
-          </For>
-        </ul>
+                            <Show
+                              when={confirming() === session.id}
+                              fallback={
+                                <button
+                                  class="icon danger"
+                                  title="Supprimer"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    setConfirming(session.id)
+                                  }}
+                                >
+                                  ✕
+                                </button>
+                              }
+                            >
+                              <button
+                                class="icon danger"
+                                title="Confirmer la suppression"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  void removeSession(session)
+                                }}
+                              >
+                                confirmer
+                              </button>
+                              <button
+                                class="icon"
+                                title="Annuler"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  setConfirming(undefined)
+                                }}
+                              >
+                                annuler
+                              </button>
+                            </Show>
+                          </span>
+                        </SessionRow>
+                      }
+                    >
+                      <input
+                        class="rename"
+                        autofocus
+                        value={renameDraft()}
+                        onInput={(event) => setRenameDraft(event.currentTarget.value)}
+                        onBlur={commitRename}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") void commitRename()
+                          if (event.key === "Escape") setRenaming(undefined)
+                        }}
+                      />
+                    </Show>
+                  )}
+                </For>
+              </div>
+            </Show>
+          </div>
+        </div>
+
+        <div class="sidebar-foot">
+          <ModelCard
+            model={currentModel(config()) ?? "défaut du serveur"}
+            sub={mcpSummary()}
+            tone={currentModel(config()) ? "ok" : "off"}
+          />
+        </div>
       </aside>
 
       <main class="thread">
@@ -503,91 +559,91 @@ export default function App() {
           <p class="error">{error()}</p>
         </Show>
 
-        <Show when={active()} fallback={<p class="empty">Choisis ou crée une session.</p>}>
-          <For each={messages()}>
-            {(message) => (
-              <article class={`message ${message.info.role}`}>
-                <header>{message.info.role}</header>
-                <For each={message.parts}>{(part) => renderPart(part)}</For>
-              </article>
-            )}
-          </For>
-          <form class="composer" onSubmit={send}>
-            <div class="composer-main">
-              <textarea
-                rows="3"
-                placeholder="Écris ton message…"
-                value={draft()}
-                onInput={(event) => setDraft(event.currentTarget.value)}
+        <Show
+          when={active()}
+          fallback={
+            <div class="empty-state">
+              <p class="empty">Choisis ou crée une session pour commencer.</p>
+            </div>
+          }
+        >
+          <div class="chat">
+            <For each={messages()}>
+              {(message) => (
+                <ChatMessage
+                  role={message.info.role}
+                  avatar={message.info.role === "user" ? "MOI" : "OC"}
+                >
+                  <For each={message.parts}>{(part) => renderPart(part)}</For>
+                </ChatMessage>
+              )}
+            </For>
+          </div>
+
+          <form class="chat-input" onSubmit={send}>
+            <Show when={attachments().length > 0}>
+              <ul class="pending">
+                <For each={attachments()}>
+                  {(item) => (
+                    <li>
+                      <Show when={isImageMime(item.mime)} fallback={<span class="fileicon">▤</span>}>
+                        <img class="thumb" src={item.dataUrl} alt={item.filename} />
+                      </Show>
+                      <span class="fname">{item.filename}</span>
+                      <span class="fsize">{fileSizeLabel(item.size)}</span>
+                      <button class="icon danger" type="button" title="Retirer" onClick={() => removeAttachment(item.id)}>
+                        ✕
+                      </button>
+                    </li>
+                  )}
+                </For>
+              </ul>
+            </Show>
+            <Show when={attachError()}>{(message) => <p class="error">{message()}</p>}</Show>
+            <span class="ci-model">{currentModel(config()) ?? "modèle par défaut"}</span>
+            <textarea
+              rows="2"
+              placeholder="Décrire une tâche, coller un contexte, joindre un fichier…"
+              value={draft()}
+              onInput={(event) => setDraft(event.currentTarget.value)}
+            />
+            <label class="icon attach" title="Joindre des fichiers">
+              +
+              <input
+                class="hidden-input"
+                type="file"
+                multiple
+                onChange={(event) => {
+                  void addFiles(event.currentTarget.files)
+                  // Remis à zéro pour qu'attacher deux fois le même fichier soit possible.
+                  event.currentTarget.value = ""
+                }}
               />
-              <Show when={attachments().length > 0}>
-                <ul class="pending">
-                  <For each={attachments()}>
-                    {(item) => (
-                      <li>
-                        <Show when={isImageMime(item.mime)} fallback={<span class="fileicon">▤</span>}>
-                          <img class="thumb" src={item.dataUrl} alt={item.filename} />
-                        </Show>
-                        <span class="fname">{item.filename}</span>
-                        <span class="fsize">{fileSizeLabel(item.size)}</span>
-                        <button
-                          class="icon danger"
-                          type="button"
-                          title="Retirer"
-                          onClick={() => removeAttachment(item.id)}
-                        >
-                          ✕
-                        </button>
-                      </li>
-                    )}
-                  </For>
-                </ul>
-              </Show>
-              <Show when={attachError()}>{(message) => <p class="error">{message()}</p>}</Show>
-            </div>
-            <div class="composer-actions">
-              <label class="icon attach" title="Joindre des fichiers">
-                +
-                <input
-                  class="hidden-input"
-                  type="file"
-                  multiple
-                  onChange={(event) => {
-                    void addFiles(event.currentTarget.files)
-                    // Remis à zéro pour qu'attacher deux fois le même fichier soit possible.
-                    event.currentTarget.value = ""
-                  }}
-                />
-              </label>
-              <button class="primary" type="submit" disabled={!draft().trim() && attachments().length === 0}>
-                Envoyer
-              </button>
-            </div>
+            </label>
+            <button class="chat-send" type="submit" disabled={!draft().trim() && attachments().length === 0}>
+              Envoyer
+            </button>
           </form>
         </Show>
       </main>
 
       <aside class="panels">
         <div class="tabs" role="tablist">
-          <button
-            class="tab"
-            classList={{ active: rightTab() === "events" }}
-            onClick={() => setRightTab("events")}
-          >
-            Événements
+          <button class="tab" classList={{ active: rightTab() === "events" }} onClick={() => setRightTab("events")}>
+            <span class="t-dot" /> Événements
           </button>
           <button
             class="tab"
             classList={{ active: rightTab() === "permissions" }}
             onClick={() => setRightTab("permissions")}
           >
-            Permissions
+            <span class="t-dot" /> Permissions
             <Show when={permissions().length > 0}>
               <span class="count">{permissions().length}</span>
             </Show>
           </button>
           <button class="tab" classList={{ active: rightTab() === "status" }} onClick={() => setRightTab("status")}>
-            Statut
+            <span class="t-dot" /> Statut
           </button>
         </div>
 
@@ -613,10 +669,7 @@ export default function App() {
 
         <Show when={rightTab() === "permissions"}>
           <div class="panelbody">
-            <Show
-              when={permissions().length > 0}
-              fallback={<p class="empty">Aucune permission en attente.</p>}
-            >
+            <Show when={permissions().length > 0} fallback={<p class="empty">Aucune permission en attente.</p>}>
               <For each={permissions()}>
                 {(request) => (
                   <PermissionPanel request={request} onReply={(reply) => void replyPermission(request, reply)} />
@@ -640,6 +693,20 @@ export default function App() {
           </div>
         </Show>
       </aside>
+
+      <StatusBar
+        left={[
+          { label: health()?.healthy ? "connecté" : "déconnecté", tone: health()?.healthy ? "ok" : "error" },
+          { label: stream().connected ? "flux actif" : "flux interrompu", tone: stream().connected ? "ok" : "warn" },
+          { label: `${sessions().length} sessions` },
+          { label: `reconnexions ${stream().reconnects}` },
+        ]}
+        right={[
+          { label: `⎇ ${workspaceName()}` },
+          { label: mcpSummary() },
+          { label: currentModel(config()) ?? "modèle par défaut" },
+        ]}
+      />
     </div>
   )
 }

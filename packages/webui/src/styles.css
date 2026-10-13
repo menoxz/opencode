@@ -1,70 +1,64 @@
 /* =============================================================================
-   Interface webui — système de design repris de DSH (DeepSeek Harness)
+   Interface webui — composants repris de DSH (DeepSeek Harness)
    =============================================================================
 
-   Source : `C:\jeanluc\dsh-identite-visuelle.html` (jetons et composants),
-   `C:\jeanluc\dsh-sidebar-proposition.html` (structure de la sidebar),
-   `C:\jeanluc\dsh-plugins\dsh-identite\design-2026-08\RECOMMANDATIONS.md`
-   (refonte validée : « bord à bord », correction de contraste).
+   Sources : `C:\jeanluc\dsh-identite-visuelle.html` (barre de titre, marque, onglets,
+   carte modèle, bulles, barre d'état), `C:\jeanluc\dsh-sidebar-proposition.html`
+   (arborescence workspace → sessions), `dsh-plugins\dsh-identite\design-2026-08\
+   RECOMMANDATIONS.md` (refonte « bord à bord », correction de contraste WCAG).
+
+   Ce fichier ne fait pas qu'habiller : chaque règle correspond à un composant du
+   balisage de référence, pour que la structure suive la même grammaire.
 
    Trois décisions reprises telles quelles :
 
-   1. **Jetons** — la palette DSH est conservée à l'identique (fond bleu-nuit, marque
-      indigo → violet, accent cyan). Elle est plus froide et plus neutre que la précédente,
-      ce qui convient mieux à un agent généraliste qu'à un terminal.
+   1. **Jetons** — palette bleu-nuit, marque indigo → violet, accent cyan, typographies
+      Space Grotesk / Inter / JetBrains Mono.
 
-   2. **« Bord à bord »** — la recommandation DSH rejette les « cartes flottantes »
-      (gouttière 8px, rayon 10px, bordure en verre) au profit de panneaux qui occupent
-      toute leur piste, séparés par un filet d'1px. Les panneaux sont donc en rayon 0 ;
-      les commandes gardent leur rayon.
+   2. **« Bord à bord »** — les panneaux occupent toute leur piste, séparés par un filet
+      d'1px, en rayon 0. Les commandes gardent leur arrondi.
 
    3. **Contraste WCAG AA** — DSH a mesuré que son texte tertiaire échouait (3,55:1) et l'a
-      relevé à 4,73:1. Sa valeur d'origine (`--text-3: #5d6679`) donne ici **3,41:1 sur
-      `--bg-1`**, donc insuffisante : elle n'est PAS recopiée. La valeur retenue est
-      `#6f7a92`, mesurée à **4,54:1** sur `--bg-1` — la leçon est reprise, pas la valeur.
+      relevé à 4,73:1. Sa valeur d'origine (`#5d6679`) donne ici 3,41:1 sur `--bg-1` : elle
+      n'est PAS recopiée. Retenu : `#6f7a92`, mesuré à 4,54:1. La leçon, pas la valeur.
    ============================================================================= */
 
 :root {
-  /* Fonds, du plus profond au plus élevé */
   --bg-0: #06070b;
   --bg-1: #0a0c12;
   --bg-2: #0f121a;
   --bg-3: #141926;
 
-  /* Filets */
   --line-1: #1c2230;
   --line-2: #293042;
 
-  /* Texte : hiérarchie primary > secondary > tertiary, contrastes vérifiés sur --bg-1 */
-  --text-1: #e9edf6; /* 15,3:1 */
+  --text-1: #e9edf6; /* 15,3:1 sur --bg-1 */
   --text-2: #9aa3b8; /* 7,4:1  */
   --text-3: #6f7a92; /* 4,54:1 — relevé depuis #5d6679 (3,41:1, insuffisant) */
 
-  /* Marque */
   --brand-1: #4d7cfe;
   --brand-2: #7c5cff;
   --brand-3: #22d3ee;
 
-  /* États */
   --ok: #34d399;
   --warn: #fbbf24;
   --danger: #f87171;
   --ember: #ff8a3d;
 
-  /* Dégradés DSH */
   --grad-brand: linear-gradient(135deg, #4d7cfe 0%, #6a5cff 55%, #8b5cf6 100%);
   --grad-signal: linear-gradient(90deg, #22d3ee, #4d7cfe);
   --grad-active: linear-gradient(90deg, rgba(77, 124, 254, 0.16), rgba(124, 92, 255, 0.07));
 
-  /* Rayons : 0 pour les panneaux (bord à bord), arrondi pour les commandes */
   --radius-panel: 0px;
   --radius-control: 9px;
   --radius-pill: 999px;
 
-  /* Typographies DSH, avec replis système si les polices ne se chargent pas */
   --mono: "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
   --display: "Space Grotesk", Inter, system-ui, sans-serif;
   --ui: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  /* Motif signature DSH : la grille de nœuds, très discrète, en fond de conversation. */
+  --node-grid: radial-gradient(rgba(154, 163, 184, 0.055) 1px, transparent 1px);
 
   color-scheme: dark;
 }
@@ -80,7 +74,6 @@ body {
 }
 
 body {
-  /* Halo d'ambiance DSH : deux radiales discrètes en haut de page */
   background:
     radial-gradient(900px 500px at 20% -10%, rgba(77, 124, 254, 0.14), transparent 60%),
     radial-gradient(800px 500px at 90% 0%, rgba(124, 92, 255, 0.12), transparent 55%),
@@ -94,66 +87,135 @@ body {
 
 code,
 pre,
-.id,
 .url,
 .props,
 .fsize,
-.tab .count,
+.count,
 .badge,
-.spec {
+.ver,
+.env,
+.ci-model,
+.toolname,
+.time,
+.mname,
+.s-item,
+.ctx,
+.patterns,
+.mc-sub,
+.sectionLabel {
   font-family: var(--mono);
 }
 
 /* =============================================================================
-   Charpente : bandeau, sidebar, conversation, panneaux — en rayon 0, filets d'1px
+   Charpente : titre / (sidebar · conversation · panneaux) / barre d'état
    ============================================================================= */
 
 .layout {
   display: grid;
   grid-template-columns: 264px minmax(0, 1fr) 320px;
-  grid-template-rows: 46px minmax(0, 1fr);
+  grid-template-rows: 46px minmax(0, 1fr) 26px;
   grid-template-areas:
     "top top top"
-    "side thread panels";
+    "side thread panels"
+    "status status status";
   height: 100vh;
 }
 
-.topbar {
+/* =============================================================================
+   Barre de titre — .titlebar / .traffic / .title / .env (DSH)
+   ============================================================================= */
+
+.titlebar {
   grid-area: top;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 14px;
   padding: 0 14px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent), var(--bg-1);
   border-bottom: 1px solid var(--line-1);
 }
 
-.topbar strong {
+.traffic {
+  display: flex;
+  gap: 8px;
+  flex: none;
+}
+
+.traffic i {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: block;
+}
+
+.traffic i:nth-child(1) {
+  background: #ff5f57;
+}
+
+.traffic i:nth-child(2) {
+  background: #febc2e;
+}
+
+.traffic i:nth-child(3) {
+  background: #28c840;
+}
+
+.titlebar .title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
   font-family: var(--display);
-  font-size: 13.5px;
   font-weight: 600;
-  letter-spacing: -0.01em;
+  font-size: 13.5px;
+  letter-spacing: 0.01em;
+  flex: none;
+}
+
+.titlebar .title .logo {
+  flex: none;
+}
+
+.titlebar .title .prod {
+  color: var(--text-1);
+}
+
+.titlebar .title .ver {
+  font-size: 10px;
+  color: var(--text-3);
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+
+.titlebar .title .sep {
+  color: var(--text-3);
+}
+
+.titlebar .title .ctx {
+  color: var(--text-2);
+  font-size: 11px;
 }
 
 .spacer {
   flex: 1;
 }
 
-.pill {
-  display: inline-flex;
+/* Pastille d'environnement : LED + libellé, comme `.env .pulse` chez DSH */
+.env {
+  display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 11.5px;
-  color: var(--text-2);
-  border: 1px solid var(--line-2);
-  background: rgba(15, 18, 26, 0.7);
-  border-radius: var(--radius-pill);
-  padding: 4px 11px;
+  font-size: 10.5px;
+  color: var(--text-3);
+  border: 1px solid var(--line-1);
+  background: var(--bg-2);
+  border-radius: 7px;
+  padding: 4px 9px;
+  flex: none;
+  white-space: nowrap;
 }
 
-/* La pastille d'état porte une LED, comme la barre de titre DSH */
-.pill::before {
-  content: "";
+.env .pulse {
   width: 7px;
   height: 7px;
   border-radius: 50%;
@@ -161,34 +223,52 @@ pre,
   flex: none;
 }
 
-.pill.ok {
-  color: var(--ok);
-  border-color: rgba(52, 211, 153, 0.3);
-}
-
-.pill.ok::before {
+.env.ok .pulse {
   background: var(--ok);
   box-shadow: 0 0 10px var(--ok);
 }
 
-.pill.down {
-  color: var(--danger);
-  border-color: rgba(248, 113, 113, 0.3);
+.env.warn .pulse {
+  background: var(--warn);
+  box-shadow: 0 0 10px var(--warn);
 }
 
-.pill.down::before {
+.env.error .pulse {
   background: var(--danger);
   box-shadow: 0 0 10px var(--danger);
+}
+
+.env.ok {
+  color: var(--ok);
+  border-color: rgba(52, 211, 153, 0.25);
+}
+
+.env.warn {
+  color: var(--warn);
+  border-color: rgba(251, 191, 36, 0.25);
+}
+
+.env.error {
+  color: var(--danger);
+  border-color: rgba(248, 113, 113, 0.25);
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  color: var(--text-2);
+  border: 1px solid var(--line-2);
+  background: rgba(15, 18, 26, 0.7);
+  border-radius: var(--radius-pill);
+  padding: 3px 10px;
+  flex: none;
 }
 
 .pill.warn {
   color: var(--warn);
   border-color: rgba(251, 191, 36, 0.3);
-}
-
-.pill.warn::before {
-  background: var(--warn);
-  box-shadow: 0 0 10px var(--warn);
 }
 
 .url {
@@ -200,12 +280,13 @@ pre,
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11.5px;
+  font-size: 11px;
   color: var(--text-3);
+  flex: none;
 }
 
 .dirfield input {
-  width: 240px;
+  width: 220px;
   padding: 5px 9px;
   border-radius: var(--radius-control);
   border: 1px solid var(--line-1);
@@ -213,16 +294,6 @@ pre,
   color: var(--text-1);
   font: inherit;
   font-size: 11.5px;
-}
-
-.dirfield input:focus,
-.authform input:focus,
-.search:focus,
-.rename:focus,
-.composer textarea:focus {
-  outline: none;
-  border-color: var(--brand-1);
-  box-shadow: 0 0 0 3px rgba(77, 124, 254, 0.14);
 }
 
 .authform {
@@ -242,15 +313,25 @@ pre,
 }
 
 .authform input[type="text"] {
-  width: 110px;
+  width: 100px;
 }
 
 .authform input[type="password"] {
-  width: 130px;
+  width: 120px;
+}
+
+.dirfield input:focus,
+.authform input:focus,
+.search:focus,
+.rename:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--brand-1);
+  box-shadow: 0 0 0 3px rgba(77, 124, 254, 0.14);
 }
 
 /* =============================================================================
-   Sidebar — structure reprise de dsh-sidebar-proposition.html
+   Sidebar — .brand / .newSession / .search / .sectionHeader / .ws / .sidebar-foot
    ============================================================================= */
 
 .sidebar {
@@ -258,20 +339,46 @@ pre,
   background: var(--bg-1);
   border-right: 1px solid var(--line-1);
   border-radius: var(--radius-panel);
-  padding: 14px 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
   min-height: 0;
   overflow: hidden;
 }
 
-button.primary {
+/* .brand — logo + nom + signature courte */
+.brand {
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 11px;
+  padding: 14px 14px 12px;
+  border-bottom: 1px solid var(--line-1);
+}
+
+.brand-name {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: -0.01em;
+  line-height: 1.05;
+}
+
+.brand-name small {
+  display: block;
+  font-family: var(--mono);
+  font-weight: 500;
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  color: var(--brand-3);
+  text-transform: uppercase;
+  margin-top: 3px;
+}
+
+/* .newSession — « + Nouvelle session » */
+.newSession {
+  display: flex;
+  align-items: center;
   gap: 8px;
-  margin: 0 12px;
+  margin: 12px 12px 0;
   padding: 9px 12px;
   border-radius: 10px;
   border: 1px solid var(--line-2);
@@ -281,20 +388,23 @@ button.primary {
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
+  text-align: left;
 }
 
-button.primary:hover {
+.newSession:hover {
   border-color: var(--brand-1);
   background: var(--bg-3);
 }
 
-button.primary:disabled {
-  opacity: 0.45;
-  cursor: default;
+.newSession .plus {
+  color: var(--brand-1);
+  font-size: 15px;
+  line-height: 1;
 }
 
+/* .search */
 .search {
-  margin: 0 12px;
+  margin: 10px 12px 0;
   padding: 8px 11px;
   border-radius: var(--radius-control);
   border: 1px solid var(--line-1);
@@ -308,124 +418,259 @@ button.primary:disabled {
   color: var(--text-3);
 }
 
-/* En-tête de section : libellé capitalisé + filet qui court jusqu'au bord */
-.sessions {
-  list-style: none;
-  margin: 4px 0 0;
-  padding: 0 8px 8px;
+/* .sectionHeader — libellé capitalisé + filet qui court jusqu'au bord */
+.sectionLabel {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.sectionLabel::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line-1);
+}
+
+.sectionLabel .count {
+  order: 3;
+  font-size: 10px;
+  color: var(--text-3);
+  background: var(--bg-2);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-pill);
+  padding: 1px 7px;
+}
+
+/* .ws / .wsGroup / .folderRow — arborescence workspace */
+.ws {
+  padding: 0 8px;
   overflow: auto;
   flex: 1;
   min-height: 0;
 }
 
-.sidebar::after {
-  /* Filet de section, comme `.sectionHeader::after` chez DSH */
-  content: "";
-  order: -1;
-  height: 1px;
-  background: var(--line-1);
-  margin: 0 12px;
+.wsGroup {
+  margin-bottom: 4px;
 }
 
-.sessions li {
-  border-radius: 8px;
-  cursor: pointer;
-  border-left: 2px solid transparent;
-}
-
-.sessions .row {
-  position: relative;
+.folderRow {
   display: flex;
-  flex-direction: column;
-  padding: 7px 9px;
-  gap: 2px;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 8px;
+  border-radius: 9px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--text-1);
+  cursor: pointer;
 }
 
-.sessions .title {
-  font-size: 12.5px;
-  color: var(--text-2);
+.folderRow:hover {
+  background: var(--bg-2);
+}
+
+.folderRow .chev {
+  width: 10px;
+  flex: none;
+  color: var(--text-3);
+  font-size: 9px;
+  transition: transform 0.12s;
+}
+
+.folderRow.open .chev {
+  transform: rotate(90deg);
+}
+
+.folderRow .crest {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: var(--brand-1);
+}
+
+.folderRow .crest svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.folderRow .fname {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 100%;
 }
 
-.sessions .id {
+.folderRow .count {
+  margin-left: auto;
   font-size: 10px;
   color: var(--text-3);
-}
-
-.sessions li:hover {
   background: var(--bg-2);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-pill);
+  padding: 1px 7px;
+  flex: none;
 }
 
-.sessions li:hover .title {
+/* .sessions / .sessionRow — guide continu + tirets (variante A validée par DSH) */
+.sessions {
+  position: relative;
+  margin: 1px 0 6px;
+  padding-left: 22px;
+  display: flex;
+  flex-direction: column;
+}
+
+.sessions::before {
+  content: "";
+  position: absolute;
+  left: 14px;
+  top: 2px;
+  bottom: 8px;
+  width: 1px;
+  background: linear-gradient(180deg, rgba(154, 163, 184, 0.22), rgba(154, 163, 184, 0.06));
+}
+
+.sessionRow {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.sessionRow::before {
+  content: "";
+  position: absolute;
+  left: -8px;
+  top: 50%;
+  width: 8px;
+  height: 1px;
+  background: rgba(154, 163, 184, 0.22);
+}
+
+.sessionRow:hover {
+  background: var(--bg-2);
   color: var(--text-1);
 }
 
-/* Session active : dégradé horizontal + filet de marque à gauche (convention DSH) */
-.sessions li.selected {
+.sessionRow.active {
   background: var(--grad-active);
-  border-left: 2px solid var(--brand-1);
-}
-
-.sessions li.selected .title {
   color: #fff;
 }
 
-.sessions .actions {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  display: flex;
+.sessionRow.active::before {
+  background: var(--brand-1);
+  box-shadow: 0 0 6px var(--brand-1);
+}
+
+.sessionRow .stitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.sessionRow .time {
+  font-size: 10px;
+  color: var(--text-3);
+  flex: none;
+}
+
+.sessionRow .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--text-3);
+}
+
+.sessionRow .dot.run {
+  background: var(--brand-3);
+  box-shadow: 0 0 8px var(--brand-3);
+}
+
+.sessionRow.active .time {
+  color: var(--text-2);
+}
+
+.rowActions {
+  display: none;
   gap: 2px;
-  opacity: 0;
-  transition: opacity 0.12s;
+  flex: none;
 }
 
-.sessions li:hover .actions,
-.sessions li.selected .actions {
-  opacity: 1;
+.sessionRow:hover .rowActions,
+.sessionRow.active .rowActions {
+  display: flex;
 }
 
-button.icon {
+/* .sidebar-foot / .model-card */
+.sidebar-foot {
+  border-top: 1px solid var(--line-1);
+  padding: 12px;
+  flex: none;
+}
+
+.modelCard {
   border: 1px solid var(--line-1);
   background: var(--bg-2);
-  color: var(--text-2);
-  border-radius: 7px;
-  cursor: pointer;
-  font: inherit;
-  font-size: 11px;
-  line-height: 1;
-  padding: 4px 6px;
+  border-radius: 11px;
+  padding: 10px;
 }
 
-button.icon:hover {
+.modelCard .mc-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
   color: var(--text-1);
-  border-color: var(--line-2);
 }
 
-button.icon.danger:hover {
-  color: var(--danger);
-  border-color: rgba(248, 113, 113, 0.4);
+.modelCard .led {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--text-3);
 }
 
-input.rename {
-  width: 100%;
-  padding: 6px 8px;
-  border-radius: var(--radius-control);
-  border: 1px solid var(--brand-1);
-  background: var(--bg-0);
-  color: var(--text-1);
-  font: inherit;
-  font-size: 12.5px;
+.modelCard .led.ok {
+  background: var(--ok);
+  box-shadow: 0 0 8px var(--ok);
+}
+
+.modelCard .led.off {
+  background: var(--text-3);
+}
+
+.modelCard .mc-sub {
+  font-size: 10px;
+  color: var(--text-3);
+  margin-top: 4px;
+  padding-left: 15px;
 }
 
 /* =============================================================================
-   Conversation — la surface principale
+   Conversation — .chat / .chat-msg / .avatar / .bubble
    ============================================================================= */
 
 .thread {
@@ -433,46 +678,80 @@ input.rename {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  padding: 18px 22px;
-  gap: 14px;
-  overflow: auto;
   background: var(--bg-0);
+  background-image: var(--node-grid);
+  background-size: 22px 22px;
 }
 
-.message {
-  /* « Bord à bord » : plus de carte flottante, un filet suffit */
-  border: none;
-  border-left: 2px solid var(--line-2);
-  border-radius: 0;
-  padding: 2px 0 2px 14px;
-  background: transparent;
+.chat {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
-.message.assistant {
-  border-left-color: var(--brand-1);
+.chatMsg {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
 }
 
-.message.user {
-  border-left-color: var(--line-2);
-}
-
-.message header {
+.chatMsg .avatar {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
   font-family: var(--mono);
   font-size: 10px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--text-3);
-  margin-bottom: 7px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  border: 1px solid var(--line-2);
+  background: var(--bg-2);
+  color: var(--text-2);
 }
 
-.message.assistant header {
-  color: var(--brand-3);
+.chatMsg.user .avatar {
+  background: var(--bg-3);
+  color: var(--text-1);
+}
+
+.chatMsg.agent .avatar {
+  background: var(--grad-brand);
+  border-color: transparent;
+  color: #fff;
+}
+
+.chatMsg .bubble {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--line-1);
+  border-radius: 12px;
+  padding: 11px 13px;
+  background: var(--bg-1);
+}
+
+.chatMsg.user .bubble {
+  background: var(--bg-2);
+  border-color: var(--line-2);
+}
+
+.chatMsg.agent .bubble {
+  border-left: 2px solid var(--brand-1);
 }
 
 .part {
   margin: 0 0 7px;
   white-space: pre-wrap;
   color: var(--text-1);
+}
+
+.part:last-child {
+  margin-bottom: 0;
 }
 
 .part.file {
@@ -502,7 +781,7 @@ input.rename {
   border-radius: 10px;
   margin: 8px 0;
   overflow: hidden;
-  background: var(--bg-1);
+  background: var(--bg-0);
 }
 
 .tool.running {
@@ -532,7 +811,6 @@ input.rename {
 }
 
 .toolname {
-  font-family: var(--mono);
   font-size: 12px;
 }
 
@@ -543,6 +821,7 @@ input.rename {
   border: 1px solid var(--line-2);
   color: var(--text-2);
   white-space: nowrap;
+  flex: none;
 }
 
 .badge.running {
@@ -595,7 +874,6 @@ input.rename {
   display: flex;
   flex-direction: column;
   gap: 7px;
-  background: var(--bg-0);
 }
 
 pre.io {
@@ -618,6 +896,157 @@ pre.io.out {
 
 pre.io.err {
   color: var(--danger);
+}
+
+/* =============================================================================
+   Barre de saisie — .chat-input / .ci-model / .chat-send
+   ============================================================================= */
+
+.chat-input {
+  flex: none;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    "pending pending pending pending"
+    "error error error error"
+    "model input attach send";
+  align-items: center;
+  gap: 9px;
+  padding: 12px 22px 14px;
+  border-top: 1px solid var(--line-1);
+  background: var(--bg-1);
+}
+
+.chat-input .pending {
+  grid-area: pending;
+}
+
+.chat-input .error {
+  grid-area: error;
+  margin: 0;
+}
+
+.ci-model {
+  grid-area: model;
+  font-size: 10px;
+  color: var(--brand-3);
+  border: 1px solid rgba(34, 211, 238, 0.22);
+  background: rgba(34, 211, 238, 0.06);
+  border-radius: var(--radius-pill);
+  padding: 4px 10px;
+  white-space: nowrap;
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-input textarea {
+  grid-area: input;
+  resize: vertical;
+  min-height: 40px;
+  padding: 10px 12px;
+  border-radius: 11px;
+  border: 1px solid var(--line-1);
+  background: var(--bg-0);
+  color: var(--text-1);
+  font: inherit;
+  font-size: 13px;
+}
+
+.chat-input textarea::placeholder {
+  color: var(--text-3);
+}
+
+.chat-input label.attach {
+  grid-area: attach;
+}
+
+.chat-send {
+  grid-area: send;
+  padding: 10px 18px;
+  border-radius: 11px;
+  border: 1px solid rgba(77, 124, 254, 0.5);
+  background: linear-gradient(180deg, rgba(77, 124, 254, 0.18), rgba(77, 124, 254, 0.06));
+  color: var(--text-1);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.chat-send:hover:not(:disabled) {
+  border-color: var(--brand-1);
+}
+
+.chat-send:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.hidden-input {
+  display: none;
+}
+
+label.attach {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  height: 36px;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  border-radius: 10px;
+  border: 1px solid var(--line-1);
+  background: var(--bg-2);
+  color: var(--text-2);
+}
+
+label.attach:hover {
+  color: var(--text-1);
+  border-color: var(--line-2);
+}
+
+.pending {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.pending li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--line-1);
+  border-radius: 9px;
+  padding: 5px 7px;
+  background: var(--bg-2);
+  font-size: 11.5px;
+  max-width: 100%;
+}
+
+.thumb {
+  width: 28px;
+  height: 28px;
+  object-fit: cover;
+  border-radius: 6px;
+}
+
+.fname {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+  color: var(--text-2);
+}
+
+.fsize {
+  color: var(--text-3);
+  font-size: 10.5px;
 }
 
 /* =============================================================================
@@ -667,6 +1096,19 @@ pre.io.err {
   color: var(--text-1);
   border-bottom-color: var(--brand-1);
   background: var(--grad-active);
+}
+
+.tab .t-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--line-2);
+  flex: none;
+}
+
+.tab.active .t-dot {
+  background: var(--brand-3);
+  box-shadow: 0 0 8px var(--brand-3);
 }
 
 .tab .count {
@@ -754,7 +1196,6 @@ pre.io.err {
 }
 
 .status h3 {
-  font-family: var(--mono);
   font-size: 10px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
@@ -770,7 +1211,6 @@ pre.io.err {
 }
 
 .mcprows .mname {
-  font-family: var(--mono);
   font-size: 11px;
   color: var(--text-2);
   overflow: hidden;
@@ -803,7 +1243,6 @@ pre.io.err {
 
 .ptitle strong {
   color: var(--brand-3);
-  font-family: var(--mono);
   font-size: 12px;
 }
 
@@ -811,7 +1250,6 @@ pre.io.err {
   margin: 0 0 11px;
   padding-left: 18px;
   color: var(--text-2);
-  font-family: var(--mono);
   font-size: 11px;
 }
 
@@ -849,125 +1287,101 @@ pre.io.err {
 }
 
 /* =============================================================================
-   Composeur
+   Barre d'état — .statusbar / .s-item / .s-right
    ============================================================================= */
 
-.composer {
-  margin-top: auto;
+.statusbar {
+  grid-area: status;
   display: flex;
-  flex-direction: column;
-  gap: 9px;
-  padding-top: 4px;
-}
-
-.composer-main {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-}
-
-.composer textarea {
-  resize: vertical;
-  padding: 11px 13px;
-  border-radius: 11px;
-  border: 1px solid var(--line-1);
-  background: var(--bg-1);
-  color: var(--text-1);
-  font: inherit;
-  font-size: 13px;
-}
-
-.composer textarea::placeholder {
-  color: var(--text-3);
-}
-
-.composer-actions {
-  display: flex;
-  gap: 9px;
   align-items: center;
+  gap: 16px;
+  padding: 0 14px;
+  background: var(--bg-1);
+  border-top: 1px solid var(--line-1);
+  font-size: 10.5px;
+  color: var(--text-3);
+  overflow: hidden;
 }
 
-.composer-actions button.primary {
-  width: auto;
-  margin: 0 0 0 auto;
-  white-space: nowrap;
-  border-color: rgba(77, 124, 254, 0.5);
-  background: linear-gradient(180deg, rgba(77, 124, 254, 0.16), rgba(77, 124, 254, 0.06));
-  color: var(--text-1);
-}
-
-.composer-actions button.primary:hover:not(:disabled) {
-  border-color: var(--brand-1);
-}
-
-.hidden-input {
-  display: none;
-}
-
-label.attach {
+.s-item {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  min-width: 30px;
-  height: 30px;
-  cursor: pointer;
-  font-size: 16px;
-  line-height: 1;
-  border-radius: 8px;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.statusbar .s-right {
+  margin-left: auto;
+  display: flex;
+  gap: 16px;
+}
+
+.statusbar .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--text-3);
+}
+
+.statusbar .dot.ok {
+  background: var(--ok);
+  box-shadow: 0 0 8px var(--ok);
+}
+
+.statusbar .dot.warn {
+  background: var(--warn);
+  box-shadow: 0 0 8px var(--warn);
+}
+
+.statusbar .dot.error {
+  background: var(--danger);
+  box-shadow: 0 0 8px var(--danger);
+}
+
+/* =============================================================================
+   Boutons d'icône, renommage, états vides
+   ============================================================================= */
+
+button.icon {
   border: 1px solid var(--line-1);
   background: var(--bg-2);
   color: var(--text-2);
+  border-radius: 7px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  padding: 4px 6px;
 }
 
-label.attach:hover {
+button.icon:hover {
   color: var(--text-1);
   border-color: var(--line-2);
 }
 
-.pending {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
+button.icon.danger:hover {
+  color: var(--danger);
+  border-color: rgba(248, 113, 113, 0.4);
 }
 
-.pending li {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  border: 1px solid var(--line-1);
-  border-radius: 9px;
-  padding: 5px 7px;
-  background: var(--bg-2);
-  font-size: 11.5px;
-  max-width: 100%;
+input.rename {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--brand-1);
+  background: var(--bg-0);
+  color: var(--text-1);
+  font: inherit;
+  font-size: 12.5px;
 }
 
-.thumb {
-  width: 28px;
-  height: 28px;
-  object-fit: cover;
-  border-radius: 6px;
+.empty-state {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: 40px;
 }
-
-.fname {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 220px;
-  color: var(--text-2);
-}
-
-.fsize {
-  color: var(--text-3);
-  font-size: 10.5px;
-}
-
-/* =============================================================================
-   États vides et erreurs
-   ============================================================================= */
 
 .empty {
   color: var(--text-3);
