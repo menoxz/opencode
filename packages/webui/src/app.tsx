@@ -19,6 +19,7 @@ import {
 } from "./columns"
 import {
   ContextInjections,
+  ConfigSheet,
   DirectoryGroup,
   FileChip,
   PermissionSheet,
@@ -28,6 +29,17 @@ import {
   Turn,
   UserPrompt,
 } from "./components"
+import {
+  agentCounts,
+  agentRows,
+  catalogSize,
+  generalLines,
+  mcpConnectedCount,
+  mcpProblems,
+  type Agent,
+  type McpState,
+  type Provider,
+} from "./config"
 import { parseInjections } from "./injections"
 import { groupByDirectory, sessionDetails, type SessionSummary } from "./sessions"
 import { subscribeEvents, type EventStreamState } from "./events"
@@ -78,6 +90,18 @@ export default function App() {
   // Deux replis indépendants : un dossier entier, et une ligne de session (son détail).
   const [groupsOpen, setGroupsOpen] = createSignal<Record<string, boolean>>({})
   const [detailsOpen, setDetailsOpen] = createSignal<Record<string, boolean>>({})
+
+  // Configuration : lue seulement quand la feuille s'ouvre. Rien de tout cela ne s'affiche au repos.
+  const [configOpen, setConfigOpen] = createSignal(false)
+  const [config, setConfig] = createSignal<{
+    model?: unknown
+    small_model?: unknown
+    username?: unknown
+    instructions?: unknown
+  }>({})
+  const [agents, setAgents] = createSignal<Agent[]>([])
+  const [mcp, setMcp] = createSignal<Record<string, McpState>>({})
+  const [providers, setProviders] = createSignal<Provider[]>([])
 
   const [authOpen, setAuthOpen] = createSignal(false)
   const [authUser, setAuthUser] = createSignal(credentials?.username ?? "")
@@ -176,6 +200,32 @@ export default function App() {
     const result = await client.permission.list(scope()).catch(() => undefined)
     const data = (result as { data?: PermissionRequest[] } | undefined)?.data
     if (Array.isArray(data)) setPermissions(data)
+  }
+
+  /**
+   * Configuration : quatre appels, tous facultatifs. Un serveur qui n'expose pas l'un d'eux ne
+   * casse pas la feuille — la section correspondante reste simplement vide, ce qui est exact.
+   */
+  const loadConfig = async () => {
+    const [configResult, agentResult, mcpResult, providerResult] = await Promise.all([
+      client.config.get(scope()).catch(() => undefined),
+      client.app.agents(scope()).catch(() => undefined),
+      client.mcp.status(scope()).catch(() => undefined),
+      client.provider.list(scope()).catch(() => undefined),
+    ])
+    const configData = (configResult as { data?: Record<string, unknown> } | undefined)?.data
+    if (configData) setConfig(configData)
+    const agentData = (agentResult as { data?: Agent[] } | undefined)?.data
+    if (Array.isArray(agentData)) setAgents(agentData)
+    const mcpData = (mcpResult as { data?: Record<string, McpState> } | undefined)?.data
+    if (mcpData) setMcp(mcpData)
+    const providerData = (providerResult as { data?: { all?: Provider[] } } | undefined)?.data
+    if (Array.isArray(providerData?.all)) setProviders(providerData.all)
+  }
+
+  const openConfig = () => {
+    setConfigOpen(true)
+    void loadConfig()
   }
 
   const selectSession = async (sessionID: string) => {
@@ -336,6 +386,12 @@ export default function App() {
     // La charpente suit la largeur de fenêtre : le solveur est pur, donc rien à mémoriser ici.
     const onResize = () => setViewport(window.innerWidth)
     window.addEventListener("resize", onResize)
+    // Échap ferme la feuille de configuration — un panneau modal qui ne se ferme qu'à la souris
+    // piège celui qui l'a ouvert au clavier.
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setConfigOpen(false)
+    }
+    window.addEventListener("keydown", onKey)
     // Debounced search: the list endpoint takes `search`, so the server does the filtering.
     let searchTimer: ReturnType<typeof setTimeout> | undefined
     createEffect(() => {
@@ -375,6 +431,7 @@ export default function App() {
       clearInterval(healthTimer)
       clearTimeout(searchTimer)
       window.removeEventListener("resize", onResize)
+      window.removeEventListener("keydown", onKey)
       unsubscribe()
     })
   })
@@ -564,9 +621,14 @@ export default function App() {
           <Show
             when={authOpen()}
             fallback={
-              <button class="ghost" title={serverUrl || "même origine"} onClick={() => setAuthOpen(true)}>
-                {credentials ? "identifiants ✓" : "identifiants"}
-              </button>
+              <span class="foot-row">
+                <button class="ghost" title="Configuration du serveur" onClick={openConfig}>
+                  réglages
+                </button>
+                <button class="ghost" title={serverUrl || "même origine"} onClick={() => setAuthOpen(true)}>
+                  {credentials ? "identifiants ✓" : "identifiants"}
+                </button>
+              </span>
             }
           >
             <form
@@ -702,6 +764,19 @@ export default function App() {
           </For>
         </div>
       </aside>
+
+      <Show when={configOpen()}>
+        <ConfigSheet
+          lines={generalLines(config())}
+          agents={agentRows(agents())}
+          counts={agentCounts(agentRows(agents()))}
+          mcpTotal={Object.keys(mcp()).length}
+          mcpConnected={mcpConnectedCount(mcp())}
+          mcpProblems={mcpProblems(mcp())}
+          catalog={catalogSize(providers())}
+          onClose={() => setConfigOpen(false)}
+        />
+      </Show>
     </div>
   )
 }

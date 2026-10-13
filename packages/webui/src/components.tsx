@@ -9,6 +9,7 @@ import {
   type ToolState,
 } from "./view-model"
 import { formatChars, injectionLabel, share, sourceLabel, type Injections } from "./injections"
+import { mcpTone, type AgentRow, type McpProblem } from "./config"
 import { ToolIcon, toolHint } from "./icons"
 import { relativeTime } from "./time"
 
@@ -245,6 +246,108 @@ export function Reasoning(props: { text: string; open: boolean; onToggle: () => 
         <p class="reasoning-text">{props.text}</p>
       </Show>
     </div>
+  )
+}
+
+/**
+ * Panneau de configuration — une **feuille** posée sur la conversation, pas une sixième zone.
+ *
+ * Elle s'ouvre à la demande et se referme, ce qui la dispense d'être discrète : c'est la règle
+ * inverse du fil, où rien ne doit s'afficher. Elle **consulte** seulement — aucun point d'écriture
+ * n'a été relevé côté serveur, donc aucune bascule n'est proposée, et un interrupteur inerte
+ * serait un mensonge.
+ */
+export function ConfigSheet(props: {
+  lines: Array<{ label: string; value: string }>
+  agents: AgentRow[]
+  counts: { primary: number; subagent: number }
+  mcpTotal: number
+  mcpConnected: number
+  mcpProblems: McpProblem[]
+  catalog: { providers: number; models: number }
+  onClose: () => void
+}) {
+  return (
+    <>
+      <div class="sheet-scrim" onClick={() => props.onClose()} />
+      <aside class="sheet" role="dialog" aria-label="Configuration">
+        <header class="sheet-head">
+          <span class="sheet-title">configuration</span>
+          <button class="ghost" title="Fermer (Échap)" onClick={() => props.onClose()}>
+            ✕
+          </button>
+        </header>
+        <div class="sheet-body">
+          <section class="sheet-section">
+            <h2>général</h2>
+            <dl class="sheet-lines">
+              <For each={props.lines}>
+                {(line) => (
+                  <>
+                    <dt>{line.label}</dt>
+                    <dd title={line.value}>{line.value}</dd>
+                  </>
+                )}
+              </For>
+            </dl>
+          </section>
+
+          <section class="sheet-section">
+            <h2>agents</h2>
+            <p class="sheet-note">
+              {props.counts.primary} principal{props.counts.primary > 1 ? "aux" : ""} · {props.counts.subagent}{" "}
+              sous-agent{props.counts.subagent > 1 ? "s" : ""}
+            </p>
+            <ul class="sheet-agents">
+              <For each={props.agents}>
+                {(agent) => (
+                  <li>
+                    <span class="sa-name">{agent.name}</span>
+                    <span class="sa-mode">{agent.mode}</span>
+                    <Show when={agent.description}>
+                      {(description) => (
+                        <span class="sa-desc" title={description()}>
+                          {description()}
+                        </span>
+                      )}
+                    </Show>
+                  </li>
+                )}
+              </For>
+            </ul>
+          </section>
+
+          <section class="sheet-section">
+            <h2>serveurs mcp</h2>
+            {/* Ce qui est sain ne s'annonce pas : six connectés tiennent en une phrase, et seuls
+                les serveurs en défaut méritent une ligne à eux. */}
+            <p class="sheet-note">
+              {props.mcpConnected} sur {props.mcpTotal} connectés
+            </p>
+            <Show when={props.mcpProblems.length > 0}>
+              <ul class="sheet-mcp">
+                <For each={props.mcpProblems}>
+                  {(problem) => (
+                    <li>
+                      <span class={`mcp-state ${mcpTone(problem.status)}`}>{problem.status}</span>
+                      <span class="mcp-name">{problem.name}</span>
+                      <Show when={problem.error}>{(error) => <span class="mcp-error">{error()}</span>}</Show>
+                    </li>
+                  )}
+                </For>
+              </ul>
+            </Show>
+          </section>
+
+          <section class="sheet-section">
+            <h2>catalogue</h2>
+            <p class="sheet-note">
+              {props.catalog.providers} fournisseurs · {props.catalog.models} modèles
+            </p>
+          </section>
+        </div>
+      </aside>
+    </>
   )
 }
 
