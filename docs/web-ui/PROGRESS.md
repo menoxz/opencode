@@ -2041,3 +2041,88 @@ rien montré.
 et jamais envoyée, parce que le brouillon ne portait que `id` et `baseURL`. Un fournisseur déclaré et
 sans adaptateur, donc inutilisable. Corrigé par `newProviderDraft()` : ce que l'écran montre part.
 Le test qui manquait est écrit, et `iso2` — créé après le correctif — porte bien son `npm`.
+
+---
+
+## Lot suivant — le fil de conversation, refondu autour de l'étape (livré)
+
+Constat de départ, mesuré et non supposé : **le texte ne pèse que 10,6 % de ce qui défile**. Relevé
+sur 4 conversations réelles de la copie de la base (273 messages, **7 782 parts**) :
+
+| part | nombre | avant ce lot |
+|---|---|---|
+| `tool` | 2 262 | rendu — une ligne, mais sans son titre |
+| `step-start` | 1 447 | **filtré** |
+| `step-finish` | 1 440 | **filtré** — porte `cost`, `tokens`, `reason` |
+| `reasoning` | 1 404 | rendu, replié, sans durée |
+| `text` | 823 (10,6 %) | rendu |
+| `patch` | 400 | **filtré** |
+
+Champs présents et jamais lus avant ce lot : `tool.state.title` (2 242), `tool.state.time` (2 262),
+`stepFinish.cost`/`tokens` (1 440), `msg.cost`/`tokens` (230). Concevoir le fil comme une
+conversation de prose cachait donc **90 % du contenu** — puis on s'étonnait de ne pas suivre ce que
+fait l'agent.
+
+### Décisions
+
+- **L'unité de lecture est l'étape**, pas le message (`groupTurns` puis `groupSteps`,
+  `view-model.ts`) : ~6 appels au modèle par réponse. La ligne d'étape s'écrit
+  « `step 3 · 12 actions · 8.4s · $0.123 · 31k tokens` » — le prix est une donnée de **lecture**,
+  pas de comptabilité.
+- **La prose se lit, le travail se vérifie.** Prose de l'agent au corps de lecture, en texte nu ;
+  outils, raisonnement et patches en **une ligne** chacun, dépliables sur place. Une étape replie son
+  travail, jamais sa prose.
+- **Le fil est append-only à l'affichage.** Il était rechargé **en entier** par REST à chaque
+  événement citant l'identifiant de session — cause directe du saut de défilement et du clignotement.
+  `reduceThread` applique l'événement ; le rechargement ne subsiste que pour un message encore
+  inconnu de la page.
+- **Le suivi du bas est conditionnel** : rien ne se déplace si l'on a remonté le fil. Le suivi
+  inconditionnel rendait la lecture impossible.
+- **Bornes** : une sortie longue s'affiche sur 12 lignes puis « show N more lines » ; un patch
+  nomme 8 fichiers puis « show N more files ». Le volume d'une sortie n'apparaît **que** s'il y a
+  quelque chose à révéler (§3.8).
+- `patch`, `compaction` et `retry` deviennent **visibles** : les filtrer faisait mentir le fil sur ce
+  qui s'est passé. `step-start`, `snapshot` et `agent` restent invisibles — aucun contenu propre.
+- `text.synthetic` (73) et `text.ignored` (70) sont **étiquetés** : un texte injecté, ou écarté,
+  n'est pas ce que l'agent a dit.
+
+### Contrats relevés — la partie qui aurait pu être fausse
+
+| fait | preuve |
+|---|---|
+| `/event` porte `message.part.updated` **et** `message.part.delta` | sonde live sur un tour réel : 17 et 12 occurrences |
+| `/global/event` n'en porte **aucun** | même sonde : 88 trames, aucune de ces deux types, autre enveloppe sans `type` au premier niveau |
+| `properties` porte la partie **aplatie** + `messageID`/`sessionID` | relevé sur le fil — le schéma (`message-v2.ts:692`) annonce `{sessionID, part, time}` |
+| ±lignes d'une écriture = `state.metadata.filediff` | 603 occurrences de `{file, patch, additions, deletions}` |
+| `PatchPart` ne compte pas les lignes | il ne porte que `hash` et `files[]` |
+| `bash.state.output` = sortie complète | 804 o, contre 589 o pour `metadata.output` |
+| tailles de sortie | médiane 4 lignes, p90 46, p99 191, max 1 349 (2 410 mesures) |
+
+### Preuve
+
+```
+vitest run     -> 16 fichiers, 306 tests, exit 0   (+42 pour ce lot)
+tsgo --noEmit  -> exit 0
+```
+
+Vérifié au navigateur sur l'**instance isolée** (Chrome 9222 → webui 5181 → serveur de dev 4097
+lisant la copie de la base), DOM lu par CDP :
+
+```
+.step = 33   .turn = 6   .patch = 7   .prose = 2
+stepHeads = ["step 1 · 2 actions · 2.9s · $0.007 · 45.1k tokens",
+             "step 3 · 6 actions · 2.8s · $0.0008 · 48.6k tokens", …]
+tool-diff = ["+1 −1", "+9 −9", "+4 −4", …]
+noms de type de protocole affichés = 0
+```
+
+**Le seul écart entre l'intention et le rendu** portait sur la source des ±lignes : la conception les
+supposait dans le patch, ils sont dans `metadata.filediff`. C'est la sonde qui l'a montré, pas la
+lecture du schéma — et le supposer aurait produit une ligne d'écriture muette.
+
+### Réserve
+
+Ce lot n'ajoute pas de champ de saisie dans le fil : la seule écriture qui y reste est la réponse à
+`question.asked`, conformément à §3.1. La vérification porte sur les conversations existantes de la
+copie, pas sur un tour en cours d'écriture — le comportement append-only est prouvé par la sonde live
+et par les tests du réducteur, pas observé « à l'œil » pendant une génération.

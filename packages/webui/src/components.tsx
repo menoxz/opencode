@@ -1,11 +1,22 @@
-import { For, Show } from "solid-js"
+import { createSignal, For, Show } from "solid-js"
 import {
+  boundLines,
+  diffLabel,
+  fileDiff,
+  formatCount,
+  formatDuration,
+  OUTPUT_PREVIEW_LINES,
+  patchLabel,
   permissionActions,
+  proseKind,
+  stepSummary,
   toolDetail,
+  toolOutputLines,
   toolStatusLabel,
   toolTitle,
   type PermissionReply,
   type PermissionRequest,
+  type StepView,
   type ToolState,
 } from "./view-model"
 import { formatChars, injectionLabel, share, sourceLabel, type Injections } from "./injections"
@@ -259,17 +270,33 @@ export function FileChip(props: { label: string; thumb?: string; size?: string; 
 }
 
 /**
- * Action de l'agent : une ligne, pas une carte. Le détail s'ouvre sur place, à la demande.
- * L'état n'est écrit que s'il n'est pas « terminé » — un succès se tait.
+ * Action de l'agent : une ligne, pas une carte — 29 % du flux mesuré, donc elle ne peut pas prendre
+ * trois lignes.
+ *
+ * La ligne porte ce qui décide : l'outil, puis son **titre** (`state.title`, présent 2 242 fois dans
+ * le relevé et jamais lu avant), et — quand il y en a un — le ±lignes d'une écriture, lu dans
+ * `state.metadata.filediff` (mesuré : `{file, patch, additions, deletions}`), car `PatchPart` ne
+ * porte que `hash` et `files[]` : les ±lignes n'y sont pas.
+ *
+ * Le volume d'une sortie n'apparaît **que s'il y a quelque chose à révéler** : il accompagne le
+ * « show N more lines », il ne vit jamais seul sur la ligne (§3.8 — ce qui est rare ne s'annonce pas).
  */
 export function ToolLine(props: { tool: string; state: ToolState; open: boolean; onToggle: () => void }) {
+  const [reveal, setReveal] = createSignal(false)
   const detail = () => toolDetail(props.state)
+  const diff = () => fileDiff(props.state)
+  const output = () => boundLines(detail().output ?? "", OUTPUT_PREVIEW_LINES)
+  const bounded = () => output().hidden > 0
   return (
     <div class="tool" classList={{ failed: props.state.status === "error", open: props.open }}>
       <button class="tool-line" title={toolHint(props.tool)} onClick={() => props.onToggle()}>
         <ToolIcon tool={props.tool} />
         <span class="tool-name">{props.tool}</span>
         <Show when={toolTitle(props.state)}>{(title) => <span class="tool-title">{title()}</span>}</Show>
+        <Show when={diff()}>{(value) => <span class="tool-diff">{diffLabel(value().additions, value().deletions)}</span>}</Show>
+        <Show when={bounded()}>
+          <span class="tool-size">{formatCount(toolOutputLines(props.state))} lines</span>
+        </Show>
         <Show when={props.state.status !== "completed"}>
           <span class="tool-state">{toolStatusLabel(props.state)}</span>
         </Show>
@@ -278,7 +305,18 @@ export function ToolLine(props: { tool: string; state: ToolState; open: boolean;
       <Show when={props.open}>
         <div class="tool-detail">
           <Show when={detail().input}>{(input) => <pre>{input()}</pre>}</Show>
-          <Show when={detail().output}>{(output) => <pre class="out">{output()}</pre>}</Show>
+          <Show when={detail().output}>
+            {(text) => (
+              <>
+                <pre class="out">{reveal() ? text() : output().head}</pre>
+                <Show when={bounded()}>
+                  <button class="tool-reveal" onClick={() => setReveal((current) => !current)}>
+                    {reveal() ? "show less" : `show ${output().hidden} more lines`}
+                  </button>
+                </Show>
+              </>
+            )}
+          </Show>
           <Show when={detail().error}>{(error) => <pre class="err">{error()}</pre>}</Show>
         </div>
       </Show>
@@ -289,17 +327,117 @@ export function ToolLine(props: { tool: string; state: ToolState; open: boolean;
 /**
  * Réflexion de l'agent. Secondaire par nature : repliée, dans la même grammaire que les actions, et
  * nommée « thinking » — jamais rendue par son nom de type (`reasoning` n'est pas un mot d'écran).
+ *
+ * Elle donne sa **durée**, pas son volume : `reasoning.time` est présent 1 511 fois sur 1 511, donc la
+ * mesure existe ; le nombre de mots, lui, ne dit rien de ce qui s'est passé.
  */
-export function Reasoning(props: { text: string; open: boolean; onToggle: () => void }) {
+export function Reasoning(props: { text: string; durationMs?: number; open: boolean; onToggle: () => void }) {
   return (
     <div class="reasoning">
       <button class="reasoning-line" onClick={() => props.onToggle()}>
         <span>thinking</span>
+        <Show when={formatDuration(props.durationMs)}>{(value) => <span class="reasoning-time">{value()}</span>}</Show>
         <span class="tool-chev">{props.open ? "▾" : "▸"}</span>
       </button>
       <Show when={props.open}>
         <p class="reasoning-text">{props.text}</p>
       </Show>
+    </div>
+  )
+}
+
+/**
+ * La prose de l'agent — la seule chose écrite **pour être lue**, donc au corps le plus grand, et en
+ * texte nu : la dissymétrie avec le prompt de l'utilisateur dit qui a parlé.
+ *
+ * Deux textes ne sont pas de la prose et ne se présentent donc pas comme une réponse : `synthetic`
+ * (injecté par le serveur — 73 occurrences mesurées) et `ignored` (jamais envoyé au modèle — 70). Les
+ * afficher tels quels ferait passer un texte machine, ou un texte écarté, pour ce que l'agent a dit.
+ */
+export function Prose(props: { text: string; synthetic?: boolean; ignored?: boolean }) {
+  const kind = () => proseKind(props)
+  return (
+    <div class="prose" classList={{ tagged: Boolean(kind()) }}>
+      <Show when={kind()}>
+        {(value) => <span class="prose-tag">{value() === "synthetic" ? "injected" : "not sent"}</span>}
+      </Show>
+      <p class="part text">{props.text}</p>
+    </div>
+  )
+}
+
+/** Nombre de fichiers d'un patch montrés avant le « +N more ». */
+const PATCH_PREVIEW_FILES = 8
+
+/** Un chemin long se lit par sa fin : `web-ui/CIBLE.md`, pas `C:\jeanluc\…\…\…`. */
+function shortPath(path: string): string {
+  const parts = path.split(/[\\/]/).filter(Boolean)
+  return parts.length <= 3 ? path : parts.slice(-3).join("/")
+}
+
+/**
+ * Un patch est un **contenu** : les fichiers changés (400 occurrences mesurées). Une ligne, la liste
+ * se dépliant à la demande, bornée elle aussi — un patch de 40 fichiers ne déverse pas 40 chemins.
+ */
+export function PatchLine(props: { files: string[]; open: boolean; onToggle: () => void }) {
+  const [reveal, setReveal] = createSignal(false)
+  const shown = () => (reveal() ? props.files : props.files.slice(0, PATCH_PREVIEW_FILES))
+  const hidden = () => Math.max(0, props.files.length - PATCH_PREVIEW_FILES)
+  return (
+    <div class="patch" classList={{ open: props.open }}>
+      <button class="tool-line" onClick={() => props.onToggle()}>
+        <span class="tool-name">patch</span>
+        <span class="tool-title">{patchLabel(props)}</span>
+        <span class="tool-chev">{props.open ? "▾" : "▸"}</span>
+      </button>
+      <Show when={props.open}>
+        <ul class="patch-files">
+          <For each={shown()}>{(file) => <li title={file}>{shortPath(file)}</li>}</For>
+          <Show when={hidden() > 0}>
+            <li>
+              <button class="tool-reveal" onClick={() => setReveal((current) => !current)}>
+                {reveal() ? "show less" : `show ${hidden()} more files`}
+              </button>
+            </li>
+          </Show>
+        </ul>
+      </Show>
+    </div>
+  )
+}
+
+/**
+ * Une borne du récit : une compaction (coupe franche — ce qui suit ne s'appuie plus sur ce qui
+ * précède) ou la relance d'une tentative échouée. Les cacher ferait mentir le fil sur ce qui s'est
+ * passé ; les rendre comme du contenu les ferait passer pour ce que l'agent a dit.
+ */
+export function Boundary(props: { label: string }) {
+  return (
+    <div class="boundary">
+      <span>{props.label}</span>
+    </div>
+  )
+}
+
+/**
+ * Une étape — l'unité de lecture.
+ *
+ * Sa ligne d'en-tête porte **son prix** : coût, jetons, durée, nombre d'actions. `cost` et `tokens`
+ * sont là 1 440 fois dans le relevé et ne s'affichaient jamais ; « combien a coûté ce travail » est
+ * une question de lecteur, pas de comptable.
+ *
+ * Le repli porte sur le **travail** (outils, raisonnement, patches), jamais sur la prose : ce qu'on
+ * vérifie se replie, ce qu'on lit reste. `step-start` n'est jamais rendu — 1 447 occurrences, aucun
+ * contenu propre.
+ */
+export function StepBlock(props: { step: StepView; open: boolean; onToggle: () => void; children?: unknown }) {
+  return (
+    <div class="step" classList={{ open: props.open }}>
+      <button class="step-head" onClick={() => props.onToggle()}>
+        <span class="step-summary">{stepSummary(props.step)}</span>
+        <span class="tool-chev">{props.open ? "▾" : "▸"}</span>
+      </button>
+      <div class="step-body">{props.children as never}</div>
     </div>
   )
 }

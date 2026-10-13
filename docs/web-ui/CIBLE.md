@@ -43,7 +43,116 @@ d'action permanent à ouvrir : le détail d'une action s'ouvre **sur place**, da
   coût, fichiers changés. **« aucun changement »** plutôt que « +0 −0 · 0 fichier », qui se lit comme
   un résultat.
 
-## 3. Le rail
+## 3. Le fil — la conception complète
+
+**Objectif : la satisfaction de lecture.** Le fil n'est pas un journal technique qu'on subit, c'est un
+texte qu'on lit — pour comprendre ce que l'agent a fait, ce qu'il a trouvé, et ce qu'il reste à faire.
+
+### 3.1 La prémisse : le flux est en **lecture seule**
+
+Ce qui défile dans le fil n'est pas un formulaire. Aucun de ses éléments ne prend de saisie, rien ne
+s'y édite sur place, rien ne s'y relance d'un clic : c'est le **compte rendu** d'un travail, écrit par
+le serveur, et l'écran ne peut que le donner à lire. Toute décision de cette section en découle.
+
+**Une seule exception, et elle est motivée** : `question.asked`. Quand l'agent pose une question, il
+est **bloqué** dessus — ne pas répondre arrête la conversation. Une question est donc un contrôle dans
+le fil, le seul. (`permission.asked` n'est pas dans le fil : il vit dans le tiroir droit, cf. §2.)
+
+### 3.2 Ce que le flux contient vraiment — mesuré, pas supposé
+
+Relevé sur **4 conversations réelles de la copie** (273 messages, **7 782 parts**) :
+
+| part | nombre | part du total | aujourd'hui |
+|---|---|---|---|
+| `tool` | 2 262 | **29 %** | rendu — une ligne, avec son titre |
+| `step-start` | 1 447 | 19 % | **filtré** |
+| `step-finish` | 1 440 | 19 % | **filtré** — porte `cost`, `tokens`, `reason`, `snapshot` |
+| `reasoning` | 1 404 | 18 % | rendu, replié |
+| `text` | 823 | **10,6 %** | rendu |
+| `patch` | 400 | 5 % | **filtré** — porte les fichiers changés |
+| `compaction` | 6 | — | **filtré** |
+
+**Le texte est 10,6 % de ce qui défile.** Concevoir le fil comme une conversation de prose, c'est
+cacher 90 % du contenu — puis s'étonner qu'on ne suive pas ce que fait l'agent. Les champs présents mais
+jamais lus confirment le gaspillage : `tool.state.title` sur 2 242 parts, `tool.state.time` sur 2 262,
+`cost` et `tokens` sur 1 440 étapes et sur 230 messages, `patch` sur 400 parts.
+
+### 3.3 L'unité de lecture est **l'étape**, pas le message
+
+Une « réponse » n'est pas un bloc : c'est une **suite d'étapes**, chacune étant un appel au modèle, avec
+son coût, ses jetons, ses outils et son raisonnement propres. Tout regrouper dans une bulle de message
+détruit la seule structure qui existe. Donc :
+
+- un **tour** (le prompt de l'utilisateur → la réponse finie) regroupe ses étapes ;
+- une **étape** est une ligne d'en-tête, puis son contenu.
+
+### 3.4 Les trois niveaux d'attention
+
+1. **Le prompt de l'utilisateur** — dans sa surface, texte conservé tel quel. C'est le seul texte de
+   l'écran écrit par l'utilisateur lui-même, donc le seul mis en forme.
+2. **La prose de l'agent** (`text`) — au corps le plus grand. C'est la seule chose écrite *pour être
+   lue*. L'agent reste en **texte nu** : la dissymétrie dit qui a parlé.
+3. **Le travail** (outils, raisonnement, patches) — replié à une ligne par étape, dépliable sur place.
+   C'est 71 % du contenu, et ce n'est pas la lecture principale : c'est ce qu'on **vérifie**.
+
+### 3.5 Ce qu'une étape montre, dans l'ordre
+
+```
+step 3 · 12 actions · 8,4 s · $0.12 · 31k tokens
+   ├ reasoning · 2,1 s                    replié, dépliable
+   ├ ⚙ bash « vitest run » · 1.2k lignes  une ligne par action
+   ├ ✎ edit src/app.tsx · +12 −3
+   └ La suite est en place ; reste le test du cas vide.   ← la prose, au grand corps
+```
+
+- **La ligne d'étape porte son prix.** `cost` et `tokens` sont là 1 440 fois et ne s'affichent jamais :
+  « combien a coûté ce travail » est une question de lecteur, pas de comptable.
+- **Le raisonnement donne sa durée** (`reasoning.time`, 1 404 occurrences), pas son volume.
+- **Un patch est un contenu** (fichiers, ±lignes) ; un `snapshot` n'en est pas un — c'est une référence
+  d'état. Le premier s'affiche, le second jamais.
+
+### 3.6 Les textes qui ne sont **pas** de la prose
+
+- `text.synthetic` (73 dans le relevé) : injecté, **pas dit par l'agent** ⇒ marqué comme tel, jamais
+  présenté comme une réponse.
+- `text.ignored` (70) : non envoyé au modèle ⇒ jamais présenté comme une réponse non plus.
+- `retry` : une tentative échouée puis rejouée ⇒ **montrée**, sinon le fil ment sur ce qui s'est passé.
+- `compaction` : coupe franche dans l'historique ⇒ montrée comme une borne, parce que ce qui suit ne
+  s'appuie plus sur ce qui précède.
+
+### 3.7 Le repos, le défilement, la densité
+
+- **Rien ne déplace ce qu'on lit.** Déplier une étape ne bouge jamais le texte au-dessus : l'ancre est
+  la ligne dépliée.
+- **Le suivi automatique n'existe que si on est déjà en bas** ; sinon on ne bouge pas, et un seul
+  contrôle permet d'y revenir.
+- **Le fil est append-only à l'affichage.** Le serveur fournit `message.part.updated` et
+  `message.part.delta` ; on **ajoute** au lieu de recharger. Aujourd'hui la webui recharge **tout** le
+  fil à chaque événement citant l'identifiant de session : c'est ce qui fait sauter le défilement et
+  clignoter le texte.
+- **Une sortie d'outil est bornée** : N lignes, puis « +412 lignes » et le clic qui les révèle — jamais
+  un déversement.
+- **La densité suit l'importance** : prose à `--fs-base`, lignes d'action et en-têtes à `--fs-note`,
+  rien en dessous. Une ligne d'action est **une ligne**, pas une carte.
+
+### 3.8 Ce qui ne s'affiche **jamais** dans le fil
+
+- `step-start` — 1 447 occurrences, **aucun contenu propre**.
+- `snapshot`, un raisonnement vide, un texte vide.
+- « +0 −0 · 0 fichier » — on écrit **« aucun changement »**, qui se lit comme un résultat.
+- Le bruit de protocole (`step-start`/`step-finish` sans contenu), déjà banni ailleurs.
+- Aucun compteur, badge ou bouton **au repos** : ce qui est rare se replie, ne s'annonce pas.
+
+### 3.9 Les seules interactions du fil
+
+| geste | nature |
+|---|---|
+| déplier / replier une étape, un raisonnement, une sortie longue | **lecture** |
+| copier une commande, un chemin, un bloc | **lecture** |
+| répondre à une question de l'agent (`question.asked`) | **écriture — la seule** |
+| autoriser / refuser (`permission.asked`) | écriture, **hors du fil** (tiroir droit) |
+
+## 4. Le rail
 
 **L'ordre suit la fréquence d'usage, pas la disponibilité technique.** C'est la règle qui gouverne
 ce document : une donnée exposée par le serveur n'est pas une raison de l'afficher.
@@ -67,7 +176,7 @@ ce document : une donnée exposée par le serveur n'est pas une raison de l'affi
 - Un plugin est **un bouton d'accès, pas un catalogue**. Une compétence ne se consulte pas, elle
   s'injecte : la rendre navigable serait une erreur de nature, pas de présentation.
 
-## 4. Les réglages — une feuille qui gère
+## 5. Les réglages — une feuille qui gère
 
 Un panneau de réglages sert à **configurer**, pas à consulter. Un interrupteur inerte est un
 mensonge : si la feuille est ouverte, elle écrit.
@@ -235,7 +344,7 @@ surface du serveur, pas une décision — il descend dans le détail s'il sert),
 au repos, aucune colonne d'actions (le libellé d'un modèle est l'information, ses actions se révèlent
 au survol de la ligne), et jamais un état par la couleur seule.
 
-## 5. Le style
+## 6. Le style
 
 **Monochrome sombre. Aucune couleur d'accent**, sauf une couleur d'attention réservée à une demande
 d'accord et une couleur d'échec. Bordures fines translucides ; pas de cartes empilées, pas d'ombres,
@@ -265,7 +374,7 @@ pas de dégradés décoratifs. Le vide fait partie du dessin.
 Tout texte passe **4,5:1** sur les trois fonds. Un jeton corrigé chez une autre source doit être
 **remesuré sur ses propres fonds** : la même valeur passe sur un fond et échoue sur l'autre.
 
-## 6. Ce qui ne doit PAS apparaître
+## 7. Ce qui ne doit PAS apparaître
 
 - Tout indicateur qui ne change pas une décision de l'utilisateur.
 - Badge, compteur, pastille, icône décorative, halo d'ambiance.
@@ -273,7 +382,7 @@ Tout texte passe **4,5:1** sur les trois fonds. Un jeton corrigé chez une autre
 - Barre de statut, panneau « statut », carte de modèle, journal d'événements.
 - Un état vide garni pour ne pas laisser de place : vide s'il n'y a rien, tel quel.
 
-## 7. Règle d'arbitrage
+## 8. Règle d'arbitrage
 
 En cas de doute : **on enlève**. Un élément ne revient que si son absence a gêné quelqu'un — et on
 l'écrit ici, avec la raison.

@@ -985,6 +985,150 @@ textarea {
   overflow-wrap: anywhere;
 }
 
+/* ---- Le fil par étapes : la prose se lit, le travail se vérifie ----
+
+   La densité suit l'importance : la prose de l'agent est au corps de lecture, les en-têtes d'étape et
+   les lignes d'action au corps de note. Une ligne d'action est **une ligne**, pas une carte. */
+
+.step {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.step-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 2px 6px;
+  margin-left: -6px;
+  border-radius: 6px;
+  color: var(--text-3);
+  font-size: var(--fs-note);
+  font-variant-numeric: tabular-nums;
+}
+
+.step-head:hover {
+  background: #ffffff08;
+  color: var(--text-2);
+}
+
+.step-summary {
+  flex: 1;
+  min-width: 0;
+}
+
+.step-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 10px;
+  border-left: 1px solid var(--line-2);
+}
+
+/* La prose de l'agent — la seule chose écrite *pour être lue*, donc au corps le plus grand. */
+.prose {
+  margin: 6px 0 4px;
+}
+
+.prose p {
+  margin: 0;
+}
+
+/* Un texte injecté ou écarté n'est pas une réponse : il le dit avant de se lire. */
+.prose.tagged .part.text {
+  color: var(--text-3);
+}
+
+.prose-tag {
+  display: block;
+  font-size: var(--fs-meta);
+  color: var(--text-3);
+  text-transform: lowercase;
+}
+
+/* Les ±lignes d'une écriture, et le volume d'une sortie seulement quand elle est bornée. */
+.tool-diff {
+  margin-left: auto;
+  font-size: var(--fs-meta);
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.tool-size {
+  font-size: var(--fs-meta);
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.tool-line,
+.reasoning-line {
+  font-size: var(--fs-note);
+}
+
+.reasoning-time {
+  font-size: var(--fs-meta);
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.tool-reveal {
+  display: block;
+  margin: 6px 0 0;
+  padding: 2px 8px;
+  font-size: var(--fs-meta);
+  color: var(--text-2);
+  background: transparent;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+}
+
+.tool-reveal:hover {
+  background: #ffffff08;
+}
+
+/* Un patch est un contenu : les fichiers changés, jamais un état interne. */
+.patch .tool-line {
+  color: var(--text-2);
+}
+
+.patch-files {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  list-style: none;
+  margin: 4px 0 10px;
+  padding-left: 12px;
+  border-left: 1px solid var(--line-2);
+}
+
+.patch-files li {
+  font-size: var(--fs-meta);
+  color: var(--text-3);
+  overflow-wrap: anywhere;
+}
+
+/* Une borne du récit : une compaction (coupe franche) ou la relance d'une tentative échouée. */
+.boundary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0;
+  font-size: var(--fs-meta);
+  color: var(--text-3);
+  text-transform: lowercase;
+}
+
+.boundary::before,
+.boundary::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line-2);
+}
+
 /* ---- Zone 4 — saisie ---- */
 
 .composer {

@@ -18,13 +18,17 @@ import {
   effectiveSidebarPreference,
 } from "./columns"
 import {
+  Boundary,
   ContextInjections,
   FileChip,
+  PatchLine,
   PermissionSheet,
   PluginButton,
+  Prose,
   Reasoning,
   SessionRow,
   ShowMore,
+  StepBlock,
   ToolLine,
   Turn,
   UserPrompt,
@@ -89,21 +93,17 @@ import { subscribeEvents, type EventStreamState } from "./events"
 import { sessionTimestamp } from "./time"
 import {
   dropPermission,
-  isVisiblePart,
+  groupTurns,
   reducePermissions,
+  reduceThread,
+  type Message,
+  type Part,
   type PermissionReply,
   type PermissionRequest,
+  type StepView,
   type ToolState,
+  type TurnView,
 } from "./view-model"
-
-type Part =
-  | { type: "text"; id?: string; text?: string }
-  | { type: "reasoning"; id: string; text?: string }
-  | { type: "tool"; id: string; tool: string; state: ToolState }
-  | { type: "file"; mime?: string; filename?: string; url?: string }
-  | { type: string; text?: string; id?: string }
-
-type Message = { info: { id: string; role: string }; parts: Part[] }
 
 const DIR_KEY = "oc.webui.directory"
 
@@ -118,6 +118,10 @@ export default function App() {
   const [active, setActive] = createSignal<string | undefined>()
   const [messages, setMessages] = createSignal<Message[]>([])
   const [stream, setStream] = createSignal<EventStreamState>({ connected: false, reconnects: 0 })
+  /** L'agent travaille : le serveur le dit (`session.status` → `busy`), on ne le devine pas. */
+  const [working, setWorking] = createSignal(false)
+  /** Le fil se lit par **tour**, et chaque tour par **étape** — jamais par message brut. */
+  const turns = createMemo(() => groupTurns(messages()))
   const [draft, setDraft] = createSignal("")
   const [error, setError] = createSignal<string | undefined>()
   const [permissions, setPermissions] = createSignal<PermissionRequest[]>([])
@@ -954,11 +958,22 @@ export default function App() {
   /** Déplier les sessions cachées d'un dossier. */
   const toggleMore = (key: string) => setMoreOpen((current) => ({ ...current, [key]: !current[key] }))
 
-  /** Le fil suit son propre bas : un tour ajouté est toujours visible. */
+  /**
+   * Le fil ne se déplace que si l'on est **déjà en bas**.
+   *
+   * Le suivi inconditionnel rendait la lecture impossible : remonter dans le fil pendant que l'agent
+   * écrit ramenait de force en bas. On retient la position au défilement, et on ne descend que si l'on
+   * y était — sinon on ne bouge pas ce qu'on est en train de lire.
+   */
   let scroller: HTMLDivElement | undefined
+  let following = true
+  const onScroll = () => {
+    if (!scroller) return
+    following = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 40
+  }
   createEffect(() => {
     messages()
-    if (scroller) scroller.scrollTop = scroller.scrollHeight
+    if (scroller && following) scroller.scrollTop = scroller.scrollHeight
   })
 
   onMount(async () => {
@@ -997,8 +1012,27 @@ export default function App() {
         }
         if (event.type === "session.created" || event.type === "session.deleted") void loadSessions()
 
-        const sessionID = active()
-        if (sessionID && JSON.stringify(event.properties ?? {}).includes(sessionID)) void loadMessages(sessionID)
+        /**
+         * Le fil s'entretient **en place**.
+         *
+         * La page relisait auparavant tout le fil par REST dès qu'un événement citait l'identifiant de
+         * session — 7 782 parts relues à chaque delta : c'est ce qui faisait sauter le défilement et
+         * clignoter le texte. `reduceThread` applique l'événement, et le rechargement ne subsiste que
+         * pour un cas nommé : un message encore inconnu de la page (le début d'un tour).
+         */
+        if (event.type.startsWith("message.")) {
+          const sessionID = active()
+          if (!sessionID) return
+          const properties = (event.properties ?? {}) as { sessionID?: string }
+          if (properties.sessionID !== sessionID) return
+          const next = reduceThread(messages(), event)
+          if (next) setMessages(next)
+          else void loadMessages(sessionID)
+        }
+        if (event.type === "session.status" || event.type === "session.idle") {
+          const properties = (event.properties ?? {}) as { sessionID?: string; status?: { type?: string } }
+          if (properties.sessionID === active()) setWorking(properties.status?.type === "busy")
+        }
       },
       onState: (state) => {
         setStream(state)
@@ -1023,49 +1057,98 @@ export default function App() {
     })
   })
 
-  const renderPart = (part: Part, role: string) => {
-    // Les parties de protocole (`step-start`, `step-finish`, `snapshot`…) ne portent rien pour
-    // l'utilisateur : elles ne s'affichent pas — un nom de type interne n'est pas une information.
-    if (!isVisiblePart(part)) return null
+  /**
+   * Le fil — l'unité de lecture est **l'étape**, pas le message.
+   *
+   * `groupTurns` (voir `view-model.ts`) découpe chaque réponse en étapes, chacune portant son prix. Le
+   * prompt de l'utilisateur garde sa surface et son texte tel quel ; la prose de l'agent est au grand
+   * corps ; le travail (outils, raisonnement, patches) tient **une ligne** chacun et se déplie sur place.
+   */
+  const renderItem = (part: Part) => {
+    const id = part.id ?? ""
     if (part.type === "text") {
-      const text = part.text ?? ""
-      // Le bloc d'injections arrive en texte brut, dans le même message que le prompt. On le lit
-      // comme une structure et il ne s'affiche **pas** comme si l'utilisateur l'avait écrit.
-      const injections = parseInjections(text)
-      if (injections) {
-        const id = part.id ?? "injections"
-        return (
-          <ContextInjections
-            injections={injections}
-            open={Boolean(expanded()[id])}
-            onToggle={() => toggle(id)}
-          />
-        )
-      }
-      if (role === "user") return <UserPrompt text={text} />
-      return <p class="part text">{text}</p>
-    }
-    if (part.type === "file") {
-      const file = part as Extract<Part, { type: "file" }>
-      return <FileChip label={filePartLabel(file)} thumb={isImageMime(file.mime ?? "") ? file.url : undefined} />
+      return <Prose text={part.text ?? ""} synthetic={part.synthetic} ignored={part.ignored} />
     }
     if (part.type === "reasoning") {
-      const thought = part as { id: string; text: string }
+      // La durée, pas le volume : `reasoning.time` est renseigné 1 511 fois sur 1 511.
+      const start = part.time?.start
+      const end = part.time?.end
       return (
-        <Reasoning text={thought.text} open={Boolean(expanded()[thought.id])} onToggle={() => toggle(thought.id)} />
+        <Reasoning
+          text={part.text ?? ""}
+          durationMs={typeof start === "number" && typeof end === "number" ? end - start : undefined}
+          open={Boolean(expanded()[id])}
+          onToggle={() => toggle(id)}
+        />
       )
     }
-
-    const toolPart = part as Extract<Part, { type: "tool" }>
-    return (
-      <ToolLine
-        tool={toolPart.tool}
-        state={toolPart.state}
-        open={Boolean(expanded()[toolPart.id])}
-        onToggle={() => toggle(toolPart.id)}
-      />
-    )
+    if (part.type === "tool") {
+      return (
+        <ToolLine
+          tool={part.tool ?? ""}
+          state={part.state as ToolState}
+          open={Boolean(expanded()[id])}
+          onToggle={() => toggle(id)}
+        />
+      )
+    }
+    if (part.type === "patch") {
+      return <PatchLine files={part.files ?? []} open={Boolean(expanded()[id])} onToggle={() => toggle(id)} />
+    }
+    if (part.type === "compaction") {
+      // Une coupe franche dans l'historique : ce qui suit ne s'appuie plus sur ce qui précède.
+      return <Boundary label={part.auto ? "context compacted" : "context compacted on request"} />
+    }
+    if (part.type === "retry") {
+      return <Boundary label={typeof part.attempt === "number" ? `retry attempt ${part.attempt + 1}` : "retry"} />
+    }
+    if (part.type === "file") {
+      // `Part` est le miroir **permissif** de l'union du serveur, où `type` est une chaîne ouverte :
+      // `Extract<Part, { type: "file" }>` se réduit donc à `never`. On garde les champs à la lecture.
+      const mime = typeof part.mime === "string" ? part.mime : ""
+      const filename = typeof part.filename === "string" ? part.filename : undefined
+      const url = typeof part.url === "string" ? part.url : undefined
+      return <FileChip label={filePartLabel({ filename, mime })} thumb={isImageMime(mime) ? url : undefined} />
+    }
+    // Type inconnu : un nom de type interne n'est pas une information — mieux vaut ne rien montrer.
+    return null
   }
+
+  /** Le prompt de l'utilisateur : le seul texte qu'il a écrit lui-même, donc la seule surface mise en forme. */
+  const renderPrompt = (part: Part) => {
+    if (part.type !== "text") return renderItem(part)
+    const text = part.text ?? ""
+    // Le bloc d'injections arrive en texte brut, dans le même message que le prompt. On le lit comme
+    // une structure et il ne s'affiche **pas** comme si l'utilisateur l'avait écrit.
+    const injections = parseInjections(text)
+    if (!injections) return <UserPrompt text={text} />
+    const id = part.id ?? "injections"
+    return <ContextInjections injections={injections} open={Boolean(expanded()[id])} onToggle={() => toggle(id)} />
+  }
+
+  const renderTurn = (turn: TurnView) => (
+    <>
+      <Show when={turn.prompt.length > 0}>
+        <Turn role="user">
+          <For each={turn.prompt}>{(part) => renderPrompt(part)}</For>
+        </Turn>
+      </Show>
+      <Show when={turn.steps.length > 0}>
+        <Turn role="assistant">
+          <For each={turn.steps}>
+            {(step: StepView) => {
+              const key = `step:${turn.id}:${step.index}`
+              return (
+                <StepBlock step={step} open={Boolean(expanded()[key])} onToggle={() => toggle(key)}>
+                  <For each={step.items}>{(part) => renderItem(part)}</For>
+                </StepBlock>
+              )
+            }}
+          </For>
+        </Turn>
+      </Show>
+    </>
+  )
 
   /**
    * Ce qui est sain ne s'affiche pas. Le bandeau n'existe que si quelque chose est cassé, et
@@ -1074,6 +1157,9 @@ export default function App() {
   const notice = () => {
     if (!health()?.healthy) return { text: "server unreachable", bad: true }
     if (!stream().connected) return { text: "stream interrupted", bad: false }
+    // L'agent travaille : le serveur le dit, on ne le devine pas. Transitoire, donc pas un « badge au
+    // repos » — il disparaît de lui-même dès que la session repasse au repos.
+    if (working()) return { text: "working…", bad: false }
     return undefined
   }
 
@@ -1276,18 +1362,12 @@ export default function App() {
         </Show>
 
         <Show when={active()} fallback={<p class="empty">Pick a session, or start one.</p>}>
-          <div class="scroll" ref={scroller}>
+          <div class="scroll" ref={scroller} onScroll={onScroll}>
             <div class="transcript">
               <Show when={error()}>
                 <p class="error">{error()}</p>
               </Show>
-              <For each={messages()}>
-                {(message) => (
-                  <Turn role={message.info.role}>
-                    <For each={message.parts}>{(part) => renderPart(part, message.info.role)}</For>
-                  </Turn>
-                )}
-              </For>
+              <For each={turns()}>{(turn) => renderTurn(turn)}</For>
             </div>
           </div>
 

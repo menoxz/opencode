@@ -1,6 +1,15 @@
 import { describe, expect, test, vi } from "vitest"
 import { render } from "solid-js/web"
-import { PermissionSheet, Reasoning, REPLY_LABEL, ToolLine } from "./components"
+import {
+  Boundary,
+  PatchLine,
+  PermissionSheet,
+  Prose,
+  Reasoning,
+  REPLY_LABEL,
+  StepBlock,
+  ToolLine,
+} from "./components"
 import type { PermissionRequest, ToolState } from "./view-model"
 
 /** Monte un composant dans un conteneur neuf et renvoie le HTML produit. */
@@ -178,6 +187,133 @@ describe("Reasoning", () => {
   test("le clic demande le basculement", () => {
     const onToggle = vi.fn()
     const { container, dispose } = mount(() => <Reasoning text="x" open={false} onToggle={onToggle} />)
+    container.querySelector("button")?.click()
+    expect(onToggle).toHaveBeenCalledTimes(1)
+    dispose()
+  })
+})
+
+describe("ToolLine — ce que la ligne porte", () => {
+  const diffed: ToolState = {
+    status: "completed",
+    input: {},
+    output: "a\nb",
+    title: "src/app.tsx",
+    time: { start: 1, end: 2 },
+    metadata: { filediff: { file: "src/app.tsx", additions: 12, deletions: 3 } },
+  }
+
+  test("une écriture annonce ses ±lignes, lues dans metadata.filediff", () => {
+    const { container, dispose } = mount(() => <ToolLine tool="edit" state={diffed} open={false} onToggle={() => {}} />)
+    expect(container.textContent).toContain("+12 −3")
+    dispose()
+  })
+
+  test("une sortie longue est bornée, et le reste se révèle au clic", () => {
+    const long: ToolState = {
+      ...diffed,
+      output: Array.from({ length: 30 }, (_, index) => `l${index}`).join("\n"),
+      metadata: {},
+    }
+    const { container, dispose } = mount(() => <ToolLine tool="bash" state={long} open onToggle={() => {}} />)
+    expect(container.querySelector("pre.out")?.textContent?.split("\n")).toHaveLength(12)
+    expect(container.querySelector(".tool-reveal")?.textContent).toBe("show 18 more lines")
+    dispose()
+  })
+
+  test("une sortie courte n'annonce aucun volume et ne propose rien à révéler", () => {
+    // §3.8 : le volume ne vit jamais seul sur la ligne — il n'existe que s'il y a à révéler.
+    const { container, dispose } = mount(() => <ToolLine tool="bash" state={diffed} open onToggle={() => {}} />)
+    expect(container.querySelector(".tool-reveal")).toBeNull()
+    expect(container.querySelector(".tool-size")).toBeNull()
+    dispose()
+  })
+})
+
+describe("Prose", () => {
+  test("la prose de l'agent se lit sans étiquette", () => {
+    const { html, container, dispose } = mount(() => <Prose text="La suite est en place." />)
+    expect(html).toContain("La suite est en place.")
+    expect(container.querySelector(".prose-tagged")).toBeNull()
+    dispose()
+  })
+
+  test("un texte injecté ne se présente pas comme une réponse", () => {
+    const { container, dispose } = mount(() => <Prose text="<instructions>" synthetic />)
+    expect(container.textContent).toContain("injected")
+    expect(container.querySelector(".prose.tagged")).not.toBeNull()
+    dispose()
+  })
+
+  test("un texte ignoré le dit aussi", () => {
+    const { container, dispose } = mount(() => <Prose text="x" ignored />)
+    expect(container.textContent).toContain("not sent")
+    dispose()
+  })
+})
+
+describe("PatchLine", () => {
+  test("replié, il compte les fichiers sans les montrer", () => {
+    const { html, container, dispose } = mount(() => (
+      <PatchLine files={["a.ts", "b.ts"]} open={false} onToggle={() => {}} />
+    ))
+    expect(container.textContent).toContain("2 files")
+    expect(html).not.toContain("a.ts")
+    dispose()
+  })
+
+  test("déplié, il nomme chaque fichier par sa fin", () => {
+    const { container, dispose } = mount(() => (
+      <PatchLine files={["C:\\jeanluc\\opencode-fork\\packages\\webui\\src\\styles.css"]} open onToggle={() => {}} />
+    ))
+    expect(container.textContent).toContain("webui/src/styles.css")
+    dispose()
+  })
+
+  test("il borne la liste et annonce ce qui reste", () => {
+    const many = Array.from({ length: 12 }, (_, index) => `p/f${index}.ts`)
+    const { container, dispose } = mount(() => <PatchLine files={many} open onToggle={() => {}} />)
+    // 8 chemins + la ligne du bouton.
+    expect(container.querySelectorAll(".patch-files li")).toHaveLength(9)
+    expect(container.textContent).toContain("show 4 more files")
+    dispose()
+  })
+})
+
+describe("Boundary", () => {
+  test("une borne porte son libellé", () => {
+    const { container, dispose } = mount(() => <Boundary label="context compacted" />)
+    expect(container.textContent).toContain("context compacted")
+    dispose()
+  })
+})
+
+describe("StepBlock", () => {
+  const step = { index: 3, items: [], actions: 12, cost: 0.1234, tokens: 31_000, durationMs: 8400 }
+
+  test("la ligne d'étape porte son prix en entier", () => {
+    const { container, dispose } = mount(() => <StepBlock step={step} open onToggle={() => {}} />)
+    expect(container.textContent).toContain("step 3")
+    expect(container.textContent).toContain("12 actions")
+    expect(container.textContent).toContain("8.4s")
+    expect(container.textContent).toContain("$0.123")
+    expect(container.textContent).toContain("31k tokens")
+    dispose()
+  })
+
+  test("la prose de l'étape n'est jamais repliée", () => {
+    const { container, dispose } = mount(() => (
+      <StepBlock step={step} open onToggle={() => {}}>
+        <Prose text="La suite est en place." />
+      </StepBlock>
+    ))
+    expect(container.textContent).toContain("La suite est en place.")
+    dispose()
+  })
+
+  test("le clic demande le repli du travail", () => {
+    const onToggle = vi.fn()
+    const { container, dispose } = mount(() => <StepBlock step={step} open={false} onToggle={onToggle} />)
     container.querySelector("button")?.click()
     expect(onToggle).toHaveBeenCalledTimes(1)
     dispose()
