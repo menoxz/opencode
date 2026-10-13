@@ -1,6 +1,9 @@
 import { describe, expect, test } from "vitest"
 import {
   SETTINGS_SECTIONS,
+  agentDisabled,
+  agentModel,
+  agentPatch,
   authBody,
   authMethods,
   isFormFillable,
@@ -117,5 +120,64 @@ describe("formulaires", () => {
 
   test("les espaces autour d'une clé collée sont retirés", () => {
     expect(authBody(AUTH.openai[2], { key: "  sk-abc  " })).toEqual({ type: "api", key: "sk-abc" })
+  })
+})
+
+describe("configuration d'un agent", () => {
+  /** Relevé sur `GET /config` : la carte `agent` porte déjà des entrées. */
+  const AGENT_MAP = {
+    build: { model: "opencode-go/deepseek-v4.1-flash", temperature: 0.2 },
+    plan: { model: "opencode-go/deepseek-v4.1-flash" },
+    review: { disable: true },
+  }
+
+  test("le modèle d'un agent est lu, et une entrée absente ne casse rien", () => {
+    expect(agentModel(AGENT_MAP.build)).toBe("opencode-go/deepseek-v4.1-flash")
+    expect(agentModel(undefined)).toBe("")
+    expect(agentModel({})).toBe("")
+    expect(agentModel({ model: 42 })).toBe("")
+  })
+
+  test("la désactivation est lue, et vaut faux par défaut", () => {
+    expect(agentDisabled(AGENT_MAP.review)).toBe(true)
+    expect(agentDisabled(AGENT_MAP.build)).toBe(false)
+    expect(agentDisabled(undefined)).toBe(false)
+  })
+
+  test("la carte ENTIÈRE est envoyée : c'est ce qui évite d'écraser les autres agents", () => {
+    // Sans cela, un serveur qui REMPLACE la carte perdrait plan et review.
+    const patch = agentPatch(AGENT_MAP, "build", { model: "autre/modele" })
+    expect(Object.keys(patch).sort()).toEqual(["build", "plan", "review"])
+    expect(agentModel(patch.plan)).toBe("opencode-go/deepseek-v4.1-flash")
+    expect(agentDisabled(patch.review)).toBe(true)
+  })
+
+  test("les autres clés de l'agent modifié survivent", () => {
+    const patch = agentPatch(AGENT_MAP, "build", { model: "autre/modele" })
+    expect((patch.build as Record<string, unknown>).temperature).toBe(0.2)
+    expect(agentModel(patch.build)).toBe("autre/modele")
+  })
+
+  test("un agent absent de la carte peut être configuré", () => {
+    const patch = agentPatch(AGENT_MAP, "nouveau", { model: "x/y" })
+    expect(agentModel(patch.nouveau)).toBe("x/y")
+    expect(Object.keys(patch)).toHaveLength(4)
+  })
+
+  test("une carte absente ne casse rien", () => {
+    const patch = agentPatch(undefined, "build", { model: "x/y" })
+    expect(agentModel(patch.build)).toBe("x/y")
+  })
+
+  test("un modèle vidé RETIRE la clé au lieu d'écrire un modèle nommé « vide »", () => {
+    const patch = agentPatch(AGENT_MAP, "build", { model: "" })
+    expect("model" in (patch.build as Record<string, unknown>)).toBe(false)
+    expect(agentModel(patch.build)).toBe("")
+  })
+
+  test("la carte d'origine n'est pas modifiée en place", () => {
+    // Un patch qui mute son entrée est un piège : le signal SolidJS ne verrait aucun changement.
+    agentPatch(AGENT_MAP, "build", { model: "autre/modele" })
+    expect(agentModel(AGENT_MAP.build)).toBe("opencode-go/deepseek-v4.1-flash")
   })
 })

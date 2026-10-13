@@ -40,6 +40,9 @@ import {
 } from "./settings-sheet"
 import {
   SETTINGS_SECTIONS,
+  agentDisabled,
+  agentModel,
+  agentPatch,
   authBody,
   authMethods,
   providerIDs,
@@ -117,6 +120,8 @@ export default function App() {
     small_model?: unknown
     username?: unknown
     instructions?: unknown
+    /** La carte `Record<nom, AgentConfig>` — lue pour **configurer** les agents, pas seulement les lister. */
+    agent?: Record<string, unknown>
   }>({})
   const [agents, setAgents] = createSignal<Agent[]>([])
   const [mcp, setMcp] = createSignal<Record<string, McpState>>({})
@@ -132,6 +137,8 @@ export default function App() {
   const [settingsNotice, setSettingsNotice] = createSignal<string | undefined>()
   const [settingsError, setSettingsError] = createSignal<string | undefined>()
   const [settingsBusy, setSettingsBusy] = createSignal<string | undefined>()
+  /** Les modèles saisis par agent, avant enregistrement. */
+  const [agentDrafts, setAgentDrafts] = createSignal<Record<string, string>>({})
 
   // Plugins : les seuls accès hors session. Lus au montage — 708 octets, donc sans coût.
   const [plugins, setPlugins] = createSignal<PluginList | undefined>()
@@ -274,9 +281,16 @@ export default function App() {
     }
 
     if (section === "agents") {
-      const result = await client.app.agents(scope()).catch(() => undefined)
-      const data = (result as { data?: Agent[] } | undefined)?.data
-      if (Array.isArray(data)) setAgents(data)
+      // La config est relue **ici aussi** : la carte `agent` vit dedans, et configurer un agent sans
+      // l'avoir lue écraserait les entrées existantes au lieu de les modifier.
+      const [configResult, agentResult] = await Promise.all([
+        client.global.config.get().catch(() => undefined),
+        client.app.agents(scope()).catch(() => undefined),
+      ])
+      const configData = (configResult as { data?: Record<string, unknown> } | undefined)?.data
+      if (configData) setConfig(configData)
+      const agentData = (agentResult as { data?: Agent[] } | undefined)?.data
+      if (Array.isArray(agentData)) setAgents(agentData)
       return
     }
 
@@ -289,6 +303,45 @@ export default function App() {
 
     await loadPlugins()
   }
+
+  /** Le modèle déclaré pour un agent, lu dans la carte de configuration. */
+  const agentModelOf = (name: string) => agentModel(config().agent?.[name])
+
+  /** Un agent est-il désactivé ? */
+  const agentDisabledOf = (name: string) => agentDisabled(config().agent?.[name])
+
+  /**
+   * Configurer un agent — `PATCH /global/config` avec la carte `agent` **entière**.
+   *
+   * Envoyer seulement l'agent modifié écraserait les 33 autres si le serveur **remplace** la carte
+   * au lieu de la fusionner. On ne connaît pas cette sémantique, donc on n'en dépend pas : la carte
+   * complète donne le même résultat dans les deux cas.
+   */
+  const saveAgent = async (name: string, changes: Record<string, unknown>, label: string) => {
+    setSettingsBusy(`agent:${name}`)
+    setSettingsError(undefined)
+    setSettingsNotice(undefined)
+    const result = await client.global.config
+      .update({
+        // Le schéma généré nomme les 21 champs d'`AgentConfig` ; notre carte reste délibérément
+        // `Record<string, unknown>` — on ne recopie pas le schéma à la main, il divergerait au
+        // premier changement. Le cast est étroit : il ne porte que sur cette carte.
+        config: { agent: agentPatch(config().agent, name, changes) as Record<string, never> },
+      })
+      .catch((cause: unknown) => {
+        setSettingsError(String(cause))
+        return undefined
+      })
+    setSettingsBusy(undefined)
+    if (result) {
+      setAgentDrafts((current) => ({ ...current, [name]: "" }))
+      await loadSettings("agents")
+      setSettingsNotice(`${label} enregistré`)
+    }
+  }
+
+  const toggleAgent = (name: string, disabled: boolean) =>
+    void saveAgent(name, { disable: disabled }, `agent ${name}`)
 
   const openConfig = () => {
     setConfigOpen(true)
@@ -1044,7 +1097,17 @@ export default function App() {
           </Show>
 
           <Show when={settingsSection() === "agents"}>
-            <AgentsSection agents={agentRows(agents())} summary={agentSummary(agentCounts(agentRows(agents())))} />
+            <AgentsSection
+              agents={agentRows(agents())}
+              summary={agentSummary(agentCounts(agentRows(agents())))}
+              modelOf={agentModelOf}
+              disabledOf={agentDisabledOf}
+              drafts={agentDrafts()}
+              busy={settingsBusy()}
+              onDraft={(name, value) => setAgentDrafts((current) => ({ ...current, [name]: value }))}
+              onSave={(name) => void saveAgent(name, { model: agentDrafts()[name] ?? "" }, `agent ${name}`)}
+              onToggle={toggleAgent}
+            />
           </Show>
 
           <Show when={settingsSection() === "mcp"}>

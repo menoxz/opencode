@@ -141,3 +141,50 @@ export function authMethods(auth: ProviderAuth | undefined, providerID: string):
   const methods = auth?.[providerID]
   return Array.isArray(methods) ? methods : []
 }
+
+/* =============================================================================
+   Les agents — les **configurer**, pas seulement les lister.
+
+   `Config.agent` est une carte `Record<nom, AgentConfig>`. La question qui décide de tout : un
+   `PATCH` **fusionne**-t-il ou **remplace**-t-il cette carte ? Je ne le suppose pas — la parade est
+   la même dans les deux cas : **envoyer la carte entière**, modifiée. Si le serveur fusionne, le
+   résultat est identique ; s'il remplace, aucun agent n'est perdu. Un patch partiel, lui, serait
+   destructeur dans le second cas.
+   ============================================================================= */
+
+/** Le modèle déclaré pour un agent, ou une chaîne vide s'il n'en déclare pas. */
+export function agentModel(entry: unknown): string {
+  if (!entry || typeof entry !== "object") return ""
+  const model = (entry as { model?: unknown }).model
+  return typeof model === "string" ? model : ""
+}
+
+/** Un agent désactivé ne se propose plus ; le serveur le note `disable: true`. */
+export function agentDisabled(entry: unknown): boolean {
+  if (!entry || typeof entry !== "object") return false
+  return (entry as { disable?: unknown }).disable === true
+}
+
+/**
+ * La carte `agent` **entière**, avec une entrée modifiée.
+ *
+ * On envoie toujours la carte complète : c'est ce qui rend le correctif sûr sans connaître la
+ * sémantique exacte du serveur (fusion ou remplacement). Envoyer `{ agent: { build: { … } } }`
+ * écraserait les 33 autres agents si le serveur remplace.
+ */
+export function agentPatch(
+  current: Record<string, unknown> | undefined,
+  name: string,
+  changes: Record<string, unknown>,
+): Record<string, unknown> {
+  const agents: Record<string, unknown> = { ...(current ?? {}) }
+  const existing = agents[name]
+  const merged = existing && typeof existing === "object" ? { ...(existing as Record<string, unknown>) } : {}
+  for (const [key, value] of Object.entries(changes)) {
+    // Un modèle vidé **retire** la clé au lieu d'écrire une chaîne vide, qui serait un modèle nommé "".
+    if (value === "" || value === undefined) delete merged[key]
+    else merged[key] = value
+  }
+  agents[name] = merged
+  return agents
+}

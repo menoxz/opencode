@@ -158,19 +158,72 @@ export function ProviderBlock(props: {
   )
 }
 
-/** Les agents : ce qui existe, ce qui est proposable, et leur mode. */
-export function AgentsSection(props: { agents: AgentRow[]; summary: string }) {
+/**
+ * Les agents — les **configurer**, pas seulement les lister.
+ *
+ * Deux gestes : donner un modèle à un agent, et le désactiver. Le bouton « enregistrer » n'existe
+ * **que si un brouillon a été saisi** — un formulaire de 34 lignes couvert de boutons inutiles
+ * serait du bruit, et le bruit fait perdre de vue ce qu'on est venu régler.
+ */
+export function AgentsSection(props: {
+  agents: AgentRow[]
+  summary: string
+  /** Le modèle déjà déclaré pour cet agent, ou une chaîne vide. */
+  modelOf: (name: string) => string
+  disabledOf: (name: string) => boolean
+  /** Les saisies en cours, par nom d'agent. */
+  drafts: Record<string, string>
+  busy?: string
+  onDraft: (name: string, value: string) => void
+  onSave: (name: string) => void
+  onToggle: (name: string, disabled: boolean) => void
+}) {
   return (
     <section class="sheet-section">
       <p class="sheet-note">{props.summary}</p>
-      <ul class="sheet-agents">
+      <ul class="sheet-agents editable">
         <For each={props.agents}>
           {(agent) => (
-            <li>
-              <span class="sa-name" title={agent.full}>
-                {agent.name}
-              </span>
-              <span class="sa-mode">{modeLabel(agent.mode)}</span>
+            <li class="agent-row" classList={{ off: props.disabledOf(agent.name) }}>
+              <div class="agent-head">
+                <span class="sa-name" title={agent.full}>
+                  {agent.name}
+                </span>
+                <span class="sa-mode">{modeLabel(agent.mode)}</span>
+                <Show when={props.disabledOf(agent.name)}>
+                  <span class="sa-off">désactivé</span>
+                </Show>
+              </div>
+              <div class="set-row">
+                <input
+                  class="set-input"
+                  placeholder={props.modelOf(agent.name) || "modèle par défaut"}
+                  title="Modèle de cet agent — vide pour revenir au modèle par défaut"
+                  value={props.drafts[agent.name] ?? ""}
+                  onInput={(event) => props.onDraft(agent.name, event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") props.onSave(agent.name)
+                  }}
+                />
+                {/* Le bouton n'apparaît que s'il y a quelque chose à enregistrer. */}
+                <Show when={(props.drafts[agent.name] ?? "").trim() !== ""}>
+                  <button
+                    class="ghost bordered"
+                    disabled={props.busy === `agent:${agent.name}`}
+                    onClick={() => props.onSave(agent.name)}
+                  >
+                    {props.busy === `agent:${agent.name}` ? "…" : "enregistrer"}
+                  </button>
+                </Show>
+                <button
+                  class="ghost agent-toggle"
+                  title={props.disabledOf(agent.name) ? "Réactiver cet agent" : "Désactiver cet agent"}
+                  disabled={props.busy === `agent:${agent.name}`}
+                  onClick={() => props.onToggle(agent.name, !props.disabledOf(agent.name))}
+                >
+                  {props.disabledOf(agent.name) ? "activer" : "désactiver"}
+                </button>
+              </div>
               <Show when={agent.description}>
                 <span class="sa-desc" title={agent.full}>
                   {agent.description}

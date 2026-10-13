@@ -1320,3 +1320,56 @@ les onglets ferme l'instance). Relancé par
 
 **Nom du produit** : `opencodev2` évoque un agent de codage, pas un généraliste. « open agent » a été
 proposé. Décision utilisateur ; rien n'est changé tant qu'elle n'est pas prise.
+
+---
+
+## Lot suivant — configurer les agents (livré)
+
+Dernier point de la critique non traité : « configurer les provider, les modèles, **les type
+d'agents** ». La section « agents » **listait** ; elle configure désormais.
+
+### Le point qui décide de tout
+
+`Config.agent` est une carte `Record<nom, AgentConfig>`. La question est : un `PATCH` **fusionne**-t-il
+ou **remplace**-t-il cette carte ? Je ne le suppose pas — la parade est la même dans les deux cas :
+**envoyer la carte entière**, modifiée. Un patch partiel serait destructeur si le serveur remplace.
+
+Mesuré : la carte porte **4 entrées** (`build`, `explore`, `orchestrator`, `plan`), pas 34 — les
+autres agents sont des valeurs par défaut du serveur. Forme réelle d'une entrée :
+`plan: { model, variant, description, options, color, permission }`.
+
+### Ce qui est livré
+
+- `agentModel(entry)`, `agentDisabled(entry)`, `agentPatch(current, name, changes)` — purs, 8 cas.
+- `agentPatch` **ne mute pas** son entrée : un patch mutant ne déclencherait aucun rendu SolidJS.
+- Un modèle vidé **retire la clé** au lieu d'écrire un modèle nommé `""`.
+- Dans le composant : un champ modèle par agent, et un bouton désactiver/activer. Le bouton
+  « enregistrer » **n'existe que si un brouillon est saisi** — 34 lignes couvertes de boutons
+  inutiles seraient du bruit.
+
+### Preuve — et sa limite, assumée
+
+```
+vitest run      -> 12 fichiers, 180 tests, exit 0   (+8 sur la configuration des agents)
+tsgo --noEmit   -> exit 0
+vite build      -> 104,79 ko brut / 27,87 ko compressés
+```
+
+Par le SDK, sur la carte **réelle** envoyée telle quelle (no-op strict) :
+
+| mesure | valeur |
+|---|---|
+| corps `{ config: { agent: … } }` | **accepté** (`ok = true`) |
+| agents avant / après | `[build, explore, orchestrator, plan]` — identiques |
+| contenu | **inchangé** (`contenu_inchange = true`) |
+| fichier déposé dans le dépôt | **aucun** |
+
+**Limite** : le clic « désactiver » dans le navigateur n'a **pas** été observé — deux sondes CDP ont
+expiré (200 s). Ce qui est prouvé : la fonction pure (8 tests), l'acceptation du corps par le
+serveur, et le chemin `{ config: { … } }` de bout en bout par l'aller-retour du `username` décrit
+plus haut. Ce qui ne l'est pas : le clic lui-même. À rejouer quand l'instance isolée sera stable.
+
+### Bug trouvé en vérifiant par l'interface
+
+`saveConfig` posait la notice de succès **puis** rechargeait la section — or le rechargement commence
+par effacer les messages. **La notice ne pouvait jamais être vue.** Corrigé en rechargeant d'abord.
