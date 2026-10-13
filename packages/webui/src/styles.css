@@ -1430,6 +1430,85 @@ textarea {
   font-size: var(--fs-note);
 }
 
+/* ---- Un interrupteur, pour un booléen ----
+
+   Un champ de texte pour un booléen obligerait à taper « true » : c'est faire porter au clavier ce
+   que l'interface sait déjà. L'état se voit à la position, pas à la couleur seule — un interrupteur
+   qui ne diffère que par sa teinte est invisible pour qui ne distingue pas les couleurs. */
+
+.switch {
+  position: relative;
+  display: inline-flex;
+  width: 34px;
+  height: 20px;
+  flex: 0 0 auto;
+}
+
+.switch input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.switch-track {
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  background: var(--bg-2);
+  transition: background 0.12s;
+}
+
+.switch-track::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text-3);
+  transition: transform 0.12s, background 0.12s;
+}
+
+.switch input:checked + .switch-track {
+  background: var(--text-2);
+}
+
+.switch input:checked + .switch-track::after {
+  transform: translateX(14px);
+  background: var(--bg-1);
+}
+
+.switch input:disabled + .switch-track {
+  opacity: 0.5;
+}
+
+.switch input:focus-visible + .switch-track {
+  border-color: var(--text-2);
+}
+
+/* ---- Une liste de choix, pour une énumération ----
+   Le libellé de chaque choix est un mot d'écran (« demander avant »), jamais la valeur technique
+   (`manual`) : c'est la même règle que pour les modes d'agent et les clés d'injection. */
+
+.set-select {
+  padding: 6px 9px;
+  border: 1px solid var(--line-1);
+  border-radius: 7px;
+  background: #0000001a;
+  color: var(--text-1);
+  font-size: var(--fs-label);
+}
+
+.set-select:focus {
+  border-color: var(--line-2);
+}
+
 /* Un champ de saisie large : la recherche d'agents, l'ajout d'un plugin. */
 .set-wide {
   display: flex;

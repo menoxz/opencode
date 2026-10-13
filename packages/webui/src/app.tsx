@@ -35,19 +35,24 @@ import {
   McpSection,
   PluginsSection,
   ProviderBlock,
+  SettingControl,
   SettingRow,
   SettingsSheet,
 } from "./settings-sheet"
 import {
   SETTINGS_SECTIONS,
+  SETTING_SPECS,
   agentDisabled,
   agentModel,
   agentPatch,
   authBody,
   authMethods,
   providerIDs,
+  settingDisplay,
+  settingValue,
   type AuthMethod,
   type ProviderAuth,
+  type SettingSpec,
   type SettingsSectionKey,
 } from "./settings"
 import {
@@ -57,7 +62,6 @@ import {
   filterAgents,
   mcpConnectedCount,
   mcpProblems,
-  modelLabel,
   type Agent,
   type McpState,
 } from "./config"
@@ -132,8 +136,8 @@ export default function App() {
   const [providerAuth, setProviderAuth] = createSignal<ProviderAuth | undefined>()
   const [providerValues, setProviderValues] = createSignal<Record<string, string>>({})
   const [pluginSpec, setPluginSpec] = createSignal("")
-  const [generalModel, setGeneralModel] = createSignal("")
-  const [generalUsername, setGeneralUsername] = createSignal("")
+  /** Les valeurs saisies, par clé de réglage — avant enregistrement. */
+  const [specDrafts, setSpecDrafts] = createSignal<Record<string, string>>({})
   const [settingsNotice, setSettingsNotice] = createSignal<string | undefined>()
   const [settingsError, setSettingsError] = createSignal<string | undefined>()
   const [settingsBusy, setSettingsBusy] = createSignal<string | undefined>()
@@ -266,14 +270,13 @@ export default function App() {
     setSettingsNotice(undefined)
     setSettingsError(undefined)
 
-    if (section === "general") {
+    if (section === "models" || section === "general" || section === "behavior" || section === "tools") {
       const result = await client.global.config.get().catch(() => undefined)
       const data = (result as { data?: Record<string, unknown> } | undefined)?.data
       if (data) {
         setConfig(data)
-        const model = modelLabel(data.model)
-        setGeneralModel(model === "défaut du serveur" ? "" : model)
-        setGeneralUsername(typeof data.username === "string" ? data.username : "")
+        // Les saisies en cours sont abandonnées : la config relue est la vérité.
+        setSpecDrafts({})
       }
       return
     }
@@ -356,6 +359,17 @@ export default function App() {
     setSettingsSection(key)
     void loadSettings(key)
   }
+
+  /**
+   * Les réglages **déclarés** (modèles, général, comportement, outils) se rendent d'un seul bloc :
+   * le composant ne fait que rendre, la donnée dit quoi montrer. Ajouter un réglage, c'est ajouter
+   * une entrée dans `SETTING_SPECS` — pas une ligne de JSX.
+   */
+  const specDraft = (spec: SettingSpec) => specDrafts()[spec.key] ?? settingDisplay(spec, config()[spec.key])
+  const setSpecDraft = (key: string, value: string) =>
+    setSpecDrafts((current) => ({ ...current, [key]: value }))
+  const commitSpec = (spec: SettingSpec, raw: string | boolean) =>
+    void saveConfig({ [spec.key]: settingValue(spec, raw) }, spec.label)
 
   /**
    * Écrire la configuration — **globale**, et en forme **imbriquée**.
@@ -1048,44 +1062,22 @@ export default function App() {
           error={settingsError()}
           busy={settingsBusy()}
         >
-          <Show when={settingsSection() === "general"}>
+          {/* Les réglages **déclarés** — modèles, général, comportement, outils — d'un seul bloc.
+              Ajouter un réglage, c'est ajouter une entrée dans `SETTING_SPECS`, pas une ligne ici. */}
+          <Show when={SETTING_SPECS[settingsSection()]}>
             <section class="sheet-section">
-              <SettingRow label="modèle par défaut" desc="le modèle qu'utilise une nouvelle session">
-                <input
-                  class="set-input"
-                  placeholder={modelLabel(config().model)}
-                  value={generalModel()}
-                  onInput={(event) => setGeneralModel(event.currentTarget.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") void saveConfig({ model: generalModel().trim() }, "modèle")
-                  }}
-                />
-                <button
-                  class="ghost bordered"
-                  disabled={settingsBusy() === "modèle"}
-                  onClick={() => void saveConfig({ model: generalModel().trim() }, "modèle")}
-                >
-                  {settingsBusy() === "modèle" ? "…" : "enregistrer"}
-                </button>
-              </SettingRow>
-
-              <SettingRow label="utilisateur" desc="le nom qui signe les messages">
-                <input
-                  class="set-input"
-                  value={generalUsername()}
-                  onInput={(event) => setGeneralUsername(event.currentTarget.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") void saveConfig({ username: generalUsername().trim() }, "utilisateur")
-                  }}
-                />
-                <button
-                  class="ghost bordered"
-                  disabled={settingsBusy() === "utilisateur"}
-                  onClick={() => void saveConfig({ username: generalUsername().trim() }, "utilisateur")}
-                >
-                  {settingsBusy() === "utilisateur" ? "…" : "enregistrer"}
-                </button>
-              </SettingRow>
+              <For each={SETTING_SPECS[settingsSection()] ?? []}>
+                {(spec) => (
+                  <SettingControl
+                    spec={spec}
+                    value={specDraft(spec)}
+                    checked={config()[spec.key] === true}
+                    busy={settingsBusy() === spec.label}
+                    onInput={(value) => setSpecDraft(spec.key, value)}
+                    onCommit={(raw) => commitSpec(spec, raw)}
+                  />
+                )}
+              </For>
             </section>
           </Show>
 

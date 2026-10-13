@@ -15,7 +15,15 @@
  * leurs champs. Les formulaires se déduisent de cette réponse : on n'invente pas les champs.
  */
 
-export type SettingsSectionKey = "general" | "providers" | "agents" | "mcp" | "plugins"
+export type SettingsSectionKey =
+  | "models"
+  | "general"
+  | "behavior"
+  | "tools"
+  | "providers"
+  | "agents"
+  | "mcp"
+  | "plugins"
 
 export type SettingsSection = {
   key: SettingsSectionKey
@@ -24,16 +32,187 @@ export type SettingsSection = {
 }
 
 /**
- * L'ordre suit la fréquence d'usage, comme le rail : on règle son modèle bien plus souvent qu'on
+ * L'ordre suit la fréquence d'usage, comme le rail : on change de modèle bien plus souvent qu'on
  * n'ajoute un plugin.
+ *
+ * Huit sections — et c'est possible **parce que** la navigation est verticale : une colonne
+ * s'allonge sans rien casser, là où une barre horizontale aurait produit deux rangées (CIBLE §13).
  */
 export const SETTINGS_SECTIONS: SettingsSection[] = [
-  { key: "general", label: "général", hint: "modèle, petit modèle, utilisateur, agent par défaut" },
+  { key: "models", label: "modèles", hint: "les modèles des sessions et des tâches courtes" },
+  { key: "general", label: "général", hint: "identité et environnement" },
+  { key: "behavior", label: "comportement", hint: "ce que le harnais fait sans demander" },
+  { key: "tools", label: "outils", hint: "formateur et serveur de langage" },
   { key: "providers", label: "fournisseurs", hint: "clés et connexions des fournisseurs de modèles" },
-  { key: "agents", label: "agents", hint: "modèle, mode et options de chaque agent" },
+  { key: "agents", label: "agents", hint: "modèle et état de chaque agent" },
   { key: "mcp", label: "serveurs MCP", hint: "état et authentification" },
   { key: "plugins", label: "plugins", hint: "ajouter ou retirer un plugin" },
 ]
+
+/* =============================================================================
+   Les réglages, **déclarés comme données**.
+
+   Pourquoi des données et pas du JSX : un réglage se décrit par quatre choses — sa clé dans
+   `Config`, son libellé d'écran, ce qu'il fait, et le contrôle qui le porte. Écrit en JSX, chacun
+   de ces quatre points se re-décide à chaque ligne, et les libellés divergent. Écrit en données, ils
+   se relisent d'un coup, et le composant ne fait que rendre.
+
+   Mesuré : `Config` a **37 clés**. Onze sont réglables simplement (chaîne, booléen, nombre, liste)
+   et quelques-unes sont des énumérations. Les autres sont des structures (cartes d'agents, de
+   fournisseurs, de serveurs MCP) — elles ont leur propre section, parce qu'elles ne se règlent pas
+   sur une ligne. `logLevel` et `experimental` ne sont **pas** exposés : ce sont des réglages de
+   diagnostic, et les exposer sans les expliquer serait exactement le défaut qu'on corrige.
+   ============================================================================= */
+
+export type SettingKind = "text" | "toggle" | "select"
+
+export type SettingSpec = {
+  /** La clé exacte dans `Config`. */
+  key: string
+  label: string
+  desc: string
+  kind: SettingKind
+  /** Pour un `select` : les choix, avec leur libellé d'écran. */
+  options?: Array<{ value: string; label: string }>
+  /** Ce qui s'affiche quand la clé est absente — jamais un champ vide sans repère. */
+  placeholder?: string
+}
+
+/** Les modèles : trois clés, une seule question — « avec quoi travailler ». */
+export const MODEL_SETTINGS: SettingSpec[] = [
+  {
+    key: "model",
+    label: "modèle par défaut",
+    desc: "le modèle qu'utilise une nouvelle session",
+    kind: "text",
+    placeholder: "provider/modèle",
+  },
+  {
+    key: "small_model",
+    label: "petit modèle",
+    desc: "les tâches courtes : titres, résumés, recherches",
+    kind: "text",
+    placeholder: "défaut du serveur",
+  },
+  {
+    key: "default_agent",
+    label: "agent par défaut",
+    desc: "l'agent qu'incarne une nouvelle session",
+    kind: "text",
+    placeholder: "défaut du serveur",
+  },
+]
+
+/** L'identité et l'environnement. */
+export const GENERAL_SETTINGS: SettingSpec[] = [
+  {
+    key: "username",
+    label: "utilisateur",
+    desc: "le nom qui signe les messages",
+    kind: "text",
+    placeholder: "non renseigné",
+  },
+  {
+    key: "shell",
+    label: "interpréteur",
+    desc: "le shell qui exécute les commandes",
+    kind: "text",
+    placeholder: "défaut du système",
+  },
+]
+
+/**
+ * Ce que le harnais fait **sans demander**. C'est le seul groupe où un mauvais réglage a des
+ * conséquences visibles par d'autres : `share` publie une conversation, `autoupdate` change le
+ * binaire. Les descriptions le disent.
+ */
+export const BEHAVIOR_SETTINGS: SettingSpec[] = [
+  {
+    key: "share",
+    label: "partage des sessions",
+    desc: "publier une conversation, ou demander avant",
+    kind: "select",
+    options: [
+      { value: "manual", label: "demander avant" },
+      { value: "auto", label: "publier automatiquement" },
+      { value: "disabled", label: "ne jamais publier" },
+    ],
+  },
+  {
+    key: "autoshare",
+    label: "partage automatique",
+    desc: "publier dès qu'une session est créée",
+    kind: "toggle",
+  },
+  {
+    key: "autoupdate",
+    label: "mise à jour",
+    desc: "installer les nouvelles versions",
+    kind: "select",
+    options: [
+      { value: "true", label: "installer automatiquement" },
+      { value: "notify", label: "seulement prévenir" },
+      { value: "false", label: "ne pas vérifier" },
+    ],
+  },
+  {
+    key: "snapshot",
+    label: "instantanés",
+    desc: "enregistrer l'état des fichiers avant modification, pour pouvoir revenir",
+    kind: "toggle",
+  },
+]
+
+/** Les outils que l'on active ou coupe — `false` les désactive sans les désinstaller. */
+export const TOOL_SETTINGS: SettingSpec[] = [
+  {
+    key: "formatter",
+    label: "formateur",
+    desc: "mettre en forme le code écrit",
+    kind: "toggle",
+  },
+  {
+    key: "lsp",
+    label: "serveur de langage",
+    desc: "analyse du code : erreurs, définitions, références",
+    kind: "toggle",
+  },
+]
+
+/** Toutes les lignes simples, par section — ce que le composant rend. */
+export const SETTING_SPECS: Partial<Record<SettingsSectionKey, SettingSpec[]>> = {
+  models: MODEL_SETTINGS,
+  general: GENERAL_SETTINGS,
+  behavior: BEHAVIOR_SETTINGS,
+  tools: TOOL_SETTINGS,
+}
+
+/**
+ * La valeur à écrire pour une clé, selon son contrôle.
+ *
+ * Un `toggle` écrit un **booléen**, jamais la chaîne `"true"` : le schéma attend un booléen, et une
+ * chaîne serait acceptée par le serveur puis relue comme fausse. Un `select` dont l'option est
+ * booléenne écrit le booléen correspondant.
+ */
+export function settingValue(spec: SettingSpec, raw: string | boolean): unknown {
+  if (spec.kind === "toggle") return raw === true || raw === "true"
+  if (spec.kind === "select") {
+    if (raw === "true") return true
+    if (raw === "false") return false
+    return String(raw)
+  }
+  return String(raw).trim()
+}
+
+/** Ce qu'un contrôle doit afficher pour une valeur lue dans la configuration. */
+export function settingDisplay(spec: SettingSpec, value: unknown): string {
+  if (spec.kind === "toggle") return value === true ? "true" : "false"
+  if (value === undefined || value === null) {
+    // Un `select` sans valeur connue retombe sur son premier choix plutôt que sur du vide.
+    return spec.kind === "select" ? (spec.options?.[0]?.value ?? "") : ""
+  }
+  return String(value)
+}
 
 /** Ce que le serveur déclare pour une méthode d'authentification. */
 export type AuthPrompt = {

@@ -7,6 +7,7 @@ import {
   methodFields,
   methodLabel,
   type AuthMethod,
+  type SettingSpec,
   type SettingsSection,
   type SettingsSectionKey,
 } from "./settings"
@@ -112,6 +113,77 @@ export function SettingWide(props: { placeholder: string; value: string; note?: 
       </Show>
       {props.children as never}
     </div>
+  )
+}
+
+/**
+ * Le contrôle qui porte un réglage — choisi par sa **nature**, pas par sa clé.
+ *
+ * Un booléen se bascule, une énumération se choisit, une chaîne s'écrit : trois gestes différents,
+ * donc trois contrôles. Un champ de texte pour un booléen obligerait à taper « true », ce qui est
+ * une façon de faire porter au clavier ce que l'interface sait déjà.
+ *
+ * Le type d'un réglage ne change pas : l'aiguillage se fait une fois, à la construction.
+ */
+export function SettingControl(props: {
+  spec: SettingSpec
+  /** La valeur affichée (chaîne, pour un champ ou une liste de choix). */
+  value: string
+  /** L'état d'un interrupteur. */
+  checked: boolean
+  busy?: boolean
+  onInput: (value: string) => void
+  /** Écrit la valeur telle que le contrôle la produit — booléenne pour un interrupteur. */
+  onCommit: (raw: string | boolean) => void
+}) {
+  if (props.spec.kind === "toggle") {
+    return (
+      <SettingRow label={props.spec.label} desc={props.spec.desc}>
+        <label class="switch" title={props.spec.desc}>
+          <input
+            type="checkbox"
+            checked={props.checked}
+            disabled={props.busy}
+            onChange={(event) => props.onCommit(event.currentTarget.checked)}
+          />
+          <span class="switch-track" />
+        </label>
+      </SettingRow>
+    )
+  }
+
+  if (props.spec.kind === "select") {
+    return (
+      <SettingRow label={props.spec.label} desc={props.spec.desc}>
+        <select
+          class="set-select"
+          value={props.value}
+          disabled={props.busy}
+          onChange={(event) => props.onCommit(event.currentTarget.value)}
+        >
+          <For each={props.spec.options ?? []}>
+            {(option) => <option value={option.value}>{option.label}</option>}
+          </For>
+        </select>
+      </SettingRow>
+    )
+  }
+
+  return (
+    <SettingRow label={props.spec.label} desc={props.spec.desc}>
+      <input
+        class="set-input"
+        placeholder={props.spec.placeholder}
+        value={props.value}
+        onInput={(event) => props.onInput(event.currentTarget.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") props.onCommit(props.value)
+        }}
+      />
+      <button class="ghost bordered" disabled={props.busy} onClick={() => props.onCommit(props.value)}>
+        {props.busy ? "…" : "enregistrer"}
+      </button>
+    </SettingRow>
   )
 }
 

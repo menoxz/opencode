@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest"
 import {
   SETTINGS_SECTIONS,
+  SETTING_SPECS,
   agentDisabled,
   agentModel,
   agentPatch,
@@ -10,8 +11,11 @@ import {
   methodFields,
   methodLabel,
   providerIDs,
+  settingDisplay,
+  settingValue,
   type AuthMethod,
   type ProviderAuth,
+  type SettingSpec,
 } from "./settings"
 
 /** Relevé tel quel sur `GET /provider/auth` (8 fournisseurs). */
@@ -34,9 +38,14 @@ const AUTH: ProviderAuth = {
 }
 
 describe("sections", () => {
-  test("cinq sections, dans l'ordre de fréquence d'usage", () => {
+  test("huit sections, dans l'ordre de fréquence d'usage", () => {
+    // Huit — et c'est possible **parce que** la navigation est verticale : une colonne s'allonge
+    // sans rien casser, là où une barre horizontale aurait produit deux rangées.
     expect(SETTINGS_SECTIONS.map((section) => section.key)).toEqual([
+      "models",
       "general",
+      "behavior",
+      "tools",
       "providers",
       "agents",
       "mcp",
@@ -179,5 +188,86 @@ describe("configuration d'un agent", () => {
     // Un patch qui mute son entrée est un piège : le signal SolidJS ne verrait aucun changement.
     agentPatch(AGENT_MAP, "build", { model: "autre/modele" })
     expect(agentModel(AGENT_MAP.build)).toBe("opencode-go/deepseek-v4.1-flash")
+  })
+})
+
+describe("réglages déclarés", () => {
+  const TOGGLE: SettingSpec = { key: "snapshot", label: "instantanés", desc: "d", kind: "toggle" }
+  const TEXT: SettingSpec = { key: "model", label: "modèle", desc: "d", kind: "text" }
+  const SELECT: SettingSpec = {
+    key: "share",
+    label: "partage",
+    desc: "d",
+    kind: "select",
+    options: [
+      { value: "manual", label: "demander avant" },
+      { value: "disabled", label: "ne jamais publier" },
+    ],
+  }
+
+  test("un interrupteur écrit un booléen, jamais la chaîne « true »", () => {
+    // Une chaîne serait acceptée par le serveur puis relue comme fausse : le réglage semblerait
+    // enregistré sans l'être.
+    expect(settingValue(TOGGLE, true)).toBe(true)
+    expect(settingValue(TOGGLE, "true")).toBe(true)
+    expect(settingValue(TOGGLE, "false")).toBe(false)
+    expect(settingValue(TOGGLE, false)).toBe(false)
+  })
+
+  test("une liste de choix écrit sa valeur, et un choix booléen écrit le booléen", () => {
+    expect(settingValue(SELECT, "manual")).toBe("manual")
+    expect(settingValue(SELECT, "notify")).toBe("notify")
+    expect(settingValue(SELECT, "true")).toBe(true)
+    expect(settingValue(SELECT, "false")).toBe(false)
+  })
+
+  test("un champ écrit la chaîne, espaces retirés", () => {
+    expect(settingValue(TEXT, "  a/b  ")).toBe("a/b")
+  })
+
+  test("l'affichage d'un interrupteur est « true » ou « false »", () => {
+    expect(settingDisplay(TOGGLE, true)).toBe("true")
+    expect(settingDisplay(TOGGLE, undefined)).toBe("false")
+  })
+
+  test("un choix sans valeur connue retombe sur son premier choix, jamais sur du vide", () => {
+    expect(settingDisplay(SELECT, undefined)).toBe("manual")
+  })
+
+  test("chaque réglage déclaré porte une clé, un libellé et une raison d'être", () => {
+    // C'est la règle de la cible : rien n'est exposé sans pouvoir dire pourquoi.
+    for (const specs of Object.values(SETTING_SPECS)) {
+      for (const spec of specs ?? []) {
+        expect(spec.key.length).toBeGreaterThan(0)
+        expect(spec.label.length).toBeGreaterThan(0)
+        expect(spec.desc.length).toBeGreaterThan(0)
+        if (spec.kind === "select") expect((spec.options ?? []).length).toBeGreaterThan(1)
+      }
+    }
+  })
+
+  test("toutes les clés déclarées existent dans le schéma Config mesuré", () => {
+    // Mesuré sur GET /doc : Config a 37 clés. Une clé inventée écrirait une valeur que le serveur
+    // ignorerait en silence — exactement le défaut qu'on traque.
+    const CONFIG_KEYS = [
+      "model",
+      "small_model",
+      "default_agent",
+      "username",
+      "shell",
+      "share",
+      "autoshare",
+      "autoupdate",
+      "snapshot",
+      "formatter",
+      "lsp",
+    ]
+    for (const specs of Object.values(SETTING_SPECS)) {
+      for (const spec of specs ?? []) expect(CONFIG_KEYS).toContain(spec.key)
+    }
+  })
+
+  test("les quatre sections à réglages simples sont couvertes", () => {
+    expect(Object.keys(SETTING_SPECS).sort()).toEqual(["behavior", "general", "models", "tools"])
   })
 })
