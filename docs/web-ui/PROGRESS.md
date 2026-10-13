@@ -1951,3 +1951,64 @@ Deux résidus du lot : la page relit `/config/providers` (531 ko) à chaque sél
 d'une clé n'est pas vérifiée de bout en bout — la vérification CDP s'est arrêtée avant d'écrire quoi
 que ce soit côté serveur, volontairement (le fournisseur ouvert était déjà `ready`, donc aucun
 formulaire de méthode à l'écran). Restent aussi les trois résidus du lot précédent, inchangés.
+
+## Lot suivant — la page Providers écrit (livré ; vérification navigateur bloquée)
+
+La critique était juste, et elle a coûté une livraison pour rien : livrer un écran qui **affiche** un
+fournisseur et ses modèles ne sert à rien si l'on ne peut ni en déclarer un, ni le régler, ni lui
+donner des modèles. La page écrit désormais ce qui manquait.
+
+### Ce que l'écriture a exigé de savoir
+
+- **Le schéma accepte n'importe quel identifiant** : `provider` est une carte libre (`config.ts:241`,
+  `Schema.Record(String, ConfigProvider.Info)`) ⇒ une passerelle maison est déclarable. Il lui faut un
+  `npm` — l'adaptateur qui parle — et une `options.baseURL` — à qui.
+- **L'ajout est sans retour** : sur `/config` comme sur `/global/config` il n'existe qu'un `GET` et un
+  `PATCH` qui **fusionne** — aucun `PUT`, aucun `DELETE`. Un fournisseur ajouté par l'écran ne se
+  retire que dans le fichier. C'est écrit à côté du bouton, avant le clic.
+- **Il n'existe pas de statut « désactivé »** : `ModelStatus` vaut `alpha|beta|deprecated|active`. Le
+  seul levier d'exclusion est `blacklist`, et un tableau est **remplacé**, jamais concaténé ⇒ on écrit
+  la liste entière, recalculée depuis celle qu'on vient de lire.
+- **`discover` agit au chargement, pas à la requête** (`provider.ts:1570`) : cocher la case ne fait pas
+  apparaître les modèles dans la seconde. La note le dit — sinon on cherche le défaut ailleurs.
+- **Un fournisseur créé n'apparaît pas tout de suite** dans `/config/providers` : la grille fusionne la
+  configuration (`mergeDeclared`), sans quoi l'écran dirait « créé » puis ne montrerait rien.
+
+### Ce qui a été ajouté
+
+`settings.ts` : six constructeurs purs (`providerId`, `providerPatch`, `modelPatch`, `discoverPatch`,
+`blacklistPatch`, `toggleModel`) plus `mergeDeclared`. Deux règles qu'un `...spread` ne tenait pas :
+**un champ vide ne s'écrit pas** (`config.ts:513` retire la clé quand la valeur est une chaîne vide :
+écrire `""` **efface**), et le patch partiel **fusionne sans retirer**.
+
+`providers.tsx` : un bouton `+ add provider` sur la grille, replié au repos ; un panneau `Connection`
+(baseURL, paquet npm, case de découverte) ; un panneau `Models` qui ajoute un modèle à la main et
+exclut/restaure chaque ligne ; et une note là où les 220 autres fournisseurs déclarent une méthode —
+le panneau restait **muet**, la note de repli vivant à l'intérieur de la boucle.
+
+`app.tsx` : cinq handlers (`createProvider`, `saveConnection`, `setDiscover`, `addModel`,
+`excludeModel`) écrits par `saveConfig` vers `/global/config`, plus `providerEntry`/`connectionFor`/
+`excludedFor`/`modelsFor` et la grille fusionnée.
+
+### Preuve
+
+```
+vitest run -> 16 fichiers, 263 tests, exit 0   (9 tests d'écriture + 12 tests d'écran ajoutés ici)
+tsgo --noEmit -> exit 0
+```
+
+L'espion de `fetch` posé dans le navigateur **prouve** que l'interception fonctionne : les appels
+réels de la page ont été relevés (`GET /pty/shells`, `GET /global/config`, `GET /config/providers`,
+`GET /agent?directory=tester`, `GET /provider/auth?directory=tester`) et `/global/config` est bien
+refusée quand l'espion la coupe.
+
+### Ce qui n'est **pas** prouvé
+
+Le parcours de clic complet n'a pas été observé : l'attachement CDP a expiré quatre fois, dont sur un
+onglet neuf, après que les trois ports et la liste des onglets eurent répondu. Les sondes précédentes
+regardaient par ailleurs **le détail** d'un fournisseur — ce qui explique un `tiles: 0` et l'absence
+du bouton de recherche, et rien d'autre.
+
+Surtout : je n'ai **pas** écrit dans la configuration de l'utilisateur pour prouver l'aller-retour. Un
+fournisseur d'essai serait resté dans son fichier, et l'API ne sait pas le retirer. La preuve d'une
+écriture réelle demande son accord.

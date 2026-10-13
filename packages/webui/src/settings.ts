@@ -493,6 +493,32 @@ export function toggleModel(current: string[] | undefined, modelID: string, disa
 }
 
 /**
+ * Les fournisseurs **déclarés dans la configuration**, rendus comme les autres.
+ *
+ * Sans cette fusion, un fournisseur qu'on vient de créer par l'écran **disparaîtrait aussitôt** : la
+ * grille se construit sur `/config/providers`, que le serveur bâtit à partir des fournisseurs qu'il a
+ * **chargés** — et il ne recharge pas parce qu'un fichier a changé. L'écran dirait donc « créé », puis
+ * ne montrerait rien : le pire des deux mensonges, parce qu'il décourage de recommencer.
+ *
+ * Le compte des modèles vient de la configuration déclarée (`models` de l'entrée), pas de la
+ * découverte : c'est ce que l'écrivain vient d'écrire, donc ce qu'il doit relire.
+ */
+export function mergeDeclared(rows: ProviderSummary[], config: unknown): ProviderSummary[] {
+  const providers = (config as { provider?: unknown } | undefined)?.provider
+  if (!providers || typeof providers !== "object") return rows
+  const known = new Set(rows.map((row) => row.id))
+  const declared: ProviderSummary[] = []
+  for (const [id, raw] of Object.entries(providers as Record<string, unknown>)) {
+    if (known.has(id)) continue
+    const models = raw && typeof raw === "object" ? (raw as { models?: unknown }).models : undefined
+    const count = models && typeof models === "object" ? Object.keys(models as object).length : 0
+    declared.push({ id, name: id, models: count, ready: false })
+  }
+  declared.sort((left, right) => left.id.localeCompare(right.id))
+  return [...rows, ...declared]
+}
+
+/**
  * Le général — l'identité, l'environnement, et **les défauts**.
  *
  * `model`, `small_model` et `default_agent` viennent de l'ancienne section « models ». Le premier

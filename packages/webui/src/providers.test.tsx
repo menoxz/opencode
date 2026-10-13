@@ -184,6 +184,14 @@ describe("le détail d'un fournisseur", () => {
       defaultModelChoices: MODELS,
       onDefaultModel: () => {},
       onBack: () => {},
+      connection: {},
+      onConnection: () => {},
+      onConnectionSave: () => {},
+      discover: false,
+      onDiscover: () => {},
+      excluded: [],
+      onAddModel: () => {},
+      onExclude: () => {},
       ...over,
     } as Parameters<typeof ProviderDetail>[0])
 
@@ -192,10 +200,11 @@ describe("le détail d'un fournisseur", () => {
     const { container, dispose } = mount(detail)
     const names = [...container.querySelectorAll(".prov-model-name")].map((node) => node.textContent)
     expect(names).toEqual(["Kimi K2", "DeepSeek V4.1 Flash"])
-    // Les deux panneaux portent le même titre de classe : on vise **le panneau des modèles**, celui
-    // qui compte ce qu'il montre — pas celui du fournisseur, qui vient avant.
-    const panes = [...container.querySelectorAll(".prov-pane")]
-    expect(panes[1].querySelector(".prov-pane-title")?.textContent).toContain("2 models")
+    // Trois panneaux portent la même classe de titre : on vise **celui des modèles**, en le
+    // reconnaissant à sa barre de recherche — un rang se casserait au prochain panneau ajouté,
+    // et c'est exactement ce qui vient d'arriver en ajoutant `Connection`.
+    const models = container.querySelector(".prov-models-head")?.closest(".prov-pane")
+    expect(models?.querySelector(".prov-pane-title")?.textContent).toContain("2 models")
     dispose()
   })
 
@@ -237,6 +246,14 @@ describe("la section", () => {
       defaultModel: "",
       defaultModelChoices: MODELS,
       onDefaultModel: () => {},
+      connection: {},
+      onConnection: () => {},
+      onConnectionSave: () => {},
+      discover: false,
+      onDiscover: () => {},
+      excluded: [],
+      onAddModel: () => {},
+      onExclude: () => {},
       ...over,
     } as Parameters<typeof ProvidersSection>[0])
 
@@ -281,6 +298,14 @@ describe("la section", () => {
         defaultModel=""
         defaultModelChoices={[]}
         onDefaultModel={() => {}}
+        connection={{}}
+        onConnection={() => {}}
+        onConnectionSave={() => {}}
+        discover={false}
+        onDiscover={() => {}}
+        excluded={[]}
+        onAddModel={() => {}}
+        onExclude={() => {}}
       />
     ))
     expect(container.querySelector(".prov-back-name")?.textContent).toBe("Zebra")

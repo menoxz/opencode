@@ -1,4 +1,4 @@
-import { createEffect, createSignal, For, Show, onCleanup, onMount } from "solid-js"
+import { createEffect, createMemo, createSignal, For, Show, onCleanup, onMount } from "solid-js"
 import {
   buildFilePart,
   filePartLabel,
@@ -63,6 +63,13 @@ import {
   type ProviderAuth,
   type SettingSpec,
   type SettingsSectionKey,
+  blacklistPatch,
+  discoverPatch,
+  mergeDeclared,
+  modelPatch,
+  providerId,
+  providerPatch,
+  toggleModel,
 } from "./settings"
 import {
   agentCounts,
@@ -189,6 +196,15 @@ export default function App() {
   const [agentQuery, setAgentQuery] = createSignal("")
   /** Un seul fournisseur ouvert à la fois : huit formulaires concurrents, c'est huit décisions. */
   const [providerSelected, setProviderSelected] = createSignal<string | undefined>()
+  /**
+   * Déclarer un fournisseur que le catalogue ignore — un serveur maison, un revendeur.
+   *
+   * Replié au repos, parce que c'est **rare** : l'immense majorité des ajouts consiste à écrire une
+   * clé sur un fournisseur qui existe déjà. Un formulaire ouvert en permanence occuperait la place
+   * d'un geste qui se fait une fois.
+   */
+  const [providerNewOpen, setProviderNewOpen] = createSignal(false)
+  const [providerDraft, setProviderDraft] = createSignal<Record<string, string>>({})
 
   // Plugins : les seuls accès hors session. Lus au montage — 708 octets, donc sans coût.
   const [plugins, setPlugins] = createSignal<PluginList | undefined>()
@@ -402,11 +418,17 @@ export default function App() {
       // `/provider/auth` ne les porte pas. On lit donc `/config/providers` (531 ko, 49 ms) — le même
       // appel que `General` — et on projette aussitôt, parce que la charge porte les clés en clair.
       const need = providerRows().length === 0
-      const [authResult, providersResult] = await Promise.all([
+      const [authResult, providersResult, configResult] = await Promise.all([
         client.provider.auth(scope()).catch(() => undefined),
         need ? client.config.providers().catch(() => undefined) : Promise.resolve(undefined),
+        // La config est lue **ici aussi** : c'est elle qui porte `provider.<id>` — l'adresse, le
+        // paquet npm, `discover`, la liste d'exclusions et les modèles écrits à la main. Sans elle,
+        // le détail ne saurait ni ce qui est déjà réglé, ni quoi réécrire.
+        client.global.config.get().catch(() => undefined),
       ])
       setProviderAuth((authResult as { data?: ProviderAuth } | undefined)?.data)
+      const configData = (configResult as { data?: Record<string, unknown> } | undefined)?.data
+      if (configData) setConfig(configData)
       const payload = (providersResult as { data?: unknown } | undefined)?.data
       if (payload) {
         // **Projection immédiate** : rien de ce qui suit ne garde la charge. `ready` est un booléen,
@@ -574,7 +596,7 @@ export default function App() {
    *      configure l'outil, pas un dépôt — c'est `/global/config` qui convient, et il ne dépose
    *      rien dans l'arbre de travail.
    */
-  const saveConfig = async (patch: Record<string, unknown>, label: string) => {
+  const saveConfig = async (patch: Record<string, unknown>, label: string, reload: SettingsSectionKey = "general") => {
     setSettingsBusy(label)
     setSettingsError(undefined)
     setSettingsNotice(undefined)
@@ -588,7 +610,7 @@ export default function App() {
     if (result) {
       // Le rechargement **avant** la notice : `loadSettings` commence par effacer les messages, donc
       // poser la notice d'abord la faisait disparaître aussitôt — un succès qui ne se voyait jamais.
-      await loadSettings("general")
+      await loadSettings(reload)
       setSettingsNotice(`${label} saved`)
     }
   }
@@ -619,6 +641,124 @@ export default function App() {
       setSettingsNotice(`${providerID} saved`)
       setProviderValues({})
     }
+  }
+
+  /**
+   * L'entrée de configuration d'un fournisseur, telle que le **fichier** la porte.
+   *
+   * C'est la seule source pour ce qui n'est pas un identifiant : `baseURL`, `npm`, `discover`,
+   * `blacklist`. La clé, elle, n'est jamais lue — `/config/providers` la rend en clair, et rien ici
+   * n'en retient la valeur.
+   */
+  const providerEntry = (id: string): Record<string, unknown> => {
+    const providers = config()?.provider
+    if (!providers || typeof providers !== "object") return {}
+    const entry = (providers as Record<string, unknown>)[id]
+    return entry && typeof entry === "object" ? (entry as Record<string, unknown>) : {}
+  }
+
+  /**
+   * La grille : ce que le serveur a **chargé**, plus ce que la configuration **déclare**.
+   *
+   * Sans cette fusion, un fournisseur qu'on vient de créer disparaîtrait de l'écran aussitôt : la
+   * liste du serveur ne bouge pas parce qu'un fichier a changé. L'écran dirait « créé » puis ne
+   * montrerait rien — le pire des deux mensonges.
+   */
+  const providerGrid = createMemo(() => mergeDeclared(providerRows(), config()))
+
+  /** La connexion affichée : ce que le fichier porte, recouvert par ce qui est en cours de saisie. */
+  const connectionFor = (id: string): Record<string, string> => {
+    const entry = providerEntry(id)
+    const options =
+      entry.options && typeof entry.options === "object" ? (entry.options as Record<string, unknown>) : {}
+    const fromFile: Record<string, string> = {}
+    if (typeof options.baseURL === "string") fromFile.baseURL = options.baseURL
+    if (typeof entry.npm === "string") fromFile.npm = entry.npm
+    return { ...fromFile, ...providerValuesFor(id) }
+  }
+
+  /** Les modèles exclus — le seul levier d'exclusion du serveur, et il remplace la liste entière. */
+  const excludedFor = (id: string): string[] => {
+    const list = providerEntry(id).blacklist
+    return Array.isArray(list) ? list.filter((entry): entry is string => typeof entry === "string") : []
+  }
+
+  /**
+   * Les modèles affichés : ceux du serveur, plus ceux **écrits à la main**.
+   *
+   * Un modèle déclaré dans `provider.<id>.models` n'apparaît pas dans `/config/providers` tant que le
+   * serveur n'a pas rechargé ses fournisseurs : sans cette fusion, « add model » semblerait n'avoir
+   * rien fait — et on le referait.
+   */
+  const modelsFor = (id: string): Choice[] => {
+    const fromServer = providerModels()[id] ?? []
+    const declared = providerEntry(id).models
+    if (!declared || typeof declared !== "object") return fromServer
+    const known = new Set(fromServer.map((entry) => entry.value))
+    const extra: Choice[] = []
+    for (const [modelID, raw] of Object.entries(declared as Record<string, unknown>)) {
+      if (known.has(modelID)) continue
+      const name = raw && typeof raw === "object" ? (raw as { name?: unknown }).name : undefined
+      extra.push({ value: modelID, label: typeof name === "string" && name.trim() ? name.trim() : modelID })
+    }
+    return [...fromServer, ...extra]
+  }
+
+  /**
+   * Déclarer un fournisseur que le catalogue ignore : `provider.<id>` dans `/global/config`.
+   *
+   * L'ajout est **sans retour** par l'API — il n'existe ni `PUT` ni `DELETE` sur `/config` ni sur
+   * `/global/config`, seulement un `PATCH` qui fusionne. C'est écrit à l'écran, à côté du bouton :
+   * un geste qu'on ne peut pas défaire se dit avant le clic, pas après.
+   */
+  const createProvider = async () => {
+    const draft = providerDraft()
+    const patch = providerPatch(draft.id ?? "", { npm: draft.npm, baseURL: draft.baseURL })
+    if (!patch) {
+      setSettingsError("a provider needs an id, and something to speak with")
+      return
+    }
+    const id = providerId(draft.id ?? "")
+    await saveConfig(patch, `provider ${id}`, "providers")
+    setProviderNewOpen(false)
+    setProviderDraft({})
+    setProviderSelected(id)
+  }
+
+  /** L'adresse : `provider.<id>.options.baseURL` — le **second** magasin, distinct de la clé. */
+  const saveConnection = async (id: string) => {
+    const values = providerValuesFor(id)
+    const patch = providerPatch(id, { baseURL: values.baseURL, npm: values.npm })
+    if (!patch) {
+      setSettingsError("empty field — nothing was written")
+      return
+    }
+    await saveConfig(patch, `${id} connection`, "providers")
+  }
+
+  /** La découverte : le serveur ira lire `GET {baseURL}/models` lui-même, au prochain chargement. */
+  const setDiscover = async (id: string, on: boolean) => {
+    const patch = discoverPatch(id, on)
+    if (patch) await saveConfig(patch, `${id} discovery`, "providers")
+  }
+
+  /** Un modèle à la main — précisément ce que la découverte ne sait pas décrire. */
+  const addModel = async (id: string, modelID: string) => {
+    const patch = modelPatch(id, modelID)
+    if (patch) await saveConfig(patch, `${id} model`, "providers")
+  }
+
+  /**
+   * Exclure un modèle — ou le remettre.
+   *
+   * Ce n'est pas un état du modèle : `ModelStatus` vaut `alpha|beta|deprecated|active` et il n'existe
+   * pas de « désactivé ». Le levier du serveur est la liste `blacklist`, et un tableau est **remplacé**
+   * par la fusion de configuration : on écrit donc la liste entière, recalculée depuis celle qu'on vient
+   * de lire.
+   */
+  const excludeModel = async (id: string, modelID: string, excluded: boolean) => {
+    const patch = blacklistPatch(id, toggleModel(excludedFor(id), modelID, excluded))
+    if (patch) await saveConfig(patch, `${id} models`, "providers")
   }
 
   /** Ajouter un plugin : `POST /plugin`, corps `{ spec }`. */
@@ -1266,11 +1406,19 @@ export default function App() {
               fallback={<p class="set-note">loading providers…</p>}
             >
               <ProvidersSection
-                providers={providerRows()}
+                providers={providerGrid()}
                 catalog={providerCatalog()}
                 query={providerQuery()}
                 onQuery={searchProviders}
                 catalogPending={catalogPending()}
+                addOpen={providerNewOpen()}
+                draft={providerDraft()}
+                onDraft={(key, value) => setProviderDraft((current) => ({ ...current, [key]: value }))}
+                onCreate={() => void createProvider()}
+                onCancelAdd={() => {
+                  setProviderNewOpen((open) => !open)
+                  setProviderDraft({})
+                }}
                 selected={providerSelected()}
                 onSelect={setProviderSelected}
                 methods={authMethods(providerAuth(), providerSelected() ?? "")}
@@ -1280,7 +1428,17 @@ export default function App() {
                   setProviderValues((current) => ({ ...current, [scopeKey(providerSelected() ?? "", key)]: value }))
                 }
                 onSubmit={(method) => void saveProvider(providerSelected() ?? "", method)}
-                models={providerModels()[providerSelected() ?? ""] ?? []}
+                connection={connectionFor(providerSelected() ?? "")}
+                onConnection={(key, value) =>
+                  setProviderValues((current) => ({ ...current, [scopeKey(providerSelected() ?? "", key)]: value }))
+                }
+                onConnectionSave={() => void saveConnection(providerSelected() ?? "")}
+                discover={providerEntry(providerSelected() ?? "").discover === true}
+                onDiscover={(on) => void setDiscover(providerSelected() ?? "", on)}
+                excluded={excludedFor(providerSelected() ?? "")}
+                models={modelsFor(providerSelected() ?? "")}
+                onAddModel={(modelID) => void addModel(providerSelected() ?? "", modelID)}
+                onExclude={(modelID, excluded) => void excludeModel(providerSelected() ?? "", modelID, excluded)}
                 defaultModel={modelSpec() ? specDraft(modelSpec() as SettingSpec) : ""}
                 defaultModelChoices={modelOptions()}
                 onDefaultModel={(value) => {
