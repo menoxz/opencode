@@ -7,7 +7,10 @@
  *   /agent   → 34 agents, chacun { name, description, mode: "primary"|"subagent"|"all", hidden,
  *                native, permission, color }
  *   /mcp     → 7 serveurs { name: { status: "connected"|"disabled"|"failed" } }
- *   /provider → 228 fournisseurs, 8 775 modèles au total
+ *
+ * Ce que ce module **ne** lit pas, et pourquoi : `GET /provider` rend **6,7 Mo** (228 fournisseurs,
+ * 8 775 modèles) pour deux nombres qui ne changent aucune décision. La section « catalogue » a été
+ * retirée, et l'appel avec — c'est lui qui gelait l'ouverture de la feuille.
  *
  * Deux règles tenues ici :
  *
@@ -27,7 +30,6 @@ export type Agent = {
 }
 
 export type McpState = { status?: string; error?: string }
-export type Provider = { id?: string; name?: string; models?: Record<string, unknown> }
 
 export type AgentRow = { name: string; description?: string; mode: string }
 export type McpProblem = { name: string; status: string; error?: string }
@@ -99,15 +101,6 @@ export function modelLabel(value: unknown): string {
     if (object.id) return object.id
   }
   return "défaut du serveur"
-}
-
-/** Nombre de fournisseurs et de modèles — l'échelle réelle du catalogue. */
-export function catalogSize(providers: Provider[]): { providers: number; models: number } {
-  let models = 0
-  for (const provider of providers) {
-    models += provider.models ? Object.keys(provider.models).length : 0
-  }
-  return { providers: providers.length, models }
 }
 
 /**

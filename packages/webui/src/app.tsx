@@ -32,13 +32,11 @@ import {
 import {
   agentCounts,
   agentRows,
-  catalogSize,
   generalLines,
   mcpConnectedCount,
   mcpProblems,
   type Agent,
   type McpState,
-  type Provider,
 } from "./config"
 import { parseInjections } from "./injections"
 import { groupByDirectory, sessionDetails, type SessionSummary } from "./sessions"
@@ -101,7 +99,6 @@ export default function App() {
   }>({})
   const [agents, setAgents] = createSignal<Agent[]>([])
   const [mcp, setMcp] = createSignal<Record<string, McpState>>({})
-  const [providers, setProviders] = createSignal<Provider[]>([])
 
   const [authOpen, setAuthOpen] = createSignal(false)
   const [authUser, setAuthUser] = createSignal(credentials?.username ?? "")
@@ -203,15 +200,17 @@ export default function App() {
   }
 
   /**
-   * Configuration : quatre appels, tous facultatifs. Un serveur qui n'expose pas l'un d'eux ne
-   * casse pas la feuille — la section correspondante reste simplement vide, ce qui est exact.
+   * Configuration : trois appels, tous facultatifs. Un serveur qui n'expose pas l'un d'eux ne
+   * casse pas la feuille — la section correspondante reste vide, ce qui est exact.
+   *
+   * `GET /provider` n'est **pas** appelé : il rend 6,7 Mo (228 fournisseurs, 8 775 modèles) pour
+   * deux nombres qui ne changent aucune décision. Mesuré : c'est lui qui gelait l'ouverture.
    */
   const loadConfig = async () => {
-    const [configResult, agentResult, mcpResult, providerResult] = await Promise.all([
+    const [configResult, agentResult, mcpResult] = await Promise.all([
       client.config.get(scope()).catch(() => undefined),
       client.app.agents(scope()).catch(() => undefined),
       client.mcp.status(scope()).catch(() => undefined),
-      client.provider.list(scope()).catch(() => undefined),
     ])
     const configData = (configResult as { data?: Record<string, unknown> } | undefined)?.data
     if (configData) setConfig(configData)
@@ -219,8 +218,6 @@ export default function App() {
     if (Array.isArray(agentData)) setAgents(agentData)
     const mcpData = (mcpResult as { data?: Record<string, McpState> } | undefined)?.data
     if (mcpData) setMcp(mcpData)
-    const providerData = (providerResult as { data?: { all?: Provider[] } } | undefined)?.data
-    if (Array.isArray(providerData?.all)) setProviders(providerData.all)
   }
 
   const openConfig = () => {
@@ -773,7 +770,6 @@ export default function App() {
           mcpTotal={Object.keys(mcp()).length}
           mcpConnected={mcpConnectedCount(mcp())}
           mcpProblems={mcpProblems(mcp())}
-          catalog={catalogSize(providers())}
           onClose={() => setConfigOpen(false)}
         />
       </Show>

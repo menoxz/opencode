@@ -264,7 +264,6 @@ export function ConfigSheet(props: {
   mcpTotal: number
   mcpConnected: number
   mcpProblems: McpProblem[]
-  catalog: { providers: number; models: number }
   onClose: () => void
 }) {
   return (
@@ -337,13 +336,6 @@ export function ConfigSheet(props: {
                 </For>
               </ul>
             </Show>
-          </section>
-
-          <section class="sheet-section">
-            <h2>catalogue</h2>
-            <p class="sheet-note">
-              {props.catalog.providers} fournisseurs · {props.catalog.models} modèles
-            </p>
           </section>
         </div>
       </aside>

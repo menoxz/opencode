@@ -2,7 +2,6 @@ import { describe, expect, test } from "vitest"
 import {
   agentCounts,
   agentRows,
-  catalogSize,
   generalLines,
   mcpConnectedCount,
   mcpProblems,
@@ -98,21 +97,6 @@ describe("modèle", () => {
     expect(modelLabel(undefined)).toBe("défaut du serveur")
     expect(modelLabel(null)).toBe("défaut du serveur")
     expect(modelLabel(42)).toBe("défaut du serveur")
-  })
-})
-
-describe("catalogue", () => {
-  test("les modèles sont comptés dans tous les fournisseurs", () => {
-    const size = catalogSize([
-      { id: "a", models: { m1: {}, m2: {} } },
-      { id: "b", models: { m3: {} } },
-      { id: "c" },
-    ])
-    expect(size).toEqual({ providers: 3, models: 3 })
-  })
-
-  test("un catalogue vide ne divise pas par zéro", () => {
-    expect(catalogSize([])).toEqual({ providers: 0, models: 0 })
   })
 })
 
