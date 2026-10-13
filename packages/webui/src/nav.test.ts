@@ -4,6 +4,7 @@ import {
   commandGroups,
   commandLabel,
   filterEntries,
+  inertReason,
   pluginEntries,
   pluginLabel,
   sourceLabel,
@@ -123,5 +124,16 @@ describe("filtre", () => {
   test("une recherche vide ne filtre rien", () => {
     const entries = commandEntries(COMMANDS)
     expect(filterEntries(entries, "   ")).toHaveLength(4)
+  })
+})
+
+describe("raison de l'inertie", () => {
+  test("sans session, l'entrée dit pourquoi elle ne répond pas", () => {
+    // La cible affirme « inerte et le dit » : une entrée grisée muette ferait croire à une panne.
+    expect(inertReason(false)).toBe("ouvrez une session pour exécuter")
+  })
+
+  test("avec une session, aucune raison : l'entrée agit", () => {
+    expect(inertReason(true)).toBeUndefined()
   })
 })

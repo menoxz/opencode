@@ -41,7 +41,7 @@ import {
   type McpState,
 } from "./config"
 import { parseInjections } from "./injections"
-import { commandGroups, pluginEntries, type Command, type PluginList } from "./nav"
+import { commandGroups, inertReason, pluginEntries, type Command, type PluginList } from "./nav"
 import { groupByDirectory, sessionDetails, type SessionSummary } from "./sessions"
 import { subscribeEvents, type EventStreamState } from "./events"
 import { sessionTimestamp } from "./time"
@@ -575,6 +575,7 @@ export default function App() {
                         hint={entry.hint}
                         kind={entry.kind}
                         disabled={!active()}
+                        disabledReason={inertReason(Boolean(active()))}
                         onRun={() => void runCommand(entry.run ?? "")}
                       />
                     )}

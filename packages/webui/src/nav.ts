@@ -134,3 +134,14 @@ export function filterEntries(entries: NavEntry[], query: string): NavEntry[] {
     (entry) => entry.label.toLowerCase().includes(needle) || entry.hint.toLowerCase().includes(needle),
   )
 }
+
+/**
+ * Pourquoi une entrée de commande ne peut pas s'exécuter — `undefined` quand elle le peut.
+ *
+ * Une entrée grisée **muette** laisse deviner : on croit à une panne ou à un droit manquant, alors
+ * qu'il manque seulement une session. La cible dit « inerte et le dit » ; ce module porte la phrase,
+ * le composant ne fait que l'afficher.
+ */
+export function inertReason(hasSession: boolean): string | undefined {
+  return hasSession ? undefined : "ouvrez une session pour exécuter"
+}

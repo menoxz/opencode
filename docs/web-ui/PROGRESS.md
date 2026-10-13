@@ -1183,7 +1183,7 @@ du détail.
 
 Corrigé : les deux occupent leur place **en permanence** et se révèlent par l'`opacity`.
 
-### Trois défauts trouvés par la mesure, corrigés
+### Quatre écarts trouvés par la mesure, corrigés
 
 1. **La section menus restait vide, sans erreur.** `/command` et `/plugin` étaient absents de
    `API_PREFIXES` (`vite.config.ts`) : Vite servait `index.html` avec un **status 200**, le SDK
@@ -1200,6 +1200,13 @@ Corrigé : les deux occupent leur place **en permanence** et se révèlent par l
    en interne (`overflow-y`), son en-tête restant `sticky`. Mesure après correction, deux groupes
    ouverts : nav **405 px** pour un contenu de 618 px (donc elle défile), workspaces **405 px**,
    liste **351 px**, 210 entrées et 19 sessions toujours rendues.
+4. **Une entrée grisée était muette, alors que la cible promettait qu'elle « le dit ».** Écart entre
+   le document et le code, trouvé en mesurant l'infobulle : elle ne portait que la description de la
+   commande. Or une entrée grisée sans explication fait croire à une panne ou à un droit manquant,
+   alors qu'il manque seulement une session. Corrigé : `inertReason()` (pure, testée) porte la
+   phrase, `NavItem` l'ajoute à l'infobulle quand l'entrée est désactivée. Mesure : sans session,
+   12 commandes sur 12 désactivées et l'infobulle dit « … — ouvrez une session pour exécuter » ;
+   avec une session, `désactivées: 0` et l'infobulle redevient la description seule.
 
 ### Preuve
 

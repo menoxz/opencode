@@ -72,13 +72,15 @@ export function NavItem(props: {
   hint: string
   kind: "command" | "plugin"
   disabled?: boolean
+  /** Pourquoi elle ne répond pas. Affiché dans l'infobulle : une entrée grisée muette fait croire à une panne. */
+  disabledReason?: string
   onRun?: () => void
 }) {
   return (
     <button
       class="nav-item"
       classList={{ disabled: Boolean(props.disabled) }}
-      title={props.hint}
+      title={props.disabled && props.disabledReason ? `${props.hint} — ${props.disabledReason}` : props.hint}
       disabled={props.disabled}
       onClick={() => props.onRun?.()}
     >
