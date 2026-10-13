@@ -66,3 +66,71 @@ Constaté dans `packages/webui/src/app.tsx`, `components.tsx` et `styles.css` (�
 | Panneau d'authentification | aucune | garder, mais hors écran (s'ouvre à la demande) |
 
 Après soustraction, il reste exactement : `SessionRow` (sans pastille), `ChatMessage`, `ToolCall`, `PermissionPanel`, la saisie et les pièces jointes.
+
+---
+
+## 9. Détail des zones (livré 2026-10-13)
+
+Six zones traitées, chacune à partir de **données relevées sur le serveur** — jamais d'une supposition.
+
+### 1. Le prompt de l'utilisateur
+
+C'est le seul texte de l'écran qu'il a écrit lui-même : il se reconnaît au premier regard. Surface à lui,
+dans la largeur de lecture, texte conservé tel quel — un prompt est souvent structuré, et le reformater
+efface sa mise en forme. L'agent, lui, reste en texte nu : la dissymétrie dit qui a parlé.
+
+### 2. Les injections de contexte
+
+Le serveur joint au message une partie `synthetic` qui décrit ce qui a été injecté. **Deux formes
+coexistent**, toutes deux relevées :
+
+```
+Context injections · 3 section(s)          Instruction injections · 2 source(s)
+- core: system prompt (PROMPT_CORE) · …    Instructions from: …\opencodev2\AGENTS.md
+- env: environment · 391 chars              Instructions from: …\packages\opencode\AGENTS.md
+- instructions: instruction files · …
+```
+
+La seconde s'affichait **comme si l'utilisateur l'avait écrite** : corrigé. Les deux sont lues comme une
+structure — une ligne par section, son volume, sa part du total, la troncature signalée — et repliées par
+défaut. C'est la seule surface qui répond à « qu'est-ce qui consomme ma fenêtre ? ».
+
+### 3. Les actions de l'agent
+
+Une **icône par famille**, pas par outil : `read`/`list`/`glob` font la même chose du point de vue de qui
+lit. Familles : lecture, écriture, commande, recherche, sous-agent, question, plan, tâches, compétence,
+web, objectif — et une générique pour l'inconnu, jamais un carré vide. Dessinées en primitives SVG : un
+glyphe Unicode dépend de la police du système, une primitive non. Une ligne, pas une carte ; le détail
+s'ouvre sur place.
+
+### 4. Le rail : sessions par dossier
+
+Le regroupement n'est pas décoratif : sur 19 sessions, **16 sous `packages/opencode`, 3 à la racine**. Le
+libellé est le chemin **relatif**, l'absolu reste en infobulle. Un dossier se replie (ouvert par défaut :
+on replie pour dégager, on ne déplie pas pour découvrir).
+
+### 5. La ligne de session : plus ou moins d'informations
+
+Chaque ligne s'ouvre sur son détail, lu depuis les champs réels de la session : `agent`, `model`, `tokens`
+(entrée / sortie / cache), `cost`, `summary` (fichiers changés). « aucun changement » plutôt que
+« +0 −0 · 0 fichier », qui se lit comme un résultat.
+
+### 6. La configuration
+
+Une **feuille posée sur la conversation**, ouverte à la demande depuis le rail, refermée par Échap, le
+bouton ou le voile. Trois sections : général (modèle, petit modèle, utilisateur), agents (34 sur ce
+serveur, les `hidden` écartés), serveurs MCP — dont seuls les **non-connectés** sont nommés.
+
+Deux décisions :
+
+- **Elle consulte, elle n'édite pas.** Aucun point d'écriture n'a été relevé côté serveur : un
+  interrupteur inerte serait un mensonge.
+- **Pas de catalogue.** `GET /provider` rend **6,7 Mo** (228 fournisseurs, 8 775 modèles) pour deux
+  nombres qui ne changent aucune décision. Mesuré : c'est lui qui gelait l'ouverture. Section et appel
+  retirés.
+
+### Ce que ça change dans la cible
+
+Le §2 disait cinq zones. Il y en a **quatre permanentes plus un bandeau conditionnel**, et la
+configuration s'ajoute en feuille — pas en sixième zone. Un panneau qui ne sert pas tous les jours n'a
+pas à occuper l'écran tous les jours.
