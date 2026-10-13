@@ -9,7 +9,7 @@ import {
   type ToolState,
 } from "./view-model"
 import { formatChars, injectionLabel, share, sourceLabel, type Injections } from "./injections"
-import { mcpTone, type AgentRow, type McpProblem } from "./config"
+import { agentSummary, mcpTone, type AgentRow, type McpProblem } from "./config"
 import { ToolIcon, toolHint } from "./icons"
 import { relativeTime } from "./time"
 
@@ -293,10 +293,7 @@ export function ConfigSheet(props: {
 
           <section class="sheet-section">
             <h2>agents</h2>
-            <p class="sheet-note">
-              {props.counts.primary} principal{props.counts.primary > 1 ? "aux" : ""} · {props.counts.subagent}{" "}
-              sous-agent{props.counts.subagent > 1 ? "s" : ""}
-            </p>
+            <p class="sheet-note">{agentSummary(props.counts)}</p>
             <ul class="sheet-agents">
               <For each={props.agents}>
                 {(agent) => (
@@ -305,7 +302,7 @@ export function ConfigSheet(props: {
                     <span class="sa-mode">{agent.mode}</span>
                     <Show when={agent.description}>
                       {(description) => (
-                        <span class="sa-desc" title={description()}>
+                        <span class="sa-desc" title={agent.full ?? description()}>
                           {description()}
                         </span>
                       )}

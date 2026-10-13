@@ -2,11 +2,13 @@ import { describe, expect, test } from "vitest"
 import {
   agentCounts,
   agentRows,
+  agentSummary,
   generalLines,
   mcpConnectedCount,
   mcpProblems,
   mcpTone,
   modelLabel,
+  truncate,
   type Agent,
 } from "./config"
 
@@ -121,7 +123,46 @@ describe("lignes générales", () => {
     expect(generalLines({ model: "x", instructions: ["a.md"] })[1]?.value).toBe("1 source")
   })
 
+  test("zéro source ne produit pas de ligne « 0 source »", () => {
+    // Vu à l'écran : `/config` renvoie `instructions: []`, et la ligne annonçait « 0 source » —
+    // un indicateur qui ne dit rien, exactement ce que cette refonte retire.
+    expect(generalLines({ model: "x", instructions: [] }).map((line) => line.label)).toEqual(["modèle"])
+  })
+
   test("une chaîne vide n'est pas une valeur", () => {
     expect(generalLines({ model: "x", username: "" }).map((line) => line.label)).toEqual(["modèle"])
+  })
+})
+
+describe("pluriels et troncature", () => {
+  test("« principal » fait « principaux », jamais « principalaux »", () => {
+    // Faute relevée à l'écran : le composant collait « aux » au singulier.
+    expect(agentSummary({ primary: 6, subagent: 22 })).toBe("6 principaux · 22 sous-agents")
+  })
+
+  test("les singuliers sont corrects", () => {
+    expect(agentSummary({ primary: 1, subagent: 1 })).toBe("1 principal · 1 sous-agent")
+    expect(agentSummary({ primary: 0, subagent: 0 })).toBe("0 principal · 0 sous-agent")
+  })
+
+  test("une description courte est rendue telle quelle", () => {
+    expect(truncate("Default development agent.")).toBe("Default development agent.")
+  })
+
+  test("une description-prompt est coupée sur un mot, pas au milieu", () => {
+    const prompt =
+      "You are a general-purpose personal assistant working for one person at a time. You get real things done."
+    const short = truncate(prompt)
+    expect(short.endsWith("…")).toBe(true)
+    expect(short.length).toBeLessThanOrEqual(91)
+    expect(prompt.startsWith(short.slice(0, -1).trimEnd())).toBe(true)
+    // La coupure tombe sur une frontière de mot : pas de mot tranché en deux.
+    expect(short.slice(0, -1).trimEnd().split(" ").pop()).toBe(
+      prompt.split(" ")[short.slice(0, -1).trimEnd().split(" ").length - 1],
+    )
+  })
+
+  test("les espaces multiples sont normalisés avant de compter", () => {
+    expect(truncate("a   b\n\nc")).toBe("a b c")
   })
 })

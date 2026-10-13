@@ -31,8 +31,34 @@ export type Agent = {
 
 export type McpState = { status?: string; error?: string }
 
-export type AgentRow = { name: string; description?: string; mode: string }
+export type AgentRow = {
+  name: string
+  /** Description déjà tronquée — c'est elle qui s'affiche. */
+  description?: string
+  /** Description d'origine, pour l'infobulle. */
+  full?: string
+  mode: string
+}
 export type McpProblem = { name: string; status: string; error?: string }
+
+/**
+ * Pluriel français : « principal » → « principaux », pas « principalaux ». Vu à l'écran lors de la
+ * vérification — la faute était dans le composant, qui collait « aux » au singulier.
+ */
+export function agentSummary(counts: { primary: number; subagent: number }): string {
+  const primary = `${counts.primary} ${counts.primary > 1 ? "principaux" : "principal"}`
+  const subagent = `${counts.subagent} ${counts.subagent > 1 ? "sous-agents" : "sous-agent"}`
+  return `${primary} · ${subagent}`
+}
+
+/** Tronque à la première phrase utile. Les descriptions d'agents sont des prompts entiers. */
+export function truncate(text: string, max = 90): string {
+  const clean = text.replace(/\s+/g, " ").trim()
+  if (clean.length <= max) return clean
+  const cut = clean.slice(0, max)
+  const space = cut.lastIndexOf(" ")
+  return `${(space > max * 0.6 ? cut.slice(0, space) : cut).trimEnd()}…`
+}
 
 const MODE_ORDER: Record<string, number> = { primary: 0, all: 1, subagent: 2 }
 
@@ -40,13 +66,19 @@ const MODE_ORDER: Record<string, number> = { primary: 0, all: 1, subagent: 2 }
  * Agents proposables : les `hidden` ne le sont pas — le serveur les marque comme internes
  * (`compaction`, `eval-runner`, `duplicate-pr` le sont sur ce serveur). Les primaires d'abord,
  * puis les mixtes, puis les sous-agents : c'est l'ordre dans lequel on cherche.
+ *
+ * La description est **tronquée ici**, pas seulement par le CSS : sur ce serveur, certaines
+ * descriptions sont des prompts complets (« You are a general-purpose personal assistant… »), et
+ * les laisser entières dans le DOM pour les masquer à l'œil, c'est payer le poids sans le lire.
+ * Le texte complet reste dans `full`, pour l'infobulle.
  */
 export function agentRows(agents: Agent[]): AgentRow[] {
   return agents
     .filter((agent) => agent.hidden !== true && Boolean(agent.name))
     .map((agent) => ({
       name: agent.name as string,
-      description: agent.description,
+      description: agent.description ? truncate(agent.description) : undefined,
+      full: agent.description,
       mode: agent.mode ?? "subagent",
     }))
     .sort((left, right) => {
@@ -119,7 +151,7 @@ export function generalLines(config: {
   if (typeof config.username === "string" && config.username) {
     lines.push({ label: "utilisateur", value: config.username })
   }
-  if (Array.isArray(config.instructions)) {
+  if (Array.isArray(config.instructions) && config.instructions.length > 0) {
     const count = config.instructions.length
     lines.push({ label: "instructions", value: `${count} source${count > 1 ? "s" : ""}` })
   }
