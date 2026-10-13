@@ -8,7 +8,7 @@ import {
   type PermissionRequest,
   type ToolState,
 } from "./view-model"
-import { formatChars, injectionLabel, share, type Injections } from "./injections"
+import { formatChars, injectionLabel, share, sourceLabel, type Injections } from "./injections"
 import { ToolIcon, toolHint } from "./icons"
 import { relativeTime } from "./time"
 
@@ -26,20 +26,69 @@ export const REPLY_LABEL: Record<PermissionReply, string> = {
    composant « par capacité ». Règle de doute : on enlève.
    ============================================================================= */
 
-/** Ligne de session : titre et temps relatif. Aucun ornement d'état. */
+/**
+ * En-tête de dossier : ce qui sépare deux lieux de travail. Le nom affiché est le chemin **relatif**
+ * (`packages/opencode`) ; le chemin absolu reste en infobulle, pour ne pas prendre la ligne.
+ */
+export function DirectoryGroup(props: {
+  label: string
+  hint: string
+  count: number
+  open: boolean
+  onToggle: () => void
+}) {
+  return (
+    <button class="group" title={props.hint} onClick={() => props.onToggle()}>
+      <span class="group-chev">{props.open ? "▾" : "▸"}</span>
+      <span class="group-label">{props.label}</span>
+      <span class="group-count">{props.count}</span>
+    </button>
+  )
+}
+
+/**
+ * Ligne de session : titre et temps au repos ; dépliée, elle dit qui a travaillé, avec quoi, ce que
+ * ça a consommé et ce que ça a changé. C'est la seule surface qui donne ces chiffres, donc elle les
+ * donne à la demande plutôt que de les imposer à la lecture.
+ */
 export function SessionRow(props: {
   title: string
   time: number | undefined
   now: number
   active: boolean
+  open: boolean
+  details: Array<{ label: string; value: string }>
   onSelect: () => void
+  onToggle: () => void
   children?: unknown
 }) {
   return (
     <div class="row" classList={{ active: props.active }} onClick={() => props.onSelect()}>
       <span class="row-title">{props.title}</span>
       <span class="row-time">{relativeTime(props.time, props.now)}</span>
+      <button
+        class="row-more"
+        title={props.open ? "Moins d'informations" : "Plus d'informations"}
+        onClick={(event) => {
+          event.stopPropagation()
+          props.onToggle()
+        }}
+      >
+        {props.open ? "▾" : "▸"}
+      </button>
       {props.children as never}
+      <Show when={props.open}>
+        <dl class="row-detail">
+          <For each={props.details}>
+            {(line) => (
+              <>
+                <dt>{line.label}</dt>
+                <dd>{line.value}</dd>
+              </>
+            )}
+          </For>
+        </dl>
+      </Show>
     </div>
   )
 }
@@ -70,42 +119,68 @@ export function UserPrompt(props: { text: string }) {
  */
 export function ContextInjections(props: { injections: Injections; open: boolean; onToggle: () => void }) {
   const total = () => props.injections.sections.reduce((sum, section) => sum + section.chars, 0)
+  const bySources = () => props.injections.kind === "sources"
+  // Deux formes coexistent côté serveur : des volumes par section, ou la liste des fichiers chargés.
+  // Le titre le dit, plutôt que d'annoncer « sections » sur une liste de chemins.
+  const title = () => (bySources() ? "instructions chargées" : "contexte injecté")
+  const meta = () => {
+    if (bySources()) {
+      const count = props.injections.sources.length
+      return `${count} fichier${count > 1 ? "s" : ""}`
+    }
+    const count = props.injections.sections.length
+    return `${count} section${count > 1 ? "s" : ""} · ${formatChars(total())} car.`
+  }
   return (
     <div class="injections">
       <button class="injections-head" onClick={() => props.onToggle()}>
-        <span class="injections-title">contexte injecté</span>
-        <span class="injections-meta">
-          {props.injections.sections.length} section{props.injections.sections.length > 1 ? "s" : ""} ·{" "}
-          {formatChars(total())} car.
-        </span>
+        <span class="injections-title">{title()}</span>
+        <span class="injections-meta">{meta()}</span>
         <span class="tool-chev">{props.open ? "▾" : "▸"}</span>
       </button>
       <Show when={props.open}>
-        <ul class="injections-list">
-          <For each={props.injections.sections}>
-            {(section) => (
-              <li>
-                <span class="inj-label" title={section.label}>
-                  {injectionLabel(section)}
-                  <Show when={section.detail}>
-                    {(detail) => <span class="inj-detail">{detail()}</span>}
-                  </Show>
-                </span>
-                <span class="inj-bar">
-                  <span style={{ width: `${Math.round(share(section.chars, total()) * 100)}%` }} />
-                </span>
-                <span class="inj-size">
-                  {formatChars(section.chars)}
-                  <Show when={section.truncated}>
-                    <span class="inj-trunc" title="Le serveur a tronqué cette section">
-                      tronqué
+        <Show
+          when={!bySources()}
+          fallback={
+            <ul class="injections-list sources">
+              <For each={props.injections.sources}>
+                {(path) => (
+                  <li>
+                    <span class="inj-path" title={path}>
+                      {sourceLabel(path)}
                     </span>
-                  </Show>
-                </span>
-              </li>
-            )}
-          </For>
-        </ul>
+                  </li>
+                )}
+              </For>
+            </ul>
+          }
+        >
+          <ul class="injections-list">
+            <For each={props.injections.sections}>
+              {(section) => (
+                <li>
+                  <span class="inj-label" title={section.label}>
+                    {injectionLabel(section)}
+                    <Show when={section.detail}>
+                      {(detail) => <span class="inj-detail">{detail()}</span>}
+                    </Show>
+                  </span>
+                  <span class="inj-bar">
+                    <span style={{ width: `${Math.round(share(section.chars, total()) * 100)}%` }} />
+                  </span>
+                  <span class="inj-size">
+                    {formatChars(section.chars)}
+                    <Show when={section.truncated}>
+                      <span class="inj-trunc" title="Le serveur a tronqué cette section">
+                        tronqué
+                      </span>
+                    </Show>
+                  </span>
+                </li>
+              )}
+            </For>
+          </ul>
+        </Show>
       </Show>
     </div>
   )

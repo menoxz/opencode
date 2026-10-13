@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { formatChars, injectionLabel, parseInjections, share } from "./injections"
+import { formatChars, injectionLabel, parseInjections, share, sourceLabel } from "./injections"
 
 /** Relevé tel quel sur `ses_edb48d77affeF6ky1NqRoE3JNH`. */
 const THREE = `Context injections · 3 section(s)
@@ -14,9 +14,15 @@ const FOUR = `Context injections · 4 section(s)
 - instructions: instruction files · 3 source(s) · 27578 chars (truncated)
 - skills: skill summary · 6883 chars`
 
+/** Relevé tel quel sur `ses_edb48d77affeF6ky1NqRoE3JNH`, autre tour : la seconde forme. */
+const SOURCES = `Instruction injections · 2 source(s)
+Instructions from: C:\\Users\\jeanl\\.config\\opencodev2\\AGENTS.md
+Instructions from: C:\\jeanluc\\opencode-fork\\packages\\opencode\\AGENTS.md`
+
 describe("parseInjections", () => {
   test("lit le bloc réel à trois sections", () => {
     const parsed = parseInjections(THREE)
+    expect(parsed?.kind).toBe("sections")
     expect(parsed?.count).toBe(3)
     expect(parsed?.sections.map((s) => s.key)).toEqual(["core", "env", "instructions"])
     expect(parsed?.sections[0]).toEqual({
@@ -26,6 +32,18 @@ describe("parseInjections", () => {
       chars: 5592,
       truncated: false,
     })
+  })
+
+  test("lit la seconde forme réelle : une liste de fichiers", () => {
+    // Relevé tel quel sur `ses_edb48d77affeF6ky1NqRoE3JNH`.
+    const parsed = parseInjections(SOURCES)
+    expect(parsed?.kind).toBe("sources")
+    expect(parsed?.count).toBe(2)
+    expect(parsed?.sources).toEqual([
+      "C:\\Users\\jeanl\\.config\\opencodev2\\AGENTS.md",
+      "C:\\jeanluc\\opencode-fork\\packages\\opencode\\AGENTS.md",
+    ])
+    expect(parsed?.sections).toEqual([])
   })
 
   test("une section sans précision n'a pas de détail", () => {
@@ -82,5 +100,19 @@ describe("libellés et volumes", () => {
   test("la part est nulle quand le total est nul", () => {
     expect(share(10, 0)).toBe(0)
     expect(share(50, 100)).toBe(0.5)
+  })
+})
+
+describe("chemin d'un fichier d'instructions", () => {
+  test("trois segments suffisent à distinguer deux AGENTS.md", () => {
+    expect(sourceLabel("C:\\Users\\jeanl\\.config\\opencodev2\\AGENTS.md")).toBe("…\\.config\\opencodev2\\AGENTS.md")
+    expect(sourceLabel("C:\\jeanluc\\opencode-fork\\packages\\opencode\\AGENTS.md")).toBe(
+      "…\\packages\\opencode\\AGENTS.md",
+    )
+  })
+
+  test("un chemin court n'est pas tronqué", () => {
+    expect(sourceLabel("AGENTS.md")).toBe("AGENTS.md")
+    expect(sourceLabel("a\\b\\c.md")).toBe("a\\b\\c.md")
   })
 })

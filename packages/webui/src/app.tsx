@@ -17,8 +17,19 @@ import {
   computeColumns,
   effectiveSidebarPreference,
 } from "./columns"
-import { ContextInjections, FileChip, PermissionSheet, Reasoning, SessionRow, ToolLine, Turn, UserPrompt } from "./components"
+import {
+  ContextInjections,
+  DirectoryGroup,
+  FileChip,
+  PermissionSheet,
+  Reasoning,
+  SessionRow,
+  ToolLine,
+  Turn,
+  UserPrompt,
+} from "./components"
 import { parseInjections } from "./injections"
+import { groupByDirectory, sessionDetails, type SessionSummary } from "./sessions"
 import { subscribeEvents, type EventStreamState } from "./events"
 import { sessionTimestamp } from "./time"
 import {
@@ -29,8 +40,6 @@ import {
   type PermissionRequest,
   type ToolState,
 } from "./view-model"
-
-type SessionInfo = { id: string; title?: string; time?: { updated?: number; created?: number } }
 
 type Part =
   | { type: "text"; id?: string; text?: string }
@@ -50,7 +59,7 @@ const DIR_KEY = "oc.webui.directory"
  */
 export default function App() {
   const [health, setHealth] = createSignal<Health | undefined>()
-  const [sessions, setSessions] = createSignal<SessionInfo[]>([])
+  const [sessions, setSessions] = createSignal<SessionSummary[]>([])
   const [active, setActive] = createSignal<string | undefined>()
   const [messages, setMessages] = createSignal<Message[]>([])
   const [stream, setStream] = createSignal<EventStreamState>({ connected: false, reconnects: 0 })
@@ -66,6 +75,9 @@ export default function App() {
   const [renameDraft, setRenameDraft] = createSignal("")
   // Confirmation en ligne : un `window.confirm` natif ne se style pas et bloque tout pilotage.
   const [confirming, setConfirming] = createSignal<string | undefined>()
+  // Deux replis indépendants : un dossier entier, et une ligne de session (son détail).
+  const [groupsOpen, setGroupsOpen] = createSignal<Record<string, boolean>>({})
+  const [detailsOpen, setDetailsOpen] = createSignal<Record<string, boolean>>({})
 
   const [authOpen, setAuthOpen] = createSignal(false)
   const [authUser, setAuthUser] = createSignal(credentials?.username ?? "")
@@ -150,7 +162,7 @@ export default function App() {
         setError(String(cause))
         return undefined
       })
-    const data = (result as { data?: SessionInfo[] } | undefined)?.data
+    const data = (result as { data?: SessionSummary[] } | undefined)?.data
     if (Array.isArray(data)) setSessions(data)
   }
 
@@ -177,12 +189,12 @@ export default function App() {
       setError(String(cause))
       return undefined
     })
-    const created = (result as { data?: SessionInfo } | undefined)?.data
+    const created = (result as { data?: SessionSummary } | undefined)?.data
     await loadSessions()
     if (created?.id) await selectSession(created.id)
   }
 
-  const startRename = (session: SessionInfo) => {
+  const startRename = (session: SessionSummary) => {
     setRenaming(session.id)
     setRenameDraft(session.title ?? "")
   }
@@ -197,7 +209,7 @@ export default function App() {
     await loadSessions()
   }
 
-  const removeSession = async (session: SessionInfo) => {
+  const removeSession = async (session: SessionSummary) => {
     setConfirming(undefined)
     await client.session.delete({ sessionID: session.id, ...scope() }).catch((cause: unknown) => {
       setError(String(cause))
@@ -301,6 +313,11 @@ export default function App() {
   }
 
   const toggle = (id: string) => setExpanded((current) => ({ ...current, [id]: !current[id] }))
+
+  /** Un dossier est ouvert par défaut : on replie pour dégager, on ne déplie pas pour découvrir. */
+  const groupOpen = (key: string) => groupsOpen()[key] !== false
+  const toggleGroup = (key: string) => setGroupsOpen((current) => ({ ...current, [key]: current[key] === false }))
+  const toggleDetail = (id: string) => setDetailsOpen((current) => ({ ...current, [id]: !current[id] }))
 
   /** Le fil suit son propre bas : un tour ajouté est toujours visible. */
   let scroller: HTMLDivElement | undefined
@@ -437,81 +454,99 @@ export default function App() {
         />
 
         <div class="rows">
-          <For each={sessions()}>
-            {(session) => (
-              <Show
-                when={renaming() === session.id}
-                fallback={
-                  <SessionRow
-                    title={session.title || "(sans titre)"}
-                    time={sessionTimestamp(session)}
-                    now={now()}
-                    active={session.id === active()}
-                    onSelect={() => void selectSession(session.id)}
-                  >
-                    <span class="row-actions">
-                      <button
-                        class="ghost"
-                        title="Renommer"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          startRename(session)
-                        }}
-                      >
-                        ✎
-                      </button>
+          <For each={groupByDirectory(sessions())}>
+            {(group) => (
+              <>
+                <DirectoryGroup
+                  label={group.label}
+                  hint={group.hint}
+                  count={group.sessions.length}
+                  open={groupOpen(group.key)}
+                  onToggle={() => toggleGroup(group.key)}
+                />
+                <Show when={groupOpen(group.key)}>
+                  <For each={group.sessions}>
+                    {(session) => (
                       <Show
-                        when={confirming() === session.id}
+                        when={renaming() === session.id}
                         fallback={
-                          <button
-                            class="ghost"
-                            title="Supprimer"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              setConfirming(session.id)
-                            }}
+                          <SessionRow
+                            title={session.title || "(sans titre)"}
+                            time={sessionTimestamp(session)}
+                            now={now()}
+                            active={session.id === active()}
+                            open={Boolean(detailsOpen()[session.id])}
+                            details={sessionDetails(session)}
+                            onSelect={() => void selectSession(session.id)}
+                            onToggle={() => toggleDetail(session.id)}
                           >
-                            ✕
-                          </button>
+                            <span class="row-actions">
+                              <button
+                                class="ghost"
+                                title="Renommer"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  startRename(session)
+                                }}
+                              >
+                                ✎
+                              </button>
+                              <Show
+                                when={confirming() === session.id}
+                                fallback={
+                                  <button
+                                    class="ghost"
+                                    title="Supprimer"
+                                    onClick={(event) => {
+                                      event.stopPropagation()
+                                      setConfirming(session.id)
+                                    }}
+                                  >
+                                    ✕
+                                  </button>
+                                }
+                              >
+                                <button
+                                  class="ghost"
+                                  title="Confirmer la suppression"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    void removeSession(session)
+                                  }}
+                                >
+                                  supprimer
+                                </button>
+                                <button
+                                  class="ghost"
+                                  title="Annuler"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    setConfirming(undefined)
+                                  }}
+                                >
+                                  annuler
+                                </button>
+                              </Show>
+                            </span>
+                          </SessionRow>
                         }
                       >
-                        <button
-                          class="ghost"
-                          title="Confirmer la suppression"
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            void removeSession(session)
+                        <input
+                          class="rename"
+                          autofocus
+                          value={renameDraft()}
+                          onInput={(event) => setRenameDraft(event.currentTarget.value)}
+                          onBlur={commitRename}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") void commitRename()
+                            if (event.key === "Escape") setRenaming(undefined)
                           }}
-                        >
-                          supprimer
-                        </button>
-                        <button
-                          class="ghost"
-                          title="Annuler"
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            setConfirming(undefined)
-                          }}
-                        >
-                          annuler
-                        </button>
+                        />
                       </Show>
-                    </span>
-                  </SessionRow>
-                }
-              >
-                <input
-                  class="rename"
-                  autofocus
-                  value={renameDraft()}
-                  onInput={(event) => setRenameDraft(event.currentTarget.value)}
-                  onBlur={commitRename}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") void commitRename()
-                    if (event.key === "Escape") setRenaming(undefined)
-                  }}
-                />
-              </Show>
+                    )}
+                  </For>
+                </Show>
+              </>
             )}
           </For>
         </div>

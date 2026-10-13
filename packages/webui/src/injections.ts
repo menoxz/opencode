@@ -1,17 +1,24 @@
 /**
  * Le serveur joint à chaque message utilisateur une partie `synthetic` qui décrit ce qui a été
- * injecté dans le contexte. Relevé sur données réelles (`ses_edb48d77affeF6ky1NqRoE3JNH`,
- * `ses_f068fa00bffeFPQlEjhYB5em1F`) :
+ * injecté dans le contexte. **Deux formes coexistent**, toutes deux relevées sur données réelles :
  *
- *   Context injections · 3 section(s)
- *   - core: system prompt (PROMPT_CORE) · agent build · 5592 chars
- *   - env: environment · 391 chars
- *   - instructions: instruction files · 2 source(s) · 13891 chars (truncated)
- *   - skills: skill summary · 6764 chars
+ *   1. `ses_edb48d77affeF6ky1NqRoE3JNH` — volumes par section :
+ *
+ *        Context injections · 3 section(s)
+ *        - core: system prompt (PROMPT_CORE) · agent build · 5592 chars
+ *        - env: environment · 391 chars
+ *        - instructions: instruction files · 2 source(s) · 13891 chars (truncated)
+ *
+ *   2. `ses_edb48d77affeF6ky1NqRoE3JNH`, autre tour — liste de fichiers :
+ *
+ *        Instruction injections · 2 source(s)
+ *        Instructions from: C:\Users\jeanl\.config\opencodev2\AGENTS.md
+ *        Instructions from: C:\jeanluc\opencode-fork\packages\opencode\AGENTS.md
  *
  * Ces nombres disent à l'utilisateur ce qui consomme sa fenêtre — information qu'aucune autre
- * surface ne donne, et qu'aucune estimation ne peut remplacer. On les lit donc comme une
- * structure, pas comme du texte : c'est ce qui permet de replier, d'aligner et de traduire.
+ * surface ne donne, et qu'aucune estimation ne peut remplacer. On les lit donc comme une structure,
+ * pas comme du texte : c'est ce qui permet de replier, d'aligner et de traduire. Et c'est ce qui
+ * évite qu'un bloc d'injection s'affiche comme si l'utilisateur l'avait écrit.
  */
 
 export type InjectionSection = {
@@ -26,19 +33,25 @@ export type InjectionSection = {
 }
 
 export type Injections = {
+  kind: "sections" | "sources"
   count: number
   sections: InjectionSection[]
+  /** Chemins des fichiers d'instructions, pour la forme « sources ». */
+  sources: string[]
 }
 
-/** En-tête : `Context injections · 4 section(s)`. */
-const HEADER = /^Context injections\s+·\s+(\d+)\s+section/
-/** Queue de ligne : `13891 chars` ou `13891 chars (truncated)`. */
+/** En-tête à volumes : `Context injections · 4 section(s)`. */
+const HEADER_SECTIONS = /^Context injections\s+·\s+(\d+)\s+section/
+/** En-tête à fichiers : `Instruction injections · 2 source(s)`. */
+const HEADER_SOURCES = /^Instruction injections\s+·\s+(\d+)\s+source/
+/** Queue de ligne à volumes : `13891 chars` ou `13891 chars (truncated)`. */
 const TAIL = /^(\d+)\s+chars(\s+\(truncated\))?$/
+const SOURCE_LINE = /^Instructions from:\s*(.+)$/
 
 /**
- * Lit le bloc d'injections. Renvoie `undefined` quand le texte n'en est pas un — c'est ce qui
- * distingue une injection d'un prompt réellement écrit par l'utilisateur, sans dépendre du
- * drapeau `synthetic` seul (un serveur peut marquer d'autres parties comme synthétiques).
+ * Lit un bloc d'injections, quelle que soit sa forme. Renvoie `undefined` quand le texte n'en est
+ * pas un — c'est ce qui distingue une injection d'un prompt réellement écrit par l'utilisateur,
+ * sans dépendre du seul drapeau `synthetic` (d'autres parties peuvent le porter).
  */
 export function parseInjections(text: string | undefined): Injections | undefined {
   if (!text) return undefined
@@ -46,34 +59,51 @@ export function parseInjections(text: string | undefined): Injections | undefine
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean)
-  const header = lines.length > 0 ? HEADER.exec(lines[0] ?? "") : null
-  if (!header) return undefined
+  const first = lines[0] ?? ""
 
-  const sections: InjectionSection[] = []
-  for (const line of lines.slice(1)) {
-    if (!line.startsWith("-")) continue
-    const body = line.slice(1).trim()
-    const colon = body.indexOf(":")
-    if (colon === -1) continue
-    const key = body.slice(0, colon).trim()
-    const parts = body
-      .slice(colon + 1)
-      .split(" · ")
-      .map((part) => part.trim())
-      .filter(Boolean)
-    const tail = parts.length > 0 ? TAIL.exec(parts[parts.length - 1] ?? "") : null
-    if (!tail) continue
-    const head = parts.slice(0, -1)
-    sections.push({
-      key,
-      label: head[0] ?? key,
-      detail: head.length > 1 ? head.slice(1).join(" · ") : undefined,
-      chars: Number(tail[1]),
-      truncated: Boolean(tail[2]),
-    })
+  const sectionsHeader = HEADER_SECTIONS.exec(first)
+  if (sectionsHeader) {
+    const sections: InjectionSection[] = []
+    for (const line of lines.slice(1)) {
+      if (!line.startsWith("-")) continue
+      const body = line.slice(1).trim()
+      const colon = body.indexOf(":")
+      if (colon === -1) continue
+      const key = body.slice(0, colon).trim()
+      const parts = body
+        .slice(colon + 1)
+        .split(" · ")
+        .map((part) => part.trim())
+        .filter(Boolean)
+      const tail = parts.length > 0 ? TAIL.exec(parts[parts.length - 1] ?? "") : null
+      if (!tail) continue
+      const head = parts.slice(0, -1)
+      sections.push({
+        key,
+        label: head[0] ?? key,
+        detail: head.length > 1 ? head.slice(1).join(" · ") : undefined,
+        chars: Number(tail[1]),
+        truncated: Boolean(tail[2]),
+      })
+    }
+    return sections.length > 0
+      ? { kind: "sections", count: Number(sectionsHeader[1]), sections, sources: [] }
+      : undefined
   }
 
-  return sections.length > 0 ? { count: Number(header[1]), sections } : undefined
+  const sourcesHeader = HEADER_SOURCES.exec(first)
+  if (sourcesHeader) {
+    const sources: string[] = []
+    for (const line of lines.slice(1)) {
+      const match = SOURCE_LINE.exec(line)
+      if (match?.[1]) sources.push(match[1].trim())
+    }
+    return sources.length > 0
+      ? { kind: "sources", count: Number(sourcesHeader[1]), sections: [], sources }
+      : undefined
+  }
+
+  return undefined
 }
 
 /**
@@ -102,4 +132,15 @@ export function formatChars(chars: number): string {
 export function share(chars: number, total: number): number {
   if (total <= 0) return 0
   return chars / total
+}
+
+/**
+ * Chemin lisible d'un fichier d'instructions : les trois derniers segments, précédés de `…` quand
+ * le chemin est tronqué. Deux `AGENTS.md` de dossiers différents restent ainsi distincts à l'écran,
+ * là où un simple nom de fichier les confondrait.
+ */
+export function sourceLabel(path: string): string {
+  const parts = path.split(/[\\/]/).filter(Boolean)
+  if (parts.length <= 3) return parts.join("\\")
+  return `…\\${parts.slice(-3).join("\\")}`
 }
