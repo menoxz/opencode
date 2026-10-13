@@ -98,3 +98,19 @@ export function dropPermission(current: PermissionRequest[], requestID: string):
 export function permissionActions(request: PermissionRequest): PermissionReply[] {
   return canAlways(request) ? ["once", "always", "reject"] : ["once", "reject"]
 }
+
+/**
+ * Parties qui portent quelque chose pour l'utilisateur.
+ *
+ * Relevé sur données réelles : une session de 7 messages contient 6 `step-start` et 6 `step-finish`
+ * — deux parties de protocole **sans aucun contenu** (`step-start` : id, messageID, sessionID,
+ * snapshot ; `step-finish` : + cost, reason, tokens). Les rendre revient à jeter un nom de type
+ * interne dans la conversation : du bruit qui ne change aucune décision. Elles ne s'affichent pas,
+ * et un type inconnu non plus — mieux vaut ne rien montrer que montrer un identifiant technique.
+ */
+export function isVisiblePart(part: { type: string; text?: string }): boolean {
+  if (part.type === "tool" || part.type === "file") return true
+  if (part.type === "text") return Boolean(part.text)
+  if (part.type === "reasoning") return Boolean(part.text?.trim())
+  return false
+}

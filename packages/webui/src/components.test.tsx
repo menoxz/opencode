@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest"
 import { render } from "solid-js/web"
-import { PermissionSheet, REPLY_LABEL, ToolLine } from "./components"
+import { PermissionSheet, Reasoning, REPLY_LABEL, ToolLine } from "./components"
 import type { PermissionRequest, ToolState } from "./view-model"
 
 /** Monte un composant dans un conteneur neuf et renvoie le HTML produit. */
@@ -147,5 +147,39 @@ describe("PermissionSheet", () => {
     expect(REPLY_LABEL.once).toBe("Autoriser une fois")
     expect(REPLY_LABEL.always).toBe("Toujours autoriser")
     expect(REPLY_LABEL.reject).toBe("Refuser")
+  })
+})
+
+describe("Reasoning", () => {
+  test("repliée, le texte n'est pas rendu et l'affordance est visible", () => {
+    const { html, dispose } = mount(() => <Reasoning text="je pèse les options" open={false} onToggle={() => {}} />)
+    expect(html).toContain("réflexion")
+    expect(html).not.toContain("je pèse les options")
+    expect(html).toContain("▸")
+    dispose()
+  })
+
+  test("dépliée, elle expose son texte", () => {
+    const { html, dispose } = mount(() => <Reasoning text="je pèse les options" open={true} onToggle={() => {}} />)
+    expect(html).toContain("je pèse les options")
+    expect(html).toContain("▾")
+    dispose()
+  })
+
+  test("le nom de type n'apparaît jamais à l'écran", () => {
+    // Assertion sur le texte visible, pas sur le HTML : la classe s'appelle légitimement
+    // `reasoning`, c'est le mot à l'écran qui ne doit pas exister.
+    const { container, dispose } = mount(() => <Reasoning text="x" open={false} onToggle={() => {}} />)
+    expect(container.textContent).toContain("réflexion")
+    expect(container.textContent).not.toContain("reasoning")
+    dispose()
+  })
+
+  test("le clic demande le basculement", () => {
+    const onToggle = vi.fn()
+    const { container, dispose } = mount(() => <Reasoning text="x" open={false} onToggle={onToggle} />)
+    container.querySelector("button")?.click()
+    expect(onToggle).toHaveBeenCalledTimes(1)
+    dispose()
   })
 })

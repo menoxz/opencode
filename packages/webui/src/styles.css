@@ -479,6 +479,37 @@ textarea {
   font-size: 12.5px;
 }
 
+/* La réflexion de l'agent : secondaire par nature, donc repliée, dans la même grammaire que les
+   actions. Nommée en français — `reasoning` n'est pas un mot d'écran. */
+
+.reasoning-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 3px 6px;
+  margin-left: -6px;
+  border-radius: 6px;
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+
+.reasoning-line:hover {
+  background: #ffffff08;
+  color: var(--text-2);
+}
+
+.reasoning-text {
+  margin: 4px 0 10px;
+  padding-left: 12px;
+  border-left: 1px solid var(--line-2);
+  color: var(--text-3);
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* ---- Zone 4 — saisie ---- */
 
 .composer {

@@ -17,11 +17,12 @@ import {
   computeColumns,
   effectiveSidebarPreference,
 } from "./columns"
-import { FileChip, PermissionSheet, SessionRow, ToolLine, Turn } from "./components"
+import { FileChip, PermissionSheet, Reasoning, SessionRow, ToolLine, Turn } from "./components"
 import { subscribeEvents, type EventStreamState } from "./events"
 import { sessionTimestamp } from "./time"
 import {
   dropPermission,
+  isVisiblePart,
   reducePermissions,
   type PermissionReply,
   type PermissionRequest,
@@ -32,9 +33,10 @@ type SessionInfo = { id: string; title?: string; time?: { updated?: number; crea
 
 type Part =
   | { type: "text"; text?: string }
+  | { type: "reasoning"; id: string; text?: string }
   | { type: "tool"; id: string; tool: string; state: ToolState }
   | { type: "file"; mime?: string; filename?: string; url?: string }
-  | { type: string; text?: string }
+  | { type: string; text?: string; id?: string }
 
 type Message = { info: { id: string; role: string }; parts: Part[] }
 
@@ -360,12 +362,20 @@ export default function App() {
   })
 
   const renderPart = (part: Part) => {
+    // Les parties de protocole (`step-start`, `step-finish`, `snapshot`…) ne portent rien pour
+    // l'utilisateur : elles ne s'affichent pas — un nom de type interne n'est pas une information.
+    if (!isVisiblePart(part)) return null
     if (part.type === "text") return <p class="part text">{part.text ?? ""}</p>
     if (part.type === "file") {
       const file = part as Extract<Part, { type: "file" }>
       return <FileChip label={filePartLabel(file)} thumb={isImageMime(file.mime ?? "") ? file.url : undefined} />
     }
-    if (part.type !== "tool") return <p class="part">{part.type}</p>
+    if (part.type === "reasoning") {
+      const thought = part as { id: string; text: string }
+      return (
+        <Reasoning text={thought.text} open={Boolean(expanded()[thought.id])} onToggle={() => toggle(thought.id)} />
+      )
+    }
 
     const toolPart = part as Extract<Part, { type: "tool" }>
     return (

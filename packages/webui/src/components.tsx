@@ -91,6 +91,24 @@ export function ToolLine(props: { tool: string; state: ToolState; open: boolean;
 }
 
 /**
+ * Réflexion de l'agent. Secondaire par nature : repliée, dans la même grammaire que les actions, et
+ * nommée en français — jamais rendue par son nom de type (`reasoning` n'est pas un mot d'écran).
+ */
+export function Reasoning(props: { text: string; open: boolean; onToggle: () => void }) {
+  return (
+    <div class="reasoning">
+      <button class="reasoning-line" onClick={() => props.onToggle()}>
+        <span>réflexion</span>
+        <span class="tool-chev">{props.open ? "▾" : "▸"}</span>
+      </button>
+      <Show when={props.open}>
+        <p class="reasoning-text">{props.text}</p>
+      </Show>
+    </div>
+  )
+}
+
+/**
  * Demande d'accord : le seul moment où l'interface hausse la voix. Les boutons viennent de
  * `permissionActions` — « toujours » n'apparaît que si le serveur a fourni des motifs, ce qui
  * est une décision, testée dans `view-model`.

@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest"
 import {
   canAlways,
   dropPermission,
+  isVisiblePart,
   permissionActions,
   reducePermissions,
   toolDetail,
@@ -93,5 +94,30 @@ describe("permissions", () => {
 
   test("la suppression optimiste retire la demande", () => {
     expect(dropPermission([request("p1"), request("p2")], "p2").map((item) => item.id)).toEqual(["p1"])
+  })
+})
+
+describe("visibilité des parties", () => {
+  test("le texte et les actions s'affichent", () => {
+    expect(isVisiblePart({ type: "text", text: "bonjour" })).toBe(true)
+    expect(isVisiblePart({ type: "tool" })).toBe(true)
+    expect(isVisiblePart({ type: "file" })).toBe(true)
+  })
+
+  test("les parties de protocole ne s'affichent pas", () => {
+    // Relevé sur une session réelle : 6 step-start et 6 step-finish, sans aucun contenu.
+    expect(isVisiblePart({ type: "step-start" })).toBe(false)
+    expect(isVisiblePart({ type: "step-finish" })).toBe(false)
+    expect(isVisiblePart({ type: "snapshot" })).toBe(false)
+    expect(isVisiblePart({ type: "patch" })).toBe(false)
+  })
+
+  test("un contenu vide ne produit pas de bloc vide", () => {
+    expect(isVisiblePart({ type: "text", text: "" })).toBe(false)
+    expect(isVisiblePart({ type: "reasoning", text: "   " })).toBe(false)
+  })
+
+  test("une réflexion non vide s'affiche, elle", () => {
+    expect(isVisiblePart({ type: "reasoning", text: "je pèse les options" })).toBe(true)
   })
 })
