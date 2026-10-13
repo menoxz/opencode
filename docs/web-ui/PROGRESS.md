@@ -2334,7 +2334,27 @@ Second piège rencontré dans la foulée : `-SimpleMatch` **avec** `[regex]::Esc
 littéral, donc **tous les compteurs rendaient 0** — j'ai failli croire la restauration ratée alors que
 le fichier était sain. Les deux leçons sont dans `AGENTS.md`.
 
-### Réserve
+### Réserve — close par la mesure
 
-Le clic fiable a été observé sur **un** bouton (« Copy output ») ; les chemins de patch suivent le
-même composant et le même helper, mais leur révélation au survol n'a pas été observée à l'œil.
+Le clic fiable n'avait été observé que sur un bouton (« Copy output »), la révélation au survol des
+chemins de patch restant non vérifiée. Elle l'est : sur une session réelle (101 patchs), ligne
+ramenée au centre puis survol **fiable** par CDP :
+
+```
+au repos          -> opacité calculée "0"      (le bouton n'existe pas au repos, §3.8)
+après survol      -> opacité calculée "1", li:hover = true
+```
+
+Les deux moitiés de la règle sont donc vérifiées : **rien au repos**, **révélé au survol de la ligne
+qui porte le chemin**.
+
+**Deux faux négatifs traversés pour y arriver, tous deux consignés dans `AGENTS.md`** — et tous deux
+de mon fait, pas du code :
+
+1. **Survol hors viewport.** Le fil est long : la ligne visée était à `y = -70553`, donc le survol
+   ne touchait rien. Corrigé par `scrollIntoView({block:'center'})` **avant** de mesurer le rectangle.
+2. **Sonde qui bascule.** Déplier un patch est un **basculement** : le run précédent l'avait laissé
+   ouvert, donc le clic suivant l'a **refermé** (`liCount` 0). Corrigé en rechargeant pour partir d'un
+   état propre et en rendant le dépliage **idempotent**.
+
+Aucune réserve ne subsiste sur ce lot.
