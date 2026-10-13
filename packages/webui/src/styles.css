@@ -35,6 +35,7 @@
   --bluish-200: #e1e5ee;
   --bluish-400: #adb2b8;
   --bluish-600: #81858c;
+  --bluish-650: #8c9697;
   --bluish-700: #61666b;
   --bluish-800: #353638;
   --bluish-850: #2c2c2e;
@@ -51,10 +52,15 @@
   --line-1: #ffffff0f;
   --line-2: #ffffff1f;
 
-  /* label-primary → bluish-50 ; label-caption → bluish-600 */
+  /* label-primary → bluish-50 ; label-caption → bluish-650
+     La teinte relevée chez DSH (bluish-600 #81858c) ne passe pas le seuil AA
+     (4,5:1) sur les deux fonds de panneau : 4,24:1 sur bg-1, 3,76:1 sur bg-2.
+     Aucun texte de l'interface n'atteint 24 px, donc le seuil est 4,5 partout.
+     bluish-650 est un pas interpolé dans la même famille bleu-gris : 6,01:1,
+     5,18:1, 4,60:1 sur bg-0/bg-1/bg-2. */
   --text-1: var(--bluish-50);
   --text-2: var(--bluish-400);
-  --text-3: var(--bluish-600);
+  --text-3: var(--bluish-650);
 
   /* États : tons médians des familles statiques DSH (green-400, red-400, amber-400) */
   --danger: #f25a5a;
