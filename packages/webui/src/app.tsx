@@ -17,7 +17,8 @@ import {
   computeColumns,
   effectiveSidebarPreference,
 } from "./columns"
-import { FileChip, PermissionSheet, Reasoning, SessionRow, ToolLine, Turn } from "./components"
+import { ContextInjections, FileChip, PermissionSheet, Reasoning, SessionRow, ToolLine, Turn, UserPrompt } from "./components"
+import { parseInjections } from "./injections"
 import { subscribeEvents, type EventStreamState } from "./events"
 import { sessionTimestamp } from "./time"
 import {
@@ -32,7 +33,7 @@ import {
 type SessionInfo = { id: string; title?: string; time?: { updated?: number; created?: number } }
 
 type Part =
-  | { type: "text"; text?: string }
+  | { type: "text"; id?: string; text?: string }
   | { type: "reasoning"; id: string; text?: string }
   | { type: "tool"; id: string; tool: string; state: ToolState }
   | { type: "file"; mime?: string; filename?: string; url?: string }
@@ -361,11 +362,28 @@ export default function App() {
     })
   })
 
-  const renderPart = (part: Part) => {
+  const renderPart = (part: Part, role: string) => {
     // Les parties de protocole (`step-start`, `step-finish`, `snapshot`…) ne portent rien pour
     // l'utilisateur : elles ne s'affichent pas — un nom de type interne n'est pas une information.
     if (!isVisiblePart(part)) return null
-    if (part.type === "text") return <p class="part text">{part.text ?? ""}</p>
+    if (part.type === "text") {
+      const text = part.text ?? ""
+      // Le bloc d'injections arrive en texte brut, dans le même message que le prompt. On le lit
+      // comme une structure et il ne s'affiche **pas** comme si l'utilisateur l'avait écrit.
+      const injections = parseInjections(text)
+      if (injections) {
+        const id = part.id ?? "injections"
+        return (
+          <ContextInjections
+            injections={injections}
+            open={Boolean(expanded()[id])}
+            onToggle={() => toggle(id)}
+          />
+        )
+      }
+      if (role === "user") return <UserPrompt text={text} />
+      return <p class="part text">{text}</p>
+    }
     if (part.type === "file") {
       const file = part as Extract<Part, { type: "file" }>
       return <FileChip label={filePartLabel(file)} thumb={isImageMime(file.mime ?? "") ? file.url : undefined} />
@@ -578,7 +596,7 @@ export default function App() {
               <For each={messages()}>
                 {(message) => (
                   <Turn role={message.info.role}>
-                    <For each={message.parts}>{(part) => renderPart(part)}</For>
+                    <For each={message.parts}>{(part) => renderPart(part, message.info.role)}</For>
                   </Turn>
                 )}
               </For>

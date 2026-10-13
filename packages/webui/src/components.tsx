@@ -8,6 +8,8 @@ import {
   type PermissionRequest,
   type ToolState,
 } from "./view-model"
+import { formatChars, injectionLabel, share, type Injections } from "./injections"
+import { ToolIcon, toolHint } from "./icons"
 import { relativeTime } from "./time"
 
 export const REPLY_LABEL: Record<PermissionReply, string> = {
@@ -47,6 +49,68 @@ export function Turn(props: { role: string; children?: unknown }) {
   return <div class={`turn ${props.role === "user" ? "user" : "agent"}`}>{props.children as never}</div>
 }
 
+/**
+ * Le prompt de l'utilisateur.
+ *
+ * C'est le seul texte de l'écran qu'il a écrit lui-même : il doit se reconnaître au premier
+ * regard, donc une surface à lui, dans la largeur de lecture, et son texte conservé tel quel —
+ * espaces et retours à la ligne compris (un prompt est souvent structuré).
+ */
+export function UserPrompt(props: { text: string }) {
+  return <p class="prompt">{props.text}</p>
+}
+
+/**
+ * Ce que le serveur a injecté dans le contexte **avant** le prompt.
+ *
+ * Il le joint en texte brut ; on le rend comme une structure : une ligne par section, son volume,
+ * et la part qu'elle prend. Replié par défaut — c'est une information de confiance, pas de
+ * lecture. Déplié, il répond à « qu'est-ce qui consomme ma fenêtre ? », question qu'aucune autre
+ * surface ne traite et qu'aucune estimation ne peut remplacer.
+ */
+export function ContextInjections(props: { injections: Injections; open: boolean; onToggle: () => void }) {
+  const total = () => props.injections.sections.reduce((sum, section) => sum + section.chars, 0)
+  return (
+    <div class="injections">
+      <button class="injections-head" onClick={() => props.onToggle()}>
+        <span class="injections-title">contexte injecté</span>
+        <span class="injections-meta">
+          {props.injections.sections.length} section{props.injections.sections.length > 1 ? "s" : ""} ·{" "}
+          {formatChars(total())} car.
+        </span>
+        <span class="tool-chev">{props.open ? "▾" : "▸"}</span>
+      </button>
+      <Show when={props.open}>
+        <ul class="injections-list">
+          <For each={props.injections.sections}>
+            {(section) => (
+              <li>
+                <span class="inj-label" title={section.label}>
+                  {injectionLabel(section)}
+                  <Show when={section.detail}>
+                    {(detail) => <span class="inj-detail">{detail()}</span>}
+                  </Show>
+                </span>
+                <span class="inj-bar">
+                  <span style={{ width: `${Math.round(share(section.chars, total()) * 100)}%` }} />
+                </span>
+                <span class="inj-size">
+                  {formatChars(section.chars)}
+                  <Show when={section.truncated}>
+                    <span class="inj-trunc" title="Le serveur a tronqué cette section">
+                      tronqué
+                    </span>
+                  </Show>
+                </span>
+              </li>
+            )}
+          </For>
+        </ul>
+      </Show>
+    </div>
+  )
+}
+
 /** Pièce jointe : vignette si image, nom, taille, retrait optionnel. */
 export function FileChip(props: { label: string; thumb?: string; size?: string; onRemove?: () => void }) {
   return (
@@ -71,7 +135,8 @@ export function ToolLine(props: { tool: string; state: ToolState; open: boolean;
   const detail = () => toolDetail(props.state)
   return (
     <div class="tool" classList={{ failed: props.state.status === "error", open: props.open }}>
-      <button class="tool-line" onClick={() => props.onToggle()}>
+      <button class="tool-line" title={toolHint(props.tool)} onClick={() => props.onToggle()}>
+        <ToolIcon tool={props.tool} />
         <span class="tool-name">{props.tool}</span>
         <Show when={toolTitle(props.state)}>{(title) => <span class="tool-title">{title()}</span>}</Show>
         <Show when={props.state.status !== "completed"}>

@@ -340,12 +340,106 @@ textarea {
   overflow-wrap: anywhere;
 }
 
-/* Le tour de l'utilisateur est une surface ; celui de l'agent est du texte nu. */
-.turn.user .part.text {
+/* Prompt de l'utilisateur : le seul texte qu'il a écrit, donc une surface à lui — et son texte
+   conservé tel quel, un prompt étant souvent structuré. */
+.prompt {
+  margin: 0;
   padding: 10px 14px;
   background: var(--bg-1);
   border: 1px solid var(--line-1);
   border-radius: var(--radius);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ---- Contexte injecté : une ligne de confiance, pas de lecture ---- */
+
+.injections {
+  align-self: stretch;
+}
+
+.injections-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 3px 6px;
+  margin-left: -6px;
+  border-radius: 6px;
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+
+.injections-head:hover {
+  background: #ffffff08;
+  color: var(--text-2);
+}
+
+.injections-title {
+  color: var(--text-2);
+}
+
+.injections-meta {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.injections-list {
+  list-style: none;
+  margin: 6px 0 10px;
+  padding: 0 0 0 12px;
+  border-left: 1px solid var(--line-2);
+}
+
+.injections-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 90px 76px;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 0;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.inj-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inj-detail {
+  margin-left: 6px;
+  color: var(--text-3);
+}
+
+/* Barre de proportion : trois pixels suffisent à montrer qui prend la place. */
+.inj-bar {
+  height: 3px;
+  border-radius: 999px;
+  background: var(--line-1);
+  overflow: hidden;
+}
+
+.inj-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--text-3);
+}
+
+.inj-size {
+  text-align: right;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.inj-trunc {
+  margin-left: 6px;
+  color: var(--attention);
 }
 
 .part.file {
@@ -413,6 +507,17 @@ textarea {
 .tool-name {
   font-family: var(--mono);
   font-size: 12px;
+}
+
+/* Icône d'outil : même teinte que le nom, s'éclaircit avec la ligne. */
+.tool-icon {
+  flex: none;
+  align-self: center;
+  color: var(--text-3);
+}
+
+.tool-line:hover .tool-icon {
+  color: var(--text-2);
 }
 
 .tool-title {
