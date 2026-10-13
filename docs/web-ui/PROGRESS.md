@@ -1134,3 +1134,90 @@ La première sonde a conclu « le fil ne se rend pas : 0 tour ». C'était faux 
 - Le rendu n'a pas été jugé par l'utilisateur.
 - L'arbitrage « ce que le binaire embarque » (`build.ts` sert `packages/app/dist`, pas `webui`)
   reste ouvert, hors de ce lot.
+
+---
+
+## Lot suivant — le rail en trois parties (livré)
+
+Demande de l'utilisateur : « une barre de sessions séparée en plusieurs parties avec différentes
+responsabilités » — les menus principaux d'un côté, les workspaces et leurs sessions de l'autre,
+avec des icônes plus intuitives, des sessions indentées, un interlignage plus petit et **un survol
+qui ne déplace pas la liste**.
+
+Le rail n'avait qu'une responsabilité de fait : lister des sessions. Il en porte trois.
+
+### Contrat relevé, pas supposé
+
+| endpoint | forme mesurée | usage |
+|---|---|---|
+| `GET /command` | **tableau de 210** entrées `{ name, description, source, template, hints }` | menus, groupés par provenance |
+| `GET /plugin` | **objet** `{ version, runtime, origins, hooks }`, 4 origines `{ spec, scope }` | liste des plugins |
+| `POST /session/{id}/command` | `{ sessionID, command, arguments?, agent?, model?, parts? }` | exécuter une entrée |
+
+Provenances réelles dans les 210 entrées : `command` **12**, `skill` **198**. Plus **4** plugins.
+
+### Les trois parties
+
+| # | partie | question | contenu | défilement |
+|---|---|---|---|---|
+| A | Menus | « que peut faire le harnais, hors session ? » | menus par provenance, plugins | non |
+| B | Workspaces | « où ai-je travaillé, et sur quoi ? » | dossiers repliables + sessions | **oui, seule** |
+| C | Pied | « où est-ce que je travaille ? » | dossier de travail | non |
+
+**A — les menus.** Groupés par provenance (`commandes`, `compétences`, `plugins`), repliés par
+défaut. Une entrée s'exécute sur la session active ; sans session active elle est **inerte et le
+dit**, plutôt que de créer une session dans le dos de l'utilisateur.
+
+**B — les workspaces.** Icônes en **primitives SVG** (dossier, session, chevron) au lieu de glyphes
+`▾`/`▸` dont le rendu dépend de la police du système. Sessions **indentées de 16px** sous leur
+dossier ; interlignage `16,25px` pour `12,5px` de corps.
+
+**C — le pied.** Il **définit** ce que B affiche ; c'est le seul endroit où l'on écrit un chemin.
+
+### Le défaut de survol, nommé et corrigé
+
+C'est la demande explicite de l'utilisateur, et le défaut était réel : `.row-actions` passait de
+`display: none` à `display: flex` au survol. Cela **change la grille**, donc la colonne du titre se
+rétrécit — toute la ligne bouge au moment précis où l'on vise un bouton. Même chose pour le chevron
+du détail.
+
+Corrigé : les deux occupent leur place **en permanence** et se révèlent par l'`opacity`.
+
+### Deux défauts trouvés par la mesure, corrigés
+
+1. **La section menus restait vide, sans erreur.** `/command` et `/plugin` étaient absents de
+   `API_PREFIXES` (`vite.config.ts`) : Vite servait `index.html` avec un **status 200**, le SDK
+   croyait recevoir du JSON, échouait à le parser, et le `.catch()` avalait tout. Corrigé : les deux
+   routes sont proxifiées.
+2. **`/command` pèse 736 669 octets gzip** (1,99 Mo décodé). Chargé au montage, c'était 719 ko pour
+   une section repliée. Chargé désormais au **premier dépliage** — même règle que `/provider`
+   (6,7 Mo), à une autre échelle. Conséquence assumée : avant le premier clic, la section n'affiche
+   pas de compte — un nombre qu'on ne connaît pas ne s'invente pas.
+
+### Preuve
+
+```
+vitest run      -> 11 fichiers, 159 tests, exit 0   (+15 pour ce lot : nav.test.ts)
+tsgo --noEmit   -> exit 0
+vite build      -> 96,07 ko brut / 25,25 ko compressés
+```
+
+Mesures par CDP, profil isolé, 1440×1000, serveur 4096 :
+
+| mesure | valeur |
+|---|---|
+| parties présentes | `rail-nav=1`, `rail-workspaces=1`, `rail-foot=1` |
+| avant chargement des menus | `["menus charger"]` |
+| après un clic | `["commandes 12", "compétences 198", "plugins 4"]` — 12 + 198 = **210**, le total mesuré |
+| entrées du premier groupe | 12 ; libellés `init`, `review`, `qa proof`, `translate`, `swarm` |
+| entrée sans session active | `disabled = true` |
+| workspaces | `["opencode-fork", "packages/opencode"]` |
+| sessions | 19 lignes, **19 icônes de session**, indent `16px` |
+| survol | titre **83px avant / 83px après** — rien ne bouge |
+
+### Réserve
+
+La **capture d'écran a expiré** (deux tentatives, 15 s puis 40 s) : `Page.captureScreenshot` n'est
+pas revenue sur cette instance. Les preuves ci-dessus sont des **mesures du DOM**, pas une image.
+Le rendu n'a donc toujours pas été jugé à l'œil — c'est la réserve **F4** qui persiste, et elle ne se
+lève que par l'utilisateur.
