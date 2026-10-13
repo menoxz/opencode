@@ -98,6 +98,22 @@ export function agentCounts(rows: AgentRow[]): { primary: number; subagent: numb
   return { primary, subagent }
 }
 
+/**
+ * Le mode vient du serveur en anglais (`primary`, `subagent`, `all`). Ce n'est pas un mot d'écran :
+ * la même règle que pour les clés d'injection (`core` → « invite système ») et les noms d'outils
+ * (`todowrite` → icône « tâches ») s'applique ici. Un mode inconnu garde son nom plutôt que de
+ * disparaître — un serveur peut en ajouter un.
+ */
+const MODE_LABELS: Record<string, string> = {
+  primary: "principal",
+  subagent: "sous-agent",
+  all: "mixte",
+}
+
+export function modeLabel(mode: string): string {
+  return MODE_LABELS[mode] ?? mode
+}
+
 /** Serveurs connectés : le nombre qui va dans la phrase « 6 serveurs connectés ». */
 export function mcpConnectedCount(mcp: Record<string, McpState>): number {
   return Object.values(mcp).filter((entry) => entry?.status === "connected").length

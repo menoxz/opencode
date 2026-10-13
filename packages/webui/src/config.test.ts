@@ -7,6 +7,7 @@ import {
   mcpConnectedCount,
   mcpProblems,
   mcpTone,
+  modeLabel,
   modelLabel,
   truncate,
   type Agent,
@@ -56,6 +57,21 @@ describe("agents", () => {
 
   test("les comptes séparent primaires et sous-agents", () => {
     expect(agentCounts(agentRows(AGENTS))).toEqual({ primary: 1, subagent: 2 })
+  })
+})
+
+describe("libellé du mode", () => {
+  test("les modes du serveur sont traduits, comme les clés d'injection", () => {
+    // Vu à l'écran : la colonne affichait « primary », « subagent », « all » en anglais dans une
+    // interface entièrement française.
+    expect(modeLabel("primary")).toBe("principal")
+    expect(modeLabel("subagent")).toBe("sous-agent")
+    expect(modeLabel("all")).toBe("mixte")
+  })
+
+  test("un mode inconnu garde son nom plutôt que de disparaître", () => {
+    expect(modeLabel("experimental")).toBe("experimental")
+    expect(modeLabel("")).toBe("")
   })
 })
 

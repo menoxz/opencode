@@ -9,7 +9,7 @@ import {
   type ToolState,
 } from "./view-model"
 import { formatChars, injectionLabel, share, sourceLabel, type Injections } from "./injections"
-import { agentSummary, mcpTone, type AgentRow, type McpProblem } from "./config"
+import { agentSummary, mcpTone, modeLabel, type AgentRow, type McpProblem } from "./config"
 import { ToolIcon, toolHint } from "./icons"
 import { relativeTime } from "./time"
 
@@ -299,7 +299,7 @@ export function ConfigSheet(props: {
                 {(agent) => (
                   <li>
                     <span class="sa-name">{agent.name}</span>
-                    <span class="sa-mode">{agent.mode}</span>
+                    <span class="sa-mode">{modeLabel(agent.mode)}</span>
                     <Show when={agent.description}>
                       {(description) => (
                         <span class="sa-desc" title={agent.full ?? description()}>
