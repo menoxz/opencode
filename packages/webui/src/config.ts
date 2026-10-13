@@ -46,8 +46,8 @@ export type McpProblem = { name: string; status: string; error?: string }
  * vérification — la faute était dans le composant, qui collait « aux » au singulier.
  */
 export function agentSummary(counts: { primary: number; subagent: number }): string {
-  const primary = `${counts.primary} ${counts.primary > 1 ? "principaux" : "principal"}`
-  const subagent = `${counts.subagent} ${counts.subagent > 1 ? "sous-agents" : "sous-agent"}`
+  const primary = `${counts.primary} primary`
+  const subagent = `${counts.subagent} ${counts.subagent === 1 ? "subagent" : "subagents"}`
   return `${primary} · ${subagent}`
 }
 
@@ -99,15 +99,15 @@ export function agentCounts(rows: AgentRow[]): { primary: number; subagent: numb
 }
 
 /**
- * Le mode vient du serveur en anglais (`primary`, `subagent`, `all`). Ce n'est pas un mot d'écran :
- * la même règle que pour les clés d'injection (`core` → « invite système ») et les noms d'outils
- * (`todowrite` → icône « tâches ») s'applique ici. Un mode inconnu garde son nom plutôt que de
- * disparaître — un serveur peut en ajouter un.
+ * Le mode vient du serveur (`primary`, `subagent`, `all`) et reste tel quel à l'écran : c'est le
+ * vocabulaire du serveur, pas une traduction. Seul `all` reçoit un mot d'écran, parce qu'il
+ * n'énonce pas un mode mais un mélange. Un mode inconnu garde son nom plutôt que de disparaître —
+ * un serveur peut en ajouter un.
  */
 const MODE_LABELS: Record<string, string> = {
-  primary: "principal",
-  subagent: "sous-agent",
-  all: "mixte",
+  primary: "primary",
+  subagent: "subagent",
+  all: "mixed",
 }
 
 export function modeLabel(mode: string): string {
@@ -141,7 +141,7 @@ export function filterAgents(rows: AgentRow[], query: string): AgentRow[] {
 export function mcpProblems(mcp: Record<string, McpState>): McpProblem[] {
   return Object.entries(mcp)
     .filter(([, entry]) => entry?.status !== "connected")
-    .map(([name, entry]) => ({ name, status: entry?.status ?? "inconnu", error: entry?.error }))
+    .map(([name, entry]) => ({ name, status: entry?.status ?? "unknown", error: entry?.error }))
     .sort((left, right) => left.name.localeCompare(right.name))
 }
 
@@ -162,5 +162,5 @@ export function modelLabel(value: unknown): string {
     if (object.providerID && object.modelID) return `${object.providerID}/${object.modelID}`
     if (object.id) return object.id
   }
-  return "défaut du serveur"
+  return "server default"
 }

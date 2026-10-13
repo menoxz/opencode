@@ -24,11 +24,11 @@ const completed: ToolState = {
 const failed: ToolState = { status: "error", input: { command: "ls" }, error: "introuvable", time: { start: 1, end: 2 } }
 
 describe("états d'outil", () => {
-  test("les quatre statuts ont un libellé français", () => {
-    expect(toolStatusLabel(pending)).toBe("en attente")
-    expect(toolStatusLabel(running)).toBe("en cours")
-    expect(toolStatusLabel(completed)).toBe("terminé")
-    expect(toolStatusLabel(failed)).toBe("erreur")
+  test("les quatre statuts ont un libellé", () => {
+    expect(toolStatusLabel(pending)).toBe("pending")
+    expect(toolStatusLabel(running)).toBe("running")
+    expect(toolStatusLabel(completed)).toBe("completed")
+    expect(toolStatusLabel(failed)).toBe("error")
   })
 
   test("seuls running et completed portent un titre", () => {

@@ -59,7 +59,7 @@ export function groupOf(session: SessionSummary): { key: string; label: string; 
   const absolute = session.directory?.trim()
   if (relative) return { key: absolute || relative, label: relative, hint: absolute || relative }
   if (absolute) return { key: absolute, label: leaf(absolute), hint: absolute }
-  return { key: "", label: "sans dossier", hint: "La session ne déclare pas de dossier" }
+  return { key: "", label: "no folder", hint: "The session declares no folder" }
 }
 
 /**
@@ -110,7 +110,7 @@ export function splitSessions(
 /** `deepseek/deepseek-v4.1-flash` → `deepseek-v4.1-flash` : le fournisseur est déjà dans la ligne. */
 export function modelLabel(model: SessionSummary["model"]): string {
   const id = model?.id
-  if (!id) return "modèle par défaut"
+  if (!id) return "server default"
   const parts = id.split("/")
   return parts[parts.length - 1] || id
 }
@@ -119,7 +119,7 @@ export function modelLabel(model: SessionSummary["model"]): string {
 export function formatTokens(value: number | undefined): string {
   if (!value || value <= 0) return "0"
   if (value < 1000) return String(value)
-  return `${(value / 1000).toFixed(1).replace(".", ",")} k`
+  return `${(value / 1000).toFixed(1)}k`
 }
 
 /**
@@ -127,12 +127,12 @@ export function formatTokens(value: number | undefined): string {
  * quatre décimales avec les zéros de queue retirés — sans quoi un coût réel s'afficherait « 0 $ ».
  */
 export function formatCost(value: number | undefined): string {
-  if (!value || value <= 0) return "0 $"
+  if (!value || value <= 0) return "$0"
   if (value < 0.01) {
     const trimmed = value.toFixed(4).replace(/0+$/, "").replace(/\.$/, "")
-    return `${trimmed.replace(".", ",")} $`
+    return `$${trimmed}`
   }
-  return `${value.toFixed(2).replace(".", ",")} $`
+  return `$${value.toFixed(2)}`
 }
 
 /**
@@ -146,16 +146,16 @@ export function sessionDetails(session: SessionSummary): Array<{ label: string; 
   const files = session.summary?.files ?? 0
   const additions = session.summary?.additions ?? 0
   const deletions = session.summary?.deletions ?? 0
-  const changes = files > 0 ? `+${additions} −${deletions} · ${files} fichier${files > 1 ? "s" : ""}` : "aucun changement"
+  const changes = files > 0 ? `+${additions} −${deletions} · ${files} file${files > 1 ? "s" : ""}` : "no changes"
 
   return [
-    { label: "agent", value: session.agent ?? "défaut du serveur" },
-    { label: "modèle", value: modelLabel(session.model) },
+    { label: "agent", value: session.agent ?? "server default" },
+    { label: "model", value: modelLabel(session.model) },
     {
-      label: "jetons",
-      value: `${formatTokens(tokens.input)} entrée · ${formatTokens(tokens.output)} sortie · ${formatTokens(cache)} cache`,
+      label: "tokens",
+      value: `${formatTokens(tokens.input)} input · ${formatTokens(tokens.output)} output · ${formatTokens(cache)} cache`,
     },
-    { label: "coût", value: formatCost(session.cost) },
-    { label: "fichiers", value: changes },
+    { label: "cost", value: formatCost(session.cost) },
+    { label: "files", value: changes },
   ]
 }

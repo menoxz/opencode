@@ -36,13 +36,13 @@ export type UiEvent = { type: string; properties?: unknown }
 export function toolStatusLabel(state: ToolState): string {
   switch (state.status) {
     case "pending":
-      return "en attente"
+      return "pending"
     case "running":
-      return "en cours"
+      return "running"
     case "completed":
-      return "terminé"
+      return "completed"
     case "error":
-      return "erreur"
+      return "error"
   }
 }
 

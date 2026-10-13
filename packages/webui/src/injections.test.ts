@@ -83,18 +83,18 @@ describe("libellés et volumes", () => {
   test("les clés connues sont traduites", () => {
     const parsed = parseInjections(FOUR)!
     expect(parsed.sections.map(injectionLabel)).toEqual([
-      "invite système",
-      "environnement",
-      "fichiers d'instructions",
-      "compétences",
+      "system prompt",
+      "environment",
+      "instruction files",
+      "skills",
     ])
   })
 
   test("les volumes s'abrègent au-delà de mille", () => {
     expect(formatChars(391)).toBe("391")
     expect(formatChars(999)).toBe("999")
-    expect(formatChars(1000)).toBe("1,0 k")
-    expect(formatChars(13891)).toBe("13,9 k")
+    expect(formatChars(1000)).toBe("1.0k")
+    expect(formatChars(13891)).toBe("13.9k")
   })
 
   test("la part est nulle quand le total est nul", () => {

@@ -41,19 +41,19 @@ describe("ToolLine", () => {
 
   test("un outil terminé se tait : aucun libellé d'état", () => {
     const { html, dispose } = mount(() => <ToolLine tool="read" state={completed} open={false} onToggle={() => {}} />)
-    expect(html).not.toContain("terminé")
+    expect(html).not.toContain("completed")
     dispose()
   })
 
   test("un outil en cours écrit son état", () => {
     const { html, dispose } = mount(() => <ToolLine tool="read" state={running} open={false} onToggle={() => {}} />)
-    expect(html).toContain("en cours")
+    expect(html).toContain("running")
     dispose()
   })
 
   test("un outil en erreur porte le libellé d'erreur", () => {
     const { html, dispose } = mount(() => <ToolLine tool="read" state={failed} open={false} onToggle={() => {}} />)
-    expect(html).toContain("erreur")
+    expect(html).toContain("error")
     dispose()
   })
 
@@ -106,16 +106,16 @@ describe("PermissionSheet", () => {
     const { html, dispose } = mount(() => <PermissionSheet request={request(["*"])} onReply={() => {}} />)
     expect(html).toContain("read")
     expect(html).toContain("tmp-perm-test.env")
-    expect(html).toContain("Autoriser une fois")
-    expect(html).toContain("Toujours autoriser")
-    expect(html).toContain("Refuser")
+    expect(html).toContain("Allow once")
+    expect(html).toContain("Always allow")
+    expect(html).toContain("Reject")
     dispose()
   })
 
   test("sans motif proposé, le bouton « toujours » n'existe pas", () => {
     const { html, dispose } = mount(() => <PermissionSheet request={request()} onReply={() => {}} />)
-    expect(html).not.toContain("Toujours autoriser")
-    expect(html).toContain("Refuser")
+    expect(html).not.toContain("Always allow")
+    expect(html).toContain("Reject")
     dispose()
   })
 
@@ -123,7 +123,7 @@ describe("PermissionSheet", () => {
     const onReply = vi.fn()
     const { container, dispose } = mount(() => <PermissionSheet request={request(["*"])} onReply={onReply} />)
     const buttons = Array.from(container.querySelectorAll("button"))
-    expect(buttons.map((b) => b.textContent)).toEqual(["Autoriser une fois", "Toujours autoriser", "Refuser"])
+    expect(buttons.map((b) => b.textContent)).toEqual(["Allow once", "Always allow", "Reject"])
     buttons[2]?.click()
     expect(onReply).toHaveBeenCalledWith("reject")
     buttons[1]?.click()
@@ -136,24 +136,24 @@ describe("PermissionSheet", () => {
   test("le refus n'est pas l'action mise en avant", () => {
     const { container, dispose } = mount(() => <PermissionSheet request={request()} onReply={() => {}} />)
     const buttons = Array.from(container.querySelectorAll("button"))
-    const reject = buttons.find((b) => b.textContent === "Refuser")
-    const allow = buttons.find((b) => b.textContent === "Autoriser une fois")
+    const reject = buttons.find((b) => b.textContent === "Reject")
+    const allow = buttons.find((b) => b.textContent === "Allow once")
     expect(reject?.className).toBe("ghost bordered")
     expect(allow?.className).toBe("primary")
     dispose()
   })
 
   test("les libellés viennent d'une seule source", () => {
-    expect(REPLY_LABEL.once).toBe("Autoriser une fois")
-    expect(REPLY_LABEL.always).toBe("Toujours autoriser")
-    expect(REPLY_LABEL.reject).toBe("Refuser")
+    expect(REPLY_LABEL.once).toBe("Allow once")
+    expect(REPLY_LABEL.always).toBe("Always allow")
+    expect(REPLY_LABEL.reject).toBe("Reject")
   })
 })
 
 describe("Reasoning", () => {
   test("repliée, le texte n'est pas rendu et l'affordance est visible", () => {
     const { html, dispose } = mount(() => <Reasoning text="je pèse les options" open={false} onToggle={() => {}} />)
-    expect(html).toContain("réflexion")
+    expect(html).toContain("thinking")
     expect(html).not.toContain("je pèse les options")
     expect(html).toContain("▸")
     dispose()
@@ -170,7 +170,7 @@ describe("Reasoning", () => {
     // Assertion sur le texte visible, pas sur le HTML : la classe s'appelle légitimement
     // `reasoning`, c'est le mot à l'écran qui ne doit pas exister.
     const { container, dispose } = mount(() => <Reasoning text="x" open={false} onToggle={() => {}} />)
-    expect(container.textContent).toContain("réflexion")
+    expect(container.textContent).toContain("thinking")
     expect(container.textContent).not.toContain("reasoning")
     dispose()
   })

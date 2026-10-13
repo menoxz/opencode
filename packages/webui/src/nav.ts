@@ -45,7 +45,7 @@ export function pluginEntries(list: PluginList | undefined): PluginEntry[] {
       return {
         key: `plugin:${spec}`,
         label: pluginLabel(spec),
-        hint: origin.scope ? `${spec} · portée ${origin.scope}` : spec,
+        hint: origin.scope ? `${spec} · scope ${origin.scope}` : spec,
       }
     })
 }

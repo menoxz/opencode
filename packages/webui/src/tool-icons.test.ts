@@ -31,9 +31,9 @@ describe("toolIcon", () => {
 })
 
 describe("toolVerb", () => {
-  test("chaque famille a un mot français", () => {
-    expect(toolVerb("bash")).toBe("commande")
-    expect(toolVerb("read")).toBe("lecture")
-    expect(toolVerb("outil_du_futur")).toBe("outil")
+  test("chaque famille a un mot", () => {
+    expect(toolVerb("bash")).toBe("command")
+    expect(toolVerb("read")).toBe("read")
+    expect(toolVerb("outil_du_futur")).toBe("tool")
   })
 })

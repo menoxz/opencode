@@ -62,12 +62,12 @@ describe("agents", () => {
 })
 
 describe("libellé du mode", () => {
-  test("les modes du serveur sont traduits, comme les clés d'injection", () => {
-    // Vu à l'écran : la colonne affichait « primary », « subagent », « all » en anglais dans une
-    // interface entièrement française.
-    expect(modeLabel("primary")).toBe("principal")
-    expect(modeLabel("subagent")).toBe("sous-agent")
-    expect(modeLabel("all")).toBe("mixte")
+  test("les modes du serveur sont rendus à l'écran, comme les clés d'injection", () => {
+    // Le serveur nomme déjà deux modes en clair : ils restent tels quels ; seul `all`, qui n'énonce
+    // pas un mode mais un mélange, reçoit un mot d'écran.
+    expect(modeLabel("primary")).toBe("primary")
+    expect(modeLabel("subagent")).toBe("subagent")
+    expect(modeLabel("all")).toBe("mixed")
   })
 
   test("un mode inconnu garde son nom plutôt que de disparaître", () => {
@@ -92,7 +92,7 @@ describe("serveurs MCP", () => {
   })
 
   test("un serveur sans état lisible est signalé, pas ignoré", () => {
-    expect(mcpProblems({ bizarre: {} })).toEqual([{ name: "bizarre", status: "inconnu", error: undefined }])
+    expect(mcpProblems({ bizarre: {} })).toEqual([{ name: "bizarre", status: "unknown", error: undefined }])
   })
 
   test("tout va bien ⇒ aucune ligne de problème", () => {
@@ -113,18 +113,18 @@ describe("modèle", () => {
   })
 
   test("une valeur absente ne produit pas de faux nom", () => {
-    expect(modelLabel(undefined)).toBe("défaut du serveur")
-    expect(modelLabel(null)).toBe("défaut du serveur")
-    expect(modelLabel(42)).toBe("défaut du serveur")
+    expect(modelLabel(undefined)).toBe("server default")
+    expect(modelLabel(null)).toBe("server default")
+    expect(modelLabel(42)).toBe("server default")
   })
 })
 
 describe("recherche d'agent", () => {
   // Trente-quatre agents : la liste ne se parcourt pas, elle se cherche.
   const ROWS: AgentRow[] = [
-    { name: "build", mode: "principal", description: "Écrit le code", full: "build" },
-    { name: "plan", mode: "principal", description: "Planifie", full: "plan" },
-    { name: "linkedin-content-creation", mode: "sous-agent", description: "Rédige des posts", full: "linkedin" },
+    { name: "build", mode: "primary", description: "Writes the code", full: "build" },
+    { name: "plan", mode: "primary", description: "Plans the work", full: "plan" },
+    { name: "linkedin-content-creation", mode: "subagent", description: "Writes posts", full: "linkedin" },
   ]
 
   test("la recherche porte sur le nom", () => {
@@ -149,19 +149,18 @@ describe("recherche d'agent", () => {
   })
 
   test("une description absente ne fait pas échouer la recherche", () => {
-    expect(filterAgents([{ name: "nu", mode: "principal", full: "nu" }], "nu")).toHaveLength(1)
+    expect(filterAgents([{ name: "nu", mode: "primary", full: "nu" }], "nu")).toHaveLength(1)
   })
 })
 
 describe("pluriels et troncature", () => {
-  test("« principal » fait « principaux », jamais « principalaux »", () => {
-    // Faute relevée à l'écran : le composant collait « aux » au singulier.
-    expect(agentSummary({ primary: 6, subagent: 22 })).toBe("6 principaux · 22 sous-agents")
+  test("le résumé suit le pluriel du nombre", () => {
+    expect(agentSummary({ primary: 6, subagent: 22 })).toBe("6 primary · 22 subagents")
   })
 
   test("les singuliers sont corrects", () => {
-    expect(agentSummary({ primary: 1, subagent: 1 })).toBe("1 principal · 1 sous-agent")
-    expect(agentSummary({ primary: 0, subagent: 0 })).toBe("0 principal · 0 sous-agent")
+    expect(agentSummary({ primary: 1, subagent: 1 })).toBe("1 primary · 1 subagent")
+    expect(agentSummary({ primary: 0, subagent: 0 })).toBe("0 primary · 0 subagents")
   })
 
   test("une description courte est rendue telle quelle", () => {

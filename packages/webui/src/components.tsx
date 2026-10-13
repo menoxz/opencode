@@ -13,9 +13,9 @@ import { ChevronIcon, FolderIcon, PluginIcon, SessionIcon, ToolIcon, toolHint } 
 import { relativeTime } from "./time"
 
 export const REPLY_LABEL: Record<PermissionReply, string> = {
-  once: "Autoriser une fois",
-  always: "Toujours autoriser",
-  reject: "Refuser",
+  once: "Allow once",
+  always: "Always allow",
+  reject: "Reject",
 }
 
 /* =============================================================================
@@ -58,7 +58,7 @@ export function ShowMore(props: { hidden: number; expanded: boolean; onToggle: (
   return (
     <button class="show-more" onClick={() => props.onToggle()}>
       <ChevronIcon size={11} open={props.expanded} />
-      <span>{props.expanded ? "voir moins" : `voir plus · ${props.hidden}`}</span>
+      <span>{props.expanded ? "show less" : `show more · ${props.hidden}`}</span>
     </button>
   )
 }
@@ -125,7 +125,7 @@ export function SessionRow(props: {
       <span class="row-time">{relativeTime(props.time, props.now)}</span>
       <button
         class="row-more"
-        title={props.open ? "Moins d'informations" : "Plus d'informations"}
+        title={props.open ? "Hide details" : "Show details"}
         onClick={(event) => {
           event.stopPropagation()
           props.onToggle()
@@ -178,14 +178,14 @@ export function ContextInjections(props: { injections: Injections; open: boolean
   const bySources = () => props.injections.kind === "sources"
   // Deux formes coexistent côté serveur : des volumes par section, ou la liste des fichiers chargés.
   // Le titre le dit, plutôt que d'annoncer « sections » sur une liste de chemins.
-  const title = () => (bySources() ? "instructions chargées" : "contexte injecté")
+  const title = () => (bySources() ? "loaded instructions" : "injected context")
   const meta = () => {
     if (bySources()) {
       const count = props.injections.sources.length
-      return `${count} fichier${count > 1 ? "s" : ""}`
+      return `${count} file${count > 1 ? "s" : ""}`
     }
     const count = props.injections.sections.length
-    return `${count} section${count > 1 ? "s" : ""} · ${formatChars(total())} car.`
+    return `${count} section${count > 1 ? "s" : ""} · ${formatChars(total())} chars`
   }
   return (
     <div class="injections">
@@ -227,8 +227,8 @@ export function ContextInjections(props: { injections: Injections; open: boolean
                   <span class="inj-size">
                     {formatChars(section.chars)}
                     <Show when={section.truncated}>
-                      <span class="inj-trunc" title="Le serveur a tronqué cette section">
-                        tronqué
+                      <span class="inj-trunc" title="The server truncated this section">
+                        truncated
                       </span>
                     </Show>
                   </span>
@@ -250,7 +250,7 @@ export function FileChip(props: { label: string; thumb?: string; size?: string; 
       <span class="chip-name">{props.label}</span>
       <Show when={props.size}>{(size) => <span class="chip-size">{size()}</span>}</Show>
       <Show when={props.onRemove}>
-        <button class="chip-x" type="button" title="Retirer" onClick={() => props.onRemove?.()}>
+        <button class="chip-x" type="button" title="Remove" onClick={() => props.onRemove?.()}>
           ✕
         </button>
       </Show>
@@ -288,13 +288,13 @@ export function ToolLine(props: { tool: string; state: ToolState; open: boolean;
 
 /**
  * Réflexion de l'agent. Secondaire par nature : repliée, dans la même grammaire que les actions, et
- * nommée en français — jamais rendue par son nom de type (`reasoning` n'est pas un mot d'écran).
+ * nommée « thinking » — jamais rendue par son nom de type (`reasoning` n'est pas un mot d'écran).
  */
 export function Reasoning(props: { text: string; open: boolean; onToggle: () => void }) {
   return (
     <div class="reasoning">
       <button class="reasoning-line" onClick={() => props.onToggle()}>
-        <span>réflexion</span>
+        <span>thinking</span>
         <span class="tool-chev">{props.open ? "▾" : "▸"}</span>
       </button>
       <Show when={props.open}>
@@ -308,7 +308,7 @@ export function PermissionSheet(props: { request: PermissionRequest; onReply: (r
   return (
     <div class="permission">
       <div class="permission-title">
-        L'agent demande à utiliser <strong>{props.request.permission}</strong>
+        The agent asks to use <strong>{props.request.permission}</strong>
       </div>
       <Show when={props.request.patterns.length > 0}>
         <ul class="permission-patterns">

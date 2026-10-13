@@ -112,20 +112,20 @@ export function parseInjections(text: string | undefined): Injections | undefine
  * visible, c'est justement celle qu'on n'attendait pas.
  */
 const LABELS: Record<string, string> = {
-  core: "invite système",
-  env: "environnement",
-  instructions: "fichiers d'instructions",
-  skills: "compétences",
+  core: "system prompt",
+  env: "environment",
+  instructions: "instruction files",
+  skills: "skills",
 }
 
 export function injectionLabel(section: InjectionSection): string {
   return LABELS[section.key] ?? section.label
 }
 
-/** Volume lisible : `13891` → `13,9 k`. Au-delà de 1000 on abrège, en dessous on compte. */
+/** Volume lisible : `13891` → `13.9k`. Au-delà de 1000 on abrège, en dessous on compte. */
 export function formatChars(chars: number): string {
   if (chars < 1000) return String(chars)
-  return `${(chars / 1000).toFixed(1).replace(".", ",")} k`
+  return `${(chars / 1000).toFixed(1)}k`
 }
 
 /** Part du total, pour une barre de proportion. Renvoie 0 quand le total est nul. */

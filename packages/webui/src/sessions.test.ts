@@ -47,7 +47,7 @@ describe("dossier d'une session", () => {
 
   test("une session sans dossier ne disparaît pas", () => {
     const orphan = groupOf({ id: "ses_x" })
-    expect(orphan.label).toBe("sans dossier")
+    expect(orphan.label).toBe("no folder")
     expect(orphan.key).toBe("")
   })
 })
@@ -75,41 +75,41 @@ describe("libellés", () => {
   test("le modèle perd son fournisseur", () => {
     expect(modelLabel({ id: "deepseek/deepseek-v4.1-flash" })).toBe("deepseek-v4.1-flash")
     expect(modelLabel({ id: "sans-barre" })).toBe("sans-barre")
-    expect(modelLabel(undefined)).toBe("modèle par défaut")
+    expect(modelLabel(undefined)).toBe("server default")
   })
 
   test("les volumes s'abrègent au-delà de mille", () => {
     expect(formatTokens(851)).toBe("851")
-    expect(formatTokens(47403)).toBe("47,4 k")
-    expect(formatTokens(251136)).toBe("251,1 k")
+    expect(formatTokens(47403)).toBe("47.4k")
+    expect(formatTokens(251136)).toBe("251.1k")
     expect(formatTokens(0)).toBe("0")
     expect(formatTokens(undefined)).toBe("0")
   })
 
   test("le coût nul s'écrit zéro, pas une décimale", () => {
-    expect(formatCost(0)).toBe("0 $")
-    expect(formatCost(undefined)).toBe("0 $")
+    expect(formatCost(0)).toBe("$0")
+    expect(formatCost(undefined)).toBe("$0")
     // Sous un cent, on garde la précision ; au-dessus, deux décimales suffisent.
-    expect(formatCost(0.005)).toBe("0,005 $")
-    expect(formatCost(0.0123)).toBe("0,01 $")
-    expect(formatCost(1.5)).toBe("1,50 $")
+    expect(formatCost(0.005)).toBe("$0.005")
+    expect(formatCost(0.0123)).toBe("$0.01")
+    expect(formatCost(1.5)).toBe("$1.50")
   })
 })
 
 describe("détail d'une session", () => {
   test("les cinq lignes sont présentes, dans l'ordre", () => {
     const details = sessionDetails(inPackages)
-    expect(details.map((line) => line.label)).toEqual(["agent", "modèle", "jetons", "coût", "fichiers"])
+    expect(details.map((line) => line.label)).toEqual(["agent", "model", "tokens", "cost", "files"])
   })
 
   test("les jetons viennent des vraies valeurs", () => {
-    const line = sessionDetails(inPackages).find((item) => item.label === "jetons")
-    expect(line?.value).toBe("47,4 k entrée · 851 sortie · 251,1 k cache")
+    const line = sessionDetails(inPackages).find((item) => item.label === "tokens")
+    expect(line?.value).toBe("47.4k input · 851 output · 251.1k cache")
   })
 
   test("aucun changement ne s'écrit pas « +0 −0 »", () => {
-    const line = sessionDetails(inPackages).find((item) => item.label === "fichiers")
-    expect(line?.value).toBe("aucun changement")
+    const line = sessionDetails(inPackages).find((item) => item.label === "files")
+    expect(line?.value).toBe("no changes")
   })
 
   test("un vrai changement est décrit, et le pluriel suivi", () => {
@@ -117,17 +117,17 @@ describe("détail d'une session", () => {
       ...inPackages,
       summary: { additions: 12, deletions: 3, files: 4 },
     }
-    expect(sessionDetails(changed).find((item) => item.label === "fichiers")?.value).toBe("+12 −3 · 4 fichiers")
+    expect(sessionDetails(changed).find((item) => item.label === "files")?.value).toBe("+12 −3 · 4 files")
 
     const one: SessionSummary = { ...inPackages, summary: { additions: 1, deletions: 0, files: 1 } }
-    expect(sessionDetails(one).find((item) => item.label === "fichiers")?.value).toBe("+1 −0 · 1 fichier")
+    expect(sessionDetails(one).find((item) => item.label === "files")?.value).toBe("+1 −0 · 1 file")
   })
 
   test("une session sans agent ni modèle ne laisse pas de trou", () => {
     const bare: SessionSummary = { id: "ses_x" }
     const details = sessionDetails(bare)
-    expect(details.find((item) => item.label === "agent")?.value).toBe("défaut du serveur")
-    expect(details.find((item) => item.label === "modèle")?.value).toBe("modèle par défaut")
+    expect(details.find((item) => item.label === "agent")?.value).toBe("server default")
+    expect(details.find((item) => item.label === "model")?.value).toBe("server default")
   })
 })
 

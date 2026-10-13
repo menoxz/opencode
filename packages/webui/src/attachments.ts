@@ -48,18 +48,18 @@ export function attachmentMaxBytes(mime: string): number {
  * si la pièce est acceptable — un booléen ne suffirait pas, l'UI doit dire *pourquoi*.
  */
 export function validateAttachment(file: { size: number; mime: string; filename: string }): string | undefined {
-  if (!file.mime) return `Type inconnu pour « ${file.filename} »`
+  if (!file.mime) return `Unknown type for "${file.filename}"`
   const max = attachmentMaxBytes(file.mime)
   if (file.size > max) {
-    return `« ${file.filename} » dépasse ${fileSizeLabel(max)} (${fileSizeLabel(file.size)})`
+    return `"${file.filename}" exceeds ${fileSizeLabel(max)} (${fileSizeLabel(file.size)})`
   }
   return undefined
 }
 
 /** Taille lisible. Arrondi au dixième : « 1,2 Mo » suffit, « 1,234 Mo » n'informe pas mieux. */
 export function fileSizeLabel(bytes: number): string {
-  if (bytes < 1024) return `${bytes} o`
-  const units = ["ko", "Mo", "Go"]
+  if (bytes < 1024) return `${bytes} B`
+  const units = ["kB", "MB", "GB"]
   let value = bytes / 1024
   let unit = 0
   while (value >= 1024 && unit < units.length - 1) {
@@ -67,7 +67,7 @@ export function fileSizeLabel(bytes: number): string {
     unit += 1
   }
   const rounded = Math.round(value * 10) / 10
-  return `${String(rounded).replace(".", ",")} ${units[unit]}`
+  return `${rounded} ${units[unit]}`
 }
 
 /**
@@ -86,5 +86,5 @@ export function buildFilePart(attachment: Pick<Attachment, "mime" | "filename" |
 
 /** Ce qu'on affiche dans le fil pour une partie de fichier, sans dépendre du DOM. */
 export function filePartLabel(part: { filename?: string; mime?: string }): string {
-  return part.filename || part.mime || "pièce jointe"
+  return part.filename || part.mime || "attachment"
 }

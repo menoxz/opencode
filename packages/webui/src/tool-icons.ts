@@ -60,18 +60,18 @@ export function toolIcon(tool: string): ToolIconName {
  * inventée : on rend son nom technique plutôt qu'une phrase fausse.
  */
 const VERBS: Record<ToolIconName, string> = {
-  read: "lecture",
-  write: "écriture",
-  shell: "commande",
-  search: "recherche",
-  subagent: "sous-agent",
+  read: "read",
+  write: "write",
+  shell: "command",
+  search: "search",
+  subagent: "subagent",
   ask: "question",
   plan: "plan",
-  todo: "tâches",
-  skill: "compétence",
+  todo: "tasks",
+  skill: "skill",
   web: "web",
-  goal: "objectif",
-  generic: "outil",
+  goal: "goal",
+  generic: "tool",
 }
 
 export function toolVerb(tool: string): string {

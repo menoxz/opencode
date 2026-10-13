@@ -36,12 +36,12 @@ describe("validateAttachment", () => {
   test("refuse une pièce au-dessus de la borne, en le disant", () => {
     const message = validateAttachment({ size: 6 * 1024 * 1024, mime: "image/png", filename: "lourd.png" })
     expect(message).toContain("lourd.png")
-    expect(message).toContain("5 Mo")
-    expect(message).toContain("6 Mo")
+    expect(message).toContain("5 MB")
+    expect(message).toContain("6 MB")
   })
 
   test("refuse un type vide, parce que la borne serait fausse", () => {
-    expect(validateAttachment({ size: 10, mime: "", filename: "x" })).toContain("Type inconnu")
+    expect(validateAttachment({ size: 10, mime: "", filename: "x" })).toContain("Unknown type")
   })
 
   test("la borne est inclusive", () => {
@@ -52,21 +52,21 @@ describe("validateAttachment", () => {
 
 describe("fileSizeLabel", () => {
   test("octets sous 1 ko", () => {
-    expect(fileSizeLabel(0)).toBe("0 o")
-    expect(fileSizeLabel(500)).toBe("500 o")
+    expect(fileSizeLabel(0)).toBe("0 B")
+    expect(fileSizeLabel(500)).toBe("500 B")
   })
 
   test("passe aux unités supérieures", () => {
-    expect(fileSizeLabel(1024)).toBe("1 ko")
-    expect(fileSizeLabel(1536)).toBe("1,5 ko")
-    expect(fileSizeLabel(1024 * 1024)).toBe("1 Mo")
-    expect(fileSizeLabel(5 * 1024 * 1024)).toBe("5 Mo")
-    expect(fileSizeLabel(1024 * 1024 * 1024)).toBe("1 Go")
+    expect(fileSizeLabel(1024)).toBe("1 kB")
+    expect(fileSizeLabel(1536)).toBe("1.5 kB")
+    expect(fileSizeLabel(1024 * 1024)).toBe("1 MB")
+    expect(fileSizeLabel(5 * 1024 * 1024)).toBe("5 MB")
+    expect(fileSizeLabel(1024 * 1024 * 1024)).toBe("1 GB")
   })
 
-  test("virgule décimale, pas point", () => {
-    expect(fileSizeLabel(1310720)).toBe("1,3 Mo")
-    expect(fileSizeLabel(1536)).not.toContain(".")
+  test("point décimal, pas virgule", () => {
+    expect(fileSizeLabel(1310720)).toBe("1.3 MB")
+    expect(fileSizeLabel(1536)).toContain(".")
   })
 })
 
@@ -110,6 +110,6 @@ describe("filePartLabel", () => {
 
   test("retombe sur le type, puis sur un libellé générique", () => {
     expect(filePartLabel({ mime: "application/pdf" })).toBe("application/pdf")
-    expect(filePartLabel({})).toBe("pièce jointe")
+    expect(filePartLabel({})).toBe("attachment")
   })
 })

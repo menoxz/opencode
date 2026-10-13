@@ -33,7 +33,7 @@ describe("entrées de plugin", () => {
   test("la portée apparaît dans l'infobulle, pas dans le libellé", () => {
     const [entry] = pluginEntries({ origins: [{ spec: "file:///a/x.ts", scope: "global" }] })
     expect(entry.label).toBe("x")
-    expect(entry.hint).toContain("portée global")
+    expect(entry.hint).toContain("scope global")
   })
 
   test("aucun plugin rend une liste vide : la section ne s'affiche pas du tout", () => {
