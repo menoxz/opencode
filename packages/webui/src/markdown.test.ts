@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { parseMarkdown, safeHref, type MdBlock, type MdInline } from "./markdown"
+import { markdownSpans, parseMarkdown, safeHref, type MdBlock, type MdInline } from "./markdown"
 
 /** Raccourci : le markdown d'un seul paragraphe, pour tester l'en ligne sans bruit. */
 const inline = (text: string): MdInline[] => {
@@ -27,6 +27,20 @@ describe("markdown — blocs", () => {
     expect(blocks[0]!.kind).toBe("paragraph")
     const first = (blocks[0] as Extract<MdBlock, { kind: "paragraph" }>).children[0]
     expect(first).toEqual({ kind: "text", text: "une ligne et une autre" })
+  })
+
+  test("un saut dur garde la coupure, comme le markdown le prévoit", () => {
+    // Un prompt est souvent structuré : le fil l'affichait avec ses retours avant ce lot, et le
+    // rendre en markdown sans ça aurait fait régresser une promesse existante.
+    const two = parseMarkdown("première ligne  \nseconde ligne")[0] as Extract<MdBlock, { kind: "paragraph" }>
+    expect(two.children.map((node) => node.kind)).toEqual(["text", "break", "text"])
+    const backslash = parseMarkdown("une\\\ndeux")[0] as Extract<MdBlock, { kind: "paragraph" }>
+    expect(backslash.children.map((node) => node.kind)).toEqual(["text", "break", "text"])
+  })
+
+  test("une seule espace en fin de ligne ne coupe pas", () => {
+    const block = parseMarkdown("une \ndeux")[0] as Extract<MdBlock, { kind: "paragraph" }>
+    expect(block.children).toEqual([{ kind: "text", text: "une deux" }])
   })
 
   test("un bloc de code retient sa langue et garde son contenu littéral", () => {
@@ -164,6 +178,29 @@ describe("markdown — la sûreté par construction", () => {
   })
 })
 
+describe("markdown — les sauts durs", () => {
+  test("deux espaces ou un antislash coupent la ligne, une espace non", () => {
+    const kinds = (source: string) =>
+      (parseMarkdown(source)[0] as Extract<MdBlock, { kind: "paragraph" }>).children.map((node) => node.kind)
+    expect(kinds("a  \nb")).toEqual(["text", "break", "text"])
+    expect(kinds("a\\\nb")).toEqual(["text", "break", "text"])
+    expect(kinds("a \nb")).toEqual(["text"])
+    expect(kinds("a\nb")).toEqual(["text"])
+  })
+
+  test("le saut dur ne casse ni l'emphase ni le code de la ligne", () => {
+    const children = (parseMarkdown("**gras**  \n`code`")[0] as Extract<MdBlock, { kind: "paragraph" }>).children
+    expect(children.map((node) => node.kind)).toEqual(["strong", "break", "code"])
+  })
+
+  test("les caractères d'un saut dur restent dans la concaténation du compositeur", () => {
+    // La garantie du calque vaut aussi ici : rien ne doit disparaître du texte saisi.
+    for (const source of ["a  \nb", "a\\\nb", "a \nb"]) {
+      expect(markdownSpans(source).map((span) => span.text).join(""), JSON.stringify(source)).toBe(source)
+    }
+  })
+})
+
 describe("markdown — la destination d'un lien", () => {
   test("http, https et mailto passent", () => {
     expect(safeHref("https://a.b")).toBe("https://a.b")
@@ -198,5 +235,83 @@ describe("markdown — la destination d'un lien", () => {
   test("une destination vide ne donne pas de lien", () => {
     expect(safeHref("")).toBeUndefined()
     expect(safeHref("   ")).toBeUndefined()
+  })
+})
+
+describe("markdown — la coloration du compositeur", () => {
+  /**
+   * La propriété qui protège le curseur : le calque est un **calque**, il est posé sous le champ et
+   * doit s'aligner au caractère. Si un seul caractère était ajouté, retiré ou déplacé, le curseur
+   * pointerait à côté — et le défaut ne se verrait qu'en tapant. On l'affirme donc directement,
+   * sur des entrées qui couvrent chaque forme reconnue.
+   */
+  const roundTrip = (source: string) => markdownSpans(source).map((span) => span.text).join("")
+
+  const cases = [
+    "",
+    "une phrase simple",
+    "**gras** et *italique* et `code`",
+    "# Titre",
+    "###### six",
+    "- une puce\n- une autre",
+    "1. premier\n2. second",
+    "  - puce indentée",
+    "> une citation",
+    "| a | b |\n| --- | --- |",
+    "---",
+    "```ts\nconst a = 1\n```",
+    "texte avant\n```\nbloc\n```\ntexte après",
+    "[lien](https://a.b) et ![image](https://a.b/x.png)",
+    "un `code` avec **gras** dedans",
+    "ligne\n\nligne après un blanc",
+    "souligné _ainsi_ et snake_case_name",
+    "éàü 中文 🙂 **accentué**",
+    "**non fermé et `code non fermé",
+    "[lien cassé](sans fin",
+    "texte\n-\n- puce",
+  ]
+
+  test("la concaténation des segments rend la source, caractère pour caractère", () => {
+    for (const source of cases) {
+      expect(roundTrip(source), JSON.stringify(source)).toBe(source)
+    }
+  })
+
+  test("les caractères sont dans le même ordre, aucun déplacé", () => {
+    // La longueur totale doit correspondre aussi : un déplacement sans perte passerait un test de
+    // concaténation naïve fait par tri, pas celui-ci.
+    for (const source of cases) {
+      const spans = markdownSpans(source)
+      expect(spans.reduce((total, span) => total + span.text.length, 0), JSON.stringify(source)).toBe(source.length)
+    }
+  })
+
+  test("chaque forme reconnue reçoit sa nature", () => {
+    const kinds = (source: string) => markdownSpans(source).map((span) => span.kind)
+    expect(kinds("# Titre")).toEqual(["marker", "plain", "heading"])
+    expect(kinds("**gras**")).toEqual(["marker", "strong", "marker"])
+    expect(kinds("*italique*")).toEqual(["marker", "em", "marker"])
+    expect(kinds("`code`")).toEqual(["marker", "code", "marker"])
+    expect(kinds("- puce")).toEqual(["marker", "plain"])
+    // Les segments voisins de même nature sont fusionnés : l'espace après la puce et le texte ne
+    // font qu'un. C'est voulu — moins de nœuds dans le calque.
+    expect(kinds("1. item")).toEqual(["marker", "plain"])
+    expect(kinds("> citation")).toContain("marker")
+    expect(kinds("[a](b)")).toEqual(["marker", "link", "marker", "link", "marker"])
+  })
+
+  test("un bloc de code clôturé colore son contenu, marqueurs compris", () => {
+    const spans = markdownSpans("```ts\nconst a = **pas du gras**\n```")
+    const kinds = spans.map((span) => span.kind)
+    // La clôture d'ouverture est un marqueur, le contenu un bloc, la clôture de fermeture aussi.
+    expect(kinds[0]).toBe("marker")
+    expect(kinds).toContain("block")
+    // Le `**` à l'intérieur ne devient PAS du gras : c'est du texte de code.
+    expect(kinds).not.toContain("strong")
+  })
+
+  test("un marqueur non fermé reste du texte", () => {
+    expect(markdownSpans("**non fermé").map((s) => s.kind)).toEqual(["plain"])
+    expect(markdownSpans("`non fermé").map((s) => s.kind)).toEqual(["plain"])
   })
 })

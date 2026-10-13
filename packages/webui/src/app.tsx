@@ -19,6 +19,7 @@ import {
 } from "./columns"
 import {
   Boundary,
+  ComposerMarkup,
   ContextInjections,
   Documents,
   FileChip,
@@ -1536,18 +1537,25 @@ export default function App() {
                 </ul>
               </Show>
               <Show when={attachError()}>{(message) => <p class="error">{message()}</p>}</Show>
-              <textarea
-                rows="2"
-                placeholder="Describe a task, paste context, attach a file…"
-                value={draft()}
-                onInput={(event) => setDraft(event.currentTarget.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey) {
-                    event.preventDefault()
-                    void send()
-                  }
-                }}
-              />
+              {/* Le champ et son calque, dans une même boîte : le calque est **dessous**, à métriques
+                  identiques, et le texte du champ est transparent. Le champ reste un `textarea` — le
+                  seul contrôle qui garde un curseur, une sélection et le copier-coller du système. */}
+              <div class="composer-field">
+                <ComposerMarkup text={draft()} />
+                <textarea
+                  class="composer-input"
+                  rows="2"
+                  placeholder="Message, / commands, @ files"
+                  value={draft()}
+                  onInput={(event) => setDraft(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault()
+                      void send()
+                    }
+                  }}
+                />
+              </div>
               <div class="composer-bar">
                 <label class="attach" title="Attach files">
                   +

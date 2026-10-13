@@ -19,6 +19,7 @@ export type MdInline =
   | { kind: "em"; children: MdInline[] }
   | { kind: "link"; href: string; children: MdInline[] }
   | { kind: "image"; src: string; alt: string }
+  | { kind: "break" }
 
 export type MdBlock =
   | { kind: "heading"; level: 1 | 2 | 3 | 4; children: MdInline[] }
@@ -33,6 +34,27 @@ export type MdBlock =
 export type MdListItem = { children: MdInline[]; sub?: MdBlock }
 
 const isSpace = (char: string | undefined) => char === " " || char === "\t"
+
+/**
+ * Le markdown écrase les retours à la ligne simples — mais un **prompt** est souvent structuré, et le
+ * fil l'affichait jusqu'ici avec ses retours (`white-space: pre-wrap`). Le rendre en markdown ferait
+ * donc **régresser** une promesse existante.
+ *
+ * D'où les **sauts durs**, qui sont du markdown standard : une ligne terminée par **deux espaces** ou
+ * par un **antislash** garde sa coupure. Le reste se rejoint par un espace, comme le markdown le veut.
+ */
+const HARD_BREAK = /(?:\s{2,}|\\)$/
+
+/** Fusionne les voisins de même nature : `a` + ` ` + `b` doit redevenir un seul texte. */
+function mergeText(nodes: MdInline[]): MdInline[] {
+  const out: MdInline[] = []
+  for (const node of nodes) {
+    const last = out[out.length - 1]
+    if (node.kind === "text" && last?.kind === "text") last.text += node.text
+    else out.push(node)
+  }
+  return out
+}
 
 /** `[label](href)`, à partir du `[`. Rend `undefined` si ce n'en est pas un (crochets non fermés). */
 function matchBracket(text: string, open: number): { label: string; href: string; end: number } | undefined {
@@ -268,7 +290,7 @@ export function parseMarkdown(source: string): MdBlock[] {
     }
 
     // Paragraphe : jusqu'à une ligne vide ou le début d'un autre bloc.
-    const paragraph: string[] = []
+    const collected: { text: string; hard: boolean }[] = []
     while (i < lines.length) {
       const candidate = lines[i]!
       if (
@@ -282,10 +304,21 @@ export function parseMarkdown(source: string): MdBlock[] {
       ) {
         break
       }
-      paragraph.push(candidate.trim())
+      // Le saut dur se lit sur la ligne **brute** : un `trim()` emporterait les deux espaces.
+      collected.push({ text: candidate.trim(), hard: HARD_BREAK.test(candidate) })
       i += 1
     }
-    if (paragraph.length > 0) blocks.push({ kind: "paragraph", children: parseInline(paragraph.join(" ")) })
+    if (collected.length > 0) {
+      const children: MdInline[] = []
+      collected.forEach((line, index) => {
+        if (index > 0) {
+          if (collected[index - 1]!.hard) children.push({ kind: "break" })
+          else children.push({ kind: "text", text: " " })
+        }
+        children.push(...parseInline(line.text))
+      })
+      blocks.push({ kind: "paragraph", children: mergeText(children) })
+    }
   }
 
   return blocks
@@ -311,4 +344,149 @@ export function safeHref(href: string, allowDataImage = false): string | undefin
   if (name === "http" || name === "https" || name === "mailto") return trimmed
   if (allowDataImage && name === "data" && /^data:image\//i.test(trimmed)) return trimmed
   return undefined
+}
+
+/* =============================================================================
+   La coloration du compositeur — CIBLE.md §13.2.
+
+   Un `textarea` ne peut pas rendre du markdown **bloc** : un titre, une liste ou un bloc de code
+   changent la mise en page, donc le curseur décroche du texte. La parade est de **colorer** la
+   syntaxe sous le champ, dans un calque à métriques **identiques**.
+
+   Ce calque n'a le droit de faire qu'une chose : changer la **couleur**. Toute transformation qui
+   touche à la largeur ou à la hauteur (poids, taille, italique, marges) décalerait le curseur — et
+   le défaut serait invisible à l'œil jusqu'à ce qu'on tape au mauvais endroit.
+
+   D'où la propriété qui gouverne cette fonction, et qui est testée : **la concaténation des segments
+   rend la source, caractère pour caractère.** Rien n'est ajouté, rien n'est retiré.
+   ============================================================================= */
+
+export type SpanKind = "plain" | "marker" | "heading" | "code" | "block" | "link" | "strong" | "em" | "quote"
+
+export type MarkdownSpan = { text: string; kind: SpanKind }
+
+const push = (spans: MarkdownSpan[], text: string, kind: SpanKind) => {
+  if (text.length === 0) return
+  const last = spans[spans.length - 1]
+  // On fusionne les voisins de même nature : moins de nœuds, et le calque reste léger.
+  if (last && last.kind === kind) last.text += text
+  else spans.push({ text, kind })
+}
+
+/** Les marqueurs restent visibles — atténués — parce qu'on écrit dans ce champ, on ne le lit pas. */
+function scanInline(source: string, spans: MarkdownSpan[]) {
+  let i = 0
+  while (i < source.length) {
+    const char = source[i]!
+
+    if (char === "`") {
+      const end = source.indexOf("`", i + 1)
+      if (end > i) {
+        push(spans, "`", "marker")
+        push(spans, source.slice(i + 1, end), "code")
+        push(spans, "`", "marker")
+        i = end + 1
+        continue
+      }
+    }
+
+    if (char === "[" || (char === "!" && source[i + 1] === "[")) {
+      const open = char === "!" ? i + 1 : i
+      const close = source.indexOf("]", open + 1)
+      const paren = close === -1 ? -1 : source.indexOf("(", close + 1)
+      const end = paren === -1 ? -1 : source.indexOf(")", paren + 1)
+      if (end !== -1) {
+        if (char === "!") push(spans, "!", "marker")
+        push(spans, "[", "marker")
+        push(spans, source.slice(open + 1, close), "link")
+        push(spans, "](", "marker")
+        push(spans, source.slice(paren + 1, end), "link")
+        push(spans, ")", "marker")
+        i = end + 1
+        continue
+      }
+    }
+
+    if (char === "*" || char === "_") {
+      const double = source[i + 1] === char
+      const marker = double ? char + char : char
+      const end = source.indexOf(marker, i + marker.length)
+      if (end > i + marker.length) {
+        push(spans, marker, "marker")
+        push(spans, source.slice(i + marker.length, end), double ? "strong" : "em")
+        push(spans, marker, "marker")
+        i = end + marker.length
+        continue
+      }
+    }
+
+    push(spans, char, "plain")
+    i += 1
+  }
+}
+
+/**
+ * Le brouillon découpé en segments colorables, dans l'ordre exact du texte.
+ *
+ * Le bloc est reconnu d'abord (clôture de code, titre, citation, puce, tableau), puis le reste de la
+ * ligne passe à `scanInline`. Les retours à la ligne restent des segments, sinon le calque ne
+ * s'alignerait plus sur les lignes du champ.
+ */
+export function markdownSpans(source: string): MarkdownSpan[] {
+  const spans: MarkdownSpan[] = []
+  const lines = source.split("\n")
+  let fenced: string | undefined
+
+  lines.forEach((line, index) => {
+    if (index > 0) push(spans, "\n", "plain")
+
+    const fence = /^\s*(```|~~~)/.exec(line)
+    if (fence) {
+      push(spans, line, fenced ? "block" : "marker")
+      fenced = fenced ? undefined : fence[1]
+      return
+    }
+    if (fenced) {
+      push(spans, line, "block")
+      return
+    }
+
+    const heading = /^(#{1,6})(\s+)(.*)$/.exec(line)
+    if (heading) {
+      push(spans, heading[1]!, "marker")
+      push(spans, heading[2]!, "plain")
+      push(spans, heading[3]!, "heading")
+      return
+    }
+
+    const quote = /^(\s*>\s?)(.*)$/.exec(line)
+    if (quote) {
+      push(spans, quote[1]!, "marker")
+      scanInline(quote[2]!, spans)
+      return
+    }
+
+    const bullet = /^(\s*)([-*+]|\d+[.)])(\s+)(.*)$/.exec(line)
+    if (bullet) {
+      push(spans, bullet[1]!, "plain")
+      push(spans, bullet[2]!, "marker")
+      push(spans, bullet[3]!, "plain")
+      scanInline(bullet[4]!, spans)
+      return
+    }
+
+    if (/^\s*\|/.test(line)) {
+      push(spans, line, "quote")
+      return
+    }
+
+    if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) {
+      push(spans, line, "marker")
+      return
+    }
+
+    scanInline(line, spans)
+  })
+
+  return spans
 }

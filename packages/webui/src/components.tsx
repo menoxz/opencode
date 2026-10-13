@@ -6,6 +6,7 @@ import {
   copyableText,
   customValue,
   diffLabel,
+  fileBadge,
   fileDiff,
   formatCost,
   formatCount,
@@ -30,7 +31,7 @@ import {
   type StepView,
   type ToolState,
 } from "./view-model"
-import { parseMarkdown, safeHref, type MdBlock, type MdInline } from "./markdown"
+import { markdownSpans, parseMarkdown, safeHref, type MdBlock, type MdInline } from "./markdown"
 import { writeClipboard } from "./clipboard"
 import { formatChars, injectionLabel, share, sourceLabel, type Injections } from "./injections"
 import { ChevronIcon, FolderIcon, PluginIcon, SessionIcon, ToolIcon, toolHint } from "./icons"
@@ -218,12 +219,20 @@ export function Turn(props: { role: string; children?: unknown }) {
 /**
  * Le prompt de l'utilisateur.
  *
- * C'est le seul texte de l'écran qu'il a écrit lui-même : il doit se reconnaître au premier
- * regard, donc une surface à lui, dans la largeur de lecture, et son texte conservé tel quel —
- * espaces et retours à la ligne compris (un prompt est souvent structuré).
+ * C'est le seul texte de l'écran qu'il a écrit lui-même : il doit se reconnaître au premier regard,
+ * donc une surface à lui, dans la largeur de lecture.
+ *
+ * Il passe par le **même** moteur markdown que la prose de l'agent : un prompt s'écrit en markdown,
+ * et le montrer en texte brut obligeait à lire des `**` et des `#`. Les sauts durs (`  ` ou `\` en fin
+ * de ligne) gardent ses retours — sans quoi le rendre en markdown aurait **retiré** une chose que le
+ * fil affichait avant.
  */
 export function UserPrompt(props: { text: string }) {
-  return <p class="prompt">{props.text}</p>
+  return (
+    <div class="prompt">
+      <Markdown text={props.text} />
+    </div>
+  )
 }
 
 /**
@@ -624,14 +633,19 @@ function Inline(props: { nodes: MdInline[] }) {
           if (!src) return node.alt
           return <img class="md-image" src={src} alt={node.alt} loading="lazy" />
         }
-        const href = safeHref(node.href)
-        // Une destination refusée ne casse pas le texte : on garde le libellé, on jette le lien.
-        if (!href) return <Inline nodes={node.children} />
-        return (
-          <a class="md-link" href={href} target="_blank" rel="noreferrer noopener">
-            <Inline nodes={node.children} />
-          </a>
-        )
+        // Un saut dur : le markdown écrase les retours simples, pas ceux que l'auteur a marqués.
+        if (node.kind === "break") return <br />
+        if (node.kind === "link") {
+          const href = safeHref(node.href)
+          // Une destination refusée ne casse pas le texte : on garde le libellé, on jette le lien.
+          if (!href) return <Inline nodes={node.children} />
+          return (
+            <a class="md-link" href={href} target="_blank" rel="noreferrer noopener">
+              <Inline nodes={node.children} />
+            </a>
+          )
+        }
+        return null
       })}
     </>
   )
@@ -749,15 +763,21 @@ export function Documents(props: { docs: DocumentRef[] }) {
         <span class="docs-head">documents</span>
         <ul class="docs-list">
           <For each={props.docs}>
-            {(doc) => (
-              <li title={doc.path}>
-                <span class="docs-path">{shortPath(doc.path)}</span>
-                <Show when={doc.additions !== undefined && doc.deletions !== undefined}>
-                  <span class="tool-diff">{diffLabel(doc.additions ?? 0, doc.deletions ?? 0)}</span>
-                </Show>
-                <CopyButton text={doc.path} label="Copy path" />
-              </li>
-            )}
+            {(doc) => {
+              const badge = fileBadge(doc.path)
+              return (
+                <li title={doc.path}>
+                  {/* Les lettres de l'extension, teintées par **nature** de fichier : un raccourci
+                      lisible, jamais une icône indéchiffrable. */}
+                  <span class={`doc-badge doc-${badge.family}`}>{badge.label}</span>
+                  <span class="docs-path">{shortPath(doc.path)}</span>
+                  <Show when={doc.additions !== undefined && doc.deletions !== undefined}>
+                    <span class="tool-diff">{diffLabel(doc.additions ?? 0, doc.deletions ?? 0)}</span>
+                  </Show>
+                  <CopyButton text={doc.path} label="Copy path" />
+                </li>
+              )
+            }}
           </For>
         </ul>
       </div>
@@ -772,6 +792,27 @@ export function Documents(props: { docs: DocumentRef[] }) {
    Le travail s'affiche donc en continu, une ligne par fait. `ToolLine`, `Reasoning` et `PatchLine`
    sont déjà cette ligne ; chaque entrée se déplie **elle-même** pour son détail.
    ============================================================================= */
+
+/* =============================================================================
+   Le calque du compositeur — CIBLE.md §13.2.
+
+   Il est posé **sous** le champ, à métriques identiques, et il ne fait qu'une chose : colorer la
+   syntaxe. Le champ lui-même reste un `textarea` — le seul contrôle qui garde un curseur, une
+   sélection et le copier-coller du système — mais son texte est transparent : ce qu'on lit vient du
+   calque.
+   ============================================================================= */
+
+export function ComposerMarkup(props: { text: string }) {
+  const spans = createMemo(() => markdownSpans(props.text))
+  return (
+    <div class="composer-markup" aria-hidden="true">
+      <For each={spans()}>{(span) => <span class={`mk mk-${span.kind}`}>{span.text}</span>}</For>
+      {/* Un caractère de largeur nulle : sans lui, un texte finissant par un retour à la ligne
+          perdrait sa dernière ligne dans le calque, et le champ défilerait seul. */}
+      <span class="mk mk-plain">{"\u200b"}</span>
+    </div>
+  )
+}
 
 /* =============================================================================
    Les statistiques — CIBLE.md §10. Exactement ce que le fil n'affiche plus.

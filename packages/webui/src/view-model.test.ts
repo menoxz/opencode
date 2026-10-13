@@ -11,6 +11,7 @@ import {
   dropPermission,
   dropQuestion,
   emptyAnswers,
+  fileBadge,
   fileDiff,
   formatCost,
   formatCount,
@@ -770,9 +771,51 @@ describe("le flux — l'ordre des faits", () => {
 
   test("une étape sans texte n'existe pas moins : elle porte son travail", () => {
     const workOnly = groupTurns([
-      { info: { id: "m1", role: "user" }, parts: [text("u1", "fais-le")] },
+      { info: { id: "m1", role: "user" }, parts: [text("u1", "d")] },
       { info: { id: "m2", role: "assistant" }, parts: [{ type: "step-start" }, tool("t1")] },
     ])[0]!
     expect(workOnly.steps[0]!.items.map((item) => item.id)).toEqual(["t1"])
+  })
+})
+
+describe("le badge de type d'un fichier", () => {
+  test("les lettres viennent de l'extension, en majuscules", () => {
+    expect(fileBadge("src/app.ts")).toEqual({ label: "TS", family: "code" })
+    expect(fileBadge("a/b/config.json")).toEqual({ label: "JSON", family: "data" })
+    expect(fileBadge("styles.css")).toEqual({ label: "CSS", family: "style" })
+    expect(fileBadge("README.md")).toEqual({ label: "MD", family: "docs" })
+  })
+
+  test("la casse et le chemin n'y changent rien", () => {
+    expect(fileBadge("C:\\jeanluc\\opencode-fork\\packages\\webui\\src\\app.tsx").label).toBe("TSX")
+    expect(fileBadge("A/B/C.PNG")).toEqual({ label: "PNG", family: "media" })
+  })
+
+  test("la teinte dit la NATURE, pas le langage", () => {
+    // Une couleur par langage serait un vocabulaire que personne ne retient.
+    expect(fileBadge("a.py").family).toBe(fileBadge("b.go").family)
+    expect(fileBadge("a.py").family).toBe("code")
+    expect(fileBadge("a.sh").family).toBe("shell")
+    expect(fileBadge("a.html").family).toBe("markup")
+  })
+
+  test("sans extension, il n'y a pas de lettres à montrer", () => {
+    expect(fileBadge("Makefile")).toEqual({ label: "•", family: "other" })
+    expect(fileBadge("LICENSE")).toEqual({ label: "•", family: "other" })
+  })
+
+  test("un point en tête est un nom, pas une extension", () => {
+    // `.env` et `.gitignore` sont des noms : leur « extension » serait le nom entier.
+    expect(fileBadge(".env")).toEqual({ label: "•", family: "other" })
+    expect(fileBadge("/a/b/.gitignore")).toEqual({ label: "•", family: "other" })
+  })
+
+  test("une extension inconnue garde ses lettres, sa nature reste autre", () => {
+    // Mieux vaut un badge exact qu'un badge deviné.
+    expect(fileBadge("data.xyz")).toEqual({ label: "XYZ", family: "other" })
+  })
+
+  test("une extension très longue ne devient pas un pavé", () => {
+    expect(fileBadge("odd.verylongext").label).toBe("•")
   })
 })

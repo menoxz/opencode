@@ -2497,3 +2497,71 @@ retiré au lot précédent — est supprimé.
 **Leçon de méthode** : un `gap` sur un conteneur de flux ne sépare pas « les blocs » comme on le croit,
 il sépare **chaque enfant**. Quand un conteneur mêle des blocs et des lignes, la séparation doit être
 portée par les blocs, pas par le conteneur.
+
+---
+
+## Lot — le markdown du prompt, aux deux bouts (livré)
+
+Deux demandes : mettre le prompt en markdown **dans le fil** et **à la saisie**, et prendre modèle sur
+une capture d'inspiration pour les liens, la mise en forme, les documents et le compositeur.
+
+### 1. Le markdown au prompt — et ce qu'il ne fallait pas perdre
+
+Le prompt passe par le **même** moteur que la prose de l'agent (§12.1) : un prompt s'écrit en markdown,
+le montrer en texte brut obligeait à lire des `**` et des `#`.
+
+**Un point de correction, repéré avant d'écrire** : le fil affichait le prompt avec ses retours à la
+ligne (`white-space: pre-wrap`). Or le markdown **écrase** les retours simples ⇒ le rendre sans rien
+aurait **retiré** une chose que le lecteur avait. D'où les **sauts durs** (`  ` ou `\` en fin de ligne,
+du markdown standard) : la coupure marquée par l'auteur survit, les autres se rejoignent.
+
+Corollaire : `pre-wrap` sur `.prompt` est devenu **faux** — il doublerait les coupures déjà rendues.
+Retiré.
+
+### 2. La coloration à la saisie — un calque, pas un rendu
+
+**Un `textarea` ne peut pas rendre du markdown bloc** : un titre, une liste ou un bloc de code changent
+la mise en page, donc le curseur décroche. La parade n'est pas de renoncer mais de **séparer** :
+
+- le champ reste un `textarea` — le seul contrôle qui garde un curseur, une sélection et le
+  copier-coller du système ;
+- un **calque** posé **dessous** , à métriques identiques, colore la syntaxe, et le texte du champ est
+  rendu **transparent**.
+
+**Trois règles, et la deuxième a failli être manquée** :
+
+1. Le calque **ne change que la couleur** — rien qui touche à la largeur ou à la hauteur.
+2. **Les deux couches déclarent la même police, explicitement.** Un `textarea` n'hérite pas la police
+   de l'application : sans déclaration il prend celle du **navigateur**, alors que le calque, lui, en
+   hérite. Ce piège a été vu **en lisant le CSS** — `.composer textarea` ne déclarait aucune police —
+   pas en le constatant à l'écran.
+3. **La concaténation des segments rend la source, caractère pour caractère** : c'est la propriété qui
+   protège le curseur, et elle est testée sur **21 entrées** couvrant chaque forme reconnue, plus des
+   cas tordus (marqueur non fermé, lien cassé, `snake_case_name`).
+
+Les marqueurs restent **visibles**, simplement atténués : on **écrit** dans ce champ, on ne le lit pas.
+
+### 3. Les documents — des cartes à badge de type
+
+Un badge porte les lettres de l'extension, teinté par **nature** de fichier (code, données, style,
+documentation, script, média) — la teinte dit la nature, **pas le langage**. Deux cas que la devinette
+raterait : un fichier **sans** extension n'a pas de lettres à montrer, et un **point en tête**
+(`.env`) est un nom, pas une extension — d'où le test `dot > 0` et non `>= 0`.
+
+### Preuve
+
+```
+vitest run     -> 17 fichiers, 413 tests, exit 0
+tsgo --noEmit  -> exit 0
+vite build     -> exit 0   (CSS 32,21 ko / 6,15 ko gzip, JS 159,09 ko / 44,30 ko gzip)
+```
+
+### Deux erreurs d'outillage, à consigner
+
+1. **Validation lancée depuis la racine du dépôt** : `bun test` y est **volontairement bloqué**
+   (`do not run tests from root`) et le script `build` n'y existe pas. Le « test exit=1 » que j'ai lu
+   n'était donc **pas** un échec de test — j'ai failli corriger un défaut inexistant. Les commandes du
+   paquet se lancent depuis `packages/webui`.
+2. **Deux tours consécutifs ont produit une action mal formée** (appel d'outil tronqué), donc deux
+   corrections écrites mais **non appliquées** — dont celle d'un test. Détecté en vérifiant l'état
+   réel du fichier avant de conclure, pas en me fiant à ce que je croyais avoir envoyé.

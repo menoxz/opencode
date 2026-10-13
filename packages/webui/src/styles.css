@@ -699,16 +699,20 @@ textarea {
   overflow-wrap: anywhere;
 }
 
-/* Prompt de l'utilisateur : le seul texte qu'il a écrit, donc une surface à lui — et son texte
-   conservé tel quel, un prompt étant souvent structuré. */
+/* Prompt de l'utilisateur : le seul texte qu'il a écrit, donc une surface à lui. Le texte est rendu
+   en markdown — les retours à la ligne qu'il a marqués passent par des **sauts durs** (`  ` ou `\`),
+   donc `pre-wrap` n'a plus lieu d'être : il doublerait les coupures déjà rendues. */
 .prompt {
   margin: 0;
   padding: 10px 14px;
   background: var(--bg-1);
   border: 1px solid var(--line-1);
   border-radius: var(--radius);
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.prompt .md {
+  gap: 6px;
 }
 
 /* ---- Contexte injecté : une ligne de confiance, pas de lecture ---- */
@@ -1291,6 +1295,100 @@ textarea {
 .patch-path {
   flex: 1;
   min-width: 0;
+}
+
+/* ---- Le champ et son calque (§13.2) ----
+
+   Le champ reste un `textarea` — le seul contrôle qui garde un curseur, une sélection et le
+   copier-coller du système — et le calque est **dessous**, avec le texte du champ rendu transparent :
+   ce qu'on lit vient du calque, ce qu'on édite reste le champ.
+
+   **Les deux déclarations sont volontairement identiques et explicites.** Un `textarea` ne déclare
+   aucune police par défaut : s'il n'en reçoit pas, il prend celle du navigateur, pas celle de
+   l'application — et le calque, lui, en hérite. Les laisser diverger décalerait le curseur, sans que
+   rien ne le signale avant qu'on tape au mauvais endroit. */
+
+.composer-field {
+  position: relative;
+}
+
+.composer-input,
+.composer-markup {
+  font-family: inherit;
+  font-size: var(--fs-base);
+  line-height: 1.55;
+  letter-spacing: normal;
+  padding: 2px 2px 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  tab-size: 4;
+}
+
+.composer-input {
+  position: relative;
+  display: block;
+  width: 100%;
+  max-height: 200px;
+  resize: none;
+  background: transparent;
+  border: 0;
+  /* Le texte est transparent, le curseur non : on écrit dans le champ, on lit le calque. */
+  color: transparent;
+  caret-color: var(--text-1);
+}
+
+.composer-input::selection {
+  background: var(--brand-1);
+  color: transparent;
+}
+
+.composer-markup {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* La couleur seule : rien qui touche à la largeur ou à la hauteur, sinon le curseur décroche. Le
+   soulignement d'un lien est admis, il ne change pas les métriques. */
+.mk-plain { color: var(--text-1); }
+.mk-marker { color: var(--text-3); }
+.mk-heading { color: var(--brand-3); }
+.mk-code { color: var(--brand-3); }
+.mk-block { color: var(--text-2); }
+.mk-quote { color: var(--text-2); }
+.mk-link { color: var(--brand-1); text-decoration: underline; }
+.mk-strong { color: var(--brand-1); }
+.mk-em { color: var(--text-2); }
+
+/* ---- Le badge de type d'un document (§14) ----
+
+   La teinte dit la **nature** du fichier (du code, des données, un style, de la documentation), pas
+   le langage : une couleur par langage serait un vocabulaire que personne ne retient. */
+
+.doc-badge {
+  flex: none;
+  min-width: 30px;
+  padding: 1px 4px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-align: center;
+  border-radius: 4px;
+}
+
+.doc-code { color: var(--fam-read); background: #4d7cfe1f; }
+.doc-markup { color: var(--fam-goal); background: #ff8f401f; }
+.doc-style { color: var(--fam-search); background: #22d3ee1f; }
+.doc-data { color: var(--fam-write); background: #f7ad311f; }
+.doc-docs { color: var(--text-2); background: #ffffff14; }
+.doc-shell { color: var(--fam-shell); background: #3fb9501f; }
+.doc-media { color: var(--fam-web); background: #a371f71f; }
+.doc-other { color: var(--text-3); background: #ffffff0f; }
+
+.docs-list li {
+  align-items: center;
 }
 
 /* ---- Zone 4 — saisie ---- */

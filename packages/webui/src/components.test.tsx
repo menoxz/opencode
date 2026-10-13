@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vitest"
 import { render } from "solid-js/web"
 import {
   Boundary,
+  ComposerMarkup,
   CopyButton,
   Documents,
   Markdown,
@@ -15,6 +16,7 @@ import {
   SessionPanel,
   StepBlock,
   ToolLine,
+  UserPrompt,
 } from "./components"
 import type { DocumentRef, PermissionRequest, QuestionAnswers, QuestionRequest, ToolState } from "./view-model"
 
@@ -477,6 +479,86 @@ describe("SessionPanel — ce que le fil n'affiche plus", () => {
     expect(container.querySelectorAll(".stats-steps li")).toHaveLength(1)
     expect(container.textContent).toContain("step 1")
     expect(container.textContent).toContain("$0.0008")
+    dispose()
+  })
+})
+
+describe("UserPrompt — le prompt aussi est du markdown", () => {
+  test("les formes markdown sortent en balises, pas en caractères", () => {
+    const { container, dispose } = mount(() => <UserPrompt text={"## Titre\n\n- un\n- deux\n\nun `code` et **gras**"} />)
+    expect(container.querySelector(".prompt")).not.toBeNull()
+    expect(container.querySelector(".md-h2")?.textContent).toBe("Titre")
+    expect(container.querySelectorAll(".md-list li")).toHaveLength(2)
+    expect(container.querySelector(".md-code")?.textContent).toBe("code")
+    // Les marqueurs ne doivent plus se lire dans le texte rendu.
+    expect(container.textContent).not.toContain("**")
+    expect(container.textContent).not.toContain("##")
+    dispose()
+  })
+
+  test("les retours à la ligne marqués survivent — c'est ce que ce lot ne devait pas retirer", () => {
+    // Le fil affichait le prompt avec ses retours (`white-space: pre-wrap`) : le rendre en markdown
+    // sans les sauts durs aurait fait régresser une promesse existante.
+    const { container, dispose } = mount(() => <UserPrompt text={"ligne une  \nligne deux"} />)
+    expect(container.querySelector(".md-p br")).not.toBeNull()
+    dispose()
+  })
+
+  test("le HTML d'un prompt n'est pas interprété", () => {
+    const { container, dispose } = mount(() => <UserPrompt text={"<img src=x onerror=alert(1)>"} />)
+    expect(container.querySelector(".prompt img")).toBeNull()
+    expect(container.textContent).toContain("<img src=x onerror=alert(1)>")
+    dispose()
+  })
+})
+
+describe("ComposerMarkup — le calque du champ", () => {
+  test("il rend le texte saisi, caractère pour caractère", () => {
+    // Le calque est posé sous le champ : tout caractère manquant ou ajouté décalerait le curseur.
+    const source = "**gras** et `code`\n# Titre\n- puce"
+    const { container, dispose } = mount(() => <ComposerMarkup text={source} />)
+    const markup = container.querySelector(".composer-markup")
+    expect(markup).not.toBeNull()
+    // Le texte du calque commence par la source (un caractère de largeur nulle le termine).
+    expect(markup?.textContent?.startsWith(source)).toBe(true)
+    expect(markup?.textContent?.replace(/\u200b$/, "")).toBe(source)
+    dispose()
+  })
+
+  test("chaque nature reçoit sa classe de couleur", () => {
+    // Un titre markdown commence une **ligne** : `# t` au milieu d'une phrase reste du texte.
+    const { container, dispose } = mount(() => <ComposerMarkup text={"# t\n`c` **g** [l](u)"} />)
+    const kinds = Array.from(container.querySelectorAll(".mk")).map((span) => span.className)
+    expect(kinds.some((name) => name.includes("mk-code"))).toBe(true)
+    expect(kinds.some((name) => name.includes("mk-strong"))).toBe(true)
+    expect(kinds.some((name) => name.includes("mk-link"))).toBe(true)
+    expect(kinds.some((name) => name.includes("mk-heading"))).toBe(true)
+    dispose()
+  })
+
+  test("un brouillon vide ne produit aucun caractère visible", () => {
+    const { container, dispose } = mount(() => <ComposerMarkup text="" />)
+    expect((container.textContent ?? "").replace(/\u200b/g, "")).toBe("")
+    dispose()
+  })
+})
+
+describe("Documents — le badge de type", () => {
+  test("chaque document porte les lettres de son extension et sa nature", () => {
+    const { container, dispose } = mount(() => (
+      <Documents
+        docs={[
+          { path: "src/app.ts", additions: 3, deletions: 1 },
+          { path: "a/config.json" },
+          { path: "Makefile" },
+        ]}
+      />
+    ))
+    const badges = Array.from(container.querySelectorAll(".doc-badge")).map((span) => span.textContent)
+    expect(badges).toEqual(["TS", "JSON", "•"])
+    expect(container.querySelector(".doc-code")).not.toBeNull()
+    expect(container.querySelector(".doc-data")).not.toBeNull()
+    expect(container.querySelector(".doc-other")).not.toBeNull()
     dispose()
   })
 })

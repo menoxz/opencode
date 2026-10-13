@@ -582,3 +582,58 @@ avec leur nom, leurs ±lignes, et la copie du chemin.
 - Vide ⇒ **il n'existe pas** (§8 : pas d'état vide garni).
 - Il porte le **contenu**, pas la performance : un nom, des ±lignes, un chemin — aucune statistique.
 - Il ne se répète pas sur chaque tour : c'est le **bilan** de la réponse, à sa fin.
+
+---
+
+## 13. Le prompt de l'utilisateur — markdown aux deux bouts
+
+Un prompt s'écrit en markdown : le montrer en texte brut oblige à lire des `**` et des `#`. Il passe
+donc par le **même** moteur que la prose de l'agent (§12.1) — et à **deux** endroits, pas un.
+
+### 13.1 Dans le fil
+
+Le prompt garde sa surface (son cadre, son corps de lecture), et son texte est **rendu**. Une seule
+chose devait être préservée : ses **retours à la ligne**. Le fil les affichait (`white-space: pre-wrap`)
+avant ce lot ; le markdown écrase les retours simples, donc le rendre sans rien aurait **retiré** une
+chose que le lecteur avait. D'où les **sauts durs** — `  ` ou `\` en fin de ligne, du markdown
+standard : la coupure que l'auteur a marquée survit, les autres se rejoignent comme le markdown le veut.
+
+### 13.2 À la saisie
+
+**Un `textarea` ne peut pas rendre du markdown bloc** : un titre, une liste ou un bloc de code
+changent la mise en page, donc le curseur décroche du texte et l'écriture devient fausse. La parade
+n'est pas de renoncer, c'est de **séparer les deux registres** :
+
+- le champ reste un `textarea` — le seul contrôle qui garde un curseur, une sélection et le
+  copier-coller du système ;
+- un **calque** est posé **dessous**, à métriques identiques, et le texte du champ est rendu
+  **transparent** : le curseur reste celui du champ, ce qu'on lit vient du calque.
+
+Trois règles, sans quoi le calque casse ce qu'il décore :
+
+1. **Le calque ne change que la couleur.** Rien qui touche à la largeur ou à la hauteur — un poids,
+   une taille, une italique décaleraient le curseur, et le défaut ne se verrait qu'en tapant.
+2. **Les deux couches déclarent la même police, explicitement.** Un `textarea` n'hérite pas la police
+   de l'application par défaut : s'il n'en reçoit pas, il prend celle du navigateur, et le calque, lui,
+   en hérite. Les laisser diverger les désaligne.
+3. **La concaténation des segments rend la source, caractère pour caractère.** C'est la propriété qui
+   protège le curseur, et elle est testée sur toutes les formes reconnues.
+
+Les marqueurs (`**`, `#`, `` ` ``) restent **visibles**, simplement atténués : on **écrit** dans ce
+champ, on ne le lit pas — les masquer cacherait ce qu'on est en train de taper.
+
+---
+
+## 14. Les documents de la réponse — des cartes
+
+§12.3 listait les documents ; ils prennent leur forme définitive :
+
+- **Un badge de type** — les lettres de l'extension (`TS`, `JSON`, `MD`), teintées par **nature** de
+  fichier : du code, des données, un style, de la documentation, un script, un média. La teinte dit la
+  nature, **pas le langage** — une couleur par langage serait un vocabulaire que personne ne retient.
+- **Un fichier sans extension n'a pas de lettres à montrer** (`Makefile`, `.gitignore`) : il porte un
+  point, pas un badge inventé. Un point **en tête** est un nom, pas une extension.
+- **Les ±lignes** quand il y en a, **le chemin copiable** au survol.
+- **Le contenu, jamais la performance** : un nom, des ±lignes, un chemin. Aucune statistique — elles
+  sont en §10.
+- **Vide, il n'existe pas** (§8).

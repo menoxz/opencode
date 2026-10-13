@@ -856,6 +856,54 @@ export function lastWorkingTurn(turns: TurnView[]): TurnView | undefined {
 }
 
 /* =============================================================================
+   Le badge de type d'un document — CIBLE.md §14.
+
+   Un raccourci **lisible**, jamais une icône indéchiffrable : les lettres de l'extension (« TS »,
+   « JSON ») et une teinte par **nature** de fichier. La teinte dit la nature (du code, des données,
+   un style, de la documentation), pas le langage — sinon il faudrait une couleur par extension, et
+   personne ne retient ce vocabulaire.
+   ============================================================================= */
+
+export type FileBadge = { label: string; family: string }
+
+/** Nature d'un fichier, déduite de son extension. */
+const BADGE_FAMILY: Record<string, string> = {
+  // Code
+  ts: "code", tsx: "code", js: "code", jsx: "code", mjs: "code", cjs: "code", py: "code", rb: "code",
+  go: "code", rs: "code", java: "code", kt: "code", c: "code", h: "code", cpp: "code", hpp: "code",
+  cs: "code", php: "code", swift: "code", scala: "code", lua: "code", ex: "code", exs: "code",
+  // Balisage
+  html: "markup", htm: "markup", xml: "markup", svg: "markup", vue: "markup", svelte: "markup",
+  // Styles
+  css: "style", scss: "style", sass: "style", less: "style", styl: "style",
+  // Données et configuration
+  json: "data", jsonc: "data", yaml: "data", yml: "data", toml: "data", ini: "data", env: "data",
+  csv: "data", tsv: "data", sql: "data", graphql: "data", lock: "data",
+  // Documentation
+  md: "docs", mdx: "docs", txt: "docs", rst: "docs", adoc: "docs", pdf: "docs",
+  // Scripts
+  sh: "shell", bash: "shell", zsh: "shell", fish: "shell", ps1: "shell", bat: "shell", cmd: "shell",
+  // Médias
+  png: "media", jpg: "media", jpeg: "media", gif: "media", webp: "media", avif: "media", bmp: "media",
+  mp4: "media", webm: "media", mov: "media", mp3: "media", wav: "media", ogg: "media",
+}
+
+/**
+ * Le badge d'un chemin : son extension en lettres, et la nature du fichier.
+ *
+ * Deux cas que la devinette raterait : un fichier **sans** extension (`Makefile`, `.gitignore`) n'a
+ * pas de lettres à montrer, et un **point en tête** (`.env`) désigne un nom, pas une extension —
+ * d'où le test `dot > 0` et non `>= 0`.
+ */
+export function fileBadge(path: string): FileBadge {
+  const name = path.split(/[\\/]/).filter(Boolean).pop() ?? path
+  const dot = name.lastIndexOf(".")
+  const ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : ""
+  if (!ext || ext.length > 8) return { label: "•", family: "other" }
+  return { label: (ext.length <= 4 ? ext : ext.slice(0, 3)).toUpperCase(), family: BADGE_FAMILY[ext] ?? "other" }
+}
+
+/* =============================================================================
    Le travail est un **flux** (CIBLE.md §9.2 révisé).
 
    Il n'y a plus de « répartition » prose/travail à calculer : un repli qui cachait tout le travail
