@@ -1338,8 +1338,19 @@ textarea {
    ============================================================================= */
 
 .sheet.settings {
-  /* Deux colonnes ne tiennent pas dans la largeur d'une feuille simple. */
-  width: min(760px, calc(100vw - 48px));
+  /* Deux colonnes ne tiennent pas dans la largeur d'une feuille simple — et huit sections ne
+     tiennent pas dans la hauteur de son contenu. Deux raisons, donc deux corrections :
+
+     - **Largeur** : 760 px laissaient 574 px au contenu, alors qu'il porte des chemins, des
+       listes d'agents et 228 fournisseurs. Une feuille de réglages se juge à ce qu'elle montre
+       sans replier.
+     - **Hauteur fixe** : `max-height` seule laissait la feuille prendre la taille de la section
+       affichée. « modèles » tient en trois lignes, « fournisseurs » en porte 228 : changer de
+       section redimensionnait la fenêtre. Le cadre appartient à la fenêtre, pas à la section —
+       c'est la même règle que la navigation verticale ci-dessus, appliquée à l'autre axe. */
+  width: min(1120px, calc(100vw - 64px));
+  height: min(86vh, 880px);
+  max-height: none;
 }
 
 /* La rangée qui porte les deux colonnes. L'en-tête reste au-dessus, sur toute la largeur. */

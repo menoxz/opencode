@@ -1618,3 +1618,42 @@ changement est celui qui publiera la release.
 **Méthode** : quand un chemin d'exécution est partagé par deux sources (bundle embarqué et dossier
 explicite), prouver le lecteur une fois prouve les deux — au lieu de payer un build complet pour une
 ligne de chemin.
+
+## Lot suivant — le cadre des réglages appartient à la fenêtre (livré)
+
+Demande de l'utilisateur : « une taille nettement plus grande pour le panneau *settings* ». Le
+non-dit, lui, était dans la capture : la feuille **changeait de taille à chaque changement de
+section**.
+
+### Les deux défauts, mesurés
+
+| mesure | avant | après |
+|---|---|---|
+| feuille | `760 × 380` | `1120 × 813` |
+| colonne de contenu | `574 large` | `934 large` |
+| hauteur | celle du contenu, plafonnée à `min(78vh, 720px)` | fixe, `min(86vh, 880px)` |
+
+`max-height` ne fixe rien : la feuille prenait la hauteur de la section affichée. « modèles » tient en
+trois lignes, « fournisseurs » en porte 228 — la fenêtre se redimensionnait donc sous le curseur au
+moment même où l'on changeait de section. C'est le **même défaut que la navigation horizontale**
+(CIBLE §4 : « une disposition qui tient à cinq sections et casse à douze n'est pas finie »), appliqué à
+l'autre axe : le cadre d'un panneau de réglages appartient à la fenêtre, pas à la section.
+
+La `height` est écrite en `vh` et non en `rem` : la règle du `rem` porte sur les **tailles de texte**
+(CIBLE §5, décision 3) ; une dimension de mise en page suit la fenêtre, comme le `78vh` qu'elle
+remplace.
+
+### Preuve
+
+```
+vitest run -> 12 fichiers, 189 tests, exit 0
+
+CDP, getBoundingClientRect : viewport 1920×945
+  .sheet.settings 1120 × 813 | .sheet-nav 184 | .sheet-body 934 × 753
+capture settings-big.png, clip 1180×860, 141 ko
+```
+
+### Ce qui reste
+
+La feuille est centrée à taille fixe ; elle ne se réordonne pas à 1024 px de large (le contenu passe
+sous la navigation avant que le média-query ne s'applique) — non observé, non mesuré.
