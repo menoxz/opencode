@@ -567,9 +567,15 @@ textarea {
 
 /* ---- Zone 5 — le tiroir droit : uniquement quand l'agent attend une décision ---- */
 
+/* Fermé, le tiroir ne peint rien : sa piste est à 0, mais un `border-left` dessinerait quand même
+   un filet d'1px au bord droit de l'écran (mesuré : `.side` large de 1px alors que la piste vaut
+   0px). Le filet n'existe donc que lorsque le tiroir est ouvert. */
 .side {
   overflow: hidden;
   background: var(--bg-1);
+}
+
+.side.open {
   border-left: 1px solid var(--line-1);
 }
 

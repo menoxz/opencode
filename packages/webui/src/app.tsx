@@ -630,7 +630,7 @@ export default function App() {
         </Show>
       </main>
 
-      <aside class="side">
+      <aside class="side" classList={{ open: permissions().length > 0 }}>
         <div class="side-inner">
           <For each={permissions()}>
             {(request) => (
