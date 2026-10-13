@@ -431,8 +431,20 @@ Ce qui allège, ce n'est pas de cacher, c'est de **tenir en une ligne**. D'où l
   colonne de bandes et gêne la lecture — verdict d'usage, retiré.
 - **Aucun écart entre les lignes non plus.** L'air qui sépare les **blocs** (la prose, les documents)
   est porté par ces blocs, via leurs marges — jamais par un `gap` entre les entrées, qui ajoutait de
-  l'air entre **chaque** appel d'outil, y compris deux appels qui se suivent. Mesuré : 30,4 px entre
-  deux lignes pour une hauteur de ligne de 24,4 px, ramenés à 24,4 px — c'est-à-dire la ligne seule.
+  l'air entre **chaque** appel d'outil, y compris deux appels qui se suivent.
+
+**Mesuré avant/après sur une même session de 795 appels d'outil** (l'ancienne feuille servie depuis
+`183c26855`, puis `HEAD`, même session, même sonde) :
+
+| | avant | après |
+|---|---|---|
+| hauteur d'une ligne | 28,4 px | **24,4 px** |
+| écart entre deux appels consécutifs | 36,4 px | **24,4 px** |
+| padding vertical d'une ligne | 3 px | **1 px** |
+| hauteur de la pile | 70 475 px | **55 719 px** |
+
+**14 756 px libérés sur cette seule session.** L'écart entre deux appels consécutifs vaut désormais
+**exactement la hauteur d'une ligne** : plus un pixel d'air ajouté.
 - **Aucune statistique** (§9.3) : le flux porte le *contenu*, jamais le *prix*.
 - **Rien ne déplace ce qu'on lit** (§3.7) : le flux s'ajoute à la fin, il ne se réordonne pas.
 

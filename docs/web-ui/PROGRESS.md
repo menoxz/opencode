@@ -2469,11 +2469,27 @@ Le quatrième était le vrai coupable : après avoir resserré les trois autres,
 documents (`.docs`) portent déjà leurs propres marges ⇒ le tour peut passer à `gap: 0` : les appels
 d'outil se touchent, la prose respire, et rien n'a été perdu.
 
+**Mesure avant/après, sur une même session** (795 appels d'outil ; l'ancienne feuille servie depuis
+`183c26855`, puis `HEAD`, même session, même sonde — le CSS étant versionné, la comparaison se fait
+sans rien reconstruire) :
+
 ```
-avant  deltasTopToTop = 30.4px   (lineHeight 24.4 + 6 d'air)
-après  deltasTopToTop = 24.4px   (la ligne seule)
-contrôles : paddingTop/Bottom = 1px, parentGap = normal, borderLeftWidth = 0px
+                        AVANT (183c26855)   APRÈS (HEAD)
+hauteur d'une ligne     28,4 px             24,4 px
+écart entre 2 appels    36,4 px             24,4 px
+padding vertical        3 px                1 px
+hauteur de la pile      70 475 px           55 719 px
+deltasPremiers          [36.4, 36.4, 71.2]  [24.4, 24.4, 47.2]
 ```
+
+**14 756 px libérés sur cette session.** L'écart entre deux appels consécutifs vaut maintenant
+**exactement** la hauteur d'une ligne : l'air ajouté est nul.
+
+**Une estimation fausse, corrigée par la mesure.** J'avais d'abord annoncé « ~4 800 px » à partir
+d'une **reconstruction** des anciennes valeurs — trois fois trop peu. L'erreur : j'avais supposé que
+la hauteur de ligne ne changeait pas, alors qu'elle baisse aussi de 28,4 à 24,4 px (4 px × 795 = 3 180 px,
+en plus des écarts). Leçon : quand les deux états existent dans l'historique, **mesurer les deux** au
+lieu de reconstruire l'un depuis l'autre — c'est moins cher que l'erreur qu'on publie.
 
 `vite build` exit 0, `tsgo --noEmit` exit 0, 389 tests. Au passage, `.work-body` — CSS mort du repli
 retiré au lot précédent — est supprimé.
