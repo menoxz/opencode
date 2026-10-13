@@ -4,6 +4,7 @@ import {
   blacklistPatch,
   discoverPatch,
   modelPatch,
+  newProviderDraft,
   providerId,
   providerPatch,
   toggleModel,
@@ -77,6 +78,16 @@ describe("les écritures d'un fournisseur", () => {
     expect(blacklistPatch("gateway", ["kimi-k2"])).toEqual({ provider: { gateway: { blacklist: ["kimi-k2"] } } })
     // Vider la liste ne peut pas passer par une omission : c'est bien un tableau vide qu'il faut écrire.
     expect(blacklistPatch("gateway", [])).toEqual({ provider: { gateway: { blacklist: [] } } })
+  })
+
+  test("le formulaire de déclaration part avec son adaptateur, pas seulement avec son affichage", () => {
+    // Défaut mesuré sur l'instance isolée : le champ montrait `@ai-sdk/openai-compatible` mais le
+    // draft ne le portait pas, donc le fichier recevait `baseURL` seule — un fournisseur déclaré et
+    // sans adaptateur, c'est-à-dire inutilisable. Ce que l'écran montre doit partir.
+    const draft = newProviderDraft()
+    expect(draft.npm).toBe(DEFAULT_NPM)
+    const patch = providerPatch("iso", { npm: draft.npm, baseURL: draft.baseURL })
+    expect(patch).toEqual({ provider: { iso: { npm: DEFAULT_NPM } } })
   })
 
   test("cocher/décocher ne laisse jamais de doublon", () => {

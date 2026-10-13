@@ -67,6 +67,7 @@ import {
   discoverPatch,
   mergeDeclared,
   modelPatch,
+  newProviderDraft,
   providerId,
   providerPatch,
   toggleModel,
@@ -721,7 +722,7 @@ export default function App() {
     const id = providerId(draft.id ?? "")
     await saveConfig(patch, `provider ${id}`, "providers")
     setProviderNewOpen(false)
-    setProviderDraft({})
+    setProviderDraft(newProviderDraft())
     setProviderSelected(id)
   }
 
@@ -1417,7 +1418,8 @@ export default function App() {
                 onCreate={() => void createProvider()}
                 onCancelAdd={() => {
                   setProviderNewOpen((open) => !open)
-                  setProviderDraft({})
+                  // Le draft part avec son adaptateur : le champ le montre, donc il doit partir.
+                  setProviderDraft(newProviderDraft())
                 }}
                 selected={providerSelected()}
                 onSelect={setProviderSelected}

@@ -2012,3 +2012,32 @@ du bouton de recherche, et rien d'autre.
 Surtout : je n'ai **pas** écrit dans la configuration de l'utilisateur pour prouver l'aller-retour. Un
 fournisseur d'essai serait resté dans son fichier, et l'API ne sait pas le retirer. La preuve d'une
 écriture réelle demande son accord.
+
+### L'aller-retour réel, prouvé sur une instance isolée
+
+L'utilisateur a tranché : **serveur isolé**. Un second couple a été monté — serveur sur **4097** avec
+ses propres dossiers XDG (`…\Temp\opencodev2\iso`), webui Vite sur **5181** pointée dessus par
+`OPENCODE_SERVER_PORT` (le proxy lit cette variable, `vite.config.ts:8`). L'écran de `General` a
+confirmé l'isolation de lui-même : « written to …\iso\config\opencodev2\opencode.jsonc ».
+
+Les quatre gestes ont été faits au clic, et le fichier les porte tous :
+
+```json
+"iso2": {
+  "npm": "@ai-sdk/openai-compatible",
+  "options": { "baseURL": "https://iso2.test/v1" },
+  "discover": true,
+  "models": { "kimi-k2": { "name": "kimi-k2" } },
+  "blacklist": ["kimi-k2"]
+}
+```
+
+…et la grille est passée de « 2 of yours » à « 3 of yours » avec la tuile `iso 0 models no key` : la
+fusion `mergeDeclared` fait donc son travail — sans elle, l'écran aurait dit « créé » puis n'aurait
+rien montré.
+
+**Un défaut réel, trouvé par cette preuve et invisible aux tests** : le premier fournisseur créé
+(`iso`) n'a reçu **aucun `npm`**. Le champ affichait `@ai-sdk/openai-compatible` — une valeur montrée
+et jamais envoyée, parce que le brouillon ne portait que `id` et `baseURL`. Un fournisseur déclaré et
+sans adaptateur, donc inutilisable. Corrigé par `newProviderDraft()` : ce que l'écran montre part.
+Le test qui manquait est écrit, et `iso2` — créé après le correctif — porte bien son `npm`.

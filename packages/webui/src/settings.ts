@@ -403,6 +403,18 @@ export function providerModelChoices(payload: unknown, providerID: string): Choi
 export const DEFAULT_NPM = "@ai-sdk/openai-compatible"
 
 /**
+ * L'état initial du formulaire de déclaration.
+ *
+ * Le paquet npm n'est pas un ornement : sans lui, le serveur n'a **aucun adaptateur** pour parler à
+ * ce fournisseur. Le champ l'affiche donc **et** le draft le porte — sinon l'écran montrerait une
+ * valeur qui ne part jamais. Défaut mesuré sur l'instance isolée : un fournisseur créé avec sa seule
+ * `baseURL`, donc déclaré et inutilisable.
+ */
+export function newProviderDraft(): Record<string, string> {
+  return { npm: DEFAULT_NPM }
+}
+
+/**
  * Un identifiant tel que la configuration le porte : `provider.<id>`.
  *
  * Un identifiant est une **clé de fichier** et la moitié gauche d'une référence `provider/modèle`
