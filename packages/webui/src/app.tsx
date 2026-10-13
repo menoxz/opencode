@@ -54,7 +54,7 @@ import {
   settingValue,
   shellChoices,
   type AuthMethod,
-  type ChoiceGroup,
+  type Choice,
   type ProviderAuth,
   type SettingSpec,
   type SettingsSectionKey,
@@ -125,8 +125,8 @@ export default function App() {
    * Les choix que le serveur publie, déjà projetés. **Jamais les charges brutes** : celle des
    * modèles porte les clés des fournisseurs, et elle est abandonnée dès la projection.
    */
-  const [modelGroups, setModelGroups] = createSignal<ChoiceGroup[]>([])
-  const [shellGroups, setShellGroups] = createSignal<ChoiceGroup[]>([])
+  const [modelOptions, setModelOptions] = createSignal<Choice[]>([])
+  const [shellOptions, setShellOptions] = createSignal<Choice[]>([])
   const [query, setQuery] = createSignal("")
   const [renaming, setRenaming] = createSignal<string | undefined>()
   const [renameDraft, setRenameDraft] = createSignal("")
@@ -351,8 +351,8 @@ export default function App() {
       if (general) {
         // **Projection immédiate.** La charge de `/config/providers` porte les clés des fournisseurs
         // en clair ; elle ne survit pas à cette ligne et n'entre dans aucun signal.
-        setModelGroups(modelCatalog((providersResult as { data?: unknown } | undefined)?.data))
-        setShellGroups(shellChoices(shellsResult))
+        setModelOptions(modelCatalog((providersResult as { data?: unknown } | undefined)?.data))
+        setShellOptions(shellChoices(shellsResult))
         const agentData = (agentResult as { data?: Agent[] } | undefined)?.data
         if (Array.isArray(agentData)) setAgents(agentData)
       }
@@ -451,11 +451,11 @@ export default function App() {
    * Les choix d'un réglage déclaré — l'aiguillage par **source**, une seule fois.
    *
    * Un réglage ne sait pas d'où vient sa liste, et le contrôle non plus : les deux reçoivent des
-   * `ChoiceGroup`. C'est ici, et seulement ici, que « models » veut dire `/config/providers`.
+   * `Choice`. C'est ici, et seulement ici, que « models » veut dire `/config/providers`.
    */
-  const optionsOf = (spec: SettingSpec): ChoiceGroup[] => {
-    if (spec.source === "models") return modelGroups()
-    if (spec.source === "shells") return shellGroups()
+  const optionsOf = (spec: SettingSpec): Choice[] => {
+    if (spec.source === "models") return modelOptions()
+    if (spec.source === "shells") return shellOptions()
     if (spec.source === "agents") return agentChoices(agents())
     return []
   }
@@ -1184,7 +1184,7 @@ export default function App() {
           <Show when={SETTING_SPECS[settingsSection()]}>
             <GeneralSection
               blocks={settingGroups(SETTING_SPECS[settingsSection()] ?? [])}
-              groupsOf={optionsOf}
+              choicesOf={optionsOf}
               draftOf={specDraft}
               checkedOf={(spec) => config()[spec.key] === true}
               busy={settingsBusy()}

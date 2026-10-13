@@ -1575,11 +1575,11 @@ textarea {
   font-size: var(--fs-meta);
 }
 
-/* Un `select` alimenté par le serveur porte des identifiants longs
-   (`opencode-go/deepseek-v4.1-flash`) : il a besoin de plus de place qu'un choix de trois mots, et
-   il ne doit pas pousser le libellé hors de sa colonne. */
+/* Un `select` alimenté par le serveur porte des libellés longs
+   (`DeepSeek V4.1 Flash · Command Code GOAT`) : il lui faut la place de se lire en entier, sinon le
+   nom du fournisseur — la partie qui lève l'ambiguïté — est la première coupée. */
 .set-select {
-  max-width: min(320px, 34vw);
+  max-width: min(440px, 44vw);
 }
 
 .set-wide .set-input {

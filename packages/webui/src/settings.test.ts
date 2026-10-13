@@ -368,7 +368,7 @@ describe("la page General", () => {
    ============================================================================= */
 
 describe("la projection des modèles", () => {
-  test("groupe par fournisseur et compose `provider/modèle`", () => {
+  test("le libellé porte le fournisseur, la valeur est `provider/modèle`", () => {
     const catalog = modelCatalog({
       providers: [
         {
@@ -379,25 +379,39 @@ describe("la projection des modèles", () => {
       ],
     })
     expect(catalog).toEqual([
-      {
-        title: "OpenCode Go",
-        choices: [
-          { value: "opencode-go/deepseek-v4.1-flash", label: "DeepSeek V4.1 Flash" },
-          { value: "opencode-go/zeta", label: "zeta" },
-        ],
-      },
+      { value: "opencode-go/deepseek-v4.1-flash", label: "DeepSeek V4.1 Flash · OpenCode Go" },
+      { value: "opencode-go/zeta", label: "zeta · OpenCode Go" },
     ])
   })
 
-  test("sans libellé de modèle, l'identifiant fait office de libellé", () => {
-    const [group] = modelCatalog({ providers: [{ id: "p", models: { "m-1": {} } }] })
-    expect(group.choices).toEqual([{ value: "p/m-1", label: "m-1" }])
+  test("un même nom chez deux fournisseurs donne **deux libellés distincts**", () => {
+    // Le défaut mesuré : 696 modèles pour **509 libellés distincts** — et les deux modèles
+    // réellement configurés partageaient tous deux « DeepSeek V4.1 Flash » avec trois autres. Fermé,
+    // un `<select>` n'affiche que le libellé : sans le fournisseur, cinq valeurs différentes
+    // s'écriraient pareil, et l'utilisateur ne pourrait pas dire ce qu'il a choisi.
+    const catalog = modelCatalog({
+      providers: [
+        { id: "opencode-go", name: "OpenCode Go", models: { "deepseek-v4.1-flash": { name: "DeepSeek V4.1 Flash" } } },
+        { id: "nvidia", name: "Nvidia", models: { "deepseek-ai/deepseek-v4.1-flash": { name: "DeepSeek V4.1 Flash" } } },
+      ],
+    })
+    expect(catalog.map((entry) => entry.label)).toEqual([
+      "DeepSeek V4.1 Flash · Nvidia",
+      "DeepSeek V4.1 Flash · OpenCode Go",
+    ])
+    expect(new Set(catalog.map((entry) => entry.label)).size).toBe(catalog.length)
+  })
+
+  test("sans libellé de modèle, l'identifiant fait office de nom", () => {
+    expect(modelCatalog({ providers: [{ id: "p", models: { "m-1": {} } }] })).toEqual([
+      { value: "p/m-1", label: "m-1 · p" },
+    ])
   })
 
   test("**les clés des fournisseurs ne passent pas la projection**", () => {
     // Mesuré : `GET /config/providers` porte 7 champs `key`/`apiKey` en clair et six chaînes `sk-…`.
-    // La projection ne lit que `name`, `id` et le libellé d'un modèle — ce test est ce qui l'empêche
-    // de dériver, parce qu'une charge porteuse de secrets ne doit jamais approcher un signal.
+    // La projection ne lit que `name`, `id` et le nom du fournisseur — ce test est ce qui l'empêche de
+    // dériver, parce qu'une charge porteuse de secrets ne doit jamais approcher un signal.
     const catalog = modelCatalog({
       providers: [
         {
@@ -410,9 +424,7 @@ describe("la projection des modèles", () => {
         },
       ],
     })
-    expect(catalog).toEqual([
-      { title: "OrcaRouter", choices: [{ value: "orcarouter/grok/grok-4.3", label: "Grok 4.3" }] },
-    ])
+    expect(catalog).toEqual([{ value: "orcarouter/grok/grok-4.3", label: "Grok 4.3 · OrcaRouter" }])
     expect(JSON.stringify(catalog)).not.toContain("sk-")
     expect(JSON.stringify(catalog)).not.toContain("SECRET")
   })
@@ -429,14 +441,18 @@ describe("la projection des agents", () => {
   test("seuls les primaires non masqués sont proposés", () => {
     // Le schéma est explicite : `default_agent` doit être un agent **primaire**. Proposer un
     // sous-agent serait proposer une valeur que le serveur refuse.
-    const groups = agentChoices([
-      { name: "build", mode: "primary" },
-      { name: "zx", mode: "primary" },
-      { name: "general", mode: "subagent" },
-      { name: "compaction", mode: "primary", hidden: true },
-      { name: "sans-mode" },
+    expect(
+      agentChoices([
+        { name: "build", mode: "primary" },
+        { name: "zx", mode: "primary" },
+        { name: "general", mode: "subagent" },
+        { name: "compaction", mode: "primary", hidden: true },
+        { name: "sans-mode" },
+      ]),
+    ).toEqual([
+      { value: "build", label: "build" },
+      { value: "zx", label: "zx" },
     ])
-    expect(groups).toEqual([{ choices: [{ value: "build", label: "build" }, { value: "zx", label: "zx" }] }])
   })
 
   test("une réponse absente rend une liste vide", () => {
@@ -449,24 +465,20 @@ describe("la projection des interpréteurs", () => {
   test("la valeur est le **nom**, et un interpréteur inacceptable est écarté", () => {
     // `Shell.preferred` → `resolve` essaie `which(nom)` : un nom survit à une réinstallation qui
     // change le chemin. `acceptable: false` veut dire que le serveur ne peut pas exécuter avec.
-    const groups = shellChoices([
-      { name: "pwsh", path: "C:\\Program Files\\PowerShell\\7\\pwsh.EXE", acceptable: true },
-      { name: "cmd", path: "C:\\WINDOWS\\system32\\cmd.exe", acceptable: true },
-      { name: "casse", path: "C:\\casse.exe", acceptable: false },
-    ])
-    expect(groups).toEqual([
-      {
-        choices: [
-          { value: "cmd", label: "cmd" },
-          { value: "pwsh", label: "pwsh" },
-        ],
-      },
+    expect(
+      shellChoices([
+        { name: "pwsh", path: "C:\\Program Files\\PowerShell\\7\\pwsh.EXE", acceptable: true },
+        { name: "cmd", path: "C:\\WINDOWS\\system32\\cmd.exe", acceptable: true },
+        { name: "casse", path: "C:\\casse.exe", acceptable: false },
+      ]),
+    ).toEqual([
+      { value: "cmd", label: "cmd" },
+      { value: "pwsh", label: "pwsh" },
     ])
   })
 
   test("sans nom, le chemin fait la valeur — jamais une option vide", () => {
-    const [group] = shellChoices([{ path: "C:\\nu.exe" }])
-    expect(group.choices).toEqual([{ value: "C:\\nu.exe", label: "C:\\nu.exe" }])
+    expect(shellChoices([{ path: "C:\\nu.exe" }])).toEqual([{ value: "C:\\nu.exe", label: "C:\\nu.exe" }])
   })
 
   test("une réponse absente rend une liste vide", () => {
@@ -479,20 +491,21 @@ describe("withValue", () => {
   test("la valeur courante absente de la liste s'affiche quand même", () => {
     // Sans cela, un réglage que le serveur accepte mais ne publie pas disparaîtrait de l'écran, et
     // le contrôle afficherait **une autre valeur que celle réellement écrite**.
-    const groups = withValue([{ title: "P", choices: [{ value: "p/a", label: "a" }] }], "p/inconnu")
-    expect(groups[0]).toEqual({ choices: [{ value: "p/inconnu", label: "p/inconnu" }] })
-    expect(groups[1].choices).toEqual([{ value: "p/a", label: "a" }])
+    expect(withValue([{ value: "p/a", label: "a" }], "p/inconnu")).toEqual([
+      { value: "p/inconnu", label: "p/inconnu" },
+      { value: "p/a", label: "a" },
+    ])
   })
 
   test("aucun doublon quand elle y est déjà", () => {
-    const groups = withValue([{ choices: [{ value: "p/a", label: "a" }] }], "p/a")
-    expect(groups).toEqual([{ choices: [{ value: "p/a", label: "a" }] }])
+    const choices = [{ value: "p/a", label: "a" }]
+    expect(withValue(choices, "p/a")).toEqual(choices)
   })
 
   test("une valeur vide n'ajoute rien : l'option vide est déjà là", () => {
-    const groups = [{ choices: [{ value: "p/a", label: "a" }] }]
-    expect(withValue(groups, "")).toEqual(groups)
-    expect(withValue(groups, "   ")).toEqual(groups)
+    const choices = [{ value: "p/a", label: "a" }]
+    expect(withValue(choices, "")).toEqual(choices)
+    expect(withValue(choices, "   ")).toEqual(choices)
   })
 })
 

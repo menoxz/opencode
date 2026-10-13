@@ -121,46 +121,69 @@ export type SettingSpec = {
    Les choix — ce que le serveur sait, projeté pour un `<select>`.
 
    `Choice` est ce qu'un contrôle consomme : la valeur écrite dans `Config`, et ce que l'utilisateur
-   lit. `ChoiceGroup` porte un titre de regroupement — un fournisseur, pour les modèles.
+   lit. Une liste plate, sans regroupement : le libellé porte tout ce qu'il faut pour identifier la
+   valeur, et un `optgroup` n'ajouterait qu'un titre au-dessus d'une information déjà là — les noms de
+   fournisseurs apparaissent seuls dans une barre de sélection native, et beaucoup de navigateurs ne
+   les cherchent pas au clavier.
    ============================================================================= */
 
 export type Choice = { value: string; label: string }
-export type ChoiceGroup = { title?: string; choices: Choice[] }
+
+/**
+ * **Le libellé doit identifier la valeur à lui seul**, parce que fermé, un `<select>` n'affiche que
+ * lui.
+ *
+ * Mesuré : **696 modèles pour 509 libellés distincts** — 141 libellés sont portés par plusieurs
+ * modèles, soit 187 options en trop. Et les deux modèles réellement configurés sur cette machine
+ * partagent tous les deux « DeepSeek V4.1 Flash » avec trois autres. Un libellé sans fournisseur
+ * afficherait donc la même chose pour cinq valeurs différentes, et l'utilisateur ne pourrait pas
+ * dire ce qu'il a choisi — le défaut même qu'on vient de retirer du champ de texte.
+ *
+ * D'où la forme `Nom · Fournisseur`, **toujours**. Un libellé qui change de forme selon ses voisins
+ * se lit moins bien qu'un libellé un peu plus long, et une liste où toutes les lignes se ressemblent
+ * se balaie plus vite qu'une liste où deux formats alternent.
+ */
+export function choice(value: string, name: string, provider: string): Choice {
+  return { value, label: `${name} · ${provider}` }
+}
+
+/** Tri par libellé : les modèles homonymes se retrouvent côte à côte, là où l'ambiguïté se voit. */
+function sorted(choices: Choice[]): Choice[] {
+  return [...choices].sort((left, right) => left.label.localeCompare(right.label))
+}
 
 /**
  * Les modèles que le serveur sait faire tourner, projetés **sans jamais toucher au reste**.
  *
  * **`GET /config/providers` porte des secrets.** Mesuré : 7 champs `key`/`apiKey` en clair et six
  * chaînes `sk-…`. Les trois routes de modèles en portent (`/api/model` en porte **580** — la route
- * « sans secrets » n'existe pas). La projection ci-dessous ne lit que `name`, `id` et le libellé d'un
- * modèle ; le reste de la charge est **abandonné ici** et n'entre jamais dans un signal, donc jamais
- * dans le DOM, un journal ou une infobulle. Le correctif de fond est côté serveur — une route qui ne
- * renvoie pas les clés — et il est consigné comme tel.
+ * « sans secrets » n'existe pas). La projection ci-dessous ne lit que `name`, `id` et le nom du
+ * fournisseur ; le reste de la charge est **abandonné ici** et n'entre jamais dans un signal, donc
+ * jamais dans le DOM, un journal ou une infobulle. Le correctif de fond est côté serveur — une route
+ * qui ne renvoie pas les clés — et il est consigné comme tel.
  *
  * La valeur est `provider/modèle` : c'est la forme que `Config.model` attend, et celle que
  * `config.ts:modelLabel` relit des deux côtés (chaîne ou objet).
  */
-export function modelCatalog(payload: unknown): ChoiceGroup[] {
+export function modelCatalog(payload: unknown): Choice[] {
   const providers = (payload as { providers?: unknown } | undefined)?.providers
   if (!Array.isArray(providers)) return []
-  const groups: ChoiceGroup[] = []
+  const choices: Choice[] = []
   for (const entry of providers) {
     if (!entry || typeof entry !== "object") continue
     const provider = entry as { id?: unknown; name?: unknown; models?: unknown }
     if (typeof provider.id !== "string" || !provider.id) continue
     const models = provider.models
     if (!models || typeof models !== "object") continue
-    const choices: Choice[] = []
+    const providerTitle =
+      typeof provider.name === "string" && provider.name.trim() ? provider.name.trim() : provider.id
     for (const [id, model] of Object.entries(models as Record<string, unknown>)) {
-      const name = (model && typeof model === "object" ? (model as { name?: unknown }).name : undefined) ?? undefined
-      choices.push({ value: `${provider.id}/${id}`, label: typeof name === "string" && name.trim() ? name.trim() : id })
+      const name = model && typeof model === "object" ? (model as { name?: unknown }).name : undefined
+      const title = typeof name === "string" && name.trim() ? name.trim() : id
+      choices.push(choice(`${provider.id}/${id}`, title, providerTitle))
     }
-    if (choices.length === 0) continue
-    choices.sort((left, right) => left.label.localeCompare(right.label))
-    const title = typeof provider.name === "string" && provider.name.trim() ? provider.name.trim() : provider.id
-    groups.push({ title, choices })
   }
-  return groups.sort((left, right) => (left.title ?? "").localeCompare(right.title ?? ""))
+  return sorted(choices)
 }
 
 /**
@@ -170,11 +193,14 @@ export function modelCatalog(payload: unknown): ChoiceGroup[] {
  * primaires, et jamais un agent masqué (le serveur les marque internes : `compaction`, `eval-runner`).
  * Proposer un sous-agent serait proposer une valeur que le serveur refuse ou ignore.
  *
+ * Pas de fournisseur dans le libellé : un agent se nomme seul (la carte `Config.agent` est indexée
+ * par son nom, donc les noms sont uniques par construction).
+ *
  * `GET /agent` pèse 1,27 Mo pour 34 agents dont six primaires : c'est cher pour six noms, et c'est
  * assumé — l'appel est déjà nécessaire à la section « Agents », il est donc payé une fois, et 37 ms
  * ne se voient pas.
  */
-export function agentChoices(payload: unknown): ChoiceGroup[] {
+export function agentChoices(payload: unknown): Choice[] {
   if (!Array.isArray(payload)) return []
   const choices: Choice[] = []
   for (const entry of payload) {
@@ -184,8 +210,7 @@ export function agentChoices(payload: unknown): ChoiceGroup[] {
     if (agent.mode !== "primary" || agent.hidden === true) continue
     choices.push({ value: agent.name, label: agent.name })
   }
-  choices.sort((left, right) => left.label.localeCompare(right.label))
-  return choices.length > 0 ? [{ choices }] : []
+  return sorted(choices)
 }
 
 /**
@@ -201,7 +226,7 @@ export function agentChoices(payload: unknown): ChoiceGroup[] {
  * atteignable en éditant la configuration à la main. Une liste de choix ferme une porte que le champ
  * de texte laissait ouverte — c'est le prix, et il est plus petit que celui de la saisie à l'aveugle.
  */
-export function shellChoices(payload: unknown): ChoiceGroup[] {
+export function shellChoices(payload: unknown): Choice[] {
   if (!Array.isArray(payload)) return []
   const choices: Choice[] = []
   for (const entry of payload) {
@@ -214,8 +239,7 @@ export function shellChoices(payload: unknown): ChoiceGroup[] {
     if (!value) continue
     choices.push({ value, label: name ?? value })
   }
-  choices.sort((left, right) => left.label.localeCompare(right.label))
-  return choices.length > 0 ? [{ choices }] : []
+  return sorted(choices)
 }
 
 /**
@@ -226,11 +250,11 @@ export function shellChoices(payload: unknown): ChoiceGroup[] {
  * le contrôle afficherait **une autre valeur que celle réellement écrite**, et l'utilisateur croirait
  * lire sa configuration. On l'affiche telle quelle, une fois, plutôt que de la taire.
  */
-export function withValue(groups: ChoiceGroup[], current: string): ChoiceGroup[] {
+export function withValue(choices: Choice[], current: string): Choice[] {
   const value = current.trim()
-  if (!value) return groups
-  if (groups.some((group) => group.choices.some((choice) => choice.value === value))) return groups
-  return [{ choices: [{ value, label: value }] }, ...groups]
+  if (!value) return choices
+  if (choices.some((entry) => entry.value === value)) return choices
+  return [{ value, label: value }, ...choices]
 }
 
 /**

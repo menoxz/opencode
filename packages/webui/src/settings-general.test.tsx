@@ -2,7 +2,7 @@ import { createSignal } from "solid-js"
 import { describe, expect, test } from "vitest"
 import { render } from "solid-js/web"
 import { GeneralSection, SettingsSheet } from "./settings-sheet"
-import { GENERAL_SETTINGS, SETTINGS_SECTIONS, settingGroups, type ChoiceGroup, type SettingSpec } from "./settings"
+import { GENERAL_SETTINGS, SETTINGS_SECTIONS, settingGroups, type Choice, type SettingSpec } from "./settings"
 
 /** Monte un composant dans un conteneur neuf et renvoie le conteneur et le HTML produit. */
 function mount(component: () => unknown): { html: string; container: HTMLElement; dispose: () => void } {
@@ -12,23 +12,22 @@ function mount(component: () => unknown): { html: string; container: HTMLElement
   return { html: container.innerHTML, container, dispose }
 }
 
-const MODELS: ChoiceGroup[] = [
-  {
-    title: "OpenCode Go",
-    choices: [
-      { value: "opencode-go/deepseek-v4.1-flash", label: "DeepSeek V4.1 Flash" },
-      { value: "opencode-go/kimi-k2", label: "Kimi K2" },
-    ],
-  },
+const MODELS: Choice[] = [
+  { value: "opencode-go/deepseek-v4.1-flash", label: "DeepSeek V4.1 Flash · OpenCode Go" },
+  { value: "opencode-go/kimi-k2", label: "Kimi K2 · OpenCode Go" },
 ]
-const AGENTS: ChoiceGroup[] = [{ choices: [{ value: "build", label: "build" }, { value: "zx", label: "zx" }] }]
-const SHELLS: ChoiceGroup[] = [
-  { choices: [{ value: "cmd", label: "cmd" }, { value: "pwsh", label: "pwsh" }] },
+const AGENTS: Choice[] = [
+  { value: "build", label: "build" },
+  { value: "zx", label: "zx" },
+]
+const SHELLS: Choice[] = [
+  { value: "cmd", label: "cmd" },
+  { value: "pwsh", label: "pwsh" },
 ]
 
 /** Ce qu'une page reçoit du conteneur — le rendu des lignes ne dépend pas de la section. */
 const BASE = {
-  groupsOf: (spec: SettingSpec) =>
+  choicesOf: (spec: SettingSpec) =>
     spec.source === "models" ? MODELS : spec.source === "shells" ? SHELLS : spec.source === "agents" ? AGENTS : [],
   draftOf: (spec: SettingSpec) => spec.placeholder ?? "",
   checkedOf: () => false,
@@ -122,18 +121,21 @@ describe("la page General", () => {
     dispose()
   })
 
-  test("les modèles viennent de la source, groupés par fournisseur", () => {
+  test("les modèles viennent de la source, leur libellé porte le fournisseur", () => {
+    // Une liste **plate** : le libellé dit tout, l'`optgroup` ne ferait que redire au-dessus de
+    // chaque ligne ce que la ligne dit, et une barre de sélection native ne cherche pas les titres de
+    // groupe au clavier — seule la ligne compte.
     const { container, dispose } = mount(() => page(() => "opencode-go/kimi-k2"))
-    const select = container.querySelector("select.set-select")!
-    const group = select.querySelector("optgroup")
-    expect(group?.getAttribute("label")).toBe("OpenCode Go")
-    expect([...(group?.querySelectorAll("option") ?? [])].map((o) => o.getAttribute("value"))).toEqual([
+    const select = container.querySelector("select.set-select") as HTMLSelectElement
+    expect(select.querySelector("optgroup")).toBeNull()
+    const options = [...select.options].slice(1) // la première est l'option vide
+    expect(options.map((option) => option.value)).toEqual([
       "opencode-go/deepseek-v4.1-flash",
       "opencode-go/kimi-k2",
     ])
-    expect([...(group?.querySelectorAll("option") ?? [])].map((o) => o.textContent)).toEqual([
-      "DeepSeek V4.1 Flash",
-      "Kimi K2",
+    expect(options.map((option) => option.textContent)).toEqual([
+      "DeepSeek V4.1 Flash · OpenCode Go",
+      "Kimi K2 · OpenCode Go",
     ])
     dispose()
   })
@@ -167,11 +169,11 @@ describe("la page General", () => {
     // un test « monte puis vérifie » passe même sur le code fautif (mesuré). Celui-ci vise le
     // **mécanisme** : on simule la sélection perdue (ce que fait le navigateur), puis on laisse les
     // options changer — et la valeur doit revenir d'elle-même.
-    const [groups, setGroups] = createSignal<ChoiceGroup[]>(MODELS)
+    const [choices, setChoices] = createSignal<Choice[]>(MODELS)
     const { container, dispose } = mount(() => (
       <GeneralSection
         blocks={settingGroups(GENERAL_SETTINGS)}
-        groupsOf={(spec) => (spec.source === "models" ? groups() : spec.source === "shells" ? SHELLS : AGENTS)}
+        choicesOf={(spec) => (spec.source === "models" ? choices() : spec.source === "shells" ? SHELLS : AGENTS)}
         draftOf={() => "opencode-go/kimi-k2"}
         checkedOf={() => false}
         onInput={() => {}}
@@ -182,7 +184,7 @@ describe("la page General", () => {
     expect(select.value).toBe("opencode-go/kimi-k2")
 
     select.value = "" // ce que produit la course : la valeur n'a pas trouvé son option
-    setGroups([...MODELS, { title: "Autre", choices: [{ value: "autre/a", label: "a" }] }])
+    setChoices([...MODELS, { value: "autre/a", label: "a · Autre" }])
 
     expect(select.value).toBe("opencode-go/kimi-k2")
     dispose()

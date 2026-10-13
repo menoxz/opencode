@@ -8,7 +8,7 @@ import {
   methodLabel,
   withValue,
   type AuthMethod,
-  type ChoiceGroup,
+  type Choice,
   type SettingSpec,
   type SettingsSection,
   type SettingsSectionKey,
@@ -141,27 +141,15 @@ export function SettingWide(props: {
  * Le type d'un réglage ne change pas : l'aiguillage se fait une fois, à la construction.
  */
 /**
- * Les choix d'un `select`.
+ * Les choix d'un `select` — une liste plate.
  *
- * Un groupe **titré** se rend en `optgroup` — les modèles, groupés par fournisseur ; un groupe sans
- * titre se rend à plat — les agents, les interpréteurs. Un `optgroup` sans nom n'ajouterait qu'une
- * indentation sans rien dire.
+ * Pas d'`optgroup` : le libellé porte déjà le fournisseur (« DeepSeek V4.1 Flash · OpenCode Go »), donc
+ * un titre de groupe redirait au-dessus de chaque ligne ce que la ligne dit déjà. Et une barre de
+ * sélection native ne cherche **pas** les titres de groupe au clavier, seulement les libellés : grouper
+ * rendrait `orcarouter` introuvable à la frappe.
  */
-function Options(props: { groups: ChoiceGroup[] }) {
-  return (
-    <For each={props.groups}>
-      {(group) => (
-        <Show
-          when={group.title}
-          fallback={<For each={group.choices}>{(choice) => <option value={choice.value}>{choice.label}</option>}</For>}
-        >
-          <optgroup label={group.title}>
-            <For each={group.choices}>{(choice) => <option value={choice.value}>{choice.label}</option>}</For>
-          </optgroup>
-        </Show>
-      )}
-    </For>
-  )
+function Options(props: { choices: Choice[] }) {
+  return <For each={props.choices}>{(choice) => <option value={choice.value}>{choice.label}</option>}</For>
 }
 
 export function SettingControl(props: {
@@ -175,7 +163,7 @@ export function SettingControl(props: {
    * Ils arrivent d'ici plutôt que d'être cherchés dans le composant : le contrôle ne sait pas d'où
    * vient une liste, il rend ce qu'on lui donne.
    */
-  groups?: ChoiceGroup[]
+  choices?: Choice[]
   busy?: boolean
   onInput: (value: string) => void
   /** Écrit la valeur telle que le contrôle la produit — booléenne pour un interrupteur. */
@@ -199,7 +187,7 @@ export function SettingControl(props: {
 
   if (props.spec.kind === "select") {
     /** Les choix viennent du serveur quand `source` est déclaré — sinon ils sont fixes. */
-    const groups = () => (props.spec.source ? withValue(props.groups ?? [], props.value) : [])
+    const choices = () => (props.spec.source ? withValue(props.choices ?? [], props.value) : [])
     return (
       <SettingRow label={props.spec.label} desc={props.spec.desc}>
         {/*
@@ -222,7 +210,7 @@ export function SettingControl(props: {
           ref={(element: HTMLSelectElement) => {
             createEffect(() => {
               const wanted = props.value
-              if (props.spec.source) groups()
+              if (props.spec.source) choices()
               if (element.value !== wanted) element.value = wanted
             })
           }}
@@ -231,15 +219,13 @@ export function SettingControl(props: {
         >
           <Show
             when={props.spec.source}
-            fallback={
-              <For each={props.spec.options ?? []}>{(option) => <option value={option.value}>{option.label}</option>}</For>
-            }
+            fallback={<Options choices={props.spec.options ?? []} />}
           >
             {/* L'option vide est un **état**, pas un texte grisé : elle remet le réglage au défaut du
                 serveur, qui retire la clé quand la valeur écrite est la chaîne vide. Son libellé vient
                 du `placeholder` — un `select` alimenté par une source n'a pas de choix statiques. */}
             <option value="">{props.spec.placeholder ?? "server default"}</option>
-            <Options groups={groups()} />
+            <Options choices={choices()} />
           </Show>
         </select>
       </SettingRow>
@@ -269,7 +255,7 @@ function Block(props: {
   title?: string
   specs: SettingSpec[]
   /** Les choix d'un réglage, quand ils viennent du serveur. */
-  groupsOf: (spec: SettingSpec) => ChoiceGroup[]
+  choicesOf: (spec: SettingSpec) => Choice[]
   draftOf: (spec: SettingSpec) => string
   checkedOf: (spec: SettingSpec) => boolean
   busy?: string
@@ -287,7 +273,7 @@ function Block(props: {
             spec={spec}
             value={props.draftOf(spec)}
             checked={props.checkedOf(spec)}
-            groups={props.groupsOf(spec)}
+            choices={props.choicesOf(spec)}
             busy={props.busy === spec.label}
             onInput={(value) => props.onInput(spec, value)}
             onCommit={(raw) => props.onCommit(spec, raw)}
@@ -322,7 +308,7 @@ function Block(props: {
 export function GeneralSection(props: {
   blocks: SettingBlock[]
   /** Les choix d'un réglage, quand ils viennent du serveur (`spec.source`). */
-  groupsOf: (spec: SettingSpec) => ChoiceGroup[]
+  choicesOf: (spec: SettingSpec) => Choice[]
   draftOf: (spec: SettingSpec) => string
   checkedOf: (spec: SettingSpec) => boolean
   busy?: string
@@ -333,7 +319,7 @@ export function GeneralSection(props: {
 }) {
   /** Ce que chaque bloc reçoit de la page — le rendu des lignes ne dépend pas de la section. */
   const shared = {
-    groupsOf: props.groupsOf,
+    choicesOf: props.choicesOf,
     draftOf: props.draftOf,
     checkedOf: props.checkedOf,
     busy: props.busy,
