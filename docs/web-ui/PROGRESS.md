@@ -2142,3 +2142,114 @@ Ce lot n'ajoute pas de champ de saisie dans le fil : la seule écriture qui y re
 `question.asked`, conformément à §3.1. La vérification porte sur les conversations existantes de la
 copie, pas sur un tour en cours d'écriture — le comportement append-only est prouvé par la sonde live
 et par les tests du réducteur, pas observé « à l'œil » pendant une génération.
+
+---
+
+## Lot suivant — la question de l'agent, la seule écriture du fil (livré)
+
+**Ce lot vient d'un audit, pas d'une demande.** §3.1 et §3.9 du document de conception faisaient de
+`question.asked` **le seul contrôle du fil**, en le motivant : « quand l'agent pose une question, il
+est **bloqué** dessus — ne pas répondre arrête la conversation ». Le lot précédent avait implémenté
+deux des quatre interactions listées en §3.9, dont celle-là. Vérification faite dans le code : les
+événements `question.asked`/`replied`/`rejected` existaient bien (`question/index.ts:90-92`), les
+routes aussi (`groups/question.ts:27,40,52`), et la webui n'en traitait **rien** — les seules
+occurrences du mot « question » dans `packages/webui/src` étaient des commentaires en français et une
+entrée d'icône d'outil.
+
+Autrement dit : **une session dont l'agent posait une question n'avait aucune sortie à l'écran.** Le
+fil ne l'affichait pas, et rien d'autre ne le faisait.
+
+### Contrat relevé
+
+| élément | forme |
+|---|---|
+| `question.asked` | `{ id, sessionID, questions[{ question, header, options[{label, description}], multiple?, custom? }], tool? }` |
+| `question.replied` | `{ sessionID, requestID, answers[] }` |
+| `question.rejected` | `{ sessionID, requestID }` |
+| réponse | `POST /question/:requestID/reply` — `{ answers: string[][] }` |
+| rejet | `POST /question/:requestID/reject` |
+| retrait | sur **`requestID`**, pas sur `id` — même piège que les permissions |
+
+**La réponse est positionnelle.** `answers` est un tableau de libellés **par question, dans l'ordre
+des questions posées** : l'index est le contrat, et une réponse décalée d'un cran répondrait à la
+mauvaise question. C'est ce qui a dicté la forme du brouillon (`emptyAnswers`) et le fait qu'aucun
+affichage ne réordonne les questions reçues.
+
+Deux règles de saisie qui découlent du contrat, pas du goût : en choix **unique**, cocher
+**remplace** (sinon le serveur reçoit deux libellés pour une question qui n'en attend qu'un) ; un
+texte libre **est** la réponse de sa question, il ne s'ajoute pas aux libellés cochés.
+
+### Le défaut que ce lot a révélé — quatrième fois le même piège
+
+La feuille ne s'affichait **pas**, alors que tout était correct côté serveur. Cause, mesurée :
+
+```
+GET http://127.0.0.1:5181/question  -> 200  content-type: text/html     (index.html)
+GET http://127.0.0.1:5181/permission -> 200  content-type: application/json
+```
+
+`/question` **manquait dans `API_PREFIXES`** de `vite.config.ts`. Le proxy Vite rendait donc
+`index.html` avec un `200`, le SDK croyait recevoir du JSON, échouait à le parser, et le `catch`
+avalait l'erreur : `questions()` restait vide, la feuille ne s'affichait jamais, **sans le moindre
+message**. C'est le piège que le fichier de config documente déjà trois fois (`/command`, `/plugin`,
+`/pty`, `/provider/auth`) — et il s'est refermé une quatrième fois sur une route que j'avais
+branchée moi-même dans le même lot.
+
+Deux leçons, toutes deux consignées dans `AGENTS.md` :
+
+1. **Toute route consommée par la webui doit être dans `API_PREFIXES`**, et le contrôle se fait
+   **par le proxy**, sur le `content-type`, jamais sur le status seul.
+2. **Invisible aux tests** : jsdom n'a pas de proxy, donc les 23 tests de ce lot passaient tous
+   pendant que l'écran était vide. C'est la vérification navigateur qui l'a trouvé — et seulement
+   parce qu'elle a été faite sur le **vrai** serveur, avec une vraie question en attente.
+
+### Preuve
+
+```
+vitest run     -> 16 fichiers, 327 tests, exit 0   (+21 pour ce lot)
+tsgo --noEmit  -> exit 0
+```
+
+**Bout en bout, par l'API** (la charge exacte que l'UI envoie) :
+
+```
+GET  /question                -> 1 en attente : que_136d4d859001LySbaHxT1T2Fqo
+POST /question/{id}/reply  { answers: [["Blue (the calm one)"]] }   -> 200 true
+/event                        -> question.replied = 1
+                                 { requestID, answers: [["Blue (the calm one)"]] }
+GET  /question                -> 0
+après la réponse              -> 2 parties émises, dernier message finish="tool-calls"
+```
+
+**L'agent se débloque** : c'est le point qui compte, et il est mesuré, pas supposé.
+
+**Vérifié au navigateur** (Chrome isolé 9222 → webui 5181 → serveur 4097 sur la copie), sur une
+vraie question en attente, DOM lu par CDP :
+
+```
+5181/question -> 200  content-type: application/json      ← le correctif, prouvé par le proxy
+foundAt: 0  questionPresent: true
+header: "Couleur"   text: "Quelle couleur veux-tu utiliser ?"
+options: ["Blue (the calm one)…", "Red (the loud one)…"]
+answerDisabled: true      (rien de coché : répondre reste impossible)
+customField: true
+```
+
+### Ce que ce lot a coûté en méthode
+
+Le premier essai de déclenchement a **expiré sans rien afficher**, et c'était une information :
+j'avais utilisé la route **bloquante** `POST /session/{id}/message`, qui ne rend la main qu'à la fin
+du tour — or le tour ne finit pas, il attend la réponse. La requête ne revenait donc jamais. C'est
+une confirmation indépendante de la prémisse de §3.1 : la question bloque vraiment. Corrigé en ne
+l'attendant pas (`void fetch(...)`).
+
+Second coût, à consigner : l'expiration d'un shell **emporte son arbre de processus**. Le serveur de
+dev (4097) et le serveur Vite (5181) lancés depuis un shell de cette session sont morts avec lui.
+Les deux tournent désormais comme **tâches gérées** (`devdb-serve`, `webui-dev-5181`), qui survivent
+aux shells. Piège déjà connu (F3), mais il s'est repayé ici.
+
+### Réserve
+
+Le rejet (`Dismiss`) n'est pas vérifié de bout en bout : la réponse l'est, et le rejet emprunte la
+même route, le même réducteur et le même retrait. Ce qui reste non observé, c'est le geste lui-même
+sur un cas réel.

@@ -37,6 +37,12 @@ const API_PREFIXES = [
   // l'oublier ne casse rien visiblement, ce qui est précisément ce qui le rend coûteux.
   "/provider",
   "/auth",
+  // La question de l'agent — le **seul** contrôle du fil. Quatrième fois que ce piège se referme :
+  // sans cette entrée, `client.question.list()` recevait `index.html` en 200, le parse échouait, le
+  // `catch` l'avalait, et le fil n'affichait **aucun** contrôle — donc une session dont l'agent est
+  // bloqué sur une question n'avait plus aucune sortie à l'écran. Trouvé en vérifiant au navigateur,
+  // invisible aux tests : jsdom n'a pas de proxy.
+  "/question",
 ]
 
 export default defineConfig(({ mode }) => ({

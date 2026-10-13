@@ -1129,6 +1129,99 @@ textarea {
   background: var(--line-2);
 }
 
+/* ---- La question de l'agent — le seul contrôle du fil ----
+
+   Elle est bloquante : tant qu'elle n'a pas de réponse, la conversation est arrêtée. Elle prend donc
+   une surface à elle, dans la largeur de lecture, et non une ligne discrète comme les actions. */
+
+.question {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px 16px;
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-left: 2px solid var(--brand-1);
+  border-radius: var(--radius);
+}
+
+.question-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.question-head {
+  font-size: var(--fs-meta);
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.question-text {
+  margin: 0;
+  font-size: var(--fs-base);
+  color: var(--text-1);
+}
+
+/* Les options sont des boutons : deux à cinq choix de un à cinq mots, tous lisibles d'un coup. */
+.question-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.question-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 6px 10px;
+  text-align: left;
+  background: transparent;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+}
+
+.question-option:hover {
+  background: #ffffff08;
+}
+
+.question-option.picked {
+  border-color: var(--brand-1);
+  background: var(--grad-active);
+}
+
+.question-label {
+  font-size: var(--fs-note);
+  color: var(--text-1);
+}
+
+.question-hint {
+  font-size: var(--fs-meta);
+  color: var(--text-3);
+}
+
+.question-custom {
+  width: 100%;
+  padding: 6px 10px;
+  font-size: var(--fs-note);
+  color: var(--text-1);
+  background: var(--bg-0);
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+}
+
+.question-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.question-actions .primary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* ---- Zone 4 — saisie ---- */
 
 .composer {

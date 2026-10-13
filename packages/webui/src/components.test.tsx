@@ -5,12 +5,13 @@ import {
   PatchLine,
   PermissionSheet,
   Prose,
+  QuestionSheet,
   Reasoning,
   REPLY_LABEL,
   StepBlock,
   ToolLine,
 } from "./components"
-import type { PermissionRequest, ToolState } from "./view-model"
+import type { PermissionRequest, QuestionAnswers, QuestionRequest, ToolState } from "./view-model"
 
 /** Monte un composant dans un conteneur neuf et renvoie le HTML produit. */
 function mount(component: () => unknown): { html: string; container: HTMLElement; dispose: () => void } {
@@ -316,6 +317,116 @@ describe("StepBlock", () => {
     const { container, dispose } = mount(() => <StepBlock step={step} open={false} onToggle={onToggle} />)
     container.querySelector("button")?.click()
     expect(onToggle).toHaveBeenCalledTimes(1)
+    dispose()
+  })
+})
+
+describe("QuestionSheet — la seule écriture du fil", () => {
+  const request = (custom?: boolean, multiple?: boolean): QuestionRequest => ({
+    id: "q1",
+    sessionID: "ses_1",
+    questions: [
+      {
+        header: "Colour",
+        question: "Which colour should the header be?",
+        options: [
+          { label: "Blue", description: "The calm one" },
+          { label: "Red", description: "The loud one" },
+        ],
+        ...(custom === undefined ? {} : { custom }),
+        ...(multiple === undefined ? {} : { multiple }),
+      },
+    ],
+  })
+
+  const empty: QuestionAnswers = [[]]
+
+  const render1 = (props: Partial<Parameters<typeof QuestionSheet>[0]> = {}) =>
+    mount(() => (
+      <QuestionSheet
+        request={request()}
+        answers={empty}
+        onToggle={() => {}}
+        onCustom={() => {}}
+        onSubmit={() => {}}
+        onReject={() => {}}
+        {...props}
+      />
+    ))
+
+  test("la question, son en-tête et ses options se lisent", () => {
+    const { container, dispose } = render1()
+    expect(container.textContent).toContain("Colour")
+    expect(container.textContent).toContain("Which colour should the header be?")
+    expect(container.textContent).toContain("Blue")
+    expect(container.textContent).toContain("The loud one")
+    dispose()
+  })
+
+  test("répondre reste impossible tant que rien n'est répondu", () => {
+    // Une réponse partielle laisserait l'agent bloqué : le bouton ne doit pas le permettre.
+    const { container, dispose } = render1()
+    const submit = container.querySelector(".question-actions .primary") as HTMLButtonElement
+    expect(submit.disabled).toBe(true)
+    dispose()
+  })
+
+  test("une fois répondu, le bouton s'ouvre", () => {
+    const { container, dispose } = render1({ answers: [["Blue"]] })
+    const submit = container.querySelector(".question-actions .primary") as HTMLButtonElement
+    expect(submit.disabled).toBe(false)
+    dispose()
+  })
+
+  test("le clic sur une option porte son index, son libellé et le mode de choix", () => {
+    const onToggle = vi.fn()
+    const { container, dispose } = render1({ onToggle, request: request(undefined, true) })
+    const options = Array.from(container.querySelectorAll<HTMLButtonElement>(".question-option"))
+    expect(options).toHaveLength(2)
+    options[1]?.click()
+    expect(onToggle).toHaveBeenCalledWith(0, "Red", true)
+    dispose()
+  })
+
+  test("l'option retenue est marquée", () => {
+    const { container, dispose } = render1({ answers: [["Blue"]] })
+    const picked = container.querySelectorAll(".question-option.picked")
+    expect(picked).toHaveLength(1)
+    expect(picked[0]?.textContent).toContain("Blue")
+    dispose()
+  })
+
+  test("le champ libre existe par défaut, et disparaît si le serveur l'interdit", () => {
+    // `custom` vaut `true` par défaut côté serveur : seul un `false` explicite le retire.
+    expect(render1().container.querySelector(".question-custom")).not.toBeNull()
+    expect(render1({ request: request(false) }).container.querySelector(".question-custom")).toBeNull()
+  })
+
+  test("taper une réponse libre la remonte", () => {
+    const onCustom = vi.fn()
+    const { container, dispose } = render1({ onCustom })
+    const input = container.querySelector(".question-custom") as HTMLInputElement
+    input.value = "Green"
+    input.dispatchEvent(new Event("input", { bubbles: true }))
+    expect(onCustom).toHaveBeenCalledWith(0, "Green")
+    dispose()
+  })
+
+  test("le champ libre affiche la réponse libre déjà saisie", () => {
+    const { container, dispose } = render1({ answers: [["Green"]] })
+    const input = container.querySelector(".question-custom") as HTMLInputElement
+    expect(input.value).toBe("Green")
+    dispose()
+  })
+
+  test("Dismiss demande le rejet", () => {
+    const onReject = vi.fn()
+    const { container, dispose } = render1({ onReject })
+    const dismiss = Array.from(container.querySelectorAll<HTMLButtonElement>(".question-actions button")).find(
+      (button) => button.textContent === "Dismiss",
+    )
+    dismiss?.click()
+    expect(onReject).toHaveBeenCalledTimes(1)
     dispose()
   })
 })

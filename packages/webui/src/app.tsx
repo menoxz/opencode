@@ -25,6 +25,7 @@ import {
   PermissionSheet,
   PluginButton,
   Prose,
+  QuestionSheet,
   Reasoning,
   SessionRow,
   ShowMore,
@@ -93,13 +94,20 @@ import { subscribeEvents, type EventStreamState } from "./events"
 import { sessionTimestamp } from "./time"
 import {
   dropPermission,
+  dropQuestion,
+  emptyAnswers,
   groupTurns,
   reducePermissions,
+  reduceQuestions,
   reduceThread,
+  setCustomAnswer,
+  toggleAnswer,
   type Message,
   type Part,
   type PermissionReply,
   type PermissionRequest,
+  type QuestionAnswers,
+  type QuestionRequest,
   type StepView,
   type ToolState,
   type TurnView,
@@ -122,6 +130,14 @@ export default function App() {
   const [working, setWorking] = createSignal(false)
   /** Le fil se lit par **tour**, et chaque tour par **étape** — jamais par message brut. */
   const turns = createMemo(() => groupTurns(messages()))
+  /**
+   * La question de l'agent : la **seule** écriture du fil. Elle est bloquante — tant qu'elle n'a pas
+   * de réponse, la conversation est arrêtée — donc elle n'est pas rangée dans un panneau : elle
+   * s'affiche dans le fil, là où l'on regarde.
+   */
+  const [questions, setQuestions] = createSignal<QuestionRequest[]>([])
+  /** Brouillons de réponse, par identifiant de question : la réponse est positionnelle. */
+  const [answers, setAnswers] = createSignal<Record<string, QuestionAnswers>>({})
   const [draft, setDraft] = createSignal("")
   const [error, setError] = createSignal<string | undefined>()
   const [permissions, setPermissions] = createSignal<PermissionRequest[]>([])
@@ -343,6 +359,51 @@ export default function App() {
     const result = await client.permission.list(scope()).catch(() => undefined)
     const data = (result as { data?: PermissionRequest[] } | undefined)?.data
     if (Array.isArray(data)) setPermissions(data)
+  }
+
+  /** La question qui bloque la session ouverte : c'est elle, et elle seule, qui s'affiche dans le fil. */
+  const activeQuestion = () => questions().find((item) => item.sessionID === active())
+  const answersFor = (request: QuestionRequest) => answers()[request.id] ?? emptyAnswers(request)
+
+  /**
+   * Les questions en attente — lues au montage et à la reconnexion, comme les permissions.
+   *
+   * Un `question.asked` manqué pendant une coupure laisserait l'agent **bloqué** sans que rien ne
+   * l'indique à l'écran : c'est le même défaut que celui trouvé en P5 sur les permissions, et il se
+   * traite de la même façon.
+   */
+  const loadQuestions = async () => {
+    const result = await client.question.list(scope()).catch(() => undefined)
+    const data = (result as { data?: QuestionRequest[] } | undefined)?.data
+    if (Array.isArray(data)) setQuestions(data)
+  }
+
+  /**
+   * Répondre — la seule écriture du fil.
+   *
+   * La question est retirée **avant** l'appel : c'est l'état que l'utilisateur vient de produire. Si
+   * l'appel échoue, `loadQuestions` la fait revenir — une réponse perdue ne doit pas ressembler à une
+   * réponse envoyée, sinon l'agent attend sans que rien ne le montre.
+   */
+  const answerQuestion = async (request: QuestionRequest) => {
+    const payload = answersFor(request)
+    setQuestions((current) => dropQuestion(current, request.id))
+    const result = await client.question
+      .reply({ requestID: request.id, answers: payload, ...scope() })
+      .catch(() => undefined)
+    if (!result) {
+      setError("The answer could not be sent.")
+      void loadQuestions()
+    }
+  }
+
+  const rejectQuestion = async (request: QuestionRequest) => {
+    setQuestions((current) => dropQuestion(current, request.id))
+    const result = await client.question.reject({ requestID: request.id, ...scope() }).catch(() => undefined)
+    if (!result) {
+      setError("The question could not be dismissed.")
+      void loadQuestions()
+    }
   }
 
   /**
@@ -982,6 +1043,7 @@ export default function App() {
     await loadProjects()
     await loadSessions()
     await loadPermissions()
+    await loadQuestions()
     await loadPlugins()
 
     const healthTimer = setInterval(async () => setHealth(await fetchHealth()), 10_000)
@@ -1009,6 +1071,15 @@ export default function App() {
       onEvent: (event) => {
         if (event.type === "permission.asked" || event.type === "permission.replied") {
           setPermissions((current) => reducePermissions(current, event))
+        }
+        // La question arrive par le même canal, mais elle vit dans le fil : c'est une écriture là où
+        // les permissions sont une décision de côté.
+        if (
+          event.type === "question.asked" ||
+          event.type === "question.replied" ||
+          event.type === "question.rejected"
+        ) {
+          setQuestions((current) => reduceQuestions(current, event))
         }
         if (event.type === "session.created" || event.type === "session.deleted") void loadSessions()
 
@@ -1042,6 +1113,7 @@ export default function App() {
         if (state.connected && !wasConnected) {
           wasConnected = true
           void loadPermissions()
+          void loadQuestions()
           void loadSessions()
         }
         if (!state.connected) wasConnected = false
@@ -1368,6 +1440,30 @@ export default function App() {
                 <p class="error">{error()}</p>
               </Show>
               <For each={turns()}>{(turn) => renderTurn(turn)}</For>
+
+              {/* La seule écriture du fil : l'agent est bloqué tant qu'il n'a pas sa réponse. */}
+              <Show when={activeQuestion()}>
+                {(request) => (
+                  <QuestionSheet
+                    request={request()}
+                    answers={answersFor(request())}
+                    onToggle={(index, label, multiple) =>
+                      setAnswers((current) => ({
+                        ...current,
+                        [request().id]: toggleAnswer(answersFor(request()), index, label, multiple),
+                      }))
+                    }
+                    onCustom={(index, value) =>
+                      setAnswers((current) => ({
+                        ...current,
+                        [request().id]: setCustomAnswer(answersFor(request()), index, value),
+                      }))
+                    }
+                    onSubmit={() => void answerQuestion(request())}
+                    onReject={() => void rejectQuestion(request())}
+                  />
+                )}
+              </Show>
             </div>
           </div>
 

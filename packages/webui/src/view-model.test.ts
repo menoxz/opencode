@@ -1,29 +1,38 @@
 import { describe, expect, test } from "vitest"
 import {
+  answersComplete,
   canAlways,
   boundLines,
+  customValue,
   diffLabel,
   dropPermission,
+  dropQuestion,
+  emptyAnswers,
   fileDiff,
   formatCost,
   formatCount,
   formatDuration,
   groupSteps,
   groupTurns,
+  isSelected,
   isVisiblePart,
   OUTPUT_PREVIEW_LINES,
   patchLabel,
   permissionActions,
   proseKind,
   reducePermissions,
+  reduceQuestions,
   reduceThread,
+  setCustomAnswer,
   stepSummary,
+  toggleAnswer,
   toolDetail,
   toolOutputLines,
   toolStatusLabel,
   toolTitle,
   type Message,
   type PermissionRequest,
+  type QuestionRequest,
   type ToolState,
 } from "./view-model"
 
@@ -410,5 +419,130 @@ describe("le fil append-only", () => {
     const current = base()
     expect(reduceThread(current, { type: "session.status", properties: { sessionID: "s1" } })).toBe(current)
     expect(reduceThread(current, { type: "message.part.delta", properties: {} })).toBe(current)
+  })
+})
+
+describe("la question de l'agent — la seule écriture du fil", () => {
+  const request = (id: string, overrides: Partial<QuestionRequest> = {}): QuestionRequest => ({
+    id,
+    sessionID: "ses_1",
+    questions: [
+      {
+        header: "Colour",
+        question: "Which colour?",
+        options: [
+          { label: "Blue", description: "The calm one" },
+          { label: "Red", description: "The loud one" },
+        ],
+      },
+    ],
+    ...overrides,
+  })
+
+  test("question.asked ajoute, sans dupliquer", () => {
+    const once = reduceQuestions([], { type: "question.asked", properties: request("q1") })
+    expect(once.map((item) => item.id)).toEqual(["q1"])
+    const twice = reduceQuestions(once, { type: "question.asked", properties: request("q1") })
+    expect(twice).toHaveLength(1)
+  })
+
+  test("question.replied et question.rejected retirent par requestID", () => {
+    // Le rejet compte autant que la réponse : c'est ce qui débloque l'agent quand on ne veut pas répondre.
+    const current = [request("q1"), request("q2")]
+    expect(
+      reduceQuestions(current, { type: "question.replied", properties: { requestID: "q1" } }).map((i) => i.id),
+    ).toEqual(["q2"])
+    expect(
+      reduceQuestions(current, { type: "question.rejected", properties: { requestID: "q2" } }).map((i) => i.id),
+    ).toEqual(["q1"])
+  })
+
+  test("un événement malformé ne casse rien", () => {
+    const current = [request("q1")]
+    expect(reduceQuestions(current, { type: "question.asked", properties: {} })).toEqual(current)
+    expect(reduceQuestions(current, { type: "question.replied", properties: {} })).toEqual(current)
+    expect(reduceQuestions(current, { type: "server.heartbeat", properties: {} })).toEqual(current)
+  })
+
+  test("la suppression optimiste retire la question", () => {
+    expect(dropQuestion([request("q1"), request("q2")], "q2").map((i) => i.id)).toEqual(["q1"])
+  })
+
+  test("la réponse est positionnelle : une entrée vide par question", () => {
+    // `answers` est un `string[][]` — un tableau de libellés **par question, dans l'ordre**. Une
+    // réponse décalée d'un cran répondrait à la mauvaise question.
+    const two = request("q1", {
+      questions: [
+        { header: "A", question: "a?", options: [] },
+        { header: "B", question: "b?", options: [] },
+      ],
+    })
+    expect(emptyAnswers(two)).toEqual([[], []])
+  })
+
+  test("en choix unique, cocher remplace", () => {
+    const start = emptyAnswers(request("q1"))
+    const first = toggleAnswer(start, 0, "Blue", false)
+    expect(first[0]).toEqual(["Blue"])
+    const second = toggleAnswer(first, 0, "Red", false)
+    // Sans le remplacement, le serveur recevrait deux libellés pour une question qui n'en attend qu'un.
+    expect(second[0]).toEqual(["Red"])
+  })
+
+  test("en choix multiple, cocher s'ajoute et se décoche", () => {
+    const start = emptyAnswers(request("q1"))
+    const both = toggleAnswer(toggleAnswer(start, 0, "Blue", true), 0, "Red", true)
+    expect(both[0]).toEqual(["Blue", "Red"])
+    expect(toggleAnswer(both, 0, "Blue", true)[0]).toEqual(["Red"])
+  })
+
+  test("une réponse ne touche pas les autres questions", () => {
+    const two = request("q1", {
+      questions: [
+        { header: "A", question: "a?", options: [] },
+        { header: "B", question: "b?", options: [] },
+      ],
+    })
+    const answers = toggleAnswer(emptyAnswers(two), 1, "Second", false)
+    expect(answers[0]).toEqual([])
+    expect(answers[1]).toEqual(["Second"])
+  })
+
+  test("un texte libre remplace, et un texte vide efface", () => {
+    const start = toggleAnswer(emptyAnswers(request("q1")), 0, "Blue", false)
+    expect(setCustomAnswer(start, 0, "Green")[0]).toEqual(["Green"])
+    expect(setCustomAnswer(start, 0, "   ")[0]).toEqual([])
+  })
+
+  test("une réponse partielle n'est pas complète", () => {
+    const two = request("q1", {
+      questions: [
+        { header: "A", question: "a?", options: [] },
+        { header: "B", question: "b?", options: [] },
+      ],
+    })
+    expect(answersComplete(two, [[], []])).toBe(false)
+    expect(answersComplete(two, [["one"], []])).toBe(false)
+    expect(answersComplete(two, [["one"], ["two"]])).toBe(true)
+    // Une forme qui ne correspond pas au nombre de questions est incomplète, pas « valide par défaut ».
+    expect(answersComplete(two, [["one"]])).toBe(false)
+  })
+
+  test("la sélection se lit par libellé", () => {
+    const answers = toggleAnswer(emptyAnswers(request("q1")), 0, "Blue", false)
+    expect(isSelected(answers, 0, "Blue")).toBe(true)
+    expect(isSelected(answers, 0, "Red")).toBe(false)
+  })
+
+  test("le champ libre n'affiche pas un libellé d'option", () => {
+    // C'est ce qui garde le champ cohérent : choisir une option le vide au lieu de laisser un texte
+    // qui ne serait plus envoyé.
+    const item = request("q1").questions[0]!
+    const picked = toggleAnswer(emptyAnswers(request("q1")), 0, "Blue", false)
+    expect(customValue(item, picked, 0)).toBe("")
+    expect(customValue(item, setCustomAnswer(picked, 0, "Green"), 0)).toBe("Green")
+    // Plusieurs libellés cochés : le champ n'a rien à montrer.
+    const many = toggleAnswer(picked, 0, "Red", true)
+    expect(customValue(item, many, 0)).toBe("")
   })
 })

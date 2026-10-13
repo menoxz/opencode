@@ -500,3 +500,122 @@ export function reduceThread(messages: Message[], event: UiEvent): Message[] | u
 
   return messages
 }
+
+/* =============================================================================
+   La question de l'agent — la **seule** écriture du fil.
+
+   §3.1 : le fil est en lecture seule, à une exception près, et elle est motivée. Quand l'agent pose
+   une question, il est **bloqué** dessus : ne pas répondre arrête la conversation. Une question est
+   donc un contrôle dans le fil, le seul. (`permission.asked` n'y est pas : il vit dans le tiroir
+   droit, cf. §2.)
+
+   Contrat relevé, pas supposé (`question/index.ts:58-92`, `groups/question.ts:22-56`) :
+
+     question.asked    -> { id, sessionID, questions[], tool? }
+     question.replied  -> { sessionID, requestID, answers[] }
+     question.rejected -> { sessionID, requestID }
+     POST /question/:requestID/reply    { answers: string[][] }
+     POST /question/:requestID/reject
+
+   `answers` est **une liste de libellés par question, dans l'ordre des questions** — d'où le
+   `string[][]`. Ce n'est pas un détail de forme : la réponse est **positionnelle**, l'index est le
+   contrat. Une réponse décalée d'un cran répondrait à la mauvaise question.
+   ============================================================================= */
+
+export type QuestionOption = { label: string; description: string }
+
+export type QuestionInfo = {
+  question: string
+  header: string
+  options: QuestionOption[]
+  /** Plusieurs choix possibles ; absent = choix unique. */
+  multiple?: boolean
+  /** Autorise une réponse libre ; absent = autorisé (défaut `true` côté serveur). */
+  custom?: boolean
+}
+
+export type QuestionRequest = {
+  id: string
+  sessionID: string
+  questions: QuestionInfo[]
+  tool?: { messageID: string; callID: string }
+}
+
+/** Une liste de libellés par question, dans l'ordre des questions posées. */
+export type QuestionAnswers = string[][]
+
+/** `question.asked` ajoute, `question.replied` et `question.rejected` retirent — sur `requestID`. */
+export function reduceQuestions(current: QuestionRequest[], event: UiEvent): QuestionRequest[] {
+  if (event.type === "question.asked") {
+    const request = event.properties as QuestionRequest | undefined
+    if (!request?.id) return current
+    if (current.some((item) => item.id === request.id)) return current
+    return [...current, request]
+  }
+  if (event.type === "question.replied" || event.type === "question.rejected") {
+    const requestID = (event.properties as { requestID?: string } | undefined)?.requestID
+    if (!requestID) return current
+    return current.filter((item) => item.id !== requestID)
+  }
+  return current
+}
+
+/** Retire une question localement après réponse, avant que le serveur ne confirme. */
+export function dropQuestion(current: QuestionRequest[], requestID: string): QuestionRequest[] {
+  return current.filter((item) => item.id !== requestID)
+}
+
+/** Une entrée vide par question : la réponse est positionnelle, donc la forme est le contrat. */
+export function emptyAnswers(request: QuestionRequest): QuestionAnswers {
+  return request.questions.map(() => [])
+}
+
+/**
+ * Coche ou décoche un libellé.
+ *
+ * `multiple` sépare le choix multiple du choix unique, et la différence est structurelle : en choix
+ * unique, cocher **remplace**. Sans cela le serveur recevrait deux libellés pour une question qui
+ * n'en attend qu'un — une réponse malformée au moment précis où l'agent attend.
+ */
+export function toggleAnswer(
+  answers: QuestionAnswers,
+  index: number,
+  label: string,
+  multiple: boolean,
+): QuestionAnswers {
+  return answers.map((current, at) => {
+    if (at !== index) return current
+    if (current.includes(label)) return current.filter((item) => item !== label)
+    return multiple ? [...current, label] : [label]
+  })
+}
+
+/**
+ * Un texte libre ne s'ajoute pas aux libellés cochés : il **est** la réponse de sa question. Le
+ * mélange produirait une réponse que ni le libellé ni la saisie ne décrit.
+ */
+export function setCustomAnswer(answers: QuestionAnswers, index: number, value: string): QuestionAnswers {
+  return answers.map((current, at) => (at === index ? (value.trim() ? [value] : []) : current))
+}
+
+/** Toutes les questions doivent porter une réponse : une réponse partielle laisserait l'agent bloqué. */
+export function answersComplete(request: QuestionRequest, answers: QuestionAnswers): boolean {
+  if (answers.length !== request.questions.length) return false
+  return answers.every((answer) => answer.some((label) => label.trim().length > 0))
+}
+
+export function isSelected(answers: QuestionAnswers, index: number, label: string): boolean {
+  return Boolean(answers[index]?.includes(label))
+}
+
+/**
+ * Le texte libre à afficher dans le champ : une réponse qui n'est **pas** un libellé d'option.
+ * C'est ce qui garde le champ cohérent avec l'état — choisir une option le vide, au lieu de laisser
+ * un texte qui ne serait plus envoyé.
+ */
+export function customValue(item: QuestionInfo, answers: QuestionAnswers, index: number): string {
+  const current = answers[index] ?? []
+  if (current.length !== 1) return ""
+  const label = current[0]!
+  return item.options.some((option) => option.label === label) ? "" : label
+}

@@ -1,10 +1,13 @@
 import { createSignal, For, Show } from "solid-js"
 import {
+  answersComplete,
   boundLines,
+  customValue,
   diffLabel,
   fileDiff,
   formatCount,
   formatDuration,
+  isSelected,
   OUTPUT_PREVIEW_LINES,
   patchLabel,
   permissionActions,
@@ -16,6 +19,8 @@ import {
   toolTitle,
   type PermissionReply,
   type PermissionRequest,
+  type QuestionAnswers,
+  type QuestionRequest,
   type StepView,
   type ToolState,
 } from "./view-model"
@@ -461,6 +466,78 @@ export function PermissionSheet(props: { request: PermissionRequest; onReply: (r
             </button>
           )}
         </For>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * La question de l'agent — le **seul** contrôle du fil.
+ *
+ * §3.1 : le fil est en lecture seule, sauf ici, et l'exception est motivée — l'agent est **bloqué**
+ * sur sa question, et ne pas répondre arrête la conversation. Ce n'est donc pas une commodité : sans
+ * ce contrôle, une session qui pose une question n'a plus aucun moyen d'en sortir depuis l'écran.
+ *
+ * Les options sont des **boutons**, pas le `Picker` cherchable : une question propose deux à cinq
+ * choix de un à cinq mots, tous lisibles d'un coup. Le `Picker` existe pour les listes longues
+ * (696 modèles) ; ici il ajouterait un clic et cacherait ce qui tient déjà à l'écran.
+ *
+ * La réponse est **positionnelle** (`string[][]`, un tableau de libellés par question) : l'ordre des
+ * blocs suit donc exactement l'ordre des questions reçues, et rien ne les réordonne à l'affichage.
+ */
+export function QuestionSheet(props: {
+  request: QuestionRequest
+  answers: QuestionAnswers
+  onToggle: (index: number, label: string, multiple: boolean) => void
+  onCustom: (index: number, value: string) => void
+  onSubmit: () => void
+  onReject: () => void
+}) {
+  const complete = () => answersComplete(props.request, props.answers)
+  return (
+    <div class="question">
+      <For each={props.request.questions}>
+        {(item, index) => (
+          <div class="question-item">
+            <div class="question-head">{item.header}</div>
+            <p class="question-text">{item.question}</p>
+            <Show when={item.options.length > 0}>
+              <div class="question-options">
+                <For each={item.options}>
+                  {(option) => (
+                    <button
+                      class="question-option"
+                      classList={{ picked: isSelected(props.answers, index(), option.label) }}
+                      title={option.description}
+                      onClick={() => props.onToggle(index(), option.label, Boolean(item.multiple))}
+                    >
+                      <span class="question-label">{option.label}</span>
+                      <span class="question-hint">{option.description}</span>
+                    </button>
+                  )}
+                </For>
+              </div>
+            </Show>
+            {/* `custom` vaut `true` par défaut côté serveur : on n'affiche le champ que s'il l'interdit pas. */}
+            <Show when={item.custom !== false}>
+              <input
+                class="question-custom"
+                type="text"
+                placeholder="Or type an answer…"
+                value={customValue(item, props.answers, index())}
+                onInput={(event) => props.onCustom(index(), event.currentTarget.value)}
+              />
+            </Show>
+          </div>
+        )}
+      </For>
+      <div class="question-actions">
+        <button class="primary" disabled={!complete()} onClick={() => props.onSubmit()}>
+          Answer
+        </button>
+        <button class="ghost bordered" onClick={() => props.onReject()}>
+          Dismiss
+        </button>
       </div>
     </div>
   )
