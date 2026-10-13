@@ -135,6 +135,20 @@ jamais `true`.
   de forme : la liste est **plate**, sans `optgroup`. Le titre de groupe redirait au-dessus de chaque
   ligne ce que la ligne dit déjà, et une barre de sélection native ne cherche **pas** les titres de
   groupe au clavier — grouper rendrait `orcarouter` introuvable à la frappe.
+- **Et réciproquement : ce qui est rare ne reste pas au premier plan.** Le bouton `credentials` et son
+  badge « credentials ✓ » vivaient au pied du rail — un badge qui ne change jamais ne dit rien, il
+  occupe — pour un réglage qu'on touche **une fois par serveur**. Ils sont descendus dans `General`,
+  bloc *Server* : l'adresse, le nom, le mot de passe, et `Forget`, qui n'apparaît **que** s'il y a
+  quelque chose à oublier. L'adresse est en **lecture seule** — elle vient de `location.origin` ou
+  d'une variable de build, donc un champ de saisie donnerait l'illusion d'un effet. Et ce que la
+  popover ne montrait pas, la page le montre : l'adresse du serveur et le nom déjà enregistré se
+  **lisent**, sans avoir à les réécrire pour les voir.
+- **Un cache de session nomme son point d'invalidation, ou n'existe pas.** `GET /config/providers`
+  (531 ko) et `GET /agent` (1,27 Mo) ne se relisent plus à chaque ouverture de `General` : 1,8 Mo pour
+  deux listes qui ne changent que si l'on écrit. L'invalidation appartient au **seul writer** qui peut
+  les changer — `saveProvider` pour les modèles, `saveAgent` pour les agents. Sans ce point nommé, un
+  cache montrerait une liste incomplète jusqu'au redémarrage : c'est le seul piège, et il se paie en
+  nommant ce qui invalide, pas en se passant de cache.
 - **Une charge utile qui porte des secrets se projette, jamais ne se stocke.** `GET /config/providers`
   rend 7 champs `key`/`apiKey` **en clair** ; `/api/model` en rend 580 — la route « sans secrets »
   n'existe pas, et c'est une limite du serveur, pas un choix d'écran. La projection ne lit que

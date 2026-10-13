@@ -1821,7 +1821,67 @@ CDP, onglet 5180 : .set-control SELECT|SELECT|SELECT|INPUT|SELECT
 
 ### Ce qui reste
 
-`/config/providers` reste un appel de 531 ko à l'ouverture de `General`. C'est acceptable une fois
-(49 ms), mais une page qui l'ouvre et le referme le repaie ; un cache de session serait le prochain
-pas. Et les clés en clair restent dans la réponse du serveur, sur le réseau local — hors du périmètre
-de l'UI.
+Les clés en clair restent dans la réponse du serveur, sur le réseau local — hors du périmètre de l'UI.
+Autrement dit : **la liste des modèles ne se paie plus qu'une fois par session** (voir le lot suivant),
+mais elle se paie toujours 531 ko, et le correctif de fond des clés reste côté serveur.
+
+## Lot suivant — les identifiants descendent, les listes se cachent (livré)
+
+Deux décisions, posées ensemble parce qu'elles se décidaient pareil — et **prises par l'utilisateur**,
+pas par moi : elles portent sur son écran, et le raisonnement seul ne tranche pas où mettre quelque
+chose qu'il voit tous les jours.
+
+### L'audit du premier plan, dans les deux sens
+
+La règle apprise au lot précédent — *une action de premier plan ne se range pas dans un panneau* — a
+été retournée sur le pied du rail. Il portait trois choses : le dossier de travail (action
+quotidienne : sa place), `settings` (l'entrée du panneau : sa place), et un bouton `credentials` avec
+un badge permanent « identifiants ✓ », pour un réglage qu'on touche **une fois par serveur**. Un badge
+qui ne change jamais ne dit rien ; il occupe.
+
+Le bloc `Server` de `General` porte désormais l'adresse, le nom, le mot de passe, et `Forget` — qui
+n'apparaît que s'il y a quelque chose à oublier. Ce que la popover ne montrait pas, la page le montre :
+elle **lit** l'adresse du serveur et le nom déjà enregistré, sans les réécrire pour les voir.
+L'adresse est en lecture seule : elle vient de `location.origin` ou d'une variable de build, donc un
+champ de saisie donnerait l'illusion d'un effet.
+
+### Le cache, et son point d'invalidation
+
+`General` relisait **1,8 Mo** à chaque ouverture : 531 ko de modèles (`/config/providers`) et 1,27 Mo
+d'agents (`/agent`) — pour deux listes qui ne changent que si l'on écrit quelque chose. Elles ne sont
+plus relues que si elles sont absentes, et l'invalidation est **nommée chez le seul writer qui peut
+les changer** : `saveProvider` (authentifier un fournisseur change les modèles qu'il propose) et
+`saveAgent`. Les interpréteurs ne sont pas cachés : 353 octets, il n'y a rien à économiser.
+
+### Incident de méthode — une édition qui a supprimé un fichier
+
+En voulant retirer le CSS devenu mort (`.auth-form`, `.auth-row`), j'ai appelé l'outil d'édition avec
+un `oldString` **vide**. Le remplacement s'est appliqué à tout le fichier : **1 725 lignes de
+`styles.css` supprimées**, dont les changements non commités du lot (`.set-value`). Réparé par
+`git checkout` depuis le dernier commit, puis les deux changements réappliqués par des éditions
+ciblées. Vérifié par le nombre de lignes et par grep de six jetons attendus (`--bluish-950`,
+`--fs-title`, `.sheet-tab`, `.set-row`, `.switch-track`, `.provider-head`).
+
+**La leçon** : un `oldString` vide n'est pas « tout remplacer » anodin — c'est une suppression de
+fichier déguisée en édition. Et la réparation n'a coûté que les changements **non commités** : le
+commit du lot précédent les portait déjà.
+
+### Preuve
+
+```
+vitest run -> 13 fichiers, 226 tests, exit 0
+tsgo --noEmit -> exit 0
+styles.css : 1 467 lignes restaurées, 6 jetons de contrôle présents
+
+CDP, onglet 5180, page General :
+  railFoot      "⌂ settings"                        (plus de bouton credentials)
+  blocks        Defaults | Identity | Environment | Server
+  addressShown  "same origin"  |  passwordField true
+```
+
+### Ce qui reste
+
+Trois résidus, inchangés : les clés des fournisseurs en clair dans la réponse du serveur (correctif
+côté serveur) ; une liste d'interpréteurs fermée aux quatre que le serveur cherche lui-même (`nu`,
+`fish`, WSL) ; et le cache, qui vit **le temps de la page** — un rechargement le vide, ce qui est le
+comportement voulu mais n'est pas écrit à l'écran comme tel.
