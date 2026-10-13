@@ -316,6 +316,19 @@ export function GeneralSection(props: {
   onCommit: (spec: SettingSpec, raw: string | boolean) => void
   /** Où les réglages sont écrits, et quelle version les sert — deux faits, une ligne. */
   footnote?: string
+  /**
+   * Le bloc « Server ». Absent, la page reste un simple rendu de blocs (`behavior`, `tools`) : les
+   * identifiants ne concernent que `General`.
+   */
+  server?: {
+    address?: string
+    username: string
+    password: string
+    stored: boolean
+    onChange: (field: "username" | "password", value: string) => void
+    onSave: () => void
+    onForget: () => void
+  }
 }) {
   /** Ce que chaque bloc reçoit de la page — le rendu des lignes ne dépend pas de la section. */
   const shared = {
@@ -331,10 +344,86 @@ export function GeneralSection(props: {
     <>
       <For each={props.blocks}>{(block) => <Block title={block.title} specs={block.specs} {...shared} />}</For>
 
+      {/* Le serveur en **dernier** : c'est le plus rare des quatre, et l'ordre suit la fréquence. */}
+      <Show when={props.server}>{(server) => <ServerBlock {...server()} />}</Show>
+
       <Show when={props.footnote}>
         <p class="set-footnote">{props.footnote}</p>
       </Show>
     </>
+  )
+}
+
+/* =============================================================================
+   Le serveur — l'adresse, et les identifiants.
+
+   Ce bloc vient du **pied du rail**, où il tenait un bouton et un badge permanents (« credentials ✓ »)
+   pour un réglage qu'on touche **une fois par serveur**. C'est la même règle que le dossier de
+   travail, appliquée dans l'autre sens : le dossier est une action quotidienne, donc il reste au
+   premier plan ; les identifiants ne le sont pas, donc ils descendent ici. Un badge qui ne change
+   jamais ne dit rien — il occupe.
+
+   Ce qui devient possible, et qui ne l'était pas dans une infobulle : **lire ce qu'on a réglé**. La
+   popover ne montrait ni l'adresse du serveur ni le nom déjà enregistré sans le réécrire, alors que
+   `readCredentials` savait les relire. Ici les trois faits sont sur une ligne chacun.
+
+   L'adresse est une **information**, pas un contrôle : elle vient de `location.origin` ou d'une
+   variable de build (`resolveServerUrl`). Un champ de saisie serait un mensonge — on ne peut pas la
+   changer d'ici, et l'éditer donnerait l'illusion d'un effet.
+   ============================================================================= */
+
+export function ServerBlock(props: {
+  /** Vide veut dire « la même origine que la page » — c'est le cas normal en production. */
+  address?: string
+  username: string
+  password: string
+  /** Y a-t-il des identifiants enregistrés ? Décide si « Forget » a un sens. */
+  stored: boolean
+  onChange: (field: "username" | "password", value: string) => void
+  onSave: () => void
+  onForget: () => void
+}) {
+  return (
+    <section class="sheet-section">
+      <h2>Server</h2>
+
+      <SettingRow label="Address" desc="the server this browser talks to">
+        <span class="set-value" title={props.address || "same origin"}>
+          {props.address || "same origin"}
+        </span>
+      </SettingRow>
+
+      <SettingRow label="Username" desc="only needed by a server that asks for one">
+        <input
+          class="set-input"
+          placeholder="not set"
+          value={props.username}
+          onInput={(event) => props.onChange("username", event.currentTarget.value)}
+        />
+      </SettingRow>
+
+      <SettingRow label="Password" desc="kept in this browser, never written to the config file">
+        <input
+          class="set-input"
+          type="password"
+          placeholder="not set"
+          value={props.password}
+          onInput={(event) => props.onChange("password", event.currentTarget.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") props.onSave()
+          }}
+        />
+        <button class="ghost bordered" onClick={() => props.onSave()}>
+          Save
+        </button>
+        {/* N'existe que s'il y a quelque chose à oublier. */}
+        <Show when={props.stored}>
+          <button class="ghost" title="Forget the stored credentials" onClick={() => props.onForget()}>
+            Forget
+          </button>
+        </Show>
+      </SettingRow>
+    </section>
   )
 }
 

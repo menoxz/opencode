@@ -608,28 +608,9 @@ textarea {
   color: var(--text-1);
 }
 
-.auth-form {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding-top: 10px;
-}
-
-.auth-form input {
-  padding: 6px 9px;
-  border: 1px solid var(--line-1);
-  border-radius: 7px;
-  background: #0000001a;
-}
-
-.auth-form input::placeholder {
-  color: var(--text-3);
-}
-
-.auth-row {
-  display: flex;
-  gap: 6px;
-}
+/* Le formulaire d'identifiants vivait ici, sous la forme d'une popover accrochée au pied du rail
+   (`.auth-form`, `.auth-row`). Il est descendu dans `General`, bloc *Server*, où il reprend les
+   classes communes du panneau : un formulaire à part n'avait plus de raison d'être. */
 
 .foot-row {
   display: flex;
@@ -1573,6 +1554,17 @@ textarea {
   margin: 12px 0 0;
   color: var(--text-3);
   font-size: var(--fs-meta);
+}
+
+/* Une valeur qu'on **lit** mais qu'on ne règle pas ici — l'adresse du serveur. Elle se tronque par
+   la fin, parce que son début (le schéma et l'hôte) est ce qui l'identifie. */
+.set-value {
+  max-width: min(440px, 44vw);
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: var(--fs-label);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Un `select` alimenté par le serveur porte des libellés longs

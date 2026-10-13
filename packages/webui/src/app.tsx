@@ -176,7 +176,12 @@ export default function App() {
   // « voir plus » par dossier : replier est l'état par défaut, déplier est un geste explicite.
   const [moreOpen, setMoreOpen] = createSignal<Record<string, boolean>>({})
 
-  const [authOpen, setAuthOpen] = createSignal(false)
+  /**
+   * Les identifiants du serveur — **lus** ici, écrits par le bloc `Server` de `General`.
+   *
+   * Ils vivent dans `localStorage` (`oc.webui.auth`), pas dans `Config` : c'est un réglage de **ce
+   * navigateur**, pas du serveur. Le formulaire n'a plus de popover : il n'a pas d'état d'ouverture.
+   */
   const [authUser, setAuthUser] = createSignal(credentials?.username ?? "")
   const [authPass, setAuthPass] = createSignal(credentials?.password ?? "")
 
@@ -336,11 +341,25 @@ export default function App() {
      */
     if (section === "general" || section === "behavior" || section === "tools") {
       const general = section === "general"
+      /**
+       * **Cache de session.** La page relisait 531 ko de modèles **et** 1,27 Mo d'agents à chaque
+       * ouverture — 1,8 Mo pour deux listes qui ne changent que si l'on écrit quelque chose. On ne
+       * les redemande donc que si on ne les a pas.
+       *
+       * L'invalidation est faite par le **writer** qui peut les changer, et par lui seul :
+       * `saveProvider` (authentifier un fournisseur change les modèles qu'il propose) et `saveAgent`.
+       * C'est ce qui rend le cache sûr : sans un point d'invalidation nommé, il montrerait une liste
+       * incomplète jusqu'au redémarrage — le piège qu'on cherche à ne pas poser.
+       *
+       * Les interpréteurs ne sont **pas** cachés : 353 octets, il n'y a rien à économiser.
+       */
+      const needModels = general && modelOptions().length === 0
+      const needAgents = general && agents().length === 0
       const [configResult, providersResult, shellsResult, agentResult] = await Promise.all([
         client.global.config.get().catch(() => undefined),
-        general ? client.config.providers().catch(() => undefined) : Promise.resolve(undefined),
+        needModels ? client.config.providers().catch(() => undefined) : Promise.resolve(undefined),
         general ? fetchShells() : Promise.resolve(undefined),
-        general ? client.app.agents(scope()).catch(() => undefined) : Promise.resolve(undefined),
+        needAgents ? client.app.agents(scope()).catch(() => undefined) : Promise.resolve(undefined),
       ])
       const data = (configResult as { data?: Record<string, unknown> } | undefined)?.data
       if (data) {
@@ -351,7 +370,7 @@ export default function App() {
       if (general) {
         // **Projection immédiate.** La charge de `/config/providers` porte les clés des fournisseurs
         // en clair ; elle ne survit pas à cette ligne et n'entre dans aucun signal.
-        setModelOptions(modelCatalog((providersResult as { data?: unknown } | undefined)?.data))
+        if (needModels) setModelOptions(modelCatalog((providersResult as { data?: unknown } | undefined)?.data))
         setShellOptions(shellChoices(shellsResult))
         const agentData = (agentResult as { data?: Agent[] } | undefined)?.data
         if (Array.isArray(agentData)) setAgents(agentData)
@@ -420,6 +439,8 @@ export default function App() {
     setSettingsBusy(undefined)
     if (result) {
       setAgentDrafts((current) => ({ ...current, [name]: "" }))
+      // Le modèle ou l'état d'un agent vient de changer : le cache d'agents devient faux.
+      setAgents([])
       await loadSettings("agents")
       setSettingsNotice(`${label} saved`)
     }
@@ -532,6 +553,8 @@ export default function App() {
     })
     setSettingsBusy(undefined)
     if (result) {
+      // Une clé ajoutée change les modèles que ce fournisseur propose : le cache devient faux.
+      setModelOptions([])
       setSettingsNotice(`${providerID} saved`)
       setProviderValues({})
     }
@@ -1020,51 +1043,15 @@ export default function App() {
           <datalist id="oc-workspaces">
             <For each={projects()}>{(path) => <option value={path} />}</For>
           </datalist>
-          <Show
-            when={authOpen()}
-            fallback={
-              <span class="foot-row">
-                <button class="ghost" title="Settings: defaults, providers, agents, MCP" onClick={openConfig}>
-                  settings
-                </button>
-                <button class="ghost" title={serverUrl || "same origin"} onClick={() => setAuthOpen(true)}>
-                  {credentials ? "credentials ✓" : "credentials"}
-                </button>
-              </span>
-            }
-          >
-            <form
-              class="auth-form"
-              onSubmit={(event) => {
-                event.preventDefault()
-                rememberCredentials({ username: authUser(), password: authPass() })
-              }}
-            >
-              <input
-                type="text"
-                placeholder="username"
-                value={authUser()}
-                onInput={(event) => setAuthUser(event.currentTarget.value)}
-              />
-              <input
-                type="password"
-                placeholder="password"
-                value={authPass()}
-                onInput={(event) => setAuthPass(event.currentTarget.value)}
-              />
-              <div class="auth-row">
-                <button class="ghost bordered" type="submit">
-                  apply
-                </button>
-                <button class="ghost" type="button" onClick={() => rememberCredentials(undefined)}>
-                  clear
-                </button>
-                <button class="ghost" type="button" onClick={() => setAuthOpen(false)}>
-                  close
-                </button>
-              </div>
-            </form>
-          </Show>
+          {/* Une seule chose ici : l'accès au panneau. Les identifiants sont descendus dans `General`
+              (bloc *Server*) — réglés **une fois par serveur**, ils tenaient un bouton et un badge
+              permanents, c'est-à-dire de la place pour rien. Même règle que le dossier de travail,
+              dans l'autre sens : lui est quotidien, donc il reste. */}
+          <span class="foot-row">
+            <button class="ghost" title="Settings: defaults, providers, agents, MCP" onClick={openConfig}>
+              settings
+            </button>
+          </span>
         </div>
       </aside>
 
@@ -1191,6 +1178,22 @@ export default function App() {
               onInput={(spec, value) => setSpecDraft(spec.key, value)}
               onCommit={commitSpec}
               footnote={settingsSection() === "general" ? generalFootnote() : undefined}
+              server={
+                settingsSection() === "general"
+                  ? {
+                      address: serverUrl || undefined,
+                      username: authUser(),
+                      password: authPass(),
+                      stored: Boolean(credentials),
+                      onChange: (field, value) => (field === "username" ? setAuthUser(value) : setAuthPass(value)),
+                      // `rememberCredentials` réécrit le stockage puis recharge la page : le client
+                      // SDK et le flux SSE sont bâtis au démarrage, donc rien moins qu'un
+                      // redémarrage ne peut prendre les nouveaux en-têtes.
+                      onSave: () => rememberCredentials({ username: authUser(), password: authPass() }),
+                      onForget: () => rememberCredentials(undefined),
+                    }
+                  : undefined
+              }
             />
           </Show>
 

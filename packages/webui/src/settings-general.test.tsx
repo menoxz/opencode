@@ -1,7 +1,7 @@
 import { createSignal } from "solid-js"
 import { describe, expect, test } from "vitest"
 import { render } from "solid-js/web"
-import { GeneralSection, SettingsSheet } from "./settings-sheet"
+import { GeneralSection, ServerBlock, SettingsSheet } from "./settings-sheet"
 import { GENERAL_SETTINGS, SETTINGS_SECTIONS, settingGroups, type Choice, type SettingSpec } from "./settings"
 
 /** Monte un composant dans un conteneur neuf et renvoie le conteneur et le HTML produit. */
@@ -197,8 +197,7 @@ describe("la page General", () => {
     dispose()
   })
 
-  test("sans liste déclarée, un `select` aux choix fixes se rend normalement", () => {
-    // `behavior` se sert du même composant : ses options sont dans la donnée, pas dans une source.
+  test("sans liste déclarée, un `select` aux choix fixes se rend normalement", () => {    // `behavior` se sert du même composant : ses options sont dans la donnée, pas dans une source.
     const { container } = (() => {
       const mounted = mount(() => (
         <GeneralSection
@@ -222,5 +221,71 @@ describe("la page General", () => {
     const options = [...container.querySelectorAll("select option")].map((o) => o.getAttribute("value"))
     // Pas d'option vide : un `select` aux choix fixes n'a pas d'état « défaut du serveur ».
     expect(options).toEqual(["manual", "auto"])
+  })
+})
+
+/* =============================================================================
+   Le bloc Server — descendu du pied du rail.
+
+   Il y tenait un bouton et un badge permanents (« credentials ✓ ») pour un réglage qu'on touche une
+   fois par serveur : de la place au premier plan pour un fait rare. Même règle que le dossier de
+   travail, appliquée dans l'autre sens.
+   ============================================================================= */
+
+describe("le bloc Server", () => {
+  type ServerProps = Parameters<typeof ServerBlock>[0]
+  /**
+   * `address` n'est **pas** dans la base : dans Solid, `mergeProps` ignore une valeur `undefined`
+   * venue d'un spread, donc `{...over}` avec `address: undefined` ne l'écraserait pas et le test
+   * croirait vérifier une absence qu'il n'a pas produite.
+   */
+  const block = (over: Partial<ServerProps> = {}) => (
+    <ServerBlock
+      username="jeanl"
+      password=""
+      stored={true}
+      onChange={() => {}}
+      onSave={() => {}}
+      onForget={() => {}}
+      {...over}
+    />
+  )
+
+  test("l'adresse se **lit**, elle ne se saisit pas", () => {
+    // Elle vient de `location.origin` ou d'une variable de build : un champ donnerait l'illusion
+    // qu'on peut la changer d'ici, alors que rien ne l'écrirait.
+    const { container, dispose } = mount(() => block({ address: "http://127.0.0.1:4096" }))
+    const row = [...container.querySelectorAll(".set-row")].find(
+      (entry) => entry.querySelector(".set-label")?.textContent === "Address",
+    )
+    expect(row?.querySelector("input")).toBeNull()
+    expect(row?.querySelector(".set-value")?.textContent).toBe("http://127.0.0.1:4096")
+    dispose()
+  })
+
+  test("sans adresse propre, elle dit « same origin » plutôt que rien", () => {
+    const { container, dispose } = mount(() => block())
+    expect(container.querySelector(".set-value")?.textContent).toBe("same origin")
+    dispose()
+  })
+
+  test("« Forget » n'existe que s'il y a quelque chose à oublier", () => {
+    // Ce qui est rare ne s'affiche pas au repos.
+    const stored = mount(() => block({ stored: true }))
+    expect(stored.container.textContent).toContain("Forget")
+    stored.dispose()
+
+    const empty = mount(() => block({ stored: false }))
+    expect(empty.container.textContent).not.toContain("Forget")
+    empty.dispose()
+  })
+
+  test("un mot de passe ne s'affiche pas en clair", () => {
+    const { container, dispose } = mount(() => block({ password: "secret-value" }))
+    const field = container.querySelector('input[type="password"]') as HTMLInputElement
+    expect(field?.value).toBe("secret-value")
+    // Et il ne part pas dans un libellé ou une infobulle.
+    expect(container.innerHTML).not.toContain("secret-value</")
+    dispose()
   })
 })
