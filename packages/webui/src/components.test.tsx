@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vitest"
 import { render } from "solid-js/web"
 import {
   Boundary,
+  CopyButton,
   PatchLine,
   PermissionSheet,
   Prose,
@@ -427,6 +428,82 @@ describe("QuestionSheet — la seule écriture du fil", () => {
     )
     dismiss?.click()
     expect(onReject).toHaveBeenCalledTimes(1)
+    dispose()
+  })
+})
+
+describe("CopyButton — copier, et dire quand ça échoue", () => {
+  /** jsdom n'implémente pas le presse-papiers : on installe celui qu'on veut tester. */
+  const withClipboard = (writeText: () => Promise<void>) => {
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true })
+  }
+
+  test("copie le texte et le confirme", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    withClipboard(writeText)
+    const { container, dispose } = mount(() => <CopyButton text="git status --short" label="Copy command" />)
+    expect(container.textContent).toBe("copy")
+    container.querySelector<HTMLButtonElement>("button")?.click()
+    await vi.waitFor(() => expect(container.textContent).toBe("copied"))
+    expect(writeText).toHaveBeenCalledWith("git status --short")
+    dispose()
+  })
+
+  test("un échec se dit, il ne fait pas croire que c'est copié", async () => {
+    // Un bouton « copier » qui ne copie pas en silence est pire que pas de bouton.
+    withClipboard(() => Promise.reject(new Error("denied")))
+    const { container, dispose } = mount(() => <CopyButton text="x" />)
+    container.querySelector<HTMLButtonElement>("button")?.click()
+    await vi.waitFor(() => expect(container.textContent).toBe("failed"))
+    expect(container.querySelector(".copy.failed")).not.toBeNull()
+    dispose()
+  })
+
+  test("le libellé d'infobulle dit ce qu'on copie", () => {
+    const { container, dispose } = mount(() => <CopyButton text="a.ts" label="Copy path" />)
+    expect(container.querySelector("button")?.getAttribute("title")).toBe("Copy path")
+    dispose()
+  })
+})
+
+describe("ce que le fil donne à copier", () => {
+  test("le détail d'un outil propose de copier sa commande et sa sortie", () => {
+    const state: ToolState = {
+      status: "completed",
+      input: { command: "git status --short" },
+      output: "ligne 1\nligne 2",
+      title: "Git status",
+      time: { start: 1, end: 2 },
+    }
+    const { container, dispose } = mount(() => <ToolLine tool="bash" state={state} open onToggle={() => {}} />)
+    const labels = Array.from(container.querySelectorAll(".copy")).map((b) => b.getAttribute("title"))
+    expect(labels).toContain("Copy command")
+    expect(labels).toContain("Copy output")
+    dispose()
+  })
+
+  test("un outil sans valeur copiable n'en propose aucun", () => {
+    // `turn_plan` n'a ni commande ni chemin : proposer « copier » n'aurait rien à copier.
+    const state: ToolState = {
+      status: "completed",
+      input: {},
+      output: "",
+      title: "Engagement declared",
+      time: { start: 1, end: 2 },
+    }
+    const { container, dispose } = mount(() => <ToolLine tool="turn_plan" state={state} open onToggle={() => {}} />)
+    expect(container.querySelectorAll(".copy")).toHaveLength(0)
+    dispose()
+  })
+
+  test("un patch propose de copier chaque chemin", () => {
+    const { container, dispose } = mount(() => (
+      <PatchLine files={["a/b/c.ts", "d/e/f.ts"]} open onToggle={() => {}} />
+    ))
+    const buttons = Array.from(container.querySelectorAll<HTMLButtonElement>(".copy"))
+    expect(buttons).toHaveLength(2)
+    expect(buttons[0]?.getAttribute("title")).toBe("Copy path")
+    expect(buttons[0]?.parentElement?.textContent).toContain("c.ts")
     dispose()
   })
 })

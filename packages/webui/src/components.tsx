@@ -1,7 +1,9 @@
-import { createSignal, For, Show } from "solid-js"
+import { createSignal, For, onCleanup, Show } from "solid-js"
 import {
   answersComplete,
   boundLines,
+  copyableOutput,
+  copyableText,
   customValue,
   diffLabel,
   fileDiff,
@@ -24,6 +26,7 @@ import {
   type StepView,
   type ToolState,
 } from "./view-model"
+import { writeClipboard } from "./clipboard"
 import { formatChars, injectionLabel, share, sourceLabel, type Injections } from "./injections"
 import { ChevronIcon, FolderIcon, PluginIcon, SessionIcon, ToolIcon, toolHint } from "./icons"
 import { relativeTime } from "./time"
@@ -32,6 +35,42 @@ export const REPLY_LABEL: Record<PermissionReply, string> = {
   once: "Allow once",
   always: "Always allow",
   reject: "Reject",
+}
+
+/**
+ * Copier — la seule action de **lecture** du fil (§3.9 : « copier une commande, un chemin, un bloc »).
+ *
+ * Deux règles la gouvernent, et la seconde compte autant que la première :
+ *
+ * 1. §3.8 — rien ne s'annonce au repos. Le bouton se révèle **au survol de l'élément qui porte
+ *    l'information**, jamais dans une colonne à côté, où il prendrait la place du texte qu'on vient
+ *    lire. Dans le détail d'un outil il est visible d'emblée : le panneau **est** déjà le dépli.
+ * 2. **L'échec se dit.** Un bouton « copier » qui ne copie pas en silence est pire que pas de bouton :
+ *    il fait croire que c'est fait. `writeClipboard` rend donc un booléen, et l'échec s'affiche.
+ */
+export function CopyButton(props: { text: string; label?: string }) {
+  const [state, setState] = createSignal<"idle" | "done" | "failed">("idle")
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const copy = async () => {
+    const ok = await writeClipboard(props.text)
+    setState(ok ? "done" : "failed")
+    clearTimeout(timer)
+    timer = setTimeout(() => setState("idle"), 1500)
+  }
+  onCleanup(() => clearTimeout(timer))
+  return (
+    <button
+      class="copy"
+      classList={{ done: state() === "done", failed: state() === "failed" }}
+      title={props.label ?? "Copy"}
+      onClick={(event) => {
+        event.stopPropagation()
+        void copy()
+      }}
+    >
+      {state() === "done" ? "copied" : state() === "failed" ? "failed" : "copy"}
+    </button>
+  )
 }
 
 /* =============================================================================
@@ -309,16 +348,32 @@ export function ToolLine(props: { tool: string; state: ToolState; open: boolean;
       </button>
       <Show when={props.open}>
         <div class="tool-detail">
-          <Show when={detail().input}>{(input) => <pre>{input()}</pre>}</Show>
+          <Show when={detail().input}>
+            {(input) => (
+              <>
+                <pre>{input()}</pre>
+                <Show when={copyableText(props.tool, props.state)}>
+                  {(text) => <CopyButton text={text()} label="Copy command" />}
+                </Show>
+              </>
+            )}
+          </Show>
           <Show when={detail().output}>
             {(text) => (
               <>
                 <pre class="out">{reveal() ? text() : output().head}</pre>
-                <Show when={bounded()}>
-                  <button class="tool-reveal" onClick={() => setReveal((current) => !current)}>
-                    {reveal() ? "show less" : `show ${output().hidden} more lines`}
-                  </button>
-                </Show>
+                <div class="tool-tools">
+                  <Show when={bounded()}>
+                    <button class="tool-reveal" onClick={() => setReveal((current) => !current)}>
+                      {reveal() ? "show less" : `show ${output().hidden} more lines`}
+                    </button>
+                  </Show>
+                  {/* On copie la sortie **complète**, jamais l'aperçu borné : copier 12 lignes sur 412
+                      donnerait un résultat tronqué qui a l'air complet — le pire des cas. */}
+                  <Show when={copyableOutput(props.state)}>
+                    {(full) => <CopyButton text={full()} label="Copy output" />}
+                  </Show>
+                </div>
               </>
             )}
           </Show>
@@ -397,7 +452,14 @@ export function PatchLine(props: { files: string[]; open: boolean; onToggle: () 
       </button>
       <Show when={props.open}>
         <ul class="patch-files">
-          <For each={shown()}>{(file) => <li title={file}>{shortPath(file)}</li>}</For>
+          <For each={shown()}>
+            {(file) => (
+              <li title={file}>
+                <span class="patch-path">{shortPath(file)}</span>
+                <CopyButton text={file} label="Copy path" />
+              </li>
+            )}
+          </For>
           <Show when={hidden() > 0}>
             <li>
               <button class="tool-reveal" onClick={() => setReveal((current) => !current)}>

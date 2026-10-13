@@ -3,6 +3,8 @@ import {
   answersComplete,
   canAlways,
   boundLines,
+  copyableOutput,
+  copyableText,
   customValue,
   diffLabel,
   dropPermission,
@@ -544,5 +546,50 @@ describe("la question de l'agent — la seule écriture du fil", () => {
     // Plusieurs libellés cochés : le champ n'a rien à montrer.
     const many = toggleAnswer(picked, 0, "Red", true)
     expect(customValue(item, many, 0)).toBe("")
+  })
+})
+
+describe("copier — la seule action de lecture du fil", () => {
+  const done = (input: Record<string, unknown>, over: Record<string, unknown> = {}): ToolState =>
+    ({ status: "completed", input, output: "", title: "", time: { start: 1, end: 2 }, ...over }) as ToolState
+
+  test("on copie la commande, pas le libellé affiché", () => {
+    // La ligne montre « Git status and diff stat » ; ce qu'on veut recoller est la commande.
+    const state = done({ command: "git status --short" }, { title: "Git status and diff stat" })
+    expect(copyableText("bash", state)).toBe("git status --short")
+  })
+
+  test("pour read, write et edit, on copie le chemin", () => {
+    const path = "C:\\jeanluc\\opencode-fork\\packages\\webui\\src\\app.tsx"
+    const state = done({ filePath: path }, { title: path })
+    expect(copyableText("read", state)).toBe(path)
+    expect(copyableText("write", state)).toBe(path)
+    expect(copyableText("edit", state)).toBe(path)
+  })
+
+  test("un titre qui est une phrase n'est pas une valeur : rien à copier", () => {
+    // « Echo hi » ou « Lecture du dossier » se recollent mal — on ne propose donc pas de copier.
+    expect(copyableText("bash", done({}, { title: "Echo hi" }))).toBeUndefined()
+    expect(copyableText("turn_plan", done({}, { title: "Engagement declared" }))).toBeUndefined()
+    expect(copyableText("read", done({}, { title: "   " }))).toBeUndefined()
+  })
+
+  test("une commande vide ne compte pas", () => {
+    expect(copyableText("bash", done({ command: "   " }))).toBeUndefined()
+    expect(copyableText("bash", undefined)).toBeUndefined()
+  })
+
+  test("on copie la sortie complète, jamais l'aperçu borné", () => {
+    // Copier les 12 lignes affichées quand l'outil en a produit 40 donnerait un résultat tronqué
+    // qui a l'air complet — c'est le cas qu'on refuse.
+    const long = Array.from({ length: 40 }, (_, index) => `ligne ${index}`).join("\n")
+    expect(copyableOutput(done({}, { output: long }))).toBe(long)
+  })
+
+  test("rien à copier sans sortie, ou si l'outil n'a pas abouti", () => {
+    expect(copyableOutput(done({}, { output: "" }))).toBeUndefined()
+    expect(copyableOutput({ status: "running", input: {}, time: { start: 1 } })).toBeUndefined()
+    expect(copyableOutput({ status: "error", input: {}, error: "x", time: { start: 1, end: 2 } })).toBeUndefined()
+    expect(copyableOutput(undefined)).toBeUndefined()
   })
 })

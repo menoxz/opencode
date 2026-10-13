@@ -619,3 +619,44 @@ export function customValue(item: QuestionInfo, answers: QuestionAnswers, index:
   const label = current[0]!
   return item.options.some((option) => option.label === label) ? "" : label
 }
+
+/* =============================================================================
+   Copier — la seule action de **lecture** du fil (§3.9 : « copier une commande, un chemin, un bloc »).
+
+   Ce qu'on copie est la **valeur**, jamais le libellé affiché. Les deux diffèrent, et l'écart n'est
+   pas cosmétique : la ligne d'un `bash` affiche son titre — « Echo hi » — qui ne sert à rien une fois
+   recollé, alors que ce qu'on veut recoller est la commande. Mesuré : `tool.state.title` est présent
+   2 242 fois sur 2 262 outils, et pour un `bash` c'est une description, pour un `read`/`write`/`edit`
+   c'est le chemin. D'où deux règles distinctes plutôt qu'une seule devinette.
+   ============================================================================= */
+
+/** Outils dont le titre **est** le chemin du fichier (relevé : `write.filepath` en metadata aussi). */
+const PATH_TITLE_TOOLS = new Set(["read", "write", "edit"])
+
+/**
+ * Ce qu'une ligne d'action donne à copier, ou `undefined` s'il n'y a rien d'utile.
+ *
+ * La commande d'abord : quand un outil en porte une, c'est elle qu'on veut recoller. Sinon le chemin,
+ * et seulement pour les outils dont le titre en est un — copier « Echo hi » ou « Lecture du dossier »
+ * serait copier une phrase, pas une valeur.
+ */
+export function copyableText(tool: string, state: ToolState | undefined): string | undefined {
+  if (!state) return undefined
+  const command = state.input?.["command"]
+  if (typeof command === "string" && command.trim().length > 0) return command
+  if (!PATH_TITLE_TOOLS.has(tool)) return undefined
+  const title = "title" in state ? state.title : undefined
+  if (typeof title === "string" && title.trim().length > 0) return title
+  return undefined
+}
+
+/**
+ * Le bloc d'une sortie, tel qu'on le copie : la sortie **complète**, jamais l'aperçu borné.
+ *
+ * C'est le point qui compte : copier les 12 lignes affichées alors que l'outil en a produit 412
+ * donnerait un résultat silencieusement tronqué — le pire des cas, parce qu'il a l'air complet.
+ */
+export function copyableOutput(state: ToolState | undefined): string | undefined {
+  if (!state || state.status !== "completed") return undefined
+  return state.output && state.output.length > 0 ? state.output : undefined
+}

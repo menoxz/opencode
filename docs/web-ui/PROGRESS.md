@@ -2271,3 +2271,70 @@ Aucune réserve ne subsiste sur ce lot.
 celle laissée en attente par la vérification navigateur, donc le bac à sable est revenu à **0
 question en attente**. Une vérification qui laisse l'environnement plus propre qu'elle ne l'a trouvé
 vaut mieux qu'un nettoyage séparé.
+
+---
+
+## Lot suivant — copier, la seule action de lecture du fil (livré)
+
+Dernier point de §3.9 : « copier une commande, un chemin, un bloc ». Vérifié dans le code avant de le
+croire fait : **aucune** fonction de copie n'existait (`clipboard`, `writeText`, `onCopy` — zéro
+occurrence dans `packages/webui/src`). Les quatre interactions de §3.9 sont donc désormais couvertes.
+
+### Ce qu'on copie — la valeur, jamais le libellé
+
+C'est la décision qui compte, et l'écart n'est pas cosmétique. La ligne d'un `bash` affiche son
+**titre** — « Git status and diff stat » — qui ne sert à rien une fois recollé ; ce qu'on veut
+recoller est la commande. Mesuré : `tool.state.title` est présent 2 242 fois sur 2 262 outils, et il
+est une **description** pour un `bash`, un **chemin** pour `read`/`write`/`edit`. D'où deux règles
+distinctes (`copyableText`) plutôt qu'une seule devinette — et rien à copier pour un outil dont le
+titre est une phrase (`turn_plan`, `question`).
+
+**Et l'on copie la sortie complète, jamais l'aperçu borné.** Copier les 12 lignes affichées quand
+l'outil en a produit 412 donnerait un résultat tronqué **qui a l'air complet** : c'est le pire des
+cas, et c'est pour ça que `copyableOutput` lit `state.output` et non l'aperçu.
+
+### Où, et pourquoi là
+
+§3.8 interdit un bouton au repos, et `AGENTS.md` impose que l'action se révèle **au survol de
+l'élément qui porte l'information** — jamais dans une colonne à côté, où elle prendrait la place du
+texte qu'on vient lire. D'où :
+
+| emplacement | révélation |
+|---|---|
+| les chemins d'un patch | au survol de **la ligne qui porte le chemin** |
+| la commande et la sortie, dans le détail d'un outil | visibles d'emblée — le panneau **est** déjà le dépli |
+
+### Preuve
+
+```
+vitest run     -> 16 fichiers, 339 tests, exit 0   (+12 pour ce lot)
+tsgo --noEmit  -> exit 0
+```
+
+Vérifié au navigateur sur l'instance isolée : le bouton apparaît dans le détail déplié avec son
+libellé (« Copy output »), et un **clic fiable** (CDP `Input.dispatchMouseEvent`, pas un `.click()`
+JS) rend `{"text":"copied","classes":"copy done","secure":true,"hasClipboard":true}`.
+
+**Un faux négatif, et ce qui l'a rendu diagnosticable.** Le premier essai, par `.click()` en JS,
+affichait **« failed »**. Ce n'était pas un défaut : `.click()` ne donne pas d'activation utilisateur,
+donc `navigator.clipboard.writeText` refuse — et le repli `execCommand` échoue pour la même raison.
+Ce qui a permis de le voir, c'est que le bouton **dit** son échec. S'il avait affiché « copié »
+d'optimisme, j'aurais conclu que le presse-papiers marchait. La leçon est consignée dans `AGENTS.md`,
+avec la méthode du clic fiable.
+
+### Un dégât, et sa réparation
+
+En insérant les règles CSS de ce lot, l'édition a **supprimé 51 lignes** de `styles.css` : mon
+`oldString` avait ses deux extrémités éloignées dans le fichier, et le remplacement a couvert tout
+l'intervalle — emportant `.boundary` et l'intégralité du bloc `.question` du lot précédent. Réparé par
+`git checkout -- packages/webui/src/styles.css` (la révision commitée les contenait), puis réappliqué
+avec des ancres **courtes et contiguës**, et vérifié par nombre de lignes **et** grep.
+
+Second piège rencontré dans la foulée : `-SimpleMatch` **avec** `[regex]::Escape` cherche le backslash
+littéral, donc **tous les compteurs rendaient 0** — j'ai failli croire la restauration ratée alors que
+le fichier était sain. Les deux leçons sont dans `AGENTS.md`.
+
+### Réserve
+
+Le clic fiable a été observé sur **un** bouton (« Copy output ») ; les chemins de patch suivent le
+même composant et le même helper, mais leur révélation au survol n'a pas été observée à l'œil.

@@ -1105,6 +1105,9 @@ textarea {
 }
 
 .patch-files li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   font-size: var(--fs-meta);
   color: var(--text-3);
   overflow-wrap: anywhere;
@@ -1220,6 +1223,64 @@ textarea {
 .question-actions .primary:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+/* ---- Copier : une action de lecture, jamais au repos ----
+
+   §3.8 : rien ne s'annonce au repos. Le bouton se révèle donc **au survol de l'élément qui porte
+   l'information** (le chemin, la ligne), et jamais dans une colonne à côté : la place qu'il prendrait
+   serait celle du texte, qui est justement ce qu'on vient lire. */
+
+.copy {
+  padding: 1px 7px;
+  font-size: var(--fs-meta);
+  color: var(--text-3);
+  background: transparent;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.copy:hover {
+  background: #ffffff08;
+  color: var(--text-2);
+}
+
+.copy.done {
+  color: var(--brand-3);
+  border-color: var(--brand-3);
+}
+
+.copy.failed {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+/* Dans une liste de chemins : caché au repos, révélé au survol de la ligne qui porte le chemin. */
+.patch-files .copy {
+  opacity: 0;
+}
+
+.patch-files li:hover .copy,
+.patch-files .copy:focus-visible {
+  opacity: 1;
+}
+
+/* Dans le détail d'un outil, le panneau **est** déjà le dépli : l'action n'y est donc pas au repos. */
+.tool-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 0;
+}
+
+.tool-tools .tool-reveal {
+  margin: 0;
+}
+
+.patch-path {
+  flex: 1;
+  min-width: 0;
 }
 
 /* ---- Zone 4 — saisie ---- */
