@@ -1,11 +1,13 @@
 import { describe, expect, test } from "vitest"
 import {
+  SESSION_LIMIT,
   formatCost,
   formatTokens,
   groupByDirectory,
   groupOf,
   modelLabel,
   sessionDetails,
+  splitSessions,
   type SessionSummary,
 } from "./sessions"
 
@@ -126,5 +128,42 @@ describe("détail d'une session", () => {
     const details = sessionDetails(bare)
     expect(details.find((item) => item.label === "agent")?.value).toBe("défaut du serveur")
     expect(details.find((item) => item.label === "modèle")?.value).toBe("modèle par défaut")
+  })
+})
+
+describe("plafond de sessions par dossier", () => {
+  /** Relevé : 16 sessions sous `packages/opencode`. C'est ce dossier qui chargeait la liste. */
+  const many = Array.from({ length: 16 }, (_, index) => ({ ...inPackages, id: `ses_${index}` }))
+
+  test("au-delà du plafond, seules les quatre premières sont montrées", () => {
+    const { shown, hidden } = splitSessions(many, false)
+    expect(SESSION_LIMIT).toBe(4)
+    expect(shown).toHaveLength(4)
+    expect(hidden).toBe(12)
+    expect(shown[0]?.id).toBe("ses_0")
+  })
+
+  test("déplié, tout est montré et rien n'est caché", () => {
+    const { shown, hidden } = splitSessions(many, true)
+    expect(shown).toHaveLength(16)
+    expect(hidden).toBe(0)
+  })
+
+  test("sous le plafond, aucun bouton : hidden vaut zéro", () => {
+    // C'est ce qui décide l'existence du bouton « voir plus » : à zéro, il n'est pas monté.
+    const few = many.slice(0, 3)
+    expect(splitSessions(few, false)).toEqual({ shown: few, hidden: 0 })
+  })
+
+  test("exactement au plafond, aucun bouton non plus", () => {
+    expect(splitSessions(many.slice(0, 4), false).hidden).toBe(0)
+  })
+
+  test("un dossier vide ne casse rien", () => {
+    expect(splitSessions([], false)).toEqual({ shown: [], hidden: 0 })
+  })
+
+  test("le plafond est un paramètre, pas une constante cachée", () => {
+    expect(splitSessions(many, false, 2).hidden).toBe(14)
   })
 })

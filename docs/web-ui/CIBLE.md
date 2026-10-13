@@ -137,7 +137,7 @@ pas à occuper l'écran tous les jours.
 
 ---
 
-## 10. Le rail, en trois parties (2026-10-13)
+## 10. Le rail, en trois parties (2026-10-13) — **supersédé par le §11**
 
 Le rail n'avait qu'une responsabilité de fait : lister des sessions. Il en porte maintenant trois, et
 chacune répond à une question différente.
@@ -191,3 +191,72 @@ Il **définit** ce que la partie B affiche. C'est le seul endroit où l'on écri
 
 Un compteur sur chaque dossier (le compte se lit dans le pli), une icône décorative, un titre de
 section qui redit son contenu, une action visible au repos.
+
+---
+
+## 11. Le rail, réordonné par fréquence d'usage (2026-10-13)
+
+**Ce paragraphe remplace le §10.** Le §10 avait construit le rail à partir de ce que le serveur
+exposait — 210 commandes parce que `GET /command` les rendait. C'est l'erreur : **l'API n'est pas la
+cible**. L'utilisateur est en conversation ; il ne consulte pas son catalogue tous les jours. L'ordre
+suit donc la **fréquence d'usage**, pas la disponibilité technique.
+
+| ordre | partie | question | contenu | par défaut |
+|---|---|---|---|---|
+| 1 | **Nouvelle session** | « je veux parler » | un bouton | toujours visible |
+| 2 | **Plugins** | « quel accès ajouté ? » | un bouton par plugin | **vide s'il n'y a aucun plugin** |
+| 3 | **Workspaces** | « où ai-je travaillé ? » | dossiers + sessions, **4 visibles** | replié à 4 |
+| 4 | **Settings** | « configurer » | un bouton → feuille en sections | fermé |
+
+### Ce qui disparaît
+
+- **La section « menus »** (210 entrées : 12 commandes, 198 compétences). Elle n'existait que parce
+  que la route existait. Un skill ne se **consulte** pas, il s'**injecte** — le rendre navigable était
+  une erreur de nature, pas de présentation.
+- **Le chargement de `/command`** (736 669 octets gzip). Plus rien à charger, donc plus de chargement
+  paresseux à gérer.
+
+### 1. Nouvelle session — en premier
+
+L'usage le plus fréquent, donc le premier élément et sans clic. Il ouvre une conversation vide.
+
+### 2. Plugins — des boutons d'accès, pas un catalogue
+
+Un plugin ajouté = **un bouton portant son nom** (`schedule`, `failure-journal`…). La section est
+**vide s'il n'y a aucun plugin** : pas de titre orphelin, pas de « 0 », pas de repli décoratif.
+Mesuré : `GET /plugin` pèse **708 octets** — le charger au montage ne coûte rien, contrairement aux
+719 ko de `/command`.
+
+### 3. Workspaces — la lisibilité avant l'affordance
+
+- Dossier et session se distinguent par une **indentation franche** (les sessions nettement en
+  retrait) et par leur icône. Aujourd'hui 16 px ne suffisent pas : les deux se confondent.
+- **4 sessions visibles au maximum**, puis « voir plus » ; « voir moins » pour replier. Un dossier de
+  19 sessions ne charge plus l'interface — l'utilisateur n'a pas besoin de tout voir à la fois.
+- **Le libellé est l'information.** Les actions (renommer, supprimer) apparaissent **au survol, en
+  superposition sur la ligne du nom** — donc sans consommer de place au repos — et l'infobulle porte
+  le nom complet **et** l'activité de la session. Aujourd'hui les actions tiennent une colonne de la
+  grille et rognent le titre : c'est ce qui le rend illisible.
+
+### 4. Settings — gérer, pas seulement consulter
+
+Le §9 disait « elle consulte, elle n'édite pas », au motif qu'aucun point d'écriture n'existait.
+**C'était faux, et c'est mesuré** : je n'avais regardé que les routes GET que je consommais.
+
+| route | corps | usage |
+|---|---|---|
+| `PATCH /config` | `Config` | configuration du projet |
+| `PATCH /global/config` | `Config` | configuration globale |
+| `PUT /auth/{providerID}` | `Auth` | identifiants d'un fournisseur |
+| `POST /auth/{providerID}/keys` | — | ajouter une clé |
+| `POST /plugin`, `DELETE /plugin/{spec}`, `POST /plugin/reload` | `{ spec }` | plugins |
+
+311 schémas disponibles (`AgentConfig`, `ProviderConfig`, `McpLocalConfig`, `PermissionConfig`,
+`LayoutConfig`…). **Le composant gère donc réellement** : providers, modèles, agents, MCP, plugins —
+**en sections séparées, chargées à la demande**, pour ne pas payer toute la configuration à
+l'ouverture.
+
+### Nom et marque — noté, non décidé
+
+`opencodev2` évoque un agent de **codage**, pas un généraliste. « open agent » a été proposé.
+Décision utilisateur ; rien n'est changé tant qu'elle n'est pas prise.

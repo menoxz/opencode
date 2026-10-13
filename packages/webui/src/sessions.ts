@@ -82,6 +82,31 @@ export function groupByDirectory(sessions: SessionSummary[]): SessionGroup[] {
   return groups
 }
 
+/**
+ * Combien de sessions un dossier montre d'abord.
+ *
+ * Mesuré : le serveur a 16 sessions sous `packages/opencode` et 3 à la racine. Les afficher toutes
+ * charge la liste pour rien — l'utilisateur navigue, il ne lit pas tout. Quatre se voient d'un coup
+ * d'œil ; au-delà, c'est du défilement qu'il n'a pas demandé.
+ */
+export const SESSION_LIMIT = 4
+
+/**
+ * Ce qu'un dossier montre : les premières sessions, et combien restent cachées.
+ *
+ * `expanded` vient de l'utilisateur (« voir plus »). Le compte des cachées est rendu séparément
+ * parce qu'il décide **l'existence** du bouton : à zéro, aucun bouton — un « voir plus » qui ne
+ * déplie rien est un mensonge d'affordance.
+ */
+export function splitSessions(
+  sessions: SessionSummary[],
+  expanded: boolean,
+  limit = SESSION_LIMIT,
+): { shown: SessionSummary[]; hidden: number } {
+  if (expanded || sessions.length <= limit) return { shown: sessions, hidden: 0 }
+  return { shown: sessions.slice(0, limit), hidden: sessions.length - limit }
+}
+
 /** `deepseek/deepseek-v4.1-flash` → `deepseek-v4.1-flash` : le fournisseur est déjà dans la ligne. */
 export function modelLabel(model: SessionSummary["model"]): string {
   const id = model?.id

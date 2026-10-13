@@ -10,7 +10,7 @@ import {
 } from "./view-model"
 import { formatChars, injectionLabel, share, sourceLabel, type Injections } from "./injections"
 import { agentSummary, mcpTone, modeLabel, type AgentRow, type McpProblem } from "./config"
-import { ChevronIcon, CommandIcon, FolderIcon, PluginIcon, SessionIcon, ToolIcon, toolHint } from "./icons"
+import { ChevronIcon, FolderIcon, PluginIcon, SessionIcon, ToolIcon, toolHint } from "./icons"
 import { relativeTime } from "./time"
 
 export const REPLY_LABEL: Record<PermissionReply, string> = {
@@ -28,66 +28,38 @@ export const REPLY_LABEL: Record<PermissionReply, string> = {
    ============================================================================= */
 
 /* =============================================================================
-   Partie A du rail — les menus. Ce qui n'est pas une session.
+   Partie 2 du rail — les plugins.
 
-   Mesuré : `GET /command` rend 210 entrées. Une liste de 210 lignes ne se déplie pas d'office :
-   un groupe de menus est **replié par défaut** et se filtre par sa provenance. C'est un menu,
-   pas un contenu.
+   Un plugin ajouté = **un bouton portant son nom**. Ce n'est pas un catalogue : l'utilisateur ne
+   parcourt pas ses plugins, il en déclenche un. Et si aucun plugin n'est chargé, la section
+   **n'existe pas** — pas de titre orphelin, pas de « 0 », pas de repli décoratif.
+
+   Une section « menus » listant les 210 commandes du serveur a existé ici ; elle a été retirée.
+   Elle n'existait que parce que la route existait : un skill ne se consulte pas, il s'injecte.
    ============================================================================= */
 
-/**
- * Un groupe de menus, par provenance. Le compte se lit dans l'en-tête, donc aucun titre de section
- * n'a besoin de redire son contenu.
- */
-export function NavGroup(props: {
-  label: string
-  /** Absent tant que les menus ne sont pas chargés : un compte qu'on ne connaît pas ne s'invente pas. */
-  count?: number
-  open: boolean
-  onToggle: () => void
-  children?: unknown
-}) {
+export function PluginButton(props: { label: string; hint: string; onRun?: () => void }) {
   return (
-    <div class="nav-group">
-      <button class="nav-head" onClick={() => props.onToggle()}>
-        <ChevronIcon size={12} open={props.open} />
-        <span class="nav-group-label">{props.label}</span>
-        <Show when={props.count !== undefined}>
-          <span class="nav-count">{props.count}</span>
-        </Show>
-      </button>
-      <Show when={props.open}>
-        <div class="nav-list">{props.children as never}</div>
-      </Show>
-    </div>
+    <button class="plugin-row" title={props.hint} onClick={() => props.onRun?.()}>
+      <span class="plugin-icon">
+        <PluginIcon size={13} />
+      </span>
+      <span class="plugin-label">{props.label}</span>
+    </button>
   )
 }
 
 /**
- * Une entrée de menu. **Elle n'existe que si elle agit** : une commande s'exécute sur la session
- * active ; sans session active, elle est inerte et le dit, plutôt que de faire semblant.
+ * « voir plus » / « voir moins » — un dossier de 19 sessions ne charge plus la liste.
+ *
+ * Le bouton n'existe que s'il a un effet : à zéro session cachée, `splitSessions` rend `hidden = 0`
+ * et le composant n'est pas monté. Un « voir plus » qui ne déplie rien est un mensonge d'affordance.
  */
-export function NavItem(props: {
-  label: string
-  hint: string
-  kind: "command" | "plugin"
-  disabled?: boolean
-  /** Pourquoi elle ne répond pas. Affiché dans l'infobulle : une entrée grisée muette fait croire à une panne. */
-  disabledReason?: string
-  onRun?: () => void
-}) {
+export function ShowMore(props: { hidden: number; expanded: boolean; onToggle: () => void }) {
   return (
-    <button
-      class="nav-item"
-      classList={{ disabled: Boolean(props.disabled) }}
-      title={props.disabled && props.disabledReason ? `${props.hint} — ${props.disabledReason}` : props.hint}
-      disabled={props.disabled}
-      onClick={() => props.onRun?.()}
-    >
-      <span class="nav-icon">
-        {props.kind === "command" ? <CommandIcon size={12} /> : <PluginIcon size={12} />}
-      </span>
-      <span class="nav-label">{props.label}</span>
+    <button class="show-more" onClick={() => props.onToggle()}>
+      <ChevronIcon size={11} open={props.expanded} />
+      <span>{props.expanded ? "voir moins" : `voir plus · ${props.hidden}`}</span>
     </button>
   )
 }
@@ -121,12 +93,16 @@ export function WorkspaceGroup(props: {
 }
 
 /**
- * Ligne de session : titre et temps au repos ; dépliée, elle dit qui a travaillé, avec quoi, ce que
- * ça a consommé et ce que ça a changé. C'est la seule surface qui donne ces chiffres, donc elle les
- * donne à la demande plutôt que de les imposer à la lecture.
+ * Ligne de session : le **libellé d'abord**. Au repos, la ligne ne porte que son nom et son temps ;
+ * les actions (renommer, supprimer) se posent **par-dessus** le nom au survol, donc sans consommer
+ * de place — c'est ce qui rendait le titre illisible quand elles tenaient une colonne de la grille.
+ * L'infobulle porte le nom complet **et** l'activité de la session, puisque le titre peut être
+ * tronqué.
  */
 export function SessionRow(props: {
   title: string
+  /** Infobulle : nom complet + activité (agent, modèle, jetons, coût, fichiers). */
+  hint: string
   time: number | undefined
   now: number
   active: boolean
@@ -141,7 +117,12 @@ export function SessionRow(props: {
       <span class="row-icon">
         <SessionIcon size={13} />
       </span>
-      <span class="row-title">{props.title}</span>
+      <span class="row-main">
+        <span class="row-title" title={props.hint}>
+          {props.title}
+        </span>
+        {props.children as never}
+      </span>
       <span class="row-time">{relativeTime(props.time, props.now)}</span>
       <button
         class="row-more"
@@ -153,7 +134,6 @@ export function SessionRow(props: {
       >
         <ChevronIcon size={11} open={props.open} />
       </button>
-      {props.children as never}
       <Show when={props.open}>
         <dl class="row-detail">
           <For each={props.details}>
