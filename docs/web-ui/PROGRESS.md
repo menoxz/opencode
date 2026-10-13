@@ -1901,7 +1901,13 @@ Le sondage a suivi la cible, pas l'inverse. Quatre verdicts, dont un qui tombe :
   pas une liste par fournisseur : le détail s'affiche sans second appel.
 - **R2 tenu, mais deux magasins** — une clé s'écrit par l'authentification (`PUT /auth/{providerID}`,
   `POST /auth/{id}/keys`), une `baseURL` par la configuration (`provider.<id>.options.baseURL` dans
-  `/global/config`). Un seul `Save` écrit donc à deux endroits ; l'écran le dit au lieu de le cacher.
+  `/global/config`). **Correction, mesurée après livraison** : l'écran n'écrit pas les deux. Seul `PUT /auth/{id}` est
+appelé — ni création de fournisseur, ni `baseURL`, ni `models`, ni `discover`. La page livrée affiche
+et pose une clé, et seulement pour les **8** fournisseurs que `/provider/auth` déclare (`openai`,
+`gitlab`, `poe`, `cloudflare-workers-ai`, `cloudflare-ai-gateway`, `azure`, `digitalocean`, `xai`).
+Les 7 fournisseurs configurés n'y sont presque pas — `orcarouter` non — donc pour eux le panneau
+d'identifiants ne rendait **rien du tout**, pas même la note de repli : elle vit à l'intérieur du `For`,
+qui ne parcourt qu'une liste vide.
 - **R3 tombe** — il n'existe pas de modèle par défaut **par fournisseur** : `Config.model` est global.
   Le contrôle s'appelle donc « Default for new sessions » et nomme sa portée, au lieu de promettre un
   défaut par fournisseur que le serveur n'a pas.
