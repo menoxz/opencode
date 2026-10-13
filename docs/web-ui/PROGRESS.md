@@ -2248,8 +2248,26 @@ dev (4097) et le serveur Vite (5181) lancés depuis un shell de cette session so
 Les deux tournent désormais comme **tâches gérées** (`devdb-serve`, `webui-dev-5181`), qui survivent
 aux shells. Piège déjà connu (F3), mais il s'est repayé ici.
 
-### Réserve
+### Réserve — close par la mesure
 
-Le rejet (`Dismiss`) n'est pas vérifié de bout en bout : la réponse l'est, et le rejet emprunte la
-même route, le même réducteur et le même retrait. Ce qui reste non observé, c'est le geste lui-même
-sur un cas réel.
+Le rejet (`Dismiss`) n'était pas vérifié de bout en bout ; il l'est désormais, sur une vraie question
+en attente, avec la charge exacte du bouton (`POST /question/{id}/reject`, sans corps) :
+
+```
+GET  /question                       -> 1 en attente : que_136d7b062001UA70LSLJR4HYIs
+POST /question/{id}/reject           -> 200 true
+/event                               -> question.rejected = 1
+                                        { sessionID, requestID: "que_136d7b062001UA70LSLJR4HYIs" }
+GET  /question                       -> 0
+trace de l'outil question            -> status "error", « The user dismissed this question »
+session                              -> session.idle (l'agent est débloqué)
+```
+
+Le message d'erreur de l'outil est celui de `RejectedError` (`question/index.ts:96-98`) : le refus
+remonte donc jusqu'à l'agent, qui sait **pourquoi** il a été débloqué et non seulement qu'il l'est.
+Aucune réserve ne subsiste sur ce lot.
+
+**Note de méthode** : cette vérification a aussi servi de nettoyage — la question utilisée était
+celle laissée en attente par la vérification navigateur, donc le bac à sable est revenu à **0
+question en attente**. Une vérification qui laisse l'environnement plus propre qu'elle ne l'a trouvé
+vaut mieux qu'un nettoyage séparé.
