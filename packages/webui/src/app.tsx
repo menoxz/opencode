@@ -36,7 +36,6 @@ import {
   PluginsSection,
   ProviderBlock,
   SettingControl,
-  SettingRow,
   SettingsSheet,
 } from "./settings-sheet"
 import {
@@ -126,6 +125,10 @@ export default function App() {
     instructions?: unknown
     /** La carte `Record<nom, AgentConfig>` — lue pour **configurer** les agents, pas seulement les lister. */
     agent?: Record<string, unknown>
+    /** Les réglages déclarés (`SETTING_SPECS`) lisent leur clé ici : la signature d'index est
+     *  nécessaire, sinon chaque clé devrait être nommée dans ce type — et un réglage ajouté aux
+     *  données cesserait de compiler. */
+    [key: string]: unknown
   }>({})
   const [agents, setAgents] = createSignal<Agent[]>([])
   const [mcp, setMcp] = createSignal<Record<string, McpState>>({})
