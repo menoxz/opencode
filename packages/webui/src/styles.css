@@ -341,9 +341,15 @@ textarea {
   padding: 14px var(--gutter) 2px;
 }
 
+/* Le chrome ne se distingue pas par la TAILLE mais par la CASSE.
+   Vu sur une capture réelle : `.wordmark` et `.sheet-title` étaient à 16 px avec 0,16em
+   d'interlettrage pendant que le contenu était à 14 px — le chrome criait plus fort que ce qu'il
+   encadre, et la hiérarchie se lisait à l'envers. Or « opencodev2 » et « réglages » ne sont pas des
+   titres de contenu : ce sont des étiquettes. Elles se distinguent déjà par les capitales et
+   l'interlettrage ; leur donner une taille supérieure était une emphase de trop. */
 .wordmark {
-  font-size: var(--fs-title);
-  letter-spacing: 0.16em;
+  font-size: var(--fs-base);
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-2);
 }
@@ -1161,9 +1167,10 @@ textarea {
   border-bottom: 1px solid var(--line-1);
 }
 
+/* Même règle que le nom du produit : étiquette de fenêtre, pas titre de contenu. */
 .sheet-title {
-  font-size: var(--fs-title);
-  letter-spacing: 0.16em;
+  font-size: var(--fs-base);
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-2);
 }
