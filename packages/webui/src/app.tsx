@@ -256,7 +256,7 @@ export default function App() {
     setSettingsError(undefined)
 
     if (section === "general") {
-      const result = await client.config.get(scope()).catch(() => undefined)
+      const result = await client.global.config.get().catch(() => undefined)
       const data = (result as { data?: Record<string, unknown> } | undefined)?.data
       if (data) {
         setConfig(data)
@@ -300,15 +300,29 @@ export default function App() {
     void loadSettings(key)
   }
 
-  /** Écrire la configuration du projet : `PATCH /config`, corps **partiel**. */
+  /**
+   * Écrire la configuration — **globale**, et en forme **imbriquée**.
+   *
+   * Deux défauts corrigés ici, tous deux silencieux :
+   *
+   *   1. **La forme.** Le SDK attend `{ config: { … } }` (`{ key: "config", map: "body" }`) et non
+   *      un patch à plat. Envoyer `{ model: "…" }` faisait chercher `parameters.config`, ne rien
+   *      trouver, et envoyer un **corps vide** — donc un `200` pour une écriture nulle.
+   *   2. **La cible.** `PATCH /config` écrit la config **du projet** : mesuré, il **matérialise un
+   *      `config.json` à la racine du dépôt** là où il n'y en avait aucun. Un panneau de réglages
+   *      configure l'outil, pas un dépôt — c'est `/global/config` qui convient, et il ne dépose
+   *      rien dans l'arbre de travail.
+   */
   const saveConfig = async (patch: Record<string, unknown>, label: string) => {
     setSettingsBusy(label)
     setSettingsError(undefined)
     setSettingsNotice(undefined)
-    const result = await client.config.update({ ...scope(), ...patch }).catch((cause: unknown) => {
-      setSettingsError(String(cause))
-      return undefined
-    })
+    const result = await client.global.config
+      .update({ config: patch })
+      .catch((cause: unknown) => {
+        setSettingsError(String(cause))
+        return undefined
+      })
     setSettingsBusy(undefined)
     if (result) {
       setSettingsNotice(`${label} enregistré`)
