@@ -1,4 +1,4 @@
-import { For, Show } from "solid-js"
+import { createEffect, For, Show } from "solid-js"
 import { mcpTone, modeLabel, type AgentRow, type McpProblem } from "./config"
 import { ChevronIcon, PluginIcon, SettingIcon } from "./icons"
 import type { PluginEntry } from "./nav"
@@ -202,9 +202,30 @@ export function SettingControl(props: {
     const groups = () => (props.spec.source ? withValue(props.groups ?? [], props.value) : [])
     return (
       <SettingRow label={props.spec.label} desc={props.spec.desc}>
+        {/*
+          La valeur est posée **dans un effet**, pas par l'attribut `value`.
+
+          Un `<select>` à qui l'on donne une valeur qu'aucune `<option>` ne porte encore **retombe
+          sur la première** — et il n'y revient plus. Or c'est exactement la séquence réelle : la
+          page s'ouvre, `Config` arrive, les listes arrivent après (49 ms pour 696 modèles). Mesuré
+          au CDP : `domValue: ""` et `selectedIndex: 0` sur les quatre listes, alors que le modèle
+          configuré figurait bien parmi les 697 options. L'écran affichait « server default » sur une
+          configuration renseignée — un mensonge, et précisément sur ce qu'on venait d'ajouter.
+
+          Lire `groups()` **dans** l'effet est le correctif : quand les choix changent, la valeur est
+          réappliquée. Le test ne pouvait pas l'attraper par un simple montage (jsdom insère les
+          options avant que la valeur soit posée : il passait sur le code fautif) — il vise donc le
+          mécanisme, et le navigateur reste l'oracle.
+        */}
         <select
           class="set-select"
-          value={props.value}
+          ref={(element: HTMLSelectElement) => {
+            createEffect(() => {
+              const wanted = props.value
+              if (props.spec.source) groups()
+              if (element.value !== wanted) element.value = wanted
+            })
+          }}
           disabled={props.busy}
           onChange={(event) => props.onCommit(event.currentTarget.value)}
         >

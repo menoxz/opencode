@@ -1,3 +1,4 @@
+import { createSignal } from "solid-js"
 import { describe, expect, test } from "vitest"
 import { render } from "solid-js/web"
 import { GeneralSection, SettingsSheet } from "./settings-sheet"
@@ -152,6 +153,38 @@ describe("la page General", () => {
     const { container, dispose } = mount(() => page(() => "autre-fournisseur/modele-maison"))
     const values = [...container.querySelectorAll("select.set-select option")].map((o) => o.getAttribute("value"))
     expect(values).toContain("autre-fournisseur/modele-maison")
+    dispose()
+  })
+
+  test("la liste réapplique la valeur configurée quand ses options changent", () => {
+    // Le défaut mesuré **au CDP** (le seul oracle, ici) : `domValue: ""` et `selectedIndex: 0` sur
+    // les quatre listes, alors que `opencode-go/deepseek-v4.1-flash` figurait bien dans les 697
+    // options. Un `<select>` à qui l'on donne une valeur qu'aucune option ne porte **encore** reste
+    // sur la première : la valeur est posée avant que les options soient insérées, et le contrôle
+    // affichait « server default » sur une configuration renseignée — un mensonge à l'écran.
+    //
+    // jsdom ne rejoue pas cette course : il insère les options avant que la valeur soit posée, donc
+    // un test « monte puis vérifie » passe même sur le code fautif (mesuré). Celui-ci vise le
+    // **mécanisme** : on simule la sélection perdue (ce que fait le navigateur), puis on laisse les
+    // options changer — et la valeur doit revenir d'elle-même.
+    const [groups, setGroups] = createSignal<ChoiceGroup[]>(MODELS)
+    const { container, dispose } = mount(() => (
+      <GeneralSection
+        blocks={settingGroups(GENERAL_SETTINGS)}
+        groupsOf={(spec) => (spec.source === "models" ? groups() : spec.source === "shells" ? SHELLS : AGENTS)}
+        draftOf={() => "opencode-go/kimi-k2"}
+        checkedOf={() => false}
+        onInput={() => {}}
+        onCommit={() => {}}
+      />
+    ))
+    const select = container.querySelector("select.set-select") as HTMLSelectElement
+    expect(select.value).toBe("opencode-go/kimi-k2")
+
+    select.value = "" // ce que produit la course : la valeur n'a pas trouvé son option
+    setGroups([...MODELS, { title: "Autre", choices: [{ value: "autre/a", label: "a" }] }])
+
+    expect(select.value).toBe("opencode-go/kimi-k2")
     dispose()
   })
 

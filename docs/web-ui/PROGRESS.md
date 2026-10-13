@@ -1756,6 +1756,25 @@ rend un rail vide **sans erreur**. Il a gagné une infobulle qui dit sa conséqu
 réglages est l'endroit de ce qui n'a pas besoin d'être au premier plan ; y ranger une action
 quotidienne ne la range pas, il l'enterre.*
 
+### Défaut 3 — trouvé en vérifiant, pas en écrivant
+
+La capture de vérification a montré les quatre listes sur « server default », alors que `Config`
+porte un modèle. Mesuré au CDP : `domValue: ""` et `selectedIndex: 0` sur les quatre, alors que le
+modèle configuré figurait bien parmi les 697 options.
+
+Un `<select>` à qui l'on donne une valeur qu'aucune `<option>` ne porte **encore** retombe sur la
+première, et n'y revient plus — c'est exactement la séquence réelle : `Config` arrive, les listes
+49 ms plus tard. L'écran affichait donc « server default » sur une configuration renseignée, c'est-à-
+dire un mensonge, et précisément sur ce qu'on venait d'ajouter. Corrigé en posant la valeur dans un
+effet qui **lit aussi les choix** : quand les options changent, la valeur est réappliquée.
+
+**Le test n'a rien vu.** Écrit d'abord comme un simple « monte et vérifie », il **passait sur le code
+fautif** : jsdom insère les options avant que la valeur soit posée, il ne rejoue pas la course. Il a
+fallu le réécrire pour viser le **mécanisme** — simuler la sélection perdue, puis laisser les options
+changer — pour qu'il échoue (`expected '' to be 'opencode-go/kimi-k2'`), et c'est le navigateur qui a
+tranché. Leçon : quand un défaut vient d'un **ordre d'arrivée**, jsdom ne peut pas l'attraper, et un
+test vert sur du code fautif est pire qu'aucun test.
+
 ### Ce que la projection évite, et ce qu'elle ne peut pas éviter
 
 `GET /config/providers` **rend les clés des fournisseurs en clair** : 7 champs `key`/`apiKey`,
