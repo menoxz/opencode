@@ -377,6 +377,121 @@ export function providerModelChoices(payload: unknown, providerID: string): Choi
   return out
 }
 
+/* =============================================================================
+   Les écritures — ce qu'on envoie à `/global/config`.
+
+   Un écran qui ne peut qu'afficher ne sert à rien : le fournisseur se **déclare**, se **règle** et
+   se **peuple** par la configuration. Les constructeurs ci-dessous sont la seule porte de sortie —
+   ils sont purs, donc éprouvables hors navigateur, et c'est là que se joue la correction : ce qui
+   part vers le fichier de configuration de l'utilisateur ne se rattrape pas d'un clic.
+
+   Deux règles qu'ils tiennent, et qu'un `...spread` ne tiendrait pas :
+
+     - **un champ vide ne s'écrit pas.** `config.ts:513` retire la clé quand la valeur est une chaîne
+       vide : écrire `""` n'est donc pas « ne rien changer », c'est **effacer**. Un formulaire laissé
+       vide détruirait un réglage existant.
+     - **le patch est partiel et fusionne.** `PATCH /global/config` fusionne les cartes (mesuré) ;
+       n'écrire que ce qui change est ce qui rend l'écriture sûre. Mais la fusion **ne retire pas**
+       une entrée : ajouter un fournisseur est un aller sans retour par l'API (aucun `PUT`, aucun
+       `DELETE` sur `/config` ni `/global/config`) — l'écran doit donc le dire, pas le promettre.
+
+   `discover` s'exécute quand le serveur **charge** ses fournisseurs (`provider.ts:1570`), pas à la
+   requête : cocher la case ne fait pas apparaître les modèles dans la seconde.
+   ============================================================================= */
+
+/** L'adaptateur par défaut d'une passerelle compatible OpenAI — c'est lui qui parle `GET /models`. */
+export const DEFAULT_NPM = "@ai-sdk/openai-compatible"
+
+/**
+ * Un identifiant tel que la configuration le porte : `provider.<id>`.
+ *
+ * Un identifiant est une **clé de fichier** et la moitié gauche d'une référence `provider/modèle`
+ * (`Config.model`). Il ne peut donc pas contenir d'espace ni de majuscule sans rendre la référence
+ * intapable — on normalise à la saisie plutôt que d'écrire une clé que personne ne pourra citer.
+ */
+export function providerId(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+}
+
+/**
+ * Déclarer ou régler un fournisseur : `provider.<id>` dans `/global/config`.
+ *
+ * C'est ce qui rend possible ce que le catalogue ne contient pas — une passerelle maison, un
+ * serveur local compatible OpenAI, un revendeur : le serveur accepte **n'importe quel** identifiant
+ * (`config.ts:241` : `provider` est une carte libre), mais il lui faut un `npm` pour parler, et une
+ * `baseURL` pour savoir à qui.
+ */
+export function providerPatch(
+  id: string,
+  fields: { baseURL?: string; npm?: string },
+): Record<string, unknown> | undefined {
+  const key = providerId(id)
+  if (!key) return undefined
+  const npm = fields.npm?.trim()
+  const baseURL = fields.baseURL?.trim()
+  const entry: Record<string, unknown> = {}
+  if (npm) entry.npm = npm
+  if (baseURL) entry.options = { baseURL }
+  if (Object.keys(entry).length === 0) return undefined
+  return { provider: { [key]: entry } }
+}
+
+/**
+ * Ajouter un modèle **à la main** : `provider.<id>.models.<modelID>`.
+ *
+ * Un modèle découvert (`discover`) reçoit des valeurs prudentes — `limit.context` lu de l'endpoint,
+ * sortie à 32 768, aucune capacité. Un modèle déclaré porte ce qu'on lui donne, et il est **conservé**
+ * quand la découverte passe : on ajoute donc exactement pour ce que la découverte ne sait pas dire.
+ *
+ * Le `name` est toujours écrit — même réduit à l'identifiant. La raison est mécanique : `mergeDeep`
+ * fusionne une carte, et rien ne garantit qu'une entrée réduite à `{}` matérialise la clé. Un libellé
+ * est de toute façon ce que la liste affiche.
+ */
+export function modelPatch(id: string, modelID: string, name?: string): Record<string, unknown> | undefined {
+  const key = providerId(id)
+  const model = modelID.trim()
+  if (!key || !model) return undefined
+  const label = name?.trim()
+  return { provider: { [key]: { models: { [model]: { name: label || model } } } } }
+}
+
+/**
+ * La découverte des modèles : `discover` fait lire `GET {baseURL}/models` **par le serveur**.
+ *
+ * L'appel part du serveur, donc aucun problème d'origine (CORS) et la clé n'a pas à descendre dans le
+ * navigateur. Fail-open côté serveur : une erreur réseau rend zéro modèle au lieu de casser le
+ * fournisseur.
+ */
+export function discoverPatch(id: string, on: boolean): Record<string, unknown> | undefined {
+  const key = providerId(id)
+  if (!key) return undefined
+  return { provider: { [key]: { discover: on } } }
+}
+
+/**
+ * Retirer un modèle de la liste disponible : `blacklist` du fournisseur.
+ *
+ * Ce n'est **pas** un statut de modèle : `ModelStatus` vaut `alpha|beta|deprecated|active` — il n'y a
+ * pas de `disabled`. Le levier que le serveur offre est la liste `blacklist` (ou `whitelist`), et elle
+ * remplace l'ancienne : un tableau est **remplacé**, jamais concaténé par la fusion de configuration.
+ */
+export function blacklistPatch(id: string, disabled: string[]): Record<string, unknown> | undefined {
+  const key = providerId(id)
+  if (!key) return undefined
+  return { provider: { [key]: { blacklist: disabled } } }
+}
+
+/** Cocher/décocher un modèle dans une liste d'exclusions, sans jamais laisser de doublon. */
+export function toggleModel(current: string[] | undefined, modelID: string, disabled: boolean): string[] {
+  const list = Array.isArray(current) ? current.filter((entry): entry is string => typeof entry === "string") : []
+  const kept = list.filter((entry) => entry !== modelID)
+  return disabled ? [...kept, modelID] : kept
+}
+
 /**
  * Le général — l'identité, l'environnement, et **les défauts**.
  *
