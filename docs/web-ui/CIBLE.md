@@ -95,8 +95,8 @@ jamais `true`.
   par défaut**. Une section nommée d'après la chose range le réglage à côté de la question qu'il
   répond.
 - **Une page longue se lit en blocs nommés**, dans l'ordre de **fréquence d'usage** : `Defaults`
-  (ce qu'on change le plus souvent), `Workspace` (où l'on travaille), `Identity`, `Environment`. Un
-  titre est du chrome : 12 px, capitales, moins contrasté que le contenu — jamais plus grand que lui.
+  (ce qu'on change le plus souvent), `Identity`, `Environment`. Un titre est du chrome : 12 px,
+  capitales, moins contrasté que le contenu — jamais plus grand que lui.
 - **Une section ne charge ses données qu'à sa sélection.** `/provider` rend 6,7 Mo et n'est jamais
   appelé ; `/provider/auth` suffit. **Aucun catalogue** : le poids d'un écran ne se paie pas pour un
   nombre qui ne change aucune décision.
@@ -106,11 +106,31 @@ jamais `true`.
   concurrents ; un seul ouvert à la fois, c'est une décision à la fois.
 - **Ce qui est sain ne s'annonce pas.** Six serveurs MCP connectés sur sept ne produisent qu'une
   ligne : seuls les défauts sont nommés.
-- **Ce qui vit ailleurs se déclare ici.** Le dossier de travail n'était qu'un champ **sans libellé**
-  au pied du rail : rien ne disait ce qu'on y écrit, ni qu'un dossier inconnu rend un rail vide
-  **sans erreur** (le serveur répond 200 avec zéro session). Il se règle donc dans `General`, sous
-  `Workspace`, avec un libellé, sa conséquence écrite, et une complétion alimentée par
-  `GET /project` (962 octets) — jamais une liste déroulante, qui occuperait la place en permanence.
+- **Une action de premier plan ne se range pas dans un panneau.** Le dossier de travail a été mis
+  ici, puis **retiré** : on change de dépôt plusieurs fois par jour, et le pied du rail porte déjà le
+  geste. Un panneau de réglages est l'endroit de ce qui n'a **pas** besoin d'être au premier plan ;
+  y ranger une action quotidienne ne la range pas, il l'enterre. Ce qui manquait n'était pas un
+  second endroit, c'était ce qui accompagne le geste : le champ du rail ne disait ni ce qu'on y écrit
+  ni qu'un dossier inconnu rend un rail vide **sans erreur** (200, zéro session). Il a maintenant un
+  libellé, une infobulle qui dit sa conséquence, et une complétion alimentée par `GET /project`
+  (962 octets) — jamais une liste déroulante, qui occuperait la place en permanence.
+- **Quand l'ensemble des valeurs valides est connu, le contrôle est un choix, jamais une saisie.** Un
+  champ de texte pour un modèle oblige à aller chercher `opencode-go/deepseek-v4.1-flash` ailleurs et
+  à le recopier sans faute, alors que le serveur publie la liste. Quatre des cinq réglages de
+  `General` sont donc des `select` alimentés par le serveur : modèles (`GET /config/providers`,
+  531 ko, 49 ms, groupés par fournisseur), agents (`GET /agent` → les **primaires** seulement, le
+  schéma l'exige : « must be a primary agent »), interpréteurs (`GET /pty/shells`, 353 o, appelé en
+  `fetch` direct — la route n'est **pas** dans le SDK, mesuré). `GET /provider` (6,7 Mo, 1 198 ms)
+  fait le même travail pour douze fois le prix : il n'est pas utilisé. Le seul champ de texte restant
+  est `Username`, qui n'a pas d'ensemble fini. L'option **vide** est un état, pas une absence : elle
+  remet le réglage au défaut du serveur (`config.ts:513` retire la clé quand la valeur est la chaîne
+  vide). Et une valeur que le serveur accepte mais ne publie pas s'affiche **quand même** — sinon le
+  contrôle montrerait autre chose que ce qui est écrit.
+- **Une charge utile qui porte des secrets se projette, jamais ne se stocke.** `GET /config/providers`
+  rend 7 champs `key`/`apiKey` **en clair** ; `/api/model` en rend 580 — la route « sans secrets »
+  n'existe pas, et c'est une limite du serveur, pas un choix d'écran. La projection ne lit que
+  `name`, `id` et le libellé d'un modèle, et le reste est abandonné **avant** d'entrer dans un
+  signal : jamais dans le DOM, un journal ou une infobulle.
 - **Deux faits valent d'être dits, en pied de page** : où les réglages sont réellement écrits, et
   quelle version du serveur les sert. « Enregistré » sans dire **où** est le défaut qui coûte une
   heure de recherche — le fichier est `opencode.jsonc`, parce que le `.jsonc` gagne sur le `.json`

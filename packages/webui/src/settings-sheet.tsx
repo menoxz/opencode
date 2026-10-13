@@ -6,7 +6,9 @@ import {
   isFormFillable,
   methodFields,
   methodLabel,
+  withValue,
   type AuthMethod,
+  type ChoiceGroup,
   type SettingSpec,
   type SettingsSection,
   type SettingsSectionKey,
@@ -138,12 +140,42 @@ export function SettingWide(props: {
  *
  * Le type d'un réglage ne change pas : l'aiguillage se fait une fois, à la construction.
  */
+/**
+ * Les choix d'un `select`.
+ *
+ * Un groupe **titré** se rend en `optgroup` — les modèles, groupés par fournisseur ; un groupe sans
+ * titre se rend à plat — les agents, les interpréteurs. Un `optgroup` sans nom n'ajouterait qu'une
+ * indentation sans rien dire.
+ */
+function Options(props: { groups: ChoiceGroup[] }) {
+  return (
+    <For each={props.groups}>
+      {(group) => (
+        <Show
+          when={group.title}
+          fallback={<For each={group.choices}>{(choice) => <option value={choice.value}>{choice.label}</option>}</For>}
+        >
+          <optgroup label={group.title}>
+            <For each={group.choices}>{(choice) => <option value={choice.value}>{choice.label}</option>}</For>
+          </optgroup>
+        </Show>
+      )}
+    </For>
+  )
+}
+
 export function SettingControl(props: {
   spec: SettingSpec
   /** La valeur affichée (chaîne, pour un champ ou une liste de choix). */
   value: string
   /** L'état d'un interrupteur. */
   checked: boolean
+  /**
+   * Les choix, quand ils viennent du serveur (`spec.source`) : modèles, agents, interpréteurs.
+   * Ils arrivent d'ici plutôt que d'être cherchés dans le composant : le contrôle ne sait pas d'où
+   * vient une liste, il rend ce qu'on lui donne.
+   */
+  groups?: ChoiceGroup[]
   busy?: boolean
   onInput: (value: string) => void
   /** Écrit la valeur telle que le contrôle la produit — booléenne pour un interrupteur. */
@@ -166,6 +198,8 @@ export function SettingControl(props: {
   }
 
   if (props.spec.kind === "select") {
+    /** Les choix viennent du serveur quand `source` est déclaré — sinon ils sont fixes. */
+    const groups = () => (props.spec.source ? withValue(props.groups ?? [], props.value) : [])
     return (
       <SettingRow label={props.spec.label} desc={props.spec.desc}>
         <select
@@ -174,9 +208,18 @@ export function SettingControl(props: {
           disabled={props.busy}
           onChange={(event) => props.onCommit(event.currentTarget.value)}
         >
-          <For each={props.spec.options ?? []}>
-            {(option) => <option value={option.value}>{option.label}</option>}
-          </For>
+          <Show
+            when={props.spec.source}
+            fallback={
+              <For each={props.spec.options ?? []}>{(option) => <option value={option.value}>{option.label}</option>}</For>
+            }
+          >
+            {/* L'option vide est un **état**, pas un texte grisé : elle remet le réglage au défaut du
+                serveur, qui retire la clé quand la valeur écrite est la chaîne vide. Son libellé vient
+                du `placeholder` — un `select` alimenté par une source n'a pas de choix statiques. */}
+            <option value="">{props.spec.placeholder ?? "server default"}</option>
+            <Options groups={groups()} />
+          </Show>
         </select>
       </SettingRow>
     )
@@ -204,6 +247,8 @@ export function SettingControl(props: {
 function Block(props: {
   title?: string
   specs: SettingSpec[]
+  /** Les choix d'un réglage, quand ils viennent du serveur. */
+  groupsOf: (spec: SettingSpec) => ChoiceGroup[]
   draftOf: (spec: SettingSpec) => string
   checkedOf: (spec: SettingSpec) => boolean
   busy?: string
@@ -221,6 +266,7 @@ function Block(props: {
             spec={spec}
             value={props.draftOf(spec)}
             checked={props.checkedOf(spec)}
+            groups={props.groupsOf(spec)}
             busy={props.busy === spec.label}
             onInput={(value) => props.onInput(spec, value)}
             onCommit={(raw) => props.onCommit(spec, raw)}
@@ -234,45 +280,39 @@ function Block(props: {
 /* =============================================================================
    La page **General**.
 
-   Ce qu'elle est : la page qui répond à « dans quel monde est-ce que je travaille ? ». Identité,
-   défauts, lieu de travail, environnement. C'est la première de la colonne parce que c'est celle
-   qu'on ouvre sans savoir ce qu'on cherche.
+   Ce qu'elle est : la page qui répond à « dans quel monde est-ce que je travaille ? ». Défauts,
+   identité, environnement. C'est la première de la colonne parce que c'est celle qu'on ouvre sans
+   savoir ce qu'on cherche.
 
    Ce qu'elle n'est pas : un rendu de `Config`. L'ordre des blocs suit la **fréquence d'usage** —
    on change de modèle bien plus souvent qu'on ne relit son nom d'utilisateur — et non l'ordre des
    clés dans le schéma.
 
-   Le bloc **Workspace** n'est pas un réglage de `Config` : c'est la portée locale du client, celle
-   qui décide ce que le rail montre. Il vit ici parce que c'est une décision générale, et parce
-   qu'ailleurs il est invisible : jusqu'ici il n'existait qu'en champ **sans libellé** au pied du
-   rail, et rien ne disait ce qu'y écrire ni ce qui arrive quand on s'y trompe (un dossier inconnu
-   rend un rail vide **sans erreur**, le serveur répondant 200 avec zéro session).
+   **Ce qui n'y est plus, et pourquoi.** Le dossier de travail y a été mis, puis retiré : c'est une
+   action de **premier plan** — on change de dépôt plusieurs fois par jour — et le pied du rail la
+   porte déjà. Un panneau de réglages est l'endroit de ce qui n'a **pas** besoin d'être au premier
+   plan ; y ranger une action quotidienne ne la range pas, il l'enterre. La complétion qui
+   l'accompagnait a suivi l'action : elle vit sur le champ du rail, là où l'on écrit.
 
-   `afterGroup` dit où il se glisse — après le dernier défaut, avant l'identité. Le reste de la page
-   reste piloté par les données : ajouter un réglage simple reste une ligne dans `GENERAL_SETTINGS`.
+   Le reste de la page est piloté par les données : ajouter un réglage simple reste une ligne dans
+   `GENERAL_SETTINGS`.
    ============================================================================= */
 
 export function GeneralSection(props: {
   blocks: SettingBlock[]
+  /** Les choix d'un réglage, quand ils viennent du serveur (`spec.source`). */
+  groupsOf: (spec: SettingSpec) => ChoiceGroup[]
   draftOf: (spec: SettingSpec) => string
   checkedOf: (spec: SettingSpec) => boolean
   busy?: string
   onInput: (spec: SettingSpec, value: string) => void
   onCommit: (spec: SettingSpec, raw: string | boolean) => void
-  /** Le bloc « Workspace » : absent, la page reste un simple rendu de blocs (`behavior`, `tools`). */
-  workspace?: {
-    value: string
-    known: string[]
-    onInput: (value: string) => void
-    onCommit: () => void
-  }
-  /** Le titre du bloc après lequel le dossier de travail se glisse. */
-  afterGroup?: string
   /** Où les réglages sont écrits, et quelle version les sert — deux faits, une ligne. */
   footnote?: string
 }) {
   /** Ce que chaque bloc reçoit de la page — le rendu des lignes ne dépend pas de la section. */
   const shared = {
+    groupsOf: props.groupsOf,
     draftOf: props.draftOf,
     checkedOf: props.checkedOf,
     busy: props.busy,
@@ -280,75 +320,14 @@ export function GeneralSection(props: {
     onCommit: props.onCommit,
   }
 
-  /** Le dossier de travail, s'il est déclaré **et** si c'est après ce bloc-ci. */
-  const workspaceAfter = (title: string | undefined) =>
-    props.workspace && title === props.afterGroup ? props.workspace : undefined
-
   return (
     <>
-      <For each={props.blocks}>
-        {(block) => (
-          <>
-            <Block title={block.title} specs={block.specs} {...shared} />
-            <Show when={workspaceAfter(block.title)}>{(ws) => <WorkspaceBlock {...ws()} />}</Show>
-          </>
-        )}
-      </For>
+      <For each={props.blocks}>{(block) => <Block title={block.title} specs={block.specs} {...shared} />}</For>
 
       <Show when={props.footnote}>
         <p class="set-footnote">{props.footnote}</p>
       </Show>
     </>
-  )
-}
-
-/**
- * Le dossier de travail — la portée du rail.
- *
- * Le champ porte la valeur, et `datalist` porte la complétion : le serveur connaît déjà les
- * workspaces (`GET /project`, quinze ici). Une liste déroulante ou une liste de lignes occuperait
- * de la place en permanence pour une information qu'on ne lit qu'en écrivant ; la complétion native
- * ne coûte rien au repos et n'oblige à rien.
- *
- * Le nombre de workspaces connus est écrit, lui : sans cela, on ne saurait pas que la complétion
- * ait quelque chose à proposer.
- */
-export function WorkspaceBlock(props: {
-  value: string
-  known: string[]
-  onInput: (value: string) => void
-  onCommit: () => void
-}) {
-  return (
-    <section class="sheet-section">
-      <h2>Workspace</h2>
-      <SettingRow
-        label="Working directory"
-        desc="where the rail looks for sessions; empty means the server's own directory"
-      >
-        <input
-          class="set-input wide"
-          list="oc-known-workspaces"
-          placeholder="server directory"
-          value={props.value}
-          onInput={(event) => props.onInput(event.currentTarget.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") props.onCommit()
-          }}
-        />
-        <datalist id="oc-known-workspaces">
-          <For each={props.known}>{(path) => <option value={path} />}</For>
-        </datalist>
-        <button class="ghost bordered" onClick={() => props.onCommit()}>
-          Switch
-        </button>
-      </SettingRow>
-      <Show when={props.known.length > 0}>
-        <p class="set-note">
-          the server knows {props.known.length} workspace{props.known.length > 1 ? "s" : ""} — type to complete
-        </p>
-      </Show>
-    </section>
   )
 }
 

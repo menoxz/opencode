@@ -1568,17 +1568,18 @@ textarea {
   padding: 8px 0;
 }
 
-/* Un champ large : le dossier de travail est un chemin, il a besoin de la place du contrôle.
-   Les autres champs se mesurent à leur contenu (« build », un nom de modèle). */
-.set-input.wide {
-  width: min(420px, 46vw);
-}
-
 /* La dernière ligne d'une page : un fait qui vaut d'être su, jamais une action. */
 .set-footnote {
   margin: 12px 0 0;
   color: var(--text-3);
   font-size: var(--fs-meta);
+}
+
+/* Un `select` alimenté par le serveur porte des identifiants longs
+   (`opencode-go/deepseek-v4.1-flash`) : il a besoin de plus de place qu'un choix de trois mots, et
+   il ne doit pas pousser le libellé hors de sa colonne. */
+.set-select {
+  max-width: min(320px, 34vw);
 }
 
 .set-wide .set-input {

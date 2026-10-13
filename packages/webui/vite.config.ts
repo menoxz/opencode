@@ -28,6 +28,10 @@ const API_PREFIXES = [
   // SDK croit recevoir du JSON, échoue à le parser, et la section reste vide sans erreur visible.
   "/command",
   "/plugin",
+  // Les interpréteurs installés (`GET /pty/shells`, 353 octets). La route existe côté serveur mais
+  // **pas dans le SDK** : l'UI l'appelle en `fetch` direct, donc elle doit être proxifiée — sinon
+  // Vite rend `index.html` avec un `200`, et la liste de choix reste silencieusement vide.
+  "/pty",
   // Les réglages. Même piège, refait : `/provider/auth` retombait sur `index.html`, donc la section
   // « fournisseurs » s'affichait **vide et sans erreur**. Une route consommée doit être proxifiée —
   // l'oublier ne casse rien visiblement, ce qui est précisément ce qui le rend coûteux.

@@ -1713,3 +1713,82 @@ seuil.
 **Méthode** : une section porte le nom du **moment**, pas celui de l'objet qu'elle règle. Le reste du
 non-dit s'est déduit d'un seul geste — chercher, pour chaque réglage, ce qui n'était dit nulle part
 ailleurs dans l'interface.
+
+## Correction du lot précédent — des listes de choix, et le dossier rendu au rail (livré)
+
+Retour de l'utilisateur, deux phrases : « la plus part des configuration ont des données existantes
+bien definis à selectionner, pourquoi ne pas avoir mis des dropdowns ? » et « la section workspace
+pour changer de chemin de dir, où la pertinence si l'utilisateur doit aller dans les settings pour
+ça alors que c'est une action évidente et prioritaire […] il peut déjà ajouter des dossiers dans la
+bar de navigation ». Les deux sont justes.
+
+### Défaut 1 — des champs de texte pour des ensembles finis
+
+`model`, `small_model`, `default_agent` et `shell` étaient des `input` : l'interface connaissait la
+réponse et la faisait porter au clavier. Ce sont maintenant quatre `select` alimentés par le serveur.
+
+**La source, choisie sur mesure, pas sur intuition.** `GET /provider` rend déjà tout — et pèse
+**6,7 Mo en 1 198 ms** : c'est lui qui gelait la feuille. La surface entière (`GET /doc`, 119 routes)
+en donne d'autres :
+
+| route | poids | ms | contenu |
+|---|---|---|---|
+| `/provider` | 6,7 Mo | 1 198 | 228 fournisseurs, 8 775 modèles — **écarté** |
+| `/config/providers` | 531 ko | **49** | 7 fournisseurs, 696 modèles — **retenu** |
+| `/api/model` | 491 ko | 1 733 | 697 modèles — non retenu (plus lent) |
+| `/agent` | 1,27 Mo | 37 | 34 agents → 6 primaires retenus |
+| `/pty/shells` | **353 o** | 110 | 4 interpréteurs |
+
+`/pty/shells` n'est **pas dans le SDK** (« Request is not supported by this version of OpenCode
+Server », mesuré) : appel en `fetch` direct, et `/pty` ajouté au proxy Vite — sans quoi Vite rend
+`index.html` avec un `200` et la liste reste **vide sans erreur**.
+
+La valeur d'un interpréteur est le **nom** (`pwsh`), pas le chemin : `Shell.preferred` → `resolve`
+essaie un chemin enraciné, et `which(nom)` sinon ; le nom survit à une réinstallation.
+
+### Défaut 2 — une action de premier plan rangée dans un panneau
+
+Le bloc `Workspace` a été **retiré** de `General` : on change de dépôt plusieurs fois par jour et le
+pied du rail porte déjà le geste. Ce qui manquait n'était pas un second endroit mais ce qui
+**accompagne** le geste — le champ du rail ne disait ni ce qu'on y écrit, ni qu'un dossier inconnu
+rend un rail vide **sans erreur**. Il a gagné une infobulle qui dit sa conséquence, et la complétion
+(`GET /project`, 962 octets) y est revenue. Une leçon, écrite dans `CIBLE.md` : *un panneau de
+réglages est l'endroit de ce qui n'a pas besoin d'être au premier plan ; y ranger une action
+quotidienne ne la range pas, il l'enterre.*
+
+### Ce que la projection évite, et ce qu'elle ne peut pas éviter
+
+`GET /config/providers` **rend les clés des fournisseurs en clair** : 7 champs `key`/`apiKey`,
+6 chaînes `sk-…`. `/api/model` en rend **580**. La route « sans secrets » n'existe pas — c'est une
+limite du serveur. La projection ne lit que `name`, `id` et le libellé d'un modèle ; le reste est
+abandonné avant d'entrer dans un signal, et un test l'assure (`modelCatalog` sur une charge piégée).
+**Le correctif de fond reste côté serveur** : une route qui ne renvoie pas les clés.
+
+### Mesures
+
+```
+General : 2 réglages -> 5 ; 4 `select` alimentés + 1 champ (`Username`)
+  select rendus : 4/4 (CDP) | fournisseurs groupés : 7 | modèles : 696 | interpréteurs : 4
+  option vide « server default » présente ; valeur hors liste affichée quand même
+blocs : Defaults · Identity · Environment (Workspace retiré)
+```
+
+### Preuve
+
+```
+vitest run -> 13 fichiers, 220 tests, exit 0
+tsgo --noEmit -> exit 0
+
+CDP, onglet 5180 : .set-control SELECT|SELECT|SELECT|INPUT|SELECT
+  optgroups : Command Code GOAT, DeepSeek, Nvidia, OpenCode, OpenCode Go, OpenRouter, OrcaRouter
+  modèles (3 premiers) : command-code/claude-fable-5 …
+  interpréteurs : bash, cmd, powershell, pwsh
+  capture general3.png, clip 1180x880, 102 ko
+```
+
+### Ce qui reste
+
+`/config/providers` reste un appel de 531 ko à l'ouverture de `General`. C'est acceptable une fois
+(49 ms), mais une page qui l'ouvre et le referme le repaie ; un cache de session serait le prochain
+pas. Et les clés en clair restent dans la réponse du serveur, sur le réseau local — hors du périmètre
+de l'UI.

@@ -81,6 +81,26 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
 
 export type SettingKind = "text" | "toggle" | "select"
 
+/**
+ * Une **source de choix** : une liste que le serveur connaît déjà.
+ *
+ * C'est la règle qui a manqué à la première version de cette page. Un champ de texte pour un modèle
+ * demande à l'utilisateur d'aller chercher `opencode-go/deepseek-v4.1-flash` ailleurs et de le
+ * recopier sans faute : l'interface connaît la réponse et la fait porter au clavier. Quand l'ensemble
+ * des valeurs valides est connu, le contrôle est un **choix**, jamais une saisie.
+ *
+ * Les trois sources, et ce qui les sert (poids mesurés 2026-10-13) :
+ *
+ *   models  `GET /config/providers`   531 ko,  49 ms, 7 fournisseurs, 696 modèles
+ *   agents  `GET /agent`             1,27 Mo,  37 ms, 34 agents → les primaires seuls
+ *   shells  `GET /pty/shells`         353 o, 110 ms, 4 interpréteurs trouvés
+ *
+ * `GET /provider` (6,7 Mo, 1 198 ms) fait le même travail pour douze fois le prix : il n'est pas
+ * utilisé. `GET /pty/shells` n'est **pas dans le SDK** (mesuré : « Request is not supported by this
+ * version of OpenCode Server ») — il s'appelle donc en `fetch` direct, et `/pty` est proxifié.
+ */
+export type SettingSource = "models" | "agents" | "shells"
+
 export type SettingSpec = {
   /** La clé exacte dans `Config`. */
   key: string
@@ -89,10 +109,128 @@ export type SettingSpec = {
   kind: SettingKind
   /** Bloc d'appartenance. Des réglages consécutifs de même `group` se rendent sous un seul titre. */
   group?: string
-  /** Pour un `select` : les choix, avec leur libellé d'écran. */
+  /** Pour un `select` **dont les choix viennent du serveur** : le nom de la source. */
+  source?: SettingSource
+  /** Pour un `select` aux choix **fixes** : les choix, avec leur libellé d'écran. */
   options?: Array<{ value: string; label: string }>
   /** Ce qui s'affiche quand la clé est absente — jamais un champ vide sans repère. */
   placeholder?: string
+}
+
+/* =============================================================================
+   Les choix — ce que le serveur sait, projeté pour un `<select>`.
+
+   `Choice` est ce qu'un contrôle consomme : la valeur écrite dans `Config`, et ce que l'utilisateur
+   lit. `ChoiceGroup` porte un titre de regroupement — un fournisseur, pour les modèles.
+   ============================================================================= */
+
+export type Choice = { value: string; label: string }
+export type ChoiceGroup = { title?: string; choices: Choice[] }
+
+/**
+ * Les modèles que le serveur sait faire tourner, projetés **sans jamais toucher au reste**.
+ *
+ * **`GET /config/providers` porte des secrets.** Mesuré : 7 champs `key`/`apiKey` en clair et six
+ * chaînes `sk-…`. Les trois routes de modèles en portent (`/api/model` en porte **580** — la route
+ * « sans secrets » n'existe pas). La projection ci-dessous ne lit que `name`, `id` et le libellé d'un
+ * modèle ; le reste de la charge est **abandonné ici** et n'entre jamais dans un signal, donc jamais
+ * dans le DOM, un journal ou une infobulle. Le correctif de fond est côté serveur — une route qui ne
+ * renvoie pas les clés — et il est consigné comme tel.
+ *
+ * La valeur est `provider/modèle` : c'est la forme que `Config.model` attend, et celle que
+ * `config.ts:modelLabel` relit des deux côtés (chaîne ou objet).
+ */
+export function modelCatalog(payload: unknown): ChoiceGroup[] {
+  const providers = (payload as { providers?: unknown } | undefined)?.providers
+  if (!Array.isArray(providers)) return []
+  const groups: ChoiceGroup[] = []
+  for (const entry of providers) {
+    if (!entry || typeof entry !== "object") continue
+    const provider = entry as { id?: unknown; name?: unknown; models?: unknown }
+    if (typeof provider.id !== "string" || !provider.id) continue
+    const models = provider.models
+    if (!models || typeof models !== "object") continue
+    const choices: Choice[] = []
+    for (const [id, model] of Object.entries(models as Record<string, unknown>)) {
+      const name = (model && typeof model === "object" ? (model as { name?: unknown }).name : undefined) ?? undefined
+      choices.push({ value: `${provider.id}/${id}`, label: typeof name === "string" && name.trim() ? name.trim() : id })
+    }
+    if (choices.length === 0) continue
+    choices.sort((left, right) => left.label.localeCompare(right.label))
+    const title = typeof provider.name === "string" && provider.name.trim() ? provider.name.trim() : provider.id
+    groups.push({ title, choices })
+  }
+  return groups.sort((left, right) => (left.title ?? "").localeCompare(right.title ?? ""))
+}
+
+/**
+ * Les agents proposables comme défaut.
+ *
+ * Le schéma est explicite — `default_agent` « must be a primary agent » — donc on ne propose que les
+ * primaires, et jamais un agent masqué (le serveur les marque internes : `compaction`, `eval-runner`).
+ * Proposer un sous-agent serait proposer une valeur que le serveur refuse ou ignore.
+ *
+ * `GET /agent` pèse 1,27 Mo pour 34 agents dont six primaires : c'est cher pour six noms, et c'est
+ * assumé — l'appel est déjà nécessaire à la section « Agents », il est donc payé une fois, et 37 ms
+ * ne se voient pas.
+ */
+export function agentChoices(payload: unknown): ChoiceGroup[] {
+  if (!Array.isArray(payload)) return []
+  const choices: Choice[] = []
+  for (const entry of payload) {
+    if (!entry || typeof entry !== "object") continue
+    const agent = entry as { name?: unknown; mode?: unknown; hidden?: unknown }
+    if (typeof agent.name !== "string" || !agent.name.trim()) continue
+    if (agent.mode !== "primary" || agent.hidden === true) continue
+    choices.push({ value: agent.name, label: agent.name })
+  }
+  choices.sort((left, right) => left.label.localeCompare(right.label))
+  return choices.length > 0 ? [{ choices }] : []
+}
+
+/**
+ * Les interpréteurs que le serveur a trouvés.
+ *
+ * La valeur est le **nom** (`pwsh`), pas le chemin : `Shell.preferred` → `resolve` essaie un chemin
+ * absolu s'il est enraciné, et `which(nom)` sinon — les deux marchent, et le nom survit à une
+ * réinstallation qui change le chemin. `acceptable: false` est écarté : le serveur dit lui-même que
+ * cet interpréteur ne peut pas exécuter de commande.
+ *
+ * **Limite assumée** : le serveur ne cherche que `pwsh`, `powershell`, git-bash et `COMSPEC`. Un
+ * interpréteur présent mais hors de cette liste (`nu`, `fish`, WSL) n'est pas proposé ; il reste
+ * atteignable en éditant la configuration à la main. Une liste de choix ferme une porte que le champ
+ * de texte laissait ouverte — c'est le prix, et il est plus petit que celui de la saisie à l'aveugle.
+ */
+export function shellChoices(payload: unknown): ChoiceGroup[] {
+  if (!Array.isArray(payload)) return []
+  const choices: Choice[] = []
+  for (const entry of payload) {
+    if (!entry || typeof entry !== "object") continue
+    const shell = entry as { name?: unknown; path?: unknown; acceptable?: unknown }
+    if (shell.acceptable === false) continue
+    const name = typeof shell.name === "string" && shell.name.trim() ? shell.name.trim() : undefined
+    const path = typeof shell.path === "string" && shell.path.trim() ? shell.path.trim() : undefined
+    const value = name ?? path
+    if (!value) continue
+    choices.push({ value, label: name ?? value })
+  }
+  choices.sort((left, right) => left.label.localeCompare(right.label))
+  return choices.length > 0 ? [{ choices }] : []
+}
+
+/**
+ * Ajoute la valeur courante en tête si la liste ne la contient pas.
+ *
+ * Sans cela, un réglage que le serveur accepte mais ne publie pas — un modèle d'un fournisseur non
+ * configuré, un interpréteur hors des quatre trouvés — disparaîtrait de l'écran au premier rendu :
+ * le contrôle afficherait **une autre valeur que celle réellement écrite**, et l'utilisateur croirait
+ * lire sa configuration. On l'affiche telle quelle, une fois, plutôt que de la taire.
+ */
+export function withValue(groups: ChoiceGroup[], current: string): ChoiceGroup[] {
+  const value = current.trim()
+  if (!value) return groups
+  if (groups.some((group) => group.choices.some((choice) => choice.value === value))) return groups
+  return [{ choices: [{ value, label: value }] }, ...groups]
 }
 
 /**
@@ -102,8 +240,14 @@ export type SettingSpec = {
  * bloc est donc « Defaults » : c'est la question qu'ils répondent tous les trois, et c'est aussi ce
  * qu'on touche le plus souvent dans tout le panneau.
  *
- * `username` et `shell` sont des chaînes qui ne changent presque jamais : ils viennent après, et
- * leur description dit à quoi ils servent, parce que leur nom seul ne le dit pas.
+ * **Quatre des cinq réglages sont des choix, pas des saisies** — et c'est la correction d'une erreur :
+ * un champ de texte pour un modèle oblige à aller chercher `opencode-go/deepseek-v4.1-flash` ailleurs
+ * et à le recopier sans faute, alors que le serveur publie la liste. Le champ de texte reste pour ce
+ * qui n'a **pas** d'ensemble fini : un nom d'utilisateur.
+ *
+ * Le `placeholder` d'un `select` alimenté par une source n'est pas un texte grisé : c'est le libellé
+ * de l'option **vide**, celle qui remet le réglage au défaut du serveur. Vide est un état, pas une
+ * absence — mesuré : `config.ts:513` retire la clé quand la valeur est la chaîne vide.
  */
 export const GENERAL_SETTINGS: SettingSpec[] = [
   {
@@ -111,15 +255,17 @@ export const GENERAL_SETTINGS: SettingSpec[] = [
     group: "Defaults",
     label: "Default model",
     desc: "the model a new session starts with",
-    kind: "text",
-    placeholder: "provider/model",
+    kind: "select",
+    source: "models",
+    placeholder: "server default",
   },
   {
     key: "small_model",
     group: "Defaults",
     label: "Small model",
     desc: "short tasks: titles, summaries, search",
-    kind: "text",
+    kind: "select",
+    source: "models",
     placeholder: "server default",
   },
   {
@@ -127,8 +273,9 @@ export const GENERAL_SETTINGS: SettingSpec[] = [
     group: "Defaults",
     label: "Default agent",
     desc: "the agent a new session runs as",
-    kind: "text",
-    placeholder: "server default",
+    kind: "select",
+    source: "agents",
+    placeholder: "build",
   },
   {
     key: "username",
@@ -143,7 +290,8 @@ export const GENERAL_SETTINGS: SettingSpec[] = [
     group: "Environment",
     label: "Shell",
     desc: "the shell that runs commands",
-    kind: "text",
+    kind: "select",
+    source: "shells",
     placeholder: "system default",
   },
 ]
@@ -252,8 +400,21 @@ export function settingValue(spec: SettingSpec, raw: string | boolean): unknown 
 export function settingDisplay(spec: SettingSpec, value: unknown): string {
   if (spec.kind === "toggle") return value === true ? "true" : "false"
   if (value === undefined || value === null) {
-    // Un `select` sans valeur connue retombe sur son premier choix plutôt que sur du vide.
+    // Un `select` sans valeur connue retombe sur son premier choix plutôt que sur du vide. Un
+    // `select` alimenté par une source n'a pas de choix statiques : il retombe sur **vide**, qui est
+    // l'option « défaut du serveur ».
     return spec.kind === "select" ? (spec.options?.[0]?.value ?? "") : ""
+  }
+  // `model` accepte une **chaîne** (`provider/modèle`) ou un **objet** `{ providerID, modelID }` — le
+  // SDK déclare les deux formes. Sans ce cas, `String(value)` rendait `[object Object]`, et le
+  // contrôle affichait cette horreur au lieu du modèle réellement configuré.
+  if (typeof value === "object") {
+    const object = value as { providerID?: unknown; modelID?: unknown; id?: unknown }
+    if (typeof object.providerID === "string" && typeof object.modelID === "string") {
+      return `${object.providerID}/${object.modelID}`
+    }
+    if (typeof object.id === "string") return object.id
+    return ""
   }
   return String(value)
 }

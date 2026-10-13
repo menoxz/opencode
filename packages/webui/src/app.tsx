@@ -41,16 +41,20 @@ import {
 import {
   SETTINGS_SECTIONS,
   SETTING_SPECS,
+  agentChoices,
   agentDisabled,
   agentModel,
   agentPatch,
   authBody,
   authMethods,
+  modelCatalog,
   providerIDs,
   settingDisplay,
   settingGroups,
   settingValue,
+  shellChoices,
   type AuthMethod,
+  type ChoiceGroup,
   type ProviderAuth,
   type SettingSpec,
   type SettingsSectionKey,
@@ -110,10 +114,19 @@ export default function App() {
   const [serverPath, setServerPath] = createSignal<string | undefined>()
   /** Le dossier de configuration du serveur — c'est là que les réglages sont réellement écrits. */
   const [configPath, setConfigPath] = createSignal<string | undefined>()
-  /** Le brouillon du dossier de travail : lu par la page General, appliqué par « Switch ». */
-  const [workspaceDraft, setWorkspaceDraft] = createSignal("")
-  /** Les workspaces que le serveur connaît déjà — la complétion du dossier de travail. */
+  /**
+   * Les workspaces que le serveur connaît déjà — la complétion du champ de dossier du **rail**.
+   *
+   * Elle vit sur le champ, pas dans la feuille de réglages : la complétion accompagne l'action, et
+   * l'action est au premier plan. `GET /project` pèse 962 octets, donc elle se lit au montage.
+   */
   const [projects, setProjects] = createSignal<string[]>([])
+  /**
+   * Les choix que le serveur publie, déjà projetés. **Jamais les charges brutes** : celle des
+   * modèles porte les clés des fournisseurs, et elle est abandonnée dès la projection.
+   */
+  const [modelGroups, setModelGroups] = createSignal<ChoiceGroup[]>([])
+  const [shellGroups, setShellGroups] = createSignal<ChoiceGroup[]>([])
   const [query, setQuery] = createSignal("")
   const [renaming, setRenaming] = createSignal<string | undefined>()
   const [renameDraft, setRenameDraft] = createSignal("")
@@ -239,6 +252,30 @@ export default function App() {
     setConfigPath(data?.config)
   }
 
+  /**
+   * Les workspaces connus — la complétion du champ de dossier du rail.
+   *
+   * `/` est un projet maison du serveur, pas un lieu de travail : il n'aide pas la saisie.
+   */
+  const loadProjects = async () => {
+    const result = await client.project.list({}).catch(() => undefined)
+    const data = (result as { data?: Array<{ worktree?: string }> } | undefined)?.data
+    if (!Array.isArray(data)) return
+    setProjects(data.map((project) => project.worktree).filter((path): path is string => Boolean(path) && path !== "/"))
+  }
+
+  /**
+   * Les interpréteurs installés. `GET /pty/shells` pèse **353 octets** et n'est **pas dans le SDK**
+   * — mesuré : « Request is not supported by this version of OpenCode Server ». On l'appelle donc
+   * directement, par le même chemin que le reste : `/pty` est proxifié vers le serveur, et en
+   * production l'UI est servie par lui (même origine).
+   */
+  const fetchShells = async () => {
+    const response = await fetch(`${serverUrl}/pty/shells`).catch(() => undefined)
+    if (!response?.ok) return undefined
+    return (await response.json().catch(() => undefined)) as unknown
+  }
+
   const loadSessions = async () => {
     const search = query().trim()
     const result = await client.session
@@ -284,16 +321,26 @@ export default function App() {
     /**
      * Les sections déclarées — `general`, `behavior`, `tools`. Elles ne lisent que la configuration.
      *
-     * `general` lit **en plus** la carte des projets : c'est elle qui alimente la complétion du
-     * dossier de travail. `GET /project` pèse **962 octets** (six projets sur ce serveur) — le payer
-     * à l'ouverture de la page, et non au montage, c'est ne le payer que si l'on ouvre la page.
+     * `general` lit **en plus** les trois listes de choix, parce que quatre de ses cinq réglages sont
+     * des `select` : modèles, agents, interpréteurs. Le prix est mesuré et assumé :
+     *
+     *   config           19 ko     4 ms
+     *   config/providers 531 ko   49 ms   → 7 fournisseurs, 696 modèles
+     *   agent           1,27 Mo   37 ms   → 34 agents, six primaires
+     *   pty/shells       353 o   110 ms   → 4 interpréteurs
+     *
+     * soit ~1,8 Mo, **une fois**, à l'ouverture de la page. `GET /provider` (6,7 Mo, 1 198 ms) n'est
+     * jamais appelé : il fait le même travail pour douze fois le prix.
      *
      * `models` a disparu de cette liste avec la section : ses trois clés vivent dans `general`.
      */
     if (section === "general" || section === "behavior" || section === "tools") {
-      const [configResult, projectResult] = await Promise.all([
+      const general = section === "general"
+      const [configResult, providersResult, shellsResult, agentResult] = await Promise.all([
         client.global.config.get().catch(() => undefined),
-        section === "general" ? client.project.list({}).catch(() => undefined) : Promise.resolve(undefined),
+        general ? client.config.providers().catch(() => undefined) : Promise.resolve(undefined),
+        general ? fetchShells() : Promise.resolve(undefined),
+        general ? client.app.agents(scope()).catch(() => undefined) : Promise.resolve(undefined),
       ])
       const data = (configResult as { data?: Record<string, unknown> } | undefined)?.data
       if (data) {
@@ -301,14 +348,13 @@ export default function App() {
         // Les saisies en cours sont abandonnées : la config relue est la vérité.
         setSpecDrafts({})
       }
-      if (section === "general") {
-        const list = (projectResult as { data?: Array<{ worktree?: string }> } | undefined)?.data
-        if (Array.isArray(list)) {
-          // `/` est un projet maison du serveur, pas un lieu de travail : il n'aide pas la saisie.
-          setProjects(list.map((project) => project.worktree).filter((path): path is string => Boolean(path) && path !== "/"))
-        }
-        // Le champ part de la portée courante : ce qui est affiché est ce qui est appliqué.
-        setWorkspaceDraft(directory())
+      if (general) {
+        // **Projection immédiate.** La charge de `/config/providers` porte les clés des fournisseurs
+        // en clair ; elle ne survit pas à cette ligne et n'entre dans aucun signal.
+        setModelGroups(modelCatalog((providersResult as { data?: unknown } | undefined)?.data))
+        setShellGroups(shellChoices(shellsResult))
+        const agentData = (agentResult as { data?: Agent[] } | undefined)?.data
+        if (Array.isArray(agentData)) setAgents(agentData)
       }
       return
     }
@@ -400,6 +446,19 @@ export default function App() {
   const specDraft = (spec: SettingSpec) => specDrafts()[spec.key] ?? settingDisplay(spec, config()[spec.key])
   const setSpecDraft = (key: string, value: string) =>
     setSpecDrafts((current) => ({ ...current, [key]: value }))
+
+  /**
+   * Les choix d'un réglage déclaré — l'aiguillage par **source**, une seule fois.
+   *
+   * Un réglage ne sait pas d'où vient sa liste, et le contrôle non plus : les deux reçoivent des
+   * `ChoiceGroup`. C'est ici, et seulement ici, que « models » veut dire `/config/providers`.
+   */
+  const optionsOf = (spec: SettingSpec): ChoiceGroup[] => {
+    if (spec.source === "models") return modelGroups()
+    if (spec.source === "shells") return shellGroups()
+    if (spec.source === "agents") return agentChoices(agents())
+    return []
+  }
   const commitSpec = (spec: SettingSpec, raw: string | boolean) =>
     void saveConfig({ [spec.key]: settingValue(spec, raw) }, spec.label)
 
@@ -680,6 +739,7 @@ export default function App() {
   onMount(async () => {
     setHealth(await fetchHealth())
     await loadPath()
+    await loadProjects()
     await loadSessions()
     await loadPermissions()
     await loadPlugins()
@@ -945,15 +1005,21 @@ export default function App() {
 
         {/* 4 — Settings : le dossier de travail, et l'accès à la configuration. */}
         <div class="rail-foot">
-          <label class="folder" title="Working directory">
+          <label class="folder" title="Working directory — the rail lists sessions from here">
             <span>⌂</span>
             <input
               type="text"
+              list="oc-workspaces"
               placeholder={serverPath() ?? "server directory"}
               value={directory()}
               onChange={(event) => applyDirectory(event.currentTarget.value)}
             />
           </label>
+          {/* La complétion accompagne **l'action**, et l'action est ici. Elle était dans les
+              réglages : on ne va pas chercher un chemin là où l'on va changer une préférence. */}
+          <datalist id="oc-workspaces">
+            <For each={projects()}>{(path) => <option value={path} />}</For>
+          </datalist>
           <Show
             when={authOpen()}
             fallback={
@@ -1118,22 +1184,12 @@ export default function App() {
           <Show when={SETTING_SPECS[settingsSection()]}>
             <GeneralSection
               blocks={settingGroups(SETTING_SPECS[settingsSection()] ?? [])}
-              afterGroup={settingsSection() === "general" ? "Defaults" : undefined}
+              groupsOf={optionsOf}
               draftOf={specDraft}
               checkedOf={(spec) => config()[spec.key] === true}
               busy={settingsBusy()}
               onInput={(spec, value) => setSpecDraft(spec.key, value)}
               onCommit={commitSpec}
-              workspace={
-                settingsSection() === "general"
-                  ? {
-                      value: workspaceDraft(),
-                      known: projects(),
-                      onInput: setWorkspaceDraft,
-                      onCommit: () => applyDirectory(workspaceDraft()),
-                    }
-                  : undefined
-              }
               footnote={settingsSection() === "general" ? generalFootnote() : undefined}
             />
           </Show>

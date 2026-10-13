@@ -3,6 +3,7 @@ import {
   GENERAL_SETTINGS,
   SETTINGS_SECTIONS,
   SETTING_SPECS,
+  agentChoices,
   agentDisabled,
   agentModel,
   agentPatch,
@@ -11,10 +12,13 @@ import {
   isFormFillable,
   methodFields,
   methodLabel,
+  modelCatalog,
   providerIDs,
   settingDisplay,
   settingGroups,
   settingValue,
+  shellChoices,
+  withValue,
   type AuthMethod,
   type ProviderAuth,
   type SettingSpec,
@@ -256,9 +260,29 @@ describe("réglages déclarés", () => {
         expect(spec.key.length).toBeGreaterThan(0)
         expect(spec.label.length).toBeGreaterThan(0)
         expect(spec.desc.length).toBeGreaterThan(0)
-        if (spec.kind === "select") expect((spec.options ?? []).length).toBeGreaterThan(1)
+        // Un `select` a ses choix **dans la donnée** (fixes) ou **chez le serveur** (une source) :
+        // l'un des deux, jamais aucun — sinon le contrôle serait un menu vide.
+        if (spec.kind === "select") expect(Boolean(spec.source) || (spec.options ?? []).length > 1).toBe(true)
       }
     }
+  })
+
+  test("les quatre réglages à ensemble fini déclarent une source, et pas des choix en dur", () => {
+    // Modèles, agent par défaut, interpréteur : leurs valeurs valides sont publiées par le serveur.
+    // Les écrire dans la donnée les figerait au jour où on les recopie.
+    const sourced = GENERAL_SETTINGS.filter((spec) => spec.source).map((spec) => [spec.key, spec.source])
+    expect(sourced).toEqual([
+      ["model", "models"],
+      ["small_model", "models"],
+      ["default_agent", "agents"],
+      ["shell", "shells"],
+    ])
+    for (const spec of GENERAL_SETTINGS.filter((s) => s.source)) {
+      expect(spec.kind).toBe("select")
+      expect(spec.options).toBeUndefined()
+    }
+    // `username` reste un champ : il n'a pas d'ensemble fini.
+    expect(GENERAL_SETTINGS.find((spec) => spec.key === "username")?.kind).toBe("text")
   })
 
   test("toutes les clés déclarées existent dans le schéma Config mesuré", () => {
@@ -332,5 +356,155 @@ describe("la page General", () => {
         for (const option of spec.options ?? []) expect(option.label).not.toMatch(/[àâäéèêëîïôöùûüç]/i)
       }
     }
+  })
+})
+
+/* =============================================================================
+   Les listes de choix.
+
+   La correction qui a motivé ce bloc : un champ de texte pour un modèle oblige à aller chercher
+   `opencode-go/deepseek-v4.1-flash` ailleurs et à le recopier sans faute, alors que le serveur
+   publie la liste. Quand l'ensemble des valeurs valides est connu, le contrôle est un **choix**.
+   ============================================================================= */
+
+describe("la projection des modèles", () => {
+  test("groupe par fournisseur et compose `provider/modèle`", () => {
+    const catalog = modelCatalog({
+      providers: [
+        {
+          id: "opencode-go",
+          name: "OpenCode Go",
+          models: { "deepseek-v4.1-flash": { name: "DeepSeek V4.1 Flash" }, zeta: {} },
+        },
+      ],
+    })
+    expect(catalog).toEqual([
+      {
+        title: "OpenCode Go",
+        choices: [
+          { value: "opencode-go/deepseek-v4.1-flash", label: "DeepSeek V4.1 Flash" },
+          { value: "opencode-go/zeta", label: "zeta" },
+        ],
+      },
+    ])
+  })
+
+  test("sans libellé de modèle, l'identifiant fait office de libellé", () => {
+    const [group] = modelCatalog({ providers: [{ id: "p", models: { "m-1": {} } }] })
+    expect(group.choices).toEqual([{ value: "p/m-1", label: "m-1" }])
+  })
+
+  test("**les clés des fournisseurs ne passent pas la projection**", () => {
+    // Mesuré : `GET /config/providers` porte 7 champs `key`/`apiKey` en clair et six chaînes `sk-…`.
+    // La projection ne lit que `name`, `id` et le libellé d'un modèle — ce test est ce qui l'empêche
+    // de dériver, parce qu'une charge porteuse de secrets ne doit jamais approcher un signal.
+    const catalog = modelCatalog({
+      providers: [
+        {
+          id: "orcarouter",
+          name: "OrcaRouter",
+          key: "sk-orca-SECRET",
+          keys: ["sk-orca-SECRET"],
+          options: {},
+          models: { "grok/grok-4.3": { id: "grok/grok-4.3", name: "Grok 4.3", apiKey: "sk-nested-SECRET" } },
+        },
+      ],
+    })
+    expect(catalog).toEqual([
+      { title: "OrcaRouter", choices: [{ value: "orcarouter/grok/grok-4.3", label: "Grok 4.3" }] },
+    ])
+    expect(JSON.stringify(catalog)).not.toContain("sk-")
+    expect(JSON.stringify(catalog)).not.toContain("SECRET")
+  })
+
+  test("une réponse absente ou malformée rend une liste vide, jamais une erreur", () => {
+    expect(modelCatalog(undefined)).toEqual([])
+    expect(modelCatalog({})).toEqual([])
+    expect(modelCatalog({ providers: "non" })).toEqual([])
+    expect(modelCatalog({ providers: [null, 42, { id: "sans-modeles" }] })).toEqual([])
+  })
+})
+
+describe("la projection des agents", () => {
+  test("seuls les primaires non masqués sont proposés", () => {
+    // Le schéma est explicite : `default_agent` doit être un agent **primaire**. Proposer un
+    // sous-agent serait proposer une valeur que le serveur refuse.
+    const groups = agentChoices([
+      { name: "build", mode: "primary" },
+      { name: "zx", mode: "primary" },
+      { name: "general", mode: "subagent" },
+      { name: "compaction", mode: "primary", hidden: true },
+      { name: "sans-mode" },
+    ])
+    expect(groups).toEqual([{ choices: [{ value: "build", label: "build" }, { value: "zx", label: "zx" }] }])
+  })
+
+  test("une réponse absente rend une liste vide", () => {
+    expect(agentChoices(undefined)).toEqual([])
+    expect(agentChoices([{ mode: "primary" }])).toEqual([])
+  })
+})
+
+describe("la projection des interpréteurs", () => {
+  test("la valeur est le **nom**, et un interpréteur inacceptable est écarté", () => {
+    // `Shell.preferred` → `resolve` essaie `which(nom)` : un nom survit à une réinstallation qui
+    // change le chemin. `acceptable: false` veut dire que le serveur ne peut pas exécuter avec.
+    const groups = shellChoices([
+      { name: "pwsh", path: "C:\\Program Files\\PowerShell\\7\\pwsh.EXE", acceptable: true },
+      { name: "cmd", path: "C:\\WINDOWS\\system32\\cmd.exe", acceptable: true },
+      { name: "casse", path: "C:\\casse.exe", acceptable: false },
+    ])
+    expect(groups).toEqual([
+      {
+        choices: [
+          { value: "cmd", label: "cmd" },
+          { value: "pwsh", label: "pwsh" },
+        ],
+      },
+    ])
+  })
+
+  test("sans nom, le chemin fait la valeur — jamais une option vide", () => {
+    const [group] = shellChoices([{ path: "C:\\nu.exe" }])
+    expect(group.choices).toEqual([{ value: "C:\\nu.exe", label: "C:\\nu.exe" }])
+  })
+
+  test("une réponse absente rend une liste vide", () => {
+    expect(shellChoices(undefined)).toEqual([])
+    expect(shellChoices("non")).toEqual([])
+  })
+})
+
+describe("withValue", () => {
+  test("la valeur courante absente de la liste s'affiche quand même", () => {
+    // Sans cela, un réglage que le serveur accepte mais ne publie pas disparaîtrait de l'écran, et
+    // le contrôle afficherait **une autre valeur que celle réellement écrite**.
+    const groups = withValue([{ title: "P", choices: [{ value: "p/a", label: "a" }] }], "p/inconnu")
+    expect(groups[0]).toEqual({ choices: [{ value: "p/inconnu", label: "p/inconnu" }] })
+    expect(groups[1].choices).toEqual([{ value: "p/a", label: "a" }])
+  })
+
+  test("aucun doublon quand elle y est déjà", () => {
+    const groups = withValue([{ choices: [{ value: "p/a", label: "a" }] }], "p/a")
+    expect(groups).toEqual([{ choices: [{ value: "p/a", label: "a" }] }])
+  })
+
+  test("une valeur vide n'ajoute rien : l'option vide est déjà là", () => {
+    const groups = [{ choices: [{ value: "p/a", label: "a" }] }]
+    expect(withValue(groups, "")).toEqual(groups)
+    expect(withValue(groups, "   ")).toEqual(groups)
+  })
+})
+
+describe("l'affichage d'un modèle écrit en objet", () => {
+  test("`{ providerID, modelID }` se lit « provider/modèle », jamais « [object Object] »", () => {
+    // Le SDK déclare les deux formes pour `model` ; sans ce cas, le contrôle affichait le résultat de
+    // `String(objet)`.
+    const spec: SettingSpec = { key: "model", label: "m", desc: "d", kind: "select", source: "models" }
+    expect(settingDisplay(spec, { providerID: "opencode-go", modelID: "deepseek-v4.1-flash" })).toBe(
+      "opencode-go/deepseek-v4.1-flash",
+    )
+    expect(settingDisplay(spec, { id: "seul-id" })).toBe("seul-id")
+    expect(settingDisplay(spec, {})).toBe("")
   })
 })
