@@ -10,7 +10,7 @@ import {
 } from "./view-model"
 import { formatChars, injectionLabel, share, sourceLabel, type Injections } from "./injections"
 import { agentSummary, mcpTone, modeLabel, type AgentRow, type McpProblem } from "./config"
-import { ToolIcon, toolHint } from "./icons"
+import { ChevronIcon, CommandIcon, FolderIcon, PluginIcon, SessionIcon, ToolIcon, toolHint } from "./icons"
 import { relativeTime } from "./time"
 
 export const REPLY_LABEL: Record<PermissionReply, string> = {
@@ -27,11 +27,79 @@ export const REPLY_LABEL: Record<PermissionReply, string> = {
    composant « par capacité ». Règle de doute : on enlève.
    ============================================================================= */
 
+/* =============================================================================
+   Partie A du rail — les menus. Ce qui n'est pas une session.
+
+   Mesuré : `GET /command` rend 210 entrées. Une liste de 210 lignes ne se déplie pas d'office :
+   un groupe de menus est **replié par défaut** et se filtre par sa provenance. C'est un menu,
+   pas un contenu.
+   ============================================================================= */
+
 /**
- * En-tête de dossier : ce qui sépare deux lieux de travail. Le nom affiché est le chemin **relatif**
- * (`packages/opencode`) ; le chemin absolu reste en infobulle, pour ne pas prendre la ligne.
+ * Un groupe de menus, par provenance. Le compte se lit dans l'en-tête, donc aucun titre de section
+ * n'a besoin de redire son contenu.
  */
-export function DirectoryGroup(props: {
+export function NavGroup(props: {
+  label: string
+  /** Absent tant que les menus ne sont pas chargés : un compte qu'on ne connaît pas ne s'invente pas. */
+  count?: number
+  open: boolean
+  onToggle: () => void
+  children?: unknown
+}) {
+  return (
+    <div class="nav-group">
+      <button class="nav-head" onClick={() => props.onToggle()}>
+        <ChevronIcon size={12} open={props.open} />
+        <span class="nav-group-label">{props.label}</span>
+        <Show when={props.count !== undefined}>
+          <span class="nav-count">{props.count}</span>
+        </Show>
+      </button>
+      <Show when={props.open}>
+        <div class="nav-list">{props.children as never}</div>
+      </Show>
+    </div>
+  )
+}
+
+/**
+ * Une entrée de menu. **Elle n'existe que si elle agit** : une commande s'exécute sur la session
+ * active ; sans session active, elle est inerte et le dit, plutôt que de faire semblant.
+ */
+export function NavItem(props: {
+  label: string
+  hint: string
+  kind: "command" | "plugin"
+  disabled?: boolean
+  onRun?: () => void
+}) {
+  return (
+    <button
+      class="nav-item"
+      classList={{ disabled: Boolean(props.disabled) }}
+      title={props.hint}
+      disabled={props.disabled}
+      onClick={() => props.onRun?.()}
+    >
+      <span class="nav-icon">
+        {props.kind === "command" ? <CommandIcon size={12} /> : <PluginIcon size={12} />}
+      </span>
+      <span class="nav-label">{props.label}</span>
+    </button>
+  )
+}
+
+/* =============================================================================
+   Partie B du rail — les workspaces.
+
+   Un workspace est un dossier ajouté ; il contient ses sessions, repliées ou dépliées à souhait.
+   Le nom affiché est le chemin **relatif** (`packages/opencode`) ; le chemin absolu reste en
+   infobulle, pour ne pas prendre la ligne.
+   ============================================================================= */
+
+/** En-tête de workspace : ce qui sépare deux lieux de travail. */
+export function WorkspaceGroup(props: {
   label: string
   hint: string
   count: number
@@ -39,10 +107,13 @@ export function DirectoryGroup(props: {
   onToggle: () => void
 }) {
   return (
-    <button class="group" title={props.hint} onClick={() => props.onToggle()}>
-      <span class="group-chev">{props.open ? "▾" : "▸"}</span>
-      <span class="group-label">{props.label}</span>
-      <span class="group-count">{props.count}</span>
+    <button class="workspace" title={props.hint} onClick={() => props.onToggle()}>
+      <ChevronIcon size={12} open={props.open} />
+      <span class="workspace-icon">
+        <FolderIcon size={14} />
+      </span>
+      <span class="workspace-label">{props.label}</span>
+      <span class="workspace-count">{props.count}</span>
     </button>
   )
 }
@@ -65,6 +136,9 @@ export function SessionRow(props: {
 }) {
   return (
     <div class="row" classList={{ active: props.active }} onClick={() => props.onSelect()}>
+      <span class="row-icon">
+        <SessionIcon size={13} />
+      </span>
       <span class="row-title">{props.title}</span>
       <span class="row-time">{relativeTime(props.time, props.now)}</span>
       <button
@@ -75,7 +149,7 @@ export function SessionRow(props: {
           props.onToggle()
         }}
       >
-        {props.open ? "▾" : "▸"}
+        <ChevronIcon size={11} open={props.open} />
       </button>
       {props.children as never}
       <Show when={props.open}>

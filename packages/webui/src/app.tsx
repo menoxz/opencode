@@ -20,14 +20,16 @@ import {
 import {
   ContextInjections,
   ConfigSheet,
-  DirectoryGroup,
   FileChip,
+  NavGroup,
+  NavItem,
   PermissionSheet,
   Reasoning,
   SessionRow,
   ToolLine,
   Turn,
   UserPrompt,
+  WorkspaceGroup,
 } from "./components"
 import {
   agentCounts,
@@ -39,6 +41,7 @@ import {
   type McpState,
 } from "./config"
 import { parseInjections } from "./injections"
+import { commandGroups, pluginEntries, type Command, type PluginList } from "./nav"
 import { groupByDirectory, sessionDetails, type SessionSummary } from "./sessions"
 import { subscribeEvents, type EventStreamState } from "./events"
 import { sessionTimestamp } from "./time"
@@ -99,6 +102,13 @@ export default function App() {
   }>({})
   const [agents, setAgents] = createSignal<Agent[]>([])
   const [mcp, setMcp] = createSignal<Record<string, McpState>>({})
+
+  // Menus : ce que le harnais propose hors session. Lus une fois au montage — ils ne dépendent pas
+  // de la session active.
+  const [commands, setCommands] = createSignal<Command[]>([])
+  const [plugins, setPlugins] = createSignal<PluginList | undefined>()
+  const [navOpen, setNavOpen] = createSignal<Record<string, boolean>>({})
+  const [navLoaded, setNavLoaded] = createSignal(false)
 
   const [authOpen, setAuthOpen] = createSignal(false)
   const [authUser, setAuthUser] = createSignal(credentials?.username ?? "")
@@ -366,6 +376,43 @@ export default function App() {
   const toggleGroup = (key: string) => setGroupsOpen((current) => ({ ...current, [key]: current[key] === false }))
   const toggleDetail = (id: string) => setDetailsOpen((current) => ({ ...current, [id]: !current[id] }))
 
+  /**
+   * Les menus ne dépendent pas de la session, mais ils ne sont **pas** chargés au montage :
+   * mesuré, `GET /command` pèse 736 669 octets compressés (1,99 Mo décodé) pour 210 entrées dont la
+   * plupart portent un gabarit inutile à un menu. On ne paie pas 719 ko pour une section repliée —
+   * même règle que pour `/provider`, à une autre échelle.
+   *
+   * Deux appels facultatifs : un serveur qui n'expose pas l'un des deux ne casse pas le rail.
+   */
+  const loadNav = async () => {
+    const [commandResult, pluginResult] = await Promise.all([
+      client.command.list(scope()).catch(() => undefined),
+      client.plugin.list(scope()).catch(() => undefined),
+    ])
+    const commandData = (commandResult as { data?: Command[] } | undefined)?.data
+    if (Array.isArray(commandData)) setCommands(commandData)
+    setPlugins((pluginResult as { data?: PluginList } | undefined)?.data)
+    // Marqué chargé même en cas d'échec : réessayer à chaque clic serait pire qu'un vide assumé.
+    setNavLoaded(true)
+  }
+
+  /** Un groupe de menus est replié par défaut : 210 entrées ne s'imposent pas à la lecture. */
+  const navGroupOpen = (key: string) => navOpen()[key] === true
+  const toggleNavGroup = (key: string) => setNavOpen((current) => ({ ...current, [key]: !current[key] }))
+
+  /**
+   * Une commande s'exécute sur la session active. Sans session active, il n'y a rien à quoi
+   * l'envoyer : l'entrée reste inerte plutôt que de créer une session dans le dos de l'utilisateur.
+   */
+  const runCommand = async (name: string) => {
+    const sessionID = active()
+    if (!sessionID || !name) return
+    await client.session.command({ sessionID, command: name, ...scope() }).catch((cause: unknown) => {
+      setError(String(cause))
+    })
+    await loadMessages(sessionID)
+  }
+
   /** Le fil suit son propre bas : un tour ajouté est toujours visible. */
   let scroller: HTMLDivElement | undefined
   createEffect(() => {
@@ -492,26 +539,80 @@ export default function App() {
       <aside class="rail">
         <div class="grip" onPointerDown={startSidebarDrag} />
 
-        <div class="rail-head">
-          <span class="wordmark">opencodev2</span>
-          <button class="ghost" title="Nouvelle session" onClick={() => void createSession()}>
-            +
-          </button>
-        </div>
+        {/* A — Menus : ce qui n'est pas une session. Chargé au premier dépliage : la réponse pèse
+            719 ko compressés, on ne la paie pas à l'ouverture de l'écran. */}
+        <nav class="rail-nav">
+          <div class="rail-head">
+            <span class="wordmark">opencodev2</span>
+            <button class="ghost" title="Nouvelle session" onClick={() => void createSession()}>
+              +
+            </button>
+          </div>
 
-        <input
-          class="search"
-          type="search"
-          placeholder="Rechercher"
-          value={query()}
-          onInput={(event) => setQuery(event.currentTarget.value)}
-        />
+          <Show
+            when={navLoaded()}
+            fallback={
+              <div class="nav-group">
+                <button class="nav-head" title="Charger les menus du harnais" onClick={() => void loadNav()}>
+                  <span class="nav-group-label">menus</span>
+                  <span class="nav-count">charger</span>
+                </button>
+              </div>
+            }
+          >
+            <For each={commandGroups(commands())}>
+              {(group) => (
+                <NavGroup
+                  label={group.label}
+                  count={group.entries.length}
+                  open={navGroupOpen(group.key)}
+                  onToggle={() => toggleNavGroup(group.key)}
+                >
+                  <For each={group.entries}>
+                    {(entry) => (
+                      <NavItem
+                        label={entry.label}
+                        hint={entry.hint}
+                        kind={entry.kind}
+                        disabled={!active()}
+                        onRun={() => void runCommand(entry.run ?? "")}
+                      />
+                    )}
+                  </For>
+                </NavGroup>
+              )}
+            </For>
 
-        <div class="rows">
+            <Show when={pluginEntries(plugins()).length > 0}>
+              <NavGroup
+                label="plugins"
+                count={pluginEntries(plugins()).length}
+                open={navGroupOpen("plugins")}
+                onToggle={() => toggleNavGroup("plugins")}
+              >
+                <For each={pluginEntries(plugins())}>
+                  {(entry) => <NavItem label={entry.label} hint={entry.hint} kind={entry.kind} />}
+                </For>
+              </NavGroup>
+            </Show>
+          </Show>
+        </nav>
+
+        {/* B — Workspaces : la seule partie qui défile. */}
+        <div class="rail-workspaces">
+          <input
+            class="search"
+            type="search"
+            placeholder="Rechercher"
+            value={query()}
+            onInput={(event) => setQuery(event.currentTarget.value)}
+          />
+
+          <div class="rows">
           <For each={groupByDirectory(sessions())}>
             {(group) => (
               <>
-                <DirectoryGroup
+                <WorkspaceGroup
                   label={group.label}
                   hint={group.hint}
                   count={group.sessions.length}
@@ -603,8 +704,10 @@ export default function App() {
               </>
             )}
           </For>
+          </div>
         </div>
 
+        {/* C — Pied : le dossier de travail définit ce que la partie B affiche. */}
         <div class="rail-foot">
           <label class="folder" title="Dossier de travail">
             <span>⌂</span>

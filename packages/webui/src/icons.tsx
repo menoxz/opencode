@@ -111,3 +111,79 @@ export function ToolIcon(props: { tool: string; size?: number }) {
 export function toolHint(tool: string): string {
   return `${toolVerb(tool)} · ${tool}`
 }
+
+/* =============================================================================
+   Icônes de navigation — même grammaire que ci-dessus, autre usage.
+
+   Le rail distingue trois natures d'objet : un dossier (workspace), une session,
+   une entrée de menu. Un glyphe texte (`▾`, `▸`, `⌂`) les confondrait et
+   dépendrait de la police du système ; une primitive SVG les sépare pour de bon.
+   ============================================================================= */
+
+/** Forme nue : la même enveloppe que `ToolIcon`, sans la table de familles. */
+function Glyph(props: { size?: number; children: JSX.Element }) {
+  const size = () => props.size ?? 14
+  return (
+    <svg
+      class="glyph"
+      width={size()}
+      height={size()}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.6"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      {props.children}
+    </svg>
+  )
+}
+
+/** Dossier : un workspace, un lieu de travail. */
+export function FolderIcon(props: { size?: number }) {
+  return (
+    <Glyph size={props.size}>
+      <path d="M3 7a2 2 0 0 1 2-2h3.6l1.8 2H19a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+    </Glyph>
+  )
+}
+
+/** Session : une conversation. */
+export function SessionIcon(props: { size?: number }) {
+  return (
+    <Glyph size={props.size}>
+      <path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H9l-4 4v-4H6a2 2 0 0 1-2-2z" />
+    </Glyph>
+  )
+}
+
+/** Chevron : l'état de pli. Il tourne, il n'est jamais remplacé par un autre dessin. */
+export function ChevronIcon(props: { size?: number; open: boolean }) {
+  return (
+    <Glyph size={props.size ?? 12}>
+      <path d={props.open ? "M6 9l6 6 6-6" : "M9 6l6 6-6 6"} />
+    </Glyph>
+  )
+}
+
+/** Commande : le signe qui la désigne partout ailleurs. */
+export function CommandIcon(props: { size?: number }) {
+  return (
+    <Glyph size={props.size}>
+      <path d="M9 6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3z" />
+    </Glyph>
+  )
+}
+
+/** Plugin : une pièce rapportée au harnais. */
+export function PluginIcon(props: { size?: number }) {
+  return (
+    <Glyph size={props.size}>
+      <path d="M9 3v6M15 3v6" />
+      <path d="M6 9h12v2a6 6 0 0 1-12 0z" />
+      <path d="M12 17v4" />
+    </Glyph>
+  )
+}

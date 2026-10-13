@@ -134,3 +134,60 @@ Deux décisions :
 Le §2 disait cinq zones. Il y en a **quatre permanentes plus un bandeau conditionnel**, et la
 configuration s'ajoute en feuille — pas en sixième zone. Un panneau qui ne sert pas tous les jours n'a
 pas à occuper l'écran tous les jours.
+
+---
+
+## 10. Le rail, en trois parties (2026-10-13)
+
+Le rail n'avait qu'une responsabilité de fait : lister des sessions. Il en porte maintenant trois, et
+chacune répond à une question différente.
+
+| # | Partie | Question à laquelle elle répond | Contenu | Défilement |
+|---|--------|--------------------------------|---------|-----------|
+| A | Menus | « Que peut faire le harnais, hors session ? » | menus par provenance ; plugins ; réglages ; identifiants | non — figée en haut |
+| B | Workspaces | « Où ai-je travaillé, et sur quoi ? » | dossiers ajoutés, repliables, contenant leurs sessions | **oui — la seule qui défile** |
+| C | Pied | « Où est-ce que je travaille ? » | le dossier de travail | non — figée en bas |
+
+### A. Menus — ce qui n'est pas une session
+
+Mesuré : `GET /command` rend **210 entrées**, chacune avec sa provenance ; `GET /plugin` rend un
+**objet** `{ version, runtime, origins, hooks }` et **4 origines**. Trois provenances réelles se
+séparent : `command` (les tiennes), `mcp` (apportées par un serveur), `skill` (apportées par une
+compétence).
+
+- **210 entrées ne se déplient pas.** La partie est repliée par défaut. C'est un menu, pas un contenu.
+- **La provenance est l'information utile**, pas le nombre. Confondre les trois sources effacerait la
+  seule chose qui aide à retrouver une entrée.
+- **Une entrée n'existe que si elle agit.** Une commande s'exécute sur la session active
+  (`POST /session/{id}/command`) ; sans session active, elle est inerte et le dit.
+- **719 ko compressés, donc pas au montage.** Mesuré : `GET /command` pèse 736 669 octets gzip
+  (1,99 Mo décodé) — 210 entrées dont la plupart portent un gabarit inutile à un menu. Chargé au
+  **premier dépliage**, jamais à l'ouverture de l'écran : c'est la règle de `/provider` (6,7 Mo) à
+  une autre échelle. Conséquence assumée : avant le premier clic, la section n'affiche pas de compte
+  — un nombre qu'on ne connaît pas ne s'invente pas.
+- **Le proxy doit lister la route.** Défaut réel : `/command` absent de `API_PREFIXES`
+  (`vite.config.ts`) faisait servir `index.html` avec un **status 200** ; le SDK croyait recevoir du
+  JSON, échouait à le parser, et la section restait vide **sans erreur visible**.
+
+### B. Workspaces — dossiers et sessions
+
+Un **workspace** est un dossier ajouté. Il contient ses sessions, repliées ou dépliées à souhait.
+
+- **Icônes** : un dossier et une session se distinguent par une **primitive SVG**, pas par un glyphe
+  (`▾`, `▸`) dont le rendu dépend de la police du système.
+- **Indentation** : une session se lit *sous* son dossier, pas au même niveau — la hiérarchie se voit.
+- **Interlignage serré** : une liste de navigation se parcourt, elle ne se lit pas ; l'air se gagne
+  dans les titres, pas entre les lignes.
+- **Survol qui ne déplace rien.** Le défaut réel : `display: none → flex` sur les actions faisait
+  changer la grille, donc la colonne du titre rétrécissait et **toute la ligne bougeait**. Les actions
+  occupent désormais leur place en permanence et se révèlent par l'opacité ; le padding ne change pas
+  au survol.
+
+### C. Pied — le dossier de travail
+
+Il **définit** ce que la partie B affiche. C'est le seul endroit où l'on écrit un chemin.
+
+### Ce qui ne revient pas
+
+Un compteur sur chaque dossier (le compte se lit dans le pli), une icône décorative, un titre de
+section qui redit son contenu, une action visible au repos.

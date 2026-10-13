@@ -24,6 +24,10 @@ const API_PREFIXES = [
   "/log",
   "/file",
   "/skill",
+  // Les menus du rail. Sans ces deux entrées, Vite sert `index.html` avec un **status 200** : le
+  // SDK croit recevoir du JSON, échoue à le parser, et la section reste vide sans erreur visible.
+  "/command",
+  "/plugin",
 ]
 
 export default defineConfig(({ mode }) => ({
