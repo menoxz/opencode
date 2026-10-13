@@ -171,6 +171,11 @@ export function agentDisabled(entry: unknown): boolean {
  * On envoie toujours la carte complète : c'est ce qui rend le correctif sûr sans connaître la
  * sémantique exacte du serveur (fusion ou remplacement). Envoyer `{ agent: { build: { … } } }`
  * écraserait les 33 autres agents si le serveur remplace.
+ *
+ * **Sémantique mesurée** (2026-10-13) : le serveur **fusionne**. Un agent ajouté persiste ; un agent
+ * **omis n'est pas retiré** ; `model: null` est refusé (`400`). Conséquence à ne pas oublier :
+ * **il n'existe aucun moyen de retirer une entrée d'agent par l'API** — le fichier de configuration
+ * est la seule voie. Et « vider un champ » n'est pas un retour au défaut : c'est un non-changement.
  */
 export function agentPatch(
   current: Record<string, unknown> | undefined,
@@ -181,7 +186,11 @@ export function agentPatch(
   const existing = agents[name]
   const merged = existing && typeof existing === "object" ? { ...(existing as Record<string, unknown>) } : {}
   for (const [key, value] of Object.entries(changes)) {
-    // Un modèle vidé **retire** la clé au lieu d'écrire une chaîne vide, qui serait un modèle nommé "".
+    // Retirer une clé de **notre** charge utile n'a **aucun effet** : mesuré, le serveur *fusionne*
+    // la carte agent (un agent omis n'est pas retiré, et `model: null` est refusé en 400). Ce n'est
+    // donc pas un « retour au défaut » — c'est une absence de changement. On écrit explicitement,
+    // jamais par omission, et l'interface ne propose pas de vider un champ (le bouton n'apparaît
+    // qu'avec un brouillon non vide).
     if (value === "" || value === undefined) delete merged[key]
     else merged[key] = value
   }

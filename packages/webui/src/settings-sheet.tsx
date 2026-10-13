@@ -198,7 +198,7 @@ export function AgentsSection(props: {
                 <input
                   class="set-input"
                   placeholder={props.modelOf(agent.name) || "modèle par défaut"}
-                  title="Modèle de cet agent — vide pour revenir au modèle par défaut"
+                  title="Modèle de cet agent. Un champ vidé n'est pas un retour au défaut : le serveur fusionne, donc vider n'annule rien."
                   value={props.drafts[agent.name] ?? ""}
                   onInput={(event) => props.onDraft(agent.name, event.currentTarget.value)}
                   onKeyDown={(event) => {
