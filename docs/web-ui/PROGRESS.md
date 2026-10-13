@@ -1235,3 +1235,88 @@ La **capture d'écran a expiré** (deux tentatives, 15 s puis 40 s) : `Page.capt
 pas revenue sur cette instance. Les preuves ci-dessus sont des **mesures du DOM**, pas une image.
 Le rendu n'a donc toujours pas été jugé à l'œil — c'est la réserve **F4** qui persiste, et elle ne se
 lève que par l'utilisateur.
+
+---
+
+## Lot suivant — rail réordonné et réglages qui gèrent (livré)
+
+Une critique de l'utilisateur, qui corrige **la façon de décider quoi afficher** — pas seulement le
+dessin. Trois règles en sont sorties, consignées dans `AGENTS.md` §4 :
+
+- **L'API n'est pas la cible.** Une donnée qui existe côté serveur n'est pas une raison de
+  l'afficher ; la seule question est « l'utilisateur fait-il ça au quotidien ? ».
+- **Relevé partiel ≠ absence.** « Aucun point d'écriture de configuration » était **faux** : je
+  n'avais regardé que les routes GET que je consommais.
+- **La lisibilité prime sur l'affordance.** Le libellé est l'information ; les actions sont
+  secondaires.
+
+### Le rail, réordonné par fréquence d'usage
+
+| ordre | partie | contenu |
+|---|---|---|
+| 1 | Nouvelle session | un bouton, toujours visible |
+| 2 | Plugins | un bouton par plugin — **rien** s'il n'y en a aucun |
+| 3 | Workspaces | dossiers + sessions, **4 visibles** puis « voir plus » |
+| 4 | Pied | dossier de travail + accès configuration |
+
+**Retiré** : la section « menus » et sa lecture de `GET /command` (736 669 octets gzip). Elle
+n'existait que parce que la route existait. Un skill ne se consulte pas, il s'injecte.
+
+**Lisibilité du libellé.** Les actions se posent en `position: absolute` **par-dessus** le nom au
+survol — elles ne consomment plus de colonne de la grille, donc le titre garde toute sa largeur.
+L'infobulle porte le nom complet **et** l'activité (agent, modèle, jetons, coût, fichiers).
+Indentation portée de 16 à **22 px** : dossiers et sessions se confondaient.
+
+### Les réglages : un composant qui gère
+
+| route | corps | usage |
+|---|---|---|
+| `PATCH /config` | `Config` (37 clés) | configuration du projet |
+| `PUT /auth/{providerID}` | `Auth` = `OAuth \| ApiAuth \| WellKnownAuth` | identifiants |
+| `POST` / `DELETE /plugin/{spec}` | `{ spec }` | plugins |
+
+`GET /provider/auth` rend, pour **8 fournisseurs**, leurs méthodes **réelles** avec leurs champs.
+Les formulaires se déduisent de cette réponse : on n'invente pas les champs. Une méthode `oauth` ne
+se remplit pas — elle se connecte, et le composant le dit au lieu de montrer un champ inerte.
+
+**Une section ne charge ses données qu'à sa sélection.** `GET /provider` (6,7 Mo) n'est **jamais**
+appelé ; `GET /agent` (1,27 Mo) n'est lu que si l'on ouvre « agents ».
+
+### Le défaut refait, et cette fois nommé
+
+La section « fournisseurs » s'affichait **vide et sans erreur** : `/provider` était absent de
+`API_PREFIXES` (`vite.config.ts`), donc Vite servait `index.html` avec un **status 200**. C'est
+**exactement** le défaut déjà corrigé pour `/command` et `/plugin` — refait. Corrigé : `/provider`
+et `/auth` sont proxifiés, avec le motif écrit dans le fichier pour qu'il ne soit pas refait une
+troisième fois.
+
+### Preuve
+
+```
+vitest run      -> 12 fichiers, 172 tests, exit 0   (+14 sur settings.test.ts)
+tsgo --noEmit   -> exit 0
+vite build      -> 102,54 ko brut / 27,16 ko compressés
+```
+
+Mesures par CDP, profil isolé, serveur 4096 :
+
+| mesure | valeur |
+|---|---|
+| ordre du rail | `rail-head · rail-new · rail-plugins · rail-workspaces · rail-foot` |
+| plugins | `failure-journal`, `preflight-guard`, `mcp-readiness`, `schedule` |
+| plafond de sessions | `opencode-fork` 3 · `packages/opencode` **4** + « voir plus · 12 » |
+| indentation | `margin-left: 22px` |
+| actions | `position: absolute`, largeur 74 px — aucune colonne consommée |
+| infobulle | `[nom, agent : build, modèle : deepseek-v4.1-flash, …]` |
+| onglets des réglages | `général · fournisseurs · agents · serveurs MCP · plugins` |
+| fournisseurs | **8** — `azure, cloudflare-ai-gateway, cloudflare-workers-ai, digitalocean, gitlab, openai, poe, xai` |
+| champs réels | `e.g. my-models`, `e.g. 1234567890abcdef…`, `clé d'API` — déclarés par le serveur |
+
+### Note de méthode
+
+Le pilote CDP isolé (port 9222) s'est **fermé** en cours de lot — le piège déjà consigné (fermer tous
+les onglets ferme l'instance). Relancé par
+`chrome.exe --remote-debugging-port=9222 --user-data-dir=%LOCALAPPDATA%\McpBrowserProfiles\chrome`.
+
+**Nom du produit** : `opencodev2` évoque un agent de codage, pas un généraliste. « open agent » a été
+proposé. Décision utilisateur ; rien n'est changé tant qu'elle n'est pas prise.

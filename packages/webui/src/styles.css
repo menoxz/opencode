@@ -1300,3 +1300,157 @@ textarea {
   border: 3px solid transparent;
   border-radius: 999px;
 }
+
+
+/* ---- Réglages : sections à gauche, contenu à droite ----
+
+   Une seule section est montée à la fois, et elle ne charge ses données qu'à sa sélection. */
+
+.sheet-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 0 18px 10px;
+  border-bottom: 1px solid var(--line-1);
+}
+
+.sheet-tab {
+  padding: 5px 10px;
+  border-radius: 6px;
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+
+.sheet-tab:hover {
+  color: var(--text-1);
+  background: #ffffff0a;
+}
+
+.sheet-tab.active {
+  color: var(--text-1);
+  background: var(--bg-2);
+}
+
+/* Un champ de réglage : le libellé porte l'information, l'action est à droite. */
+.set-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 0;
+}
+
+.set-label {
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+
+.set-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.set-input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 9px;
+  border: 1px solid var(--line-1);
+  border-radius: 7px;
+  background: #0000001a;
+  color: var(--text-1);
+  font-size: 12.5px;
+}
+
+.set-input::placeholder {
+  color: var(--text-3);
+}
+
+.set-input:focus {
+  border-color: var(--line-2);
+}
+
+/* Un fournisseur et ses méthodes : chaque méthode dit ce qu'elle attend. */
+.set-block {
+  padding: 6px 0 10px;
+  border-bottom: 1px solid var(--line-1);
+}
+
+.set-block:last-child {
+  border-bottom: none;
+}
+
+.set-block-title {
+  margin: 0 0 4px;
+  color: var(--text-1);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.set-method {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.set-method-label {
+  flex: 0 0 auto;
+  min-width: 0;
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.set-note {
+  color: var(--text-3);
+  font-size: 11.5px;
+}
+
+.sheet-ok,
+.sheet-err {
+  margin: 0 0 8px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.sheet-ok {
+  color: var(--text-2);
+  background: #ffffff0a;
+}
+
+.sheet-err {
+  color: var(--danger);
+}
+
+.sheet-plugins {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0 0 6px;
+  padding: 0;
+  list-style: none;
+}
+
+.sheet-plugins li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.pl-icon {
+  display: flex;
+  flex: 0 0 auto;
+  color: var(--text-3);
+}
+
+.pl-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+  font-size: 12.5px;
+}

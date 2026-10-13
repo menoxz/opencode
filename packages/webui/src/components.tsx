@@ -9,7 +9,6 @@ import {
   type ToolState,
 } from "./view-model"
 import { formatChars, injectionLabel, share, sourceLabel, type Injections } from "./injections"
-import { agentSummary, mcpTone, modeLabel, type AgentRow, type McpProblem } from "./config"
 import { ChevronIcon, FolderIcon, PluginIcon, SessionIcon, ToolIcon, toolHint } from "./icons"
 import { relativeTime } from "./time"
 
@@ -305,102 +304,6 @@ export function Reasoning(props: { text: string; open: boolean; onToggle: () => 
   )
 }
 
-/**
- * Panneau de configuration — une **feuille** posée sur la conversation, pas une sixième zone.
- *
- * Elle s'ouvre à la demande et se referme, ce qui la dispense d'être discrète : c'est la règle
- * inverse du fil, où rien ne doit s'afficher. Elle **consulte** seulement — aucun point d'écriture
- * n'a été relevé côté serveur, donc aucune bascule n'est proposée, et un interrupteur inerte
- * serait un mensonge.
- */
-export function ConfigSheet(props: {
-  lines: Array<{ label: string; value: string }>
-  agents: AgentRow[]
-  counts: { primary: number; subagent: number }
-  mcpTotal: number
-  mcpConnected: number
-  mcpProblems: McpProblem[]
-  onClose: () => void
-}) {
-  return (
-    <>
-      <div class="sheet-scrim" onClick={() => props.onClose()} />
-      <aside class="sheet" role="dialog" aria-label="Configuration">
-        <header class="sheet-head">
-          <span class="sheet-title">configuration</span>
-          <button class="ghost" title="Fermer (Échap)" onClick={() => props.onClose()}>
-            ✕
-          </button>
-        </header>
-        <div class="sheet-body">
-          <section class="sheet-section">
-            <h2>général</h2>
-            <dl class="sheet-lines">
-              <For each={props.lines}>
-                {(line) => (
-                  <>
-                    <dt>{line.label}</dt>
-                    <dd title={line.value}>{line.value}</dd>
-                  </>
-                )}
-              </For>
-            </dl>
-          </section>
-
-          <section class="sheet-section">
-            <h2>agents</h2>
-            <p class="sheet-note">{agentSummary(props.counts)}</p>
-            <ul class="sheet-agents">
-              <For each={props.agents}>
-                {(agent) => (
-                  <li>
-                    <span class="sa-name">{agent.name}</span>
-                    <span class="sa-mode">{modeLabel(agent.mode)}</span>
-                    <Show when={agent.description}>
-                      {(description) => (
-                        <span class="sa-desc" title={agent.full ?? description()}>
-                          {description()}
-                        </span>
-                      )}
-                    </Show>
-                  </li>
-                )}
-              </For>
-            </ul>
-          </section>
-
-          <section class="sheet-section">
-            <h2>serveurs mcp</h2>
-            {/* Ce qui est sain ne s'annonce pas : six connectés tiennent en une phrase, et seuls
-                les serveurs en défaut méritent une ligne à eux. */}
-            <p class="sheet-note">
-              {props.mcpConnected} sur {props.mcpTotal} connectés
-            </p>
-            <Show when={props.mcpProblems.length > 0}>
-              <ul class="sheet-mcp">
-                <For each={props.mcpProblems}>
-                  {(problem) => (
-                    <li>
-                      <span class={`mcp-state ${mcpTone(problem.status)}`}>{problem.status}</span>
-                      <span class="mcp-name">{problem.name}</span>
-                      <Show when={problem.error}>{(error) => <span class="mcp-error">{error()}</span>}</Show>
-                    </li>
-                  )}
-                </For>
-              </ul>
-            </Show>
-          </section>
-        </div>
-      </aside>
-    </>
-  )
-}
-
-/**
- * Demande d'accord : le seul moment où l'interface hausse la voix. Les boutons viennent de
- * `permissionActions` — « toujours » n'apparaît que si le serveur a fourni des motifs, ce qui
- * est une décision, testée dans `view-model`.
- */
 export function PermissionSheet(props: { request: PermissionRequest; onReply: (reply: PermissionReply) => void }) {
   return (
     <div class="permission">

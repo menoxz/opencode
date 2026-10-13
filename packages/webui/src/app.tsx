@@ -19,7 +19,6 @@ import {
 } from "./columns"
 import {
   ContextInjections,
-  ConfigSheet,
   FileChip,
   PermissionSheet,
   PluginButton,
@@ -32,11 +31,30 @@ import {
   WorkspaceGroup,
 } from "./components"
 import {
+  AgentsSection,
+  McpSection,
+  PluginsSection,
+  ProviderBlock,
+  SettingsField,
+  SettingsSheet,
+} from "./settings-sheet"
+import {
+  SETTINGS_SECTIONS,
+  authBody,
+  authMethods,
+  providerIDs,
+  type AuthMethod,
+  type ProviderAuth,
+  type SettingsSectionKey,
+} from "./settings"
+import {
   agentCounts,
   agentRows,
+  agentSummary,
   generalLines,
   mcpConnectedCount,
   mcpProblems,
+  modelLabel,
   type Agent,
   type McpState,
 } from "./config"
@@ -102,6 +120,18 @@ export default function App() {
   }>({})
   const [agents, setAgents] = createSignal<Agent[]>([])
   const [mcp, setMcp] = createSignal<Record<string, McpState>>({})
+
+  // Réglages : une section ne charge ses données **qu'à sa sélection**. `GET /provider` (6,7 Mo)
+  // n'est jamais appelé ; `/provider/auth` suffit et ne pèse que quelques kilo-octets.
+  const [settingsSection, setSettingsSection] = createSignal<SettingsSectionKey>("general")
+  const [providerAuth, setProviderAuth] = createSignal<ProviderAuth | undefined>()
+  const [providerValues, setProviderValues] = createSignal<Record<string, string>>({})
+  const [pluginSpec, setPluginSpec] = createSignal("")
+  const [generalModel, setGeneralModel] = createSignal("")
+  const [generalUsername, setGeneralUsername] = createSignal("")
+  const [settingsNotice, setSettingsNotice] = createSignal<string | undefined>()
+  const [settingsError, setSettingsError] = createSignal<string | undefined>()
+  const [settingsBusy, setSettingsBusy] = createSignal<string | undefined>()
 
   // Plugins : les seuls accès hors session. Lus au montage — 708 octets, donc sans coût.
   const [plugins, setPlugins] = createSignal<PluginList | undefined>()
@@ -214,23 +244,137 @@ export default function App() {
    * `GET /provider` n'est **pas** appelé : il rend 6,7 Mo (228 fournisseurs, 8 775 modèles) pour
    * deux nombres qui ne changent aucune décision. Mesuré : c'est lui qui gelait l'ouverture.
    */
-  const loadConfig = async () => {
-    const [configResult, agentResult, mcpResult] = await Promise.all([
-      client.config.get(scope()).catch(() => undefined),
-      client.app.agents(scope()).catch(() => undefined),
-      client.mcp.status(scope()).catch(() => undefined),
-    ])
-    const configData = (configResult as { data?: Record<string, unknown> } | undefined)?.data
-    if (configData) setConfig(configData)
-    const agentData = (agentResult as { data?: Agent[] } | undefined)?.data
-    if (Array.isArray(agentData)) setAgents(agentData)
-    const mcpData = (mcpResult as { data?: Record<string, McpState> } | undefined)?.data
-    if (mcpData) setMcp(mcpData)
+  /**
+   * Les réglages — une section à la fois.
+   *
+   * C'est ce qui répond à « éviter de charger la page de settings » : chaque section ne lit que ce
+   * qu'elle montre. `GET /agent` (1,27 Mo) n'est lu que si l'on ouvre « agents » ; `GET /provider`
+   * (6,7 Mo) n'est **jamais** lu, `/provider/auth` donne les méthodes pour quelques kilo-octets.
+   */
+  const loadSettings = async (section: SettingsSectionKey) => {
+    setSettingsNotice(undefined)
+    setSettingsError(undefined)
+
+    if (section === "general") {
+      const result = await client.config.get(scope()).catch(() => undefined)
+      const data = (result as { data?: Record<string, unknown> } | undefined)?.data
+      if (data) {
+        setConfig(data)
+        const model = modelLabel(data.model)
+        setGeneralModel(model === "défaut du serveur" ? "" : model)
+        setGeneralUsername(typeof data.username === "string" ? data.username : "")
+      }
+      return
+    }
+
+    if (section === "providers") {
+      const result = await client.provider.auth(scope()).catch(() => undefined)
+      setProviderAuth((result as { data?: ProviderAuth } | undefined)?.data)
+      return
+    }
+
+    if (section === "agents") {
+      const result = await client.app.agents(scope()).catch(() => undefined)
+      const data = (result as { data?: Agent[] } | undefined)?.data
+      if (Array.isArray(data)) setAgents(data)
+      return
+    }
+
+    if (section === "mcp") {
+      const result = await client.mcp.status(scope()).catch(() => undefined)
+      const data = (result as { data?: Record<string, McpState> } | undefined)?.data
+      if (data) setMcp(data)
+      return
+    }
+
+    await loadPlugins()
   }
 
   const openConfig = () => {
     setConfigOpen(true)
-    void loadConfig()
+    void loadSettings(settingsSection())
+  }
+
+  const selectSection = (key: SettingsSectionKey) => {
+    setSettingsSection(key)
+    void loadSettings(key)
+  }
+
+  /** Écrire la configuration du projet : `PATCH /config`, corps **partiel**. */
+  const saveConfig = async (patch: Record<string, unknown>, label: string) => {
+    setSettingsBusy(label)
+    setSettingsError(undefined)
+    setSettingsNotice(undefined)
+    const result = await client.config.update({ ...scope(), ...patch }).catch((cause: unknown) => {
+      setSettingsError(String(cause))
+      return undefined
+    })
+    setSettingsBusy(undefined)
+    if (result) {
+      setSettingsNotice(`${label} enregistré`)
+      await loadSettings("general")
+    }
+  }
+
+  /**
+   * Enregistrer une clé : `PUT /auth/{providerID}`, corps `ApiAuth`.
+   *
+   * `authBody` rend `undefined` sur un champ vide — et on n'écrit alors **rien** : écrire une clé
+   * vide écraserait une clé valide.
+   */
+  const saveProvider = async (providerID: string, method: AuthMethod) => {
+    const body = authBody(method, providerValues())
+    if (!body) {
+      setSettingsError("champ vide — rien n'a été écrit")
+      return
+    }
+    setSettingsBusy(`provider:${providerID}`)
+    setSettingsError(undefined)
+    setSettingsNotice(undefined)
+    const result = await client.auth.set({ providerID, ...body }).catch((cause: unknown) => {
+      setSettingsError(String(cause))
+      return undefined
+    })
+    setSettingsBusy(undefined)
+    if (result) {
+      setSettingsNotice(`${providerID} enregistré`)
+      setProviderValues({})
+    }
+  }
+
+  /** Ajouter un plugin : `POST /plugin`, corps `{ spec }`. */
+  const addPlugin = async () => {
+    const spec = pluginSpec().trim()
+    if (!spec) return
+    setSettingsBusy("plugin")
+    setSettingsError(undefined)
+    setSettingsNotice(undefined)
+    const result = await client.plugin.add({ spec, ...scope() }).catch((cause: unknown) => {
+      setSettingsError(String(cause))
+      return undefined
+    })
+    setSettingsBusy(undefined)
+    if (result) {
+      setSettingsNotice("plugin ajouté")
+      setPluginSpec("")
+      await loadPlugins()
+    }
+  }
+
+  /** Retirer un plugin : `DELETE /plugin/{spec}`. */
+  const removePlugin = async (spec: string) => {
+    setSettingsBusy("plugin")
+    setSettingsError(undefined)
+    setSettingsNotice(undefined)
+    const result = await client.plugin.remove({ spec, ...scope() }).catch((cause: unknown) => {
+      setSettingsError(String(cause))
+      return undefined
+    })
+    setSettingsBusy(undefined)
+    if (result) {
+      setSettingsNotice("plugin retiré")
+      await loadPlugins()
+    }
   }
 
   const selectSession = async (sessionID: string) => {
@@ -822,15 +966,90 @@ export default function App() {
       </aside>
 
       <Show when={configOpen()}>
-        <ConfigSheet
-          lines={generalLines(config())}
-          agents={agentRows(agents())}
-          counts={agentCounts(agentRows(agents()))}
-          mcpTotal={Object.keys(mcp()).length}
-          mcpConnected={mcpConnectedCount(mcp())}
-          mcpProblems={mcpProblems(mcp())}
+        <SettingsSheet
+          sections={SETTINGS_SECTIONS}
+          active={settingsSection()}
+          onSelect={selectSection}
           onClose={() => setConfigOpen(false)}
-        />
+          notice={settingsNotice()}
+          error={settingsError()}
+          busy={settingsBusy()}
+        >
+          <Show when={settingsSection() === "general"}>
+            <section class="sheet-section">
+              <SettingsField
+                label="modèle par défaut"
+                hint="Le modèle qu'utilise une nouvelle session"
+                value={generalModel()}
+                placeholder={modelLabel(config().model)}
+                busy={settingsBusy() === "modèle"}
+                onInput={setGeneralModel}
+                onSubmit={() => void saveConfig({ model: generalModel().trim() }, "modèle")}
+              />
+              <SettingsField
+                label="utilisateur"
+                hint="Le nom qui signe les messages"
+                value={generalUsername()}
+                busy={settingsBusy() === "utilisateur"}
+                onInput={setGeneralUsername}
+                onSubmit={() => void saveConfig({ username: generalUsername().trim() }, "utilisateur")}
+              />
+              <dl class="sheet-lines">
+                <For each={generalLines(config())}>
+                  {(line) => (
+                    <>
+                      <dt>{line.label}</dt>
+                      <dd>{line.value}</dd>
+                    </>
+                  )}
+                </For>
+              </dl>
+            </section>
+          </Show>
+
+          <Show when={settingsSection() === "providers"}>
+            <Show
+              when={providerIDs(providerAuth()).length > 0}
+              fallback={<p class="sheet-note">chargement des fournisseurs…</p>}
+            >
+              <For each={providerIDs(providerAuth())}>
+                {(id) => (
+                  <ProviderBlock
+                    id={id}
+                    methods={authMethods(providerAuth(), id)}
+                    values={providerValues()}
+                    busy={settingsBusy() === `provider:${id}`}
+                    onInput={(key, value) => setProviderValues((current) => ({ ...current, [key]: value }))}
+                    onSubmit={(method) => void saveProvider(id, method)}
+                  />
+                )}
+              </For>
+            </Show>
+          </Show>
+
+          <Show when={settingsSection() === "agents"}>
+            <AgentsSection agents={agentRows(agents())} summary={agentSummary(agentCounts(agentRows(agents())))} />
+          </Show>
+
+          <Show when={settingsSection() === "mcp"}>
+            <McpSection
+              total={Object.keys(mcp()).length}
+              connected={mcpConnectedCount(mcp())}
+              problems={mcpProblems(mcp())}
+            />
+          </Show>
+
+          <Show when={settingsSection() === "plugins"}>
+            <PluginsSection
+              plugins={pluginEntries(plugins())}
+              spec={pluginSpec()}
+              busy={settingsBusy() === "plugin"}
+              onSpec={setPluginSpec}
+              onAdd={() => void addPlugin()}
+              onRemove={(spec) => void removePlugin(spec)}
+            />
+          </Show>
+        </SettingsSheet>
       </Show>
     </div>
   )

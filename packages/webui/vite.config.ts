@@ -28,6 +28,11 @@ const API_PREFIXES = [
   // SDK croit recevoir du JSON, échoue à le parser, et la section reste vide sans erreur visible.
   "/command",
   "/plugin",
+  // Les réglages. Même piège, refait : `/provider/auth` retombait sur `index.html`, donc la section
+  // « fournisseurs » s'affichait **vide et sans erreur**. Une route consommée doit être proxifiée —
+  // l'oublier ne casse rien visiblement, ce qui est précisément ce qui le rend coûteux.
+  "/provider",
+  "/auth",
 ]
 
 export default defineConfig(({ mode }) => ({

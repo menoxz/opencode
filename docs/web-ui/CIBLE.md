@@ -260,3 +260,51 @@ l'ouverture.
 
 `opencodev2` évoque un agent de **codage**, pas un généraliste. « open agent » a été proposé.
 Décision utilisateur ; rien n'est changé tant qu'elle n'est pas prise.
+
+---
+
+## 12. Les réglages — un composant qui gère (2026-10-13)
+
+Le §9 disait : « elle consulte, elle n'édite pas », au motif qu'aucun point d'écriture n'existait.
+**C'était faux.** Je n'avais regardé que les routes GET que je consommais. L'utilisateur attend un
+composant de réglages au sens conventionnel : **il configure providers, modèles et agents.**
+
+### Le contrat d'écriture, mesuré
+
+| route | corps | usage |
+|---|---|---|
+| `PATCH /config` | `Config` — **37 clés** | configuration du projet |
+| `PATCH /global/config` | `Config` | configuration globale |
+| `PUT /auth/{providerID}` | `Auth` | identifiants d'un fournisseur |
+| `POST /auth/{providerID}/keys` | — | ajouter une clé |
+| `DELETE /auth/{providerID}/keys/{index}` | — | retirer une clé |
+| `POST /mcp/{name}/auth` (+ `callback`) | — | authentifier un serveur MCP |
+| `POST /plugin` / `DELETE /plugin/{spec}` | `{ spec }` | ajouter / retirer un plugin |
+
+`GET /provider/auth` rend, pour **8 fournisseurs**, les méthodes réellement disponibles avec leurs
+champs — par exemple `gitlab` : `oauth` (GitLab OAuth) et `api` (« GitLab Personal Access Token »,
+champ `token`, `placeholder: glpat-…`). Les formulaires se **déduisent** de cette réponse : on
+n'invente pas les champs, le serveur les donne.
+
+### Les sections — le modèle conventionnel
+
+| section | contenu | écrit |
+|---|---|---|
+| **général** | modèle, petit modèle, utilisateur, agent par défaut | `PATCH /config` |
+| **fournisseurs** | les 8 fournisseurs, méthodes et champs réels | `PUT /auth/{id}` |
+| **agents** | les 34 agents : modèle, mode, température, désactivation | `PATCH /config` |
+| **MCP** | les 7 serveurs : statut, authentification | `POST /mcp/{n}/auth` |
+| **plugins** | les plugins chargés : ajouter, retirer | `POST` / `DELETE /plugin` |
+
+### La règle de chargement
+
+**Une section ne charge ses données qu'à sa sélection.** C'est ce que demande l'utilisateur — « éviter
+de charger la page de settings » — et c'est la même règle qu'au §9 : `GET /provider` rend **6,7 Mo**,
+il n'est **jamais** appelé ; `/provider/auth` (petit) suffit pour les méthodes.
+
+### Ce qui reste vrai du §9
+
+- **Ce qui est sain ne s'annonce pas.** Six serveurs MCP connectés sur sept ne produisent qu'une
+  ligne : seuls les défauts sont nommés.
+- **Aucun catalogue.** Le poids d'un écran ne se paie pas pour un nombre qui ne change aucune
+  décision.
