@@ -1,36 +1,24 @@
 /* =============================================================================
-   Interface webui — composants repris de DSH (DeepSeek Harness)
-   =============================================================================
+   Interface webui — grammaire d'écran inspirée de DSH (DeepSeek Harness)
 
-   Sources : `C:\jeanluc\dsh-identite-visuelle.html` (barre de titre, marque, onglets,
-   carte modèle, bulles, barre d'état), `C:\jeanluc\dsh-sidebar-proposition.html`
-   (arborescence workspace → sessions), `dsh-plugins\dsh-identite\design-2026-08\
-   RECOMMANDATIONS.md` (refonte « bord à bord », correction de contraste WCAG).
+   Ce que ce fichier reprend de DSH, c'est sa **discipline**, pas sa liste de
+   composants : jetons monochromes (relevés dans @deepseek-ai/dsh-client-ui-theme),
+   filets translucides, marque quasi-blanche, blanc tournant comme seul accent
+   solide, vide qui fait partie du dessin.
 
-   Ce fichier ne fait pas qu'habiller : chaque règle correspond à un composant du
-   balisage de référence, pour que la structure suive la même grammaire.
+   Trois règles tenues ici :
 
-   Trois décisions reprises telles quelles :
-
-   1. **Jetons** — palette bleu-nuit, marque indigo → violet, accent cyan, typographies
-      Space Grotesk / Inter / JetBrains Mono.
-
-   2. **« Bord à bord »** — les panneaux occupent toute leur piste, séparés par un filet
-      d'1px, en rayon 0. Les commandes gardent leur arrondi.
-
-   3. **Contraste WCAG AA** — DSH a mesuré que son texte tertiaire échouait (3,55:1) et l'a
-      relevé à 4,73:1. Sa valeur d'origine (`#5d6679`) donne ici 3,41:1 sur `--bg-1` : elle
-      n'est PAS recopiée. Retenu : `#6f7a92`, mesuré à 4,54:1. La leçon, pas la valeur.
+   1. Monochrome. Une seule couleur d'attention (`--attention`), réservée à une
+      demande d'accord de l'agent ; une seule couleur d'échec (`--danger`).
+      Tout le reste est l'échelle `neutral-bluish`.
+   2. Pas de mobilier. Aucune barre de statut, pastille, badge, compteur, carte.
+      Ce qui est sain ne s'affiche pas : l'absence est le meilleur indicateur.
+   3. Bord à bord. Les panneaux occupent leur piste, séparés par un filet d'1px,
+      rayon 0 ; seules les commandes sont arrondies.
    ============================================================================= */
 
 :root {
-  /* ---- Jetons RÉELS de DSH, extraits de @deepseek-ai/dsh-client-ui-theme ----
-     Source : lib/client.js (80 ko), paquets installés sous
-     %APPDATA%\npm\node_modules\@deepseek-ai\dsh\node_modules\@deepseek-ai\
-     Le thème DSH est MONOCHROME : son `brand-primary` est bluish-50, un quasi-blanc.
-     Les valeurs précédentes venaient de la maquette d'un plugin, pas du produit. */
-
-  /* Échelle `neutral-bluish` de DSH, 19 paliers (relevée telle quelle) */
+  /* Échelle `neutral-bluish` de DSH, relevée telle quelle */
   --bluish-50: #f9fafb;
   --bluish-200: #e1e5ee;
   --bluish-400: #adb2b8;
@@ -41,57 +29,31 @@
   --bluish-875: #232324;
   --bluish-900: #1b1b1c;
   --bluish-950: #151517;
-  --bluish-1000: #0f1115;
 
-  /* Alias du thème sombre : bg-base → 950, layer-1 → 875, layer-2 → 850, layer-3 → 800 */
+  /* Alias du thème sombre DSH : bg-base → 950, layer-1 → 875, layer-2 → 850 */
   --bg-0: var(--bluish-950);
   --bg-1: var(--bluish-875);
   --bg-2: var(--bluish-850);
-  --bg-3: var(--bluish-800);
 
-  /* Bordures : blanc TRANSLUCIDE chez DSH, pas des hex opaques */
-  --line-1: #ffffff0f; /* border-l1 — 6 % de blanc */
-  --line-2: #ffffff1f; /* border-l2 — 12 % de blanc */
+  /* Bordures : blanc translucide chez DSH, pas des hex opaques */
+  --line-1: #ffffff0f;
+  --line-2: #ffffff1f;
 
   /* label-primary → bluish-50 ; label-caption → bluish-600 */
   --text-1: var(--bluish-50);
   --text-2: var(--bluish-400);
   --text-3: var(--bluish-600);
 
-  /* Marque monochrome : DSH n'a pas d'accent coloré dans son thème sombre */
-  --brand-1: var(--bluish-50);
-  --brand-2: var(--bluish-200);
-  --brand-3: var(--bluish-400);
+  /* États : tons médians des familles statiques DSH (green-400, red-400, amber-400) */
+  --danger: #f25a5a;
+  --attention: #f7ad31;
 
-  /* États : familles statiques DSH, relevées dans la palette `--dsw-static-*`.
-     Tons médians pour un thème sombre.
-     green : 100 #e6faed · 400 #4ed17e · 500 #22c55e · 900 #233c2c
-     red   :  50 #fef2f2 · 100 #fee2e2 · 400 #f25a5a · 500 #ef4444 · 600 #ec1313 · 900 #570c0c
-     amber : 100 #fef5e7 · 400 #f7ad31 · 500 #f59e0b · 600 #dd8629 · 900 #27241f */
-  --ok: #4ed17e; /* green-400 */
-  --warn: #f59e0b; /* amber-500 */
-  --danger: #f25a5a; /* red-400 */
-  --ember: #f7ad31; /* amber-400 */
+  --font: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
 
-  /* Dégradés : DSH n'en a pas de coloré dans son thème sombre — sa marque est monochrome.
-     Les anciens (indigo → violet, cyan) venaient de la maquette du plugin et contredisaient
-     la marque réelle. Ce sont désormais des dégradés de l'échelle bluish. */
-  --grad-brand: linear-gradient(135deg, var(--bluish-50) 0%, var(--bluish-200) 55%, var(--bluish-400) 100%);
-  --grad-signal: linear-gradient(90deg, var(--bluish-400), var(--bluish-50));
-  --grad-active: linear-gradient(90deg, rgba(249, 250, 251, 0.07), rgba(249, 250, 251, 0.02));
-
-  --radius-panel: 0px;
-  --radius-control: 9px;
-  --radius-pill: 999px;
-
-  --mono: "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
-  --display: "Space Grotesk", Inter, system-ui, sans-serif;
-  --ui: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
-
-  /* Motif signature DSH : la grille de nœuds, très discrète, en fond de conversation. */
-  --node-grid: radial-gradient(rgba(154, 163, 184, 0.055) 1px, transparent 1px);
-
-  color-scheme: dark;
+  --gutter: 24px;
+  --measure: 780px;
+  --radius: 10px;
 }
 
 * {
@@ -99,1330 +61,567 @@
 }
 
 html,
-body {
+body,
+#root {
+  height: 100%;
   margin: 0;
-  padding: 0;
 }
 
 body {
-  background:
-    radial-gradient(900px 500px at 20% -10%, rgba(77, 124, 254, 0.14), transparent 60%),
-    radial-gradient(800px 500px at 90% 0%, rgba(124, 92, 255, 0.12), transparent 55%),
-    var(--bg-0);
+  background: var(--bg-0);
   color: var(--text-1);
-  font-family: var(--ui);
-  font-size: 13px;
-  line-height: 1.55;
+  font: 14px/1.6 var(--font);
   -webkit-font-smoothing: antialiased;
 }
 
-code,
-pre,
-.url,
-.props,
-.fsize,
-.count,
-.badge,
-.ver,
-.env,
-.ci-model,
-.toolname,
-.time,
-.mname,
-.s-item,
-.ctx,
-.patterns,
-.mc-sub,
-.sectionLabel {
-  font-family: var(--mono);
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
 }
 
-/* =============================================================================
-   Charpente : titre / (sidebar · conversation · panneaux) / barre d'état
-   ============================================================================= */
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  outline: none;
+}
 
-/* Largeurs contractuelles de DSH (`dsh-client-ui-layout/lib/types/client/columns.d.ts`) :
-   SIDEBAR_DEFAULT 280 (264–420), CENTER_MIN 640, DETAILS_DEFAULT 360 (300–520).
-   Ce sont les valeurs de repos ; la chaîne de concession est résolue par `columns.ts`. */
+/* ---- Charpente : trois pistes, la troisième à 0 tant qu'aucune décision n'est attendue ---- */
+
 .layout {
   display: grid;
-  grid-template-columns: 280px minmax(640px, 1fr) 360px;
-  grid-template-rows: 46px minmax(0, 1fr) 26px;
-  grid-template-areas:
-    "top top top"
-    "side thread panels"
-    "status status status";
+  grid-template-columns: 280px minmax(0, 1fr) 0px;
   height: 100vh;
 }
 
-/* =============================================================================
-   Barre de titre — .titlebar / .traffic / .title / .env (DSH)
-   ============================================================================= */
+/* ---- Zone 2 — rail des sessions ---- */
 
-.titlebar {
-  grid-area: top;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 0 14px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent), var(--bg-1);
-  border-bottom: 1px solid var(--line-1);
-}
-
-.traffic {
-  display: flex;
-  gap: 8px;
-  flex: none;
-}
-
-.traffic i {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  display: block;
-}
-
-.traffic i:nth-child(1) {
-  background: #ff5f57;
-}
-
-.traffic i:nth-child(2) {
-  background: #febc2e;
-}
-
-.traffic i:nth-child(3) {
-  background: #28c840;
-}
-
-.titlebar .title {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  font-family: var(--display);
-  font-weight: 600;
-  font-size: 13.5px;
-  letter-spacing: 0.01em;
-  flex: none;
-}
-
-.titlebar .title .logo {
-  flex: none;
-}
-
-.titlebar .title .prod {
-  color: var(--text-1);
-}
-
-.titlebar .title .ver {
-  font-size: 10px;
-  color: var(--text-3);
-  border: 1px solid var(--line-2);
-  border-radius: 6px;
-  padding: 2px 6px;
-}
-
-.titlebar .title .sep {
-  color: var(--text-3);
-}
-
-.titlebar .title .ctx {
-  color: var(--text-2);
-  font-size: 11px;
-}
-
-.spacer {
-  flex: 1;
-}
-
-/* Pastille d'environnement : LED + libellé, comme `.env .pulse` chez DSH */
-.env {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 10.5px;
-  color: var(--text-3);
-  border: 1px solid var(--line-1);
-  background: var(--bg-2);
-  border-radius: 7px;
-  padding: 4px 9px;
-  flex: none;
-  white-space: nowrap;
-}
-
-.env .pulse {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--text-3);
-  flex: none;
-}
-
-.env.ok .pulse {
-  background: var(--ok);
-  box-shadow: 0 0 10px var(--ok);
-}
-
-.env.warn .pulse {
-  background: var(--warn);
-  box-shadow: 0 0 10px var(--warn);
-}
-
-.env.error .pulse {
-  background: var(--danger);
-  box-shadow: 0 0 10px var(--danger);
-}
-
-.env.ok {
-  color: var(--ok);
-  border-color: rgba(52, 211, 153, 0.25);
-}
-
-.env.warn {
-  color: var(--warn);
-  border-color: rgba(251, 191, 36, 0.25);
-}
-
-.env.error {
-  color: var(--danger);
-  border-color: rgba(248, 113, 113, 0.25);
-}
-
-.pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 11px;
-  color: var(--text-2);
-  border: 1px solid var(--line-2);
-  background: rgba(15, 18, 26, 0.7);
-  border-radius: var(--radius-pill);
-  padding: 3px 10px;
-  flex: none;
-}
-
-.pill.warn {
-  color: var(--warn);
-  border-color: rgba(251, 191, 36, 0.3);
-}
-
-.url {
-  color: var(--text-3);
-  font-size: 10.5px;
-}
-
-.dirfield {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--text-3);
-  flex: none;
-}
-
-.dirfield input {
-  width: 220px;
-  padding: 5px 9px;
-  border-radius: var(--radius-control);
-  border: 1px solid var(--line-1);
-  background: var(--bg-2);
-  color: var(--text-1);
-  font: inherit;
-  font-size: 11.5px;
-}
-
-.authform {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.authform input {
-  padding: 5px 9px;
-  border-radius: var(--radius-control);
-  border: 1px solid var(--line-1);
-  background: var(--bg-2);
-  color: var(--text-1);
-  font: inherit;
-  font-size: 11.5px;
-}
-
-.authform input[type="text"] {
-  width: 100px;
-}
-
-.authform input[type="password"] {
-  width: 120px;
-}
-
-.dirfield input:focus,
-.authform input:focus,
-.search:focus,
-.rename:focus,
-textarea:focus {
-  outline: none;
-  border-color: var(--brand-1);
-  box-shadow: 0 0 0 3px rgba(77, 124, 254, 0.14);
-}
-
-/* =============================================================================
-   Sidebar — .brand / .newSession / .search / .sectionHeader / .ws / .sidebar-foot
-   ============================================================================= */
-
-.sidebar {
-  grid-area: side;
-  background: var(--bg-1);
-  border-right: 1px solid var(--line-1);
-  border-radius: var(--radius-panel);
+.rail {
+  position: relative;
   display: flex;
   flex-direction: column;
-  min-height: 0;
+  min-width: 0;
   overflow: hidden;
+  background: var(--bg-1);
+  border-right: 1px solid var(--line-1);
 }
 
-/* .brand — logo + nom + signature courte */
-.brand {
+.rail-head {
   display: flex;
   align-items: center;
-  gap: 11px;
-  padding: 14px 14px 12px;
-  border-bottom: 1px solid var(--line-1);
-}
-
-.brand-name {
-  font-family: var(--display);
-  font-weight: 700;
-  font-size: 16px;
-  letter-spacing: -0.01em;
-  line-height: 1.05;
-}
-
-.brand-name small {
-  display: block;
-  font-family: var(--mono);
-  font-weight: 500;
-  font-size: 9px;
-  letter-spacing: 0.2em;
-  color: var(--brand-3);
-  text-transform: uppercase;
-  margin-top: 3px;
-}
-
-/* .newSession — « + Nouvelle session » */
-.newSession {
-  display: flex;
-  align-items: center;
+  justify-content: space-between;
   gap: 8px;
-  margin: 12px 12px 0;
-  padding: 9px 12px;
-  border-radius: 10px;
-  border: 1px solid var(--line-2);
-  background: var(--bg-2);
-  color: var(--text-1);
-  font: inherit;
+  padding: 16px var(--gutter) 6px;
+}
+
+.wordmark {
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+.ghost {
+  color: var(--text-2);
+  padding: 5px 8px;
+  border-radius: 8px;
   font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  text-align: left;
 }
 
-.newSession:hover {
-  border-color: var(--brand-1);
-  background: var(--bg-3);
-}
-
-.newSession .plus {
-  color: var(--brand-1);
-  font-size: 15px;
-  line-height: 1;
-}
-
-/* .search */
-.search {
-  margin: 10px 12px 0;
-  padding: 8px 11px;
-  border-radius: var(--radius-control);
-  border: 1px solid var(--line-1);
-  background: var(--bg-2);
+.ghost:hover {
   color: var(--text-1);
-  font: inherit;
-  font-size: 12.5px;
+  background: #ffffff0a;
+}
+
+.ghost.bordered {
+  border: 1px solid var(--line-2);
+}
+
+.search {
+  margin: 6px var(--gutter) 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--line-1);
+  border-radius: 8px;
+  color: var(--text-1);
 }
 
 .search::placeholder {
   color: var(--text-3);
 }
 
-/* .sectionHeader — libellé capitalisé + filet qui court jusqu'au bord */
-.sectionLabel {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 14px 16px 8px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--text-3);
-}
-
-.sectionLabel::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: var(--line-1);
-}
-
-.sectionLabel .count {
-  order: 3;
-  font-size: 10px;
-  color: var(--text-3);
-  background: var(--bg-2);
-  border: 1px solid var(--line-1);
-  border-radius: var(--radius-pill);
-  padding: 1px 7px;
-}
-
-/* .ws / .wsGroup / .folderRow — arborescence workspace */
-.ws {
-  padding: 0 8px;
-  overflow: auto;
-  flex: 1;
-  min-height: 0;
-}
-
-.wsGroup {
-  margin-bottom: 4px;
-}
-
-.folderRow {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 7px 8px;
-  border-radius: 9px;
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: -0.005em;
-  color: var(--text-1);
-  cursor: pointer;
-}
-
-.folderRow:hover {
-  background: var(--bg-2);
-}
-
-.folderRow .chev {
-  width: 10px;
-  flex: none;
-  color: var(--text-3);
-  font-size: 9px;
-  transition: transform 0.12s;
-}
-
-.folderRow.open .chev {
-  transform: rotate(90deg);
-}
-
-.folderRow .crest {
-  width: 16px;
-  height: 16px;
-  flex: none;
-  color: var(--brand-1);
-}
-
-.folderRow .crest svg {
-  width: 16px;
-  height: 16px;
-  display: block;
-  stroke: currentColor;
-  fill: none;
-  stroke-width: 1.7;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.folderRow .fname {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.folderRow .count {
-  margin-left: auto;
-  font-size: 10px;
-  color: var(--text-3);
-  background: var(--bg-2);
-  border: 1px solid var(--line-1);
-  border-radius: var(--radius-pill);
-  padding: 1px 7px;
-  flex: none;
-}
-
-/* .sessions / .sessionRow — guide continu + tirets (variante A validée par DSH) */
-.sessions {
-  position: relative;
-  margin: 1px 0 6px;
-  padding-left: 22px;
-  display: flex;
-  flex-direction: column;
-}
-
-.sessions::before {
-  content: "";
-  position: absolute;
-  left: 14px;
-  top: 2px;
-  bottom: 8px;
-  width: 1px;
-  background: linear-gradient(180deg, rgba(154, 163, 184, 0.22), rgba(154, 163, 184, 0.06));
-}
-
-.sessionRow {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 8px;
-  border-radius: 8px;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--text-2);
-  cursor: pointer;
-}
-
-.sessionRow::before {
-  content: "";
-  position: absolute;
-  left: -8px;
-  top: 50%;
-  width: 8px;
-  height: 1px;
-  background: rgba(154, 163, 184, 0.22);
-}
-
-.sessionRow:hover {
-  background: var(--bg-2);
-  color: var(--text-1);
-}
-
-.sessionRow.active {
-  background: var(--grad-active);
-  color: #fff;
-}
-
-.sessionRow.active::before {
-  background: var(--brand-1);
-  box-shadow: 0 0 6px var(--brand-1);
-}
-
-.sessionRow .stitle {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
-}
-
-.sessionRow .time {
-  font-size: 10px;
-  color: var(--text-3);
-  flex: none;
-}
-
-.sessionRow .dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex: none;
-  background: var(--text-3);
-}
-
-.sessionRow .dot.run {
-  background: var(--brand-3);
-  box-shadow: 0 0 8px var(--brand-3);
-}
-
-.sessionRow.active .time {
-  color: var(--text-2);
-}
-
-.rowActions {
-  display: none;
-  gap: 2px;
-  flex: none;
-}
-
-.sessionRow:hover .rowActions,
-.sessionRow.active .rowActions {
-  display: flex;
-}
-
-/* .sidebar-foot / .model-card */
-.sidebar-foot {
-  border-top: 1px solid var(--line-1);
-  padding: 12px;
-  flex: none;
-}
-
-.modelCard {
-  border: 1px solid var(--line-1);
-  background: var(--bg-2);
-  border-radius: 11px;
-  padding: 10px;
-}
-
-.modelCard .mc-top {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-1);
-}
-
-.modelCard .led {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  flex: none;
-  background: var(--text-3);
-}
-
-.modelCard .led.ok {
-  background: var(--ok);
-  box-shadow: 0 0 8px var(--ok);
-}
-
-.modelCard .led.off {
-  background: var(--text-3);
-}
-
-.modelCard .mc-sub {
-  font-size: 10px;
-  color: var(--text-3);
-  margin-top: 4px;
-  padding-left: 15px;
-}
-
-/* =============================================================================
-   Conversation — .chat / .chat-msg / .avatar / .bubble
-   ============================================================================= */
-
-.thread {
-  grid-area: thread;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  background: var(--bg-0);
-  background-image: var(--node-grid);
-  background-size: 22px 22px;
-}
-
-.chat {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding: 18px 22px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.chatMsg {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-}
-
-.chatMsg .avatar {
-  width: 30px;
-  height: 30px;
-  flex: none;
-  border-radius: 9px;
-  display: grid;
-  place-items: center;
-  font-family: var(--mono);
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  border: 1px solid var(--line-2);
-  background: var(--bg-2);
-  color: var(--text-2);
-}
-
-.chatMsg.user .avatar {
-  background: var(--bg-3);
-  color: var(--text-1);
-}
-
-.chatMsg.agent .avatar {
-  background: var(--grad-brand);
-  border-color: transparent;
-  color: #fff;
-}
-
-.chatMsg .bubble {
-  flex: 1;
-  min-width: 0;
-  border: 1px solid var(--line-1);
-  border-radius: 12px;
-  padding: 11px 13px;
-  background: var(--bg-1);
-}
-
-.chatMsg.user .bubble {
-  background: var(--bg-2);
+.search:focus {
   border-color: var(--line-2);
 }
 
-.chatMsg.agent .bubble {
-  border-left: 2px solid var(--brand-1);
+.rows {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 10px 12px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.row:hover {
+  background: #ffffff0a;
+}
+
+.row.active {
+  background: var(--bg-2);
+}
+
+.row-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-time {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.row-actions {
+  display: none;
+  gap: 2px;
+}
+
+.row:hover .row-actions,
+.row.active .row-actions {
+  display: flex;
+}
+
+.rename {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--bg-2);
+}
+
+.rail-foot {
+  padding: 12px var(--gutter) 16px;
+  border-top: 1px solid var(--line-1);
+}
+
+.folder {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+
+.folder input {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-2);
+}
+
+.folder input::placeholder {
+  color: var(--text-3);
+}
+
+.folder input:focus {
+  color: var(--text-1);
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 10px;
+}
+
+.auth-form input {
+  padding: 6px 9px;
+  border: 1px solid var(--line-1);
+  border-radius: 7px;
+  background: #0000001a;
+}
+
+.auth-form input::placeholder {
+  color: var(--text-3);
+}
+
+.auth-row {
+  display: flex;
+  gap: 6px;
+}
+
+/* Poignée de glissement : bande de préhension **invisible** chez DSH. */
+
+.grip {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 5;
+}
+
+.grip:hover {
+  background: var(--line-2);
+}
+
+/* ---- Zone 3 et 4 — la conversation ---- */
+
+.thread {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: 100vh;
+}
+
+.thread-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px var(--gutter) 0;
+}
+
+.notice {
+  font-size: 12.5px;
+  color: var(--attention);
+}
+
+.notice.bad {
+  color: var(--danger);
+}
+
+.scroll {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.transcript {
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding: 28px var(--gutter) 36px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.empty {
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding: 28px var(--gutter);
+  color: var(--text-3);
+}
+
+.turn {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .part {
-  margin: 0 0 7px;
-  white-space: pre-wrap;
-  color: var(--text-1);
+  margin: 0;
 }
 
-.part:last-child {
-  margin-bottom: 0;
+.part.text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Le tour de l'utilisateur est une surface ; celui de l'agent est du texte nu. */
+.turn.user .part.text {
+  padding: 10px 14px;
+  background: var(--bg-1);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
 }
 
 .part.file {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--text-2);
+  display: inline-flex;
 }
 
-.attach-preview {
-  max-width: 260px;
-  max-height: 200px;
-  border-radius: 10px;
-  border: 1px solid var(--line-1);
-}
-
-.fileicon {
-  color: var(--text-3);
-}
-
-/* =============================================================================
-   Appels d'outils
-   ============================================================================= */
-
-.tool {
-  border: 1px solid var(--line-1);
-  border-radius: 10px;
-  margin: 8px 0;
-  overflow: hidden;
-  background: var(--bg-0);
-}
-
-.tool.running {
-  border-color: rgba(251, 191, 36, 0.4);
-}
-
-.tool.error {
-  border-color: rgba(248, 113, 113, 0.4);
-}
-
-.toolhead {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  width: 100%;
-  padding: 7px 10px;
-  background: transparent;
-  border: 0;
-  color: var(--text-1);
-  font: inherit;
-  cursor: pointer;
-  text-align: left;
-}
-
-.toolhead:hover {
-  background: var(--bg-2);
-}
-
-.toolname {
-  font-size: 12px;
-}
-
-.badge {
-  font-size: 9.5px;
-  border-radius: var(--radius-pill);
-  padding: 2px 8px;
-  border: 1px solid var(--line-2);
-  color: var(--text-2);
-  white-space: nowrap;
-  flex: none;
-}
-
-.badge.running {
-  color: var(--warn);
-  border-color: rgba(251, 191, 36, 0.35);
-  background: rgba(251, 191, 36, 0.08);
-}
-
-.badge.completed,
-.badge.ok {
-  color: var(--ok);
-  border-color: rgba(52, 211, 153, 0.35);
-  background: rgba(52, 211, 153, 0.08);
-}
-
-.badge.error {
-  color: var(--danger);
-  border-color: rgba(248, 113, 113, 0.35);
-  background: rgba(248, 113, 113, 0.08);
-}
-
-.badge.warn {
-  color: var(--warn);
-  border-color: rgba(251, 191, 36, 0.35);
-  background: rgba(251, 191, 36, 0.08);
-}
-
-.badge.off {
-  color: var(--text-3);
-  border-color: var(--line-1);
-}
-
-.tooltitle {
-  color: var(--text-3);
-  font-size: 11.5px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
-}
-
-.chevron {
-  margin-left: auto;
-  color: var(--text-3);
-}
-
-.tooldetail {
-  border-top: 1px solid var(--line-1);
-  padding: 9px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-}
-
-pre.io {
-  margin: 0;
-  padding: 9px;
-  border-radius: 8px;
-  background: var(--bg-1);
-  border: 1px solid var(--line-1);
-  color: var(--text-2);
-  font-size: 11.5px;
-  max-height: 260px;
-  overflow: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-pre.io.out {
-  color: var(--text-1);
-}
-
-pre.io.err {
-  color: var(--danger);
-}
-
-/* =============================================================================
-   Barre de saisie — .chat-input / .ci-model / .chat-send
-   ============================================================================= */
-
-.chat-input {
-  flex: none;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
-  grid-template-areas:
-    "pending pending pending pending"
-    "error error error error"
-    "model input attach send";
-  align-items: center;
-  gap: 9px;
-  padding: 12px 22px 14px;
-  border-top: 1px solid var(--line-1);
-  background: var(--bg-1);
-}
-
-.chat-input .pending {
-  grid-area: pending;
-}
-
-.chat-input .error {
-  grid-area: error;
-  margin: 0;
-}
-
-.ci-model {
-  grid-area: model;
-  font-size: 10px;
-  color: var(--brand-3);
-  border: 1px solid rgba(34, 211, 238, 0.22);
-  background: rgba(34, 211, 238, 0.06);
-  border-radius: var(--radius-pill);
-  padding: 4px 10px;
-  white-space: nowrap;
-  max-width: 190px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.chat-input textarea {
-  grid-area: input;
-  resize: vertical;
-  min-height: 40px;
-  padding: 10px 12px;
-  border-radius: 11px;
-  border: 1px solid var(--line-1);
-  background: var(--bg-0);
-  color: var(--text-1);
-  font: inherit;
-  font-size: 13px;
-}
-
-.chat-input textarea::placeholder {
-  color: var(--text-3);
-}
-
-.chat-input label.attach {
-  grid-area: attach;
-}
-
-.chat-send {
-  grid-area: send;
-  padding: 10px 18px;
-  border-radius: 11px;
-  border: 1px solid rgba(77, 124, 254, 0.5);
-  background: linear-gradient(180deg, rgba(77, 124, 254, 0.18), rgba(77, 124, 254, 0.06));
-  color: var(--text-1);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.chat-send:hover:not(:disabled) {
-  border-color: var(--brand-1);
-}
-
-.chat-send:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.hidden-input {
-  display: none;
-}
-
-label.attach {
+.chip {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  min-width: 36px;
-  height: 36px;
-  cursor: pointer;
-  font-size: 16px;
-  line-height: 1;
-  border-radius: 10px;
+  gap: 8px;
+  padding: 4px 9px;
   border: 1px solid var(--line-1);
-  background: var(--bg-2);
+  border-radius: 999px;
   color: var(--text-2);
+  font-size: 12.5px;
 }
 
-label.attach:hover {
-  color: var(--text-1);
-  border-color: var(--line-2);
-}
-
-.pending {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-}
-
-.pending li {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  border: 1px solid var(--line-1);
-  border-radius: 9px;
-  padding: 5px 7px;
-  background: var(--bg-2);
-  font-size: 11.5px;
-  max-width: 100%;
-}
-
-.thumb {
-  width: 28px;
-  height: 28px;
+.chip img {
+  width: 22px;
+  height: 22px;
   object-fit: cover;
   border-radius: 6px;
 }
 
-.fname {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.chip-name {
   max-width: 220px;
-  color: var(--text-2);
-}
-
-.fsize {
-  color: var(--text-3);
-  font-size: 10.5px;
-}
-
-/* =============================================================================
-   Panneaux de droite — onglets
-   ============================================================================= */
-
-.panels {
-  grid-area: panels;
-  background: var(--bg-1);
-  border-left: 1px solid var(--line-1);
-  border-radius: var(--radius-panel);
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  font-size: 12px;
-}
-
-.tabs {
-  display: flex;
-  align-items: stretch;
-  border-bottom: 1px solid var(--line-1);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent);
-}
-
-.tab {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 10px 6px;
-  background: transparent;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  color: var(--text-3);
-  font: inherit;
-  font-size: 11.5px;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.tab:hover {
-  color: var(--text-1);
-}
-
-.tab.active {
-  color: var(--text-1);
-  border-bottom-color: var(--brand-1);
-  background: var(--grad-active);
-}
-
-.tab .t-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--line-2);
-  flex: none;
-}
-
-.tab.active .t-dot {
-  background: var(--brand-3);
-  box-shadow: 0 0 8px var(--brand-3);
-}
-
-.tab .count {
-  font-size: 9.5px;
-  color: var(--brand-3);
-  background: rgba(34, 211, 238, 0.09);
-  border: 1px solid rgba(34, 211, 238, 0.22);
-  border-radius: var(--radius-pill);
-  padding: 1px 6px;
-  line-height: 15px;
-}
-
-.panelbody {
-  padding: 14px 12px;
-  overflow: auto;
-  flex: 1;
-  min-height: 0;
-}
-
-.eventlist,
-.statuslines,
-.mcprows {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-}
-
-.eventlist li {
-  border-bottom: 1px solid var(--line-1);
-  padding-bottom: 5px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.eventlist code {
-  font-size: 11px;
-  color: var(--brand-3);
-}
-
-.props {
-  color: var(--text-3);
-  word-break: break-all;
-  font-size: 10.5px;
-}
-
-/* --- Statut --- */
-
-.statusline {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  border-bottom: 1px solid var(--line-1);
-  padding-bottom: 6px;
-}
-
-.statusline .slabel {
-  color: var(--text-3);
-  font-size: 11.5px;
-}
-
-.statusline .svalue {
-  text-align: right;
-  word-break: break-word;
-  font-size: 11.5px;
-}
-
-.statusline.ok .svalue {
-  color: var(--ok);
-}
-
-.statusline.warn .svalue {
-  color: var(--warn);
-}
-
-.statusline.error .svalue {
-  color: var(--danger);
-}
-
-.statusline.off .svalue {
-  color: var(--text-3);
-}
-
-.status h3 {
-  font-size: 10px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--text-3);
-  margin: 16px 0 7px;
-}
-
-.mcprows li {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  flex-wrap: wrap;
-}
-
-.mcprows .mname {
-  font-size: 11px;
-  color: var(--text-2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.mcprows .merror {
-  color: var(--danger);
-  flex-basis: 100%;
-  font-size: 10.5px;
-}
-
-/* =============================================================================
-   Permissions — action bloquante, donc mise en avant
-   ============================================================================= */
-
-.permission {
-  border: 1px solid rgba(251, 191, 36, 0.45);
-  border-left: 3px solid var(--warn);
-  border-radius: 10px;
-  padding: 13px;
-  background: var(--bg-2);
-}
-
-.ptitle {
-  margin-bottom: 7px;
-  color: var(--text-1);
-}
-
-.ptitle strong {
-  color: var(--brand-3);
-  font-size: 12px;
-}
-
-.patterns {
-  margin: 0 0 11px;
-  padding-left: 18px;
-  color: var(--text-2);
-  font-size: 11px;
-}
-
-.pactions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.pactions button {
-  padding: 7px 13px;
-  border-radius: var(--radius-control);
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-  background: transparent;
-}
-
-.pactions button.primary {
-  border: 1px solid rgba(52, 211, 153, 0.5);
-  color: var(--ok);
-}
-
-.pactions button.primary:hover {
-  background: rgba(52, 211, 153, 0.1);
-}
-
-.pactions button.danger {
-  border: 1px solid rgba(248, 113, 113, 0.5);
-  color: var(--danger);
-}
-
-.pactions button.danger:hover {
-  background: rgba(248, 113, 113, 0.1);
-}
-
-/* =============================================================================
-   Barre d'état — .statusbar / .s-item / .s-right
-   ============================================================================= */
-
-.statusbar {
-  grid-area: status;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 0 14px;
-  background: var(--bg-1);
-  border-top: 1px solid var(--line-1);
-  font-size: 10.5px;
+.chip-size {
   color: var(--text-3);
-  overflow: hidden;
 }
 
-.s-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  white-space: nowrap;
-}
-
-.statusbar .s-right {
-  margin-left: auto;
-  display: flex;
-  gap: 16px;
-}
-
-.statusbar .dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex: none;
-  background: var(--text-3);
-}
-
-.statusbar .dot.ok {
-  background: var(--ok);
-  box-shadow: 0 0 8px var(--ok);
-}
-
-.statusbar .dot.warn {
-  background: var(--warn);
-  box-shadow: 0 0 8px var(--warn);
-}
-
-.statusbar .dot.error {
-  background: var(--danger);
-  box-shadow: 0 0 8px var(--danger);
-}
-
-/* =============================================================================
-   Boutons d'icône, renommage, états vides
-   ============================================================================= */
-
-button.icon {
-  border: 1px solid var(--line-1);
-  background: var(--bg-2);
-  color: var(--text-2);
-  border-radius: 7px;
-  cursor: pointer;
-  font: inherit;
-  font-size: 11px;
+.chip-x {
+  color: var(--text-3);
   line-height: 1;
-  padding: 4px 6px;
 }
 
-button.icon:hover {
-  color: var(--text-1);
-  border-color: var(--line-2);
-}
-
-button.icon.danger:hover {
+.chip-x:hover {
   color: var(--danger);
-  border-color: rgba(248, 113, 113, 0.4);
 }
 
-input.rename {
+/* Action de l'agent : une ligne discrète. */
+
+.tool-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   width: 100%;
-  padding: 6px 8px;
-  border-radius: var(--radius-control);
-  border: 1px solid var(--brand-1);
-  background: var(--bg-0);
+  text-align: left;
+  padding: 3px 6px;
+  margin-left: -6px;
+  border-radius: 6px;
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+
+.tool-line:hover {
+  background: #ffffff08;
   color: var(--text-1);
-  font: inherit;
-  font-size: 12.5px;
 }
 
-.empty-state {
+.tool-name {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.tool-title {
   flex: 1;
-  display: grid;
-  place-items: center;
-  padding: 40px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-3);
 }
 
-.empty {
+.tool-state {
   color: var(--text-3);
-  font-size: 12.5px;
+}
+
+/* Le chevron n'apparaît qu'au survol ou déplié : la ligne reste nue au repos, mais l'ouverture
+   reste découvrable. */
+.tool-chev {
+  color: var(--text-3);
+  opacity: 0;
+}
+
+.tool-line:hover .tool-chev,
+.tool.open .tool-chev {
+  opacity: 1;
+}
+
+.tool.failed .tool-name,
+.tool.failed .tool-state {
+  color: var(--danger);
+}
+
+.tool-detail {
+  margin: 4px 0 10px;
+  padding-left: 12px;
+  border-left: 1px solid var(--line-2);
+}
+
+.tool-detail pre {
+  margin: 6px 0;
+  padding: 8px 10px;
+  max-height: 280px;
+  overflow: auto;
+  background: var(--bg-1);
+  border-radius: 8px;
+  color: var(--text-2);
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.tool-detail pre.out {
+  color: var(--text-1);
+}
+
+.tool-detail pre.err {
+  color: var(--danger);
 }
 
 .error {
+  margin: 6px 0;
   color: var(--danger);
+  font-size: 12.5px;
+}
+
+/* ---- Zone 4 — saisie ---- */
+
+.composer {
+  padding: 0 var(--gutter) 22px;
+}
+
+.composer-inner {
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding: 10px 12px;
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: 14px;
+}
+
+.pending {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+}
+
+.composer textarea {
+  display: block;
+  width: 100%;
+  max-height: 200px;
+  padding: 2px 2px 8px;
+  resize: none;
+  line-height: 1.55;
+}
+
+.composer textarea::placeholder {
+  color: var(--text-3);
+}
+
+.composer-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.composer-bar .spacer {
+  flex: 1;
+}
+
+.attach {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  color: var(--text-2);
+  font-size: 16px;
+}
+
+.attach:hover {
+  background: #ffffff0f;
+  color: var(--text-1);
+}
+
+/* Masqué par la classe, jamais par `style="display:none"` : un champ en display:none
+   n'est pas remplissable, alors qu'un champ clippé l'est. */
+.hidden-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.primary {
+  padding: 6px 14px;
+  border-radius: 8px;
+  background: var(--text-1);
+  color: var(--bg-0);
+  font-size: 13px;
+}
+
+.primary:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+/* ---- Zone 5 — le tiroir droit : uniquement quand l'agent attend une décision ---- */
+
+.side {
+  overflow: hidden;
+  background: var(--bg-1);
+  border-left: 1px solid var(--line-1);
+}
+
+.side-inner {
+  padding: 18px;
+}
+
+.permission {
+  padding: 14px;
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  border-left: 2px solid var(--attention);
+  border-radius: 10px;
+}
+
+.permission-title {
+  font-size: 13px;
+}
+
+.permission-patterns {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  color: var(--text-2);
+  font-family: var(--mono);
   font-size: 12px;
+}
+
+.permission-patterns li {
+  padding: 3px 0;
+}
+
+.permission-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+/* ---- Barres de défilement discrètes ---- */
+
+.scroll::-webkit-scrollbar,
+.rows::-webkit-scrollbar,
+.tool-detail pre::-webkit-scrollbar {
+  width: 10px;
+}
+
+.scroll::-webkit-scrollbar-thumb,
+.rows::-webkit-scrollbar-thumb,
+.tool-detail pre::-webkit-scrollbar-thumb {
+  background: #ffffff14;
+  background-clip: content-box;
+  border: 3px solid transparent;
+  border-radius: 999px;
 }

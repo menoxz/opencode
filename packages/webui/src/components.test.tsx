@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest"
 import { render } from "solid-js/web"
-import { PermissionPanel, REPLY_LABEL, ToolCall } from "./components"
+import { PermissionSheet, REPLY_LABEL, ToolLine } from "./components"
 import type { PermissionRequest, ToolState } from "./view-model"
 
 /** Monte un composant dans un conteneur neuf et renvoie le HTML produit. */
@@ -31,30 +31,41 @@ const request = (always: string[] = []): PermissionRequest => ({
   metadata: {},
 })
 
-describe("ToolCall", () => {
-  test("affiche le nom de l'outil et le libellé d'état", () => {
-    const { html, dispose } = mount(() => <ToolCall tool="read" state={completed} open={false} onToggle={() => {}} />)
+describe("ToolLine", () => {
+  test("affiche le nom de l'outil et son titre", () => {
+    const { html, dispose } = mount(() => <ToolLine tool="read" state={completed} open={false} onToggle={() => {}} />)
     expect(html).toContain("read")
-    expect(html).toContain("terminé")
     expect(html).toContain("Lecture du dossier")
     dispose()
   })
 
+  test("un outil terminé se tait : aucun libellé d'état", () => {
+    const { html, dispose } = mount(() => <ToolLine tool="read" state={completed} open={false} onToggle={() => {}} />)
+    expect(html).not.toContain("terminé")
+    dispose()
+  })
+
+  test("un outil en cours écrit son état", () => {
+    const { html, dispose } = mount(() => <ToolLine tool="read" state={running} open={false} onToggle={() => {}} />)
+    expect(html).toContain("en cours")
+    dispose()
+  })
+
   test("un outil en erreur porte le libellé d'erreur", () => {
-    const { html, dispose } = mount(() => <ToolCall tool="read" state={failed} open={false} onToggle={() => {}} />)
+    const { html, dispose } = mount(() => <ToolLine tool="read" state={failed} open={false} onToggle={() => {}} />)
     expect(html).toContain("erreur")
     dispose()
   })
 
   test("replié, le détail n'est pas rendu", () => {
-    const { html, dispose } = mount(() => <ToolCall tool="read" state={completed} open={false} onToggle={() => {}} />)
+    const { html, dispose } = mount(() => <ToolLine tool="read" state={completed} open={false} onToggle={() => {}} />)
     expect(html).not.toContain("src\npackage.json")
     expect(html).toContain("▸")
     dispose()
   })
 
   test("déplié, il expose l'entrée et la sortie", () => {
-    const { html, dispose } = mount(() => <ToolCall tool="read" state={completed} open={true} onToggle={() => {}} />)
+    const { html, dispose } = mount(() => <ToolLine tool="read" state={completed} open={true} onToggle={() => {}} />)
     expect(html).toContain("ls -la")
     expect(html).toContain("package.json")
     expect(html).toContain("▾")
@@ -62,15 +73,16 @@ describe("ToolCall", () => {
   })
 
   test("déplié, une erreur expose le message et non une sortie", () => {
-    const { html, dispose } = mount(() => <ToolCall tool="read" state={failed} open={true} onToggle={() => {}} />)
+    const { html, dispose } = mount(() => <ToolLine tool="read" state={failed} open={true} onToggle={() => {}} />)
     expect(html).toContain("introuvable")
-    expect(html).toContain("io err")
+    expect(html).toContain('class="err"')
+    expect(html).not.toContain('class="out"')
     dispose()
   })
 
-  test("le clic sur l'en-tête demande le basculement", () => {
+  test("le clic sur la ligne demande le basculement", () => {
     const onToggle = vi.fn()
-    const { container, dispose } = mount(() => <ToolCall tool="read" state={running} open={false} onToggle={onToggle} />)
+    const { container, dispose } = mount(() => <ToolLine tool="read" state={running} open={false} onToggle={onToggle} />)
     const button = container.querySelector("button")
     expect(button).not.toBeNull()
     button?.click()
@@ -78,16 +90,20 @@ describe("ToolCall", () => {
     dispose()
   })
 
-  test("la classe reflète l'état, pour que le style suive", () => {
-    const { container, dispose } = mount(() => <ToolCall tool="read" state={running} open={false} onToggle={() => {}} />)
-    expect(container.querySelector(".tool.running")).not.toBeNull()
-    dispose()
+  test("seule une erreur porte la classe d'échec, pour que le style suive", () => {
+    const bad = mount(() => <ToolLine tool="read" state={failed} open={false} onToggle={() => {}} />)
+    expect(bad.container.querySelector(".tool.failed")).not.toBeNull()
+    bad.dispose()
+
+    const ok = mount(() => <ToolLine tool="read" state={running} open={false} onToggle={() => {}} />)
+    expect(ok.container.querySelector(".tool.failed")).toBeNull()
+    ok.dispose()
   })
 })
 
-describe("PermissionPanel", () => {
+describe("PermissionSheet", () => {
   test("affiche la permission, le motif et les boutons", () => {
-    const { html, dispose } = mount(() => <PermissionPanel request={request(["*"])} onReply={() => {}} />)
+    const { html, dispose } = mount(() => <PermissionSheet request={request(["*"])} onReply={() => {}} />)
     expect(html).toContain("read")
     expect(html).toContain("tmp-perm-test.env")
     expect(html).toContain("Autoriser une fois")
@@ -97,7 +113,7 @@ describe("PermissionPanel", () => {
   })
 
   test("sans motif proposé, le bouton « toujours » n'existe pas", () => {
-    const { html, dispose } = mount(() => <PermissionPanel request={request()} onReply={() => {}} />)
+    const { html, dispose } = mount(() => <PermissionSheet request={request()} onReply={() => {}} />)
     expect(html).not.toContain("Toujours autoriser")
     expect(html).toContain("Refuser")
     dispose()
@@ -105,7 +121,7 @@ describe("PermissionPanel", () => {
 
   test("chaque bouton renvoie la bonne réponse", () => {
     const onReply = vi.fn()
-    const { container, dispose } = mount(() => <PermissionPanel request={request(["*"])} onReply={onReply} />)
+    const { container, dispose } = mount(() => <PermissionSheet request={request(["*"])} onReply={onReply} />)
     const buttons = Array.from(container.querySelectorAll("button"))
     expect(buttons.map((b) => b.textContent)).toEqual(["Autoriser une fois", "Toujours autoriser", "Refuser"])
     buttons[2]?.click()
@@ -117,10 +133,13 @@ describe("PermissionPanel", () => {
     dispose()
   })
 
-  test("le bouton de refus porte la classe danger, pas les autres", () => {
-    const { container, dispose } = mount(() => <PermissionPanel request={request()} onReply={() => {}} />)
-    const reject = Array.from(container.querySelectorAll("button")).find((b) => b.textContent === "Refuser")
-    expect(reject?.className).toBe("danger")
+  test("le refus n'est pas l'action mise en avant", () => {
+    const { container, dispose } = mount(() => <PermissionSheet request={request()} onReply={() => {}} />)
+    const buttons = Array.from(container.querySelectorAll("button"))
+    const reject = buttons.find((b) => b.textContent === "Refuser")
+    const allow = buttons.find((b) => b.textContent === "Autoriser une fois")
+    expect(reject?.className).toBe("ghost bordered")
+    expect(allow?.className).toBe("primary")
     dispose()
   })
 

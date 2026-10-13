@@ -9,20 +9,16 @@ import {
 } from "./attachments"
 import { client, credentials, fetchHealth, rememberCredentials, serverUrl, type Health } from "./client"
 import {
-  Brand,
-  ChatMessage,
-  FolderRow,
-  ModelCard,
-  PermissionPanel,
-  SectionLabel,
-  SessionRow,
-  StatusBar,
-  StatusPanel,
-  TitleBar,
-  ToolCall,
-} from "./components"
-import { subscribeEvents, type ServerEvent, type EventStreamState } from "./events"
-import { agentCount, currentModel, mcpCounts, mcpRows, summarizeStatus, type McpStatus } from "./status"
+  DETAILS_DEFAULT,
+  SIDEBAR_DEFAULT,
+  SIDEBAR_MAX,
+  SIDEBAR_MIN,
+  clampWidth,
+  computeColumns,
+  effectiveSidebarPreference,
+} from "./columns"
+import { FileChip, PermissionSheet, SessionRow, ToolLine, Turn } from "./components"
+import { subscribeEvents, type EventStreamState } from "./events"
 import { sessionTimestamp } from "./time"
 import {
   dropPermission,
@@ -42,31 +38,32 @@ type Part =
 
 type Message = { info: { id: string; role: string }; parts: Part[] }
 
-const MAX_EVENTS = 60
 const DIR_KEY = "oc.webui.directory"
 
+/**
+ * L'écran, en cinq zones : rail des sessions, fil, saisie, et un tiroir droit qui n'apparaît que
+ * lorsqu'une décision est attendue. Tout le reste a été retiré — un agent généraliste produit des
+ * choses très diverses, et c'est la **conversation** qui absorbe cette variété, pas le mobilier.
+ */
 export default function App() {
   const [health, setHealth] = createSignal<Health | undefined>()
   const [sessions, setSessions] = createSignal<SessionInfo[]>([])
   const [active, setActive] = createSignal<string | undefined>()
   const [messages, setMessages] = createSignal<Message[]>([])
-  const [events, setEvents] = createSignal<ServerEvent[]>([])
   const [stream, setStream] = createSignal<EventStreamState>({ connected: false, reconnects: 0 })
   const [draft, setDraft] = createSignal("")
   const [error, setError] = createSignal<string | undefined>()
+  const [permissions, setPermissions] = createSignal<PermissionRequest[]>([])
+  const [expanded, setExpanded] = createSignal<Record<string, boolean>>({})
 
   const [directory, setDirectory] = createSignal(localStorage.getItem(DIR_KEY) ?? "")
   const [serverPath, setServerPath] = createSignal<string | undefined>()
   const [query, setQuery] = createSignal("")
   const [renaming, setRenaming] = createSignal<string | undefined>()
   const [renameDraft, setRenameDraft] = createSignal("")
-  // Inline confirmation instead of window.confirm: a native dialog blocks automation and cannot
-  // be styled. Two clicks on the same row, no modal.
+  // Confirmation en ligne : un `window.confirm` natif ne se style pas et bloque tout pilotage.
   const [confirming, setConfirming] = createSignal<string | undefined>()
-  const [workspaceOpen, setWorkspaceOpen] = createSignal(true)
 
-  // Credentials are read once at boot: the SDK client and the SSE connection are both built with
-  // them, so saving reloads the page (see `rememberCredentials`).
   const [authOpen, setAuthOpen] = createSignal(false)
   const [authUser, setAuthUser] = createSignal(credentials?.username ?? "")
   const [authPass, setAuthPass] = createSignal(credentials?.password ?? "")
@@ -74,27 +71,66 @@ export default function App() {
   const [attachments, setAttachments] = createSignal<Attachment[]>([])
   const [attachError, setAttachError] = createSignal<string | undefined>()
 
-  // Panneaux annexes, à droite : la disposition prévoit plusieurs panneaux, donc des onglets.
-  const [rightTab, setRightTab] = createSignal<"events" | "permissions" | "status">("events")
-  const [mcp, setMcp] = createSignal<Record<string, McpStatus>>({})
-  const [config, setConfig] = createSignal<{ model?: string; agent?: Record<string, unknown> } | undefined>()
-
   /** Horloge figée par rendu : évite que chaque ligne recalcule un temps différent. */
   const now = () => Date.now()
+
+  // ---- Charpente : solveur de concession de DSH (`columns.ts`) ----
+  // Les préférences sont l'état ; les largeurs rendues sont **dérivées**. C'est ce qui rend la
+  // restauration au ré-élargissement automatique : rien n'est réécrit pendant une concession.
+  const [viewport, setViewport] = createSignal(typeof window === "undefined" ? 1440 : window.innerWidth)
+  const [sidebarPref, setSidebarPref] = createSignal(SIDEBAR_DEFAULT)
+  const [narrowExpanded, setNarrowExpanded] = createSignal(false)
+
+  const columns = () =>
+    computeColumns(viewport(), effectiveSidebarPreference(viewport(), sidebarPref(), narrowExpanded()), DETAILS_DEFAULT)
+
+  /**
+   * Le tiroir droit n'a qu'une raison d'exister : une demande d'accord. Pas de panneau vide, pas
+   * d'onglets, pas de journal d'événements — la piste reste à 0 tant qu'on n'a rien à décider.
+   */
+  const detailsWidth = () => (permissions().length > 0 ? columns().details : 0)
+
+  const layoutStyle = () => ({
+    "grid-template-columns": `${columns().sidebar}px minmax(0, 1fr) ${detailsWidth()}px`,
+  })
+
+  /**
+   * Glissement de la frontière rail/conversation. DSH précise que cette frontière est une **bande
+   * de préhension invisible**, là où celle des détails garde une pilule visible.
+   */
+  const startSidebarDrag = (event: PointerEvent) => {
+    event.preventDefault()
+    const depart = event.clientX
+    const largeurDepart = columns().sidebar
+    const onMove = (move: PointerEvent) => {
+      setSidebarPref(clampWidth(largeurDepart + (move.clientX - depart), SIDEBAR_MIN, SIDEBAR_MAX))
+      // Un glissement manuel sous le seuil vaut ré-expansion explicite (`narrowExpanded` chez DSH).
+      if (viewport() < 1024) setNarrowExpanded(true)
+    }
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove)
+      window.removeEventListener("pointerup", onUp)
+    }
+    window.addEventListener("pointermove", onMove)
+    window.addEventListener("pointerup", onUp)
+  }
+
+  /** Repli/dépli manuel : sous le seuil, un dépli explicite pose `narrowExpanded`. */
+  const toggleSidebar = () => {
+    if (sidebarPref() === 0) {
+      setSidebarPref(SIDEBAR_DEFAULT)
+      setNarrowExpanded(true)
+      return
+    }
+    setSidebarPref(0)
+    setNarrowExpanded(false)
+  }
 
   /**
    * Every SDK method takes `directory` as a query parameter, so switching the working directory
    * needs no client rebuild — the value is threaded into each call instead.
    */
   const scope = () => (directory().trim() ? { directory: directory().trim() } : {})
-
-  /** Nom du workspace affiché dans l'arborescence : le dossier de travail, ou son défaut serveur. */
-  const workspaceName = () => {
-    const value = directory().trim() || serverPath() || ""
-    if (!value) return "workspace"
-    const parts = value.split(/[\\/]/).filter(Boolean)
-    return parts[parts.length - 1] ?? value
-  }
 
   const loadPath = async () => {
     const result = await client.path.get(scope()).catch(() => undefined)
@@ -125,18 +161,6 @@ export default function App() {
     const result = await client.permission.list(scope()).catch(() => undefined)
     const data = (result as { data?: PermissionRequest[] } | undefined)?.data
     if (Array.isArray(data)) setPermissions(data)
-  }
-
-  /** Alimente le panneau Statut et la carte modèle : MCP et configuration. */
-  const loadStatus = async () => {
-    const [mcpResult, configResult] = await Promise.all([
-      client.mcp.status(scope()).catch(() => undefined),
-      client.config.get(scope()).catch(() => undefined),
-    ])
-    const mcpData = (mcpResult as { data?: Record<string, McpStatus> } | undefined)?.data
-    if (mcpData && typeof mcpData === "object") setMcp(mcpData)
-    const configData = (configResult as { data?: { model?: string; agent?: Record<string, unknown> } } | undefined)?.data
-    if (configData) setConfig(configData)
   }
 
   const selectSession = async (sessionID: string) => {
@@ -242,8 +266,8 @@ export default function App() {
 
   const removeAttachment = (id: string) => setAttachments((current) => current.filter((item) => item.id !== id))
 
-  const send = async (event: SubmitEvent) => {
-    event.preventDefault()
+  const send = async (event?: { preventDefault: () => void }) => {
+    event?.preventDefault()
     const sessionID = active()
     const text = draft().trim()
     const files = attachments()
@@ -271,19 +295,27 @@ export default function App() {
     void loadPath()
     void loadSessions()
     void loadPermissions()
-    void loadStatus()
   }
 
   const toggle = (id: string) => setExpanded((current) => ({ ...current, [id]: !current[id] }))
+
+  /** Le fil suit son propre bas : un tour ajouté est toujours visible. */
+  let scroller: HTMLDivElement | undefined
+  createEffect(() => {
+    messages()
+    if (scroller) scroller.scrollTop = scroller.scrollHeight
+  })
 
   onMount(async () => {
     setHealth(await fetchHealth())
     await loadPath()
     await loadSessions()
     await loadPermissions()
-    await loadStatus()
 
     const healthTimer = setInterval(async () => setHealth(await fetchHealth()), 10_000)
+    // La charpente suit la largeur de fenêtre : le solveur est pur, donc rien à mémoriser ici.
+    const onResize = () => setViewport(window.innerWidth)
+    window.addEventListener("resize", onResize)
     // Debounced search: the list endpoint takes `search`, so the server does the filtering.
     let searchTimer: ReturnType<typeof setTimeout> | undefined
     createEffect(() => {
@@ -297,12 +329,8 @@ export default function App() {
 
     const unsubscribe = subscribeEvents({
       onEvent: (event) => {
-        setEvents((current) => [event, ...current].slice(0, MAX_EVENTS))
-
         if (event.type === "permission.asked" || event.type === "permission.replied") {
           setPermissions((current) => reducePermissions(current, event))
-          // Une demande est bloquante : elle ouvre son onglet plutôt que d'attendre d'être trouvée.
-          if (event.type === "permission.asked") setRightTab("permissions")
         }
         if (event.type === "session.created" || event.type === "session.deleted") void loadSessions()
 
@@ -326,32 +354,22 @@ export default function App() {
     onCleanup(() => {
       clearInterval(healthTimer)
       clearTimeout(searchTimer)
+      window.removeEventListener("resize", onResize)
       unsubscribe()
     })
   })
-
-  const [expanded, setExpanded] = createSignal<Record<string, boolean>>({})
-  const [permissions, setPermissions] = createSignal<PermissionRequest[]>([])
 
   const renderPart = (part: Part) => {
     if (part.type === "text") return <p class="part text">{part.text ?? ""}</p>
     if (part.type === "file") {
       const file = part as Extract<Part, { type: "file" }>
-      const label = filePartLabel(file)
-      return (
-        <div class="part file">
-          <Show when={isImageMime(file.mime ?? "") && file.url} fallback={<span class="fileicon">▤</span>}>
-            <img class="attach-preview" src={file.url} alt={label} />
-          </Show>
-          <span class="fname">{label}</span>
-        </div>
-      )
+      return <FileChip label={filePartLabel(file)} thumb={isImageMime(file.mime ?? "") ? file.url : undefined} />
     }
     if (part.type !== "tool") return <p class="part">{part.type}</p>
 
     const toolPart = part as Extract<Part, { type: "tool" }>
     return (
-      <ToolCall
+      <ToolLine
         tool={toolPart.tool}
         state={toolPart.state}
         open={Boolean(expanded()[toolPart.id])}
@@ -360,353 +378,267 @@ export default function App() {
     )
   }
 
-  const envTone = () => (!health()?.healthy ? "error" : stream().connected ? "ok" : "warn")
-  const envLabel = () =>
-    !health()?.healthy ? "serveur injoignable" : stream().connected ? "session locale · connecté" : "flux interrompu"
-
-  const mcpSummary = () => {
-    const { connected, total } = mcpCounts(mcp())
-    if (total === 0) return "aucun serveur MCP"
-    return `mcp ${connected}/${total} · agents ${agentCount(config())}`
+  /**
+   * Ce qui est sain ne s'affiche pas. Le bandeau n'existe que si quelque chose est cassé, et
+   * disparaît dès que c'est réparé — l'absence est le meilleur indicateur.
+   */
+  const notice = () => {
+    if (!health()?.healthy) return { text: "serveur injoignable", bad: true }
+    if (!stream().connected) return { text: "flux interrompu", bad: false }
+    return undefined
   }
 
   return (
-    <div class="layout">
-      <TitleBar
-        version={health()?.version ?? "—"}
-        context={workspaceName()}
-        envLabel={envLabel()}
-        envTone={envTone() as "ok" | "warn" | "error"}
-      >
-        <Show when={permissions().length > 0}>
-          <span class="pill warn">{permissions().length} permission(s)</span>
-        </Show>
-        <Show
-          when={authOpen()}
-          fallback={
-            <button
-              class="icon"
-              title="Identifiants du serveur (OPENCODE_SERVER_USERNAME / PASSWORD)"
-              onClick={() => setAuthOpen(true)}
-            >
-              {credentials ? "auth ✓" : "auth"}
-            </button>
-          }
-        >
-          <form
-            class="authform"
-            onSubmit={(event) => {
-              event.preventDefault()
-              rememberCredentials({ username: authUser(), password: authPass() })
-            }}
-          >
-            <input
-              type="text"
-              placeholder="utilisateur"
-              value={authUser()}
-              onInput={(event) => setAuthUser(event.currentTarget.value)}
-            />
-            <input
-              type="password"
-              placeholder="mot de passe"
-              value={authPass()}
-              onInput={(event) => setAuthPass(event.currentTarget.value)}
-            />
-            <button class="icon" type="submit">
-              appliquer
-            </button>
-            <button class="icon" type="button" onClick={() => rememberCredentials(undefined)}>
-              effacer
-            </button>
-            <button class="icon" type="button" onClick={() => setAuthOpen(false)}>
-              fermer
-            </button>
-          </form>
-        </Show>
-        <label class="dirfield">
-          <span>dossier</span>
-          <input
-            type="text"
-            placeholder={serverPath() ?? "répertoire du serveur"}
-            value={directory()}
-            onChange={(event) => applyDirectory(event.currentTarget.value)}
-          />
-        </label>
-        <code class="url">{serverUrl || "même origine"}</code>
-      </TitleBar>
+    <div class="layout" style={layoutStyle()}>
+      <aside class="rail">
+        <div class="grip" onPointerDown={startSidebarDrag} />
 
-      <aside class="sidebar">
-        <Brand name="opencodev2" tagline="agent généraliste" />
-
-        <button class="newSession" onClick={createSession}>
-          <span class="plus">+</span> Nouvelle session
-        </button>
+        <div class="rail-head">
+          <span class="wordmark">opencodev2</span>
+          <button class="ghost" title="Nouvelle session" onClick={() => void createSession()}>
+            +
+          </button>
+        </div>
 
         <input
           class="search"
           type="search"
-          placeholder="⌕ Rechercher une session…"
+          placeholder="Rechercher"
           value={query()}
           onInput={(event) => setQuery(event.currentTarget.value)}
         />
 
-        <SectionLabel label="Sessions" trailing={String(sessions().length)} />
-
-        <div class="ws">
-          <div class="wsGroup">
-            <FolderRow
-              name={workspaceName()}
-              count={sessions().length}
-              open={workspaceOpen()}
-              onToggle={() => setWorkspaceOpen((value) => !value)}
-            />
-            <Show when={workspaceOpen()}>
-              <div class="sessions">
-                <For each={sessions()}>
-                  {(session) => (
-                    <Show
-                      when={renaming() === session.id}
-                      fallback={
-                        <SessionRow
-                          title={session.title || "(sans titre)"}
-                          time={sessionTimestamp(session)}
-                          now={now()}
-                          active={session.id === active()}
-                          running={false}
-                          onSelect={() => void selectSession(session.id)}
-                        >
-                          <span class="rowActions">
-                            <button
-                              class="icon"
-                              title="Renommer"
-                              onClick={(event) => {
-                                event.stopPropagation()
-                                startRename(session)
-                              }}
-                            >
-                              ✎
-                            </button>
-                            <Show
-                              when={confirming() === session.id}
-                              fallback={
-                                <button
-                                  class="icon danger"
-                                  title="Supprimer"
-                                  onClick={(event) => {
-                                    event.stopPropagation()
-                                    setConfirming(session.id)
-                                  }}
-                                >
-                                  ✕
-                                </button>
-                              }
-                            >
-                              <button
-                                class="icon danger"
-                                title="Confirmer la suppression"
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  void removeSession(session)
-                                }}
-                              >
-                                confirmer
-                              </button>
-                              <button
-                                class="icon"
-                                title="Annuler"
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  setConfirming(undefined)
-                                }}
-                              >
-                                annuler
-                              </button>
-                            </Show>
-                          </span>
-                        </SessionRow>
-                      }
-                    >
-                      <input
-                        class="rename"
-                        autofocus
-                        value={renameDraft()}
-                        onInput={(event) => setRenameDraft(event.currentTarget.value)}
-                        onBlur={commitRename}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") void commitRename()
-                          if (event.key === "Escape") setRenaming(undefined)
+        <div class="rows">
+          <For each={sessions()}>
+            {(session) => (
+              <Show
+                when={renaming() === session.id}
+                fallback={
+                  <SessionRow
+                    title={session.title || "(sans titre)"}
+                    time={sessionTimestamp(session)}
+                    now={now()}
+                    active={session.id === active()}
+                    onSelect={() => void selectSession(session.id)}
+                  >
+                    <span class="row-actions">
+                      <button
+                        class="ghost"
+                        title="Renommer"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          startRename(session)
                         }}
-                      />
-                    </Show>
-                  )}
-                </For>
-              </div>
-            </Show>
-          </div>
+                      >
+                        ✎
+                      </button>
+                      <Show
+                        when={confirming() === session.id}
+                        fallback={
+                          <button
+                            class="ghost"
+                            title="Supprimer"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              setConfirming(session.id)
+                            }}
+                          >
+                            ✕
+                          </button>
+                        }
+                      >
+                        <button
+                          class="ghost"
+                          title="Confirmer la suppression"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            void removeSession(session)
+                          }}
+                        >
+                          supprimer
+                        </button>
+                        <button
+                          class="ghost"
+                          title="Annuler"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            setConfirming(undefined)
+                          }}
+                        >
+                          annuler
+                        </button>
+                      </Show>
+                    </span>
+                  </SessionRow>
+                }
+              >
+                <input
+                  class="rename"
+                  autofocus
+                  value={renameDraft()}
+                  onInput={(event) => setRenameDraft(event.currentTarget.value)}
+                  onBlur={commitRename}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") void commitRename()
+                    if (event.key === "Escape") setRenaming(undefined)
+                  }}
+                />
+              </Show>
+            )}
+          </For>
         </div>
 
-        <div class="sidebar-foot">
-          <ModelCard
-            model={currentModel(config()) ?? "défaut du serveur"}
-            sub={mcpSummary()}
-            tone={currentModel(config()) ? "ok" : "off"}
-          />
+        <div class="rail-foot">
+          <label class="folder" title="Dossier de travail">
+            <span>⌂</span>
+            <input
+              type="text"
+              placeholder={serverPath() ?? "répertoire du serveur"}
+              value={directory()}
+              onChange={(event) => applyDirectory(event.currentTarget.value)}
+            />
+          </label>
+          <Show
+            when={authOpen()}
+            fallback={
+              <button class="ghost" title={serverUrl || "même origine"} onClick={() => setAuthOpen(true)}>
+                {credentials ? "identifiants ✓" : "identifiants"}
+              </button>
+            }
+          >
+            <form
+              class="auth-form"
+              onSubmit={(event) => {
+                event.preventDefault()
+                rememberCredentials({ username: authUser(), password: authPass() })
+              }}
+            >
+              <input
+                type="text"
+                placeholder="utilisateur"
+                value={authUser()}
+                onInput={(event) => setAuthUser(event.currentTarget.value)}
+              />
+              <input
+                type="password"
+                placeholder="mot de passe"
+                value={authPass()}
+                onInput={(event) => setAuthPass(event.currentTarget.value)}
+              />
+              <div class="auth-row">
+                <button class="ghost bordered" type="submit">
+                  appliquer
+                </button>
+                <button class="ghost" type="button" onClick={() => rememberCredentials(undefined)}>
+                  effacer
+                </button>
+                <button class="ghost" type="button" onClick={() => setAuthOpen(false)}>
+                  fermer
+                </button>
+              </div>
+            </form>
+          </Show>
         </div>
       </aside>
 
       <main class="thread">
-        <Show when={error()}>
-          <p class="error">{error()}</p>
+        <Show when={columns().sidebar === 0 || notice()}>
+          <div class="thread-head">
+            <Show when={columns().sidebar === 0}>
+              <button class="ghost" title="Afficher les sessions" onClick={toggleSidebar}>
+                ☰
+              </button>
+            </Show>
+            <Show when={notice()}>
+              {(state) => (
+                <span class="notice" classList={{ bad: state().bad }}>
+                  {state().text}
+                </span>
+              )}
+            </Show>
+          </div>
         </Show>
 
-        <Show
-          when={active()}
-          fallback={
-            <div class="empty-state">
-              <p class="empty">Choisis ou crée une session pour commencer.</p>
+        <Show when={active()} fallback={<p class="empty">Choisis une session, ou crée-en une.</p>}>
+          <div class="scroll" ref={scroller}>
+            <div class="transcript">
+              <Show when={error()}>
+                <p class="error">{error()}</p>
+              </Show>
+              <For each={messages()}>
+                {(message) => (
+                  <Turn role={message.info.role}>
+                    <For each={message.parts}>{(part) => renderPart(part)}</For>
+                  </Turn>
+                )}
+              </For>
             </div>
-          }
-        >
-          <div class="chat">
-            <For each={messages()}>
-              {(message) => (
-                <ChatMessage
-                  role={message.info.role}
-                  avatar={message.info.role === "user" ? "MOI" : "OC"}
-                >
-                  <For each={message.parts}>{(part) => renderPart(part)}</For>
-                </ChatMessage>
-              )}
-            </For>
           </div>
 
-          <form class="chat-input" onSubmit={send}>
-            <Show when={attachments().length > 0}>
-              <ul class="pending">
-                <For each={attachments()}>
-                  {(item) => (
-                    <li>
-                      <Show when={isImageMime(item.mime)} fallback={<span class="fileicon">▤</span>}>
-                        <img class="thumb" src={item.dataUrl} alt={item.filename} />
-                      </Show>
-                      <span class="fname">{item.filename}</span>
-                      <span class="fsize">{fileSizeLabel(item.size)}</span>
-                      <button class="icon danger" type="button" title="Retirer" onClick={() => removeAttachment(item.id)}>
-                        ✕
-                      </button>
-                    </li>
-                  )}
-                </For>
-              </ul>
-            </Show>
-            <Show when={attachError()}>{(message) => <p class="error">{message()}</p>}</Show>
-            <span class="ci-model">{currentModel(config()) ?? "modèle par défaut"}</span>
-            <textarea
-              rows="2"
-              placeholder="Décrire une tâche, coller un contexte, joindre un fichier…"
-              value={draft()}
-              onInput={(event) => setDraft(event.currentTarget.value)}
-            />
-            <label class="icon attach" title="Joindre des fichiers">
-              +
-              <input
-                class="hidden-input"
-                type="file"
-                multiple
-                onChange={(event) => {
-                  void addFiles(event.currentTarget.files)
-                  // Remis à zéro pour qu'attacher deux fois le même fichier soit possible.
-                  event.currentTarget.value = ""
+          <form class="composer" onSubmit={send}>
+            <div class="composer-inner">
+              <Show when={attachments().length > 0}>
+                <ul class="pending">
+                  <For each={attachments()}>
+                    {(item) => (
+                      <li>
+                        <FileChip
+                          label={item.filename}
+                          thumb={isImageMime(item.mime) ? item.dataUrl : undefined}
+                          size={fileSizeLabel(item.size)}
+                          onRemove={() => removeAttachment(item.id)}
+                        />
+                      </li>
+                    )}
+                  </For>
+                </ul>
+              </Show>
+              <Show when={attachError()}>{(message) => <p class="error">{message()}</p>}</Show>
+              <textarea
+                rows="2"
+                placeholder="Décrire une tâche, coller un contexte, joindre un fichier…"
+                value={draft()}
+                onInput={(event) => setDraft(event.currentTarget.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault()
+                    void send()
+                  }
                 }}
               />
-            </label>
-            <button class="chat-send" type="submit" disabled={!draft().trim() && attachments().length === 0}>
-              Envoyer
-            </button>
+              <div class="composer-bar">
+                <label class="attach" title="Joindre des fichiers">
+                  +
+                  <input
+                    class="hidden-input"
+                    type="file"
+                    multiple
+                    onChange={(event) => {
+                      void addFiles(event.currentTarget.files)
+                      // Remis à zéro pour qu'attacher deux fois le même fichier soit possible.
+                      event.currentTarget.value = ""
+                    }}
+                  />
+                </label>
+                <span class="spacer" />
+                <button class="primary" type="submit" disabled={!draft().trim() && attachments().length === 0}>
+                  Envoyer
+                </button>
+              </div>
+            </div>
           </form>
         </Show>
       </main>
 
-      <aside class="panels">
-        <div class="tabs" role="tablist">
-          <button class="tab" classList={{ active: rightTab() === "events" }} onClick={() => setRightTab("events")}>
-            <span class="t-dot" /> Événements
-          </button>
-          <button
-            class="tab"
-            classList={{ active: rightTab() === "permissions" }}
-            onClick={() => setRightTab("permissions")}
-          >
-            <span class="t-dot" /> Permissions
-            <Show when={permissions().length > 0}>
-              <span class="count">{permissions().length}</span>
-            </Show>
-          </button>
-          <button class="tab" classList={{ active: rightTab() === "status" }} onClick={() => setRightTab("status")}>
-            <span class="t-dot" /> Statut
-          </button>
+      <aside class="side">
+        <div class="side-inner">
+          <For each={permissions()}>
+            {(request) => (
+              <PermissionSheet request={request} onReply={(reply) => void replyPermission(request, reply)} />
+            )}
+          </For>
         </div>
-
-        <Show when={rightTab() === "events"}>
-          <div class="panelbody">
-            <Show when={stream().lastError}>
-              <p class="error">{stream().lastError}</p>
-            </Show>
-            <ul class="eventlist">
-              <For each={events()}>
-                {(event) => (
-                  <li>
-                    <code>{event.type}</code>
-                    <Show when={event.properties && Object.keys(event.properties).length > 0}>
-                      <span class="props">{JSON.stringify(event.properties).slice(0, 120)}</span>
-                    </Show>
-                  </li>
-                )}
-              </For>
-            </ul>
-          </div>
-        </Show>
-
-        <Show when={rightTab() === "permissions"}>
-          <div class="panelbody">
-            <Show when={permissions().length > 0} fallback={<p class="empty">Aucune permission en attente.</p>}>
-              <For each={permissions()}>
-                {(request) => (
-                  <PermissionPanel request={request} onReply={(reply) => void replyPermission(request, reply)} />
-                )}
-              </For>
-            </Show>
-          </div>
-        </Show>
-
-        <Show when={rightTab() === "status"}>
-          <div class="panelbody">
-            <StatusPanel
-              lines={summarizeStatus({
-                health: health(),
-                config: config(),
-                mcp: mcp(),
-                pendingPermissions: permissions().length,
-              })}
-              rows={mcpRows(mcp())}
-            />
-          </div>
-        </Show>
       </aside>
-
-      <StatusBar
-        left={[
-          { label: health()?.healthy ? "connecté" : "déconnecté", tone: health()?.healthy ? "ok" : "error" },
-          { label: stream().connected ? "flux actif" : "flux interrompu", tone: stream().connected ? "ok" : "warn" },
-          { label: `${sessions().length} sessions` },
-          { label: `reconnexions ${stream().reconnects}` },
-        ]}
-        right={[
-          { label: `⎇ ${workspaceName()}` },
-          { label: mcpSummary() },
-          { label: currentModel(config()) ?? "modèle par défaut" },
-        ]}
-      />
     </div>
   )
 }
