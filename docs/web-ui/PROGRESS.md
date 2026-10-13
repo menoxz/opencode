@@ -1193,6 +1193,13 @@ Corrigé : les deux occupent leur place **en permanence** et se révèlent par l
    une section repliée. Chargé désormais au **premier dépliage** — même règle que `/provider`
    (6,7 Mo), à une autre échelle. Conséquence assumée : avant le premier clic, la section n'affiche
    pas de compte — un nombre qu'on ne connaît pas ne s'invente pas.
+3. **La partie menus n'était pas plafonnée.** Mesuré : repliée elle fait 139 px et laisse 617 px aux
+   sessions ; un groupe ouvert la porte à 379 px (sessions à 377 px) ; **deux groupes ouverts la
+   porteraient à ~619 px et ne laisseraient que ~190 px aux workspaces** — la liste qu'on vient
+   consulter, écrasée par le menu. Corrigé : `.rail-nav` est plafonnée à **45 %** du rail et défile
+   en interne (`overflow-y`), son en-tête restant `sticky`. Mesure après correction, deux groupes
+   ouverts : nav **405 px** pour un contenu de 618 px (donc elle défile), workspaces **405 px**,
+   liste **351 px**, 210 entrées et 19 sessions toujours rendues.
 
 ### Preuve
 

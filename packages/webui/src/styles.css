@@ -118,8 +118,13 @@ textarea {
   border-right: 1px solid var(--line-1);
 }
 
+/* La partie menus est **plafonnée** : mesuré, deux groupes ouverts la portaient à ~619 px et ne
+   laissaient que ~190 px aux workspaces — la liste qu'on vient consulter était écrasée par le
+   menu. Elle se plafonne à 45 % du rail et défile en interne au-delà. */
 .rail-nav {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  max-height: 45%;
+  overflow-y: auto;
   padding-bottom: 6px;
   border-bottom: 1px solid var(--line-1);
 }
@@ -228,12 +233,18 @@ textarea {
   white-space: nowrap;
 }
 
+/* Le nom du produit et « nouvelle session » ne défilent pas avec les menus : ils restent la
+   poignée de la partie A quand elle défile en interne. */
 .rail-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   padding: 16px var(--gutter) 6px;
+  background: var(--bg-1);
 }
 
 .wordmark {
@@ -424,6 +435,7 @@ textarea {
 }
 
 .rail-foot {
+  flex: 0 0 auto;
   padding: 12px var(--gutter) 16px;
   border-top: 1px solid var(--line-1);
 }
