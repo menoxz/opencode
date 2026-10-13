@@ -1183,7 +1183,7 @@ du détail.
 
 Corrigé : les deux occupent leur place **en permanence** et se révèlent par l'`opacity`.
 
-### Deux défauts trouvés par la mesure, corrigés
+### Trois défauts trouvés par la mesure, corrigés
 
 1. **La section menus restait vide, sans erreur.** `/command` et `/plugin` étaient absents de
    `API_PREFIXES` (`vite.config.ts`) : Vite servait `index.html` avec un **status 200**, le SDK
