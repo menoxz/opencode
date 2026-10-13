@@ -1373,3 +1373,75 @@ plus haut. Ce qui ne l'est pas : le clic lui-même. À rejouer quand l'instance 
 
 `saveConfig` posait la notice de succès **puis** rechargeait la section — or le rechargement commence
 par effacer les messages. **La notice ne pouvait jamais être vue.** Corrigé en rechargeant d'abord.
+
+---
+
+## Lot suivant — le panneau de réglages comme composant (livré)
+
+Deux reproches, dont un de méthode : « **tu as exposé ce qui pouvait être exposé sans pouvoir
+expliquer pourquoi c'est exposé et comment c'est stylisé** », et « **as-tu mis une navigation
+horizontale, pourquoi ?** ».
+
+### L'échec de méthode, nommé
+
+J'avais appris quatre principes — l'API n'est pas la cible, on enlève, la lisibilité prime, le
+fréquent passe devant — et je les avais appliqués **au rail**, le composant dont l'utilisateur
+parlait. Puis j'ai recommencé l'erreur exacte dans les réglages, **parce qu'il n'en avait pas parlé**.
+
+⇒ **Un principe appris vaut pour tout l'écran, pas pour le composant où il a été appris** (`AGENTS.md`
+§13). Le non-dit ne porte pas sur le contenu, il porte sur le composant entier.
+
+### Ce qui était faux
+
+| défaut | pourquoi |
+|---|---|
+| navigation **horizontale** (`flex-wrap`) | prise par défaut, pas décidée. Tient à 5 sections, **casse à 12** |
+| contenu = ce que l'API rend, dans son ordre | 2 réglages exposés sur les **37** clés du schéma |
+| **six** tailles de police ad-hoc | aucune échelle, donc aucune hiérarchie |
+| 8 fournisseurs ouverts d'un coup, 34 agents listés | aucun repli, aucune recherche |
+
+### Ce qui est fait
+
+- **Navigation verticale** en colonne (184 px), feuille portée à **760 px** : deux colonnes ne
+  tenaient pas dans 560. Convention des panneaux de réglages (Réglages Système, VS Code, GitHub,
+  Linear, Notion), et seule forme qui ne change pas quand une section s'ajoute.
+- **Les réglages sont déclarés comme données** (`SETTING_SPECS`) : clé, libellé d'écran, raison d'être,
+  contrôle. Le composant ne fait que rendre — ajouter un réglage, c'est ajouter une entrée.
+- **Le contrôle suit la nature** : booléen → interrupteur, énumération → liste de choix (libellés
+  d'écran : « demander avant », jamais `manual`), chaîne → champ.
+- **Trois jetons typographiques** (`--fs-label`, `--fs-note`, `--fs-meta`) au lieu de six tailles
+  écrites à la main.
+- Fournisseurs **repliables** (un seul ouvert), agents **cherchables**.
+- `generalLines()` et son `<dl>` **supprimés** : une ligne qui redit un champ affiché juste au-dessus
+  ne dit rien.
+
+### Preuve
+
+```
+vitest run      -> 12 fichiers, 189 tests, exit 0
+tsgo --noEmit   -> exit 0
+vite build      -> 107,94 ko brut / 28,80 ko compressés
+```
+
+Géométrie mesurée par CDP sur l'écran réel, 1440×1000 :
+
+| mesure | valeur |
+|---|---|
+| largeur de la feuille | **760 px** |
+| `.sheet-nav` | `flex-direction: column`, **184 px** |
+| `.sheet-main` | grille **184px 574px** — deux colonnes |
+| onglets | **8** : modèles · général · comportement · outils · fournisseurs · agents · serveurs MCP · plugins |
+| tailles de police | label **12,5** · description **11,5** · titre **12** — trois, pas six |
+| une ligne | grille **348px 178px** (libellé / contrôle) |
+| contrôles par nature | **2 interrupteurs** (`autoshare`, `snapshot`), **2 listes de choix** (`share`, `autoupdate`) |
+| libellés de comportement | partage des sessions · partage automatique · mise à jour · instantanés |
+
+**Limite** : ces preuves sont des **mesures du DOM**, jamais une image — `Page.captureScreenshot`
+reste inatteignable. Le rendu est vérifié en géométrie, pas à l'œil.
+
+### Faute de méthode corrigée
+
+Le commit `6e98b8f34` est passé avec un **typecheck en échec** : le garde testait `$LASTEXITCODE`
+après le build, donc le code du build, pas celui du typecheck. Corrigé (`82f090956`), et le garde
+vérifie désormais **les trois codes**. Même classe de défaut que ceux qu'on traque : un contrôle qui
+ne contrôle pas ce qu'il prétend.
