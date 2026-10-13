@@ -258,6 +258,126 @@ export function withValue(choices: Choice[], current: string): Choice[] {
 }
 
 /**
+ * La clé d'un identifiant **en cours de saisie**, propre à un fournisseur.
+ *
+ * Sans le préfixe, une clé tapée pour l'un s'afficherait dans le champ de l'autre : les méthodes
+ * d'authentification déclarent les mêmes noms de champ (`key`, `apiKey`) pour tous les fournisseurs,
+ * donc une carte plate n'a rien pour les distinguer. C'est un défaut silencieux — l'écran reste
+ * cohérent, il montre simplement la mauvaise valeur.
+ */
+export function scopeKey(providerID: string, key: string): string {
+  return `${providerID}:${key}`
+}
+
+/** Les identifiants d'**un** fournisseur, extraits de la carte plate. */
+export function scopedValues(values: Record<string, string>, providerID: string): Record<string, string> {
+  const prefix = `${providerID}:`
+  const scoped: Record<string, string> = {}
+  for (const [key, value] of Object.entries(values)) {
+    if (key.startsWith(prefix)) scoped[key.slice(prefix.length)] = value
+  }
+  return scoped
+}
+
+/* =============================================================================
+   Les fournisseurs — la collection, puis le détail.
+
+   Un écran de réglages décompose sa donnée en **1 → n** : un fournisseur existe **pour ses modèles**.
+   Ces trois projections servent les deux niveaux, et la première règle qu'elles respectent est celle
+   de la charge : `/config/providers` porte les clés **en clair** (7 champs `key`/`apiKey` mesurés), donc
+   aucun résumé ne lit une valeur de secret — il n'en retient que la **présence**. Ce qui entre dans un
+   signal est ce qui s'affiche, et rien d'autre.
+   ============================================================================= */
+
+export type ProviderSummary = {
+  id: string
+  name: string
+  /** Le nombre de modèles que ce fournisseur déclare. */
+  models: number
+  /** Un identifiant est enregistré. C'est **le fait**, jamais la valeur. */
+  ready: boolean
+}
+
+/** La présence d'un identifiant, sans jamais le lire. */
+function hasCredentials(entry: Record<string, unknown>): boolean {
+  for (const value of [entry.key, entry.apiKey]) {
+    if (typeof value === "string" && value.trim()) return true
+  }
+  for (const value of [entry.keys, entry.apiKeys]) {
+    if (Array.isArray(value) && value.length > 0) return true
+  }
+  const options = entry.options
+  if (options && typeof options === "object") {
+    const nested = options as Record<string, unknown>
+    if (typeof nested.apiKey === "string" && nested.apiKey.trim()) return true
+    if (Array.isArray(nested.apiKeys) && nested.apiKeys.length > 0) return true
+  }
+  return false
+}
+
+function providerSummary(entry: unknown): ProviderSummary | undefined {
+  if (!entry || typeof entry !== "object") return undefined
+  const record = entry as Record<string, unknown>
+  const id = record.id
+  if (typeof id !== "string" || !id) return undefined
+  const name = typeof record.name === "string" && record.name.trim() ? record.name.trim() : id
+  const models = record.models && typeof record.models === "object" ? Object.keys(record.models).length : 0
+  return { id, name, models, ready: hasCredentials(record) }
+}
+
+/** Les fournisseurs **configurés** — la grille au repos, celle qu'on règle. */
+export function providerSummaries(payload: unknown): ProviderSummary[] {
+  const providers = (payload as { providers?: unknown } | undefined)?.providers
+  if (!Array.isArray(providers)) return []
+  const out: ProviderSummary[] = []
+  for (const entry of providers) {
+    const summary = providerSummary(entry)
+    if (summary) out.push(summary)
+  }
+  return out
+}
+
+/**
+ * Le catalogue du serveur — 228 fournisseurs, 8 775 modèles, 6,7 Mo.
+ *
+ * Il n'est demandé qu'**au premier caractère tapé** dans la recherche : la grille au repos montre ce
+ * qu'on a, et on ne cherche dans le catalogue que pour ajouter ce qu'on n'a pas. Le poids suit donc
+ * l'intention au lieu de précéder l'écran.
+ */
+export function catalogSummaries(payload: unknown): ProviderSummary[] {
+  const root = payload as { all?: unknown; providers?: unknown } | undefined
+  const list = Array.isArray(root?.all) ? root.all : Array.isArray(root?.providers) ? root.providers : []
+  const out: ProviderSummary[] = []
+  for (const entry of list) {
+    const summary = providerSummary(entry)
+    if (summary) out.push(summary)
+  }
+  return out
+}
+
+/**
+ * Les modèles d'**un** fournisseur — le « n » de la relation.
+ *
+ * Le libellé perd son suffixe de fournisseur, contrairement à celui d'un contrôle global : ici le
+ * fournisseur **est** le contexte, donc le répéter sur chaque ligne redirait ce que l'en-tête vient de
+ * dire. La règle « un libellé identifie sa valeur à lui seul » vaut pour un choix global.
+ */
+export function providerModelChoices(payload: unknown, providerID: string): Choice[] {
+  const providers = (payload as { providers?: unknown } | undefined)?.providers
+  if (!Array.isArray(providers)) return []
+  const entry = providers.find((candidate) => (candidate as { id?: unknown } | undefined)?.id === providerID)
+  const models = (entry as { models?: unknown } | undefined)?.models
+  if (!models || typeof models !== "object") return []
+  const out: Choice[] = []
+  for (const [id, raw] of Object.entries(models as Record<string, unknown>)) {
+    const name = raw && typeof raw === "object" ? (raw as { name?: unknown }).name : undefined
+    out.push({ value: id, label: typeof name === "string" && name.trim() ? name.trim() : id })
+  }
+  out.sort((left, right) => left.label.localeCompare(right.label))
+  return out
+}
+
+/**
  * Le général — l'identité, l'environnement, et **les défauts**.
  *
  * `model`, `small_model` et `default_agent` viennent de l'ancienne section « models ». Le premier

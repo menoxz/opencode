@@ -1690,72 +1690,220 @@ textarea {
   flex: 1;
 }
 
-/* ---- Un fournisseur : repliable, un seul ouvert à la fois ----
+/* ---- Providers : la collection (une grille), puis le détail ----
 
-   Huit fournisseurs ouverts d'un coup, c'est huit formulaires concurrents ; un seul ouvert, c'est
-   une décision à la fois. */
+   Un fournisseur existe **pour ses modèles** : la page le montre au lieu d'empiler des formulaires.
+   Monochrome, bordures fines, aucune ombre — la grille se lit par ses mots, pas par ses cartes. */
 
-.provider {
-  border-bottom: 1px solid var(--line-1);
-}
-
-.provider:last-child {
-  border-bottom: 0;
-}
-
-.provider-head {
+.prov-search {
   display: flex;
   align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 9px 0;
-  color: var(--text-1);
-  font-size: var(--fs-base);
-  text-align: left;
+  gap: 10px;
+  padding-bottom: 12px;
 }
 
-.provider-head:hover {
-  color: var(--text-1);
-}
-
-.provider-head .glyph {
-  flex: 0 0 auto;
-  color: var(--text-3);
-}
-
-.provider-name {
+.prov-search .set-input {
   flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--mono);
-  font-size: var(--fs-label);
+  max-width: min(440px, 44vw);
 }
 
-.provider-count {
+.prov-count {
   color: var(--text-3);
   font-size: var(--fs-meta);
-  font-variant-numeric: tabular-nums;
 }
 
-.provider-body {
-  display: flex;
-  flex-direction: column;
+.prov-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 8px;
-  padding: 2px 0 12px 20px;
 }
 
-.provider-method {
+.prov-tile {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--line-1);
+  border-radius: 9px;
+  background: #00000014;
+  color: var(--text-1);
+  text-align: left;
 }
 
-.provider-method-label {
+.prov-tile:hover {
+  border-color: var(--line-2);
+  background: #ffffff08;
+}
+
+.prov-tile:focus-visible {
+  outline: 2px solid var(--line-2);
+  outline-offset: 1px;
+}
+
+.prov-tile-name {
+  overflow: hidden;
+  font-size: var(--fs-base);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prov-tile-models {
+  color: var(--text-3);
+  font-size: var(--fs-meta);
+}
+
+/* L'état est un **mot**, avec un point. Un état qui ne se lit qu'en couleur ne se lit pas. */
+.prov-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-3);
+  font-size: var(--fs-meta);
+}
+
+.prov-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.prov-state.is-ready {
+  color: var(--text-2);
+}
+
+.prov-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+/* Le retour **nomme** ce qu'on quitte, et où l'on revient : une flèche seule ne dit pas d'où l'on vient. */
+.prov-back {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-3);
+  font-size: var(--fs-note);
+}
+
+.prov-back:hover {
+  color: var(--text-1);
+}
+
+.prov-back-sep {
+  padding: 0 5px;
+  color: var(--line-2);
+}
+
+.prov-back-name {
+  color: var(--text-1);
+}
+
+.prov-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line-1);
+}
+
+.prov-pane-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  color: var(--text-1);
+  font-size: var(--fs-title);
+  font-weight: 500;
+}
+
+.prov-method {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.prov-method-label {
+  min-width: 76px;
   color: var(--text-2);
   font-size: var(--fs-note);
 }
+
+.prov-models-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.prov-models-filter {
+  flex: 1;
+  max-width: min(320px, 40vw);
+  margin-left: auto;
+}
+
+/* La liste est bornée et défile avec **notre** barre, comme celle du contrôle de choix. */
+.prov-models {
+  max-height: 16rem;
+  overflow-y: auto;
+  border: 1px solid var(--line-1);
+  border-radius: 8px;
+  scrollbar-color: var(--bluish-700) transparent;
+  scrollbar-width: thin;
+}
+
+.prov-models::-webkit-scrollbar {
+  width: 10px;
+}
+
+.prov-models::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.prov-models::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: var(--bluish-700);
+  background-clip: content-box;
+}
+
+.prov-models::-webkit-scrollbar-thumb:hover {
+  background: var(--bluish-600);
+  background-clip: content-box;
+}
+
+.prov-model {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line-1);
+}
+
+.prov-model:last-child {
+  border-bottom: 0;
+}
+
+.prov-model-name {
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: var(--fs-base);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prov-default {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line-1);
+}
+
+/* L'accordéon d'un fournisseur vivait ici (`.provider`, `.provider-head`, `.provider-name`,
+   `.provider-count`, `.provider-body`, `.provider-method`). Il est remplacé par la grille et le détail
+   de `providers.tsx` — mêmes raisons que `ProviderBlock` côté code : ce n'était pas la bonne forme. */
 
 .sheet-ok,
 .sheet-err {

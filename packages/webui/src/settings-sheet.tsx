@@ -1,14 +1,10 @@
 import { For, Show } from "solid-js"
 import { mcpTone, modeLabel, type AgentRow, type McpProblem } from "./config"
-import { ChevronIcon, PluginIcon, SettingIcon } from "./icons"
+import { PluginIcon, SettingIcon } from "./icons"
 import type { PluginEntry } from "./nav"
 import { Picker } from "./picker"
 import {
-  isFormFillable,
-  methodFields,
-  methodLabel,
   withValue,
-  type AuthMethod,
   type Choice,
   type SettingSpec,
   type SettingsSection,
@@ -408,73 +404,12 @@ export function ServerBlock(props: {
   )
 }
 
-/**
- * Un fournisseur — **repliable, un seul ouvert à la fois**.
- *
- * Huit fournisseurs ouverts d'un coup, c'est huit formulaires concurrents ; un seul ouvert, c'est
- * une décision à la fois. Le compte des méthodes est dans l'en-tête, donc il n'y a pas de titre de
- * section à redire.
- *
- * Une méthode `oauth` **ne se remplit pas** : elle se connecte. Le composant le dit au lieu de
- * montrer un champ inerte.
- */
-export function ProviderBlock(props: {
-  id: string
-  methods: AuthMethod[]
-  open: boolean
-  onToggle: () => void
-  values: Record<string, string>
-  busy?: boolean
-  onInput: (key: string, value: string) => void
-  onSubmit: (method: AuthMethod) => void
-}) {
-  return (
-    <div class="provider">
-      <button class="provider-head" onClick={() => props.onToggle()}>
-        <ChevronIcon size={12} open={props.open} />
-        <span class="provider-name">{props.id}</span>
-        <span class="provider-count">{props.methods.length}</span>
-      </button>
-
-      <Show when={props.open}>
-        <div class="provider-body">
-          <For each={props.methods}>
-            {(method) => (
-              <div class="provider-method">
-                <span class="provider-method-label">{methodLabel(method)}</span>
-                <Show
-                  when={isFormFillable(method)}
-                  fallback={<span class="set-note">connect in the browser — nothing to type here</span>}
-                >
-                  <div class="set-control">
-                    <For each={methodFields(method)}>
-                      {(field) => (
-                        <input
-                          class="set-input"
-                          type={field.secret ? "password" : "text"}
-                          placeholder={field.placeholder ?? field.label}
-                          title={field.label}
-                          value={props.values[field.key] ?? ""}
-                          onInput={(event) => props.onInput(field.key, event.currentTarget.value)}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") props.onSubmit(method)
-                          }}
-                        />
-                      )}
-                    </For>
-                    <button class="ghost bordered" disabled={props.busy} onClick={() => props.onSubmit(method)}>
-                      {props.busy ? "…" : "Save"}
-                    </button>
-                  </div>
-                </Show>
-              </div>
-            )}
-          </For>
-        </div>
-      </Show>
-    </div>
-  )
-}
+/*
+   Un fournisseur repliable vivait ici (`ProviderBlock`) : huit formulaires empilés, un seul ouvert.
+   C'était un progrès sur huit ouverts, mais ce n'était pas la bonne forme — la relation qui donne sa
+   raison d'être au fournisseur, **ses modèles**, restait absente de l'écran. La page vit maintenant
+   dans `providers.tsx` : la grille, puis le détail d'un fournisseur et de ses modèles.
+*/
 
 /**
  * Les agents — **cherchables**, parce qu'ils sont 34.

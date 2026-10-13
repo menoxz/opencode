@@ -1885,3 +1885,63 @@ Trois résidus, inchangés : les clés des fournisseurs en clair dans la répons
 côté serveur) ; une liste d'interpréteurs fermée aux quatre que le serveur cherche lui-même (`nu`,
 `fish`, WSL) ; et le cache, qui vit **le temps de la page** — un rechargement le vide, ce qui est le
 comportement voulu mais n'est pas écrit à l'écran comme tel.
+
+## Lot suivant — la page Providers : la collection se cherche, le détail se règle (livré)
+
+La règle était écrite dans `CIBLE.md` **avant** le premier appel d'API, et c'est ce qui a tenu : un
+écran de réglages décompose sa donnée en **1 → n**. La collection est une grille qu'on cherche, un
+élément est une page qu'on règle. Jamais sept formulaires empilés — c'est-à-dire jamais un catalogue
+qui prend la place du réglage.
+
+### L'API n'a pas décidé l'écran
+
+Le sondage a suivi la cible, pas l'inverse. Quatre verdicts, dont un qui tombe :
+
+- **R1 tenu** — `models` est une **carte** dans `/config/providers` (122 entrées pour `orcarouter`),
+  pas une liste par fournisseur : le détail s'affiche sans second appel.
+- **R2 tenu, mais deux magasins** — une clé s'écrit par l'authentification (`PUT /auth/{providerID}`,
+  `POST /auth/{id}/keys`), une `baseURL` par la configuration (`provider.<id>.options.baseURL` dans
+  `/global/config`). Un seul `Save` écrit donc à deux endroits ; l'écran le dit au lieu de le cacher.
+- **R3 tombe** — il n'existe pas de modèle par défaut **par fournisseur** : `Config.model` est global.
+  Le contrôle s'appelle donc « Default for new sessions » et nomme sa portée, au lieu de promettre un
+  défaut par fournisseur que le serveur n'a pas.
+- **R4 tenu** — `whitelist`/`blacklist` et les surcharges `models.<id>` passent par `/global/config`,
+  et `PATCH /config` matérialise un `config.json` à la racine du dépôt (mesuré) : un panneau de
+  réglages vise `/global/config`, qui ne dépose rien dans l'arbre de travail.
+
+`ProviderBlock` disparaît de `settings-sheet.tsx` : la section `Providers` porte désormais
+`providers.tsx` (`ProviderGrid`, `ProviderDetail`, `ProvidersSection`), et le schéma de l'écran vit
+dans `settings.ts` (`providerSummary`, `catalogSummaries`, `providerModelChoices`, `scopeKey`,
+`scopedValues`) — les valeurs saisies sont préfixées `id:clé` et relues par `providerValuesFor(id)`.
+
+### Le contrôle de choix, une fois pour toutes
+
+Les quatre listes de `General` avaient chacune leur `<select>` natif — et un défaut mesuré : quand les
+`<option>` arrivent **après** la valeur posée par le code, le select retombe sur sa première option et
+n'y revient plus (`domValue: ""`, `selectedIndex: 0`). Un mensonge à l'écran, que jsdom ne rejoue pas —
+un test « monte puis vérifie » passe sur le code fautif.
+
+Le `<select>` est donc remplacé partout par `picker.tsx` : un contrôle cherchable, une popup en
+`position: fixed`, avec sa propre barre de défilement (un `<select>` natif ne peut pas obéir : sa liste
+est dessinée par le système). Mesuré au CDP : 697 entrées, filtre focalisé à l'ouverture — la `ref`
+Solid étant appelée **avant** l'insertion du nœud, le focus est posé dans un `queueMicrotask`.
+
+### Preuve
+
+```
+vitest run    -> 14 fichiers, 242 tests, exit 0
+tsgo --noEmit -> exit 0
+
+CDP, onglet 5180, section Providers :
+  grille   7 tuiles  |  count "7 of yours"  |  première tuile "OrcaRouter"
+  détail   titres ["OrcaRouter ready", "122 models"]  |  122 lignes de modèles
+           filtre présent  |  libellé "Default for new sessions"  |  état "ready"
+  retour   "← Providers / OrcaRouter"  ->  grille de nouveau, détail disparu
+```
+
+### Ce qui reste
+
+Deux résidus du lot : la page relit `/config/providers` (531 ko) à chaque sélection, et l'écriture
+d'une clé n'est pas vérifiée de bout en bout — la vérification CDP s'est arrêtée avant d'écrire quoi
+que ce soit côté serveur, volontairement (le fournisseur ouvert était déjà `ready`, donc aucun
+formulaire de méthode à l'écran). Restent aussi les trois résidus du lot précédent, inchangés.

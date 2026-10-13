@@ -35,9 +35,9 @@ import {
   GeneralSection,
   McpSection,
   PluginsSection,
-  ProviderBlock,
   SettingsSheet,
 } from "./settings-sheet"
+import { ProvidersSection } from "./providers"
 import {
   SETTINGS_SECTIONS,
   SETTING_SPECS,
@@ -48,7 +48,12 @@ import {
   authBody,
   authMethods,
   modelCatalog,
-  providerIDs,
+  catalogSummaries,
+  providerModelChoices,
+  providerSummaries,
+  scopeKey,
+  scopedValues,
+  type ProviderSummary,
   settingDisplay,
   settingGroups,
   settingValue,
@@ -158,6 +163,20 @@ export default function App() {
   const [settingsSection, setSettingsSection] = createSignal<SettingsSectionKey>("general")
   const [providerAuth, setProviderAuth] = createSignal<ProviderAuth | undefined>()
   const [providerValues, setProviderValues] = createSignal<Record<string, string>>({})
+  /**
+   * Les fournisseurs **résumés**, et leurs modèles.
+   *
+   * Ce sont les deux seules choses qui sortent de la charge de `/config/providers`, laquelle porte les
+   * clés **en clair** (7 champs `key`/`apiKey` mesurés). Le résumé retient `ready: boolean` — le fait
+   * qu'un identifiant existe, jamais sa valeur. La projection se fait au chargement, et la charge
+   * n'entre dans aucun signal.
+   */
+  const [providerRows, setProviderRows] = createSignal<ProviderSummary[]>([])
+  const [providerModels, setProviderModels] = createSignal<Record<string, Choice[]>>({})
+  /** Le catalogue (228 fournisseurs, 6,7 Mo) — vide tant qu'on n'a pas cherché. */
+  const [providerCatalog, setProviderCatalog] = createSignal<ProviderSummary[]>([])
+  const [catalogPending, setCatalogPending] = createSignal(false)
+  const [providerQuery, setProviderQuery] = createSignal("")
   const [pluginSpec, setPluginSpec] = createSignal("")
   /** Les valeurs saisies, par clé de réglage — avant enregistrement. */
   const [specDrafts, setSpecDrafts] = createSignal<Record<string, string>>({})
@@ -169,7 +188,7 @@ export default function App() {
   /** La recherche d'agents : 34 lignes ne se parcourent pas, l'utilisateur sait ce qu'il cherche. */
   const [agentQuery, setAgentQuery] = createSignal("")
   /** Un seul fournisseur ouvert à la fois : huit formulaires concurrents, c'est huit décisions. */
-  const [providerOpen, setProviderOpen] = createSignal<string | undefined>()
+  const [providerSelected, setProviderSelected] = createSignal<string | undefined>()
 
   // Plugins : les seuls accès hors session. Lus au montage — 708 octets, donc sans coût.
   const [plugins, setPlugins] = createSignal<PluginList | undefined>()
@@ -379,8 +398,25 @@ export default function App() {
     }
 
     if (section === "providers") {
-      const result = await client.provider.auth(scope()).catch(() => undefined)
-      setProviderAuth((result as { data?: ProviderAuth } | undefined)?.data)
+      // La grille a besoin des **noms**, du compte de modèles et de l'état de chaque fournisseur :
+      // `/provider/auth` ne les porte pas. On lit donc `/config/providers` (531 ko, 49 ms) — le même
+      // appel que `General` — et on projette aussitôt, parce que la charge porte les clés en clair.
+      const need = providerRows().length === 0
+      const [authResult, providersResult] = await Promise.all([
+        client.provider.auth(scope()).catch(() => undefined),
+        need ? client.config.providers().catch(() => undefined) : Promise.resolve(undefined),
+      ])
+      setProviderAuth((authResult as { data?: ProviderAuth } | undefined)?.data)
+      const payload = (providersResult as { data?: unknown } | undefined)?.data
+      if (payload) {
+        // **Projection immédiate** : rien de ce qui suit ne garde la charge. `ready` est un booléen,
+        // jamais la clé qui le rend vrai.
+        const rows = providerSummaries(payload)
+        setProviderRows(rows)
+        const index: Record<string, Choice[]> = {}
+        for (const row of rows) index[row.id] = providerModelChoices(payload, row.id)
+        setProviderModels(index)
+      }
       return
     }
 
@@ -483,6 +519,31 @@ export default function App() {
   const commitSpec = (spec: SettingSpec, raw: string | boolean) =>
     void saveConfig({ [spec.key]: settingValue(spec, raw) }, spec.label)
 
+  /** Les identifiants du fournisseur ouvert, extraits de la carte plate et préfixée. */
+  const providerValuesFor = (id: string) => scopedValues(providerValues(), id)
+
+  /**
+   * Chercher un fournisseur — le **seul** moment où le catalogue se paie.
+   *
+   * `GET /provider` rend 6,7 Mo en 1 198 ms (228 fournisseurs, 8 775 modèles). La grille au repos
+   * montre les sept qu'on a ; on ne cherche dans le catalogue que pour ajouter ce qu'on n'a pas, donc
+   * le poids suit l'intention au lieu de précéder l'écran. Une fois par session : le catalogue ne
+   * change pas sous nos pieds, et un rechargement le vide.
+   */
+  const searchProviders = (value: string) => {
+    setProviderQuery(value)
+    if (!value.trim() || providerCatalog().length > 0 || catalogPending()) return
+    setCatalogPending(true)
+    void client.provider
+      .list(scope())
+      .then((result) => setProviderCatalog(catalogSummaries((result as { data?: unknown } | undefined)?.data)))
+      .catch(() => setProviderCatalog([]))
+      .finally(() => setCatalogPending(false))
+  }
+
+  /** Le réglage `model` — le contrôle « default for new sessions » du détail d'un fournisseur. */
+  const modelSpec = () => (SETTING_SPECS.general ?? []).find((spec) => spec.key === "model")
+
   /**
    * Le pied de la page General — **deux faits** qu'aucun autre écran ne donne : où les réglages sont
    * réellement écrits, et quelle version du serveur les sert.
@@ -539,7 +600,7 @@ export default function App() {
    * vide écraserait une clé valide.
    */
   const saveProvider = async (providerID: string, method: AuthMethod) => {
-    const body = authBody(method, providerValues())
+    const body = authBody(method, providerValuesFor(providerID))
     if (!body) {
       setSettingsError("empty field — nothing was written")
       return
@@ -1198,24 +1259,35 @@ export default function App() {
           </Show>
 
           <Show when={settingsSection() === "providers"}>
+            {/* La section choisit elle-même entre la grille et le détail : une page qui décide de sa
+                mise en page se teste sans monter la moitié de l'application. */}
             <Show
-              when={providerIDs(providerAuth()).length > 0}
+              when={providerRows().length > 0 || providerSelected()}
               fallback={<p class="set-note">loading providers…</p>}
             >
-              <For each={providerIDs(providerAuth())}>
-                {(id) => (
-                  <ProviderBlock
-                    id={id}
-                    methods={authMethods(providerAuth(), id)}
-                    open={providerOpen() === id}
-                    onToggle={() => setProviderOpen(providerOpen() === id ? undefined : id)}
-                    values={providerValues()}
-                    busy={settingsBusy() === `provider:${id}`}
-                    onInput={(key, value) => setProviderValues((current) => ({ ...current, [key]: value }))}
-                    onSubmit={(method) => void saveProvider(id, method)}
-                  />
-                )}
-              </For>
+              <ProvidersSection
+                providers={providerRows()}
+                catalog={providerCatalog()}
+                query={providerQuery()}
+                onQuery={searchProviders}
+                catalogPending={catalogPending()}
+                selected={providerSelected()}
+                onSelect={setProviderSelected}
+                methods={authMethods(providerAuth(), providerSelected() ?? "")}
+                values={providerValuesFor(providerSelected() ?? "")}
+                busy={settingsBusy() === `provider:${providerSelected()}`}
+                onInput={(key, value) =>
+                  setProviderValues((current) => ({ ...current, [scopeKey(providerSelected() ?? "", key)]: value }))
+                }
+                onSubmit={(method) => void saveProvider(providerSelected() ?? "", method)}
+                models={providerModels()[providerSelected() ?? ""] ?? []}
+                defaultModel={modelSpec() ? specDraft(modelSpec() as SettingSpec) : ""}
+                defaultModelChoices={modelOptions()}
+                onDefaultModel={(value) => {
+                  const spec = modelSpec()
+                  if (spec) commitSpec(spec, value)
+                }}
+              />
             </Show>
           </Show>
 
