@@ -2103,7 +2103,23 @@ fait l'agent.
 ```
 vitest run     -> 16 fichiers, 306 tests, exit 0   (+42 pour ce lot)
 tsgo --noEmit  -> exit 0
+vite build     -> exit 0
 ```
+
+Poids après ce lot, mesuré (`bun run build`, vite 7.1.4) :
+
+| fichier | brut | gzip |
+|---|---|---|
+| `index.html` | 1,11 ko | 0,61 ko |
+| `assets/index-*.css` | 24,33 ko | 4,66 ko |
+| `assets/index-*.js` | 139,36 ko | 38,02 ko |
+| **total utile** | **164,8 ko** | **43,3 ko** |
+
+Budget de `WORKFLOW.md` §4 : premier rendu utile < 150 ko compressés, bundle total < 400 ko.
+**Respecté** — 43,3 ko compressés, soit un facteur 3,5 de marge. À noter pour la suite : le JS est
+passé de 78 à 139 ko brut depuis le lot « surface Statut », l'essentiel venant des lots `Providers`
+et de celui-ci ; la marge reste confortable mais elle se réduit, et c'est le seul chiffre du
+chantier qui va dans ce sens.
 
 Vérifié au navigateur sur l'**instance isolée** (Chrome 9222 → webui 5181 → serveur de dev 4097
 lisant la copie de la base), DOM lu par CDP :
