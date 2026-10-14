@@ -290,15 +290,17 @@ export function Picker(props: {
  * de deviner qu'une liste s'ouvrirait à la frappe. Ici on voit les projets, on voit lequel est
  * courant (la coche), et on choisit d'un clic.
  *
- * Il n'a **pas** de champ de filtre, contrairement au `Picker` : sept dossiers se lisent d'un coup
- * d'œil, et un filtre serait une ligne de plus à franchir avant d'atteindre le premier projet. La
- * mécanique du popup, elle, est identique — et pour une raison : elle a été payée par des défauts
- * mesurés (fermeture au défilement de sa propre liste, fermeture au clic extérieur, position fixe
- * depuis le rectangle du déclencheur).
+ * Il porte un **champ de recherche**, comme le `Picker`. La première version s'en passait, en
+ * s'appuyant sur la référence — qui montre sept dossiers. La mesure a dit le contraire : ce serveur
+ * en connaît **vingt-six**, et sept suffisaient seulement dans l'image. Le champ est donc la
+ * première ligne de la liste et prend le focus, ce qui laisse taper tout de suite.
  *
- * `Add workspace…` est une **vraie** action, pas un ornement : aucun navigateur ne sait ouvrir le
- * sélecteur de dossier du serveur, donc la ligne révèle un champ où l'on écrit le chemin. Les
- * dossiers déjà connus, eux, se choisissent d'un clic.
+ * Il n'est **pas** un ornement : sans lui, retrouver un dossier demande de parcourir la liste à
+ * l'œil, et un nom qu'on ne voit pas est un nom qu'on ne choisit pas.
+ *
+ * La mécanique du popup, elle, est identique au `Picker` — et pour une raison : elle a été payée par
+ * des défauts mesurés (fermeture au défilement de sa propre liste, fermeture au clic extérieur,
+ * position fixe depuis le rectangle du déclencheur).
  */
 export function FolderPicker(props: {
   /** Les dossiers connus du serveur — des chemins absolus. */
@@ -311,6 +313,7 @@ export function FolderPicker(props: {
   onChange: (path: string) => void
 }) {
   const [open, setOpen] = createSignal(false)
+  const [query, setQuery] = createSignal("")
   const [active, setActive] = createSignal(0)
   const [adding, setAdding] = createSignal(false)
   const [draft, setDraft] = createSignal("")
@@ -318,12 +321,29 @@ export function FolderPicker(props: {
   let trigger: HTMLButtonElement | undefined
   let pop: HTMLDivElement | undefined
   let list: HTMLDivElement | undefined
+  let filter: HTMLInputElement | undefined
   let addField: HTMLInputElement | undefined
 
   const choices = createMemo(() => folderChoices(props.folders, props.value))
+
+  /**
+   * Les choix **visibles** — le filtre porte sur le nom **et sur le chemin**.
+   *
+   * Le nom seul ne suffit pas : `folderChoices` désambiguïse deux dossiers homonymes par leur
+   * segment parent, mais c'est le chemin qui dit vraiment où l'on est. Chercher `jeanluc` doit
+   * ramener `C:\jeanluc\…` même quand la ligne affiche un nom court.
+   */
+  const visible = createMemo(() => {
+    const needle = query().trim().toLowerCase()
+    if (!needle) return choices()
+    return choices().filter(
+      (choice) => choice.name.toLowerCase().includes(needle) || choice.path.toLowerCase().includes(needle),
+    )
+  })
+
   /** La ligne d'ajout est la dernière : le clavier la parcourt comme les autres. */
-  const ADD = () => choices().length
-  const rows = () => choices().length + 1
+  const ADD = () => visible().length
+  const rows = () => visible().length + 1
 
   const place = () => {
     const rect = trigger?.getBoundingClientRect()
@@ -338,12 +358,16 @@ export function FolderPicker(props: {
     place()
     setAdding(false)
     setDraft("")
+    // La requête repart à vide : ce qu'on avait tapé la fois précédente ne doit pas filtrer la
+    // liste qu'on rouvre.
+    setQuery("")
     // La ligne active part sur le dossier **courant** : c'est celui qu'on vient voir.
     setActive(Math.max(0, choices().findIndex((choice) => choice.current)))
     setOpen(true)
-    // Le focus se pose **après** le rendu : une `ref` est appelée avant l'insertion dans le
-    // document, et `focus()` sur un élément détaché ne fait rien (défaut mesuré sur le `Picker`).
-    queueMicrotask(() => pop?.focus())
+    // Le focus se pose **après** le rendu, et sur le **filtre** : c'est la première ligne de la
+    // liste, donc l'endroit où l'on écrit. Une `ref` est appelée avant l'insertion dans le document,
+    // et `focus()` sur un élément détaché ne fait rien (défaut mesuré sur le `Picker`).
+    queueMicrotask(() => filter?.focus())
   }
 
   const close = () => setOpen(false)
@@ -424,7 +448,7 @@ export function FolderPicker(props: {
     } else if (event.key === "Enter") {
       event.preventDefault()
       if (active() === ADD()) startAdd()
-      else pick(choices()[active()]?.path)
+      else pick(visible()[active()]?.path)
     } else if (event.key === "Escape") {
       event.preventDefault()
       dismiss()
@@ -466,8 +490,23 @@ export function FolderPicker(props: {
           }}
           onKeyDown={onKey}
         >
+          {/* Le filtre est la **première ligne** de la liste, et il prend le focus : on ouvre pour
+              chercher, pas pour parcourir vingt-six lignes à l'œil. */}
+          <input
+            class="folder-filter"
+            type="text"
+            placeholder="Search folders"
+            aria-label="Search folders"
+            value={query()}
+            ref={(element: HTMLInputElement) => (filter = element)}
+            onInput={(event) => setQuery(event.currentTarget.value)}
+          />
           <div class="folder-list" ref={(element) => (list = element)}>
-            <For each={choices()}>
+            {/* Rien ne correspond : le **dire**. Une liste vide sans mot laisse croire à une panne. */}
+            <Show when={visible().length === 0}>
+              <div class="folder-empty">No folder matches</div>
+            </Show>
+            <For each={visible()}>
               {(choice, index) => (
                 <div
                   class="folder-row"

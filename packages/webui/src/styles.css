@@ -1501,6 +1501,34 @@ textarea {
   color: var(--text-3);
 }
 
+/* Le filtre : la **première ligne** du menu, comme dans le `Picker`. Il ne coûte rien au repos —
+   il n'existe que la liste ouverte — et il prend le focus, ce qui laisse taper tout de suite. */
+.folder-filter {
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-bottom: 1px solid var(--line-1);
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  font-size: var(--fs-note);
+}
+
+.folder-filter:focus {
+  outline: none;
+}
+
+.folder-filter::placeholder {
+  color: var(--text-3);
+}
+
+/* Aucun dossier ne correspond : le **dire**. Une liste vide sans mot laisse croire à une panne. */
+.folder-empty {
+  padding: 10px 9px;
+  color: var(--text-3);
+  font-size: var(--fs-note);
+}
+
 .home-composer {
   padding: 10px 12px;
   border: 1px solid var(--line-2);
