@@ -3,7 +3,6 @@ import {
   SESSION_LIMIT,
   formatCost,
   formatTokens,
-  groupByDirectory,
   groupByWorkspace,
   groupOf,
   modelLabel,
@@ -50,25 +49,6 @@ describe("dossier d'une session", () => {
     const orphan = groupOf({ id: "ses_x" })
     expect(orphan.label).toBe("no folder")
     expect(orphan.key).toBe("")
-  })
-})
-
-describe("regroupement", () => {
-  test("deux dossiers réels donnent deux groupes, dans l'ordre d'apparition", () => {
-    const groups = groupByDirectory([inPackages, atRoot, { ...inPackages, id: "ses_2" }])
-    expect(groups.map((group) => group.label)).toEqual(["packages/opencode", "opencode-fork"])
-    expect(groups[0]?.sessions).toHaveLength(2)
-    expect(groups[1]?.sessions).toHaveLength(1)
-  })
-
-  test("une liste vide ne produit aucun groupe", () => {
-    expect(groupByDirectory([])).toEqual([])
-  })
-
-  test("les sessions sans dossier sont rassemblées, pas écartées", () => {
-    const groups = groupByDirectory([{ id: "a" }, { id: "b" }])
-    expect(groups).toHaveLength(1)
-    expect(groups[0]?.sessions).toHaveLength(2)
   })
 })
 
@@ -228,5 +208,12 @@ describe("regroupement par workspace", () => {
 
   test("aucune session : aucune liste, et pas de groupe fantôme", () => {
     expect(groupByWorkspace([], projects, "C:/jeanluc/opencode-fork")).toEqual([])
+  })
+
+  test("les sessions sans dossier ne sont pas perdues", () => {
+    // Repris de `groupByDirectory`, qu'on remplace : l'invariant survit au changement de regroupement.
+    const groups = groupByWorkspace([{ id: "a" }, { id: "b" }], projects, "")
+    expect(groups).toHaveLength(1)
+    expect(groups[0]?.sessions).toHaveLength(2)
   })
 })

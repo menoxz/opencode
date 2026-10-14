@@ -64,25 +64,13 @@ export function groupOf(session: SessionSummary): { key: string; label: string; 
   return { key: "", label: "no folder", hint: "The session declares no folder" }
 }
 
-/**
- * Regroupe en conservant l'ordre d'apparition — le serveur trie déjà par récence, et un tri
- * supplémentaire ferait remonter un vieux dossier au-dessus d'un récent.
+/*
+ * `groupByDirectory` vivait ici : il regroupait sur `session.path`, le chemin **relatif**, donc un
+ * sous-dossier du lieu courant. `groupByWorkspace` l'a remplacé — la question posée par le rail est
+ * « où ai-je travaillé ? », et elle se répond en projets, pas en sous-chemins. Retiré plutôt que
+ * laissé : une fonction de regroupement en double est exactement ce que le prochain lecteur
+ * rebranchera par erreur.
  */
-export function groupByDirectory(sessions: SessionSummary[]): SessionGroup[] {
-  const groups: SessionGroup[] = []
-  const index = new Map<string, SessionGroup>()
-  for (const session of sessions) {
-    const { key, label, hint } = groupOf(session)
-    let group = index.get(key)
-    if (!group) {
-      group = { key, label, hint, sessions: [] }
-      index.set(key, group)
-      groups.push(group)
-    }
-    group.sessions.push(session)
-  }
-  return groups
-}
 
 /**
  * Combien de sessions un dossier montre d'abord.
