@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest"
 import {
   answersComplete,
   errorText,
+  patchLines,
   trajectory,
   answerDocuments,
   canAlways,
@@ -1031,6 +1032,39 @@ describe("errorText — lire une erreur sans deviner sa forme", () => {
     expect(errorText(undefined)).toBeUndefined()
     expect(errorText("oups")).toBeUndefined()
     expect(errorText({})).toBeUndefined()
+  })
+})
+
+describe("patchLines — le diff, ligne par ligne", () => {
+  test("les ajouts et les retraits sont classés, et leur signe retiré du texte", () => {
+    const lines = patchLines("--- a/f\n+++ b/f\n@@ -1,3 +1,3 @@\n contexte\n-ancien\n+nouveau")
+    expect(lines).toEqual([
+      { kind: "hunk", text: "--- a/f" },
+      { kind: "hunk", text: "+++ b/f" },
+      { kind: "hunk", text: "@@ -1,3 +1,3 @@" },
+      { kind: "context", text: "contexte" },
+      { kind: "del", text: "ancien" },
+      { kind: "add", text: "nouveau" },
+    ])
+  })
+
+  test("un patch absent ou vide rend une liste vide, jamais une erreur", () => {
+    expect(patchLines(undefined)).toEqual([])
+    expect(patchLines("")).toEqual([])
+  })
+
+  test("le préfixe n'est pas dupliqué dans le texte", () => {
+    // Le signe est porté par la **classe** : le laisser dans le texte écrirait deux fois la même
+    // information, une fois colorée et une fois en clair.
+    const [added] = patchLines("+ligne ajoutée")
+    expect(added).toEqual({ kind: "add", text: "ligne ajoutée" })
+    expect(added!.text.startsWith("+")).toBe(false)
+  })
+
+  test("une ligne sans préfixe reste du contexte — un message binaire n'est pas un ajout", () => {
+    expect(patchLines("Binary files a/x.png and b/x.png differ")).toEqual([
+      { kind: "context", text: "Binary files a/x.png and b/x.png differ" },
+    ])
   })
 })
 

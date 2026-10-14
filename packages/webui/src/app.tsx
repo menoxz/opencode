@@ -22,7 +22,7 @@ import {
   ComposerMarkup,
   ComposerStats,
   ContextInjections,
-  Documents,
+  ModifiedFiles,
   FileChip,
   Media,
   PatchLine,
@@ -1629,7 +1629,7 @@ export default function App() {
 
           {/* Le bilan de la dernière réponse : ses documents, à la fin de son dernier step (§12.3). */}
           <Show when={turn.id === lastWorkingTurn(turns())?.id}>
-            <Documents docs={answerDocuments(turn)} />
+            <ModifiedFiles docs={answerDocuments(turn)} />
           </Show>
         </Turn>
       </Show>

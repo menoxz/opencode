@@ -18,6 +18,7 @@ import {
   isSelected,
   OUTPUT_PREVIEW_LINES,
   patchLabel,
+  patchLines,
   permissionActions,
   proseKind,
   stepSummary,
@@ -859,29 +860,96 @@ export function Media(props: { kind: MediaKind; url: string; name: string }) {
 }
 
 /* =============================================================================
-   Les documents de la réponse — CIBLE.md §12.3. Le bilan, à la fin du dernier step.
-   Contenu (un nom, des ±lignes), jamais performance.
+   Les fichiers **modifiés** par la réponse — CIBLE.md §12.3. Le bilan, à la fin du dernier step.
+   Contenu (un nom, des ±lignes, le diff), jamais performance.
    ============================================================================= */
 
-export function Documents(props: { docs: DocumentRef[] }) {
+export function ModifiedFiles(props: { docs: DocumentRef[] }) {
+  /** Les fichiers dont le diff est déplié, par chemin — un même fichier peut revenir dans deux tours. */
+  const [open, setOpen] = createSignal<Record<string, boolean>>({})
+  const toggle = (path: string) => setOpen({ ...open(), [path]: !open()[path] })
+
+  /**
+   * Le total des ±lignes, **seulement** s'il en existe au moins une.
+   *
+   * Un total à « +0 −0 » serait un chiffre faux : la moitié des entrées n'ont pas de comptage (les
+   * fichiers d'un `patch` n'en portent pas), et l'additionner à zéro ferait croire à un travail nul
+   * là où il n'a simplement pas été mesuré.
+   */
+  const totals = createMemo(() => {
+    let additions = 0
+    let deletions = 0
+    let counted = false
+    for (const doc of props.docs) {
+      if (doc.additions !== undefined || doc.deletions !== undefined) {
+        counted = true
+        additions += doc.additions ?? 0
+        deletions += doc.deletions ?? 0
+      }
+    }
+    return counted ? { additions, deletions } : undefined
+  })
+
   return (
     <Show when={props.docs.length > 0}>
-      <div class="docs">
-        <span class="docs-head">documents</span>
-        <ul class="docs-list">
+      <div class="files">
+        <div class="files-head">
+          <span class="files-title">modified files</span>
+          <span class="files-count">
+            {props.docs.length} {props.docs.length > 1 ? "files" : "file"}
+          </span>
+          <span class="trace-spacer" />
+          <Show when={totals()}>
+            {(total) => (
+              <span class="files-total">
+                <span class="add">+{total().additions}</span>
+                <span class="del">−{total().deletions}</span>
+              </span>
+            )}
+          </Show>
+        </div>
+        <ul class="files-list">
           <For each={props.docs}>
             {(doc) => {
               const badge = fileBadge(doc.path)
+              // Le diff n'existe que pour les outils qui écrivent ; les fichiers d'un `patch` n'en
+              // portent pas, et la ligne le dit alors en n'offrant pas de chevron.
+              const lines = createMemo(() => patchLines(doc.patch))
+              const shown = () => Boolean(open()[doc.path])
               return (
-                <li title={doc.path}>
-                  {/* Les lettres de l'extension, teintées par **nature** de fichier : un raccourci
-                      lisible, jamais une icône indéchiffrable. */}
-                  <span class={`doc-badge doc-${badge.family}`}>{badge.label}</span>
-                  <span class="docs-path">{shortPath(doc.path)}</span>
-                  <Show when={doc.additions !== undefined && doc.deletions !== undefined}>
-                    <span class="tool-diff">{diffLabel(doc.additions ?? 0, doc.deletions ?? 0)}</span>
+                <li class="file" classList={{ open: shown() }}>
+                  <div
+                    class="file-row"
+                    classList={{ "is-openable": lines().length > 0 }}
+                    title={doc.path}
+                    onClick={() => lines().length > 0 && toggle(doc.path)}
+                  >
+                    <span class="file-chevron" classList={{ open: shown(), vide: lines().length === 0 }}>
+                      ›
+                    </span>
+                    {/* Les lettres de l'extension, teintées par **nature** de fichier : un raccourci
+                        lisible, jamais une icône indéchiffrable. */}
+                    <span class={`doc-badge doc-${badge.family}`}>{badge.label}</span>
+                    <span class="docs-path">{shortPath(doc.path)}</span>
+                    <Show when={doc.additions !== undefined && doc.deletions !== undefined}>
+                      <span class="tool-diff">{diffLabel(doc.additions ?? 0, doc.deletions ?? 0)}</span>
+                    </Show>
+                    <CopyButton text={doc.path} label="Copy path" />
+                  </div>
+                  <Show when={shown()}>
+                    <div class="file-diff">
+                      <For each={lines()}>
+                        {(line) => (
+                          <div class={`dl dl-${line.kind}`}>
+                            <span class="dl-sign">
+                              {line.kind === "add" ? "+" : line.kind === "del" ? "-" : " "}
+                            </span>
+                            <span class="dl-text">{line.text}</span>
+                          </div>
+                        )}
+                      </For>
+                    </div>
                   </Show>
-                  <CopyButton text={doc.path} label="Copy path" />
                 </li>
               )
             }}

@@ -1137,12 +1137,25 @@ export function partMedia(part: Part): Array<{ kind: MediaKind; mime?: string; u
 }
 
 /* =============================================================================
-   Les documents de la réponse — le bilan, à la fin du dernier step (CIBLE.md §12.3).
+   Les fichiers **modifiés** par la réponse — le bilan, à la fin du dernier step (CIBLE.md §12.3).
 
-   « Contenu, pas performance » : un nom, des ±lignes, un chemin. Aucune statistique.
+   « Contenu, pas performance » : un nom, des ±lignes, un chemin, et le **diff** quand il est connu.
+   Aucune statistique.
    ============================================================================= */
 
-export type DocumentRef = { path: string; additions?: number; deletions?: number }
+export type DocumentRef = {
+  path: string
+  additions?: number
+  deletions?: number
+  /**
+   * Le diff du **dernier** passage sur ce fichier, tel que le serveur l'a produit.
+   *
+   * Il n'existe que pour les outils qui écrivent (`edit`, `write`) : `metadata.filediff.patch`, relevé
+   * sur 603 mesures. Les fichiers d'un `patch` n'en portent pas — on sait qu'ils ont changé, pas
+   * comment. Le composant le dit alors au lieu de faire semblant.
+   */
+  patch?: string
+}
 
 /** Outils dont le titre **est** le chemin (même règle que `copyableText`, pour la même raison). */
 const PATH_TOOLS = new Set(["read", "write", "edit"])
@@ -1152,9 +1165,11 @@ function documentOf(tool: string, state: ToolState | undefined): DocumentRef | u
   const diff = fileDiff(state)
   if (diff) {
     const file = state.metadata?.["filediff"]
-    const path = file && typeof file === "object" ? (file as { file?: unknown }).file : undefined
+    const entry = file && typeof file === "object" ? (file as { file?: unknown; patch?: unknown }) : undefined
+    const path = entry?.file
     if (typeof path === "string" && path.length > 0) {
-      return { path, additions: diff.additions, deletions: diff.deletions }
+      const patch = typeof entry?.patch === "string" && entry.patch.length > 0 ? entry.patch : undefined
+      return { path, additions: diff.additions, deletions: diff.deletions, patch }
     }
   }
   if (!PATH_TOOLS.has(tool)) return undefined
@@ -1188,6 +1203,33 @@ export function answerDocuments(turn: TurnView | undefined): DocumentRef[] {
     }
   }
   return [...byPath.values()]
+}
+
+/** Une ligne de diff, classée par ce qu'elle fait — et non par sa couleur, qui est une vue. */
+export type PatchLine = {
+  kind: "add" | "del" | "hunk" | "context"
+  text: string
+}
+
+/**
+ * Le patch, décomposé en lignes classées.
+ *
+ * Un diff se **lit** : on cherche les lignes qui changent, et les lignes de contexte ne servent qu'à
+ * situer le changement. La classification est donc faite ici, une fois, plutôt que dans le rendu —
+ * c'est elle qu'un test peut vérifier.
+ *
+ * Le préfixe `+`/`-` est **retiré** du texte : il est déjà porté par la classe, et le laisser ferait
+ * deux fois la même information à l'écran.
+ */
+export function patchLines(patch: string | undefined): PatchLine[] {
+  if (typeof patch !== "string" || patch.length === 0) return []
+  return patch.split(/\r?\n/).map((line) => {
+    if (line.startsWith("@@")) return { kind: "hunk", text: line }
+    if (line.startsWith("+++") || line.startsWith("---")) return { kind: "hunk", text: line }
+    if (line.startsWith("+")) return { kind: "add", text: line.slice(1) }
+    if (line.startsWith("-")) return { kind: "del", text: line.slice(1) }
+    return { kind: "context", text: line.startsWith(" ") ? line.slice(1) : line }
+  })
 }
 
 /**

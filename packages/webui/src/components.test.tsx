@@ -4,7 +4,7 @@ import {
   Boundary,
   ComposerMarkup,
   CopyButton,
-  Documents,
+  ModifiedFiles,
   Markdown,
   Media,
   PatchLine,
@@ -414,26 +414,61 @@ describe("Media", () => {
   })
 })
 
-describe("Documents — le bilan de la réponse", () => {
+describe("ModifiedFiles — le bilan de la réponse", () => {
   const docs: DocumentRef[] = [
     { path: "C:\\jeanluc\\opencode-fork\\packages\\webui\\src\\app.tsx", additions: 12, deletions: 3 },
     { path: "docs/web-ui/CIBLE.md" },
   ]
 
-  test("il nomme chaque document, avec ses ±lignes quand il en a", () => {
-    const { container, dispose } = mount(() => <Documents docs={docs} />)
-    expect(container.textContent).toContain("documents")
+  test("il nomme chaque fichier, avec ses ±lignes quand il en a", () => {
+    const { container, dispose } = mount(() => <ModifiedFiles docs={docs} />)
+    expect(container.textContent).toContain("modified files")
     expect(container.textContent).toContain("webui/src/app.tsx")
     expect(container.textContent).toContain("+12 −3")
-    // Un document sans ±lignes (un patch) ne montre pas de faux chiffres.
-    expect(container.querySelectorAll(".docs-list li")).toHaveLength(2)
+    // Un fichier sans ±lignes (un patch) ne montre pas de faux chiffres.
+    expect(container.querySelectorAll(".files-list .file")).toHaveLength(2)
+    dispose()
+  })
+
+  test("l'en-tête compte les fichiers et totalise les ±lignes", () => {
+    const { container, dispose } = mount(() => <ModifiedFiles docs={docs} />)
+    expect(container.querySelector(".files-count")?.textContent).toBe("2 files")
+    expect(container.querySelector(".files-total")?.textContent).toContain("+12")
+    dispose()
+  })
+
+  test("sans total mesurable, aucun total — pas un « +0 −0 »", () => {
+    // La moitié des entrées n'ont pas de comptage (les fichiers d'un `patch` n'en portent pas) :
+    // afficher « +0 −0 » ferait croire à un travail nul là où il n'a pas été mesuré.
+    const { container, dispose } = mount(() => <ModifiedFiles docs={[{ path: "a.md" }]} />)
+    expect(container.querySelector(".files-total")).toBeNull()
+    expect(container.querySelector(".files-count")?.textContent).toBe("1 file")
+    dispose()
+  })
+
+  test("seul un fichier dont le diff est connu s'ouvre, et le diff reste plié au repos", () => {
+    const withPatch: DocumentRef[] = [
+      { path: "a.ts", additions: 1, deletions: 1, patch: "@@ -1 +1 @@\n-ancien\n+nouveau" },
+      { path: "b.md" },
+    ]
+    const { container, dispose } = mount(() => <ModifiedFiles docs={withPatch} />)
+    const rows = container.querySelectorAll(".file-row")
+    expect(rows[0]!.classList.contains("is-openable")).toBe(true)
+    expect(rows[1]!.classList.contains("is-openable")).toBe(false)
+    // Le diff n'est pas déplié au repos : la liste reste un index.
+    expect(container.querySelector(".file-diff")).toBeNull()
+    const first = rows[0] as HTMLElement
+    first.click()
+    expect(container.querySelectorAll(".file-diff .dl")).toHaveLength(3)
+    expect(container.querySelector(".dl-del .dl-text")?.textContent).toBe("ancien")
+    expect(container.querySelector(".dl-add .dl-text")?.textContent).toBe("nouveau")
     dispose()
   })
 
   test("sans document, il n'existe pas", () => {
     // §8 : pas d'état vide garni pour ne pas laisser de place.
-    const { container, dispose } = mount(() => <Documents docs={[]} />)
-    expect(container.querySelector(".docs")).toBeNull()
+    const { container, dispose } = mount(() => <ModifiedFiles docs={[]} />)
+    expect(container.querySelector(".files")).toBeNull()
     expect(container.textContent).toBe("")
     dispose()
   })
@@ -567,10 +602,10 @@ describe("ComposerMarkup — le calque du champ", () => {
   })
 })
 
-describe("Documents — le badge de type", () => {
-  test("chaque document porte les lettres de son extension et sa nature", () => {
+describe("ModifiedFiles — le badge de type", () => {
+  test("chaque fichier porte les lettres de son extension et sa nature", () => {
     const { container, dispose } = mount(() => (
-      <Documents
+      <ModifiedFiles
         docs={[
           { path: "src/app.ts", additions: 3, deletions: 1 },
           { path: "a/config.json" },

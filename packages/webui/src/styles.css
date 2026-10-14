@@ -3288,21 +3288,44 @@ textarea {
 
 /* (`.work-body` a été retiré : le repli « work » n'existe plus, cf. §9.2 révisé.) */
 
-/* ---- Les documents de la réponse (§12.3) ---- */
+/* ---- Les fichiers **modifiés** de la réponse (§12.3) ----
 
-.docs {
+   Le bilan, à la fin du dernier step : ce qui a changé, de combien, et — quand le serveur l'a
+   fourni — **comment**. C'est un contenu, jamais une performance : aucun temps, aucun coût. */
+
+.files {
   margin-top: 14px;
   padding-top: 10px;
   border-top: 1px solid var(--line-1);
 }
 
-.docs-head {
+.files-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   font-size: var(--fs-meta);
   color: var(--text-3);
+}
+
+.files-title {
   text-transform: lowercase;
 }
 
-.docs-list {
+.files-total {
+  display: flex;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.files-total .add {
+  color: var(--fam-shell);
+}
+
+.files-total .del {
+  color: #f85149;
+}
+
+.files-list {
   list-style: none;
   margin: 7px 0 0;
   padding: 0;
@@ -3311,12 +3334,39 @@ textarea {
   gap: 3px;
 }
 
-.docs-list li {
+.file-row {
   display: flex;
   align-items: baseline;
   gap: 8px;
+  padding: 2px 4px;
+  border-radius: 4px;
   font-size: var(--fs-note);
   color: var(--text-2);
+}
+
+/* Seul un fichier dont le diff est **connu** est ouvrable : les autres ne portent pas de chevron,
+   parce qu'une affordance qui ne fait rien est un mensonge. */
+.file-row.is-openable {
+  cursor: pointer;
+}
+
+.file-row.is-openable:hover {
+  background: #ffffff08;
+}
+
+.file-chevron {
+  flex: none;
+  display: inline-block;
+  color: var(--text-3);
+  transition: transform 0.12s ease;
+}
+
+.file-chevron.open {
+  transform: rotate(90deg);
+}
+
+.file-chevron.vide {
+  visibility: hidden;
 }
 
 .docs-path {
@@ -3327,13 +3377,65 @@ textarea {
   white-space: nowrap;
 }
 
-.docs-list li .copy {
+.file-row .copy {
   opacity: 0;
 }
 
-.docs-list li:hover .copy,
-.docs-list li:focus-within .copy {
+.file-row:hover .copy,
+.file-row:focus-within .copy {
   opacity: 1;
+}
+
+/* Le diff : une ligne par ligne, en chasse fixe, ajouts et retraits teintés. Le signe occupe sa
+   propre colonne pour que les textes s'alignent — un diff dont les lignes ne s'alignent pas ne se
+   lit pas, on y cherche le changement au lieu de le voir. */
+.file-diff {
+  margin: 4px 0 8px;
+  padding: 6px 8px;
+  max-height: 320px;
+  overflow: auto;
+  border-radius: 6px;
+  background: #ffffff08;
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  line-height: 1.5;
+}
+
+.dl {
+  display: flex;
+  gap: 8px;
+}
+
+.dl-sign {
+  flex: none;
+  width: 8px;
+  text-align: center;
+  color: var(--text-3);
+}
+
+.dl-text {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.dl-add .dl-sign,
+.dl-add .dl-text {
+  color: var(--fam-shell);
+}
+
+.dl-del .dl-sign,
+.dl-del .dl-text {
+  color: #f85149;
+}
+
+.dl-hunk .dl-text,
+.dl-hunk .dl-sign {
+  color: var(--text-3);
+}
+
+.dl-context .dl-text {
+  color: var(--text-2);
 }
 
 /* ---- Les statistiques (§10) — exactement ce que le fil n'affiche plus ---- */
