@@ -670,7 +670,10 @@ textarea {
   padding: 28px var(--gutter) 36px;
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  /* Pas entre deux tours. Un cran au-dessus de 22px : le tour précédent se terminait trop près du
+     suivant, ses dernières lignes d'outil collant au prompt d'après. Le flux interne d'un tour
+     reste serré (`.turn { gap: 0 }`) — c'est l'air ENTRE tours qui augmente, pas dedans. */
+  gap: 26px;
 }
 
 .empty {
