@@ -21,15 +21,9 @@ import {
   permissionActions,
   proseKind,
   stepSummary,
-  TRACE_FILTERS,
-  filterTraceEntries,
-  formatClock,
   tokensPerSecond,
   toolDetail,
   trajectory,
-  type TraceEntry,
-  type TraceFilter,
-  type TraceKind,
   type TurnView,
   toolOutputLines,
   toolStatusLabel,
@@ -923,113 +917,6 @@ export function ComposerMarkup(props: { text: string }) {
       {/* Un caractère de largeur nulle : sans lui, un texte finissant par un retour à la ligne
           perdrait sa dernière ligne dans le calque, et le champ défilerait seul. */}
       <span class="mk mk-plain">{"\u200b"}</span>
-    </div>
-  )
-}
-
-/* =============================================================================
-   La trajectoire — la timeline du `/trace` de DSH.
-
-   **Reprise de DSH** (`dsh-TUI/src/components/TraceView.tsx`) : une ligne par événement, de la forme
-   `HH:MM:SS  glyphe  résumé  (durée)`. Le glyphe dit le genre, la couleur dit l'issue — et **seul** un
-   outil en a une, parce que c'est le seul dont on sache s'il a réussi.
-
-   Rien n'est replié ici, et rien n'est une carte : c'est une liste dense qu'on parcourt du regard,
-   comme dans un terminal. Le résumé est tronqué par la mise en page (une ligne par entrée), jamais
-   par le texte lui-même.
-   ============================================================================= */
-
-/** Les glyphes de DSH, un par genre. */
-const TRACE_ICON: Record<TraceKind, string> = {
-  turn: "▶",
-  step: "∙",
-  user: "❯",
-  assistant: "✻",
-  thinking: "✻",
-  tool: "⏺",
-  todo: "✓",
-}
-
-/**
- * Le libellé affiché de chaque filtre — **exactement** les chaînes de DSH.
- *
- * DSH les tient dans son `i18n.ts` (`trace-filter-all|tool|thinking|message|progress`) : « all »,
- * « tools », « thinking », « messages », « progress ». Le pluriel est **dans DSH**, pas une fantaisie
- * de traduction — et une clé interne (`tool`) n'est pas un libellé : confondre les deux ferait
- * afficher « tool » là où DSH dit « tools ».
- */
-const TRACE_FILTER_LABEL: Record<TraceFilter, string> = {
-  all: "all",
-  tool: "tools",
-  thinking: "thinking",
-  message: "messages",
-  progress: "progress",
-}
-
-/** La teinte suit l'issue. `undefined` là où il n'y a rien à dire — et le style reste neutre. */
-function traceTone(entry: TraceEntry): string | undefined {
-  if (entry.kind === "tool") {
-    if (entry.status === "error") return "error"
-    if (entry.status === "running") return "warning"
-    return "success"
-  }
-  if (entry.kind === "user") return "suggestion"
-  if (entry.kind === "todo") return "success"
-  return undefined
-}
-
-export function TraceTimeline(props: { entries: TraceEntry[] }) {
-  const [filter, setFilter] = createSignal<TraceFilter>("all")
-  const shown = createMemo(() => filterTraceEntries(props.entries, filter()))
-  return (
-    <div class="trace">
-      <div class="trace-bar">
-        <span class="trace-title">Trace</span>
-        {/* Le sous-titre est celui de DSH, mot pour mot : « Session event timeline · filter: … ·
-            … entries ». Il dit à la fois **ce qu'est** la vue et **ce qu'elle montre en ce moment**. */}
-        <span class="trace-subtitle">
-          Session event timeline · filter: {TRACE_FILTER_LABEL[filter()]} · {shown().length} entries
-        </span>
-        <span class="trace-spacer" />
-        <For each={TRACE_FILTERS}>
-          {(name) => (
-            <button
-              class="trace-filter"
-              classList={{ active: filter() === name }}
-              onClick={() => setFilter(name)}
-            >
-              {TRACE_FILTER_LABEL[name]}
-            </button>
-          )}
-        </For>
-      </div>
-      <Show when={shown().length > 0} fallback={<p class="trace-empty">No trace events yet</p>}>
-        <ol class="trace-lines">
-          <For each={shown()}>
-            {(entry) => (
-              <li class="trace-line" classList={{ dim: entry.kind === "thinking" || entry.kind === "step" }}>
-                <span class="trace-clock">{formatClock(entry.time)}</span>
-                <span
-                  class="trace-glyph"
-                  classList={{ [`tone-${traceTone(entry)}`]: traceTone(entry) !== undefined }}
-                >
-                  {TRACE_ICON[entry.kind]}
-                </span>
-                {/* Le résumé occupe la place restante et se rogne à la fin : c'est la seule colonne
-                    qui grandit, donc la seule qui puisse manquer de place. */}
-                <span class="trace-text">{entry.summary}</span>
-                <span class="trace-dur">
-                  {entry.durationMs !== undefined
-                    ? `(${formatDuration(entry.durationMs)})`
-                    : entry.status === "running"
-                      ? "(…)"
-                      : ""}
-                </span>
-              </li>
-            )}
-          </For>
-        </ol>
-      </Show>
     </div>
   )
 }
