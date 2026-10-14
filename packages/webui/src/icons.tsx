@@ -238,6 +238,33 @@ export function SendIcon(props: { size?: number }) {
   )
 }
 
+/** La barre d'outils de la trajectoire (capture DSH) : `◷ Duration`, `☰ Turns`, `🔍 Search`. */
+export function ClockIcon(props: { size?: number }) {
+  return (
+    <Glyph size={props.size ?? 12}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </Glyph>
+  )
+}
+
+export function ListIcon(props: { size?: number }) {
+  return (
+    <Glyph size={props.size ?? 12}>
+      <path d="M4 6h16M4 12h16M4 18h16" />
+    </Glyph>
+  )
+}
+
+export function SearchIcon(props: { size?: number }) {
+  return (
+    <Glyph size={props.size ?? 12}>
+      <circle cx="11" cy="11" r="6" />
+      <path d="M16 16l4 4" />
+    </Glyph>
+  )
+}
+
 /* =============================================================================
    Icônes de section — les entrées du panneau de réglages.
 

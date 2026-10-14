@@ -618,6 +618,231 @@ textarea {
    pas des cartes qu'on déplie : les colonnes sont fixes pour que l'œil descende droit (heure, glyphe,
    puis le résumé qui prend la place restante), et rien n'occupe deux lignes. */
 
+/* ---- La vue `Trajectory` — reprise de la capture de DSH ----
+
+   Trois bandes : la barre d'outils, le diagramme en pistes, la liste. La densité est celle de DSH —
+   des lignes serrées, une teinte en marge qui dit le genre, et deux colonnes : le contenu à gauche,
+   le résultat à droite après `→`. */
+
+.tj {
+  padding: 4px var(--gutter) 16px;
+}
+
+.tj-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0 8px;
+}
+
+.tj-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border-radius: 6px;
+  font-size: var(--fs-meta);
+  color: var(--text-3);
+}
+
+.tj-toggle:hover {
+  background: #ffffff0f;
+  color: var(--text-1);
+}
+
+.tj-toggle.active {
+  background: #ffffff14;
+  color: var(--text-1);
+}
+
+.tj-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  border-radius: 6px;
+  background: #ffffff0a;
+  color: var(--text-3);
+}
+
+.tj-search input {
+  width: 200px;
+  border: 0;
+  background: transparent;
+  color: var(--text-1);
+  font-size: var(--fs-meta);
+  outline: none;
+}
+
+/* Le diagramme : une piste par genre, dont les barres sont placées **dans le temps**. */
+.tj-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 0 10px;
+  border-bottom: 1px solid var(--line-1);
+}
+
+.tj-track {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tj-track-label {
+  flex: none;
+  width: 44px;
+  text-align: right;
+  color: var(--text-3);
+  font-size: var(--fs-meta);
+}
+
+.tj-lane {
+  position: relative;
+  flex: 1;
+  height: 9px;
+}
+
+.tj-bar {
+  position: absolute;
+  top: 0;
+  height: 9px;
+  border-radius: 2px;
+  min-width: 2px;
+}
+
+.bar-input {
+  background: var(--fam-ask);
+}
+
+.bar-model {
+  background: var(--fam-read);
+}
+
+.bar-tools {
+  background: var(--fam-shell);
+}
+
+.bar-error {
+  background: var(--fam-write);
+}
+
+.bar-running {
+  opacity: 0.45;
+}
+
+.tj-list {
+  display: flex;
+  flex-direction: column;
+  padding-top: 6px;
+}
+
+.tj-turn {
+  margin: 10px 0 4px;
+  color: var(--text-3);
+  font-size: var(--fs-meta);
+  font-weight: 600;
+}
+
+.tj-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 0 3px 4px;
+  border-radius: 4px;
+  font-size: var(--fs-meta);
+  line-height: 1.5;
+}
+
+.tj-row:hover {
+  background: #ffffff08;
+}
+
+/* La marge teintée : elle dit le genre d'un coup d'œil, sans lire le badge. */
+.tj-mark {
+  flex: none;
+  align-self: stretch;
+  width: 3px;
+  border-radius: 2px;
+}
+
+.row-user .tj-mark {
+  background: var(--fam-ask);
+}
+
+.row-assistant .tj-mark {
+  background: var(--fam-read);
+}
+
+.row-tool .tj-mark {
+  background: var(--fam-shell);
+}
+
+.row-error .tj-mark {
+  background: #f85149;
+}
+
+.tj-bullet {
+  flex: none;
+  color: var(--text-3);
+}
+
+.tj-badge {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+.badge-user {
+  color: var(--fam-ask);
+  background: #7c5cff1f;
+}
+
+.badge-assistant {
+  color: var(--fam-read);
+  background: #4d7cfe1f;
+}
+
+.badge-tool {
+  color: var(--fam-shell);
+  background: #3fb9501f;
+}
+
+.tj-content {
+  flex: 0 1 auto;
+  min-width: 0;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.tj-content.is-empty {
+  color: var(--text-3);
+  font-style: italic;
+}
+
+.tj-duration {
+  flex: none;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Le résultat prend la place qui reste, et se rogne : c'est la colonne qui peut manquer. */
+.tj-result {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-3);
+}
+
+.tj-arrow {
+  color: var(--text-3);
+}
+
 .trace {
   padding: 4px var(--gutter) 16px;
 }

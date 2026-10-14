@@ -34,7 +34,6 @@ import {
   SessionPanel,
   SessionRow,
   ShowMore,
-  TraceTimeline,
   TrajectoryPanel,
   ToolLine,
   Turn,
@@ -86,6 +85,7 @@ import {
 } from "./settings"
 import { Picker } from "./picker"
 import { SendIcon } from "./icons"
+import { TrajectoryView } from "./trajectory-view"
 import {
   commandChoices,
   commandInsert,
@@ -138,7 +138,6 @@ import {
   type StepView,
   type ToolState,
   type TurnView,
-  traceEntries,
 } from "./view-model"
 
 const DIR_KEY = "oc.webui.directory"
@@ -188,6 +187,16 @@ export default function App() {
    */
   const [logEntries, setLogEntries] = createSignal<Array<{ at: number; type: string }>>([])
   const LOG_LIMIT = 200
+  /**
+   * Le **schéma déclaré** de chaque outil (`GET /experimental/tool`), pour le panneau de détail.
+   *
+   * `GET /experimental/tool` pesait 61 ko sur l'instance de développement : c'est le prix d'un onglet
+   * `Schema` utile, et il ne se paie qu'à l'ouverture de la vue `Trajectory`. La route exige un couple
+   * `provider`/`model`, donc on prend celui de la saisie — le même que celui des messages.
+   */
+  const [toolSchemas, setToolSchemas] = createSignal<
+    Record<string, { description?: string; parameters?: unknown }>
+  >({})
   /**
    * La question de l'agent : la **seule** écriture du fil. Elle est bloquante — tant qu'elle n'a pas
    * de réponse, la conversation est arrêtée — donc elle n'est pas rangée dans un panneau : elle
@@ -484,6 +493,34 @@ export default function App() {
     const choices = agentChoices(data)
     setAgentOptions(choices)
     return choices
+  }
+
+  /**
+   * Le **schéma déclaré** de chaque outil, pour l'onglet `Schema` du panneau de détail.
+   *
+   * La route exige un couple `provider`/`model` : on prend celui de la saisie, qui est aussi celui des
+   * messages. Elle pesait **61 ko** sur l'instance de développement — c'est le prix d'un onglet utile,
+   * et il ne se paie qu'à l'ouverture de la vue `Trajectory`, jamais au montage.
+   */
+  const loadToolSchemas = async () => {
+    if (Object.keys(toolSchemas()).length > 0) return
+    const model = parseModelChoice(composerModel())
+    if (!model) return
+    const result = await client.tool
+      .list({ provider: model.providerID, model: model.modelID, ...scope() })
+      .catch(() => undefined)
+    const data = (result as { data?: unknown } | undefined)?.data
+    if (!Array.isArray(data)) return
+    const map: Record<string, { description?: string; parameters?: unknown }> = {}
+    for (const entry of data) {
+      const tool = entry as { id?: unknown; description?: unknown; parameters?: unknown }
+      if (typeof tool.id !== "string") continue
+      map[tool.id] = {
+        description: typeof tool.description === "string" ? tool.description : undefined,
+        parameters: tool.parameters,
+      }
+    }
+    setToolSchemas(map)
   }
 
   /** Les commandes du serveur — lues une fois, à la première frappe de `/`. */
@@ -1836,18 +1873,25 @@ export default function App() {
               regarde. */}
           <nav class="view-nav">
             <button class="view-item" classList={{ active: view() === "chat" }} onClick={() => setView("chat")}>
-              Session
+              Chat
             </button>
-            <button class="view-item" classList={{ active: view() === "logs" }} onClick={() => setView("logs")}>
-              Logs
+            <button
+              class="view-item"
+              classList={{ active: view() === "logs" }}
+              onClick={() => {
+                setView("logs")
+                // Le schéma des outils se lit **ici** : 61 ko ne se paient pas au montage.
+                void loadToolSchemas()
+              }}
+            >
+              Trajectory
             </button>
           </nav>
           <Show when={view() === "logs"}>
-            {/* La timeline de trajectoire, **reprise de DSH** (`/trace`) : une ligne par événement,
-                dense, en chasse fixe. C'est la vue qu'on parcourt du regard pour voir où le temps et
-                les appels sont passés. */}
+            {/* La vue **Trajectory**, reprise de la capture de DSH : barre d'outils, diagramme en
+                pistes, puis la liste des événements — badge, contenu, résultat. */}
             <div class="scroll">
-              <TraceTimeline entries={traceEntries(turns())} />
+              <TrajectoryView turns={turns()} toolSchema={(id) => toolSchemas()[id]} />
             </div>
           </Show>
           <Show when={view() === "chat"}>

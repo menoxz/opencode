@@ -28,6 +28,10 @@ const API_PREFIXES = [
   // SDK croit recevoir du JSON, échoue à le parser, et la section reste vide sans erreur visible.
   "/command",
   "/plugin",
+  // Le **schéma des outils** (`GET /experimental/tool`) : le panneau de détail d'une ligne de
+  // trajectoire y lit les paramètres déclarés de l'outil. Même piège que les autres : sans cette
+  // entrée, Vite rend `index.html` avec un 200 et le panneau resterait vide sans erreur visible.
+  "/experimental",
   // Les interpréteurs installés (`GET /pty/shells`, 353 octets). La route existe côté serveur mais
   // **pas dans le SDK** : l'UI l'appelle en `fetch` direct, donc elle doit être proxifiée — sinon
   // Vite rend `index.html` avec un `200`, et la liste de choix reste silencieusement vide.
