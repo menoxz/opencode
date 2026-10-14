@@ -141,6 +141,16 @@ step 3 · 12 actions · 8,4 s · $0.12 · 31k tokens
   un bloc et se détache par un peu d'air **au-dessus** (`margin-top` sur `.reasoning`, 8 px). Le pas
   **entre deux tours** est plus large encore (`.transcript { gap }`, 26 px) : c'est lui qui sépare deux
   échanges, pas le flux interne d'un tour (`.turn { gap: 0 }`).
+- **Toutes les barres de défilement viennent d'une seule règle, et d'un seul mécanisme.** Le style est
+  **global** (`*::-webkit-scrollbar`) : énuméré par sélecteur, il laissait chaque conteneur défilant
+  ajouté ensuite avec la barre native du système — claire, épaisse (15 px mesurés), à flèches — au
+  milieu d'une interface sombre. Une énumération se paie à chaque ajout, et c'est ce qui a fait
+  re-signaler le défaut plusieurs fois. Second point, moins visible : `scrollbar-width` et
+  `scrollbar-color` **désactivent** `::-webkit-scrollbar` dans Chromium dès qu'ils valent autre chose
+  que `auto` — les mélanger donne **deux** apparences selon la classe, et fait croire la règle
+  inopérante alors qu'une autre la neutralise. Le repli standard est donc réservé aux moteurs qui
+  ignorent le pseudo-élément, par un test de **capacité** (`@supports not selector(::-webkit-scrollbar)`)
+  et non par nom de navigateur.
 
 ### 3.8 Ce qui ne s'affiche **jamais** dans le fil
 
