@@ -368,7 +368,10 @@ describe("la page General", () => {
    ============================================================================= */
 
 describe("la projection des modèles", () => {
-  test("le libellé porte le fournisseur, la valeur est `provider/modèle`", () => {
+  test("le libellé porte le **modèle**, le fournisseur est le groupe, la valeur est `provider/modèle`", () => {
+    // Le fournisseur a quitté le libellé pour le groupe : la liste ouverte l'affiche en **en-tête**
+    // (une fois par fournisseur au lieu de 695 fois), le filtre le cherche, et le contrôle refermé
+    // recompose « modèle · fournisseur ». Le répéter sur chaque ligne était du bruit.
     const catalog = modelCatalog({
       providers: [
         {
@@ -379,32 +382,33 @@ describe("la projection des modèles", () => {
       ],
     })
     expect(catalog).toEqual([
-      { value: "opencode-go/deepseek-v4.1-flash", label: "DeepSeek V4.1 Flash · OpenCode Go" },
-      { value: "opencode-go/zeta", label: "zeta · OpenCode Go" },
+      { value: "opencode-go/deepseek-v4.1-flash", label: "DeepSeek V4.1 Flash", group: "OpenCode Go" },
+      { value: "opencode-go/zeta", label: "zeta", group: "OpenCode Go" },
     ])
   })
 
-  test("un même nom chez deux fournisseurs donne **deux libellés distincts**", () => {
+  test("un même nom chez deux fournisseurs reste **distinguable**", () => {
     // Le défaut mesuré : 696 modèles pour **509 libellés distincts** — et les deux modèles
-    // réellement configurés partageaient tous deux « DeepSeek V4.1 Flash » avec trois autres. Fermé,
-    // un `<select>` n'affiche que le libellé : sans le fournisseur, cinq valeurs différentes
-    // s'écriraient pareil, et l'utilisateur ne pourrait pas dire ce qu'il a choisi.
+    // réellement configurés partageaient tous deux « DeepSeek V4.1 Flash » avec trois autres. Le
+    // contrôle refermé n'a pas d'en-tête de groupe : c'est donc le libellé **composé** qui doit
+    // rester distinct, et le test le vérifie sur la composition, pas sur le seul libellé.
     const catalog = modelCatalog({
       providers: [
         { id: "opencode-go", name: "OpenCode Go", models: { "deepseek-v4.1-flash": { name: "DeepSeek V4.1 Flash" } } },
         { id: "nvidia", name: "Nvidia", models: { "deepseek-ai/deepseek-v4.1-flash": { name: "DeepSeek V4.1 Flash" } } },
       ],
     })
-    expect(catalog.map((entry) => entry.label)).toEqual([
+    expect(catalog.map((entry) => entry.group)).toEqual(["Nvidia", "OpenCode Go"])
+    expect(catalog.map((entry) => `${entry.label} · ${entry.group}`)).toEqual([
       "DeepSeek V4.1 Flash · Nvidia",
       "DeepSeek V4.1 Flash · OpenCode Go",
     ])
-    expect(new Set(catalog.map((entry) => entry.label)).size).toBe(catalog.length)
+    expect(new Set(catalog.map((entry) => `${entry.label} · ${entry.group}`)).size).toBe(catalog.length)
   })
 
   test("sans libellé de modèle, l'identifiant fait office de nom", () => {
     expect(modelCatalog({ providers: [{ id: "p", models: { "m-1": {} } }] })).toEqual([
-      { value: "p/m-1", label: "m-1 · p" },
+      { value: "p/m-1", label: "m-1", group: "p" },
     ])
   })
 
@@ -424,7 +428,7 @@ describe("la projection des modèles", () => {
         },
       ],
     })
-    expect(catalog).toEqual([{ value: "orcarouter/grok/grok-4.3", label: "Grok 4.3 · OrcaRouter" }])
+    expect(catalog).toEqual([{ value: "orcarouter/grok/grok-4.3", label: "Grok 4.3", group: "OrcaRouter" }])
     expect(JSON.stringify(catalog)).not.toContain("sk-")
     expect(JSON.stringify(catalog)).not.toContain("SECRET")
   })

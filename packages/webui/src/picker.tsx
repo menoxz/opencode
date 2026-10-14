@@ -52,10 +52,21 @@ export function Picker(props: {
   let filter: HTMLInputElement | undefined
   let pop: HTMLDivElement | undefined
 
+  /**
+   * Le filtre porte sur le libellé **et sur le groupe**.
+   *
+   * C'est ce qui rend le filtre par fournisseur réel : taper `orcarouter` ramène ses 122 modèles,
+   * taper `claude` ramène ceux de tous les fournisseurs. Ne filtrer que sur le libellé obligeait à
+   * connaître le nom exact du modèle pour le retrouver dans une liste de 696 entrées — c'est le
+   * défaut qui rendait la liste impraticable.
+   */
   const filtered = createMemo(() => {
     const needle = query().trim().toLowerCase()
     if (!needle) return props.choices
-    return props.choices.filter((entry) => entry.label.toLowerCase().includes(needle))
+    return props.choices.filter(
+      (entry) =>
+        entry.label.toLowerCase().includes(needle) || (entry.group ?? "").toLowerCase().includes(needle),
+    )
   })
 
   /**
@@ -68,7 +79,10 @@ export function Picker(props: {
    */
   const shown = () => {
     const found = props.choices.find((entry) => entry.value === props.value)
-    if (found) return found.label
+    // Le groupe se recompose ici : dans la liste ouverte il est porté par l'en-tête, mais le contrôle
+    // **refermé** n'a pas d'en-tête — un modèle seul y serait ambigu (« Claude 4 » de qui ?), et
+    // c'était précisément le défaut corrigé en ajoutant le fournisseur au libellé.
+    if (found) return found.group ? `${found.label} · ${found.group}` : found.label
     if (props.value) return props.value
     return props.placeholder ?? "server default"
   }
@@ -226,17 +240,39 @@ export function Picker(props: {
           <div class="pick-list" role="listbox" aria-label={props.label} ref={(element) => (list = element)}>
             <For each={filtered()} fallback={<p class="pick-empty">no match</p>}>
               {(entry, index) => (
-                <div
-                  class="pick-row"
-                  classList={{ "is-active": active() === index(), "is-current": entry.value === props.value }}
-                  data-i={index()}
-                  role="option"
-                  aria-selected={entry.value === props.value}
-                  onMouseEnter={() => setActive(index())}
-                  onClick={() => pick(entry)}
-                >
-                  <span class="pick-row-label">{entry.label}</span>
-                </div>
+                <>
+                  {/* L'en-tête de fournisseur n'apparaît qu'au **changement** de groupe : le répéter
+                      sur chaque ligne ne dirait rien de plus et pousserait les modèles hors de vue.
+                      Il est **cliquable** — c'est le filtre par fournisseur, en un geste : on clique
+                      `orcarouter` et la liste se réduit à ses 122 modèles, sans rien taper. */}
+                  <Show
+                    when={entry.group && (index() === 0 || filtered()[index() - 1]!.group !== entry.group)}
+                  >
+                    <button
+                      type="button"
+                      class="pick-group"
+                      title={`Only ${entry.group}`}
+                      onClick={() => {
+                        setQuery(entry.group ?? "")
+                        setActive(0)
+                        filter?.focus()
+                      }}
+                    >
+                      {entry.group}
+                    </button>
+                  </Show>
+                  <div
+                    class="pick-row"
+                    classList={{ "is-active": active() === index(), "is-current": entry.value === props.value }}
+                    data-i={index()}
+                    role="option"
+                    aria-selected={entry.value === props.value}
+                    onMouseEnter={() => setActive(index())}
+                    onClick={() => pick(entry)}
+                  >
+                    <span class="pick-row-label">{entry.label}</span>
+                  </div>
+                </>
               )}
             </For>
           </div>

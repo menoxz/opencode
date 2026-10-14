@@ -2864,6 +2864,29 @@ textarea {
   padding: 4px;
 }
 
+/* L'en-tête de fournisseur, dans la liste de choix. Il **colle** en haut de la liste pendant qu'on
+   la défile : sur 122 modèles d'un même fournisseur, on doit pouvoir dire à tout instant de qui on
+   regarde la liste. Il est cliquable — un clic restreint la liste à ce fournisseur. */
+.pick-group {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  padding: 7px 8px 5px;
+  background: var(--bg-1);
+  color: var(--text-3);
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pick-group:hover {
+  color: var(--text-1);
+}
+
 .pick-row {
   display: flex;
   align-items: center;

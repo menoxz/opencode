@@ -127,7 +127,19 @@ export type SettingSpec = {
    les cherchent pas au clavier.
    ============================================================================= */
 
-export type Choice = { value: string; label: string }
+export type Choice = {
+  value: string
+  label: string
+  /**
+   * Le **fournisseur** (ou le groupe) auquel le choix appartient.
+   *
+   * Il n'est pas décoratif : c'est ce qui rend le filtre par fournisseur possible. Sept fournisseurs
+   * et 696 modèles dans une seule liste plate obligeaient à connaître le nom exact du modèle pour le
+   * retrouver ; avec le groupe, la liste s'affiche sous des en-têtes, un clic sur un en-tête la
+   * restreint à ce fournisseur, et la recherche porte sur le modèle **comme** sur le fournisseur.
+   */
+  group?: string
+}
 
 /**
  * **Le libellé doit identifier la valeur à lui seul**, parce que fermé, un `<select>` n'affiche que
@@ -147,9 +159,19 @@ export function choice(value: string, name: string, provider: string): Choice {
   return { value, label: `${name} · ${provider}` }
 }
 
-/** Tri par libellé : les modèles homonymes se retrouvent côte à côte, là où l'ambiguïté se voit. */
+/**
+ * Tri : par **groupe**, puis par libellé.
+ *
+ * Le groupe d'abord, parce que la liste s'affiche sous des en-têtes de fournisseur : triée par
+ * libellé seul, les modèles des sept fournisseurs s'entrelaçaient et l'en-tête se répétait à chaque
+ * ligne — le regroupement ne se lisait plus. À l'intérieur d'un fournisseur, l'ordre alphabétique
+ * reste le plus rapide à balayer.
+ */
 function sorted(choices: Choice[]): Choice[] {
-  return [...choices].sort((left, right) => left.label.localeCompare(right.label))
+  return [...choices].sort(
+    (left, right) =>
+      (left.group ?? "").localeCompare(right.group ?? "") || left.label.localeCompare(right.label),
+  )
 }
 
 /**
@@ -180,7 +202,10 @@ export function modelCatalog(payload: unknown): Choice[] {
     for (const [id, model] of Object.entries(models as Record<string, unknown>)) {
       const name = model && typeof model === "object" ? (model as { name?: unknown }).name : undefined
       const title = typeof name === "string" && name.trim() ? name.trim() : id
-      choices.push(choice(`${provider.id}/${id}`, title, providerTitle))
+      // Le libellé porte le **modèle seul** : le fournisseur est le groupe — donc l'en-tête de la
+      // liste, le filtre, et la seconde moitié du libellé quand le contrôle est refermé. Le répéter
+      // sur chaque ligne ajoutait 696 fois la même information dans la liste ouverte.
+      choices.push({ value: `${provider.id}/${id}`, label: title, group: providerTitle })
     }
   }
   return sorted(choices)
