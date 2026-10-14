@@ -2660,3 +2660,69 @@ tsgo --noEmit  -> exit 0
 4. **Le shell emporte ses enfants** : les serveurs lancés par `Start-Process` meurent avec lui, d'où la
    pile retrouvée morte. Les relancer via `cmd /d /c` (`Start-Process` refuse le shim `.ps1` de `bun`).
 
+---
+
+## Lot 9 — cinq retours d'usage, et une navigation corrigée
+
+Cinq défauts signalés après le lot 8, dont **un vrai bug fonctionnel** que la vérification du lot 8
+avait manqué : le menu de choix du modèle était inutilisable.
+
+### 1. Le menu du modèle se refermait (bug)
+
+`fa58ae436`. Le popup porte 696 modèles : on le fait défiler, et l'événement `scroll` remonte en phase
+de **capture** jusqu'au `document`, où le gestionnaire « le défilement ferme le popup » le refermait
+avant qu'on ait pu cliquer. Corrigé en ignorant tout ce qui part de l'intérieur du popup
+(`pop?.contains(event.target)`).
+
+**Pourquoi le lot 8 ne l'avait pas vu** : sa sonde mesurait l'ouverture du popup, jamais un clic
+dedans. Une vérification qui n'exerce pas le geste ne prouve pas que le geste marche — et
+« le popup s'ouvre » n'est pas « on peut choisir ».
+
+Vérifié par un test A/B : clic souris CDP sur la ligne réelle (`y=697`) ⇒ la valeur passe à
+`DeepSeek V4 Pro 0813 · OrcaRouter` et le popup se ferme. Les échecs précédents venaient de la **sonde**
+(elle cliquait `y=594`, dans la bande du filtre — `filter: 576→612`), pas du code.
+
+### 2. Les statistiques sont centrées
+
+`justify-content: center` sur `.composer-stats` : les groupes se lisent comme **une** ligne de
+contexte, dans l'axe du champ. Mesuré : `justifyContent: "center"`.
+
+### 3. La barre du bloc de contenu d'injection
+
+`.inj-source-text` n'était pas dans les règles de barre (le défilement venait de la barre **native** de
+Chromium). Ajoutée aux quatre groupes (piste, pouce, coins, plus `scrollbar-width: thin` pour Firefox).
+Mesuré : `scrollbar-width: thin`, `scrollbar-color: rgba(255,255,255,0.19) transparent`.
+
+### 4. Le champ ne s'arrêtait plus à cinq lignes
+
+`field-sizing: content` + plafond à 340 px, et suppression d'un `max-height: 200px` **rival** : la règle
+`.composer textarea` (plus spécifique que `.composer-input`) recopiait le plafond et l'emportait. Une
+règle qui recopie la mise en page d'une autre finit par la contredire — elle ne garde plus que ce qui
+n'est pas dit ailleurs. Mesuré : 10 lignes ⇒ **227 px**, `defile: false` (`scrollH == clientH`).
+
+### 5. La navigation — corrigée une première fois de travers
+
+`fa58ae436`. Première tentative : `Session | Config | Logs` dans le pied du rail. **Faux** — l'utilisateur
+a corrigé : les **réglages** restent au pied du rail (une préférence n'est pas une vue), et les vues
+`Session` / `Logs` vont dans une **barre au-dessus du chat** qui commute le contenu du panneau
+principal. CIBLE.md §4 le dit maintenant.
+
+Vérifié au navigateur : pied = `["stats","settings"]` ; barre de vues = `["Session","Logs"]` ; clic
+`Logs` ⇒ `.transcript` **disparaît**, le compositeur disparaît, 4 lignes de journal s'affichent ; clic
+`Session` ⇒ la conversation et le compositeur reviennent.
+
+### Preuve
+
+```
+vitest run     -> 18 fichiers, 461 tests, exit 0
+tsgo --noEmit  -> exit 0
+```
+
+### Leçon
+
+Trois des cinq échecs de sonde venaient de la **sonde**, pas du code (clic dans la bande du filtre,
+mesure avant le rendu du compositeur, `y` hors viewport). La règle qui les couvre toutes : **vérifier
+que la cible mesurée est bien celle qu'on croit** — `elementFromPoint` au point cliqué, et attendre
+l'élément avant de le mesurer.
+
+

@@ -183,6 +183,24 @@ ce document : une donnée exposée par le serveur n'est pas une raison de l'affi
 - Un plugin est **un bouton d'accès, pas un catalogue**. Une compétence ne se consulte pas, elle
   s'injecte : la rendre navigable serait une erreur de nature, pas de présentation.
 
+### Le pied du rail, et les vues
+
+Le pied du rail garde ce qui n'est **pas** une vue : le dossier de travail, les statistiques de session
+(un tiroir) et l'ouverture des **réglages**. Une préférence n'est pas une vue : ranger les deux dans une
+même barre mélangerait ce qui se **règle** et ce qui se **remplace**.
+
+Les **vues**, elles, sont au-dessus du chat : `Session` et `Logs`, qui **commutent le panneau
+principal** — la conversation, ou le journal — comme les dialogues du TUI. Elles vivent là, et non dans
+le rail, parce que c'est le contenu du chat qu'elles remplacent : on les cherche là où l'on regarde.
+
+Le journal montre ce que la page a **réellement reçu** (`server.connected`, `server.heartbeat`,
+`message.part.updated`…), et le plus récent en tête. C'est le seul journal qu'on puisse montrer
+honnêtement : le serveur n'expose aucune route qui *lise* ses logs — `POST /log` ne fait qu'en écrire
+un — et ses fichiers vivent hors du projet, donc hors de portée de `/file/content`. Ce panneau répond
+donc à « il ne se passe rien à l'écran », qui est la question qu'on se pose vraiment.
+
+---
+
 ## 5. Les réglages — une feuille qui gère
 
 Un panneau de réglages sert à **configurer**, pas à consulter. Un interrupteur inerte est un
