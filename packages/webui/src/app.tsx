@@ -102,7 +102,7 @@ import {
   slashQuery,
   type CommandChoice,
 } from "./composer-keys"
-import { contractFrom, todosFrom, type ContractView, type TodoView } from "./plan"
+import { contractFrom, contractPayload, todosFrom, type ContractDraft, type ContractView, type TodoView } from "./plan"
 import {
   agentCounts,
   agentRows,
@@ -248,6 +248,14 @@ export default function App() {
    */
   const [todos, setTodos] = createSignal<TodoView[]>([])
   const [contract, setContract] = createSignal<ContractView | undefined>()
+  /**
+   * Le `goalState` **brut**, tel que le serveur le rend.
+   *
+   * L'écran n'en affiche qu'une projection, mais l'écriture repart de l'état brut : le serveur
+   * **remplace** l'objet reçu, donc renvoyer la projection effacerait `findings` et `completion` —
+   * une perte de données silencieuse.
+   */
+  const [rawGoal, setRawGoal] = createSignal<Record<string, unknown> | undefined>(undefined)
   /** La fenêtre de contexte de chaque modèle — la seule donnée dont le remplissage du contexte a besoin. */
   const [modelLimits, setModelLimits] = createSignal<Record<string, number>>({})
   /** Les agents proposables — chargés à la première ouverture du choix, jamais au montage (1,5 Mo). */
@@ -753,6 +761,38 @@ export default function App() {
     ])
     setTodos(todosFrom(todoResult?.data))
     setContract(contractFrom(sessionResult?.data))
+    // Conservé à part : c'est **lui** que l'écriture renvoie, complété de ce que l'écran a décidé.
+    setRawGoal((sessionResult?.data as { goalState?: Record<string, unknown> } | undefined)?.goalState)
+  }
+
+  /**
+   * Écrit le contrat de la session ouverte. Rend `true` si le serveur a accepté — le composant le
+   * **dit** alors à l'écran, au lieu de le supposer.
+   *
+   * `PATCH /session/{id}` **remplace** le `goalState` : on repart de l'état brut et l'on n'y change
+   * que ce que l'écran a décidé (`findings`, `completion`, `compaction` traversent tels quels). Le
+   * vrai est ensuite relu : l'affichage doit être la réponse du serveur, jamais l'espoir de l'avoir
+   * écrit.
+   */
+  const saveContract = async (draft: ContractDraft): Promise<boolean> => {
+    const sessionID = active()
+    const payload = contractPayload(rawGoal(), draft)
+    if (!sessionID || !payload) return false
+    const result = await client.session
+      // Le SDK type `goalState` finement ; l'écran, lui, transporte l'objet du serveur tel quel et
+      // n'en réécrit que trois champs. Ce cast dit exactement cela — et rien de plus.
+      .update({
+        sessionID,
+        goalState: payload as Parameters<typeof client.session.update>[0]["goalState"],
+        ...scope(),
+      })
+      .catch((cause: unknown) => {
+        setError(String(cause))
+        return undefined
+      })
+    if (!result) return false
+    await loadPlan(sessionID)
+    return true
   }
 
   const loadMessages = async (sessionID: string) => {
@@ -1965,7 +2005,7 @@ export default function App() {
               **demandé**, les todos ce qui est **fait**. Les deux répondent à « où en est-on ? »,
               et c'est au moment d'écrire qu'on se le demande — pas en relisant le fil. */}
           <Show when={contract()}>
-            {(current) => <TaskContract contract={current()} />}
+            {(current) => <TaskContract contract={current()} onSave={saveContract} />}
           </Show>
           <Show when={todos().length > 0}>
             <TodoList todos={todos()} />

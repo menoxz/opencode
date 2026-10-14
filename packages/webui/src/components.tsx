@@ -40,7 +40,7 @@ import {
   type ToolState,
 } from "./view-model"
 import { markdownSpans, parseMarkdown, safeHref, type MdBlock, type MdInline } from "./markdown"
-import { todoProgress, type ContractView, type TodoView } from "./plan"
+import { addItem, draftFrom, removeItem, setItem, todoProgress, type ContractDraft, type ContractView, type TodoView } from "./plan"
 import { writeClipboard } from "./clipboard"
 import { formatChars, injectionLabel, share, sourceLabel, type Injections } from "./injections"
 import { CheckIcon, ChevronIcon, CopyIcon, CrossIcon, FolderIcon, PluginIcon, SessionIcon, ThinkIcon, ToolIcon, toolHint } from "./icons"
@@ -986,6 +986,10 @@ const TODO_GLYPH: Record<TodoView["status"], string> = {
 export function TodoList(props: { todos: TodoView[] }) {
   const [open, setOpen] = createSignal(false)
   const progress = createMemo(() => todoProgress(props.todos))
+  const percent = createMemo(() => {
+    const { done, total } = progress()
+    return total > 0 ? Math.round((done / total) * 100) : 0
+  })
   return (
     <Show when={props.todos.length > 0}>
       <div class="plan">
@@ -1008,12 +1012,36 @@ export function TodoList(props: { todos: TodoView[] }) {
               )}
             </Show>
           </button>
+          {/* La barre reste **visible carte pliée** : c'est elle qui répond à « où en est-on ? »
+              sans rien ouvrir. Un compteur se lit, une barre se voit. */}
+          <div
+            class="plan-progress"
+            role="progressbar"
+            aria-valuenow={percent()}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            title={`${progress().done}/${progress().total}`}
+          >
+            <div class="plan-progress-fill" style={{ width: `${percent()}%` }} />
+          </div>
           <Show when={open()}>
             <ul class="plan-list">
               <For each={props.todos}>
                 {(todo) => (
                   <li class={`plan-item st-${todo.status}`} title={todo.content}>
-                    <span class="plan-glyph">{TODO_GLYPH[todo.status]}</span>
+                    {/* La **case** est ce qui fait lire la liste comme une checklist : sans elle, un
+                        glyphe en tête de ligne reste une puce, et l'état se déduit au lieu de se
+                        voir. Le glyphe vit *dans* la case ; c'est la case qui porte l'état. */}
+                    <span
+                      class="todo-box"
+                      classList={{
+                        on: todo.status === "completed",
+                        doing: todo.status === "in_progress",
+                        off: todo.status === "cancelled",
+                      }}
+                    >
+                      {TODO_GLYPH[todo.status]}
+                    </span>
                     <span class="plan-text">{todo.content}</span>
                     <Show when={todo.priority === "high"}>
                       <span class="plan-prio">high</span>
@@ -1029,24 +1057,144 @@ export function TodoList(props: { todos: TodoView[] }) {
   )
 }
 
-export function TaskContract(props: { contract: ContractView }) {
+/**
+ * Le contrat de tâche — objectif, Definition of Done, hors-périmètre — **éditable**.
+ *
+ * Le contrat est la seule partie du plan qu'une main humaine doit pouvoir corriger : l'agent le
+ * déduit de la demande, et une déduction se trompe. Le lire sans pouvoir le reprendre obligeait à
+ * écrire dans le fil pour le faire changer.
+ *
+ * L'écriture passe par `PATCH /session/{id}` avec un `goalState` — route **existante**, vérifiée par
+ * un PATCH réel (200, objectif relu modifié, `version` 5 → 6). Le composant ne connaît ni le réseau
+ * ni le SDK : il reçoit `onSave` et **dit** ce qui s'est passé, réussite comme échec. Un
+ * enregistrement silencieux laisserait croire qu'il a réussi.
+ */
+export function TaskContract(props: {
+  contract: ContractView
+  onSave?: (draft: ContractDraft) => Promise<boolean>
+}) {
   const [open, setOpen] = createSignal(false)
+  const [editing, setEditing] = createSignal(false)
+  const [draft, setDraft] = createSignal<ContractDraft>(draftFrom(props.contract))
+  const [saving, setSaving] = createSignal(false)
+  const [failure, setFailure] = createSignal<string | undefined>(undefined)
+
+  const startEdit = () => {
+    // Le brouillon repart du contrat **affiché**, jamais d'une saisie abandonnée.
+    setDraft(draftFrom(props.contract))
+    setFailure(undefined)
+    setOpen(true)
+    setEditing(true)
+  }
+
+  const cancel = () => {
+    setEditing(false)
+    setFailure(undefined)
+  }
+
+  const save = async () => {
+    if (!props.onSave || saving()) return
+    setSaving(true)
+    setFailure(undefined)
+    const accepted = await props.onSave(draft())
+    setSaving(false)
+    if (accepted) setEditing(false)
+    else setFailure("The contract was not saved.")
+  }
+
   return (
     <div class="plan">
       <div class="plan-card" classList={{ open: open() }}>
-        <button class="plan-head" title="Task contract" onClick={() => setOpen(!open())}>
-          <span class="plan-chevron" classList={{ open: open() }}>
-            ›
-          </span>
-          <span class="plan-title">contract</span>
-          {/* L'objectif est la ligne du repos : c'est lui qui dit de quoi il s'agit, et il se rogne
-              plutôt que de passer à la ligne — le détail est dans le dépli. */}
-          <span class="plan-active">{props.contract.goal}</span>
-          <Show when={props.contract.dod.length > 0}>
-            <span class="plan-count">DoD {props.contract.dod.length}</span>
+        <div class="plan-head-row">
+          <button class="plan-head" title="Task contract" onClick={() => setOpen(!open())}>
+            <span class="plan-chevron" classList={{ open: open() }}>
+              ›
+            </span>
+            <span class="plan-title">contract</span>
+            {/* L'objectif est la ligne du repos : c'est lui qui dit de quoi il s'agit, et il se rogne
+                plutôt que de passer à la ligne — le détail est dans le dépli. */}
+            <span class="plan-active">{props.contract.goal}</span>
+            <Show when={props.contract.dod.length > 0}>
+              <span class="plan-count">DoD {props.contract.dod.length}</span>
+            </Show>
+          </button>
+          <Show when={props.onSave && !editing()}>
+            <button class="plan-edit-btn" title="Edit the contract" aria-label="Edit the contract" onClick={startEdit}>
+              ✎
+            </button>
           </Show>
-        </button>
-        <Show when={open()}>
+        </div>
+        <Show when={editing()}>
+          <div class="plan-edit">
+            <h4 class="plan-sub">Objective</h4>
+            <textarea
+              class="plan-input"
+              rows="2"
+              value={draft().goal}
+              onInput={(event) => setDraft({ ...draft(), goal: event.currentTarget.value })}
+            />
+            <h4 class="plan-sub">Definition of done</h4>
+            <For each={draft().dod}>
+              {(item, index) => (
+                <div class="plan-row">
+                  <input
+                    class="plan-input"
+                    value={item}
+                    onInput={(event) =>
+                      setDraft({ ...draft(), dod: setItem(draft().dod, index(), event.currentTarget.value) })
+                    }
+                  />
+                  <button
+                    class="plan-remove"
+                    title="Remove"
+                    aria-label="Remove"
+                    onClick={() => setDraft({ ...draft(), dod: removeItem(draft().dod, index()) })}
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+            </For>
+            <button class="plan-add" onClick={() => setDraft({ ...draft(), dod: addItem(draft().dod) })}>
+              + criterion
+            </button>
+            <h4 class="plan-sub">Out of scope</h4>
+            <For each={draft().outOfScope}>
+              {(item, index) => (
+                <div class="plan-row">
+                  <input
+                    class="plan-input"
+                    value={item}
+                    onInput={(event) =>
+                      setDraft({ ...draft(), outOfScope: setItem(draft().outOfScope, index(), event.currentTarget.value) })
+                    }
+                  />
+                  <button
+                    class="plan-remove"
+                    title="Remove"
+                    aria-label="Remove"
+                    onClick={() => setDraft({ ...draft(), outOfScope: removeItem(draft().outOfScope, index()) })}
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+            </For>
+            <button class="plan-add" onClick={() => setDraft({ ...draft(), outOfScope: addItem(draft().outOfScope) })}>
+              + exclusion
+            </button>
+            <Show when={failure()}>{(message) => <p class="plan-error">{message()}</p>}</Show>
+            <div class="plan-actions">
+              <button class="plan-save" disabled={saving() || !draft().goal.trim()} onClick={() => void save()}>
+                {saving() ? "Saving…" : "Save"}
+              </button>
+              <button class="plan-cancel" onClick={cancel}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </Show>
+        <Show when={!editing() && open()}>
           <div class="plan-body">
             <Show when={props.contract.goal}>
               <h4 class="plan-sub">Objective</h4>
@@ -1058,7 +1206,7 @@ export function TaskContract(props: { contract: ContractView }) {
                 <For each={props.contract.dod}>
                   {(item) => (
                     <li class="plan-item" title={item}>
-                      <span class="plan-glyph">✓</span>
+                      <span class="todo-box on">✓</span>
                       <span class="plan-text">{item}</span>
                     </li>
                   )}
@@ -1071,7 +1219,7 @@ export function TaskContract(props: { contract: ContractView }) {
                 <For each={props.contract.outOfScope}>
                   {(item) => (
                     <li class="plan-item out" title={item}>
-                      <span class="plan-glyph">✕</span>
+                      <span class="todo-box off">✕</span>
                       <span class="plan-text">{item}</span>
                     </li>
                   )}

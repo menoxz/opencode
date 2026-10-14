@@ -3316,6 +3316,18 @@ textarea {
   overflow: hidden;
 }
 
+/* L'en-tête et son crayon. Le crayon agit sur la **carte entière**, donc il vit à côté du bouton qui
+   la déplie — jamais dedans : deux boutons imbriqués ne sont pas du HTML valide. */
+.plan-head-row {
+  display: flex;
+  align-items: center;
+}
+
+.plan-head-row .plan-head {
+  flex: 1;
+  min-width: 0;
+}
+
 .plan-head {
   display: flex;
   align-items: center;
@@ -3441,6 +3453,183 @@ textarea {
   margin: 0;
   color: var(--text-2);
   line-height: 1.6;
+}
+
+/* ---- Les todos en **checklist** ----
+
+   La case est ce qui fait lire la liste comme une checklist plutôt que comme une énumération. Sans
+   elle, un glyphe en tête de ligne reste une puce : l'état se **déduit** au lieu de se voir. */
+.todo-box {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line-2);
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 1;
+  /* Le glyphe est **dans** la case et n'en sort jamais : c'est la case qui porte l'état. */
+  color: transparent;
+}
+
+/* Cochée : la case se remplit. C'est le seul état qui mérite un aplat — il est terminal. */
+.todo-box.on {
+  border-color: var(--text-1);
+  background: var(--text-1);
+  color: var(--bg-0);
+}
+
+/* En cours : la case est **vide mais allumée**. Le travail qui se fait se distingue du travail
+   qui reste, sans se confondre avec celui qui est fini. */
+.todo-box.doing {
+  border-color: #4c8dff;
+  color: #4c8dff;
+}
+
+.todo-box.off {
+  color: var(--text-3);
+}
+
+/* L'item coché s'éteint : sa ligne n'est plus à lire, elle est à survoler. */
+.plan-item.st-completed .plan-text,
+.plan-item.st-cancelled .plan-text {
+  color: var(--text-3);
+  text-decoration: line-through;
+  text-decoration-color: var(--line-2);
+}
+
+/* La progression : une barre, pas un compteur seul. Un nombre se lit, une barre se voit. */
+.plan-progress {
+  height: 3px;
+  margin: 0 12px 8px;
+  border-radius: 2px;
+  background: var(--line-1);
+  overflow: hidden;
+}
+
+.plan-progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--text-2);
+  transition: width 0.2s ease;
+}
+
+/* ---- L'édition du contrat ---- */
+
+/* Le crayon vit dans l'en-tête, à droite : il agit sur la carte entière, pas sur une ligne. */
+.plan-edit-btn {
+  flex: none;
+  padding: 9px 12px 9px 4px;
+  color: var(--text-3);
+  font-size: var(--fs-meta);
+}
+
+.plan-edit-btn:hover {
+  color: var(--text-1);
+}
+
+.plan-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 12px 10px 34px;
+}
+
+.plan-input {
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  background: var(--bg-0);
+  color: var(--text-1);
+  font: inherit;
+  font-size: var(--fs-note);
+  resize: vertical;
+}
+
+.plan-input:focus {
+  outline: none;
+  border-color: var(--text-3);
+}
+
+/* Une entrée de liste : le champ prend la place, la croix reste au bord. */
+.plan-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.plan-row .plan-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.plan-remove {
+  flex: none;
+  padding: 5px 6px;
+  color: var(--text-3);
+  font-size: var(--fs-meta);
+}
+
+.plan-remove:hover {
+  color: var(--danger);
+}
+
+.plan-add {
+  align-self: flex-start;
+  padding: 3px 0;
+  color: var(--text-3);
+  font-size: var(--fs-note);
+}
+
+.plan-add:hover {
+  color: var(--text-1);
+}
+
+.plan-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.plan-save {
+  padding: 4px 12px;
+  border-radius: 6px;
+  background: var(--text-1);
+  color: var(--bg-0);
+  font-size: var(--fs-note);
+  font-weight: 600;
+}
+
+.plan-save:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.plan-cancel {
+  padding: 4px 8px;
+  color: var(--text-3);
+  font-size: var(--fs-note);
+}
+
+.plan-cancel:hover {
+  color: var(--text-1);
+}
+
+/* L'échec d'une écriture reste **visible** : un enregistrement qui ne dit rien laisse croire qu'il
+   a réussi, et c'est précisément ce qui a rendu indétectable le faux négatif du presse-papiers. */
+.plan-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--fs-note);
+}
+
+.plan-saved {
+  color: var(--text-3);
+  font-size: var(--fs-meta);
 }
 
 /* ---- Les fichiers **modifiés** de la réponse (§12.3) ----

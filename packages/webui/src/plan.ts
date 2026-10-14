@@ -108,3 +108,73 @@ export function todoProgress(todos: TodoView[]): {
     todos.find((todo) => todo.status === "in_progress") ?? todos.find((todo) => todo.status === "pending")
   return { done, total: todos.length, active }
 }
+
+/* =============================================================================
+   L'édition du contrat.
+
+   Le contrat est **inscriptible** : `PATCH /session/{id}` accepte un `goalState`. Prouvé par un
+   PATCH réel sur le bac à sable — 200, l'objectif relu portait la modification, `version` 5 → 6.
+   L'écran écrit donc par la route qui existe, sans en ajouter aucune.
+
+   Ce que l'édition change est **la décision** : l'objectif, les items de DoD, le hors-périmètre. Ce
+   qui l'entoure (`findings`, `completion`, `compaction`) est **repris tel quel** — l'écran n'en
+   connaît pas le sens, et le perdre serait une perte de données silencieuse.
+   ============================================================================= */
+
+/** Le contrat en cours d'édition : trois champs, tous du texte libre. */
+export type ContractDraft = {
+  goal: string
+  dod: string[]
+  outOfScope: string[]
+}
+
+export function draftFrom(contract: ContractView): ContractDraft {
+  return { goal: contract.goal, dod: [...contract.dod], outOfScope: [...contract.outOfScope] }
+}
+
+/** Les entrées vides ne partent pas : une ligne blanche n'est pas une décision. */
+export function cleanList(items: string[]): string[] {
+  return items.map((item) => item.trim()).filter((item) => item.length > 0)
+}
+
+/** Remplace une entrée — un index hors bornes rend la liste inchangée. */
+export function setItem(items: string[], index: number, value: string): string[] {
+  if (index < 0 || index >= items.length) return items
+  return items.map((item, at) => (at === index ? value : item))
+}
+
+export function addItem(items: string[]): string[] {
+  return [...items, ""]
+}
+
+export function removeItem(items: string[], index: number): string[] {
+  return items.filter((_, at) => at !== index)
+}
+
+/**
+ * Le `goalState` à envoyer : l'état **brut** du serveur, moins ce que l'écran a décidé.
+ *
+ * On repart de l'état brut, jamais de la projection : le schéma exige `status`, `source`, `version`
+ * et `updatedAt`, et le serveur **remplace** l'objet reçu — envoyer la seule projection effacerait
+ * `findings` et `completion`.
+ */
+export function contractPayload(
+  raw: unknown,
+  draft: ContractDraft,
+  now: number = Date.now(),
+): Record<string, unknown> | undefined {
+  if (!raw || typeof raw !== "object") return undefined
+  const base = raw as Record<string, unknown>
+  const version = typeof base.version === "number" ? base.version : 0
+  return {
+    ...base,
+    goal: draft.goal.trim(),
+    dod: cleanList(draft.dod),
+    outOfScope: cleanList(draft.outOfScope),
+    // Une main d'utilisateur a touché le contrat : c'est exactement ce que disent ces deux champs.
+    status: "edited",
+    source: "user",
+    version: version + 1,
+    updatedAt: now,
+  }
+}

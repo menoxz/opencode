@@ -1,5 +1,15 @@
 import { describe, expect, test } from "vitest"
-import { contractFrom, todoProgress, todosFrom } from "./plan"
+import {
+  addItem,
+  cleanList,
+  contractFrom,
+  contractPayload,
+  draftFrom,
+  removeItem,
+  setItem,
+  todoProgress,
+  todosFrom,
+} from "./plan"
 
 describe("todosFrom — les todos d'une session", () => {
   test("les trois champs sont repris, le contenu détouré", () => {
@@ -115,5 +125,86 @@ describe("todoProgress — ce qui s'affiche au repos", () => {
 
   test("une liste vide ne rend ni compte ni actif", () => {
     expect(todoProgress([])).toEqual({ done: 0, total: 0, active: undefined })
+  })
+})
+
+describe("l'édition du contrat — le brouillon", () => {
+  const contract = { goal: "Objectif", dod: ["a", "b"], outOfScope: ["c"] }
+
+  test("le brouillon repart du contrat affiché, sans partager ses tableaux", () => {
+    const draft = draftFrom(contract)
+    expect(draft).toEqual({ goal: "Objectif", dod: ["a", "b"], outOfScope: ["c"] })
+    // Modifier le brouillon ne doit **pas** toucher le contrat : sans la copie, l'annulation ne
+    // ramènerait rien, puisque l'original aurait déjà changé.
+    draft.dod.push("z")
+    expect(contract.dod).toEqual(["a", "b"])
+  })
+
+  test("les entrées vides ne partent pas : une ligne blanche n'est pas une décision", () => {
+    expect(cleanList(["  a  ", "", "   ", "b"])).toEqual(["a", "b"])
+  })
+
+  test("remplacer une entrée laisse les autres intactes", () => {
+    expect(setItem(["a", "b", "c"], 1, "B")).toEqual(["a", "B", "c"])
+  })
+
+  test("un index hors bornes rend la liste inchangée", () => {
+    expect(setItem(["a"], 4, "x")).toEqual(["a"])
+    expect(setItem(["a"], -1, "x")).toEqual(["a"])
+  })
+
+  test("ajouter pose une entrée vide : on l'écrit ensuite", () => {
+    expect(addItem(["a"])).toEqual(["a", ""])
+  })
+
+  test("retirer enlève la bonne ligne", () => {
+    expect(removeItem(["a", "b", "c"], 1)).toEqual(["a", "c"])
+  })
+})
+
+describe("l'édition du contrat — la charge envoyée au serveur", () => {
+  const raw = {
+    status: "active",
+    source: "auto",
+    goal: "ancien",
+    dod: ["x"],
+    outOfScope: [],
+    version: 4,
+    updatedAt: 1,
+    findings: [{ id: "F1", summary: "à ne pas perdre" }],
+    completion: { evidence: [], unverified: [], completedAt: 0 },
+  }
+
+  test("ce que l'écran ne connaît pas traverse **tel quel**", () => {
+    // Le serveur **remplace** le goalState reçu : repartir de la projection effacerait `findings`
+    // et `completion`, et personne ne le verrait.
+    const payload = contractPayload(raw, { goal: "neuf", dod: ["y"], outOfScope: [] }, 999)
+    expect(payload?.findings).toEqual(raw.findings)
+    expect(payload?.completion).toEqual(raw.completion)
+  })
+
+  test("l'objectif et les listes sont détourés, les vides écartés", () => {
+    const payload = contractPayload(raw, { goal: "  neuf  ", dod: ["  y  ", ""], outOfScope: ["z"] }, 999)
+    expect(payload?.goal).toBe("neuf")
+    expect(payload?.dod).toEqual(["y"])
+    expect(payload?.outOfScope).toEqual(["z"])
+  })
+
+  test("la main de l'utilisateur est **dite** : statut édité, source utilisateur, version incrémentée", () => {
+    const payload = contractPayload(raw, { goal: "neuf", dod: [], outOfScope: [] }, 999)
+    expect(payload?.status).toBe("edited")
+    expect(payload?.source).toBe("user")
+    expect(payload?.version).toBe(5)
+    expect(payload?.updatedAt).toBe(999)
+  })
+
+  test("sans état brut, il n'y a rien à envoyer — et surtout pas un objet inventé", () => {
+    expect(contractPayload(undefined, { goal: "a", dod: [], outOfScope: [] })).toBeUndefined()
+    expect(contractPayload(null, { goal: "a", dod: [], outOfScope: [] })).toBeUndefined()
+  })
+
+  test("une version absente repart de zéro au lieu de rendre NaN", () => {
+    const payload = contractPayload({ goal: "a", dod: [], outOfScope: [] }, { goal: "b", dod: [], outOfScope: [] }, 1)
+    expect(payload?.version).toBe(1)
   })
 })
