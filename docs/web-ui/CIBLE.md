@@ -136,6 +136,11 @@ step 3 · 12 actions · 8,4 s · $0.12 · 31k tokens
   un déversement.
 - **La densité suit l'importance** : prose à `--fs-base`, lignes d'action et en-têtes à `--fs-note`,
   rien en dessous. Une ligne d'action est **une ligne**, pas une carte.
+- **L'air se met au-dessus de ce qui ouvre un bloc, jamais entre deux lignes du même bloc.** Deux
+  appels d'outil qui se suivent restent au ras (1 px de padding chacun) ; un raisonnement, lui, *ouvre*
+  un bloc et se détache par un peu d'air **au-dessus** (`margin-top` sur `.reasoning`, 8 px). Le pas
+  **entre deux tours** est plus large encore (`.transcript { gap }`, 26 px) : c'est lui qui sépare deux
+  échanges, pas le flux interne d'un tour (`.turn { gap: 0 }`).
 
 ### 3.8 Ce qui ne s'affiche **jamais** dans le fil
 
