@@ -1,6 +1,8 @@
 import { describe, expect, test } from "vitest"
 import {
   answersComplete,
+  errorText,
+  trajectory,
   answerDocuments,
   canAlways,
   boundLines,
@@ -710,7 +712,14 @@ describe("les documents d'une réponse", () => {
     },
   })
 
-  const turn = (items: unknown[]): TurnView => ({ id: "m", role: "assistant", prompt: [], steps: [{ index: 1, items: items as never, actions: 0, cost: 0, tokens: 0, durationMs: undefined }] })
+  const turn = (items: unknown[]): TurnView => ({
+    id: "m",
+    role: "assistant",
+    info: { id: "m", role: "assistant" },
+    replies: [],
+    prompt: [],
+    steps: [{ index: 1, items: items as never, actions: 0, cost: 0, tokens: 0, durationMs: undefined }],
+  })
 
   test("un patch apporte ses fichiers, une écriture ses ±lignes", () => {
     const docs = answerDocuments(turn([patch(["a.ts", "b.ts"]), write("t", "c.ts", 12, 3)]))
@@ -825,5 +834,157 @@ describe("le badge de type d'un fichier", () => {
 
   test("une extension très longue ne devient pas un pavé", () => {
     expect(fileBadge("odd.verylongext").label).toBe("•")
+  })
+})
+
+describe("trajectory — le diagnostic d'un tour", () => {
+  const asked = (id: string, text: string, extra: Record<string, unknown> = {}) => ({
+    info: { id, role: "user", ...extra },
+    parts: [{ type: "text", text }],
+  })
+  const reply = (id: string, parts: unknown[], extra: Record<string, unknown> = {}) => ({
+    info: { id, role: "assistant", ...extra },
+    parts,
+  })
+  const finish = (reason: string, cost: number, tokens: Record<string, unknown>) => ({
+    type: "step-finish",
+    id: "f",
+    reason,
+    cost,
+    tokens,
+  })
+  const call = (tool: string) => ({ type: "tool", id: "t", tool, state: { status: "completed" } })
+  const trace = (messages: unknown[]) => trajectory(groupTurns(messages as never))
+
+  const small = { input: 1, output: 1, cache: { read: 0, write: 0 } }
+
+  test("le tour dit ce qui a **réellement** servi, pas ce qui a été demandé", () => {
+    // L'utilisateur demande « p/m » ; le serveur répond avec « p/autre » (bascule de modèle).
+    const traces = trace([
+      asked("u", "fais", { agent: "build", model: { providerID: "p", modelID: "m" } }),
+      reply("a", [], { providerID: "p", modelID: "autre", agent: "plan", mode: "primary" }),
+    ])
+    expect(traces[0].model).toBe("p/autre")
+    expect(traces[0].agent).toBe("plan")
+    expect(traces[0].mode).toBe("primary")
+  })
+
+  test("sans réponse, il retombe sur ce qui a été demandé", () => {
+    const traces = trace([asked("u", "fais", { agent: "build", model: { providerID: "p", modelID: "m" } })])
+    expect(traces[0].model).toBe("p/m")
+    expect(traces[0].agent).toBe("build")
+    expect(traces[0].mode).toBeUndefined()
+  })
+
+  test("la durée va de la demande à la fin de la réponse", () => {
+    const traces = trace([
+      asked("u", "fais", { time: { created: 1000 } }),
+      reply("a", [], { time: { created: 1100, completed: 2500 } }),
+    ])
+    expect(traces[0].durationMs).toBe(1500)
+  })
+
+  test("une réponse sans fin n'a pas de durée — on n'invente pas un zéro", () => {
+    const traces = trace([
+      asked("u", "fais", { time: { created: 1000 } }),
+      reply("a", [], { time: { created: 1100 } }),
+    ])
+    expect(traces[0].durationMs).toBeUndefined()
+  })
+
+  test("les jetons sont séparés par origine et additionnés sur les étapes", () => {
+    const traces = trace([
+      asked("u", "fais"),
+      reply("a", [
+        finish("tool-calls", 0.01, { input: 100, output: 20, cache: { read: 900, write: 5 } }),
+        finish("stop", 0.02, { input: 200, output: 40, cache: { read: 100, write: 0 } }),
+      ]),
+    ])
+    expect(traces[0].input).toBe(300)
+    expect(traces[0].output).toBe(60)
+    expect(traces[0].cacheRead).toBe(1000)
+    expect(Number(traces[0].cost.toFixed(3))).toBe(0.03)
+  })
+
+  test("l'étape porte ses outils et son motif d'arrêt", () => {
+    const traces = trace([
+      asked("u", "fais"),
+      reply("a", [{ type: "step-start", id: "s1" }, call("read"), call("edit"), finish("tool-calls", 0, small)]),
+    ])
+    expect(traces[0].steps[0].tools).toEqual(["read", "edit"])
+    expect(traces[0].steps[0].reason).toBe("tool-calls")
+    expect(traces[0].actions).toBe(2)
+  })
+
+  test("une étape sans outil est un pas de raisonnement — liste vide, pas un mensonge", () => {
+    // Le prix est indispensable : `groupSteps` écarte une étape **sans contenu et sans prix** (un
+    // `step-start` resté seul). Un `step-finish` réel en porte toujours un.
+    const traces = trace([
+      asked("u", "fais"),
+      reply("a", [{ type: "step-start", id: "s1" }, finish("stop", 0.001, small)]),
+    ])
+    expect(traces[0].steps[0].tools).toEqual([])
+  })
+
+  test("le motif d'arrêt se lit jusque dans la ligne d'étape", () => {
+    // `length` est le cas qui se répare mal : une réponse coupée ne se relance pas comme un arrêt normal.
+    const traces = trace([asked("u", "fais"), reply("a", [finish("length", 0.001, small)])])
+    expect(traces[0].steps[0].reason).toBe("length")
+  })
+
+  test("une étape sans contenu et sans prix n'est pas une étape", () => {
+    // C'est la règle du regroupement : un `step-start` resté seul ne compte pas. Elle compte ici
+    // parce que la trajectoire en dépend — un tour sans étape doit s'afficher sans étape.
+    const traces = trace([asked("u", "fais"), reply("a", [{ type: "step-start", id: "s1" }])])
+    expect(traces[0].steps).toEqual([])
+  })
+
+  test("le prompt compte ses caractères — ce qui a été envoyé", () => {
+    const traces = trace([asked("u", "douze lettres")])
+    expect(traces[0].promptChars).toBe(13)
+  })
+
+  test("les injections jointes au prompt se relisent dans le tour", () => {
+    const texte = "Context injections · 3 section(s)\n- core: system prompt (PROMPT_CORE) · 5592 chars"
+    const traces = trace([asked("u", texte)])
+    expect(traces[0].injections?.kind).toBe("sections")
+    expect(traces[0].injections?.sections).toHaveLength(1)
+  })
+
+  test("sans injection, le tour n'en invente pas", () => {
+    expect(trace([asked("u", "juste un prompt")])[0].injections).toBeUndefined()
+  })
+
+  test("l'erreur d'une réponse remonte dans le tour", () => {
+    const traces = trace([
+      asked("u", "fais"),
+      reply("a", [], { error: { name: "ApiError", data: { message: "taux dépassé", statusCode: 429 } } }),
+    ])
+    expect(traces[0].error).toBe("taux dépassé")
+  })
+
+  test("les tours sont numérotés à partir de 1, dans l'ordre", () => {
+    const traces = trace([asked("u1", "un"), asked("u2", "deux")])
+    expect(traces.map((entry) => entry.turn)).toEqual([1, 2])
+  })
+
+  test("sans tour, la trajectoire est vide", () => {
+    expect(trajectory([])).toEqual([])
+  })
+})
+
+describe("errorText — lire une erreur sans deviner sa forme", () => {
+  test("il prend le message de la variante", () => {
+    expect(errorText({ name: "ProviderAuthError", data: { message: "clé absente" } })).toBe("clé absente")
+  })
+
+  test("à défaut de message, le nom de la variante est déjà une information", () => {
+    expect(errorText({ name: "MessageAbortedError", data: {} })).toBe("MessageAbortedError")
+  })
+
+  test("une entrée qui n'est pas une erreur ne rend rien", () => {
+    expect(errorText(undefined)).toBeUndefined()
+    expect(errorText("oups")).toBeUndefined()
+    expect(errorText({})).toBeUndefined()
   })
 })

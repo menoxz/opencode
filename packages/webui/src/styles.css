@@ -2944,6 +2944,148 @@ textarea {
   color: var(--text-1);
 }
 
+/* ---- La trajectoire — le diagnostic d'un tour (§10.2) ----
+
+   Un tour est un bloc, et dans le bloc les faits sont alignés en **colonnes** : un libellé à gauche,
+   la valeur à droite. On lit une trajectoire en descendant une colonne — pas en cherchant le chiffre
+   dans une phrase. */
+
+.trace-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0 var(--gutter) 8px;
+  list-style: none;
+  max-width: var(--measure);
+  margin-inline: auto;
+}
+
+.trace-turn {
+  padding: 10px 12px;
+  background: var(--bg-1);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+}
+
+.trace-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.trace-index {
+  color: var(--text-1);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.trace-role {
+  color: var(--text-3);
+  font-size: var(--fs-meta);
+}
+
+.trace-tag {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #ffffff14;
+  color: var(--text-2);
+  font-size: var(--fs-meta);
+}
+
+.trace-model {
+  color: var(--text-2);
+  font-size: var(--fs-meta);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 40%;
+}
+
+.trace-spacer {
+  flex: 1;
+}
+
+.trace-fact {
+  color: var(--text-3);
+  font-size: var(--fs-meta);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.trace-row {
+  display: flex;
+  gap: 10px;
+  padding: 2px 0;
+  font-size: var(--fs-meta);
+}
+
+.trace-label {
+  flex: none;
+  width: 66px;
+  color: var(--text-3);
+}
+
+.trace-value {
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.trace-steps {
+  display: flex;
+  flex-direction: column;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line-2);
+}
+
+.trace-step {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 2px 0;
+  font-size: var(--fs-meta);
+}
+
+.trace-step-index {
+  flex: none;
+  width: 48px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.trace-tools {
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trace-error {
+  margin: 8px 0 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: #f851491a;
+  color: var(--fam-error, #f85149);
+  font-size: var(--fs-meta);
+  overflow-wrap: anywhere;
+}
+
+/* Les événements bruts, repliés : ils servent quand la trajectoire ne suffit pas. */
+.log-events {
+  max-width: var(--measure);
+  margin: 6px auto 0;
+  padding: 0 var(--gutter);
+}
+
+.log-events summary {
+  cursor: pointer;
+  color: var(--text-3);
+  font-size: var(--fs-meta);
+}
+
 .log-list {
   display: flex;
   flex-direction: column;

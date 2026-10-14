@@ -34,6 +34,7 @@ import {
   SessionPanel,
   SessionRow,
   ShowMore,
+  TrajectoryPanel,
   ToolLine,
   Turn,
   UserPrompt,
@@ -1840,21 +1841,27 @@ export default function App() {
             </button>
           </nav>
           <Show when={view() === "logs"}>
-            {/* Le plus récent en tête : on ouvre le journal pour voir **ce qui vient de se passer**,
-                pas pour remonter le temps depuis le début du serveur. */}
+            {/* La **trajectoire** d'abord : c'est elle qui diagnostique un tour — ce qui a été
+                injecté, ce qui est entré et sorti, ce que chaque étape a coûté. Les événements bruts
+                sont dessous, repliés : ils servent quand la trajectoire ne suffit pas, et les déplier
+                par défaut noierait la lecture. */}
             <div class="scroll">
-              <Show when={logEntries().length > 0} fallback={<p class="log-empty">No events received yet.</p>}>
-                <ul class="log-list">
-                  <For each={[...logEntries()].reverse()}>
-                    {(entry) => (
-                      <li class="log-row">
-                        <span class="log-time">{new Date(entry.at).toLocaleTimeString()}</span>
-                        <span class="log-type">{entry.type}</span>
-                      </li>
-                    )}
-                  </For>
-                </ul>
-              </Show>
+              <TrajectoryPanel turns={turns()} />
+              <details class="log-events">
+                <summary>Raw events ({logEntries().length})</summary>
+                <Show when={logEntries().length > 0} fallback={<p class="log-empty">No events received yet.</p>}>
+                  <ul class="log-list">
+                    <For each={[...logEntries()].reverse()}>
+                      {(entry) => (
+                        <li class="log-row">
+                          <span class="log-time">{new Date(entry.at).toLocaleTimeString()}</span>
+                          <span class="log-type">{entry.type}</span>
+                        </li>
+                      )}
+                    </For>
+                  </ul>
+                </Show>
+              </details>
             </div>
           </Show>
           <Show when={view() === "chat"}>

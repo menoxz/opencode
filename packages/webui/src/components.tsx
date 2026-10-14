@@ -23,6 +23,8 @@ import {
   stepSummary,
   tokensPerSecond,
   toolDetail,
+  trajectory,
+  type TurnView,
   toolOutputLines,
   toolStatusLabel,
   toolTitle,
@@ -916,6 +918,99 @@ export function ComposerMarkup(props: { text: string }) {
           perdrait sa dernière ligne dans le calque, et le champ défilerait seul. */}
       <span class="mk mk-plain">{"\u200b"}</span>
     </div>
+  )
+}
+
+/* =============================================================================
+   La trajectoire — CIBLE.md §10.2.
+
+   Le fil raconte ce qui s'est passé ; la trajectoire dit **comment** et **à quel prix**. Un tour y
+   est un bloc, et il contient dans l'ordre : par quel agent et quel modèle il a été produit, ce qui a
+   été **envoyé** (le prompt, puis ce que le serveur a injecté avant lui), ce qui est **revenu** (les
+   jetons séparés par origine), puis chaque **étape** avec ses outils, son motif d'arrêt et son coût.
+
+   Deux règles de composition :
+
+   1. **Une ligne ne dit qu'un fait, et son libellé à gauche.** On lit une trajectoire en descendant
+      une colonne, pas en cherchant le chiffre dans une phrase.
+   2. **Une donnée absente disparaît** (§10.1) : une étape de raisonnement n'a pas d'outil et le dit
+      (« reasoning »), mais une durée inconnue ne s'affiche pas comme un zéro.
+   ============================================================================= */
+
+export function TrajectoryPanel(props: { turns: TurnView[] }) {
+  const traces = createMemo(() => trajectory(props.turns))
+  const injectionSummary = (injections: Injections) =>
+    injections.kind === "sources"
+      ? `${injections.sources.length} file${injections.sources.length > 1 ? "s" : ""}`
+      : `${injections.sections.length} section${injections.sections.length > 1 ? "s" : ""}`
+  return (
+    <Show when={traces().length > 0} fallback={<p class="log-empty">No turns in this session yet.</p>}>
+      <ol class="trace-list">
+        <For each={traces()}>
+          {(trace) => (
+            <li class="trace-turn">
+              <div class="trace-head">
+                <span class="trace-index">#{trace.turn}</span>
+                <span class="trace-role">{trace.role}</span>
+                <Show when={trace.agent}>{(agent) => <span class="trace-tag">{agent()}</span>}</Show>
+                <Show when={trace.mode}>{(mode) => <span class="trace-tag">{mode()}</span>}</Show>
+                <span class="trace-model" title={trace.model ?? undefined}>
+                  {trace.model ?? "model unknown"}
+                </span>
+                <span class="trace-spacer" />
+                <Show when={formatDuration(trace.durationMs)}>
+                  {(value) => <span class="trace-fact">{value()}</span>}
+                </Show>
+                <Show when={formatCost(trace.cost)}>{(value) => <span class="trace-fact">{value()}</span>}</Show>
+              </div>
+              {/* Ce qui a été **envoyé**. */}
+              <div class="trace-row">
+                <span class="trace-label">prompt</span>
+                <span class="trace-value">{trace.promptChars.toLocaleString()} chars</span>
+              </div>
+              <Show when={trace.injections}>
+                {(injections) => (
+                  <div class="trace-row">
+                    <span class="trace-label">injected</span>
+                    <span class="trace-value">{injectionSummary(injections())}</span>
+                  </div>
+                )}
+              </Show>
+              {/* Ce qui est **revenu**, séparé par origine : entrée, sortie, cache. */}
+              <div class="trace-row">
+                <span class="trace-label">tokens</span>
+                <span class="trace-value">
+                  {trace.input.toLocaleString()} in · {trace.output.toLocaleString()} out ·{" "}
+                  {trace.cacheRead.toLocaleString()} cached
+                </span>
+              </div>
+              <Show when={trace.steps.length > 0}>
+                <div class="trace-steps">
+                  <For each={trace.steps}>
+                    {(step) => (
+                      <div class="trace-step">
+                        <span class="trace-step-index">step {step.index}</span>
+                        <span class="trace-tools">{step.tools.length > 0 ? step.tools.join(", ") : "reasoning"}</span>
+                        <span class="trace-spacer" />
+                        <Show when={step.reason}>{(reason) => <span class="trace-fact">{reason()}</span>}</Show>
+                        <span class="trace-fact">
+                          {step.input.toLocaleString()}↓ {step.output.toLocaleString()}↑
+                        </span>
+                        <Show when={formatDuration(step.durationMs)}>
+                          {(value) => <span class="trace-fact">{value()}</span>}
+                        </Show>
+                      </div>
+                    )}
+                  </For>
+                </div>
+              </Show>
+              {/* L'erreur, quand il y en a une : c'est la première chose qu'on cherche après coup. */}
+              <Show when={trace.error}>{(error) => <p class="trace-error">{error()}</p>}</Show>
+            </li>
+          )}
+        </For>
+      </ol>
+    </Show>
   )
 }
 

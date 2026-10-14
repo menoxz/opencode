@@ -1,3 +1,5 @@
+import { parseInjections, type Injections } from "./injections"
+
 /**
  * Pure decision logic for the web UI, kept free of JSX so it can be tested with `bun test`.
  *
@@ -191,6 +193,23 @@ export type Message = {
     providerID?: string
     modelID?: string
     agent?: string
+    /**
+     * Le mode de l'agent, ses bornes de temps, et l'erreur éventuelle.
+     *
+     * Ce sont les trois choses qu'un diagnostic par tour demande et que le fil n'affiche pas : *par
+     * quel mode* la réponse a été produite, *combien de temps* elle a pris, et *pourquoi* elle a
+     * échoué. `time.completed` manquant est en soi une information — une réponse qui n'a pas fini.
+     */
+    mode?: string
+    time?: { created?: number; completed?: number }
+    error?: unknown
+    /**
+     * Le modèle **demandé**, sur un message d'utilisateur (`{ providerID, modelID, variant? }`).
+     *
+     * Il est imbriqué, contrairement à celui d'une réponse : c'est la forme du serveur, et la
+     * confusion entre les deux ferait lire un modèle vide sur les messages d'utilisateur.
+     */
+    model?: { providerID?: string; modelID?: string; variant?: string }
   }
   parts: Part[]
 }
@@ -211,6 +230,14 @@ export type StepView = {
    * sort jamais du fil — il alimente la barre de statistiques sous la saisie.
    */
   usage?: StepUsage
+  /**
+   * Le motif de fin d'étape — `stop`, `tool-calls`, `length`…
+   *
+   * C'est la réponse à « pourquoi cette étape s'est-elle arrêtée là ? », et c'est la première chose
+   * qu'on cherche quand une réponse se coupe : une longueur atteinte ne se répare pas comme un arrêt
+   * normal.
+   */
+  reason?: string
 }
 
 export type StepUsage = {
@@ -228,6 +255,24 @@ export type TurnView = {
   /** Le prompt de l'utilisateur, tel qu'il l'a écrit. */
   prompt: Part[]
   steps: StepView[]
+  /**
+   * L'information du message d'origine, gardée telle quelle.
+   *
+   * Le fil n'en a pas besoin — il rend des parties — mais la **trajectoire** oui : c'est la seule
+   * source du modèle, de l'agent, du mode, des bornes de temps et de l'erreur d'un tour. La garder ici
+   * évite de relire les messages bruts dans un second passage, ce qui risquerait de désynchroniser les
+   * deux lectures.
+   */
+  info: Message["info"]
+  /**
+   * Les réponses d'agent du tour, avec leur information.
+   *
+   * C'est là que vivent ce que le tour a **réellement** utilisé — le modèle et l'agent retenus, le
+   * mode, la borne de fin, l'erreur — là où le message de l'utilisateur ne porte que ce qu'il a
+   * *demandé*. Un tour peut porter plusieurs réponses (une par étape) : on les garde toutes, et la
+   * dernière fait foi pour ce qui est continu.
+   */
+  replies: Message["info"][]
 }
 
 /** Types qui ne portent rien pour l'utilisateur, quel que soit leur volume. */
@@ -310,6 +355,8 @@ export function groupSteps(parts: Part[]): StepView[] {
       const step = open ?? begin()
       step.cost += typeof part.cost === "number" ? part.cost : 0
       step.tokens += tokensOf(part.tokens)
+      // Le motif de fin : `stop`, `tool-calls`, `length`… Le fil ne le montre pas, la trajectoire oui.
+      if (typeof part.reason === "string" && part.reason) step.reason = part.reason
       const tokens = part.tokens
       if (tokens && typeof tokens === "object") {
         const usage = step.usage ?? (step.usage = {})
@@ -346,14 +393,22 @@ export function groupTurns(messages: Message[]): TurnView[] {
     const role = message.info.role
     const parts = message.parts ?? []
     if (role === "user") {
-      current = { id: message.info.id, role, prompt: parts.filter((part) => isVisiblePart(part)), steps: [] }
+      current = {
+        id: message.info.id,
+        role,
+        info: message.info,
+        replies: [],
+        prompt: parts.filter((part) => isVisiblePart(part)),
+        steps: [],
+      }
       turns.push(current)
       continue
     }
     if (!current || current.role !== "user" || current.steps.length > 0) {
-      current = { id: message.info.id, role, prompt: [], steps: [] }
+      current = { id: message.info.id, role, info: message.info, replies: [], prompt: [], steps: [] }
       turns.push(current)
     }
+    current.replies.push(message.info)
     current.steps.push(...groupSteps(parts))
   }
 
@@ -850,6 +905,140 @@ export function cacheHitRate(stats: SessionStats): number | undefined {
 export function contextFill(contextTokens: number | undefined, limit: number | undefined): number | undefined {
   if (!contextTokens || !limit || limit <= 0) return undefined
   return Math.min(1, contextTokens / limit)
+}
+
+/* -----------------------------------------------------------------------------
+   La trajectoire — le diagnostic d'un tour (CIBLE.md §10.2).
+
+   Le fil raconte ce qui s'est passé ; la trajectoire dit **comment** et **à quel prix**. Elle répond
+   aux questions qu'on se pose après coup : qu'est-ce qui a été injecté avant mon prompt, combien de
+   jetons sont entrés et sortis, combien de temps chaque étape a pris, et pourquoi celle-ci s'est
+   arrêtée là. Elle est construite sur les **mêmes** projections que le fil (`groupTurns`/`groupSteps`)
+   pour que les deux lectures ne puissent pas se contredire.
+   -------------------------------------------------------------------------- */
+
+/** Une étape, réduite à ce qui se diagnostique. */
+export type StepTrace = {
+  index: number
+  /** Les outils appelés, dans l'ordre — un pas de raisonnement n'en a aucun. */
+  tools: string[]
+  input: number
+  output: number
+  cacheRead: number
+  cost: number
+  durationMs?: number
+  reason?: string
+}
+
+/** Un tour, avec tout ce qui est exposable pour le diagnostiquer. */
+export type TurnTrace = {
+  /** Numéro affiché, à partir de 1. */
+  turn: number
+  role: string
+  /** `providerID/modelID`, tel que le serveur l'a réellement utilisé pour ce tour. */
+  model?: string
+  agent?: string
+  mode?: string
+  started?: number
+  durationMs?: number
+  /** Le volume du prompt, en caractères : ce qui a été envoyé. */
+  promptChars: number
+  /** Ce que le serveur a injecté **avant** le prompt, quand le texte synthétique le porte. */
+  injections?: Injections
+  steps: StepTrace[]
+  input: number
+  output: number
+  cacheRead: number
+  cost: number
+  actions: number
+  error?: string
+}
+
+/**
+ * Le message d'une erreur, quelle que soit sa variante.
+ *
+ * `error` est une union : chaque variante porte `name` et `data.message`. On ne devine pas la forme —
+ * on lit celle qui est là, et on retombe sur le `name`, qui est déjà une information (« quelle erreur »
+ * vaut mieux que rien).
+ */
+export function errorText(error: unknown): string | undefined {
+  if (!error || typeof error !== "object") return undefined
+  const entry = error as { name?: unknown; data?: unknown }
+  const data = entry.data && typeof entry.data === "object" ? (entry.data as { message?: unknown }) : undefined
+  if (typeof data?.message === "string" && data.message) return data.message
+  if (typeof entry.name === "string" && entry.name) return entry.name
+  return undefined
+}
+
+/** Les outils d'une étape, dans l'ordre — le bruit de protocole (`turn_plan`) reste exclu. */
+function stepTools(step: StepView): string[] {
+  const tools: string[] = []
+  for (const part of step.items) {
+    if (part.type !== "tool" || !part.tool) continue
+    if (HIDDEN_TOOLS.has(part.tool)) continue
+    tools.push(part.tool)
+  }
+  return tools
+}
+
+/**
+ * Les injections d'un tour.
+ *
+ * Le serveur les joint en **texte synthétique** dans le prompt (`Context injections · …` /
+ * `Instructions from: …`) : c'est le seul endroit où elles vivent, donc on les relit là plutôt que de
+ * les recalculer — recalculer donnerait une seconde vérité.
+ */
+function turnInjections(prompt: Part[]): Injections | undefined {
+  for (const part of prompt) {
+    if (part.type !== "text" || typeof part.text !== "string") continue
+    const parsed = parseInjections(part.text)
+    if (parsed) return parsed
+  }
+  return undefined
+}
+
+/** La trajectoire de la session, du plus ancien tour au plus récent. */
+export function trajectory(turns: TurnView[]): TurnTrace[] {
+  return turns.map((turn, index) => {
+    const asked = turn.info
+    // Ce qui a **réellement** servi : la dernière réponse du tour. À défaut (un tour sans réponse —
+    // une question en attente), on retombe sur ce que l'utilisateur avait demandé.
+    const ran = turn.replies[turn.replies.length - 1]
+    const steps: StepTrace[] = turn.steps.map((step) => ({
+      index: step.index,
+      tools: stepTools(step),
+      input: step.usage?.input ?? 0,
+      output: step.usage?.output ?? 0,
+      cacheRead: step.usage?.cacheRead ?? 0,
+      cost: step.cost,
+      durationMs: step.durationMs,
+      reason: step.reason,
+    }))
+    const started = asked.time?.created
+    const completed = ran?.time?.completed
+    const sum = (pick: (step: StepTrace) => number) => steps.reduce((total, step) => total + pick(step), 0)
+    const usedProvider = ran?.providerID ?? asked.model?.providerID
+    const usedModel = ran?.modelID ?? asked.model?.modelID
+    return {
+      turn: index + 1,
+      role: turn.role,
+      model: usedProvider && usedModel ? `${usedProvider}/${usedModel}` : undefined,
+      agent: ran?.agent ?? asked.agent,
+      mode: ran?.mode,
+      started,
+      // Une réponse sans `completed` n'a pas de durée : on n'en invente pas une (elle est en cours).
+      durationMs: typeof started === "number" && typeof completed === "number" ? completed - started : undefined,
+      promptChars: turn.prompt.reduce((total, part) => total + (part.text?.length ?? 0), 0),
+      injections: turnInjections(turn.prompt),
+      steps,
+      input: sum((step) => step.input),
+      output: sum((step) => step.output),
+      cacheRead: sum((step) => step.cacheRead),
+      cost: sum((step) => step.cost),
+      actions: sum((step) => step.tools.length),
+      error: turn.replies.map((reply) => errorText(reply.error)).find((text) => Boolean(text)),
+    }
+  })
 }
 
 /* =============================================================================
