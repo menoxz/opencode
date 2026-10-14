@@ -448,6 +448,11 @@ describe("SessionPanel — ce que le fil n'affiche plus", () => {
     tokens: 1_200_000,
     cost: 0.42,
     perStep: [],
+    output: 0,
+    input: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    contextTokens: 0,
   }
 
   test("il porte les agrégats demandés", () => {

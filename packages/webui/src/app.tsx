@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, Show, onCleanup, onMount } from "solid-js"
+import { createEffect, createMemo, createSignal, For, Show, onCleanup, onMount, untrack } from "solid-js"
 import {
   buildFilePart,
   filePartLabel,
@@ -20,6 +20,7 @@ import {
 import {
   Boundary,
   ComposerMarkup,
+  ComposerStats,
   ContextInjections,
   Documents,
   FileChip,
@@ -56,12 +57,12 @@ import {
   authBody,
   authMethods,
   modelCatalog,
+  modelContextLimits,
   catalogSummaries,
   providerModelChoices,
   providerSummaries,
   scopeKey,
-  scopedValues,
-  type ProviderSummary,
+  scopedValues,  type ProviderSummary,
   settingDisplay,
   settingGroups,
   settingValue,
@@ -76,10 +77,13 @@ import {
   mergeDeclared,
   modelPatch,
   newProviderDraft,
+  parseModelChoice,
   providerId,
   providerPatch,
   toggleModel,
 } from "./settings"
+import { Picker } from "./picker"
+import { SendIcon } from "./icons"
 import {
   agentCounts,
   agentRows,
@@ -176,6 +180,39 @@ export default function App() {
    * modèles porte les clés des fournisseurs, et elle est abandonnée dès la projection.
    */
   const [modelOptions, setModelOptions] = createSignal<Choice[]>([])
+  /**
+   * Le modèle et l'agent du **prochain message**.
+   *
+   * Ce ne sont pas des réglages de session persistés : ils partent avec chaque envoi — `promptAsync`
+   * les accepte, et c'est ce qui rend le changement effectif dès le message suivant. Vides, ils
+   * valent « défaut du serveur » et l'envoi n'ajoute alors aucune contrainte.
+   */
+  const [composerModel, setComposerModel] = createSignal("")
+  const [composerAgent, setComposerAgent] = createSignal("")
+  /** La fenêtre de contexte de chaque modèle — la seule donnée dont le remplissage du contexte a besoin. */
+  const [modelLimits, setModelLimits] = createSignal<Record<string, number>>({})
+  /** Les agents proposables — chargés à la première ouverture du choix, jamais au montage (1,5 Mo). */
+  const [agentOptions, setAgentOptions] = createSignal<Choice[]>([])
+  /**
+   * Le modèle et l'agent de la saisie suivent **ce que la session a réellement utilisé**.
+   *
+   * C'est la seule source qui décrive l'état courant : la configuration ne donne qu'un défaut global,
+   * et la session dit ce qui a servi. On ne remplace jamais un choix explicite — la valeur n'est posée
+   * que si rien n'a encore été choisi — et elle est lue sous `untrack`, sinon l'écriture relancerait
+   * l'effet qui vient de la faire.
+   */
+  createEffect(() => {
+    const list = messages()
+    for (let index = list.length - 1; index >= 0; index -= 1) {
+      const info = list[index]?.info
+      if (!info || info.role !== "assistant") continue
+      untrack(() => {
+        if (!composerModel() && info.providerID && info.modelID) setComposerModel(`${info.providerID}/${info.modelID}`)
+        if (!composerAgent() && typeof info.agent === "string" && info.agent) setComposerAgent(info.agent)
+      })
+      return
+    }
+  })
   const [shellOptions, setShellOptions] = createSignal<Choice[]>([])
   const [query, setQuery] = createSignal("")
   const [renaming, setRenaming] = createSignal<string | undefined>()
@@ -352,6 +389,33 @@ export default function App() {
     const response = await fetch(`${serverUrl}/pty/shells`).catch(() => undefined)
     if (!response?.ok) return undefined
     return (await response.json().catch(() => undefined)) as unknown
+  }
+
+  /**
+   * Le catalogue des modèles, pour la **saisie**.
+   *
+   * `GET /config/providers` pèse 531 ko et 49 ms : c'est le prix d'un changement de modèle facile
+   * depuis le champ, et il se paie une fois. La charge porte les clés des fournisseurs **en clair**,
+   * donc elle est projetée dans les deux lignes suivantes et n'entre dans aucun signal — on ne garde
+   * que les `{ value, label }` et les fenêtres de contexte.
+   *
+   * C'est aussi ce qui donne au remplissage du contexte sa **limite** : sans elle, la barre se tairait
+   * au lieu d'afficher un « 0% » qui ferait croire à une fenêtre vide.
+   */
+  const loadModelCatalog = async () => {
+    if (modelOptions().length > 0) return
+    const result = await client.config.providers().catch(() => undefined)
+    const payload = (result as { data?: unknown } | undefined)?.data
+    setModelOptions(modelCatalog(payload))
+    setModelLimits(modelContextLimits(payload))
+  }
+
+  /** Les agents proposables — payés à la première ouverture du choix, pas au montage. */
+  const loadAgentOptions = async () => {
+    if (agentOptions().length > 0) return
+    const result = await client.app.agents(scope()).catch(() => undefined)
+    const data = (result as { data?: Agent[] } | undefined)?.data
+    setAgentOptions(agentChoices(data))
   }
 
   const loadSessions = async () => {
@@ -992,8 +1056,17 @@ export default function App() {
     setAttachments([])
     setAttachError(undefined)
     const parts = [...(text ? [{ type: "text" as const, text }] : []), ...files.map(buildFilePart)]
+    // Le modèle et l'agent partent avec le message : c'est ce qui rend le changement effectif ici et
+    // maintenant, sans toucher à la configuration. Absents, le serveur applique son défaut.
+    const model = parseModelChoice(composerModel())
     const result = await client.session
-      .promptAsync({ sessionID, parts, ...scope() })
+      .promptAsync({
+        sessionID,
+        parts,
+        ...(model ? { model } : {}),
+        ...(composerAgent() ? { agent: composerAgent() } : {}),
+        ...scope(),
+      })
       .catch((cause: unknown) => {
         setError(String(cause))
         return undefined
@@ -1062,6 +1135,9 @@ export default function App() {
     await loadPermissions()
     await loadQuestions()
     await loadPlugins()
+    // Le catalogue des modèles est payé au montage : le choix du modèle est dans la saisie, donc il
+    // doit être prêt avant qu'on écrive. Les agents, eux, attendent la première ouverture (1,5 Mo).
+    void loadModelCatalog()
 
     const healthTimer = setInterval(async () => setHealth(await fetchHealth()), 10_000)
     // La charpente suit la largeur de fenêtre : le solveur est pur, donc rien à mémoriser ici.
@@ -1570,12 +1646,39 @@ export default function App() {
                     }}
                   />
                 </label>
+                {/* Les deux choix du prochain message. Le modèle est déjà là ; les agents arrivent à
+                    la première ouverture — 1,5 Mo ne se paient pas au repos. */}
+                <div class="composer-picks">
+                  <Picker
+                    choices={modelOptions()}
+                    value={composerModel()}
+                    placeholder="Default model"
+                    label="model"
+                    onOpen={() => void loadModelCatalog()}
+                    onChange={setComposerModel}
+                  />
+                  <Picker
+                    choices={agentOptions()}
+                    value={composerAgent()}
+                    placeholder="Default agent"
+                    label="agent"
+                    onOpen={() => void loadAgentOptions()}
+                    onChange={setComposerAgent}
+                  />
+                </div>
                 <span class="spacer" />
-                <button class="primary" type="submit" disabled={!draft().trim() && attachments().length === 0}>
-                  Send
+                <button
+                  class="send"
+                  type="submit"
+                  title="Send"
+                  aria-label="Send"
+                  disabled={!draft().trim() && attachments().length === 0}
+                >
+                  <SendIcon />
                 </button>
               </div>
             </div>
+            <ComposerStats stats={stats()} contextLimit={modelLimits()[composerModel()]} />
           </form>
         </Show>
       </main>

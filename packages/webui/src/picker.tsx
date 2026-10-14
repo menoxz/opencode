@@ -36,6 +36,11 @@ export function Picker(props: {
   /** Ce que le contrôle règle — pour les lecteurs d'écran, qui n'ont pas le libellé de la ligne. */
   label?: string
   disabled?: boolean
+  /**
+   * Appelé quand la liste s'ouvre — l'appelant peut alors charger des choix qu'il ne voulait pas
+   * payer au repos (le catalogue des modèles pèse 531 ko, la liste des agents 1,5 Mo).
+   */
+  onOpen?: () => void
   onChange: (value: string) => void
 }) {
   const [open, setOpen] = createSignal(false)
@@ -80,6 +85,7 @@ export function Picker(props: {
     setQuery("")
     place()
     setOpen(true)
+    props.onOpen?.()
     setActive(Math.max(0, filtered().findIndex((entry) => entry.value === props.value)))
     /**
      * Le focus se pose **après** le rendu, pas dans la `ref`.
@@ -168,6 +174,9 @@ export function Picker(props: {
         aria-haspopup="listbox"
         aria-expanded={open()}
         aria-label={props.label}
+        /* Le libellé est rogné quand il est long (un modèle se nomme « Nom · Fournisseur ») : le
+           titre porte alors la valeur entière, sinon l'information serait perdue à l'écran. */
+        title={shown()}
         disabled={props.disabled}
         ref={(element) => (trigger = element)}
         onClick={() => (open() ? close() : show())}

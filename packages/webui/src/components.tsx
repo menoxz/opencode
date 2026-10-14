@@ -2,6 +2,8 @@ import { createMemo, createSignal, For, onCleanup, Show } from "solid-js"
 import {
   answersComplete,
   boundLines,
+  cacheHitRate,
+  contextFill,
   copyableOutput,
   copyableText,
   customValue,
@@ -11,12 +13,15 @@ import {
   formatCost,
   formatCount,
   formatDuration,
+  formatPercent,
+  formatRate,
   isSelected,
   OUTPUT_PREVIEW_LINES,
   patchLabel,
   permissionActions,
   proseKind,
   stepSummary,
+  tokensPerSecond,
   toolDetail,
   toolOutputLines,
   toolStatusLabel,
@@ -894,5 +899,77 @@ export function SessionPanel(props: { stats: SessionStats }) {
         </ol>
       </Show>
     </div>
+  )
+}
+
+/* =============================================================================
+   La barre de statistiques de la saisie — CIBLE.md §10.
+
+   Elle vit **sous le champ**, et pas dans le tiroir : les trois chiffres qu'on y lit répondent à la
+   question qu'on se pose en écrivant — « où en est cette session, et à quelle vitesse ? ». Le tiroir
+   garde le détail par étape, qui ne se consulte pas en écrivant.
+
+   Deux règles de composition :
+
+   1. **Un groupe est un fait vérifiable**, et son infobulle dit la mesure exacte. Un chiffre sans
+      unité ni provenance n'est pas une information — c'est ce qui distingue « 93% » d'un nombre
+      décoratif.
+   2. **Un groupe dont la donnée manque disparaît.** La barre ne montre jamais un remplissage de
+      contexte à zéro faute de limite connue : elle se tait, plutôt que d'inventer un « 0% » qui
+      ferait croire à une fenêtre vide.
+   ============================================================================= */
+
+export function ComposerStats(props: { stats: SessionStats; contextLimit?: number }) {
+  const rate = () => formatRate(tokensPerSecond(props.stats))
+  const cached = () => formatPercent(cacheHitRate(props.stats))
+  const fill = () => formatPercent(contextFill(props.stats.contextTokens, props.contextLimit))
+  const tokens = () => formatCount(props.stats.tokens)
+  const steps = () => `${props.stats.steps} step${props.stats.steps > 1 ? "s" : ""}`
+  const turns = () => `${props.stats.turns} turn${props.stats.turns > 1 ? "s" : ""}`
+  return (
+    <Show when={props.stats.turns > 0}>
+      <div class="composer-stats">
+        <span
+          class="stat"
+          title={`${props.stats.turns} turns, ${props.stats.steps} steps, ${props.stats.actions} actions in this session`}
+        >
+          {turns()} · {steps()}
+        </span>
+        <Show when={rate()}>
+          {(value) => (
+            <span class="stat" title="Output tokens per second, measured over the steps' own duration">
+              {value()}
+            </span>
+          )}
+        </Show>
+        <Show when={tokens()}>
+          {(value) => (
+            <span
+              class="stat"
+              title={`Tokens processed: ${props.stats.input.toLocaleString()} in, ${props.stats.output.toLocaleString()} out, ${props.stats.cacheRead.toLocaleString()} read from cache`}
+            >
+              {value()} tok
+            </span>
+          )}
+        </Show>
+        <Show when={cached()}>
+          {(value) => (
+            <span class="stat" title="Share of the input served from the prompt cache">
+              {value()} cached
+            </span>
+          )}
+        </Show>
+        <Show when={fill()}>
+          {(value) => (
+            <span
+              class="stat"
+              title={`Context window: ${(props.stats.contextTokens ?? 0).toLocaleString()} of ${(props.contextLimit ?? 0).toLocaleString()} tokens`}
+            >
+              {value()} context
+            </span>
+          )}
+        </Show>
+      </div>
+    </Show>
   )
 }

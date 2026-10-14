@@ -176,7 +176,22 @@ export type Part = {
 }
 
 export type Message = {
-  info: { id: string; role: string; cost?: number; tokens?: TokenCount }
+  info: {
+    id: string
+    role: string
+    cost?: number
+    tokens?: TokenCount
+    /**
+     * Le modèle qui a produit une réponse d'agent, et l'agent qui a répondu.
+     *
+     * C'est la **seule** description de ce que la session utilise réellement — la configuration ne
+     * donne qu'un défaut global. La saisie s'en sert pour amorcer ses deux choix, et le remplissage du
+     * contexte a besoin du `providerID/modelID` pour retrouver sa limite.
+     */
+    providerID?: string
+    modelID?: string
+    agent?: string
+  }
   parts: Part[]
 }
 
@@ -188,6 +203,23 @@ export type StepView = {
   cost: number
   tokens: number
   durationMs: number | undefined
+  /**
+   * Le détail des jetons, quand `step-finish` le porte.
+   *
+   * Le total ne suffit pas aux deux chiffres qu'on veut lire : les tok/s se calculent sur les jetons
+   * **produits**, et le taux de cache sur `cache.read` face à l'entrée. Additionné par étape, il ne
+   * sort jamais du fil — il alimente la barre de statistiques sous la saisie.
+   */
+  usage?: StepUsage
+}
+
+export type StepUsage = {
+  input?: number
+  output?: number
+  cacheRead?: number
+  cacheWrite?: number
+  /** `tokens.total` de l'étape : c'est la taille du contexte **à ce moment-là**. */
+  total?: number
 }
 
 export type TurnView = {
@@ -278,6 +310,15 @@ export function groupSteps(parts: Part[]): StepView[] {
       const step = open ?? begin()
       step.cost += typeof part.cost === "number" ? part.cost : 0
       step.tokens += tokensOf(part.tokens)
+      const tokens = part.tokens
+      if (tokens && typeof tokens === "object") {
+        const usage = step.usage ?? (step.usage = {})
+        usage.input = (usage.input ?? 0) + (tokens.input ?? 0)
+        usage.output = (usage.output ?? 0) + (tokens.output ?? 0)
+        usage.cacheRead = (usage.cacheRead ?? 0) + (tokens.cache?.read ?? 0)
+        usage.cacheWrite = (usage.cacheWrite ?? 0) + (tokens.cache?.write ?? 0)
+        usage.total = (usage.total ?? 0) + tokensOf(tokens)
+      }
       continue
     }
     if (!isVisiblePart(part)) continue
@@ -356,6 +397,24 @@ export function formatDuration(ms: number | undefined): string | undefined {
   if (ms < 1000) return `${Math.round(ms)}ms`
   if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`
   return `${Math.floor(ms / 60_000)}m${Math.round((ms % 60_000) / 1000)}s`
+}
+
+/**
+ * Un débit, arrondi à l'unité : `145 tok/s`.
+ *
+ * C'est un rapport **mesuré** (jetons produits par seconde écoulée), pas un débit d'API ; `undefined`
+ * quand la durée manque, et la barre n'affiche alors rien plutôt qu'un zéro qui ferait croire à un
+ * arrêt.
+ */
+export function formatRate(value: number | undefined): string | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return undefined
+  return `${Math.round(value)} tok/s`
+}
+
+/** Un pourcentage entier — `93%`. Une décimale ne se lit pas dans une barre de statistiques. */
+export function formatPercent(value: number | undefined): string | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined
+  return `${Math.round(value * 100)}%`
 }
 
 /**
@@ -706,6 +765,13 @@ export type SessionStats = {
   cost: number
   /** Le détail, dans l'ordre : c'est le contenu de la section, pas du fil. */
   perStep: StepStat[]
+  /** Jetons produits, et entrée/cache — la matière des tok/s et du taux de cache. */
+  output: number
+  input: number
+  cacheRead: number
+  cacheWrite: number
+  /** Taille du contexte à la dernière étape mesurée : ce que la fenêtre contient maintenant. */
+  contextTokens: number | undefined
 }
 
 export function sessionStats(turns: TurnView[]): SessionStats {
@@ -715,6 +781,12 @@ export function sessionStats(turns: TurnView[]): SessionStats {
   let cost = 0
   let durationMs = 0
   let timed = false
+  let output = 0
+  let input = 0
+  let cacheRead = 0
+  let cacheWrite = 0
+  /** La taille du contexte à la **dernière** étape qui en porte une : c'est le remplissage actuel. */
+  let contextTokens: number | undefined
 
   turns.forEach((turn, turnIndex) => {
     for (const step of turn.steps) {
@@ -725,6 +797,14 @@ export function sessionStats(turns: TurnView[]): SessionStats {
       if (typeof step.durationMs === "number") {
         durationMs += step.durationMs
         timed = true
+      }
+      const usage = step.usage
+      if (usage) {
+        output += usage.output ?? 0
+        input += usage.input ?? 0
+        cacheRead += usage.cacheRead ?? 0
+        cacheWrite += usage.cacheWrite ?? 0
+        if (typeof usage.total === "number" && usage.total > 0) contextTokens = usage.total
       }
     }
   })
@@ -737,7 +817,39 @@ export function sessionStats(turns: TurnView[]): SessionStats {
     tokens,
     cost,
     perStep,
+    output,
+    input,
+    cacheRead,
+    cacheWrite,
+    contextTokens,
   }
+}
+
+/**
+ * Les deux chiffres que la barre de statistiques ajoute au total, calculés **là où ils sont sûrs**.
+ *
+ * `tokensPerSecond` divise les jetons **produits** par la durée **mesurée** des étapes : un rapport
+ * honnête, pas une estimation de débit d'API. `undefined` quand l'un des deux manque — mieux vaut
+ * pas de chiffre qu'un chiffre faux, et la barre n'affiche alors rien plutôt qu'un zéro.
+ *
+ * `cacheHitRate` est la part de l'entrée servie par le cache : `cache.read / (cache.read + input)`.
+ * La mesure vient de `step-finish.tokens`, la seule source qui distingue les deux.
+ */
+export function tokensPerSecond(stats: SessionStats): number | undefined {
+  if (!stats.output || !stats.durationMs) return undefined
+  return stats.output / (stats.durationMs / 1000)
+}
+
+export function cacheHitRate(stats: SessionStats): number | undefined {
+  const total = stats.cacheRead + stats.input
+  if (!total) return undefined
+  return stats.cacheRead / total
+}
+
+/** Remplissage de la fenêtre : `contextTokens / limite`, `undefined` si l'un des deux manque. */
+export function contextFill(contextTokens: number | undefined, limit: number | undefined): number | undefined {
+  if (!contextTokens || !limit || limit <= 0) return undefined
+  return Math.min(1, contextTokens / limit)
 }
 
 /* =============================================================================

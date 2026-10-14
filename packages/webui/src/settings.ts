@@ -187,6 +187,46 @@ export function modelCatalog(payload: unknown): Choice[] {
 }
 
 /**
+ * La fenêtre de contexte de chaque modèle, indexée par `providerID/modelID`.
+ *
+ * Le remplissage du contexte est le seul chiffre de la barre de statistiques qui a besoin d'une
+ * **limite** : les jetons d'une étape ne disent pas à quel point la fenêtre est pleine sans elle. On
+ * la projette donc en nombres pendant que la charge des fournisseurs passe — la charge brute, elle,
+ * ne survit pas à la projection (elle porte les clés des fournisseurs en clair).
+ */
+export function modelContextLimits(payload: unknown): Record<string, number> {
+  const providers = (payload as { providers?: unknown } | undefined)?.providers
+  if (!Array.isArray(providers)) return {}
+  const limits: Record<string, number> = {}
+  for (const entry of providers) {
+    if (!entry || typeof entry !== "object") continue
+    const provider = entry as { id?: unknown; models?: unknown }
+    if (typeof provider.id !== "string" || !provider.id) continue
+    if (!provider.models || typeof provider.models !== "object") continue
+    for (const [id, model] of Object.entries(provider.models as Record<string, unknown>)) {
+      const limit = model && typeof model === "object" ? (model as { limit?: unknown }).limit : undefined
+      const context = limit && typeof limit === "object" ? (limit as { context?: unknown }).context : undefined
+      if (typeof context === "number" && context > 0) limits[`${provider.id}/${id}`] = context
+    }
+  }
+  return limits
+}
+
+/**
+ * Un choix de modèle `providerID/modelID` relu en `{ providerID, modelID }`.
+ *
+ * La coupe se fait sur le **premier** `/` : un identifiant de modèle peut en contenir (`a/b/c`), un
+ * identifiant de fournisseur non. Une valeur vide n'est pas un modèle — c'est « défaut du serveur »,
+ * donc `undefined`, et l'envoi n'ajoute alors aucune contrainte.
+ */
+export function parseModelChoice(value: string): { providerID: string; modelID: string } | undefined {
+  const trimmed = value.trim()
+  const cut = trimmed.indexOf("/")
+  if (cut <= 0 || cut === trimmed.length - 1) return undefined
+  return { providerID: trimmed.slice(0, cut), modelID: trimmed.slice(cut + 1) }
+}
+
+/**
  * Les agents proposables comme défaut.
  *
  * Le schéma est explicite — `default_agent` « must be a primary agent » — donc on ne propose que les

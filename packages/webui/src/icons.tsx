@@ -223,6 +223,21 @@ export function CrossIcon(props: { size?: number }) {
   )
 }
 
+/**
+ * Envoyer : une flèche qui monte.
+ *
+ * Le **sens** dit l'action, sans mot — ce qui part vers le haut, c'est le message. Le bouton reste
+ * désactivé tant qu'il n'y a rien à envoyer, et cette extinction suffit à dire « il n'y a rien ».
+ */
+export function SendIcon(props: { size?: number }) {
+  return (
+    <Glyph size={props.size ?? 14}>
+      <path d="M12 20V5" />
+      <path d="M6 11l6-6 6 6" />
+    </Glyph>
+  )
+}
+
 /* =============================================================================
    Icônes de section — les entrées du panneau de réglages.
 

@@ -1522,6 +1522,80 @@ textarea {
   cursor: default;
 }
 
+/* ---- Les deux choix de la saisie : le modèle et l'agent du prochain message ----
+
+   Ils vivent dans la barre du champ, à gauche, à côté de l'attache : ce sont des réglages de **ce
+   qu'on écrit**, pas des actions de premier plan. Compacts au repos — le libellé du modèle peut être
+   long, il se rogne plutôt que de pousser la barre. */
+
+.composer-picks {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.composer-picks .pick {
+  min-width: 0;
+}
+
+.composer-picks .pick-trigger {
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font-size: var(--fs-meta);
+  padding: 4px 6px;
+  max-width: 200px;
+}
+
+.composer-picks .pick-trigger:hover {
+  background: #ffffff0f;
+  color: var(--text-1);
+}
+
+.composer-picks .pick-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Le bouton d'envoi, réduit à une flèche : le sens dit l'action, sans mot. */
+.send {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--text-1);
+  color: var(--bg-0);
+}
+
+.send:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+/* ---- La barre de statistiques, sous le champ (§10) ----
+
+   Trois faits : le volume de travail, le débit, et le remplissage du contexte. Elle se tait tant
+   qu'il n'y a rien à dire — une session neuve n'annonce pas « 0 turn ». Chaque groupe porte sa
+   mesure en infobulle : un chiffre sans provenance n'est pas une information. */
+
+.composer-stats {
+  max-width: var(--measure);
+  margin: 8px auto 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  padding: 0 2px;
+  font-size: var(--fs-meta);
+  color: var(--text-3);
+}
+
+.composer-stats .stat {
+  white-space: nowrap;
+}
+
 /* ---- Zone 5 — le tiroir droit : uniquement quand l'agent attend une décision ---- */
 
 /* Fermé, le tiroir ne peint rien : sa piste est à 0, mais un `border-left` dessinerait quand même
