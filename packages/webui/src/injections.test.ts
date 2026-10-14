@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { formatChars, injectionLabel, parseInjections, share, sourceLabel } from "./injections"
+import { formatChars, injectionLabel, parseInjections, relativeTo, share, sourceLabel } from "./injections"
 
 /** Relevé tel quel sur `ses_edb48d77affeF6ky1NqRoE3JNH`. */
 const THREE = `Context injections · 3 section(s)
@@ -114,5 +114,36 @@ describe("chemin d'un fichier d'instructions", () => {
   test("un chemin court n'est pas tronqué", () => {
     expect(sourceLabel("AGENTS.md")).toBe("AGENTS.md")
     expect(sourceLabel("a\\b\\c.md")).toBe("a\\b\\c.md")
+  })
+})
+
+describe("relativeTo — ce qui est lisible dépend de la base", () => {
+  const base = "C:\\jeanluc\\opencode-fork"
+
+  test("un fichier sous la base devient un chemin relatif", () => {
+    expect(relativeTo("C:\\jeanluc\\opencode-fork\\packages\\opencode\\AGENTS.md", base)).toBe(
+      "packages/opencode/AGENTS.md",
+    )
+  })
+
+  test("la casse des lecteurs Windows ne compte pas", () => {
+    expect(relativeTo("c:\\jeanluc\\OPENCODE-FORK\\AGENTS.md", base)).toBe("AGENTS.md")
+  })
+
+  test("un fichier hors de la base n'est pas lisible — c'est le cas de ~/.config", () => {
+    expect(relativeTo("C:\\Users\\jeanl\\.config\\opencodev2\\AGENTS.md", base)).toBeUndefined()
+  })
+
+  test("la base elle-même n'est pas un fichier", () => {
+    expect(relativeTo(base, base)).toBeUndefined()
+  })
+
+  test("un préfixe qui n'est pas un dossier ne compte pas", () => {
+    // `opencode-fork-old` commence par `opencode-fork` : sans le séparateur, il passerait pour dedans.
+    expect(relativeTo("C:\\jeanluc\\opencode-fork-old\\AGENTS.md", base)).toBeUndefined()
+  })
+
+  test("sans base, rien n'est lisible", () => {
+    expect(relativeTo("C:\\jeanluc\\opencode-fork\\AGENTS.md", "")).toBeUndefined()
   })
 })

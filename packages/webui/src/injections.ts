@@ -144,3 +144,25 @@ export function sourceLabel(path: string): string {
   if (parts.length <= 3) return parts.join("\\")
   return `…\\${parts.slice(-3).join("\\")}`
 }
+
+/**
+ * Un chemin rendu **relatif à une base**, ou `undefined` s'il n'est pas dessous.
+ *
+ * C'est ce qui décide si le contenu d'un fichier d'instructions peut être lu : `/file/content` résout
+ * `path` **sous la racine du projet** et rien d'autre. Mesuré sur l'instance de développement :
+ * `path=AGENTS.md&directory=<projet>/packages/opencode` rend 7 291 octets, `path=<chemin absolu>` rend
+ * une chaîne vide, et un fichier **hors** du projet rend une erreur 500. Or les injections portent des
+ * chemins absolus — dont `~/.config/opencodev2/AGENTS.md`, qui est hors projet par nature. On ne peut
+ * donc lire que ce qui est sous la base, et il faut le dire plutôt que d'afficher une boîte vide.
+ *
+ * Le séparateur est normalisé : un chemin Windows relu tel quel ne se compare pas à un chemin à `/`.
+ */
+export function relativeTo(path: string, base: string): string | undefined {
+  const normal = (value: string) => value.replace(/\\/g, "/").replace(/\/+$/, "")
+  const target = normal(path)
+  const root = normal(base)
+  if (!root || !target) return undefined
+  if (target.toLowerCase() === root.toLowerCase()) return undefined
+  if (!target.toLowerCase().startsWith(`${root.toLowerCase()}/`)) return undefined
+  return target.slice(root.length + 1)
+}

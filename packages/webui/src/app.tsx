@@ -108,7 +108,7 @@ import {
   type Agent,
   type McpState,
 } from "./config"
-import { parseInjections } from "./injections"
+import { parseInjections, relativeTo } from "./injections"
 import { pluginEntries, type PluginList } from "./nav"
 import { SESSION_LIMIT, groupByDirectory, sessionDetails, splitSessions, type SessionSummary } from "./sessions"
 import { subscribeEvents, type EventStreamState } from "./events"
@@ -180,6 +180,8 @@ export default function App() {
 
   const [directory, setDirectory] = createSignal(localStorage.getItem(DIR_KEY) ?? "")
   const [serverPath, setServerPath] = createSignal<string | undefined>()
+  /** La racine du projet — la base sous laquelle `/file/content` résout un chemin. */
+  const [worktree, setWorktree] = createSignal<string | undefined>()
   /** Le dossier de configuration du serveur — c'est là que les réglages sont réellement écrits. */
   const [configPath, setConfigPath] = createSignal<string | undefined>()
   /**
@@ -401,6 +403,10 @@ export default function App() {
     // Observed shape: { home, state, config, worktree, directory } — not `cwd`/`root`.
     const data = (result as { data?: { directory?: string; worktree?: string; config?: string } } | undefined)?.data
     setServerPath(data?.directory ?? data?.worktree)
+    // La racine du **projet**, gardée à part : c'est la base sous laquelle `/file/content` résout un
+    // chemin. L'instance, elle, est le dossier courant (`packages/opencode`), qui ne contient pas
+    // tous les fichiers du projet — s'en servir comme base rendrait illisibles la moitié des sources.
+    setWorktree(data?.worktree)
     setConfigPath(data?.config)
   }
 
@@ -469,6 +475,25 @@ export default function App() {
     const result = await client.find.files({ query, limit: 20, ...scope() }).catch(() => undefined)
     const data = (result as { data?: unknown } | undefined)?.data
     setFileOptions(Array.isArray(data) ? data.filter((path): path is string => typeof path === "string") : [])
+  }
+
+  /**
+   * Le contenu d'un fichier d'instructions injecté, quand il est **lisible d'ici**.
+   *
+   * `/file/content` résout `path` **sous la racine du projet** et rien d'autre : mesuré sur l'instance
+   * de développement, un chemin absolu rend une chaîne vide, un chemin relatif sous la racine rend le
+   * fichier, et un fichier **hors** du projet rend une erreur 500. Or les injections portent justement
+   * des chemins absolus, dont `~/.config/opencodev2/AGENTS.md` — hors projet par nature. On ne tente
+   * donc la lecture que pour ce qui est sous la racine, et `undefined` pour le reste : l'écran dit
+   * « not readable from here » plutôt que d'afficher une boîte vide, ce qui serait un mensonge.
+   */
+  const loadInstructionSource = async (path: string): Promise<string | undefined> => {
+    const base = worktree()
+    const relative = base ? relativeTo(path, base) : undefined
+    if (!relative) return undefined
+    const result = await client.file.read({ path: relative, directory: base }).catch(() => undefined)
+    const content = (result as { data?: { content?: string } } | undefined)?.data?.content
+    return typeof content === "string" && content ? content : undefined
   }
 
   /**
@@ -1517,7 +1542,7 @@ export default function App() {
     const injections = parseInjections(text)
     if (!injections) return <UserPrompt text={text} />
     const id = part.id ?? "injections"
-    return <ContextInjections injections={injections} open={Boolean(expanded()[id])} onToggle={() => toggle(id)} />
+    return <ContextInjections injections={injections} open={Boolean(expanded()[id])} onToggle={() => toggle(id)} loadSource={loadInstructionSource} />
   }
 
   const renderTurn = (turn: TurnView) => (

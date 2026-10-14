@@ -293,9 +293,42 @@ export function UserPrompt(props: { text: string }) {
  * lecture. Déplié, il répond à « qu'est-ce qui consomme ma fenêtre ? », question qu'aucune autre
  * surface ne traite et qu'aucune estimation ne peut remplacer.
  */
-export function ContextInjections(props: { injections: Injections; open: boolean; onToggle: () => void }) {
+export function ContextInjections(props: {
+  injections: Injections
+  open: boolean
+  onToggle: () => void
+  /**
+   * Le contenu d'un fichier d'instructions, quand il est **lisible d'ici**.
+   *
+   * La lecture est tentée au dépli, jamais avant : ces fichiers pèsent des milliers d'octets et la
+   * plupart du temps on ne regarde que leur nom. `undefined` n'est pas une erreur — c'est le cas
+   * normal d'un fichier hors du projet, et il se dit.
+   */
+  loadSource?: (path: string) => Promise<string | undefined>
+}) {
   const total = () => props.injections.sections.reduce((sum, section) => sum + section.chars, 0)
   const bySources = () => props.injections.kind === "sources"
+  /**
+   * Le dépli d'**une** source à la fois : deux fichiers ouverts en même temps pousseraient le reste
+   * du fil hors de l'écran, et on ne compare pas deux injections d'instructions côte à côte.
+   */
+  const [openSource, setOpenSource] = createSignal<string | undefined>()
+  const [sourceText, setSourceText] = createSignal<Record<string, string | undefined>>({})
+  const [loadingSource, setLoadingSource] = createSignal<string | undefined>()
+
+  const toggleSource = async (path: string) => {
+    if (openSource() === path) {
+      setOpenSource(undefined)
+      return
+    }
+    setOpenSource(path)
+    // Le contenu déjà lu n'est pas relu : un fichier d'instructions ne change pas pendant qu'on lit.
+    if (sourceText()[path] !== undefined || !props.loadSource) return
+    setLoadingSource(path)
+    const text = await props.loadSource(path).catch(() => undefined)
+    setSourceText((current) => ({ ...current, [path]: text ?? "" }))
+    setLoadingSource(undefined)
+  }
   // Deux formes coexistent côté serveur : des volumes par section, ou la liste des fichiers chargés.
   // Le titre le dit, plutôt que d'annoncer « sections » sur une liste de chemins.
   const title = () => (bySources() ? "loaded instructions" : "injected context")
@@ -322,9 +355,31 @@ export function ContextInjections(props: { injections: Injections; open: boolean
               <For each={props.injections.sources}>
                 {(path) => (
                   <li>
-                    <span class="inj-path" title={path}>
-                      {sourceLabel(path)}
-                    </span>
+                    {/* Le nom seul ne suffit pas : on déplie pour lire **le chemin entier** et le
+                        contenu. C'est la réponse à « qu'est-ce qui a été injecté, et d'où ? ». */}
+                    <button class="inj-source" onClick={() => void toggleSource(path)} title={path}>
+                      <span class="inj-chev">{openSource() === path ? "▾" : "▸"}</span>
+                      <span class="inj-path">{sourceLabel(path)}</span>
+                    </button>
+                    <Show when={openSource() === path}>
+                      <div class="inj-source-body">
+                        <p class="inj-source-path">{path}</p>
+                        <Show
+                          when={sourceText()[path]}
+                          fallback={
+                            <p class="inj-source-empty">
+                              {loadingSource() === path ? "loading…" : "not readable from here"}
+                            </p>
+                          }
+                        >
+                          {(text) => (
+                            <pre class="inj-source-text">
+                              {text().split(/\r?\n/).slice(0, SOURCE_PREVIEW_LINES).join("\n")}
+                            </pre>
+                          )}
+                        </Show>
+                      </div>
+                    </Show>
                   </li>
                 )}
               </For>
@@ -867,6 +922,15 @@ export function ComposerMarkup(props: { text: string }) {
 /* =============================================================================
    Les statistiques — CIBLE.md §10. Exactement ce que le fil n'affiche plus.
    ============================================================================= */
+
+/**
+ * Les lignes montrées d'un fichier d'instructions déplié.
+ *
+ * Un `AGENTS.md` fait 7 291 octets (mesuré) : le montrer en entier noierait le fil sous un document
+ * qu'on n'a pas demandé à lire. On en montre le début — assez pour reconnaître le fichier et voir de
+ * quoi il parle — et on dit combien de lignes restent.
+ */
+const SOURCE_PREVIEW_LINES = 40
 
 export function SessionPanel(props: { stats: SessionStats }) {
   const aggregates = () => {

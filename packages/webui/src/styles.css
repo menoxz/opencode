@@ -1646,6 +1646,60 @@ textarea {
   font-size: var(--fs-meta);
 }
 
+/* ---- Une source d'instructions, dépliée ----
+
+   Le nom rogné est ce qui se lit au repos ; le dépli donne le **chemin entier** et le début du
+   contenu. Le chemin entier d'abord : c'est lui qui lève l'ambiguïté entre deux `AGENTS.md`. */
+
+.inj-source {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+}
+
+.inj-chev {
+  flex: none;
+  width: 10px;
+  color: var(--text-3);
+  font-size: 9px;
+}
+
+.inj-source-body {
+  margin: 4px 0 8px 16px;
+  padding-left: 10px;
+  border-left: 1px solid var(--line-2);
+}
+
+.inj-source-path {
+  margin: 0 0 6px;
+  font-size: var(--fs-meta);
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.inj-source-empty {
+  margin: 0;
+  font-size: var(--fs-meta);
+  color: var(--text-3);
+  font-style: italic;
+}
+
+.inj-source-text {
+  max-height: 260px;
+  overflow: auto;
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--bg-0);
+  border-radius: 8px;
+  font-size: var(--fs-meta);
+  line-height: 1.5;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* ---- Zone 5 — le tiroir droit : uniquement quand l'agent attend une décision ---- */
 
 /* Fermé, le tiroir ne peint rien : sa piste est à 0, mais un `border-left` dessinerait quand même
