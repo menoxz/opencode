@@ -43,7 +43,7 @@ import { markdownSpans, parseMarkdown, safeHref, type MdBlock, type MdInline } f
 import { addItem, draftFrom, removeItem, setItem, todoProgress, type ContractDraft, type ContractView, type TodoView } from "./plan"
 import { writeClipboard } from "./clipboard"
 import { formatChars, injectionLabel, share, sourceLabel, type Injections } from "./injections"
-import { CheckIcon, ChevronIcon, CopyIcon, CrossIcon, FolderIcon, PluginIcon, SessionIcon, ThinkIcon, ToolIcon, toolHint } from "./icons"
+import { CheckIcon, ChevronIcon, CopyIcon, CrossIcon, FolderIcon, PlusIcon, SessionIcon, ThinkIcon, ToolIcon, toolHint } from "./icons"
 import { toolIcon } from "./tool-icons"
 import { relativeTime } from "./time"
 
@@ -100,24 +100,15 @@ export function CopyButton(props: { text: string; label?: string }) {
 /* =============================================================================
    Partie 2 du rail — les plugins.
 
-   Un plugin ajouté = **un bouton portant son nom**. Ce n'est pas un catalogue : l'utilisateur ne
-   parcourt pas ses plugins, il en déclenche un. Et si aucun plugin n'est chargé, la section
-   **n'existe pas** — pas de titre orphelin, pas de « 0 », pas de repli décoratif.
+   Elle n'a **plus** de lignes. Mesuré le 2026-10-14 : chaque ligne portait une icône générique
+   identique pour tous les plugins, donc rien d'autre que son nom — et son `onRun` n'était jamais
+   fourni, donc elle n'ouvrait rien. Une liste de noms sans action n'est pas un accès, c'est du bruit.
 
-   Une section « menus » listant les 210 commandes du serveur a existé ici ; elle a été retirée.
-   Elle n'existait que parce que la route existait : un skill ne se consulte pas, il s'injecte.
+   La règle qui la remplace : **seuls les plugins qui ont un panneau se montrent au rail**. Aucun
+   n'en a aujourd'hui — leurs options s'écrivent dans la configuration — donc le rail n'affiche
+   qu'**une** entrée, qui ouvre la section `Plugins` des réglages, là où ils s'ajoutent et se
+   retirent. La règle du fichier tient : un plugin est un bouton d'accès, pas un catalogue.
    ============================================================================= */
-
-export function PluginButton(props: { label: string; hint: string; onRun?: () => void }) {
-  return (
-    <button class="plugin-row" title={props.hint} onClick={() => props.onRun?.()}>
-      <span class="plugin-icon">
-        <PluginIcon size={13} />
-      </span>
-      <span class="plugin-label">{props.label}</span>
-    </button>
-  )
-}
 
 /**
  * « voir plus » / « voir moins » — un dossier de 19 sessions ne charge plus la liste.
@@ -143,41 +134,51 @@ export function ShowMore(props: { hidden: number; expanded: boolean; onToggle: (
    ============================================================================= */
 
 /**
- * En-tête de workspace : ce qui sépare deux lieux de travail.
+ * Ligne de workspace : le dossier, son nom, la coche du courant — et **le geste qui compte**,
+ * ouvrir une session ici.
  *
- * La **coche** marque celui où l'on travaille — la forme de la référence. Elle est en `opacity`, donc
- * sa place est réservée en permanence : un marqueur qui se poserait au survol ferait bouger la ligne.
- * Le libellé du courant monte d'un cran de contraste, parce qu'une coche seule ne se lit pas d'un
- * balayage de colonne.
+ * **Sans chevron.** L'état ouvert se lit à l'**indentation** des sessions sous le dossier, qui est
+ * une information ; un chevron en était une seconde fois la même, à une place que l'œil paie sur
+ * chaque ligne. Le clic sur le nom replie toujours — le nom est l'information, son clic est le geste.
+ *
+ * Ce n'est plus un `<button>` : la ligne porte désormais un vrai bouton, et deux boutons imbriqués
+ * ne sont pas du HTML valide. La forme reste la même — l'icône, le libellé, la coche, le compte.
  */
 export function WorkspaceGroup(props: {
   label: string
   hint: string
   count: number
-  open: boolean
   /** Est-ce le workspace où l'on travaille ? */
   current?: boolean
   onToggle: () => void
+  /** Ouvrir une session **dans ce dossier** — le geste qui doit vivre sur la ligne du dossier. */
+  onNew: () => void
 }) {
   return (
-    <button
-      class="workspace"
-      classList={{ current: Boolean(props.current) }}
-      title={props.hint}
-      onClick={() => props.onToggle()}
-    >
-      <ChevronIcon size={12} open={props.open} />
-      <span class="workspace-icon">
-        <FolderIcon size={14} />
-      </span>
-      <span class="workspace-label">{props.label}</span>
-      <Show when={props.current}>
-        <span class="workspace-check">
-          <CheckIcon size={13} />
+    <div class="workspace" classList={{ current: Boolean(props.current) }}>
+      <button class="workspace-main" title={props.hint} onClick={() => props.onToggle()}>
+        <span class="workspace-icon">
+          <FolderIcon size={14} />
         </span>
-      </Show>
-      <span class="workspace-count">{props.count}</span>
-    </button>
+        <span class="workspace-label">{props.label}</span>
+        <Show when={props.current}>
+          <span class="workspace-check">
+            <CheckIcon size={13} />
+          </span>
+        </Show>
+        <span class="workspace-count">{props.count}</span>
+      </button>
+      {/* Sa place est réservée en permanence et il se révèle à l'opacité : une action qui apparaît
+          en modifiant la grille fait bouger la ligne au moment précis où on la vise (défaut mesuré). */}
+      <button
+        class="icon-btn workspace-new"
+        title="New session in this folder"
+        aria-label="New session in this folder"
+        onClick={() => props.onNew()}
+      >
+        <PlusIcon size={13} />
+      </button>
+    </div>
   )
 }
 

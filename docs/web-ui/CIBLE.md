@@ -177,9 +177,9 @@ ce document : une donnée exposée par le serveur n'est pas une raison de l'affi
 | ordre | partie | question | contenu |
 |---|---|---|---|
 | 1 | Nouvelle session | « je veux parler » | un bouton, premier élément, sans clic |
-| 2 | Plugins | « quel accès ajouté ? » | un bouton par plugin — **vide s'il n'y en a aucun** |
+| 2 | Plugins | « quel accès ajouté ? » | **une** entrée qui mène à la section des réglages — les lignes par plugin n'avaient aucune action |
 | 3 | Workspaces | « où ai-je travaillé ? » | un dossier par **workspace**, repliable, **4 sessions visibles** |
-| 4 | Pied | « où est-ce que je travaille ? » | dossier, identifiants, réglages |
+| 4 | Pied | « je veux voir ou régler » | statistiques de session et réglages — **et rien d'autre** |
 
 - **Le libellé est l'information.** Les actions d'une ligne (renommer, supprimer) apparaissent **au
   survol, en superposition sur le libellé** — elles ne consomment aucune place au repos. L'infobulle
@@ -206,9 +206,29 @@ ce document : une donnée exposée par le serveur n'est pas une raison de l'affi
 
 ### Le pied du rail, et les vues
 
-Le pied du rail garde ce qui n'est **pas** une vue : le dossier de travail, les statistiques de session
-(un tiroir) et l'ouverture des **réglages**. Une préférence n'est pas une vue : ranger les deux dans une
-même barre mélangerait ce qui se **règle** et ce qui se **remplace**.
+Le pied ne garde que des **accès** : les statistiques de session (un tiroir) et les **réglages**. Une
+préférence n'est pas une vue : ranger les deux dans une même barre mélangerait ce qui se **règle** et
+ce qui se **remplace**.
+
+Le **sélecteur de dossier** y vivait — **retiré au lot 14**. Il faisait le même geste que l'ajout d'un
+workspace, deux fois, alors que le dossier de travail se **lit** déjà sur le workspace coché : deux
+contrôles pour un geste font douter de celui qui agit.
+
+### Les trois règles de composition de la colonne (lot 14)
+
+1. **Un seul retrait pour toute la colonne**, et un jeton **local au rail** (`--rail-pad`). Mesuré le
+   2026-10-14 : la colonne en portait quatre (8, 10, 24, 32), donc rien ne s'alignait et le logo
+   semblait flotter. Toucher `--gutter` déplacerait aussi la feuille de réglages, qui n'en a pas besoin.
+2. **Un seul patron de bouton** (`.rail-button`) : fond de surface, filet, rayon, libellé **centré**.
+   Trois boutons qui se ressemblaient sans se ressembler ne se lisaient pas comme une famille — et un
+   mot sans fond ni filet ne se lit pas comme un bouton du tout.
+3. **L'indentation dit l'appartenance, et elle suffit.** Le chevron d'ouverture est retiré des lignes
+   de dossier : l'état ouvert se lit aux sessions **indentées dessous**, et le chevron doublait cette
+   information sur chaque ligne. Le pli reste au clic du nom, qui est l'information.
+
+Corollaire : **la ligne d'un dossier porte son geste** — ouvrir une session ici —, parce que c'est là
+qu'on en a l'idée. Et la coche du courant se reconnaît par **préfixe** : le dossier de travail est un
+sous-dossier du workspace.
 
 Les **vues**, elles, sont au-dessus du chat : `Session` et `Logs`, qui **commutent le panneau
 principal** — la conversation, ou le journal — comme les dialogues du TUI. Elles vivent là, et non dans

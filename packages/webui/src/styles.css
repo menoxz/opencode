@@ -128,6 +128,11 @@ textarea {
    Une seule partie défile : les autres ne peuvent pas disparaître sous le défilement. */
 
 .rail {
+  /* **Un seul retrait pour toute la colonne.** Mesuré le 2026-10-14 : la colonne en portait quatre
+     — 8 pour le libellé, 10 pour les boutons, 24 pour le logo et le pied, 32 pour les sessions —
+     donc rien ne s'alignait, et le logo semblait flotter. Le jeton est **local au rail** : toucher
+     `--gutter` déplacerait aussi la feuille de réglages, qui n'a pas le même besoin. */
+  --rail-pad: 12px;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -137,40 +142,53 @@ textarea {
   border-right: 1px solid var(--line-1);
 }
 
-/* 1. Nouvelle session — le geste le plus fréquent, donc la première chose et la plus large. */
+/* **Un seul patron de bouton** pour tout le rail : fond de surface, filet, rayon, libellé centré.
+   Trois boutons qui se ressemblaient sans se ressembler (transparent, bordé, mot nu) ne se lisaient
+   pas comme la même famille — et le mot nu, lui, ne se lisait pas comme un bouton du tout. */
+.rail-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--bg-2);
+  color: var(--text-2);
+  font-size: var(--fs-base);
+}
+
+.rail-button:hover {
+  color: var(--text-1);
+  background: #ffffff0a;
+}
+
+.rail-button.active {
+  color: var(--text-1);
+  border-color: var(--text-3);
+}
+
+/* 1. Nouvelle session — le geste le plus fréquent, donc la première chose et la plus large.
+   Le libellé est **centré** : un bouton plein largeur dont le texte colle à gauche se lit comme une
+   ligne de liste, pas comme le bouton qu'il est. */
 .rail-new {
   flex: 0 0 auto;
-  padding: 4px 10px 8px;
+  padding: 0 var(--rail-pad) 8px;
 }
 
 .new-session {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   width: 100%;
-  padding: 8px 10px;
-  border: 1px solid var(--line-1);
-  border-radius: 8px;
-  color: var(--text-1);
-  font-size: var(--fs-base);
-  text-align: left;
-}
-
-.new-session:hover {
-  background: #ffffff0a;
-  border-color: var(--line-2);
 }
 
 .new-session-plus {
   color: var(--text-3);
-  font-size: var(--fs-base);
   line-height: 1;
 }
 
 /* 2. Plugins — des boutons d'accès, pas un catalogue. La section n'existe que s'il y a des plugins. */
 .rail-plugins {
   flex: 0 0 auto;
-  padding: 0 10px 8px;
+  padding: 0 var(--rail-pad) 8px;
   border-bottom: 1px solid var(--line-1);
 }
 
@@ -203,16 +221,8 @@ textarea {
   background: #ffffff0a;
 }
 
-.rail-entry-chevron {
-  flex: none;
-  display: inline-block;
-  color: var(--text-3);
-  transition: transform 0.12s ease;
-}
-
-.rail-entry.open .rail-entry-chevron {
-  transform: rotate(90deg);
-}
+/* La ligne du libellé porte désormais les deux gestes — plus de chevron à faire tourner : les
+   lignes par plugin ont disparu (aucune n'avait d'action), et le pli se lit à l'opacité. */
 
 .rail-entry-label {
   flex: 1;
@@ -228,42 +238,60 @@ textarea {
   font-variant-numeric: tabular-nums;
 }
 
-.plugin-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 5px 8px;
-  border-radius: 6px;
-  color: var(--text-2);
-  font-size: var(--fs-base);
-  text-align: left;
-}
-
-.plugin-row:hover {
-  color: var(--text-1);
-  background: #ffffff0a;
-}
-
-.plugin-icon {
-  display: flex;
-  flex: 0 0 auto;
-  color: var(--text-3);
-}
-
-.plugin-label {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .rail-workspaces {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+/* La ligne du libellé, qui porte les **deux gestes de premier niveau**. Au repos elle n'est qu'un
+   libellé : le champ n'existe que le temps de l'action, donc il ne coûte rien (§8). */
+.ws-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px var(--rail-pad) 6px;
+}
+
+.ws-head .rail-label {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+}
+
+.ws-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* Un bouton d'icône : la place d'un bouton, la discrétion d'une icône. */
+.icon-btn {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: var(--text-3);
+}
+
+.icon-btn:hover {
+  color: var(--text-1);
+  background: #ffffff0a;
+}
+
+.ws-input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  background: var(--bg-2);
+  color: var(--text-1);
+  font-size: var(--fs-base);
 }
 
 /* « voir plus » / « voir moins » : une commande discrète, alignée sur les sessions qu'elle cache. */
@@ -389,7 +417,7 @@ textarea {
    tranché, on n'ajoute pas de marque — on garde la place. */
 .rail-head {
   flex: 0 0 auto;
-  padding: 14px var(--gutter) 2px;
+  padding: 14px var(--rail-pad) 6px;
 }
 
 /* Le chrome ne se distingue pas par la TAILLE mais par la CASSE.
@@ -421,26 +449,13 @@ textarea {
   border: 1px solid var(--line-2);
 }
 
-.search {
-  margin: 6px var(--gutter) 10px;
-  padding: 7px 10px;
-  border: 1px solid var(--line-1);
-  border-radius: 8px;
-  color: var(--text-1);
-}
-
-.search::placeholder {
-  color: var(--text-3);
-}
-
-.search:focus {
-  border-color: var(--line-2);
-}
+/* La recherche du rail n'est plus un champ permanent : elle vit dans la ligne du libellé, sous
+   `.ws-input`. Le bloc `.search` a été retiré avec le champ qu'il stylait. */
 
 .rows {
   flex: 1;
   overflow-y: auto;
-  padding: 0 10px 12px;
+  padding: 0 var(--rail-pad) 12px;
 }
 
 /* ---- B. Un workspace : ce qui sépare deux lieux de travail ---- */
@@ -448,22 +463,40 @@ textarea {
 .workspace {
   display: flex;
   align-items: center;
+}
+
+.workspace-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
   gap: 7px;
-  width: 100%;
   text-align: left;
-  padding: 9px 8px 4px;
+  padding: 9px 4px 4px 8px;
   color: var(--text-2);
   font-size: var(--fs-base);
   line-height: 1.25;
 }
 
-.workspace:hover {
+.workspace:hover .workspace-main {
   color: var(--text-1);
 }
 
 .workspace .glyph {
   flex: 0 0 auto;
   color: var(--text-3);
+}
+
+/* L'action de la ligne : sa **place est réservée** et elle se révèle à l'opacité — une action qui
+   apparaît en modifiant la grille fait bouger la ligne au moment précis où on la vise (défaut
+   mesuré au lot 3). Elle reste visible sur le workspace courant, qui est celui qu'on regarde. */
+.workspace-new {
+  opacity: 0;
+}
+
+.workspace:hover .workspace-new,
+.workspace.current .workspace-new {
+  opacity: 1;
 }
 
 .workspace-label {
@@ -480,9 +513,9 @@ textarea {
   font-variant-numeric: tabular-nums;
 }
 
-/* Le workspace **courant** — la coche de la référence.
-   Le libellé monte d'un cran de contraste : une coche seule ne se lit pas en balayant la colonne. */
-.workspace.current {
+/* Le workspace **courant** — la coche. Le libellé monte d'un cran de contraste : une coche seule ne
+   se lit pas en balayant la colonne. */
+.workspace.current .workspace-main {
   color: var(--text-1);
 }
 
@@ -490,45 +523,6 @@ textarea {
   flex: 0 0 auto;
   display: flex;
   color: var(--text-3);
-}
-
-/* « Add workspace… » — la **dernière ligne de la liste**, comme dans la référence.
-   On ajoute un lieu de travail là où on les lit, et le champ n'existe qu'ouvert : il ne coûte donc
-   rien au repos. Le filet le sépare des workspaces, sans encadrer la liste. */
-.workspace-add {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  width: 100%;
-  margin-top: 4px;
-  padding: 7px 8px;
-  border-top: 1px solid var(--line-1);
-  color: var(--text-2);
-  font-size: var(--fs-base);
-  text-align: left;
-}
-
-.workspace-add:hover {
-  color: var(--text-1);
-}
-
-.workspace-plus {
-  flex: 0 0 auto;
-  color: var(--text-3);
-}
-
-.workspace-add-input {
-  width: 100%;
-  margin-top: 4px;
-  padding: 7px 8px;
-  border: 1px solid var(--line-1);
-  border-radius: 6px;
-  color: var(--text-1);
-  font-size: var(--fs-base);
-}
-
-.workspace-add-input:focus {
-  border-color: var(--line-2);
 }
 
 /* ---- 3. Une session : nettement en retrait de son dossier ---- */
@@ -678,8 +672,20 @@ textarea {
 
 .rail-foot {
   flex: 0 0 auto;
-  padding: 12px var(--gutter) 16px;
+  padding: 12px var(--rail-pad) 16px;
   border-top: 1px solid var(--line-1);
+}
+
+/* Les deux accès tiennent sur **une** ligne : l'ancien pied passait à la ligne, et `settings` se
+   retrouvait seul sous la pastille du dossier — lu comme une légende, pas comme un bouton. */
+.foot-row {
+  display: flex;
+  gap: 6px;
+}
+
+.foot-row .rail-button {
+  flex: 1;
+  min-width: 0;
 }
 
 .folder {

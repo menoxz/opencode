@@ -189,6 +189,44 @@ export function PluginIcon(props: { size?: number }) {
 }
 
 /* =============================================================================
+   Les gestes du rail — quatre formes, chacune pour une action qu'on y fait.
+
+   Elles sont en **deux ou trois éléments** comme les autres : à 14px, un dessin
+   plus fin devient de la bouillie. La roue dentée a failli coûter cher — huit
+   dents dessinées séparément donnaient une tache ; deux éléments (le cercle et
+   les rayons en un seul tracé) la gardent lisible.
+   ============================================================================= */
+
+/** Nouvelle session : le signe du geste, celui qu'on retrouve partout. */
+export function PlusIcon(props: { size?: number }) {
+  return (
+    <Glyph size={props.size ?? 13}>
+      <path d="M12 5v14M5 12h14" />
+    </Glyph>
+  )
+}
+
+/** Ajouter un dossier : le dossier, plus le signe du geste — jamais le signe seul, qui dirait « nouvelle session ». */
+export function FolderPlusIcon(props: { size?: number }) {
+  return (
+    <Glyph size={props.size ?? 14}>
+      <path d="M3 7a2 2 0 0 1 2-2h3.6l1.8 2H19a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+      <path d="M12 12v4M10 14h4" />
+    </Glyph>
+  )
+}
+
+/** Réglages : la roue dentée. Le cercle, puis les rayons en un seul tracé. */
+export function GearIcon(props: { size?: number }) {
+  return (
+    <Glyph size={props.size ?? 14}>
+      <circle cx="12" cy="12" r="3.2" />
+      <path d="M12 3.2v2.1M12 18.7v2.1M20.8 12h-2.1M5.3 12H3.2M18.2 5.8l-1.5 1.5M7.3 16.7l-1.5 1.5M18.2 18.2l-1.5-1.5M7.3 7.3L5.8 5.8" />
+    </Glyph>
+  )
+}
+
+/* =============================================================================
    Les trois états d'un geste de copie.
 
    Un bouton « copier » sans texte ne peut pas se contenter d'une infobulle : il lui faut une forme

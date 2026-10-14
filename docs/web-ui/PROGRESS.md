@@ -2966,6 +2966,82 @@ reconnaît à son **projet**, se marque par **préfixe** (on travaille dans un s
 workspace), et n'apparaît que s'il porte **au moins une session** : un workspace vide serait une ligne
 qui ne dit rien (§8).
 
+---
+
+## Lot 14 — la barre latérale : un retrait, un patron, un pied qui tient (livré)
+
+Retour d'usage sur capture, en douze points. **Chacun a été confronté à une mesure avant d'être
+corrigé** — c'est la consigne, et elle a changé le diagnostic sur un point au moins.
+
+### Les douze points, et ce que la mesure a dit
+
+| point | verdict | mesure |
+|---|---|---|
+| logo non centré | **vrai** | `.wordmark` à x=24 sur 280 (centré = 83) |
+| … sans padding défini | **inexact tel quel** — mais quatre retraits | 8 (libellé), 10 (boutons), 24 (logo, pied), 32 (sessions) |
+| « New session » : libellé non centré | **vrai** | `text-align: left` |
+| … `background` non défini | **vrai** | `rgba(0,0,0,0)` |
+| … patron de bordure non défini ni utilisé | **vrai** | `.ghost.bordered` existait et n'était appliqué **nulle part** |
+| plugins inutile en l'état | **vrai, et pire** | chaque ligne portait la **même** icône générique, et `onRun` n'était **jamais** fourni : elle n'ouvrait rien |
+| recherche + ajout en deux boutons sur la ligne | **vrai que ce n'était pas le cas** | libellé x=8, recherche pleine largeur sur sa propre ligne, ajout en bas de liste |
+| pas besoin de l'icône ouvert/fermé | **vrai** | 3 SVG par ligne de dossier (chevron, dossier, coche) |
+| ajouter une session depuis le dossier | **vrai qu'il manquait** | enfants = chevron, icône, libellé, coche, compteur |
+| sélecteur du pied inutile | **vrai** | deux voies pour un geste, et le contrôle le plus lourd de la colonne |
+| « stats » est un bouton mort | **vrai à l'écran — faux dans le code** | voir ci-dessous |
+| « settings » ne se lit pas comme un bouton | **vrai** | fond transparent, **bordure 0 px**, aucune icône |
+
+### Le défaut que la mesure a déplacé
+
+« Stats est mort » était vrai **à l'écran**, mais le bouton n'était pas mort : il basculait bien son
+état, et `drawerOpen` passait à vrai. La faute était **en amont**, dans la largeur :
+
+```js
+const detailsWidth = () => (permissions().length > 0 ? columns().details : 0)
+```
+
+La colonne du tiroir ne recevait une largeur **qu'en présence d'une permission**. Mesuré : `.side`
+faisait **0 px** avant le clic, **1 px** après — le 1 venant de sa propre bordure gauche — alors que son
+contenu (4 348 caractères) était bien rendu. Le panneau se dessinait dans une colonne invisible.
+
+**Un bouton qui agit et dont l'effet ne se voit pas est pire qu'un bouton mort** : il fait douter de
+l'écran entier. La cause est corrigée, et elle explique aussi pourquoi le tiroir n'avait jamais montré
+les statistiques depuis §10.
+
+### Ce qui est livré
+
+| fichier | ce qui change |
+|---|---|
+| `styles.css` | jeton **`--rail-pad`** (un seul retrait) et patron **`.rail-button`** ; ligne de dossier restructurée ; CSS mort retiré (`plugin-row`, `plugin-icon`, `plugin-label`, `rail-entry-chevron`, `workspace-add*`, `.search`) |
+| `components.tsx` | `WorkspaceGroup` : plus de chevron, un vrai bouton de session sur la ligne ; `PluginButton` retiré (sans usage) |
+| `app.tsx` | en-tête « Workspaces » à deux gestes ; chaque dossier ouvre une session **chez lui** (`createSession(directory)`) ; entrée plugins vers les réglages ; pied réécrit ; `detailsWidth` corrigé |
+| `icons.tsx` | `PlusIcon`, `FolderPlusIcon`, `GearIcon` (la roue en deux éléments, pas huit) — `SearchIcon` existait déjà |
+
+### Preuve
+
+```
+vitest run     -> 21 fichiers, 563 tests, exit 0
+tsgo --noEmit  -> exit 0
+```
+
+Au navigateur (5181), **après relance de l'instance isolée** — l'attachement CDP était mort alors que
+la pile répondait 200, remède documenté :
+
+```
+retraits à gauche : logo 12 · New session 12 · plugins 12 · libellé 12 · dossier 12 · pied 12
+                    sessions 34 (indentées) · gestes d'en-tête 217 (alignés à droite)
+New session       : rail-button, justify-content center, fond rgb(44,44,46), filet 1 px, rayon 8 px
+pied              : stats x=12 et settings x=143, **même ligne** (y=889), une icône chacun
+ligne de dossier  : [workspace-main, icon-btn] — chevron 0, lignes plugin 0
+tiroir            : 0 px au démarrage -> 360 px au clic -> 0 px (fermé, pas de régression)
+```
+
+### La règle
+
+**Un défaut d'alignement ne se voit pas en vérifiant que chaque pièce existe.** J'avais mesuré chaque
+élément du rail — largeur, hauteur, rôle — et rien de tout cela ne m'a montré que quatre bords gauches
+et un pied cassé en deux se voient d'un coup d'œil quand on cherche la **composition**. Regarder un
+élément n'est pas regarder un écran.
+
 
 
 

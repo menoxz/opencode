@@ -29,7 +29,6 @@ import {
   Media,
   PatchLine,
   PermissionSheet,
-  PluginButton,
   Prose,
   QuestionSheet,
   Reasoning,
@@ -86,7 +85,7 @@ import {
   toggleModel,
 } from "./settings"
 import { FolderPicker, Picker } from "./picker"
-import { SendIcon } from "./icons"
+import { FolderPlusIcon, GearIcon, ListIcon, SearchIcon, SendIcon } from "./icons"
 import { TrajectoryView } from "./trajectory-view"
 import {
   commandChoices,
@@ -306,14 +305,9 @@ export default function App() {
   let fileTimer: ReturnType<typeof setTimeout> | undefined
   const [query, setQuery] = createSignal("")
   /**
-   * Les plugins sont **repliés** au repos.
-   *
-   * Quatre boutons ouverts occupaient une bande entière du rail pour une action qu'on déclenche
-   * rarement — et cette bande est la place des sessions, qui sont le quotidien. DSH montre une
-   * **entrée courte** ; on prend la forme, en gardant les boutons derrière elle : l'accès reste
-   * direct, il cesse simplement de se payer au repos.
+   * Le tiroir droit : « Session » (les statistiques) et « Decisions » (une permission en attente).
+   * Sa porte vit dans la **tête du fil**, pas dans le rail : c'est le contenu du chat qu'il longe.
    */
-  const [pluginsOpen, setPluginsOpen] = createSignal(false)
   const [renaming, setRenaming] = createSignal<string | undefined>()
   const [renameDraft, setRenameDraft] = createSignal("")
   // Confirmation en ligne : un `window.confirm` natif ne se style pas et bloque tout pilotage.
@@ -321,12 +315,12 @@ export default function App() {
   // Deux replis indépendants : un dossier entier, et une ligne de session (son détail).
   const [groupsOpen, setGroupsOpen] = createSignal<Record<string, boolean>>({})
   /**
-   * L'ajout d'un workspace se fait **dans la liste**, comme dans la référence : sa dernière ligne
-   * devient un champ. Le champ n'existe qu'ouvert, donc il ne coûte rien au repos ; et l'action est
-   * là où on lit les workspaces, sans envoyer l'utilisateur chercher un autre contrôle.
+   * La ligne « Workspaces » porte ses **deux gestes de premier niveau** — chercher, ajouter — et se
+   * change en champ quand on en déclenche un. Le champ n'existe donc pas au repos : la ligne reste
+   * un libellé, et les deux fonctions se trouvent là où on les cherche, sans coûter une ligne de plus.
    */
-  const [addingWorkspace, setAddingWorkspace] = createSignal(false)
-  const [workspaceDraft, setWorkspaceDraft] = createSignal("")
+  const [headMode, setHeadMode] = createSignal<"none" | "search" | "add">("none")
+  const [headDraft, setHeadDraft] = createSignal("")
   const [detailsOpen, setDetailsOpen] = createSignal<Record<string, boolean>>({})
 
   // Configuration : lue seulement quand la feuille s'ouvre. Rien de tout cela ne s'affiche au repos.
@@ -420,8 +414,12 @@ export default function App() {
   /**
    * Le tiroir droit n'a qu'une raison d'exister : une demande d'accord. Pas de panneau vide, pas
    * d'onglets, pas de journal d'événements — la piste reste à 0 tant qu'on n'a rien à décider.
+   * Le tiroir a **deux** raisons d'exister (§10) : une permission en attente, et la consultation des
+   * statistiques. Mesuré le 2026-10-14 : la largeur ne suivait **que** la permission, donc le bouton
+   * `stats` basculait bien son état mais la colonne restait à **0 px** — le panneau se rendait dans
+   * une colonne invisible, et le bouton paraissait mort alors que c'était la largeur qui manquait.
    */
-  const detailsWidth = () => (permissions().length > 0 ? columns().details : 0)
+  const detailsWidth = () => (drawerOpen() || permissions().length > 0 ? columns().details : 0)
 
   const layoutStyle = () => ({
     "grid-template-columns": `${columns().sidebar}px minmax(0, 1fr) ${detailsWidth()}px`,
@@ -1049,6 +1047,12 @@ export default function App() {
     void loadSettings(settingsSection())
   }
 
+  /** L'entrée `plugins` du rail **ouvre** la section où ils s'ajoutent et se retirent. */
+  const openPlugins = () => {
+    selectSection("plugins")
+    setConfigOpen(true)
+  }
+
   const selectSection = (key: SettingsSectionKey) => {
     setSettingsSection(key)
     void loadSettings(key)
@@ -1339,8 +1343,13 @@ export default function App() {
     await loadMessages(sessionID)
   }
 
-  const createSession = async () => {
-    const result = await client.session.create(scope()).catch((cause: unknown) => {
+  const createSession = async (directory?: string) => {
+    /**
+     * Le dossier est un **paramètre**, pas le contexte courant : le bouton porté par une ligne de
+     * workspace ouvre une session *chez ce dossier*, sans exiger de l'avoir d'abord choisi.
+     */
+    const target = directory?.trim() ? { directory: directory.trim() } : scope()
+    const result = await client.session.create(target).catch((cause: unknown) => {
       setError(String(cause))
       return undefined
     })
@@ -1474,6 +1483,18 @@ export default function App() {
     void loadPath()
     void loadSessions()
     void loadPermissions()
+  }
+
+  /**
+   * « Nouvelle session dans ce dossier » — le geste porté par une ligne de workspace.
+   *
+   * Le dossier devient le lieu de travail **avant** la création : le client envoie `directory` à
+   * chaque appel, donc créer ailleurs sans le dire laisserait la page dans un contexte qui ne
+   * correspond plus à la session affichée.
+   */
+  const newSessionIn = (folder: string) => {
+    applyDirectory(folder)
+    void createSession(folder)
   }
 
   const toggle = (id: string) => setExpanded((current) => ({ ...current, [id]: !current[id] }))
@@ -1866,32 +1887,22 @@ export default function App() {
 
         {/* 1 — Le geste le plus fréquent, donc en premier et sans clic. */}
         <div class="rail-new">
-          <button class="new-session" title="Start an empty conversation" onClick={() => void createSession()}>
+          <button class="new-session rail-button" title="Start an empty conversation" onClick={() => void createSession()}>
             <span class="new-session-plus">+</span>
             <span>New session</span>
           </button>
         </div>
 
-        {/* 2 — Les plugins, en **une entrée courte**. Le rail appartient aux sessions ; une liste
-            dépliée en permanence y prenait la place du quotidien pour une action rare. La section
-            **n'existe pas** s'il n'y a aucun plugin. */}
+        {/* Les plugins, en **une** entrée qui ouvre. Mesuré le 2026-10-14 : les lignes par plugin
+            portaient toutes la même icône générique et n'ouvraient rien (`onRun` jamais fourni) —
+            une liste de noms sans action. La règle : seuls les plugins qui ont un panneau se
+            montrent ici ; aucun n'en a aujourd'hui, donc l'entrée mène là où ils se configurent. */}
         <Show when={pluginEntries(plugins()).length > 0}>
           <div class="rail-plugins">
-            <button
-              class="rail-entry"
-              classList={{ open: pluginsOpen() }}
-              title="Plugins loaded in this workspace"
-              onClick={() => setPluginsOpen(!pluginsOpen())}
-            >
-              <span class="rail-entry-chevron">›</span>
+            <button class="rail-entry" title="Plugins: add or remove one" onClick={openPlugins}>
               <span class="rail-entry-label">plugins</span>
               <span class="rail-entry-count">{pluginEntries(plugins()).length}</span>
             </button>
-            <Show when={pluginsOpen()}>
-              <For each={pluginEntries(plugins())}>
-                {(entry) => <PluginButton label={entry.label} hint={entry.hint} />}
-              </For>
-            </Show>
           </div>
         </Show>
 
@@ -1899,14 +1910,70 @@ export default function App() {
             la référence : sans lui, la recherche flottait au-dessus d'une liste de dossiers dont
             rien ne disait ce qu'ils étaient. */}
         <div class="rail-workspaces">
-          <span class="rail-label">workspaces</span>
-          <input
-            class="search"
-            type="search"
-            placeholder="Search"
-            value={query()}
-            onInput={(event) => setQuery(event.currentTarget.value)}
-          />
+          {/* La ligne du libellé porte les **deux gestes de premier niveau** — chercher, ajouter —
+              et devient le champ correspondant. Au repos elle n'est qu'un libellé : ce qui est rare
+              ne s'affiche pas (§8), et ces deux fonctions se trouvent là où on les cherche. */}
+          <div class="ws-head">
+            <Show
+              when={headMode() !== "none"}
+              fallback={
+                <>
+                  <span class="rail-label">workspaces</span>
+                  <span class="ws-actions">
+                    <button
+                      class="icon-btn"
+                      title="Search sessions"
+                      aria-label="Search sessions"
+                      onClick={() => {
+                        setHeadDraft("")
+                        setHeadMode("search")
+                      }}
+                    >
+                      <SearchIcon size={14} />
+                    </button>
+                    <button
+                      class="icon-btn"
+                      title="Add a workspace folder"
+                      aria-label="Add a workspace folder"
+                      onClick={() => {
+                        setQuery("")
+                        setHeadDraft("")
+                        setHeadMode("add")
+                      }}
+                    >
+                      <FolderPlusIcon size={14} />
+                    </button>
+                  </span>
+                </>
+              }
+            >
+              <input
+                class="ws-input"
+                autofocus
+                placeholder={headMode() === "search" ? "Search sessions" : "path to a project folder"}
+                aria-label={headMode() === "search" ? "Search sessions" : "path to a project folder"}
+                value={headMode() === "search" ? query() : headDraft()}
+                onInput={(event) =>
+                  headMode() === "search" ? setQuery(event.currentTarget.value) : setHeadDraft(event.currentTarget.value)
+                }
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    const path = headMode() === "add" ? headDraft().trim() : ""
+                    setHeadMode("none")
+                    setHeadDraft("")
+                    if (path) applyDirectory(path)
+                  }
+                  if (event.key === "Escape") {
+                    // Fermer un filtre le retire aussi : une liste filtrée sans champ visible ne
+                    // dirait plus pourquoi elle est courte.
+                    setHeadMode("none")
+                    setHeadDraft("")
+                    setQuery("")
+                  }
+                }}
+              />
+            </Show>
+          </div>
 
           <div class="rows">
           <For each={groupByWorkspace(sessions(), projects(), directory())}>
@@ -1919,8 +1986,8 @@ export default function App() {
                   hint={group.hint}
                   count={group.sessions.length}
                   current={group.current}
-                  open={groupOpen(group.key)}
                   onToggle={() => toggleGroup(group.key)}
+                  onNew={() => newSessionIn(group.hint)}
                 />
                 <Show when={groupOpen(group.key)}>
                     <For each={split().shown}>
@@ -2018,78 +2085,38 @@ export default function App() {
                 )
               }}
           </For>
-
-            {/* « Add workspace… » — la **dernière ligne de la liste**, comme dans la référence.
-                Sans workspace connu, elle reste seule : c'est le seul geste possible, et il vaut mieux
-                qu'un état vide décoratif. */}
-            <Show
-              when={addingWorkspace()}
-              fallback={
-                <button class="workspace-add" onClick={() => setAddingWorkspace(true)}>
-                  <span class="workspace-plus">+</span>
-                  <span class="workspace-label">Add workspace…</span>
-                </button>
-              }
-            >
-              <input
-                class="workspace-add-input"
-                autofocus
-                placeholder="path to a project folder"
-                aria-label="path to a project folder"
-                value={workspaceDraft()}
-                onInput={(event) => setWorkspaceDraft(event.currentTarget.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    const path = workspaceDraft().trim()
-                    setAddingWorkspace(false)
-                    setWorkspaceDraft("")
-                    if (path) applyDirectory(path)
-                  }
-                  if (event.key === "Escape") {
-                    setAddingWorkspace(false)
-                    setWorkspaceDraft("")
-                  }
-                }}
-              />
-            </Show>
           </div>
         </div>
 
-        {/* 4 — Settings : le dossier de travail, et l'accès à la configuration. */}
+        {/* 4 — Le pied : les **deux accès**, et rien d'autre.
+            Le sélecteur de dossier est retiré — la ligne « Workspaces » ajoute déjà n'importe quel
+            dossier, et deux contrôles pour un même geste font douter de celui qui agit ; le dossier
+            de travail reste **dit** par le workspace coché, au-dessus.
+            Les deux boutons portent une icône **et** le patron de bouton du rail : sans fond ni
+            filet un mot ne se lit pas comme un bouton, et un mot seul ne dit pas ce qu'il ouvre. */}
         <div class="rail-foot">
-          <FolderPicker
-            folders={projects()}
-            value={directory()}
-            placeholder={serverPath()}
-            label="Working directory — the rail lists sessions from here"
-            onChange={applyDirectory}
-          />
-          {/* Une seule chose ici : l'accès au panneau. Les identifiants sont descendus dans `General`
-              (bloc *Server*) — réglés **une fois par serveur**, ils tenaient un bouton et un badge
-              permanents, c'est-à-dire de la place pour rien. Même règle que le dossier de travail,
-              dans l'autre sens : lui est quotidien, donc il reste. */}
-          {/* Le footer garde ce qui n'est **pas** une vue : le dossier de travail, les statistiques de
-              session (un tiroir) et les réglages. Les **vues** (Session, Logs) sont au-dessus du chat,
-              là où leur bascule se voit. */}
           <span class="foot-row">
             <button
-              class="ghost"
+              class="rail-button"
               classList={{ active: drawerOpen() && drawerTab() === "session" }}
               title="Session statistics: turns, steps, time, tokens, cost"
+              aria-label="Session statistics"
               onClick={() => {
                 setDrawerTab("session")
                 setDrawerOpen(drawerOpen() && drawerTab() === "session" ? false : true)
               }}
             >
-              stats
+              <ListIcon size={13} />
+              <span>stats</span>
             </button>
             <button
-              class="ghost"
+              class="rail-button"
               classList={{ active: configOpen() }}
               title="Settings: defaults, providers, agents, MCP"
               onClick={openConfig}
             >
-              settings
+              <GearIcon size={14} />
+              <span>settings</span>
             </button>
           </span>
         </div>
