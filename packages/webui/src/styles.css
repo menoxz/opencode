@@ -1750,17 +1750,19 @@ textarea {
 
 .scroll::-webkit-scrollbar,
 .rows::-webkit-scrollbar,
-.tool-detail pre::-webkit-scrollbar {
+.tool-detail pre::-webkit-scrollbar,
+.md-pre::-webkit-scrollbar {
   width: 10px;
   /* La hauteur vaut pour la barre **horizontale**. Sans elle, une commande longue débordait sur la
-     barre native du système : claire, pleine largeur, épaisse — elle cassait le bloc. Mesuré sur le
-     bloc `powershell` d'un `bash`. */
+     barre native du système : claire, pleine largeur, épaisse, avec ses flèches aux deux bouts —
+     elle cassait le bloc de code (mesuré sur un bloc ```powershell de la prose). */
   height: 10px;
 }
 
 .scroll::-webkit-scrollbar-thumb,
 .rows::-webkit-scrollbar-thumb,
-.tool-detail pre::-webkit-scrollbar-thumb {
+.tool-detail pre::-webkit-scrollbar-thumb,
+.md-pre::-webkit-scrollbar-thumb {
   background: #ffffff14;
   background-clip: content-box;
   border: 3px solid transparent;
@@ -1772,17 +1774,26 @@ textarea {
 .scroll::-webkit-scrollbar-track,
 .rows::-webkit-scrollbar-track,
 .tool-detail pre::-webkit-scrollbar-track,
+.md-pre::-webkit-scrollbar-track,
 .scroll::-webkit-scrollbar-corner,
 .rows::-webkit-scrollbar-corner,
-.tool-detail pre::-webkit-scrollbar-corner {
+.tool-detail pre::-webkit-scrollbar-corner,
+.md-pre::-webkit-scrollbar-corner {
   background: transparent;
 }
 
 /* Firefox ne connaît pas `::-webkit-scrollbar` ; `scrollbar-width`/`scrollbar-color` y suffisent et
    restent sans effet sur Chromium, qui suit les règles ci-dessus. */
-.tool-detail pre {
+.tool-detail pre,
+.md-pre {
   scrollbar-width: thin;
   scrollbar-color: #ffffff30 transparent;
+}
+
+/* Le bloc de code se termine par sa barre : les coins arrondis du conteneur doivent la rogner, sinon
+   la barre déborde en carré sous un bloc arrondi. */
+.md-block {
+  overflow: hidden;
 }
 
 
