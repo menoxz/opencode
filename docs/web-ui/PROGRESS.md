@@ -2834,6 +2834,67 @@ confondre les deux suffisait à diverger. Alignés.
 navigateur : reprendre la ligne d'aide aurait été un **faux affordance**. Les filtres sont donc des
 boutons visibles — ce que DSH cache faute de place, ici montré faute de raison de le cacher.
 
+---
+
+## Lot 12 — la vue `Trajectory`, reprise de **l'écran** de DSH
+
+Retour d'usage, capture à l'appui : « je n'aime pas ce que tu as fait des logs en terme de design,
+reproduis exactement celui de dsh » — puis, la capture montrée : **« tu n'as pas pensé à faire une
+vérification visuelle »**.
+
+### L'erreur, nommée
+
+Le lot 11 avait rendu hommage à DSH en lisant `dsh-TUI/src/components/TraceView.tsx` — un composant de
+**terminal** — et en reproduisant sa timeline `HH:MM:SS glyphe résumé (durée)`. C'était du DSH, mais
+pas **celui de l'écran**. La référence était l'onglet `Trajectory` de l'application, et je ne l'avais
+jamais mis côte à côte avec mon résultat : c'est exactement pour cela que l'écart n'a pas été vu.
+
+Ce qui aurait dû être fait au lot 11 : **regarder l'écran d'abord**. Le composant de DSH n'est pas
+lisible localement (client packagé ; `dsh-identite` n'est qu'une *skin*), donc la capture **est** la
+spécification — et une capture se compare.
+
+### Ce qui est livré
+
+`trajectory-view.tsx` (vue) et `trajectory.ts` (modèle pur) :
+
+- **Barre d'outils** — `Duration`, `Turns`, `Calls`, et une recherche.
+- **Diagramme en pistes** — `Input`, `Model`, `Tools`, barres **proportionnelles au temps**. Mesuré sur
+  une session réelle : 61 barres `Input`, 399 `Model`, 611 `Tools`, pour 995 lignes.
+- **Liste** — badge `USER`/`ASSISTANT`/`TOOL`, contenu à gauche, résultat à droite après `→`, marge
+  teintée par genre, repères `Turn N` au changement de tour.
+- **Panneau de détail** (ce que la seconde capture demandait) — `Summary` (Hierarchy, Status, Payload,
+  Result), `Payload`, `Result`, `Schema`, `Timing`. Le `Schema` vient de `GET /experimental/tool`
+  (**61 ko**, payés à l'ouverture de la vue), et la route a dû être ajoutée à `API_PREFIXES` — sans
+  quoi le proxy aurait rendu `index.html` en 200 et l'onglet serait resté vide **sans erreur**.
+
+### Deux bugs trouvés par les tests
+
+La suite de `trajectory.ts` (19 tests) a révélé deux défauts réels :
+
+1. **`spanPlacement` débordait** : la largeur était bornée d'après la position *non* bornée, donc une
+   barre commençant avant l'intervalle donnait `left 0` + `width 150`.
+2. **Un tour sans horodatage disparaissait** — et avec lui ses outils et ses étapes. Le serveur ne donne
+   pas toujours `time.created` : on le place à 0 plutôt que de l'écarter.
+
+### Preuve
+
+```
+vitest run     -> 19 fichiers, 514 tests, exit 0
+tsgo --noEmit  -> exit 0
+```
+
+Au navigateur (instance isolée 5181), sur une session réelle : barre d'outils `Duration/Turns/Calls` +
+recherche, pistes `Input/Model/Tools`, badges `USER/ASSISTANT/TOOL`, ligne `TOOL bash {…} → Found 9
+matches…`. Panneau ouvert sur une ligne `TOOL` : `Hierarchy Assistant message`, `Status Completed`,
+onglet `Schema` rendant la description réelle de `bash` et ses paramètres JSON, onglet `Timing`
+rendant `Started 2026-10-13 15:27:45.804` et `Duration 64ms`. Aucune erreur de console.
+
+### La règle
+
+**Quand la référence est un écran, la vérification est une comparaison d'écrans.** Reproduire un
+composant sans le regarder revient à deviner — et deviner juste est un hasard, pas une méthode.
+
+
 
 
 

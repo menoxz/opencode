@@ -556,62 +556,55 @@ catalogue) : elle suit donc le choix de la saisie (§13.3) au lieu d'être figé
 
 ---
 
-### 10.2 La vue `Logs` — la timeline de DSH, reprise telle quelle
+### 10.2 La vue `Trajectory` — l'onglet de DSH, repris **de l'écran**
 
-La vue `Logs` **reproduit le `/trace` de DSH** (`dsh-TUI/src/components/TraceView.tsx` et
-`dsh-adapter/trace.ts`), parce que c'est une forme éprouvée et que l'utilisateur l'a demandée telle
-quelle. Ce n'est **pas** une liste de cartes : c'est une timeline dense, en chasse fixe, d'**une ligne
-par événement** :
+> **Révision.** Cette section décrivait le composant de **terminal** de DSH
+> (`dsh-TUI/src/components/TraceView.tsx`) : une timeline `HH:MM:SS glyphe résumé (durée)`. C'était du
+> DSH — mais pas celui que l'utilisateur avait sous les yeux. La référence est la **capture de l'onglet
+> `Trajectory`** de l'application DSH, et le composant de celle-ci **n'est pas lisible localement** : il
+> appartient au client packagé (`@deepseek-ai/dsh-client-ui-*`), et `dsh-identite` n'est qu'une *skin*
+> (« aucune fonctionnalité métier, uniquement de la mise en forme »). L'écran fait donc foi — et il
+> fallait le **regarder**, ce qui manquait.
 
-```
-HH:MM:SS   glyphe   résumé   (durée)
-```
+Trois bandes, de haut en bas :
 
-| genre | glyphe | ligne |
-|---|---|---|
-| tour | `▶` | `turn 1` |
-| étape | `∙` | `turn 1 · step 1` |
-| prompt | `❯` | le texte de l'humain |
-| réponse | `✻` | le texte de l'agent |
-| raisonnement | `✻` | le raisonnement (atténué) |
-| outil | `⏺` | `read src/a.ts` |
-| todo | `✓` | `3/5 · la tâche en cours` |
+1. **La barre d'outils** — `Duration`, `Turns`, `Calls`, et une recherche.
+2. **Le diagramme en pistes** — `Input`, `Model`, `Tools` : une barre par fait, placée à sa position
+   **dans le temps**. Les largeurs sont **proportionnelles**, pas des compteurs : c'est la répartition
+   du temps qu'on vient lire. Une barre dont la fin est inconnue reste **ouverte** (atténuée).
+3. **La liste** — un badge de genre (`USER` / `ASSISTANT` / `TOOL`), le contenu à gauche, le
+   **résultat** à droite après `→`, une **marge teintée par genre** (elle dit le genre d'un coup d'œil,
+   sans lire le badge), et les repères `Turn N` — affichés au **changement** de tour seulement.
 
-Quatre règles, toutes reprises de DSH :
+Un assistant sans texte mais avec des outils **existe** (l'étape qui n'a fait qu'appeler) : DSH écrit
+`(tool call only)` plutôt que de sauter la ligne — la sauter romprait l'ordre du temps, qui est ce que
+la liste raconte.
 
-1. **La couleur dit l'issue, et seulement l'issue** : un outil est vert s'il a réussi, rouge s'il a
-   échoué, ambre s'il tourne. Rien d'autre n'est coloré par un état.
-2. **Le raisonnement et les étapes s'atténuent** : ils encadrent le travail, ils ne le sont pas.
-3. **La durée apparaît quand la fin est connue** — `(…)` pour un travail en cours, rien quand il n'y a
-   pas de paire à mesurer.
-4. **Les filtres de type** découpent la timeline sans la réordonner.
+**Le contexte injecté n'est pas un prompt de l'humain.** Même règle que pour la timeline précédente :
+sans ce filtre, une ligne `USER` annoncerait comme dit ce qui ne l'a pas été.
 
-**Les libellés sont ceux de DSH, mot pour mot** — et une clé interne n'est pas un libellé. DSH tient
-les siens dans son `i18n.ts` (`trace-filter-*`) :
+### 10.2.1 Le panneau de détail — cinq onglets
 
-| clé | libellé DSH |
+Sélectionner une ligne ouvre, **à droite**, le détail de ce fait ; la liste se rétrécit. On regarde un
+fait et son détail, jamais l'un sans l'autre. Les onglets sont ceux de la capture :
+
+| onglet | contenu |
 |---|---|
-| `all` | `all` |
-| `tool` | **`tools`** |
-| `thinking` | `thinking` |
-| `message` | **`messages`** |
-| `progress` | `progress` |
+| `Summary` | `Hierarchy`, `Status`, puis `Payload` et `Result` |
+| `Payload` | les arguments de l'appel, en JSON lisible |
+| `Result` | la sortie **entière** (la liste, elle, rogne) |
+| `Schema` | la description et les **paramètres déclarés** de l'outil |
+| `Timing` | `Started` (à la milliseconde) et `Duration` |
 
-Le pluriel est **dans DSH**, ce n'est pas une fantaisie de traduction : afficher `tool` là où DSH dit
-`tools` serait déjà une divergence. Même exigence pour l'en-tête — le titre est **`Trace`**, et le
-sous-titre est son gabarit exact : `Session event timeline · filter: <libellé> · <n> entries`. Le
-message vide est le sien : `No trace events yet`.
+Le `Schema` vient de `GET /experimental/tool`, **payé à l'ouverture de la vue** (61 ko mesurés) : la
+route exige un couple `provider`/`model`, donc elle ne peut pas être lue au montage de l'écran. ⚠ La
+route doit figurer dans `API_PREFIXES` de `vite.config.ts` (`/experimental`) — sans quoi le proxy rend
+`index.html` avec un 200 et l'onglet resterait vide **sans erreur**.
 
-**Une seule divergence, volontaire :** DSH cache ses filtres derrière la touche `f` et affiche une
-ligne d'aide (`↑/↓ PgUp/PgDn g/G to scroll · f to filter · Esc/q to close`), parce qu'un terminal n'a
-pas la place. Un navigateur l'a : les filtres sont des **boutons visibles**, et cette ligne d'aide
-serait un mensonge — ces touches n'existent pas ici. Rendre visible ce que DSH cache derrière une touche
-est la traduction fidèle de la même information, pas un écart de design.
-
-**Le contexte injecté n'est pas un prompt.** DSH est explicite : « Only direct human prompts are
-trajectory items; injected context … mirrors the transcript's filtering ». Chez nous le contexte
-injecté arrive comme du **texte du prompt** : sans ce filtre, chaque tour affichait deux ou trois
-lignes `❯` qui n'étaient pas des prompts — mesuré, puis corrigé.
+**Ce qui est inféré, et le reste non :** la capture est une image fixe — la sémantique exacte des trois
+bascules (`Duration`, `Turns`, `Calls`) ne s'y lit pas. Elles commandent ce que l'on affiche (les
+durées, les repères de tour, les appels d'outils), et c'est écrit ici pour ne pas faire passer une
+supposition pour une certitude.
 
 ### 10.3 Le détail par tour — dans le tiroir `Session`
 
