@@ -85,7 +85,7 @@ import {
   providerPatch,
   toggleModel,
 } from "./settings"
-import { Picker } from "./picker"
+import { FolderPicker, Picker } from "./picker"
 import { SendIcon } from "./icons"
 import { TrajectoryView } from "./trajectory-view"
 import {
@@ -1731,16 +1731,13 @@ export default function App() {
         {/* Le dossier **avant** le champ : c'est lui qui décide à quel projet la session appartiendra,
             et il ne se change plus sans rouvrir une session. */}
         <div class="home-picks">
-          <label class="home-folder" title="Working directory — the new session joins this project">
-            <span class="home-icon">⌂</span>
-            <input
-              type="text"
-              list="oc-workspaces"
-              placeholder={serverPath() ?? "server directory"}
-              value={directory()}
-              onChange={(event) => applyDirectory(event.currentTarget.value)}
-            />
-          </label>
+          <FolderPicker
+            folders={projects()}
+            value={directory()}
+            placeholder={serverPath()}
+            label="Working directory — the new session joins this project"
+            onChange={applyDirectory}
+          />
         </div>
 
         <form class="home-composer" onSubmit={(event) => void sendFromHome(event)}>
@@ -2012,21 +2009,13 @@ export default function App() {
 
         {/* 4 — Settings : le dossier de travail, et l'accès à la configuration. */}
         <div class="rail-foot">
-          <label class="folder" title="Working directory — the rail lists sessions from here">
-            <span>⌂</span>
-            <input
-              type="text"
-              list="oc-workspaces"
-              placeholder={serverPath() ?? "server directory"}
-              value={directory()}
-              onChange={(event) => applyDirectory(event.currentTarget.value)}
-            />
-          </label>
-          {/* La complétion accompagne **l'action**, et l'action est ici. Elle était dans les
-              réglages : on ne va pas chercher un chemin là où l'on va changer une préférence. */}
-          <datalist id="oc-workspaces">
-            <For each={projects()}>{(path) => <option value={path} />}</For>
-          </datalist>
+          <FolderPicker
+            folders={projects()}
+            value={directory()}
+            placeholder={serverPath()}
+            label="Working directory — the rail lists sessions from here"
+            onChange={applyDirectory}
+          />
           {/* Une seule chose ici : l'accès au panneau. Les identifiants sont descendus dans `General`
               (bloc *Server*) — réglés **une fois par serveur**, ils tenaient un bouton et un badge
               permanents, c'est-à-dire de la place pour rien. Même règle que le dossier de travail,

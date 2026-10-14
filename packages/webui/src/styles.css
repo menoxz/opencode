@@ -1360,36 +1360,144 @@ textarea {
   justify-content: center;
 }
 
-.home-folder {
+/* ---- Le sélecteur de dossier — la **pastille**, pas un champ ----
+
+   Il remplace un champ de saisie doublé d'une `datalist`. Le champ demandait de connaître le chemin
+   par cœur, ou de deviner qu'une liste s'ouvrirait à la frappe — et une `datalist` ne se voit pas,
+   ne se stylise pas, et son menu est dessiné par le système, donc étranger à cette interface.
+
+   Ici les projets se **voient** : on ouvre, on lit les noms, on voit lequel est courant, on clique.
+   Le chemin n'est plus à connaître, il est à reconnaître. */
+
+.folder-pick {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* La pastille : une icône, le nom, un chevron. Le nom est le seul élément clair — c'est lui qui
+   porte l'information, le reste n'est que l'enveloppe. */
+.folder-trigger {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   max-width: 100%;
-  padding: 5px 12px;
+  padding: 6px 10px;
   border: 1px solid var(--line-2);
-  border-radius: 999px;
+  border-radius: 10px;
+  background: var(--bg-2);
+  color: var(--text-3);
+  font-size: var(--fs-note);
+  text-align: left;
+}
+
+.folder-trigger:hover {
+  background: #ffffff0a;
   color: var(--text-2);
 }
 
-.home-folder:focus-within {
+.folder-trigger[aria-expanded="true"] {
   border-color: var(--text-3);
 }
 
-.home-folder input {
-  width: 260px;
+.folder-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-1);
+  font-weight: 500;
+}
+
+/* La liste est `fixed`, positionnée en JS depuis le rectangle du déclencheur : le pied du rail est
+   près du bord, et un popup ancré en `absolute` y serait rogné par le conteneur qui défile. */
+.folder-pop {
+  position: fixed;
+  z-index: 40;
+  padding: 6px;
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  background: var(--bg-1);
+  box-shadow: 0 14px 34px #00000059;
+}
+
+.folder-list {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.folder-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 9px;
+  border-radius: 7px;
+  color: var(--text-3);
+  font-size: var(--fs-base);
+  cursor: pointer;
+}
+
+.folder-row.is-active {
+  background: #ffffff0f;
+}
+
+.folder-row-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+
+/* Le dossier courant s'allume, et la coche le dit sans qu'on ait à comparer les lignes. */
+.folder-row.is-current .folder-row-name {
+  color: var(--text-1);
+  font-weight: 600;
+}
+
+.folder-sep {
+  height: 1px;
+  margin: 5px 3px;
+  background: var(--line-1);
+}
+
+.folder-add {
+  color: var(--text-2);
+}
+
+.folder-plus {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  color: var(--text-3);
+  font-size: var(--fs-title);
+}
+
+.folder-add-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 4px 9px;
+}
+
+.folder-add-input {
+  flex: 1;
   min-width: 0;
   border: 0;
   background: transparent;
-  color: inherit;
+  color: var(--text-1);
   font: inherit;
-  font-size: var(--fs-note);
+  font-size: var(--fs-base);
 }
 
-.home-folder input:focus {
+.folder-add-input:focus {
   outline: none;
 }
 
-.home-icon {
+.folder-add-input::placeholder {
   color: var(--text-3);
 }
 

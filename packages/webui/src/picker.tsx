@@ -1,5 +1,6 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
-import { ChevronIcon } from "./icons"
+import { CheckIcon, ChevronIcon, FolderIcon } from "./icons"
+import { folderChoices, folderLabel } from "./folders"
 import type { Choice } from "./settings"
 
 /**
@@ -276,6 +277,256 @@ export function Picker(props: {
               )}
             </For>
           </div>
+        </div>
+      </Show>
+    </span>
+  )
+}
+
+/**
+ * Le **sélecteur de dossier** — une pastille qui ouvre la liste des projets.
+ *
+ * Il remplace un champ de saisie avec complétion : celui-ci demandait de **connaître le chemin**, ou
+ * de deviner qu'une liste s'ouvrirait à la frappe. Ici on voit les projets, on voit lequel est
+ * courant (la coche), et on choisit d'un clic.
+ *
+ * Il n'a **pas** de champ de filtre, contrairement au `Picker` : sept dossiers se lisent d'un coup
+ * d'œil, et un filtre serait une ligne de plus à franchir avant d'atteindre le premier projet. La
+ * mécanique du popup, elle, est identique — et pour une raison : elle a été payée par des défauts
+ * mesurés (fermeture au défilement de sa propre liste, fermeture au clic extérieur, position fixe
+ * depuis le rectangle du déclencheur).
+ *
+ * `Add workspace…` est une **vraie** action, pas un ornement : aucun navigateur ne sait ouvrir le
+ * sélecteur de dossier du serveur, donc la ligne révèle un champ où l'on écrit le chemin. Les
+ * dossiers déjà connus, eux, se choisissent d'un clic.
+ */
+export function FolderPicker(props: {
+  /** Les dossiers connus du serveur — des chemins absolus. */
+  folders: string[]
+  /** Le dossier courant. `""` est un état : c'est celui du serveur, pas une absence. */
+  value: string
+  /** Ce qu'on affiche quand aucun dossier n'est choisi. */
+  placeholder?: string
+  label?: string
+  onChange: (path: string) => void
+}) {
+  const [open, setOpen] = createSignal(false)
+  const [active, setActive] = createSignal(0)
+  const [adding, setAdding] = createSignal(false)
+  const [draft, setDraft] = createSignal("")
+  const [box, setBox] = createSignal({ left: 0, top: 0, width: 240, up: false })
+  let trigger: HTMLButtonElement | undefined
+  let pop: HTMLDivElement | undefined
+  let list: HTMLDivElement | undefined
+  let addField: HTMLInputElement | undefined
+
+  const choices = createMemo(() => folderChoices(props.folders, props.value))
+  /** La ligne d'ajout est la dernière : le clavier la parcourt comme les autres. */
+  const ADD = () => choices().length
+  const rows = () => choices().length + 1
+
+  const place = () => {
+    const rect = trigger?.getBoundingClientRect()
+    if (!rect) return
+    // Bascule vers le haut quand il n'y a pas la place en dessous — le contrôle vit au **pied** du
+    // rail, donc c'est son cas courant, pas son exception.
+    const up = window.innerHeight - rect.bottom < 260 && rect.top > 260
+    setBox({ left: rect.left, top: up ? rect.top : rect.bottom + 4, width: Math.max(rect.width, 240), up })
+  }
+
+  const show = () => {
+    place()
+    setAdding(false)
+    setDraft("")
+    // La ligne active part sur le dossier **courant** : c'est celui qu'on vient voir.
+    setActive(Math.max(0, choices().findIndex((choice) => choice.current)))
+    setOpen(true)
+    // Le focus se pose **après** le rendu : une `ref` est appelée avant l'insertion dans le
+    // document, et `focus()` sur un élément détaché ne fait rien (défaut mesuré sur le `Picker`).
+    queueMicrotask(() => pop?.focus())
+  }
+
+  const close = () => setOpen(false)
+  /** Fermer en rendant le focus au déclencheur — pour `Échap` et un choix, pas pour un clic ailleurs. */
+  const dismiss = () => {
+    setOpen(false)
+    trigger?.focus()
+  }
+
+  const pick = (path: string | undefined) => {
+    if (path) props.onChange(path)
+    dismiss()
+  }
+
+  const startAdd = () => {
+    setAdding(true)
+    queueMicrotask(() => addField?.focus())
+  }
+
+  const commitAdd = () => {
+    const path = draft().trim()
+    if (!path) return
+    props.onChange(path)
+    dismiss()
+  }
+
+  createEffect(() => {
+    if (active() >= rows()) setActive(Math.max(0, rows() - 1))
+  })
+
+  createEffect(() => {
+    const index = active()
+    if (!open() || adding()) return
+    // `scrollIntoView` n'existe pas partout (jsdom ne l'implémente pas) : son absence ne doit pas
+    // casser le contrôle, seulement ne pas faire défiler.
+    list?.querySelector(`[data-i="${index}"]`)?.scrollIntoView?.({ block: "nearest" })
+  })
+
+  createEffect(() => {
+    if (!open()) return
+    const onDown = (event: MouseEvent) => {
+      if (!pop?.contains(event.target as Node) && !trigger?.contains(event.target as Node)) close()
+    }
+    document.addEventListener("mousedown", onDown)
+    onCleanup(() => document.removeEventListener("mousedown", onDown))
+  })
+
+  createEffect(() => {
+    if (!open()) return
+    /**
+     * Le popup est en `fixed` : le défilement de la page le ferme plutôt que de le laisser flotter
+     * à côté de sa ligne. Celui de **sa propre liste** ne doit pas le fermer — défaut mesuré sur le
+     * `Picker`, où l'événement remontait en phase de capture et refermait le popup avant le clic.
+     */
+    const onScroll = (event: Event) => {
+      if (pop?.contains(event.target as Node)) return
+      close()
+    }
+    document.addEventListener("scroll", onScroll, true)
+    onCleanup(() => document.removeEventListener("scroll", onScroll, true))
+  })
+
+  const onKey = (event: KeyboardEvent) => {
+    // Le champ d'ajout prend le clavier quand il est ouvert : les flèches doivent y écrire.
+    if (adding()) return
+    if (event.key === "ArrowDown") {
+      event.preventDefault()
+      setActive((index) => Math.min(index + 1, rows() - 1))
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault()
+      setActive((index) => Math.max(index - 1, 0))
+    } else if (event.key === "Home") {
+      event.preventDefault()
+      setActive(0)
+    } else if (event.key === "End") {
+      event.preventDefault()
+      setActive(rows() - 1)
+    } else if (event.key === "Enter") {
+      event.preventDefault()
+      if (active() === ADD()) startAdd()
+      else pick(choices()[active()]?.path)
+    } else if (event.key === "Escape") {
+      event.preventDefault()
+      dismiss()
+    } else if (event.key === "Tab") {
+      close()
+    }
+  }
+
+  return (
+    <span class="folder-pick">
+      <button
+        type="button"
+        class="folder-trigger"
+        aria-haspopup="listbox"
+        aria-expanded={open()}
+        aria-label={props.label}
+        /* Le contrôle refermé montre le **nom** ; le chemin entier vit dans l'infobulle, sinon il
+           serait perdu à l'écran. */
+        title={props.value || props.placeholder || "server directory"}
+        ref={(element) => (trigger = element)}
+        onClick={() => (open() ? close() : show())}
+      >
+        <FolderIcon size={14} />
+        <span class="folder-name">{folderLabel(props.value, props.placeholder ?? "server directory")}</span>
+        <ChevronIcon size={12} open={true} />
+      </button>
+
+      <Show when={open()}>
+        <div
+          class="folder-pop"
+          role="listbox"
+          aria-label={props.label}
+          tabIndex={-1}
+          ref={(element) => (pop = element)}
+          style={{
+            left: `${box().left}px`,
+            width: `${box().width}px`,
+            ...(box().up ? { bottom: `${window.innerHeight - box().top + 4}px` } : { top: `${box().top}px` }),
+          }}
+          onKeyDown={onKey}
+        >
+          <div class="folder-list" ref={(element) => (list = element)}>
+            <For each={choices()}>
+              {(choice, index) => (
+                <div
+                  class="folder-row"
+                  classList={{ "is-active": active() === index(), "is-current": choice.current }}
+                  data-i={index()}
+                  role="option"
+                  aria-selected={choice.current}
+                  title={choice.path}
+                  onMouseEnter={() => setActive(index())}
+                  onClick={() => pick(choice.path)}
+                >
+                  <FolderIcon size={14} />
+                  <span class="folder-row-name">{choice.name}</span>
+                  <Show when={choice.current}>
+                    <CheckIcon size={13} />
+                  </Show>
+                </div>
+              )}
+            </For>
+          </div>
+          <div class="folder-sep" />
+          <Show
+            when={adding()}
+            fallback={
+              <div
+                class="folder-row folder-add"
+                classList={{ "is-active": active() === ADD() }}
+                onMouseEnter={() => setActive(ADD())}
+                onClick={startAdd}
+              >
+                <span class="folder-plus">+</span>
+                <span class="folder-row-name">Add workspace…</span>
+              </div>
+            }
+          >
+            <div class="folder-add-row">
+              <span class="folder-plus">+</span>
+              <input
+                class="folder-add-input"
+                type="text"
+                placeholder="path to a project folder"
+                aria-label="path to a project folder"
+                value={draft()}
+                ref={(element: HTMLInputElement) => (addField = element)}
+                onInput={(event) => setDraft(event.currentTarget.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault()
+                    commitAdd()
+                  }
+                  if (event.key === "Escape") {
+                    event.preventDefault()
+                    setAdding(false)
+                    queueMicrotask(() => pop?.focus())
+                  }
+                }}
+              />
+            </div>
+          </Show>
         </div>
       </Show>
     </span>
