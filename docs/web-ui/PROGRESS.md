@@ -2770,5 +2770,56 @@ erreur `getaddrinfo ENOTFOUND opencode.ai` · `Raw events (3)` repliés. Aucune 
 
 Le diagnostic a **immédiatement** montré sa valeur : cette erreur réseau était invisible dans le fil.
 
+---
+
+## Lot 11 — la vue Logs refaite sur le design de DSH
+
+Retour d'usage : « je n'aime pas ce que tu as fait des logs en terme de design, reproduis exactement
+celui de dsh, même composant design et informations ». Le lot 10 avait inventé une forme ; celui-ci
+**reprend celle de DSH**.
+
+### La source, localisée
+
+DSH = DeepSeek Harness, présent dans `C:\jeanluc\`. Le composant de trajectoire est
+`dsh-plugins\dsh-TUI\src\components\TraceView.tsx` (135 lignes) et son modèle de données
+`dsh-adapter\trace.ts` (324 lignes) — lus, pas devinés.
+
+### Ce qui a changé
+
+`TraceTimeline` remplace la liste de cartes dans la vue `Logs` : une ligne par événement,
+`HH:MM:SS  glyphe  résumé  (durée)`, en chasse fixe. Glyphes, couleurs d'issue, atténuation du
+raisonnement, filtres de type (`all`/`tool`/`thinking`/`message`/`progress`) et troncature des
+résumés : **identiques** à DSH.
+
+Le détail par tour (jetons par origine, injections, contexte, cwd, erreur) et les événements bruts
+sont **descendus dans le tiroir `Session`** : la timeline dit ce qui s'est passé, le tiroir dit à quel
+prix. CIBLE.md §10.2 et §10.3.
+
+### Le défaut que la vérification a trouvé
+
+Première mesure : **7 lignes**, dont deux `❯` intitulées « Instruction injections · 3 source(s) » et
+« Context injections · 3 section(s) ». DSH les exclut explicitement (`user/message` : « Only direct
+human prompts are trajectory items; injected context … mirrors the transcript's filtering »). Chez
+nous le contexte injecté arrive comme du **texte du prompt** : sans filtre, la timeline annonçait comme
+« prompt » ce que l'humain n'avait pas écrit. Corrigé (`parseInjections` écarte ces parties), et
+épinglé par un test.
+
+Seconde mesure : **5 lignes**, et le filtre `tool` réduit bien à **1 ligne** (`⏺`). La première sonde
+avait conclu à tort que le filtre ne marchait pas : `:nth-child(2)` visait `.trace-count`, pas un
+bouton — **erreur de sonde**, corrigée en `:nth-of-type`.
+
+### Preuve
+
+```
+vitest run     -> 18 fichiers, 495 tests, exit 0
+tsgo --noEmit  -> exit 0
+```
+
+Au navigateur (instance isolée 5181) : titre `Trajectory`, compteur `5 lines`, filtres
+`[all*, tool, thinking, message, progress]`, lignes `▶ turn 1 (7m23s)` · `❯ Use the question tool…` ·
+`∙ turn 1 · step 1 (1.2s)` · `✻ Simple: call question tool…` · `⏺ question (7m16s)` en rouge,
+`font-family: "JetBrains Mono", ui-monospace, monospace`. Aucune erreur de console.
+
+
 
 

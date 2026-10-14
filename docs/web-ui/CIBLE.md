@@ -556,10 +556,51 @@ catalogue) : elle suit donc le choix de la saisie (§13.3) au lieu d'être figé
 
 ---
 
-### 10.2 La trajectoire — le diagnostic d'un tour
+### 10.2 La vue `Logs` — la timeline de DSH, reprise telle quelle
 
-La vue `Logs` ne montre pas des événements bruts : elle montre la **trajectoire** de la session, un
-bloc par tour. Le fil raconte ce qui s'est passé ; la trajectoire dit **comment** et **à quel prix**.
+La vue `Logs` **reproduit le `/trace` de DSH** (`dsh-TUI/src/components/TraceView.tsx` et
+`dsh-adapter/trace.ts`), parce que c'est une forme éprouvée et que l'utilisateur l'a demandée telle
+quelle. Ce n'est **pas** une liste de cartes : c'est une timeline dense, en chasse fixe, d'**une ligne
+par événement** :
+
+```
+HH:MM:SS   glyphe   résumé   (durée)
+```
+
+| genre | glyphe | ligne |
+|---|---|---|
+| tour | `▶` | `turn 1` |
+| étape | `∙` | `turn 1 · step 1` |
+| prompt | `❯` | le texte de l'humain |
+| réponse | `✻` | le texte de l'agent |
+| raisonnement | `✻` | le raisonnement (atténué) |
+| outil | `⏺` | `read src/a.ts` |
+| todo | `✓` | `3/5 · la tâche en cours` |
+
+Quatre règles, toutes reprises de DSH :
+
+1. **La couleur dit l'issue, et seulement l'issue** : un outil est vert s'il a réussi, rouge s'il a
+   échoué, ambre s'il tourne. Rien d'autre n'est coloré par un état.
+2. **Le raisonnement et les étapes s'atténuent** : ils encadrent le travail, ils ne le sont pas.
+3. **La durée apparaît quand la fin est connue** — `(…)` pour un travail en cours, rien quand il n'y a
+   pas de paire à mesurer.
+4. **Les filtres de type** — `all`, `tool`, `thinking`, `message`, `progress` — découpent la timeline
+   sans la réordonner.
+
+**Le contexte injecté n'est pas un prompt.** DSH est explicite : « Only direct human prompts are
+trajectory items; injected context … mirrors the transcript's filtering ». Chez nous le contexte
+injecté arrive comme du **texte du prompt** : sans ce filtre, chaque tour affichait deux ou trois
+lignes `❯` qui n'étaient pas des prompts — mesuré, puis corrigé.
+
+### 10.3 Le détail par tour — dans le tiroir `Session`
+
+La timeline dit **ce qui s'est passé et dans quel ordre** ; elle ne dit pas **à quel prix**. Le détail
+d'un tour — agent, mode et modèle réellement utilisés, durée, taille du prompt et d'un éventuel prompt
+système, injections, jetons séparés par origine (entrée, sortie, raisonnement, cache), état du
+contexte, dossier de travail, erreur — vit dans le tiroir `Session`, avec les événements bruts.
+
+Deux lectures, deux endroits : on **parcourt** la timeline, on **ouvre** le détail. Les mélanger
+donnerait une vue qui ne se lit ni d'un coup d'œil ni en profondeur.
 
 Un tour porte, dans cet ordre :
 
