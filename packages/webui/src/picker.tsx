@@ -50,6 +50,7 @@ export function Picker(props: {
   let trigger: HTMLButtonElement | undefined
   let list: HTMLDivElement | undefined
   let filter: HTMLInputElement | undefined
+  let pop: HTMLDivElement | undefined
 
   const filtered = createMemo(() => {
     const needle = query().trim().toLowerCase()
@@ -134,9 +135,19 @@ export function Picker(props: {
 
   createEffect(() => {
     if (!open()) return
-    // Le popup est en `fixed` : il ne suit pas le panneau qui défile. Plutôt que de flotter à côté
-    // de sa ligne, il se ferme — on rouvre d'un clic.
-    const onScroll = () => close()
+    /**
+     * Le popup est en `fixed` : il ne suit pas le panneau qui défile, donc le défilement **de la page**
+     * le ferme plutôt que de le laisser flotter à côté de sa ligne.
+     *
+     * Mais le défilement de **sa propre liste** ne doit pas le fermer — et c'est exactement le défaut
+     * qui rendait le choix du modèle inutilisable : la liste porte 696 entrées, on la fait défiler,
+     * l'événement remonte en phase de capture jusqu'au document, et il refermait le popup avant qu'on
+     * ait pu cliquer. On ignore donc tout ce qui part de l'intérieur du popup.
+     */
+    const onScroll = (event: Event) => {
+      if (pop?.contains(event.target as Node)) return
+      close()
+    }
     document.addEventListener("scroll", onScroll, true)
     onCleanup(() => document.removeEventListener("scroll", onScroll, true))
   })
@@ -190,6 +201,7 @@ export function Picker(props: {
       <Show when={open()}>
         <div
           class="pick-pop"
+          ref={(element) => (pop = element)}
           style={{
             left: `${box().left}px`,
             width: `${box().width}px`,

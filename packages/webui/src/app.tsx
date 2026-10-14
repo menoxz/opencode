@@ -166,6 +166,26 @@ export default function App() {
   const [drawerOpen, setDrawerOpen] = createSignal(false)
   const [drawerTab, setDrawerTab] = createSignal<"session" | "decisions">("session")
   /**
+   * La **vue** du panneau principal : la conversation, ou le journal.
+   *
+   * Deux vues, pas deux panneaux : elles occupent la même place et se remplacent, comme les dialogues
+   * du TUI. Le journal n'est donc pas un tiroir qu'on ouvre à côté du chat — c'est l'écran qui change,
+   * et c'est la barre au-dessus du chat qui le commute.
+   */
+  const [view, setView] = createSignal<"chat" | "logs">("chat")
+  /**
+   * Le journal de l'écran — les derniers événements reçus du serveur.
+   *
+   * C'est le seul journal qu'on puisse montrer **honnêtement** : le serveur n'expose pas de route qui
+   * *lise* ses logs (`POST /log` ne fait qu'en écrire un), et les fichiers vivent hors du projet, donc
+   * hors de portée de `/file/content`. Ce qu'on voit ici est donc ce que la page a réellement reçu —
+   * et c'est précisément ce qui sert à diagnostiquer « il ne se passe rien à l'écran ».
+   *
+   * Borné : un journal qui grossit sans fin est une fuite, pas un journal.
+   */
+  const [logEntries, setLogEntries] = createSignal<Array<{ at: number; type: string }>>([])
+  const LOG_LIMIT = 200
+  /**
    * La question de l'agent : la **seule** écriture du fil. Elle est bloquante — tant qu'elle n'a pas
    * de réponse, la conversation est arrêtée — donc elle n'est pas rangée dans un panneau : elle
    * s'affiche dans le fil, là où l'on regarde.
@@ -1397,6 +1417,12 @@ export default function App() {
 
     const unsubscribe = subscribeEvents({
       onEvent: (event) => {
+        // Le journal se remplit **avant** l'aiguillage : ce qui n'est traité nulle part doit rester
+        // visible, sinon on ne peut pas voir qu'un événement arrive et n'est pas pris en charge.
+        setLogEntries((current) => {
+          const next = [...current, { at: Date.now(), type: event.type }]
+          return next.length > LOG_LIMIT ? next.slice(next.length - LOG_LIMIT) : next
+        })
         if (event.type === "permission.asked" || event.type === "permission.replied") {
           setPermissions((current) => reducePermissions(current, event))
           // Une décision bloquante ouvre le tiroir d'elle-même : elle ne doit jamais attendre dans un
@@ -1755,22 +1781,27 @@ export default function App() {
               (bloc *Server*) — réglés **une fois par serveur**, ils tenaient un bouton et un badge
               permanents, c'est-à-dire de la place pour rien. Même règle que le dossier de travail,
               dans l'autre sens : lui est quotidien, donc il reste. */}
+          {/* Le footer garde ce qui n'est **pas** une vue : le dossier de travail, les statistiques de
+              session (un tiroir) et les réglages. Les **vues** (Session, Logs) sont au-dessus du chat,
+              là où leur bascule se voit. */}
           <span class="foot-row">
-            {/* La porte des statistiques. Elle est **ici** parce que c'est ici que s'ouvrent les
-                panneaux dans cet écran, et elle est **toujours** là : « accès facile et visible »
-                exclut un panneau qui n'apparaît que quand quelque chose bloque. */}
             <button
               class="ghost"
-              classList={{ active: drawerOpen() }}
+              classList={{ active: drawerOpen() && drawerTab() === "session" }}
               title="Session statistics: turns, steps, time, tokens, cost"
               onClick={() => {
                 setDrawerTab("session")
-                setDrawerOpen((open) => !open)
+                setDrawerOpen(drawerOpen() && drawerTab() === "session" ? false : true)
               }}
             >
               stats
             </button>
-            <button class="ghost" title="Settings: defaults, providers, agents, MCP" onClick={openConfig}>
+            <button
+              class="ghost"
+              classList={{ active: configOpen() }}
+              title="Settings: defaults, providers, agents, MCP"
+              onClick={openConfig}
+            >
               settings
             </button>
           </span>
@@ -1796,6 +1827,37 @@ export default function App() {
         </Show>
 
         <Show when={active()} fallback={<p class="empty">Pick a session, or start one.</p>}>
+          {/* La barre des **vues**, au-dessus du chat. Elle commute le contenu du panneau principal
+              — la conversation ou le journal — comme les dialogues du TUI. Elle est ici, et non dans
+              le rail, parce que c'est le contenu du chat qu'elle remplace : on la cherche là où l'on
+              regarde. */}
+          <nav class="view-nav">
+            <button class="view-item" classList={{ active: view() === "chat" }} onClick={() => setView("chat")}>
+              Session
+            </button>
+            <button class="view-item" classList={{ active: view() === "logs" }} onClick={() => setView("logs")}>
+              Logs
+            </button>
+          </nav>
+          <Show when={view() === "logs"}>
+            {/* Le plus récent en tête : on ouvre le journal pour voir **ce qui vient de se passer**,
+                pas pour remonter le temps depuis le début du serveur. */}
+            <div class="scroll">
+              <Show when={logEntries().length > 0} fallback={<p class="log-empty">No events received yet.</p>}>
+                <ul class="log-list">
+                  <For each={[...logEntries()].reverse()}>
+                    {(entry) => (
+                      <li class="log-row">
+                        <span class="log-time">{new Date(entry.at).toLocaleTimeString()}</span>
+                        <span class="log-type">{entry.type}</span>
+                      </li>
+                    )}
+                  </For>
+                </ul>
+              </Show>
+            </div>
+          </Show>
+          <Show when={view() === "chat"}>
           <div class="scroll" ref={scroller} onScroll={onScroll}>
             <div class="transcript">
               <Show when={error()}>
@@ -1949,6 +2011,7 @@ export default function App() {
             </div>
             <ComposerStats stats={stats()} contextLimit={modelLimits()[composerModel()]} working={working()} />
           </form>
+          </Show>
         </Show>
       </main>
 

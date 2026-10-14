@@ -612,10 +612,36 @@ textarea {
    (`.auth-form`, `.auth-row`). Il est descendu dans `General`, bloc *Server*, où il reprend les
    classes communes du panneau : un formulaire à part n'avait plus de raison d'être. */
 
-.foot-row {
+/* La barre de navigation du rail — les trois portes de l'écran (Session, Config, Logs).
+
+   Elle remplace deux boutons perdus au fond du rail, et elle est **horizontale** pour deux raisons :
+   on la lit d'un coup d'œil au lieu de la chercher, et sa place ne bouge pas — un accès qu'on ne
+   cherche pas est un accès qu'on utilise. Les trois parts égales disent qu'elles sont de même rang :
+   aucune n'est l'action principale. */
+
+.rail-nav {
   display: flex;
-  gap: 10px;
-  margin-top: 8px;
+  gap: 4px;
+  margin-top: 10px;
+}
+
+.rail-nav .nav-item {
+  flex: 1;
+  padding: 7px 6px;
+  border-radius: 8px;
+  font-size: var(--fs-meta);
+  color: var(--text-2);
+  text-align: center;
+}
+
+.rail-nav .nav-item:hover {
+  background: #ffffff0f;
+  color: var(--text-1);
+}
+
+.rail-nav .nav-item.active {
+  background: var(--grad-active);
+  color: var(--text-1);
 }
 
 /* Poignée de glissement : bande de préhension **invisible** chez DSH. */
@@ -1374,7 +1400,19 @@ textarea {
   position: relative;
   display: block;
   width: 100%;
-  max-height: 200px;
+  /**
+   * Le champ **grandit avec ce qu'on écrit** au lieu de rétrécir la lecture.
+   *
+   * Mesuré à l'usage : `max-height: 200px` seul laissait apparaître une barre native dès la
+   * cinquième ligne — exactement le moment où l'on écrit une consigne un peu longue. `field-sizing:
+   * content` fait prendre au champ la hauteur de son contenu, et le plafond ne sert plus qu'au cas
+   * extrême : au-delà, une barre **nôtre** apparaît (voir les règles de barre plus bas).
+   */
+  field-sizing: content;
+  min-height: 2.4em;
+  max-height: 340px;
+  overflow-y: auto;
+  padding: 2px 2px 8px;
   resize: none;
   background: transparent;
   border: 0;
@@ -1460,13 +1498,15 @@ textarea {
   padding: 0;
 }
 
+/* Ce bloc ne fixe **plus** de plafond.
+   Mesuré : malgré `field-sizing: content`, le champ s'arrêtait à 200 px — `.composer textarea` est
+   plus spécifique que `.composer-input`, et sa copie du `max-height` l'emportait. Une règle qui
+   recopie la mise en page d'une autre finit par la contredire : celle-ci ne garde que ce qui n'est
+   pas déjà dit ailleurs. */
 .composer textarea {
   display: block;
   width: 100%;
-  max-height: 200px;
-  padding: 2px 2px 8px;
   resize: none;
-  line-height: 1.55;
 }
 
 .composer textarea::placeholder {
@@ -1586,6 +1626,9 @@ textarea {
   margin: 8px auto 0;
   display: flex;
   flex-wrap: wrap;
+  /* Les groupes se lisent comme **une** ligne de contexte, pas comme une colonne : ils se centrent
+     sous le champ, dans l'axe de ce qu'on vient d'écrire. */
+  justify-content: center;
   gap: 4px 14px;
   padding: 0 2px;
   font-size: var(--fs-meta);
@@ -1926,6 +1969,8 @@ textarea {
 
 /* ---- Barres de défilement discrètes ---- */
 
+.composer-input::-webkit-scrollbar,
+.inj-source-text::-webkit-scrollbar,
 .scroll::-webkit-scrollbar,
 .rows::-webkit-scrollbar,
 .tool-detail pre::-webkit-scrollbar,
@@ -1937,6 +1982,8 @@ textarea {
   height: 10px;
 }
 
+.composer-input::-webkit-scrollbar-thumb,
+.inj-source-text::-webkit-scrollbar-thumb,
 .scroll::-webkit-scrollbar-thumb,
 .rows::-webkit-scrollbar-thumb,
 .tool-detail pre::-webkit-scrollbar-thumb,
@@ -1949,10 +1996,14 @@ textarea {
 
 /* Les rails et les coins restent transparents : le fond du bloc doit passer au travers, sinon la
    barre dessine un cadre gris dans un bloc de code. */
+.composer-input::-webkit-scrollbar-track,
+.inj-source-text::-webkit-scrollbar-track,
 .scroll::-webkit-scrollbar-track,
 .rows::-webkit-scrollbar-track,
 .tool-detail pre::-webkit-scrollbar-track,
 .md-pre::-webkit-scrollbar-track,
+.composer-input::-webkit-scrollbar-corner,
+.inj-source-text::-webkit-scrollbar-corner,
 .scroll::-webkit-scrollbar-corner,
 .rows::-webkit-scrollbar-corner,
 .tool-detail pre::-webkit-scrollbar-corner,
@@ -1962,6 +2013,8 @@ textarea {
 
 /* Firefox ne connaît pas `::-webkit-scrollbar` ; `scrollbar-width`/`scrollbar-color` y suffisent et
    restent sans effet sur Chromium, qui suit les règles ci-dessus. */
+.composer-input,
+.inj-source-text,
 .tool-detail pre,
 .md-pre {
   scrollbar-width: thin;
@@ -2851,10 +2904,82 @@ textarea {
   border-radius: 999px;
 }
 
-/* La porte des statistiques, quand le tiroir est ouvert. */
-.foot-row .ghost.active {
+/* ---- Le journal — ce que la page a réellement reçu du serveur ----
+
+   Le serveur n'expose aucune route qui **lise** ses logs (`POST /log` ne fait qu'en écrire un), et
+   ses fichiers vivent hors du projet : ce panneau montre donc l'événementiel **reçu par la page**,
+   qui est justement ce qui manque quand « il ne se passe rien à l'écran ». Le plus récent est en
+   tête — on ouvre un journal pour voir ce qui vient d'arriver. */
+
+/* La barre des **vues**, au-dessus du chat — Session ou Logs.
+
+   Deux vues qui **se remplacent** dans le panneau principal, comme les dialogues du TUI : ce n'est pas
+   un tiroir qu'on ouvre à côté de la conversation. Sa place est en haut de la zone qu'elle commute —
+   on la cherche là où l'on regarde, pas dans le rail. */
+
+.view-nav {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+  padding: 12px var(--gutter) 4px;
+  max-width: var(--measure);
+  margin: 0 auto;
+  width: 100%;
+}
+
+.view-item {
+  padding: 5px 12px;
+  border-radius: 8px;
+  font-size: var(--fs-note);
+  color: var(--text-2);
+}
+
+.view-item:hover {
+  background: #ffffff0f;
   color: var(--text-1);
+}
+
+.view-item.active {
   background: var(--grad-active);
+  color: var(--text-1);
+}
+
+.log-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-meta);
+}
+
+.log-row {
+  display: flex;
+  gap: 8px;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.log-row:nth-child(odd) {
+  background: #ffffff05;
+}
+
+.log-time {
+  flex: none;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.log-type {
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.log-empty {
+  margin: 0;
+  font-size: var(--fs-meta);
+  color: var(--text-3);
+  font-style: italic;
 }
 
 /* ---- Le markdown (§12.1) ----
