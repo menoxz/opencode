@@ -3042,6 +3042,39 @@ tiroir            : 0 px au démarrage -> 360 px au clic -> 0 px (fermé, pas de
 et un pied cassé en deux se voient d'un coup d'œil quand on cherche la **composition**. Regarder un
 élément n'est pas regarder un écran.
 
+### Vérification finale — et deux défauts de la sonde, pas du code
+
+Une passe unique sur l'état **commité**, pour que la preuve postdate la dernière édition :
+
+```
+bords gauches     : logo 12 · New session 12 · plugins 12 · libellé 12 · dossier 12 · pied 12
+                    sessions 34 (indentées) · gestes d'en-tête 243 (à droite)
+New session       : justify-content center, fond rgb(44,44,46), filet 1 px, rayon 8 px
+dossier           : [workspace-main, icon-btn] — chevron 0, lignes plugin 0
+pied              : stats x=12, settings x=143, même ligne (y=889), une icône chacun
+tiroir            : 0 px au repos -> 360 px ouvert -> 0 px refermé
+recherche         : `GET /session?search=zzz` émis, liste à 0 ligne, retour à 4 par Échap
+```
+
+Deux « défauts » que cette passe a signalés étaient ceux de **ma sonde** :
+
+1. **« chevron présent »** — mon compte soustrayait les icônes de dossier du total des `svg`, sans
+   compter la **coche** du workspace courant. La ligne n'a pas de chevron.
+2. **« la recherche ne filtre pas »** — j'avais posé la valeur avec le *setter* natif puis dispatché un
+   `new Event('input')` : Solid délègue ses événements, et ce texte n'atteignait pas son gestionnaire.
+   Avec une **vraie frappe** (`Input.insertText`), la requête part et la liste se réduit.
+
+⇒ **Vérifier un comportement de saisie exige une saisie réelle**, jamais un événement fabriqué — et la
+mesure qui passe par le **réseau** (la requête est-elle émise ?) sépare ce que l'interface fait de ce
+que la sonde lui fait faire.
+
+### Un défaut réel trouvé par cette passe
+
+La ligne de dossier et son bouton étaient décalés de **3 px** : l'air du groupe était porté par un
+`padding` **asymétrique** (`9px 4px 4px`) sur le bouton du dossier, ce qui descendait son texte sous
+l'icône voisine. Corrigé en `margin-top: 8px` sur `.workspace` — ce qui est aussi la règle du §3.7
+(l'air se met **au-dessus** de ce qui ouvre un bloc, jamais dans une boîte). Mesuré après : **1 px**.
+
 
 
 
