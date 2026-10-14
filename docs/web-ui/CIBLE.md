@@ -178,14 +178,25 @@ ce document : une donnée exposée par le serveur n'est pas une raison de l'affi
 |---|---|---|---|
 | 1 | Nouvelle session | « je veux parler » | un bouton, premier élément, sans clic |
 | 2 | Plugins | « quel accès ajouté ? » | un bouton par plugin — **vide s'il n'y en a aucun** |
-| 3 | Workspaces | « où ai-je travaillé ? » | dossiers repliables, **4 sessions visibles** |
+| 3 | Workspaces | « où ai-je travaillé ? » | un dossier par **workspace**, repliable, **4 sessions visibles** |
 | 4 | Pied | « où est-ce que je travaille ? » | dossier, identifiants, réglages |
 
 - **Le libellé est l'information.** Les actions d'une ligne (renommer, supprimer) apparaissent **au
   survol, en superposition sur le libellé** — elles ne consomment aucune place au repos. L'infobulle
   porte le nom complet et l'activité.
-- **Une session se lit *sous* son dossier**, par une indentation franche. Le libellé est le chemin
-  **relatif** ; l'absolu reste en infobulle.
+- **Un workspace est un *projet*, pas un sous-chemin.** Mesuré le 2026-10-14 : le rail affichait
+  `packages/opencode` sous le titre « workspaces », c'est-à-dire un sous-dossier du lieu courant — un
+  seul groupe, par construction, alors que la question posée est « où ai-je travaillé ? ». Le
+  rattachement se calcule : `GET /session` porte `directory`, `GET /project` porte les workspaces.
+  Le libellé est le **nom du projet** ; l'absolu reste en infobulle.
+- **Le workspace courant porte la coche**, et il se reconnaît par **préfixe** : on travaille dans
+  `…\opencode-fork\packages\opencode` alors que le workspace est `…\opencode-fork`. Comparés entiers,
+  aucun ne correspondait — la coche ne s'affichait donc **jamais**.
+- **Un workspace sans session n'apparaît pas.** La liste répond à « où ai-je travaillé ? » : une ligne
+  vide ne répond à rien (§8). Ce serveur connaît 26 projets et 100 sessions, toutes dans un seul —
+  la liste en montre donc **un**, et c'est le résultat juste : la référence donne la forme, jamais les
+  données.
+- **Une session se lit *sous* son workspace**, par une indentation franche.
 - **Un dossier se replie**, ouvert par défaut : on replie pour dégager, on ne déplie pas pour
   découvrir. Au-delà de **4 sessions**, « show more » ; « show less » pour replier.
 - **Le survol ne déplace rien.** Une action qui apparaît en modifiant la grille fait bouger toute la

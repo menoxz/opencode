@@ -480,6 +480,57 @@ textarea {
   font-variant-numeric: tabular-nums;
 }
 
+/* Le workspace **courant** — la coche de la référence.
+   Le libellé monte d'un cran de contraste : une coche seule ne se lit pas en balayant la colonne. */
+.workspace.current {
+  color: var(--text-1);
+}
+
+.workspace-check {
+  flex: 0 0 auto;
+  display: flex;
+  color: var(--text-3);
+}
+
+/* « Add workspace… » — la **dernière ligne de la liste**, comme dans la référence.
+   On ajoute un lieu de travail là où on les lit, et le champ n'existe qu'ouvert : il ne coûte donc
+   rien au repos. Le filet le sépare des workspaces, sans encadrer la liste. */
+.workspace-add {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  margin-top: 4px;
+  padding: 7px 8px;
+  border-top: 1px solid var(--line-1);
+  color: var(--text-2);
+  font-size: var(--fs-base);
+  text-align: left;
+}
+
+.workspace-add:hover {
+  color: var(--text-1);
+}
+
+.workspace-plus {
+  flex: 0 0 auto;
+  color: var(--text-3);
+}
+
+.workspace-add-input {
+  width: 100%;
+  margin-top: 4px;
+  padding: 7px 8px;
+  border: 1px solid var(--line-1);
+  border-radius: 6px;
+  color: var(--text-1);
+  font-size: var(--fs-base);
+}
+
+.workspace-add-input:focus {
+  border-color: var(--line-2);
+}
+
 /* ---- 3. Une session : nettement en retrait de son dossier ---- */
 
 .row {

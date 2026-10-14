@@ -14,6 +14,8 @@
  *     a consommé et ce qu'elle a changé — information qu'aucun autre écran ne donne.
  */
 
+import { pathKey } from "./folders"
+
 export type SessionTokens = {
   input?: number
   output?: number
@@ -158,4 +160,82 @@ export function sessionDetails(session: SessionSummary): Array<{ label: string; 
     { label: "cost", value: formatCost(session.cost) },
     { label: "files", value: changes },
   ]
+}
+
+export type WorkspaceGroup = SessionGroup & {
+  /** Est-ce le workspace où l'on travaille ? C'est lui qui porte la coche. */
+  current: boolean
+}
+
+/**
+ * `directory` appartient-il au projet ? Égalité, ou **sous-dossier** — jamais un préfixe de texte :
+ * `…/opencode-fork-2` ne doit pas compter comme `…/opencode-fork`.
+ */
+function within(directory: string, project: string): boolean {
+  if (!project) return false
+  return directory === project || directory.startsWith(`${project}/`)
+}
+
+/**
+ * Regroupe les sessions par **workspace** — le dossier de projet auquel elles appartiennent.
+ *
+ * Mesuré le 2026-10-14 : le rail affichait `packages/opencode` comme unique groupe, c'est-à-dire un
+ * **sous-chemin** du dossier courant, alors que la référence liste des **workspaces**. La donnée
+ * n'était pas absente : `GET /session` porte `directory` et `GET /project` porte les workspaces — le
+ * rattachement se calcule donc, sans appel de plus.
+ *
+ * Le projet **le plus long** gagne : `…\opencode-fork` et `…\opencode-fork\packages` peuvent être
+ * deux workspaces connus, et une session du second appartient au second.
+ *
+ * Une session hors de tout projet connu retombe sur son propre dossier (`groupOf`) : le regroupement
+ * ne perd jamais une session, il la range seulement moins bien. L'ordre d'apparition est conservé —
+ * le serveur trie par récence, et un tri de plus ferait remonter un vieux workspace au-dessus d'un
+ * récent.
+ */
+export function groupByWorkspace(
+  sessions: SessionSummary[],
+  projects: string[],
+  current: string,
+): WorkspaceGroup[] {
+  const known = projects
+    .filter((path) => typeof path === "string" && path.trim().length > 0)
+    .map((path) => ({ path, key: pathKey(path) }))
+    // Du plus long au plus court : le premier qui contient le dossier est le bon.
+    .sort((a, b) => b.key.length - a.key.length)
+
+  const groups: WorkspaceGroup[] = []
+  const index = new Map<string, WorkspaceGroup>()
+  for (const session of sessions) {
+    const home = known.find((entry) => within(pathKey(session.directory ?? ""), entry.key))
+    const own = home ? undefined : groupOf(session)
+    // La clé est **normalisée** dans les deux branches : deux écritures du même dossier (`C:/…` et
+    // `C:\…`, relevé sur `GET /project`) doivent donner **un** groupe, pas deux.
+    const key = home?.key ?? pathKey(own!.key)
+    let group = index.get(key)
+    if (!group) {
+      group = {
+        key,
+        label: home ? leaf(home.path) : own!.label,
+        hint: home ? home.path : own!.hint,
+        current: false,
+        sessions: [],
+      }
+      index.set(key, group)
+      groups.push(group)
+    }
+    group.sessions.push(session)
+  }
+
+  /*
+   * Le courant se reconnaît par **préfixe**, pas par égalité : on travaille dans
+   * `…\opencode-fork\packages\opencode` alors que le workspace est `…\opencode-fork`. Comparés
+   * entiers, aucun ne correspondait — mesuré : le sélecteur de dossier du rail n'affichait **aucune**
+   * coche, alors que la référence en montre une.
+   */
+  const here = pathKey(current)
+  if (here) {
+    for (const group of groups) if (within(here, group.key)) group.current = true
+  }
+
+  return groups
 }

@@ -142,21 +142,40 @@ export function ShowMore(props: { hidden: number; expanded: boolean; onToggle: (
    infobulle, pour ne pas prendre la ligne.
    ============================================================================= */
 
-/** En-tête de workspace : ce qui sépare deux lieux de travail. */
+/**
+ * En-tête de workspace : ce qui sépare deux lieux de travail.
+ *
+ * La **coche** marque celui où l'on travaille — la forme de la référence. Elle est en `opacity`, donc
+ * sa place est réservée en permanence : un marqueur qui se poserait au survol ferait bouger la ligne.
+ * Le libellé du courant monte d'un cran de contraste, parce qu'une coche seule ne se lit pas d'un
+ * balayage de colonne.
+ */
 export function WorkspaceGroup(props: {
   label: string
   hint: string
   count: number
   open: boolean
+  /** Est-ce le workspace où l'on travaille ? */
+  current?: boolean
   onToggle: () => void
 }) {
   return (
-    <button class="workspace" title={props.hint} onClick={() => props.onToggle()}>
+    <button
+      class="workspace"
+      classList={{ current: Boolean(props.current) }}
+      title={props.hint}
+      onClick={() => props.onToggle()}
+    >
       <ChevronIcon size={12} open={props.open} />
       <span class="workspace-icon">
         <FolderIcon size={14} />
       </span>
       <span class="workspace-label">{props.label}</span>
+      <Show when={props.current}>
+        <span class="workspace-check">
+          <CheckIcon size={13} />
+        </span>
+      </Show>
       <span class="workspace-count">{props.count}</span>
     </button>
   )

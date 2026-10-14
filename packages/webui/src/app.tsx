@@ -115,7 +115,7 @@ import {
 } from "./config"
 import { parseInjections, relativeTo } from "./injections"
 import { pluginEntries, type PluginList } from "./nav"
-import { SESSION_LIMIT, groupByDirectory, sessionDetails, splitSessions, type SessionSummary } from "./sessions"
+import { SESSION_LIMIT, groupByWorkspace, sessionDetails, splitSessions, type SessionSummary } from "./sessions"
 import { subscribeEvents, type EventStreamState } from "./events"
 import { sessionTimestamp } from "./time"
 import {
@@ -320,6 +320,13 @@ export default function App() {
   const [confirming, setConfirming] = createSignal<string | undefined>()
   // Deux replis indépendants : un dossier entier, et une ligne de session (son détail).
   const [groupsOpen, setGroupsOpen] = createSignal<Record<string, boolean>>({})
+  /**
+   * L'ajout d'un workspace se fait **dans la liste**, comme dans la référence : sa dernière ligne
+   * devient un champ. Le champ n'existe qu'ouvert, donc il ne coûte rien au repos ; et l'action est
+   * là où on lit les workspaces, sans envoyer l'utilisateur chercher un autre contrôle.
+   */
+  const [addingWorkspace, setAddingWorkspace] = createSignal(false)
+  const [workspaceDraft, setWorkspaceDraft] = createSignal("")
   const [detailsOpen, setDetailsOpen] = createSignal<Record<string, boolean>>({})
 
   // Configuration : lue seulement quand la feuille s'ouvre. Rien de tout cela ne s'affiche au repos.
@@ -743,8 +750,14 @@ export default function App() {
 
   const loadSessions = async () => {
     const search = query().trim()
+    /**
+     * **Sans** `scope()` : le rail liste des *workspaces*, il lui faut donc les sessions de tous —
+     * pas seulement celles du dossier courant. C'est la seule lecture qui réponde à « où ai-je
+     * travaillé ? ». Le rattachement de chaque session à son workspace ne coûte aucun appel de plus :
+     * `GET /session` porte déjà `directory`, et `GET /project` porte les workspaces.
+     */
     const result = await client.session
-      .list({ ...scope(), ...(search ? { search } : {}) })
+      .list({ ...(search ? { search } : {}) })
       .catch((cause: unknown) => {
         setError(String(cause))
         return undefined
@@ -1896,7 +1909,7 @@ export default function App() {
           />
 
           <div class="rows">
-          <For each={groupByDirectory(sessions())}>
+          <For each={groupByWorkspace(sessions(), projects(), directory())}>
               {(group) => {
                 const split = () => splitSessions(group.sessions, Boolean(moreOpen()[group.key]))
                 return (
@@ -1905,6 +1918,7 @@ export default function App() {
                   label={group.label}
                   hint={group.hint}
                   count={group.sessions.length}
+                  current={group.current}
                   open={groupOpen(group.key)}
                   onToggle={() => toggleGroup(group.key)}
                 />
@@ -2004,6 +2018,40 @@ export default function App() {
                 )
               }}
           </For>
+
+            {/* « Add workspace… » — la **dernière ligne de la liste**, comme dans la référence.
+                Sans workspace connu, elle reste seule : c'est le seul geste possible, et il vaut mieux
+                qu'un état vide décoratif. */}
+            <Show
+              when={addingWorkspace()}
+              fallback={
+                <button class="workspace-add" onClick={() => setAddingWorkspace(true)}>
+                  <span class="workspace-plus">+</span>
+                  <span class="workspace-label">Add workspace…</span>
+                </button>
+              }
+            >
+              <input
+                class="workspace-add-input"
+                autofocus
+                placeholder="path to a project folder"
+                aria-label="path to a project folder"
+                value={workspaceDraft()}
+                onInput={(event) => setWorkspaceDraft(event.currentTarget.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    const path = workspaceDraft().trim()
+                    setAddingWorkspace(false)
+                    setWorkspaceDraft("")
+                    if (path) applyDirectory(path)
+                  }
+                  if (event.key === "Escape") {
+                    setAddingWorkspace(false)
+                    setWorkspaceDraft("")
+                  }
+                }}
+              />
+            </Show>
           </div>
         </div>
 

@@ -2894,6 +2894,78 @@ rendant `Started 2026-10-13 15:27:45.804` et `Duration 64ms`. Aucune erreur de c
 **Quand la référence est un écran, la vérification est une comparaison d'écrans.** Reproduire un
 composant sans le regarder revient à deviner — et deviner juste est un hasard, pas une méthode.
 
+---
+
+## Lot 13 — la barre latérale : des workspaces, pas des sous-chemins (livré)
+
+Demande : « implémente la barre latérale complète du harnais agentique généraliste », référence à
+l'appui — la liste des workspaces de DSH (`DS Bot`, `mcp-servers`, `opencodev2`, `opencode-fork` ✓,
+`auxiflow`, `jeanluc`, `deepseek_harness`, `+ Add workspace…`).
+
+### Ce que la mesure a dit, avant de toucher au code
+
+Le rail n'était **pas vide** : `.rail-head` (le nom), `.rail-new` (« New session », 40 px), une entrée
+`plugins` **ouverte par défaut** (171 px, ses 4 plugins listés), « WORKSPACES » avec une recherche, et
+un pied portant le sélecteur de dossier. Ce qui manquait n'était pas une partie : c'était la **nature
+de la troisième**.
+
+Deux faits mesurés sur la pile isolée (5181), sonde CDP bornée :
+
+| fait | mesure |
+|---|---|
+| le groupe affiché | `packages/opencode` — un **sous-chemin** du dossier courant, pas un workspace |
+| la ligne du courant | **aucune coche**, alors que la référence en montre une |
+
+Première cause : `loadSessions` passait `scope()` (`{ directory }`), donc le serveur ne rendait que
+les sessions du dossier courant, et `groupByDirectory` regroupait sur `session.path` — le chemin
+**relatif**. Un seul groupe, par construction.
+
+Seconde cause : `folderChoices` comparait `pathKey(projet)` à `pathKey(dossier courant)`. Le dossier
+courant est `…\opencode-fork\packages\opencode`, les projets connus sont des **racines** : aucun
+n'était égal, donc la coche ne pouvait pas s'afficher.
+
+### Ce qui était déjà là — et qu'il ne fallait pas refaire
+
+`FolderPicker` (`picker.tsx`) **est** la forme de la référence : déclencheur dossier + nom + chevron ;
+liste avec icône dossier, nom, coche sur le courant ; séparateur ; `+ Add workspace…`. Mesuré ouvert :
+**26 dossiers** rendus sur 436 px de haut. La forme n'était pas à écrire, elle était à **corriger**.
+
+### Ce qui est livré
+
+| fichier | ce qui change |
+|---|---|
+| `sessions.ts` | `groupByWorkspace(sessions, projects, current)` — rattachement d'une session à son **projet** par préfixe de chemin normalisé, projet le plus long gagnant, repli sur son propre dossier sinon, courant marqué par **préfixe** |
+| `components.tsx` | `WorkspaceGroup` porte la **coche** du courant |
+| `app.tsx` | le rail groupe par workspace ; `loadSessions` lit **toutes** les sessions (sans `scope()`) ; la dernière ligne de la liste est `Add workspace…`, champ à l'ouverture |
+| `styles.css` | la coche, la ligne d'ajout |
+
+### Preuve
+
+```
+vitest run     -> 21 fichiers, 565 tests, exit 0   (8 tests neufs sur le regroupement)
+tsgo --noEmit  -> exit 0
+```
+
+Au navigateur, après **rechargement** (une page gardée ne reprend pas les derniers changements — leçon
+du lot précédent) :
+
+```
+WORKSPACES: 1 | sessions visibles: 4 | colonnes 280
+   [x] opencode-fork | 100 sessions | C:\jeanluc\opencode-fork
+LIGNE D'AJOUT: 1 | POPUPS OUVERTS: 0
+```
+
+**Un seul workspace — et c'est juste.** Les 100 sessions de ce serveur appartiennent toutes à
+`C:\jeanluc\opencode-fork`. La référence en montre sept parce que DSH en avait sept : la référence
+donne la **forme**, jamais les **données** — leçon déjà écrite, vérifiée ici dans l'autre sens.
+
+### La règle
+
+**Le rail liste les workspaces où l'on a travaillé, pas les sous-chemins d'un seul.** Un workspace se
+reconnaît à son **projet**, se marque par **préfixe** (on travaille dans un sous-dossier de son
+workspace), et n'apparaît que s'il porte **au moins une session** : un workspace vide serait une ligne
+qui ne dit rien (§8).
+
 
 
 
