@@ -203,12 +203,12 @@ describe("trajectoryRange et spanPlacement — l'axe du diagramme", () => {
 
 describe("rowDuration — ce que la colonne de durée affiche", () => {
   test("une durée mesurée est formatée", () => {
-    const row: TraceRow = { seq: 1, time: 0, turn: 1, kind: "tool", content: "x", durationMs: 58 }
+    const row: TraceRow = { seq: 1, step: 1, time: 0, turn: 1, kind: "tool", content: "x", durationMs: 58 }
     expect(rowDuration(row)).toBe("58ms")
   })
 
   test("sans durée, rien — pas un zéro", () => {
-    const row: TraceRow = { seq: 1, time: 0, turn: 1, kind: "tool", content: "x" }
+    const row: TraceRow = { seq: 1, step: 1, time: 0, turn: 1, kind: "tool", content: "x" }
     expect(rowDuration(row)).toBeUndefined()
   })
 })

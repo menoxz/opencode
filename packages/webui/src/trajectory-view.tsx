@@ -7,14 +7,17 @@
  * repris `dsh-TUI/src/components/TraceView.tsx`, un composant de **terminal** : c'était du DSH, mais
  * pas celui de l'écran. L'écran fait foi.
  *
- * Trois bandes, dans l'ordre de la capture : une **barre d'outils** (`Duration`, `Turns`, `Calls`,
+ * Deux colonnes : à gauche la **trajectoire** — une barre d'outils (`Duration`, `Turns`, `Calls`,
  * recherche), un **diagramme en pistes** (`Input` / `Model` / `Tools`, barres proportionnelles au
- * temps), puis la **liste** — badge de genre, contenu à gauche, résultat à droite après `→` — et, à
- * droite, le **panneau de détail** de la ligne choisie.
+ * temps), puis la **liste** (badge de genre, contenu à gauche, résultat à droite après `→`) ; à
+ * droite le **détail** de la ligne choisie (`Summary` / `Preview` / `Raw`).
+ *
+ * Les deux colonnes défilent **séparément** : on lit le détail d'une ligne sans perdre la ligne, et
+ * l'inverse. C'est pour cela que le panneau est une colonne de la vue et non un tiroir par-dessus.
  */
 
 import { createMemo, createSignal, For, Show } from "solid-js"
-import { formatDuration, type TurnView } from "./view-model"
+import { formatCount, formatDuration, formatRate, type TurnView } from "./view-model"
 import {
   rowDuration,
   spanPlacement,
@@ -43,14 +46,12 @@ const TRACKS: Array<{ track: TraceTrack; label: string }> = [
 ]
 
 /** Les onglets du panneau de détail, dans l'ordre de la capture. */
-const DETAIL_TABS: TraceDetailTab[] = ["summary", "payload", "result", "schema", "timing"]
+const DETAIL_TABS: TraceDetailTab[] = ["summary", "preview", "raw"]
 
 const DETAIL_LABEL: Record<TraceDetailTab, string> = {
   summary: "Summary",
-  payload: "Payload",
-  result: "Result",
-  schema: "Schema",
-  timing: "Timing",
+  preview: "Preview",
+  raw: "Raw",
 }
 
 /** L'état d'une ligne, en mot — la capture écrit `Completed`. */
@@ -75,6 +76,24 @@ function formatStamp(time: number | undefined): string {
     `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.` +
     pad(date.getMilliseconds(), 3)
   )
+}
+
+/**
+ * Le débit d'une ligne : ses jetons sur son intervalle — `132 tok/s`, comme la capture l'écrit.
+ *
+ * Il n'existe que si les deux sont connus : un débit calculé sur une durée absente serait un chiffre
+ * inventé, et c'est précisément ce qu'un panneau de diagnostic ne doit pas faire.
+ */
+function rowRate(row: TraceRow): string | undefined {
+  if (typeof row.tokens !== "number" || typeof row.durationMs !== "number" || row.durationMs <= 0) {
+    return undefined
+  }
+  return formatRate((row.tokens / row.durationMs) * 1000)
+}
+
+/** La tranche de texte que l'onglet `Preview` montre : le message écrit, ou les arguments d'un outil. */
+function rowPreview(row: TraceRow): string | undefined {
+  return row.contentFull ?? row.payload
 }
 
 export function TrajectoryView(props: {
@@ -104,6 +123,11 @@ export function TrajectoryView(props: {
    */
   const [selected, setSelected] = createSignal<TraceRow | undefined>()
   const [tab, setTab] = createSignal<TraceDetailTab>("summary")
+  // Les sections du `Summary` sont dépliées au départ : c'est la vue d'ensemble, celle qu'on vient
+  // lire. Le repli sert à écarter une section devenue trop longue, pas à cacher le contenu.
+  const [openPreview, setOpenPreview] = createSignal(true)
+  const [openThinking, setOpenThinking] = createSignal(true)
+  const [openTiming, setOpenTiming] = createSignal(true)
 
   const visible = createMemo(() => {
     const search = query().trim().toLowerCase()
@@ -114,6 +138,11 @@ export function TrajectoryView(props: {
           ? true
           : row.content.toLowerCase().includes(search) || (row.result ?? "").toLowerCase().includes(search),
       )
+  })
+
+  const schema = createMemo(() => {
+    const row = selected()
+    return row?.tool ? props.toolSchema?.(row.tool) : undefined
   })
 
   return (
@@ -192,10 +221,7 @@ export function TrajectoryView(props: {
                       "row-error": row.status === "error",
                       "is-selected": selected()?.seq === row.seq,
                     }}
-                    onClick={() => {
-                      setSelected(row)
-                      setTab("summary")
-                    }}
+                    onClick={() => setSelected(row)}
                   >
                     <span class="tj-mark" />
                     <span class="tj-bullet">•</span>
@@ -203,7 +229,9 @@ export function TrajectoryView(props: {
                     <span class="tj-content" classList={{ "is-empty": row.toolCallOnly }}>
                       {row.toolCallOnly ? "(tool call only)" : row.content}
                     </span>
-                    <Show when={showDurations() && rowDuration(row)}>
+                    {/* La durée ne s'affiche que sur un **appel d'outil**, comme la capture : sur un
+                        message, l'intervalle de l'étape est une information de détail, pas de liste. */}
+                    <Show when={showDurations() && row.kind === "tool" && rowDuration(row)}>
                       {(value) => <span class="tj-duration">{value()}</span>}
                     </Show>
                     <Show when={row.result}>
@@ -221,15 +249,16 @@ export function TrajectoryView(props: {
         </Show>
       </div>
 
-      {/* Le panneau de détail — les cinq onglets de la capture. Il s'ouvre **à droite** et la liste se
-          rétrécit : on regarde un fait et son détail, jamais l'un sans l'autre. */}
+      {/* Le panneau de détail — les trois onglets de la capture. Il ouvre une **colonne** à droite,
+          et la liste se rétrécit d'autant : on regarde un bloc et son détail, jamais l'un sans
+          l'autre. Son défilement est le sien. */}
       <Show when={selected()}>
         {(entry) => (
           <aside class="tj-detail">
             <div class="tj-detail-head">
               <span class={`tj-badge badge-${entry().kind}`}>{ROW_BADGE[entry().kind]}</span>
               <span class="tj-detail-title">
-                Turn {entry().turn}
+                Turn {entry().turn} · Step {entry().step}
                 {entry().tool ? ` · ${entry().tool}` : ""}
               </span>
               <span class="trace-spacer" />
@@ -249,22 +278,75 @@ export function TrajectoryView(props: {
             <div class="tj-detail-body">
               <Show when={tab() === "summary"}>
                 <div class="tj-field">
-                  <span class="tj-field-label">Hierarchy</span>
-                  <span class="tj-field-value">
-                    {entry().kind === "user" ? "User message" : "Assistant message"}
-                  </span>
+                  <span class="tj-field-label">Source</span>
+                  <span class="tj-field-value">Request #{entry().turn}</span>
                 </div>
                 <div class="tj-field">
                   <span class="tj-field-label">Status</span>
                   <span class="tj-field-value">{detailStatus(entry().status)}</span>
                 </div>
-                <Show when={entry().payload}>
-                  {(payload) => (
+                <Show when={formatCount(entry().tokens)}>
+                  {(count) => (
+                    <div class="tj-field">
+                      <span class="tj-field-label">Tokens</span>
+                      <span class="tj-field-value">{count()} tok</span>
+                    </div>
+                  )}
+                </Show>
+
+                <Show when={entry().thinking}>
+                  {(text) => (
                     <>
-                      <h4 class="tj-field-title">Payload</h4>
-                      <pre class="tj-pre">{payload()}</pre>
+                      <button class="tj-section" onClick={() => setOpenPreview(!openPreview())}>
+                        <span class="tj-chevron" classList={{ open: openPreview() }}>
+                          ›
+                        </span>
+                        Preview
+                      </button>
+                      <Show when={openPreview()}>
+                        <button class="tj-section sub" onClick={() => setOpenThinking(!openThinking())}>
+                          <span class="tj-chevron" classList={{ open: openThinking() }}>
+                            ›
+                          </span>
+                          Thinking
+                        </button>
+                        <Show when={openThinking()}>
+                          <p class="tj-think">{text()}</p>
+                        </Show>
+                      </Show>
                     </>
                   )}
+                </Show>
+
+                <button class="tj-section" onClick={() => setOpenTiming(!openTiming())}>
+                  <span class="tj-chevron" classList={{ open: openTiming() }}>
+                    ›
+                  </span>
+                  Request Timing
+                </button>
+                <Show when={openTiming()}>
+                  <div class="tj-field">
+                    <span class="tj-field-label">Started</span>
+                    <span class="tj-field-value">{formatStamp(entry().started)}</span>
+                  </div>
+                  <div class="tj-field">
+                    <span class="tj-field-label">Total duration</span>
+                    <span class="tj-field-value">{formatDuration(entry().durationMs) ?? "—"}</span>
+                  </div>
+                  <Show when={rowRate(entry())}>
+                    {(rate) => (
+                      <div class="tj-field">
+                        <span class="tj-field-label">Throughput</span>
+                        <span class="tj-field-value">{rate()}</span>
+                      </div>
+                    )}
+                  </Show>
+                </Show>
+              </Show>
+
+              <Show when={tab() === "preview"}>
+                <Show when={rowPreview(entry())} fallback={<p class="tj-empty">Nothing to preview here.</p>}>
+                  {(text) => <pre class="tj-pre">{text()}</pre>}
                 </Show>
                 <Show when={entry().resultFull}>
                   {(result) => (
@@ -275,41 +357,40 @@ export function TrajectoryView(props: {
                   )}
                 </Show>
               </Show>
-              <Show when={tab() === "payload"}>
-                <Show when={entry().payload} fallback={<p class="tj-empty">No payload for this line.</p>}>
-                  {(payload) => <pre class="tj-pre">{payload()}</pre>}
-                </Show>
-              </Show>
-              <Show when={tab() === "result"}>
-                <Show when={entry().resultFull} fallback={<p class="tj-empty">No result for this line.</p>}>
-                  {(result) => <pre class="tj-pre">{result()}</pre>}
-                </Show>
-              </Show>
-              <Show when={tab() === "schema"}>
+
+              <Show when={tab() === "raw"}>
                 <Show
-                  when={entry().tool ? props.toolSchema?.(entry().tool as string) : undefined}
-                  fallback={<p class="tj-empty">No schema available for this tool.</p>}
+                  when={entry().payload || entry().resultFull || schema()}
+                  fallback={<p class="tj-empty">Nothing raw for this line.</p>}
                 >
-                  {(schema) => (
-                    <>
-                      <Show when={schema().description}>
-                        {(text) => <p class="tj-schema-desc">{text()}</p>}
-                      </Show>
-                      <h4 class="tj-field-title">Parameters</h4>
-                      <pre class="tj-pre">{JSON.stringify(schema().parameters, null, 2)}</pre>
-                    </>
-                  )}
+                  <Show when={entry().payload}>
+                    {(payload) => (
+                      <>
+                        <h4 class="tj-field-title">Payload</h4>
+                        <pre class="tj-pre">{payload()}</pre>
+                      </>
+                    )}
+                  </Show>
+                  <Show when={schema()}>
+                    {(declared) => (
+                      <>
+                        <h4 class="tj-field-title">Schema</h4>
+                        <Show when={declared().description}>
+                          {(text) => <p class="tj-schema-desc">{text()}</p>}
+                        </Show>
+                        <pre class="tj-pre">{JSON.stringify(declared().parameters, null, 2)}</pre>
+                      </>
+                    )}
+                  </Show>
+                  <Show when={entry().resultFull}>
+                    {(result) => (
+                      <>
+                        <h4 class="tj-field-title">Result</h4>
+                        <pre class="tj-pre">{result()}</pre>
+                      </>
+                    )}
+                  </Show>
                 </Show>
-              </Show>
-              <Show when={tab() === "timing"}>
-                <div class="tj-field">
-                  <span class="tj-field-label">Started</span>
-                  <span class="tj-field-value">{formatStamp(entry().started)}</span>
-                </div>
-                <div class="tj-field">
-                  <span class="tj-field-label">Duration</span>
-                  <span class="tj-field-value">{formatDuration(entry().durationMs) ?? "—"}</span>
-                </div>
               </Show>
             </div>
           </aside>

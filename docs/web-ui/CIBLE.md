@@ -595,18 +595,31 @@ la liste raconte.
 **Le contexte injecté n'est pas un prompt de l'humain.** Même règle que pour la timeline précédente :
 sans ce filtre, une ligne `USER` annoncerait comme dit ce qui ne l'a pas été.
 
-### 10.2.1 Le panneau de détail — cinq onglets
+### 10.2.1 Le panneau de détail — trois onglets, une colonne à droite
 
 Sélectionner une ligne ouvre, **à droite**, le détail de ce fait ; la liste se rétrécit. On regarde un
 fait et son détail, jamais l'un sans l'autre. Les onglets sont ceux de la capture :
 
 | onglet | contenu |
 |---|---|
-| `Summary` | `Hierarchy`, `Status`, puis `Payload` et `Result` |
-| `Payload` | les arguments de l'appel, en JSON lisible |
-| `Result` | la sortie **entière** (la liste, elle, rogne) |
-| `Schema` | la description et les **paramètres déclarés** de l'outil |
-| `Timing` | `Started` (à la milliseconde) et `Duration` |
+| `Summary` | `Source`, `Status`, `Tokens`, puis `Preview › Thinking` et `Request Timing` — deux sections **dépliables** |
+| `Preview` | le message écrit tel quel (ou les arguments d'un outil), puis le résultat |
+| `Raw` | `Payload`, `Schema`, `Result` — la matière, sans mise en forme |
+
+**Le panneau est une colonne, pas un tiroir.** Deux conséquences, toutes deux mesurées sur 995 lignes
+(101 578 px de liste) : les deux colonnes défilent **séparément** — `main` défile, le panneau reste à
+`top: 47` — et le panneau garde la hauteur de l'écran (898 px), pas celle de la liste. ⚠ Sans
+`height: 100%` sur la rangée, elle prend la hauteur du **contenu** : le panneau s'étire sur des milliers
+de pixels, son propre défilement ne sert plus à rien, et il sort de l'écran dès qu'on descend. Le
+conteneur de la vue porte donc la classe `tj-scroll` (rangée), et non le seul `.scroll`.
+
+`Tokens` est la **sortie** de l'étape, jamais son total : le total d'une étape est la taille du contexte
+qu'elle a relu, et il se remplace d'une étape à l'autre au lieu de s'additionner (cf. §10.3). Un
+message se compte par ce qu'il a produit.
+
+`TTFT` et `Generation` de la capture ne sont **pas** reproduits : le serveur ne les expose pas — un
+temps jusqu'au premier jeton supposerait de mesurer le flux à la réception, ce que la page ne fait pas.
+`Throughput` est calculé (`jetons / durée`), et n'apparaît que si les deux sont connus.
 
 Le `Schema` vient de `GET /experimental/tool`, **payé à l'ouverture de la vue** (61 ko mesurés) : la
 route exige un couple `provider`/`model`, donc elle ne peut pas être lue au montage de l'écran. ⚠ La

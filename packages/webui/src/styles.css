@@ -624,7 +624,30 @@ textarea {
    des lignes serrées, une teinte en marge qui dit le genre, et deux colonnes : le contenu à gauche,
    le résultat à droite après `→`. */
 
+/* Deux colonnes : la trajectoire à gauche, le détail de la ligne choisie à droite. Chacune défile
+   pour son compte — le conteneur de la vue devient donc une **rangée**, et ce sont ses enfants qui
+   portent le défilement. Sans cela le panneau se rangeait **sous** la liste : à 995 lignes, il
+   n'était plus atteignable, et l'écran semblait n'en avoir aucun. */
+.tj-scroll {
+  display: flex;
+  align-items: stretch;
+  /* La hauteur du **conteneur**, pas celle du contenu : sans elle, la rangée prend la hauteur de la
+     liste (des milliers de pixels) et le panneau s'étire d'autant — son propre défilement ne sert
+     alors plus à rien, et le panneau sort de l'écran dès qu'on descend la liste. */
+  height: 100%;
+}
+
 .tj {
+  display: flex;
+  align-items: stretch;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.tj-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-y: auto;
   padding: 4px var(--gutter) 16px;
 }
 
@@ -752,10 +775,17 @@ textarea {
   border-radius: 4px;
   font-size: var(--fs-meta);
   line-height: 1.5;
+  cursor: pointer;
 }
 
 .tj-row:hover {
   background: #ffffff08;
+}
+
+/* La ligne ouverte dans le panneau. Elle reste marquée pendant qu'on lit son détail : c'est le lien
+   entre les deux colonnes — sans elle, on ne saurait plus de quelle ligne on lit le détail. */
+.tj-row.is-selected {
+  background: #ffffff12;
 }
 
 /* La marge teintée : elle dit le genre d'un coup d'œil, sans lire le badge. */
@@ -841,6 +871,169 @@ textarea {
 
 .tj-arrow {
   color: var(--text-3);
+}
+
+/* ---- Le panneau de détail — la colonne de droite de la vue `Trajectory` ----
+
+   Il est **bord à bord** : un filet à gauche, pas de rayon, son propre défilement. C'est une piste
+   de l'écran, pas une carte posée dessus. La largeur est fixe — un panneau qui suit la longueur du
+   texte ferait bouger la liste à chaque clic, et l'on perdrait la ligne qu'on vient d'ouvrir. */
+
+.tj-detail {
+  flex: none;
+  width: 380px;
+  overflow-y: auto;
+  padding: 8px 16px 28px;
+  border-left: 1px solid var(--line-1);
+  background: var(--bg-1);
+  font-size: var(--fs-meta);
+}
+
+.tj-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 10px;
+}
+
+.tj-detail-title {
+  color: var(--text-2);
+}
+
+.tj-detail-close {
+  padding: 0 4px;
+  color: var(--text-3);
+  font-size: var(--fs-note);
+  line-height: 1;
+}
+
+.tj-detail-close:hover {
+  color: var(--text-1);
+}
+
+.tj-detail-tabs {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--line-1);
+}
+
+.tj-dtab {
+  margin-bottom: -1px;
+  padding: 5px 0 7px;
+  border-bottom: 2px solid transparent;
+  color: var(--text-3);
+  font-size: var(--fs-meta);
+}
+
+.tj-dtab:hover {
+  color: var(--text-1);
+}
+
+.tj-dtab.active {
+  color: var(--text-1);
+  border-bottom-color: var(--bluish-200);
+}
+
+/* Une ligne du panneau : le libellé à gauche, la valeur à droite. Les libellés s'alignent parce
+   qu'ils font tous la même largeur — c'est la colonne qu'on descend du regard. */
+.tj-field {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 3px 0;
+}
+
+.tj-field-label {
+  flex: none;
+  width: 92px;
+  color: var(--text-3);
+}
+
+.tj-field-value {
+  min-width: 0;
+  color: var(--text-1);
+  overflow-wrap: anywhere;
+}
+
+.tj-field-title {
+  margin: 12px 0 4px;
+  color: var(--text-2);
+  font-size: var(--fs-meta);
+  font-weight: 600;
+}
+
+/* Les titres de section, dépliables. Le chevron tourne au lieu d'être remplacé par un autre
+   caractère : l'œil suit le mouvement, il ne relit pas le mot. */
+.tj-section {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  margin-top: 14px;
+  padding: 2px 0;
+  color: var(--text-2);
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  text-align: left;
+}
+
+.tj-section:hover {
+  color: var(--text-1);
+}
+
+.tj-section.sub {
+  margin-top: 8px;
+  padding-left: 10px;
+  color: var(--text-3);
+  font-weight: 400;
+}
+
+.tj-chevron {
+  display: inline-block;
+  color: var(--text-3);
+  transition: transform 0.12s ease;
+}
+
+.tj-chevron.open {
+  transform: rotate(90deg);
+}
+
+.tj-think {
+  margin: 2px 0 0;
+  padding-left: 10px;
+  max-height: 340px;
+  overflow-y: auto;
+  color: var(--text-2);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.tj-pre {
+  margin: 0;
+  padding: 8px 10px;
+  max-height: 320px;
+  overflow: auto;
+  border-radius: 6px;
+  background: #ffffff0a;
+  color: var(--text-2);
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.tj-empty {
+  margin: 0;
+  color: var(--text-3);
+}
+
+.tj-schema-desc {
+  margin: 0 0 6px;
+  color: var(--text-2);
+  line-height: 1.6;
 }
 
 .trace {

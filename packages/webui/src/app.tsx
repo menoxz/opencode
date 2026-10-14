@@ -1890,7 +1890,7 @@ export default function App() {
           <Show when={view() === "logs"}>
             {/* La vue **Trajectory**, reprise de la capture de DSH : barre d'outils, diagramme en
                 pistes, puis la liste des événements — badge, contenu, résultat. */}
-            <div class="scroll">
+            <div class="scroll tj-scroll">
               <TrajectoryView turns={turns()} toolSchema={(id) => toolSchemas()[id]} />
             </div>
           </Show>

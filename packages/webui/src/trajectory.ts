@@ -20,8 +20,8 @@
 import { parseInjections } from "./injections"
 import { errorText, formatDuration, type PartTime, type StepView, type TurnView } from "./view-model"
 
-/** Les onglets du panneau de détail — les cinq de la capture de DSH. */
-export type TraceDetailTab = "summary" | "payload" | "result" | "schema" | "timing"
+/** Les onglets du panneau de détail — les trois de la capture de DSH. */
+export type TraceDetailTab = "summary" | "preview" | "raw"
 
 /** Les genres de ligne du diagramme — les pistes de DSH. */
 export type TraceTrack = "input" | "model" | "tools"
@@ -44,9 +44,13 @@ export type TraceRow = {
   time: number
   /** Le numéro de tour affiché (`Turn N` en marge). */
   turn: number
+  /** Le rang de la ligne **dans son tour** — le `Step 18` de l'en-tête du panneau. */
+  step: number
   kind: TraceRowKind
   /** Colonne de gauche. Pour un outil : `nom {arguments}`. */
   content: string
+  /** Le texte **entier** : la liste l'aplatit sur une ligne, le panneau le montre tel quel. */
+  contentFull?: string
   /** Colonne de droite, après `→`. Absente quand il n'y a pas de résultat à montrer. */
   result?: string
   /** Un assistant sans texte : DSH écrit « (tool call only) » plutôt que de laisser le vide. */
@@ -64,6 +68,16 @@ export type TraceRow = {
   resultFull?: string
   /** L'instant de départ, pour le *Timing* du panneau. */
   started?: number
+  /**
+   * Les jetons **produits** par l'étape — le `Tokens` du panneau de détail.
+   *
+   * C'est la sortie, et non le total : le total d'une étape est la taille du **contexte** qu'elle a
+   * relu, et il se remplace d'une étape à l'autre au lieu de s'additionner (mesuré). Un message,
+   * lui, se compte par ce qu'il a produit.
+   */
+  tokens?: number
+  /** Le raisonnement de l'étape — la section `Preview › Thinking` du panneau. */
+  thinking?: string
 }
 
 /** Aplatit les blancs — une ligne de liste reste une ligne. */
@@ -156,35 +170,59 @@ export function trajectorySpans(turns: TurnView[]): TraceSpan[] {
 export function trajectoryRows(turns: TurnView[]): TraceRow[] {
   const rows: TraceRow[] = []
   let seq = 0
-  const push = (row: Omit<TraceRow, "seq">) => {
-    seq += 1
-    rows.push({ seq, ...row })
-  }
 
   turns.forEach((turn, index) => {
     const started = turn.info.time?.created ?? 0
     const number = index + 1
+    // Le rang se compte **par tour**, pas globalement : le panneau décrit un bloc, et `Step 18` y
+    // situe la ligne dans son tour — un rang de session ne dirait rien d'utile au lecteur.
+    let stepNo = 0
+    const push = (row: Omit<TraceRow, "seq" | "step">) => {
+      seq += 1
+      stepNo += 1
+      rows.push({ seq, step: stepNo, ...row })
+    }
     for (const part of turn.prompt) {
       if (part.type !== "text" || !flat(part.text ?? "")) continue
       // Le **contexte injecté** n'est pas un prompt de l'humain, et la capture de DSH ne le montre
       // pas comme tel : sans ce filtre, une ligne `USER` annoncerait comme dit ce qui ne l'a pas été.
       if (parseInjections(part.text ?? "")) continue
-      push({ time: started, turn: number, kind: "user", content: flat(part.text ?? "") })
+      push({
+        time: started,
+        turn: number,
+        kind: "user",
+        content: flat(part.text ?? ""),
+        contentFull: part.text ?? "",
+      })
     }
     for (const step of turn.steps) {
       const span = stepSpan(step)
       const when = span.start ?? started
       const tools = step.items.filter((item) => item.type === "tool" && item.tool)
-      const text = step.items
-        .filter((item) => item.type === "text" && flat(item.text ?? ""))
-        .map((item) => flat(item.text ?? ""))
-        .join(" ")
+      const written = step.items.filter((item) => item.type === "text" && flat(item.text ?? ""))
+      const text = written.map((item) => flat(item.text ?? "")).join(" ")
+      const full = written.map((item) => item.text ?? "").join("\n\n")
       const answered = turn.replies.some((reply) => Boolean(errorText(reply.error)))
+      // Ce qu'une étape a produit, en une fois : ses jetons de sortie, son raisonnement, son
+      // intervalle. Un assistant **sans texte** les porte aussi — c'est l'étape qui n'a fait
+      // qu'appeler un outil, et c'est justement là que le raisonnement se lit.
+      const common = {
+        time: when,
+        turn: number,
+        kind: "assistant" as const,
+        started: span.start,
+        durationMs:
+          typeof span.start === "number" && typeof span.end === "number"
+            ? Math.max(0, span.end - span.start)
+            : undefined,
+        tokens: step.usage?.output,
+        thinking: step.reason,
+      }
       if (text) {
-        push({ time: when, turn: number, kind: "assistant", content: text, status: answered ? "error" : "ok" })
+        push({ ...common, content: text, contentFull: full, status: answered ? "error" : "ok" })
       } else if (tools.length > 0) {
         // Aucun texte mais des outils : la ligne existe quand même, et elle le dit.
-        push({ time: when, turn: number, kind: "assistant", content: "", toolCallOnly: true })
+        push({ ...common, content: "", toolCallOnly: true })
       }
       for (const item of tools) {
         const { start, end } = partTime(item)
