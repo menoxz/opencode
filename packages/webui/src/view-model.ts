@@ -1041,9 +1041,15 @@ export function traceEntries(turns: TurnView[]): TraceEntry[] {
       durationMs,
       status: failed ? "error" : durationMs === undefined ? "running" : "ok",
     })
-    // Le prompt : le texte direct de l'utilisateur, comme DSH qui ignore le contexte injecté.
+    // Le prompt : le texte **direct** de l'humain, et lui seul.
+    //
+    // DSH est explicite là-dessus (`user/message` : « Only direct human prompts are trajectory
+    // items; injected context … mirrors the transcript's filtering »). Le contexte injecté arrive
+    // chez nous comme du texte du prompt : sans ce filtre, chaque tour afficherait deux ou trois
+    // lignes `❯` qui ne sont pas des prompts — et la trajectoire mentirait sur ce que l'humain a dit.
     for (const part of turn.prompt) {
       if (part.type !== "text" || !part.text?.trim()) continue
+      if (parseInjections(part.text)) continue
       push({ time: started, kind: "user", summary: traceSummary(part.text) })
     }
     for (const step of turn.steps) {

@@ -1140,6 +1140,16 @@ describe("traceEntries — la timeline reprise de DSH", () => {
     expect(lines[0].status).toBe("error")
   })
 
+  test("le contexte injecté n'est pas un prompt — DSH ne garde que le texte de l'humain", () => {
+    const lines = trace([
+      asked("u", "Context injections · 3 section(s)\n- core: system prompt (PROMPT_CORE) · 5592 chars"),
+      asked("u2", "vrai prompt"),
+    ])
+    const users = lines.filter((line) => line.kind === "user")
+    expect(users).toHaveLength(1)
+    expect(users[0].summary).toBe("vrai prompt")
+  })
+
   test("sans tour, la timeline est vide", () => {
     expect(traceEntries([])).toEqual([])
   })
