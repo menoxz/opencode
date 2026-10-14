@@ -143,6 +143,14 @@ describe("visibilité des parties", () => {
     expect(isVisiblePart({ type: "snapshot" })).toBe(false)
   })
 
+  test("la ligne d'un outil de protocole ne s'affiche pas", () => {
+    // `turn_plan` déclare une intention puis rend la main : sa sortie ne se lit pas. Même choix que
+    // le TUI du fork (`isHiddenTool`), qui l'exclut de son rendu **et** de ses décomptes.
+    expect(isVisiblePart({ type: "tool", tool: "turn_plan" })).toBe(false)
+    // Un autre outil garde sa ligne — la règle vise un outil, pas la famille « tool ».
+    expect(isVisiblePart({ type: "tool", tool: "bash" })).toBe(true)
+  })
+
   test("un patch s'affiche, lui : il porte les fichiers changés", () => {
     // 400 occurrences dans le relevé. Il était filtré — à tort : c'est un contenu, pas un état interne.
     expect(isVisiblePart({ type: "patch", files: ["a.ts"] })).toBe(true)

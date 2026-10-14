@@ -517,8 +517,13 @@ describe("UserPrompt — le prompt aussi est du markdown", () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true })
     const { container, dispose } = mount(() => <UserPrompt text={"**gras** et `code`"} />)
-    const button = container.querySelector<HTMLButtonElement>(".prompt-copy button")
+    // L'action vit **sous** la carte (`prompt-foot`), pas en surimpression dessus.
+    expect(container.querySelector(".prompt .prompt-foot")).toBeNull()
+    const button = container.querySelector<HTMLButtonElement>(".prompt-foot button")
     expect(button?.getAttribute("title")).toBe("Copy prompt")
+    // Le bouton ne porte plus de mot : trois formes portent les trois états.
+    expect(button?.textContent).toBe("")
+    expect(button?.querySelector("svg")).not.toBeNull()
     button?.click()
     await vi.waitFor(() => expect(writeText).toHaveBeenCalled())
     expect(writeText).toHaveBeenCalledWith("**gras** et `code`")

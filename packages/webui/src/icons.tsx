@@ -189,6 +189,41 @@ export function PluginIcon(props: { size?: number }) {
 }
 
 /* =============================================================================
+   Les trois états d'un geste de copie.
+
+   Un bouton « copier » sans texte ne peut pas se contenter d'une infobulle : il lui faut une forme
+   qui dit l'état. Trois dessins, donc — copier, fait, échoué —, jamais un quatrième.
+   ============================================================================= */
+
+/** Copier : deux feuilles superposées — la forme que le geste porte partout ailleurs. */
+export function CopyIcon(props: { size?: number }) {
+  return (
+    <Glyph size={props.size ?? 13}>
+      <rect x="8" y="8" width="14" height="14" rx="2" />
+      <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+    </Glyph>
+  )
+}
+
+/** Fait : le trait de validation. */
+export function CheckIcon(props: { size?: number }) {
+  return (
+    <Glyph size={props.size ?? 13}>
+      <path d="M4 12.5l5 5L20 6.5" />
+    </Glyph>
+  )
+}
+
+/** Échoué : une croix. L'échec se dit, même sans texte (la couleur seule serait muette). */
+export function CrossIcon(props: { size?: number }) {
+  return (
+    <Glyph size={props.size ?? 13}>
+      <path d="M6 6l12 12M18 6L6 18" />
+    </Glyph>
+  )
+}
+
+/* =============================================================================
    Icônes de section — les entrées du panneau de réglages.
 
    Pourquoi en ajouter : dans une colonne de sept libellés, l'œil cherche une **forme** avant de lire

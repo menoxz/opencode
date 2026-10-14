@@ -34,7 +34,7 @@ import {
 import { markdownSpans, parseMarkdown, safeHref, type MdBlock, type MdInline } from "./markdown"
 import { writeClipboard } from "./clipboard"
 import { formatChars, injectionLabel, share, sourceLabel, type Injections } from "./injections"
-import { ChevronIcon, FolderIcon, PluginIcon, SessionIcon, ToolIcon, toolHint } from "./icons"
+import { CheckIcon, ChevronIcon, CopyIcon, CrossIcon, FolderIcon, PluginIcon, SessionIcon, ToolIcon, toolHint } from "./icons"
 import { toolIcon } from "./tool-icons"
 import { relativeTime } from "./time"
 
@@ -217,6 +217,40 @@ export function Turn(props: { role: string; children?: unknown }) {
 }
 
 /**
+ * Le geste « copier » réduit à son icône, pour les endroits où un mot serait du bruit.
+ *
+ * Il remplace le dessin **à l'intérieur** de la même boîte : copier → fait → échoué, trois formes,
+ * jamais un quatrième état. L'échec prend la couleur d'alerte **et** une croix — une couleur seule
+ * ne se lit pas (même règle que `CopyButton`, dont l'échec s'écrit).
+ */
+export function CopyIconButton(props: { text: string; label: string }) {
+  const [state, setState] = createSignal<"idle" | "done" | "failed">("idle")
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const copy = async () => {
+    const ok = await writeClipboard(props.text)
+    setState(ok ? "done" : "failed")
+    clearTimeout(timer)
+    timer = setTimeout(() => setState("idle"), 1500)
+  }
+  onCleanup(() => clearTimeout(timer))
+  const title = () => (state() === "done" ? "Copied" : state() === "failed" ? "Copy failed" : props.label)
+  return (
+    <button
+      class="copy-icon"
+      classList={{ done: state() === "done", failed: state() === "failed" }}
+      title={title()}
+      aria-label={title()}
+      onClick={(event) => {
+        event.stopPropagation()
+        void copy()
+      }}
+    >
+      {state() === "done" ? <CheckIcon /> : state() === "failed" ? <CrossIcon /> : <CopyIcon />}
+    </button>
+  )
+}
+
+/**
  * Le prompt de l'utilisateur.
  *
  * C'est le seul texte de l'écran qu'il a écrit lui-même : il doit se reconnaître au premier regard,
@@ -226,16 +260,21 @@ export function Turn(props: { role: string; children?: unknown }) {
  * et le montrer en texte brut obligeait à lire des `**` et des `#`. Les sauts durs (`  ` ou `\` en fin
  * de ligne) gardent ses retours — sans quoi le rendre en markdown aurait **retiré** une chose que le
  * fil affichait avant.
+ *
+ * L'action vit **sous** la carte, pas dessus : posée en surimpression, elle mordait le texte et
+ * obligeait à réserver une place qui n'est pas la sienne. Sous la carte, elle ne prend rien à la
+ * lecture et se trouve là où le regard finit de lire le prompt.
  */
 export function UserPrompt(props: { text: string }) {
   return (
-    <div class="prompt">
-      <Markdown text={props.text} />
-      {/* Rien au repos (§3.8) : le bouton se révèle au survol de la carte, dans son coin, **sans
-          réserver de place** — le texte garde toute la largeur. On copie la source brute, jamais le
-          texte rendu : c'est ce que l'utilisateur a écrit, marqueurs markdown compris. */}
-      <div class="prompt-copy">
-        <CopyButton text={props.text} label="Copy prompt" />
+    <div class="prompt-block">
+      <div class="prompt">
+        <Markdown text={props.text} />
+      </div>
+      <div class="prompt-foot">
+        {/* On copie la **source**, jamais le texte rendu : recopier l'affichage perdrait la mise en
+            forme que l'utilisateur a saisie. */}
+        <CopyIconButton text={props.text} label="Copy prompt" />
       </div>
     </div>
   )

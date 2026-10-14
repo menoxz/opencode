@@ -202,6 +202,16 @@ export type TurnView = {
 const HIDDEN_TYPES = new Set(["step-start", "step-finish", "snapshot", "agent", "subtask", "unknown"])
 
 /**
+ * Outils dont la **ligne entière** est du bruit de protocole.
+ *
+ * `turn_plan` déclare une intention (« Engagement declared: … ») puis rend la main : il ne fait rien
+ * et sa sortie ne se lit pas. C'est le même choix que le TUI du fork, qui l'exclut de son rendu
+ * **et** de ses décomptes (`isHiddenTool`). Conséquence assumée : il ne compte plus comme une action
+ * d'étape — compter un outil qu'on ne montre pas ferait diverger le fil de ses propres chiffres.
+ */
+const HIDDEN_TOOLS = new Set(["turn_plan"])
+
+/**
  * Ce qui s'affiche **dans** une étape.
  *
  * `patch` est passé de filtré à affiché : il porte les fichiers changés (400 occurrences mesurées).
@@ -209,8 +219,11 @@ const HIDDEN_TYPES = new Set(["step-start", "step-finish", "snapshot", "agent", 
  * reviendrait à mentir sur ce qui s'est passé : après une compaction, ce qui suit ne s'appuie plus
  * sur ce qui précède.
  */
-export function isVisiblePart(part: { type: string; text?: string; files?: string[] }): boolean {
+export function isVisiblePart(part: { type: string; tool?: string; text?: string; files?: string[] }): boolean {
   if (HIDDEN_TYPES.has(part.type)) return false
+  // Un outil dont la ligne est du bruit de protocole n'entre pas dans le fil **du tout** : ni sa
+  // ligne, ni son décompte d'action (voir `HIDDEN_TOOLS`).
+  if (part.type === "tool" && HIDDEN_TOOLS.has(part.tool ?? "")) return false
   if (part.type === "tool" || part.type === "file" || part.type === "patch") return true
   if (part.type === "compaction" || part.type === "retry") return true
   if (part.type === "text") return Boolean(part.text)

@@ -705,12 +705,13 @@ textarea {
 /* Prompt de l'utilisateur : le seul texte qu'il a écrit, donc une surface à lui. Le texte est rendu
    en markdown — les retours à la ligne qu'il a marqués passent par des **sauts durs** (`  ` ou `\`),
    donc `pre-wrap` n'a plus lieu d'être : il doublerait les coupures déjà rendues. */
-.prompt {
-  /* L'air est **sous** la carte : elle ouvre le tour et doit se détacher de la réponse de l'agent,
-     qui commence juste après (le flux d'étapes). Un peu plus que le pas entre deux tours, puisque
-     ici la carte est un bloc à elle, pas une ligne de flux. */
-  position: relative;
+.prompt-block {
+  /* La carte **est** le tour de l'utilisateur : elle porte l'air qui la sépare de la réponse de
+     l'agent, qui commence juste après (le flux d'étapes). */
   margin: 0 0 16px;
+}
+
+.prompt {
   padding: 10px 14px;
   background: var(--bg-1);
   border: 1px solid var(--line-1);
@@ -722,19 +723,34 @@ textarea {
   gap: 6px;
 }
 
-/* Rien au repos (§3.8) : le bouton est posé dans le coin de la carte, sans réserver de place, et se
-   révèle **au survol de la carte** — la carte porte le texte, donc c'est elle qui porte l'action. */
-.prompt-copy {
-  position: absolute;
-  top: 6px;
-  right: 8px;
-  opacity: 0;
-  transition: opacity 0.1s;
+/* L'action vit **sous** la carte, alignée à droite : elle termine la lecture au lieu de la couper. */
+.prompt-foot {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
 }
 
-.prompt:hover .prompt-copy,
-.prompt-copy:focus-within {
-  opacity: 1;
+/* Un geste réduit à son icône, dans la même boîte pour les trois états (copier, fait, échoué). */
+.copy-icon {
+  display: flex;
+  padding: 3px;
+  color: var(--text-3);
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+}
+
+.copy-icon:hover {
+  color: var(--text-1);
+  background: #ffffff0a;
+}
+
+.copy-icon.done {
+  color: var(--brand-3);
+}
+
+.copy-icon.failed {
+  color: var(--danger);
 }
 
 /* ---- Contexte injecté : une ligne de confiance, pas de lecture ---- */
@@ -1736,6 +1752,10 @@ textarea {
 .rows::-webkit-scrollbar,
 .tool-detail pre::-webkit-scrollbar {
   width: 10px;
+  /* La hauteur vaut pour la barre **horizontale**. Sans elle, une commande longue débordait sur la
+     barre native du système : claire, pleine largeur, épaisse — elle cassait le bloc. Mesuré sur le
+     bloc `powershell` d'un `bash`. */
+  height: 10px;
 }
 
 .scroll::-webkit-scrollbar-thumb,
@@ -1745,6 +1765,24 @@ textarea {
   background-clip: content-box;
   border: 3px solid transparent;
   border-radius: 999px;
+}
+
+/* Les rails et les coins restent transparents : le fond du bloc doit passer au travers, sinon la
+   barre dessine un cadre gris dans un bloc de code. */
+.scroll::-webkit-scrollbar-track,
+.rows::-webkit-scrollbar-track,
+.tool-detail pre::-webkit-scrollbar-track,
+.scroll::-webkit-scrollbar-corner,
+.rows::-webkit-scrollbar-corner,
+.tool-detail pre::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Firefox ne connaît pas `::-webkit-scrollbar` ; `scrollbar-width`/`scrollbar-color` y suffisent et
+   restent sans effet sur Chromium, qui suit les règles ci-dessus. */
+.tool-detail pre {
+  scrollbar-width: thin;
+  scrollbar-color: #ffffff30 transparent;
 }
 
 
