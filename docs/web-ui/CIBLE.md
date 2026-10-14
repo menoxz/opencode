@@ -511,6 +511,33 @@ la cherche, pas là où on lit.
 
 ---
 
+### 10.1 La barre sous le champ — trois faits, et leur provenance
+
+§10 rangeait les statistiques dans la section, au motif qu'elles ne sont pas le fil. La règle tient,
+mais elle laissait un vide : **les trois chiffres qu'on veut lire en écrivant** — où en est la session,
+à quelle vitesse, et à quel point la fenêtre est pleine — demandaient d'ouvrir un tiroir. Ils vivent
+donc **sous le champ**, et le détail par étape reste dans la section, qui ne se consulte pas en
+écrivant.
+
+- **Le volume** — `3 turns · 12 steps`. L'infobulle ajoute les actions de la session.
+- **Le débit** — `145 tok/s`, les jetons **produits** divisés par la durée **mesurée** des étapes :
+  un rapport honnête, pas une estimation de débit d'API.
+- **Le cache** — `93% cached`, la part de l'entrée servie par le cache (`cache.read` face à l'entrée).
+- **Le contexte** — `23% context`, `tokens.total` de la dernière étape face à la fenêtre du modèle.
+
+Deux règles, et chacune répond à un défaut précis :
+
+1. **Chaque groupe porte sa mesure en infobulle.** Un chiffre sans unité ni provenance n'est pas une
+   information : « 47% » ne dit rien, « Share of the input served from the prompt cache » le dit.
+2. **Un groupe dont la donnée manque disparaît.** Sans limite de fenêtre connue, il n'y a **pas** de
+   remplissage de contexte — la barre se tait plutôt que d'afficher un « 0% » qui ferait croire à une
+   fenêtre vide. Même règle pour le débit : une durée absente ne donne pas un zéro, elle ne donne rien.
+
+La limite vient du **modèle choisi** (`limit.context`, projeté de `/config/providers` avec le
+catalogue) : elle suit donc le choix de la saisie (§13.3) au lieu d'être figée.
+
+---
+
 ## 11. La couleur — une grammaire, pas une décoration
 
 Couleur **sémantique par famille d'outil** — les douze familles existent déjà (`tool-icons.ts`), donc
@@ -626,6 +653,48 @@ Trois règles, sans quoi le calque casse ce qu'il décore :
 
 Les marqueurs (`**`, `#`, `` ` ``) restent **visibles**, simplement atténués : on **écrit** dans ce
 champ, on ne le lit pas — les masquer cacherait ce qu'on est en train de taper.
+
+### 13.3 Les deux choix du prochain message
+
+Le modèle et l'agent se choisissent **dans la saisie**, à côté du trombone, et ils partent avec le
+message (`promptAsync` accepte `model` et `agent`) : changer de modèle ne passe donc pas par les
+réglages, et n'écrit **rien** dans la configuration. Vides, ils valent « défaut du serveur » et l'envoi
+n'ajoute aucune contrainte.
+
+Ils sont **amorcés par ce que la session a réellement utilisé** : la dernière réponse d'agent porte
+`providerID`, `modelID` et `agent`, seule description de l'état courant — la configuration ne donne
+qu'un défaut **global**, sans portée par fournisseur. L'amorçage ne remplace jamais un choix explicite.
+
+Le **coût est assumé et inégal** : le catalogue des modèles (531 ko, 49 ms) est payé **au montage**,
+parce que le choix est là où l'on écrit ; la liste des agents (1,5 Mo) attend la **première
+ouverture**, `Tab` compris — et `Tab` change au **même** appui, sinon la première pression ne ferait
+que charger la liste, ce qui se lit comme une panne. Un libellé rogné porte son titre entier (un
+modèle se nomme « Nom · Fournisseur »).
+
+### 13.4 Les suggestions — `/` et `@`
+
+- `/` **en tête** ouvre les commandes, et la requête se ferme au premier espace : écrire l'argument
+  referme la liste sans aucun code de fermeture. `GET /command` pèse **1,95 Mo** de gabarits dont la
+  liste n'affiche que le nom et la description ⇒ lu à la **première frappe**, et projeté aussitôt.
+- `@` ouvre les fichiers, mais seulement s'il **commence un mot** : `moi@exemple.com` n'ouvre rien. La
+  mention court jusqu'au **blanc suivant** — c'est le mot entier qui est remplacé, pas le seul curseur.
+- La liste vit **au-dessus du champ, dans la même boîte** : elle **pousse** le champ au lieu de le
+  recouvrir. Un menu flottant cacherait justement la ligne qu'on relit pour choisir.
+- Le menu **consomme** les flèches, `Entrée` et `Échap` tant qu'il est ouvert — sinon `Entrée`
+  enverrait le message au lieu de choisir la ligne.
+- Le filtre des commandes regarde le **nom** puis la **description** : on cherche parfois « comment on
+  fait un commit » sans connaître le nom du raccourci.
+
+### 13.5 Le clavier
+
+`Entrée` envoie, `Maj+Entrée` retourne à la ligne, `Tab` change l'agent, `↑`/`↓` remontent
+l'historique des prompts, et **deux `Échap` rapprochés arrêtent le travail** — fenêtre de 700 ms,
+parce qu'un `Échap` seul ferme les listes et ne peut donc pas porter l'arrêt. L'historique est
+**dérivé des messages**, jamais tenu dans un signal à part : une liste séparée se désynchronise de la
+session (changement, reprise, rechargement) et montrerait des prompts absents du fil.
+
+L'indice « esc esc to stop » n'apparaît **que pendant que l'agent travaille** : ce qui est rare ne
+s'affiche pas au repos (§9).
 
 ---
 

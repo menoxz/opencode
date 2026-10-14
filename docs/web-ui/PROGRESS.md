@@ -2565,3 +2565,98 @@ vite build     -> exit 0   (CSS 32,21 ko / 6,15 ko gzip, JS 159,09 ko / 44,30 ko
 2. **Deux tours consécutifs ont produit une action mal formée** (appel d'outil tronqué), donc deux
    corrections écrites mais **non appliquées** — dont celle d'un test. Détecté en vérifiant l'état
    réel du fichier avant de conclure, pas en me fiant à ce que je croyais avoir envoyé.
+
+---
+
+## Lot 8 — l'espacement, la copie, la saisie, les statistiques et les injections
+
+Huit demandes d'un seul tenant, du plus petit (un cran d'air) au plus structurant (le clavier de la
+saisie). CIBLE.md §10.1 et §13.3–13.5 sont écrits **pour** ce lot.
+
+### 1. L'air — au-dessus de ce qui ouvre un bloc
+
+`6516a67d2` (le pas entre deux tours : `.transcript { gap }` 22 → **26 px**) et `0c471ecdc` (un
+thinking **ouvre** un bloc ⇒ `.reasoning { margin-top: 8px }`). La règle est écrite en §3.7 : l'air se
+met **au-dessus de ce qui ouvre un bloc**, jamais entre deux lignes du même bloc — deux appels d'outil
+qui se suivent restent au ras. Vérifié au navigateur : **209 blocs**, tous à `marginTop: 8px`.
+
+### 2. La copie — une action vit **sous** la carte, pas dessus
+
+`eb1ff694f`. Le bouton posé dans le coin de la carte mordait le texte : il est passé **sous** elle
+(`.prompt-block > .prompt-foot`), réduit à une **icône** à trois états (copier / fait / échoué)
+remplaçant le dessin dans la même boîte, sans jamais un mot. Vérifié : `.prompt-foot .copy-icon svg`
+= 1, `gap: 4`, aligné à droite.
+
+### 3. La barre de défilement — mesurer **le bon** composant
+
+`23dfe6458`. Le premier correctif visait `.tool-detail pre` — **faux** : le bloc de la capture était un
+bloc de code **markdown** (`.md-block > .md-lang` + `.md-pre`). Le piège mérite d'être consigné : un
+« bloc commande » à l'écran n'est pas forcément `.tool-detail pre`, et `.tool-detail pre` replie donc
+son `scrollW == clientW`. Corrigé sur `.md-pre`, plus `scrollbar-width: thin` pour Firefox et
+`.md-block { overflow: hidden }` pour rogner la barre sous les coins arrondis.
+
+### 4. La saisie — les deux choix, l'envoi en icône
+
+`dc4af6115`. Modèle et agent se choisissent dans la barre du champ et partent avec le message
+(`promptAsync` accepte `model` et `agent`) — donc rien n'est écrit dans la configuration. Amorcés par
+**ce que la session a utilisé** (`providerID`/`modelID`/`agent` de la dernière réponse ; la
+configuration ne donne qu'un défaut global). Le bouton *Send* devient une **flèche**. Vérifié :
+2 déclencheurs (« DeepSeek V4.1 Flash · OpenCode Go », « build »), `.send` = 28 px, **1 svg**.
+
+### 5. Les statistiques — sous le champ
+
+`dc4af6115`. Quatre groupes (`turns · steps`, `tok/s`, `tok`, `cached`, `context`), chacun avec sa
+mesure en infobulle ; un groupe dont la donnée manque **disparaît** — sans limite de fenêtre connue,
+pas de « 0% context ». Le détail par étape reste dans la section. CIBLE.md §10.1.
+
+### 6. Le clavier et les suggestions
+
+`6f2203543` + module pur `composer-keys.ts` (25 tests). `/` en tête, `@` qui commence un mot, `Tab`
+change l'agent **au même appui**, deux `Échap` (700 ms) arrêtent, `↑`/`↓` remontent l'historique
+**dérivé des messages**. La liste vit **au-dessus du champ, dans sa boîte**, et consomme les flèches.
+Vérifié au navigateur : `/` → **207** lignes, `/comm` → 41, `@pack` → 11 fichiers.
+
+Deux pièges corrigés en cours de route : `client.find.files` (et non `find.file`), et le premier `Tab`
+qui ne faisait que **charger** la liste — il change désormais au même appui, sinon cela se lit comme
+une panne.
+
+### 7. Les injections — dépliables, et honnêtes sur ce qui est lisible
+
+`5d83b3488`. Les sources d'instructions se déplient : chemin **entier**, puis contenu. La règle de
+lecture a été **mesurée** et non devinée — `/file/content` résout `path` **sous la racine du projet**
+et rien d'autre :
+
+```
+path=AGENTS.md&directory=<projet>/packages/opencode   -> 7 291 octets
+path=<chemin absolu>                                  -> ""          (vide)
+path=<fichier hors du projet>                         -> 500
+```
+
+Or les injections portent des chemins **absolus**, dont `~/.config/opencodev2/AGENTS.md`, hors projet
+par nature ⇒ `relativeTo(path, worktree)` décide, et l'écran dit **« not readable from here »** au lieu
+d'afficher une boîte vide. Vérifié au navigateur, **les deux branches** : un fichier hors projet dit
+« not readable from here » ; `packages\opencode\AGENTS.md` rend son aperçu de **40 lignes**
+(« # opencode database guide… »).
+
+### Preuve
+
+```
+vitest run     -> 18 fichiers, 461 tests, exit 0
+tsgo --noEmit  -> exit 0
+```
+
+### Quatre erreurs d'outillage, à consigner
+
+1. **`EscapeDataString` encode `/` en `%2F`** ⇒ un chemin envoyé ainsi ne se résout pas : trois sondes
+   ont rendu « contenu vide » avant que je comprenne que la **sonde**, pas la route, était fautive.
+   Corollaire : un résultat vide n'accuse pas le serveur tant que la requête n'est pas vérifiée.
+2. **Toute la pile de dev était morte** (4097 *et* 5181) et l'onglet affichait « Ce site est
+   inaccessible » : le rail vide ressemblait à un plantage de **mon** code. Diagnostic dans l'ordre
+   (`/json/list` → santé des deux serveurs) ⇒ c'était l'outillage. Ne jamais conclure au défaut de code
+   avant d'avoir sondé les serveurs.
+3. **`navigate`/`reload` par CDP tue de nouveau l'attachement** (mesure confirmée) ⇒ redémarrer Chrome
+   du profil isolé ; et le bundle servi avant l'édition peut être l'ancien, ce qui fait croire que le
+   code ne marche pas.
+4. **Le shell emporte ses enfants** : les serveurs lancés par `Start-Process` meurent avec lui, d'où la
+   pile retrouvée morte. Les relancer via `cmd /d /c` (`Start-Process` refuse le shim `.ps1` de `bun`).
+
