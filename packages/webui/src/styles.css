@@ -990,6 +990,13 @@ textarea {
   color: var(--text-2);
 }
 
+/* Le thinking **ouvre** un bloc : il se détache de ce qui précède par un peu d'air, là où deux lignes
+   d'action se suivent au ras (1px de padding chacune). L'air est au-dessus, jamais en dessous : le
+   bloc thinking appartient à ce qui vient après lui. */
+.reasoning {
+  margin-top: 8px;
+}
+
 .reasoning-text {
   margin: 2px 0 6px;
   padding-left: 12px;
