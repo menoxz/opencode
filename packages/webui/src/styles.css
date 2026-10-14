@@ -842,10 +842,23 @@ textarea {
 }
 
 .tj-content {
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   min-width: 0;
   color: var(--text-2);
-  overflow-wrap: anywhere;
+  /* **Une ligne, toujours.** La liste est un *index* : elle nomme chaque fait, et le contenu entier
+     appartient au panneau de détail — c'est sa raison d'être. Laisser le texte se replier faisait des
+     lignes de quatre à six hauteurs sur une commande longue (mesuré), et la trajectoire ne se
+     parcourait plus du regard : c'est pourtant ce que cette liste est faite pour permettre. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Quand la ligne porte un résultat, le contenu garde une largeur **fixe** : le `→` tombe au même x
+   sur toutes les lignes, et la colonne des résultats se lit d'un seul regard. Sans résultat, le
+   contenu prend la place restante — il n'y a rien à aligner en face. */
+.tj-row.has-result .tj-content {
+  flex: 0 0 46%;
 }
 
 .tj-content.is-empty {

@@ -220,13 +220,22 @@ export function TrajectoryView(props: {
                       [`row-${row.kind}`]: true,
                       "row-error": row.status === "error",
                       "is-selected": selected()?.seq === row.seq,
+                      // La largeur du contenu dépend de la présence d'un résultat : c'est ce qui fait
+                      // tomber le `→` au même x sur toutes les lignes.
+                      "has-result": Boolean(row.result),
                     }}
                     onClick={() => setSelected(row)}
                   >
                     <span class="tj-mark" />
                     <span class="tj-bullet">•</span>
                     <span class={`tj-badge badge-${row.kind}`}>{ROW_BADGE[row.kind]}</span>
-                    <span class="tj-content" classList={{ "is-empty": row.toolCallOnly }}>
+                    {/* La ligne est tronquée, donc elle porte son texte entier en infobulle : ce qui
+                        est coupé reste atteignable sans ouvrir le panneau. */}
+                    <span
+                      class="tj-content"
+                      classList={{ "is-empty": row.toolCallOnly }}
+                      title={row.toolCallOnly ? undefined : row.content}
+                    >
                       {row.toolCallOnly ? "(tool call only)" : row.content}
                     </span>
                     {/* La durée ne s'affiche que sur un **appel d'outil**, comme la capture : sur un
@@ -236,7 +245,7 @@ export function TrajectoryView(props: {
                     </Show>
                     <Show when={row.result}>
                       {(result) => (
-                        <span class="tj-result">
+                        <span class="tj-result" title={result()}>
                           <span class="tj-arrow">→</span> {result()}
                         </span>
                       )}
