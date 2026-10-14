@@ -2725,4 +2725,50 @@ mesure avant le rendu du compositeur, `y` hors viewport). La règle qui les couv
 que la cible mesurée est bien celle qu'on croit** — `elementFromPoint` au point cliqué, et attendre
 l'élément avant de le mesurer.
 
+---
+
+## Lot 10 — la trajectoire par tour dans la vue Logs
+
+`59cf3281e`. La vue `Logs` montrait des événements bruts ; elle montre maintenant la **trajectoire**
+de la session, un bloc par tour, avec de quoi diagnostiquer chacun (CIBLE.md §10.2).
+
+### Ce que porte un tour
+
+`view-model.ts` : `TurnView` gagne `info` (l'information du message) et `replies` (les réponses
+d'agent, **avec leur information**), et `StepView` gagne `reason` (le motif d'arrêt). `trajectory()`
+projette le tout en `TurnTrace[]` : agent/mode/modèle, durée, taille du prompt, injections, jetons
+séparés par origine, étapes (outils, motif, jetons, durée), erreur.
+
+### La correction qui compte : le modèle qui a **servi**
+
+Première écriture fautive : je lisais le modèle dans `turn.info` — c'est-à-dire le message de
+l'**utilisateur**, qui ne porte que ce qu'il a *demandé*, et sous une forme différente (imbriquée :
+`model.providerID`). Le modèle réel, le mode, la borne de fin et l'erreur vivent sur les messages
+d'**agent**. `TurnView.replies` a été ajouté pour les porter, et la trajectoire lit la **dernière**
+réponse, en retombant sur la demande quand il n'y en a pas (question en attente). Sans cela, l'écran
+aurait annoncé un modèle que rien n'a utilisé.
+
+### Deux tests qui ont échoué — et le code avait raison
+
+`vitest` a refusé deux tests sur trois, tous deux avec une étape réduite à `step-finish`. La cause était
+la **règle de regroupement** : `groupSteps` écarte une étape **sans contenu et sans prix** (un
+`step-start` resté seul). Mes fixtures passaient `cost: 0` sans contenu : l'étape était donc écartée, à
+raison. Un `step-finish` réel porte toujours un prix — les fixtures ont été corrigées, et un troisième
+test a été **ajouté pour épingler la règle**, puisqu'elle se voit désormais à l'écran.
+
+### Vérification
+
+```
+vitest run     -> 18 fichiers, 479 tests, exit 0
+tsgo --noEmit  -> exit 0
+```
+
+Au navigateur (instance isolée 5181), sur une session réelle : `#1 user build build
+opencode-go/deepseek-v4.1-flash 7m23s $0.004` · `prompt 618 chars` · `injected 3 files` ·
+`tokens 26 463 in · 213 out · 23 040 cached` · `step 1 question tool-calls 26 463↓ 213↑ 1.2s` ·
+erreur `getaddrinfo ENOTFOUND opencode.ai` · `Raw events (3)` repliés. Aucune erreur de console.
+
+Le diagnostic a **immédiatement** montré sa valeur : cette erreur réseau était invisible dans le fil.
+
+
 

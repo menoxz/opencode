@@ -556,6 +556,35 @@ catalogue) : elle suit donc le choix de la saisie (§13.3) au lieu d'être figé
 
 ---
 
+### 10.2 La trajectoire — le diagnostic d'un tour
+
+La vue `Logs` ne montre pas des événements bruts : elle montre la **trajectoire** de la session, un
+bloc par tour. Le fil raconte ce qui s'est passé ; la trajectoire dit **comment** et **à quel prix**.
+
+Un tour porte, dans cet ordre :
+
+- **Ce qui a réellement servi** — l'agent, le mode et le modèle de la *réponse*, jamais ce qui a été
+  *demandé*. Les deux diffèrent (bascule de modèle, agent qui en appelle un autre) et confondre les
+  deux ferait dire à l'écran un modèle qui n'a pas produit la réponse.
+- **Ce qui a été envoyé** — la taille du prompt en caractères, puis les injections que le serveur y a
+  jointes. Elles se **relisent** dans le texte synthétique du prompt (`Context injections · …`),
+  jamais recalculées : recalculer donnerait une seconde vérité.
+- **Ce qui est revenu** — les jetons **séparés par origine** : entrée, sortie, cache. Un total unique
+  ne dit pas si la fenêtre est pleine de neuf ou de déjà-vu.
+- **Chaque étape** — ses outils dans l'ordre, son **motif d'arrêt** (`stop`, `tool-calls`, `length`…),
+  ses jetons et sa durée. Le motif est la première chose qu'on cherche quand une réponse se coupe :
+  une longueur atteinte ne se répare pas comme un arrêt normal.
+- **L'erreur**, quand il y en a une, avec son message réel.
+
+Deux règles : **une ligne ne dit qu'un fait, et son libellé à gauche** (on lit une trajectoire en
+descendant une colonne, pas en cherchant le chiffre dans une phrase) ; et **une donnée absente
+disparaît** (§10.1) — une réponse sans borne de fin n'a pas de durée, elle n'affiche pas un zéro.
+
+Les **événements bruts** restent, repliés sous la trajectoire : ils servent quand elle ne suffit pas,
+et les déplier par défaut noierait la lecture.
+
+---
+
 ## 11. La couleur — une grammaire, pas une décoration
 
 Couleur **sémantique par famille d'outil** — les douze familles existent déjà (`tool-icons.ts`), donc
