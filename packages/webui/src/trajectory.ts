@@ -100,8 +100,11 @@ function stepSpan(step: StepView): { start?: number; end?: number } {
 export function trajectorySpans(turns: TurnView[]): TraceSpan[] {
   const spans: TraceSpan[] = []
   for (const turn of turns) {
-    const started = turn.info.time?.created
-    if (typeof started !== "number") continue
+    // Un tour sans horodatage existe quand même — le serveur ne le donne pas toujours (question en
+    // attente, tour rejoué). On le place à **0** plutôt que de l'écarter : l'écarter supprimait aussi
+    // ses outils et ses étapes du diagramme, alors qu'ils ont bien eu lieu. Un tour sans travail reste
+    // donc une entrée de durée nulle, pas une absence.
+    const started = turn.info.time?.created ?? 0
     // `input` : de l'arrivée du prompt au **début du premier travail** — le temps où l'entrée se
     // constitue. La fin du tour serait une barre couvrant tout le tour : la piste ne dirait plus rien,
     // et c'est la **répartition** qu'on vient lire ici.
@@ -226,9 +229,12 @@ export function spanPlacement(
 ): { left: number; width: number } {
   const total = range.end - range.start
   if (total <= 0) return { left: 0, width: 100 }
-  const left = ((span.start - range.start) / total) * 100
+  // On borne **d'abord** la position, puis la largeur sur ce qu'il reste à droite : borner la largeur
+  // d'après la position *non* bornée laissait une barre dépasser (mesuré : `left 0` + `width 150`,
+  // pour une barre qui commence avant l'intervalle affiché).
+  const left = Math.max(0, Math.min(100, ((span.start - range.start) / total) * 100))
   const width = ((span.end - span.start) / total) * 100
-  return { left: Math.max(0, Math.min(100, left)), width: Math.max(0.4, Math.min(100 - left, width)) }
+  return { left, width: Math.max(0.4, Math.min(100 - left, width)) }
 }
 
 /** Le résumé de durée d'une ligne — `(13ms)`, `(…)` si elle tourne encore. */
