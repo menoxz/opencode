@@ -968,6 +968,16 @@ export function TrajectoryPanel(props: { turns: TurnView[] }) {
                 <span class="trace-label">prompt</span>
                 <span class="trace-value">{trace.promptChars.toLocaleString()} chars</span>
               </div>
+              <Show when={trace.systemChars}>
+                {(chars) => (
+                  <div class="trace-row">
+                    <span class="trace-label">system</span>
+                    <span class="trace-value">
+                      {chars().toLocaleString()} chars — a system prompt was overridden
+                    </span>
+                  </div>
+                )}
+              </Show>
               <Show when={trace.injections}>
                 {(injections) => (
                   <div class="trace-row">
@@ -976,14 +986,35 @@ export function TrajectoryPanel(props: { turns: TurnView[] }) {
                   </div>
                 )}
               </Show>
-              {/* Ce qui est **revenu**, séparé par origine : entrée, sortie, cache. */}
+              {/* Ce qui est **revenu**, séparé par origine : entrée, sortie, cache, raisonnement. */}
               <div class="trace-row">
                 <span class="trace-label">tokens</span>
                 <span class="trace-value">
-                  {trace.input.toLocaleString()} in · {trace.output.toLocaleString()} out ·{" "}
+                  {trace.input.toLocaleString()} in · {trace.output.toLocaleString()} out
+                  <Show when={trace.reasoning > 0}> · {trace.reasoning.toLocaleString()} thinking</Show>
+                  {" · "}
                   {trace.cacheRead.toLocaleString()} cached
                 </span>
               </div>
+              {/* L'état de la fenêtre en fin de tour : c'est lui qui explique une compaction. */}
+              <Show when={trace.contextTokens}>
+                {(tokens) => (
+                  <div class="trace-row">
+                    <span class="trace-label">context</span>
+                    <span class="trace-value">{tokens().toLocaleString()} tokens in the window</span>
+                  </div>
+                )}
+              </Show>
+              <Show when={trace.cwd}>
+                {(cwd) => (
+                  <div class="trace-row">
+                    <span class="trace-label">cwd</span>
+                    <span class="trace-value" title={cwd()}>
+                      {cwd()}
+                    </span>
+                  </div>
+                )}
+              </Show>
               <Show when={trace.steps.length > 0}>
                 <div class="trace-steps">
                   <For each={trace.steps}>

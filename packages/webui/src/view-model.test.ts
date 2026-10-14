@@ -968,6 +968,51 @@ describe("trajectory — le diagnostic d'un tour", () => {
     expect(traces.map((entry) => entry.turn)).toEqual([1, 2])
   })
 
+  test("le raisonnement est compté à part du total", () => {
+    // Le total ne dit pas combien le modèle a « pensé » : c'est le chiffre qu'on regarde quand un tour
+    // coûte cher sans rien produire.
+    const traces = trace([
+      asked("u", "fais"),
+      reply("a", [finish("stop", 0.001, { input: 10, output: 5, reasoning: 400, cache: { read: 0, write: 0 } })]),
+    ])
+    expect(traces[0].reasoning).toBe(400)
+    expect(traces[0].steps[0].reasoning).toBe(400)
+    // Le raisonnement ne se confond ni avec l'entrée ni avec la sortie.
+    expect(traces[0].input).toBe(10)
+    expect(traces[0].output).toBe(5)
+  })
+
+  test("la taille du contexte vient de la **dernière** étape qui en donne une", () => {
+    const traces = trace([
+      asked("u", "fais"),
+      reply("a", [
+        finish("tool-calls", 0.001, { total: 1000, input: 1, output: 1, cache: { read: 0, write: 0 } }),
+        finish("stop", 0.001, { total: 2500, input: 1, output: 1, cache: { read: 0, write: 0 } }),
+      ]),
+    ])
+    expect(traces[0].contextTokens).toBe(2500)
+  })
+
+  test("sans taille de contexte mesurée, il n'y en a pas — pas un zéro", () => {
+    const traces = trace([asked("u", "fais"), reply("a", [finish("stop", 0.001, small)])])
+    expect(traces[0].contextTokens).toBeUndefined()
+  })
+
+  test("un prompt système de remplacement se signale par sa taille", () => {
+    // On montre qu'il a été écrasé, pas son texte : le contenu serait un pavé au milieu du diagnostic.
+    const traces = trace([asked("u", "fais", { system: "tu es un assistant concis" })])
+    expect(traces[0].systemChars).toBe(25)
+  })
+
+  test("sans prompt système, rien ne s'affiche", () => {
+    expect(trace([asked("u", "fais")])[0].systemChars).toBeUndefined()
+  })
+
+  test("le dossier de travail vient de la réponse, pas de la demande", () => {
+    const traces = trace([asked("u", "fais"), reply("a", [], { path: { cwd: "/tmp/projet" } })])
+    expect(traces[0].cwd).toBe("/tmp/projet")
+  })
+
   test("sans tour, la trajectoire est vide", () => {
     expect(trajectory([])).toEqual([])
   })

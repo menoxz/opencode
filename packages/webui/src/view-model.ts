@@ -210,6 +210,15 @@ export type Message = {
      * confusion entre les deux ferait lire un modèle vide sur les messages d'utilisateur.
      */
     model?: { providerID?: string; modelID?: string; variant?: string }
+    /**
+     * Le dossier de travail du tour, sur les messages d'agent.
+     *
+     * Deux tours d'une même session peuvent tourner dans des dossiers différents (le dossier de
+     * travail se change en cours de route) : c'est une information de diagnostic, pas un détail.
+     */
+    path?: { cwd?: string }
+    /** Un prompt système de remplacement, sur les messages d'utilisateur. */
+    system?: string
   }
   parts: Part[]
 }
@@ -243,6 +252,13 @@ export type StepView = {
 export type StepUsage = {
   input?: number
   output?: number
+  /**
+   * Les jetons de **raisonnement**, comptés à part par le serveur.
+   *
+   * Ils sont déjà dans le total, mais un total ne dit pas combien le modèle a « pensé » avant de
+   * répondre : c'est le premier chiffre qu'on regarde quand un tour coûte cher sans rien produire.
+   */
+  reasoning?: number
   cacheRead?: number
   cacheWrite?: number
   /** `tokens.total` de l'étape : c'est la taille du contexte **à ce moment-là**. */
@@ -362,9 +378,13 @@ export function groupSteps(parts: Part[]): StepView[] {
         const usage = step.usage ?? (step.usage = {})
         usage.input = (usage.input ?? 0) + (tokens.input ?? 0)
         usage.output = (usage.output ?? 0) + (tokens.output ?? 0)
+        usage.reasoning = (usage.reasoning ?? 0) + (tokens.reasoning ?? 0)
         usage.cacheRead = (usage.cacheRead ?? 0) + (tokens.cache?.read ?? 0)
         usage.cacheWrite = (usage.cacheWrite ?? 0) + (tokens.cache?.write ?? 0)
-        usage.total = (usage.total ?? 0) + tokensOf(tokens)
+        // La **taille du contexte** ne s'additionne pas : elle se remplace. L'addition donnait 3 500
+        // là où la fenêtre contenait 2 500 (mesuré sur deux `step-finish` d'une même étape), et elle
+        // fabriquait une taille à partir d'un `step-finish` qui n'en portait aucune.
+        if (typeof tokens.total === "number") usage.total = tokens.total
       }
       continue
     }
@@ -924,6 +944,7 @@ export type StepTrace = {
   tools: string[]
   input: number
   output: number
+  reasoning: number
   cacheRead: number
   cost: number
   durationMs?: number
@@ -943,14 +964,29 @@ export type TurnTrace = {
   durationMs?: number
   /** Le volume du prompt, en caractères : ce qui a été envoyé. */
   promptChars: number
+  /**
+   * La taille d'un **prompt système** de remplacement, quand le message en porte un.
+   *
+   * On expose sa taille et non son contenu : un système qui écrase celui de l'agent change tout ce qui
+   * suit, et c'est cela qu'il faut voir — le texte, lui, serait un pavé au milieu du diagnostic.
+   */
+  systemChars?: number
+  /** Le dossier dans lequel le tour a tourné — deux tours d'une même session peuvent différer. */
+  cwd?: string
   /** Ce que le serveur a injecté **avant** le prompt, quand le texte synthétique le porte. */
   injections?: Injections
   steps: StepTrace[]
   input: number
   output: number
+  reasoning: number
   cacheRead: number
   cost: number
   actions: number
+  /**
+   * La taille du contexte à la **dernière** étape mesurée : ce que la fenêtre contenait à la fin du
+   * tour. C'est le chiffre qui explique une compaction ou un échec de longueur.
+   */
+  contextTokens?: number
   error?: string
 }
 
@@ -1009,6 +1045,7 @@ export function trajectory(turns: TurnView[]): TurnTrace[] {
       tools: stepTools(step),
       input: step.usage?.input ?? 0,
       output: step.usage?.output ?? 0,
+      reasoning: step.usage?.reasoning ?? 0,
       cacheRead: step.usage?.cacheRead ?? 0,
       cost: step.cost,
       durationMs: step.durationMs,
@@ -1019,6 +1056,13 @@ export function trajectory(turns: TurnView[]): TurnTrace[] {
     const sum = (pick: (step: StepTrace) => number) => steps.reduce((total, step) => total + pick(step), 0)
     const usedProvider = ran?.providerID ?? asked.model?.providerID
     const usedModel = ran?.modelID ?? asked.model?.modelID
+    // La taille du contexte à la **dernière** étape qui en donne une : l'état de la fenêtre en fin de
+    // tour. Une étape muette ne remet pas le compte à zéro — elle n'en sait simplement rien.
+    let contextTokens: number | undefined
+    for (const step of turn.steps) {
+      const total = step.usage?.total
+      if (typeof total === "number" && total > 0) contextTokens = total
+    }
     return {
       turn: index + 1,
       role: turn.role,
@@ -1029,13 +1073,17 @@ export function trajectory(turns: TurnView[]): TurnTrace[] {
       // Une réponse sans `completed` n'a pas de durée : on n'en invente pas une (elle est en cours).
       durationMs: typeof started === "number" && typeof completed === "number" ? completed - started : undefined,
       promptChars: turn.prompt.reduce((total, part) => total + (part.text?.length ?? 0), 0),
+      systemChars: typeof asked.system === "string" && asked.system ? asked.system.length : undefined,
+      cwd: ran?.path?.cwd,
       injections: turnInjections(turn.prompt),
       steps,
       input: sum((step) => step.input),
       output: sum((step) => step.output),
+      reasoning: sum((step) => step.reasoning),
       cacheRead: sum((step) => step.cacheRead),
       cost: sum((step) => step.cost),
       actions: sum((step) => step.tools.length),
+      contextTokens,
       error: turn.replies.map((reply) => errorText(reply.error)).find((text) => Boolean(text)),
     }
   })
