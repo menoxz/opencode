@@ -565,6 +565,18 @@ catalogue) : elle suit donc le choix de la saisie (§13.3) au lieu d'être figé
 > appartient au client packagé (`@deepseek-ai/dsh-client-ui-*`), et `dsh-identite` n'est qu'une *skin*
 > (« aucune fonctionnalité métier, uniquement de la mise en forme »). L'écran fait donc foi — et il
 > fallait le **regarder**, ce qui manquait.
+>
+> **Absence vérifiée, pas supposée** (2026-10-14) — trois recherches ont été faites, pour que personne
+> ne les refasse :
+>
+> | où | résultat |
+> |---|---|
+> | `dsh-plugins\dsh-browser\node_modules\.pnpm\` (les paquets `@deepseek-ai/dsh-client-ui-*` **y sont** installés) | ni `Trajectory`, ni `tool call only` |
+> | `%LOCALAPPDATA%\Programs\DeepSeek Harness` (l'application est bien installée) | ni `Trajectory`, ni `tool call only` |
+> | `C:\jeanluc\deepseek_harness` | ni `Trajectory`, ni `tool call only` |
+>
+> Le client est **servi** par le serveur DSH, pas livré sous forme lisible. La capture reste donc la
+> seule référence — et une capture se compare.
 
 Trois bandes, de haut en bas :
 
