@@ -510,6 +510,20 @@ describe("UserPrompt — le prompt aussi est du markdown", () => {
     expect(container.textContent).toContain("<img src=x onerror=alert(1)>")
     dispose()
   })
+
+  test("la carte porte un bouton pour copier le prompt, et il copie la SOURCE", async () => {
+    // On copie ce que l'utilisateur a écrit — marqueurs markdown compris — et non le texte rendu :
+    // recopier l'affichage ferait perdre la mise en forme qu'il a saisie.
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true })
+    const { container, dispose } = mount(() => <UserPrompt text={"**gras** et `code`"} />)
+    const button = container.querySelector<HTMLButtonElement>(".prompt-copy button")
+    expect(button?.getAttribute("title")).toBe("Copy prompt")
+    button?.click()
+    await vi.waitFor(() => expect(writeText).toHaveBeenCalled())
+    expect(writeText).toHaveBeenCalledWith("**gras** et `code`")
+    dispose()
+  })
 })
 
 describe("ComposerMarkup — le calque du champ", () => {

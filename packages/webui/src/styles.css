@@ -706,7 +706,11 @@ textarea {
    en markdown — les retours à la ligne qu'il a marqués passent par des **sauts durs** (`  ` ou `\`),
    donc `pre-wrap` n'a plus lieu d'être : il doublerait les coupures déjà rendues. */
 .prompt {
-  margin: 0;
+  /* L'air est **sous** la carte : elle ouvre le tour et doit se détacher de la réponse de l'agent,
+     qui commence juste après (le flux d'étapes). Un peu plus que le pas entre deux tours, puisque
+     ici la carte est un bloc à elle, pas une ligne de flux. */
+  position: relative;
+  margin: 0 0 16px;
   padding: 10px 14px;
   background: var(--bg-1);
   border: 1px solid var(--line-1);
@@ -716,6 +720,21 @@ textarea {
 
 .prompt .md {
   gap: 6px;
+}
+
+/* Rien au repos (§3.8) : le bouton est posé dans le coin de la carte, sans réserver de place, et se
+   révèle **au survol de la carte** — la carte porte le texte, donc c'est elle qui porte l'action. */
+.prompt-copy {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.prompt:hover .prompt-copy,
+.prompt-copy:focus-within {
+  opacity: 1;
 }
 
 /* ---- Contexte injecté : une ligne de confiance, pas de lecture ---- */

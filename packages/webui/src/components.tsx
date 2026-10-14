@@ -231,6 +231,12 @@ export function UserPrompt(props: { text: string }) {
   return (
     <div class="prompt">
       <Markdown text={props.text} />
+      {/* Rien au repos (§3.8) : le bouton se révèle au survol de la carte, dans son coin, **sans
+          réserver de place** — le texte garde toute la largeur. On copie la source brute, jamais le
+          texte rendu : c'est ce que l'utilisateur a écrit, marqueurs markdown compris. */}
+      <div class="prompt-copy">
+        <CopyButton text={props.text} label="Copy prompt" />
+      </div>
     </div>
   )
 }
