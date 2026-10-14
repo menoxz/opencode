@@ -637,9 +637,12 @@ textarea {
   font-size: var(--fs-note);
 }
 
-.trace-count {
+.trace-subtitle {
   color: var(--text-3);
   font-size: var(--fs-meta);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .trace-filter {

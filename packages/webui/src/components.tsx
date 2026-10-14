@@ -950,6 +950,22 @@ const TRACE_ICON: Record<TraceKind, string> = {
   todo: "✓",
 }
 
+/**
+ * Le libellé affiché de chaque filtre — **exactement** les chaînes de DSH.
+ *
+ * DSH les tient dans son `i18n.ts` (`trace-filter-all|tool|thinking|message|progress`) : « all »,
+ * « tools », « thinking », « messages », « progress ». Le pluriel est **dans DSH**, pas une fantaisie
+ * de traduction — et une clé interne (`tool`) n'est pas un libellé : confondre les deux ferait
+ * afficher « tool » là où DSH dit « tools ».
+ */
+const TRACE_FILTER_LABEL: Record<TraceFilter, string> = {
+  all: "all",
+  tool: "tools",
+  thinking: "thinking",
+  message: "messages",
+  progress: "progress",
+}
+
 /** La teinte suit l'issue. `undefined` là où il n'y a rien à dire — et le style reste neutre. */
 function traceTone(entry: TraceEntry): string | undefined {
   if (entry.kind === "tool") {
@@ -968,9 +984,11 @@ export function TraceTimeline(props: { entries: TraceEntry[] }) {
   return (
     <div class="trace">
       <div class="trace-bar">
-        <span class="trace-title">Trajectory</span>
-        <span class="trace-count">
-          {shown().length} line{shown().length > 1 ? "s" : ""}
+        <span class="trace-title">Trace</span>
+        {/* Le sous-titre est celui de DSH, mot pour mot : « Session event timeline · filter: … ·
+            … entries ». Il dit à la fois **ce qu'est** la vue et **ce qu'elle montre en ce moment**. */}
+        <span class="trace-subtitle">
+          Session event timeline · filter: {TRACE_FILTER_LABEL[filter()]} · {shown().length} entries
         </span>
         <span class="trace-spacer" />
         <For each={TRACE_FILTERS}>
@@ -980,12 +998,12 @@ export function TraceTimeline(props: { entries: TraceEntry[] }) {
               classList={{ active: filter() === name }}
               onClick={() => setFilter(name)}
             >
-              {name}
+              {TRACE_FILTER_LABEL[name]}
             </button>
           )}
         </For>
       </div>
-      <Show when={shown().length > 0} fallback={<p class="trace-empty">No trajectory lines.</p>}>
+      <Show when={shown().length > 0} fallback={<p class="trace-empty">No trace events yet</p>}>
         <ol class="trace-lines">
           <For each={shown()}>
             {(entry) => (
