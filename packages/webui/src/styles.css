@@ -612,7 +612,128 @@ textarea {
    (`.auth-form`, `.auth-row`). Il est descendu dans `General`, bloc *Server*, où il reprend les
    classes communes du panneau : un formulaire à part n'avait plus de raison d'être. */
 
-/* La barre de navigation du rail — les trois portes de l'écran (Session, Config, Logs).
+/* ---- La timeline de trajectoire — reprise de DSH (`/trace`) ----
+
+   Une ligne par événement, dense, en chasse fixe. C'est une timeline qu'on **parcourt du regard**,
+   pas des cartes qu'on déplie : les colonnes sont fixes pour que l'œil descende droit (heure, glyphe,
+   puis le résumé qui prend la place restante), et rien n'occupe deux lignes. */
+
+.trace {
+  padding: 4px var(--gutter) 16px;
+}
+
+.trace-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0 8px;
+  border-bottom: 1px solid var(--line-1);
+  margin-bottom: 6px;
+}
+
+.trace-title {
+  color: var(--text-1);
+  font-weight: 600;
+  font-size: var(--fs-note);
+}
+
+.trace-count {
+  color: var(--text-3);
+  font-size: var(--fs-meta);
+}
+
+.trace-filter {
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: var(--fs-meta);
+  color: var(--text-3);
+}
+
+.trace-filter:hover {
+  background: #ffffff0f;
+  color: var(--text-1);
+}
+
+.trace-filter.active {
+  background: var(--grad-active);
+  color: var(--text-1);
+}
+
+.trace-lines {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-size: var(--fs-meta);
+  line-height: 1.75;
+}
+
+.trace-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+/* Le thinking et le step s'effacent : ils encadrent le travail, ils ne le sont pas. */
+.trace-line.dim {
+  opacity: 0.55;
+}
+
+.trace-clock {
+  flex: none;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.trace-glyph {
+  flex: none;
+  width: 1.2em;
+  text-align: center;
+  color: var(--text-2);
+}
+
+.trace-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-2);
+}
+
+.trace-dur {
+  flex: none;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* La couleur dit l'issue, et **seulement** l'issue. */
+.tone-error {
+  color: #f85149;
+}
+
+.tone-warning {
+  color: var(--fam-write);
+}
+
+.tone-success {
+  color: var(--fam-shell);
+}
+
+.tone-suggestion {
+  color: var(--fam-read);
+}
+
+.trace-empty {
+  margin: 0;
+  color: var(--text-3);
+  font-size: var(--fs-meta);
+  font-style: italic;
+}
+
+/* ---- La barre de navigation du rail — les trois portes de l'écran (Session, Config, Logs).
 
    Elle remplace deux boutons perdus au fond du rail, et elle est **horizontale** pour deux raisons :
    on la lit d'un coup d'œil au lieu de la chercher, et sa place ne bouge pas — un accès qu'on ne

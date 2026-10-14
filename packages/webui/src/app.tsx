@@ -34,6 +34,7 @@ import {
   SessionPanel,
   SessionRow,
   ShowMore,
+  TraceTimeline,
   TrajectoryPanel,
   ToolLine,
   Turn,
@@ -137,6 +138,7 @@ import {
   type StepView,
   type ToolState,
   type TurnView,
+  traceEntries,
 } from "./view-model"
 
 const DIR_KEY = "oc.webui.directory"
@@ -1841,27 +1843,11 @@ export default function App() {
             </button>
           </nav>
           <Show when={view() === "logs"}>
-            {/* La **trajectoire** d'abord : c'est elle qui diagnostique un tour — ce qui a été
-                injecté, ce qui est entré et sorti, ce que chaque étape a coûté. Les événements bruts
-                sont dessous, repliés : ils servent quand la trajectoire ne suffit pas, et les déplier
-                par défaut noierait la lecture. */}
+            {/* La timeline de trajectoire, **reprise de DSH** (`/trace`) : une ligne par événement,
+                dense, en chasse fixe. C'est la vue qu'on parcourt du regard pour voir où le temps et
+                les appels sont passés. */}
             <div class="scroll">
-              <TrajectoryPanel turns={turns()} />
-              <details class="log-events">
-                <summary>Raw events ({logEntries().length})</summary>
-                <Show when={logEntries().length > 0} fallback={<p class="log-empty">No events received yet.</p>}>
-                  <ul class="log-list">
-                    <For each={[...logEntries()].reverse()}>
-                      {(entry) => (
-                        <li class="log-row">
-                          <span class="log-time">{new Date(entry.at).toLocaleTimeString()}</span>
-                          <span class="log-type">{entry.type}</span>
-                        </li>
-                      )}
-                    </For>
-                  </ul>
-                </Show>
-              </details>
+              <TraceTimeline entries={traceEntries(turns())} />
             </div>
           </Show>
           <Show when={view() === "chat"}>
@@ -2048,6 +2034,25 @@ export default function App() {
           </div>
           <Show when={drawerTab() === "session"}>
             <SessionPanel stats={stats()} />
+            {/* Le détail par tour et les événements bruts vivent ici, pas dans la vue Logs : celle-ci
+                **est** la timeline de DSH, et ces deux lectures sont du diagnostic qu'on ouvre à
+                côté. */}
+            <TrajectoryPanel turns={turns()} />
+            <details class="log-events">
+              <summary>Raw events ({logEntries().length})</summary>
+              <Show when={logEntries().length > 0} fallback={<p class="log-empty">No events received yet.</p>}>
+                <ul class="log-list">
+                  <For each={[...logEntries()].reverse()}>
+                    {(entry) => (
+                      <li class="log-row">
+                        <span class="log-time">{new Date(entry.at).toLocaleTimeString()}</span>
+                        <span class="log-type">{entry.type}</span>
+                      </li>
+                    )}
+                  </For>
+                </ul>
+              </Show>
+            </details>
           </Show>
           <Show when={drawerTab() === "decisions"}>
             <For each={permissions()}>
