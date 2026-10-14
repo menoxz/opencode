@@ -40,6 +40,7 @@ import {
   type ToolState,
 } from "./view-model"
 import { markdownSpans, parseMarkdown, safeHref, type MdBlock, type MdInline } from "./markdown"
+import { todoProgress, type ContractView, type TodoView } from "./plan"
 import { writeClipboard } from "./clipboard"
 import { formatChars, injectionLabel, share, sourceLabel, type Injections } from "./injections"
 import { CheckIcon, ChevronIcon, CopyIcon, CrossIcon, FolderIcon, PluginIcon, SessionIcon, ToolIcon, toolHint } from "./icons"
@@ -957,6 +958,129 @@ export function ModifiedFiles(props: { docs: DocumentRef[] }) {
         </ul>
       </div>
     </Show>
+  )
+}
+
+/* =============================================================================
+   Le plan de la session — les **todos** et le **contrat de tâche**, juste au-dessus du compositeur.
+
+   Les deux répondent à la même question — « où en est-on ? » — et à deux moments différents : le
+   contrat est ce qui a été **demandé**, les todos ce qui est **fait**. Ils vivent donc au même
+   endroit, collés au-dessus du champ où l'on écrit, et non dans le fil : ils décrivent l'état
+   courant, pas un moment passé.
+
+   Au repos, chacun tient sur **une ligne** : un compte et l'item en cours pour les todos, l'objectif
+   pour le contrat. Le reste se déplie — même règle que la liste Trajectory : ce qui est rare ne
+   s'affiche pas au repos.
+   ============================================================================= */
+
+/** Le glyphe d'un état de todo — un signe, jamais un mot : la ligne doit rester une ligne. */
+const TODO_GLYPH: Record<TodoView["status"], string> = {
+  completed: "✓",
+  in_progress: "▸",
+  pending: "·",
+  cancelled: "✕",
+}
+
+export function TodoList(props: { todos: TodoView[] }) {
+  const [open, setOpen] = createSignal(false)
+  const progress = createMemo(() => todoProgress(props.todos))
+  return (
+    <Show when={props.todos.length > 0}>
+      <div class="plan">
+        <div class="plan-card" classList={{ open: open() }}>
+          <button class="plan-head" title="Todos" onClick={() => setOpen(!open())}>
+            <span class="plan-chevron" classList={{ open: open() }}>
+              ›
+            </span>
+            <span class="plan-title">todos</span>
+            <span class="plan-count">
+              {progress().done}/{progress().total}
+            </span>
+            {/* L'item en cours est la seule information qui mérite le repos : c'est ce que l'agent
+                fait maintenant. Le compte dit où l'on en est ; le reste se déplie. */}
+            <Show when={progress().active}>
+              {(todo) => (
+                <span class="plan-active" title={todo().content}>
+                  {todo().content}
+                </span>
+              )}
+            </Show>
+          </button>
+          <Show when={open()}>
+            <ul class="plan-list">
+              <For each={props.todos}>
+                {(todo) => (
+                  <li class={`plan-item st-${todo.status}`} title={todo.content}>
+                    <span class="plan-glyph">{TODO_GLYPH[todo.status]}</span>
+                    <span class="plan-text">{todo.content}</span>
+                    <Show when={todo.priority === "high"}>
+                      <span class="plan-prio">high</span>
+                    </Show>
+                  </li>
+                )}
+              </For>
+            </ul>
+          </Show>
+        </div>
+      </div>
+    </Show>
+  )
+}
+
+export function TaskContract(props: { contract: ContractView }) {
+  const [open, setOpen] = createSignal(false)
+  return (
+    <div class="plan">
+      <div class="plan-card" classList={{ open: open() }}>
+        <button class="plan-head" title="Task contract" onClick={() => setOpen(!open())}>
+          <span class="plan-chevron" classList={{ open: open() }}>
+            ›
+          </span>
+          <span class="plan-title">contract</span>
+          {/* L'objectif est la ligne du repos : c'est lui qui dit de quoi il s'agit, et il se rogne
+              plutôt que de passer à la ligne — le détail est dans le dépli. */}
+          <span class="plan-active">{props.contract.goal}</span>
+          <Show when={props.contract.dod.length > 0}>
+            <span class="plan-count">DoD {props.contract.dod.length}</span>
+          </Show>
+        </button>
+        <Show when={open()}>
+          <div class="plan-body">
+            <Show when={props.contract.goal}>
+              <h4 class="plan-sub">Objective</h4>
+              <p class="plan-goal">{props.contract.goal}</p>
+            </Show>
+            <Show when={props.contract.dod.length > 0}>
+              <h4 class="plan-sub">Definition of done</h4>
+              <ul class="plan-list">
+                <For each={props.contract.dod}>
+                  {(item) => (
+                    <li class="plan-item" title={item}>
+                      <span class="plan-glyph">✓</span>
+                      <span class="plan-text">{item}</span>
+                    </li>
+                  )}
+                </For>
+              </ul>
+            </Show>
+            <Show when={props.contract.outOfScope.length > 0}>
+              <h4 class="plan-sub">Out of scope</h4>
+              <ul class="plan-list">
+                <For each={props.contract.outOfScope}>
+                  {(item) => (
+                    <li class="plan-item out" title={item}>
+                      <span class="plan-glyph">✕</span>
+                      <span class="plan-text">{item}</span>
+                    </li>
+                  )}
+                </For>
+              </ul>
+            </Show>
+          </div>
+        </Show>
+      </div>
+    </div>
   )
 }
 

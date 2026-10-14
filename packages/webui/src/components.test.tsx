@@ -5,6 +5,8 @@ import {
   ComposerMarkup,
   CopyButton,
   ModifiedFiles,
+  TaskContract,
+  TodoList,
   Markdown,
   Media,
   PatchLine,
@@ -18,6 +20,7 @@ import {
   ToolLine,
   UserPrompt,
 } from "./components"
+import type { ContractView, TodoView } from "./plan"
 import type { DocumentRef, PermissionRequest, QuestionAnswers, QuestionRequest, ToolState } from "./view-model"
 
 /** Monte un composant dans un conteneur neuf et renvoie le HTML produit. */
@@ -618,6 +621,73 @@ describe("ModifiedFiles — le badge de type", () => {
     expect(container.querySelector(".doc-code")).not.toBeNull()
     expect(container.querySelector(".doc-data")).not.toBeNull()
     expect(container.querySelector(".doc-other")).not.toBeNull()
+    dispose()
+  })
+})
+
+describe("TodoList — le plan, au-dessus du champ", () => {
+  const todos: TodoView[] = [
+    { content: "Écrire le composant", status: "completed" },
+    { content: "Vérifier à l'écran", status: "in_progress" },
+    { content: "Commiter", status: "pending" },
+  ]
+
+  test("au repos : un compte et l'item en cours, rien de plus", () => {
+    const { container, dispose } = mount(() => <TodoList todos={todos} />)
+    expect(container.querySelector(".plan-count")?.textContent).toBe("1/3")
+    expect(container.querySelector(".plan-active")?.textContent).toBe("Vérifier à l'écran")
+    // La liste n'est pas dépliée : le repos tient sur une ligne, sinon deux cadres pleins
+    // repousseraient la conversation hors de l'écran.
+    expect(container.querySelector(".plan-list")).toBeNull()
+    dispose()
+  })
+
+  test("le dépli montre chaque item avec son état", () => {
+    const { container, dispose } = mount(() => <TodoList todos={todos} />)
+    const head = container.querySelector(".plan-head") as HTMLElement
+    head.click()
+    const items = container.querySelectorAll(".plan-item")
+    expect(items).toHaveLength(3)
+    expect(items[0]!.classList.contains("st-completed")).toBe(true)
+    expect(items[1]!.classList.contains("st-in_progress")).toBe(true)
+    expect(container.querySelector(".plan-item.st-in_progress .plan-text")?.textContent).toBe(
+      "Vérifier à l'écran",
+    )
+    dispose()
+  })
+
+  test("sans todo, il n'existe pas", () => {
+    const { container, dispose } = mount(() => <TodoList todos={[]} />)
+    expect(container.querySelector(".plan")).toBeNull()
+    expect(container.textContent).toBe("")
+    dispose()
+  })
+})
+
+describe("TaskContract — ce qui a été demandé", () => {
+  const contract: ContractView = {
+    goal: "Livrer la vue Trajectory",
+    dod: ["Le panneau s'affiche à droite", "Les tests passent"],
+    outOfScope: ["Le rendu serveur"],
+  }
+
+  test("au repos : l'objectif et le compte de la DoD", () => {
+    const { container, dispose } = mount(() => <TaskContract contract={contract} />)
+    expect(container.querySelector(".plan-active")?.textContent).toBe("Livrer la vue Trajectory")
+    expect(container.querySelector(".plan-count")?.textContent).toBe("DoD 2")
+    expect(container.querySelector(".plan-list")).toBeNull()
+    dispose()
+  })
+
+  test("le dépli montre l'objectif, la DoD et le hors-périmètre", () => {
+    const { container, dispose } = mount(() => <TaskContract contract={contract} />)
+    const head = container.querySelector(".plan-head") as HTMLElement
+    head.click()
+    const subs = Array.from(container.querySelectorAll(".plan-sub")).map((h) => h.textContent)
+    expect(subs).toEqual(["Objective", "Definition of done", "Out of scope"])
+    expect(container.querySelector(".plan-goal")?.textContent).toBe("Livrer la vue Trajectory")
+    // Le hors-périmètre se distingue : c'est ce qui ne sera **pas** fait.
+    expect(container.querySelector(".plan-item.out")?.textContent).toContain("Le rendu serveur")
     dispose()
   })
 })

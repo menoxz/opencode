@@ -3288,6 +3288,161 @@ textarea {
 
 /* (`.work-body` a été retiré : le repli « work » n'existe plus, cf. §9.2 révisé.) */
 
+/* ---- Le plan de la session (§13.6) — les todos et le contrat, au-dessus du champ ----
+
+   Au repos, chacun tient sur **une ligne** : un compte et l'item en cours, ou l'objectif. Le dépli
+   montre le reste. Même règle que la liste Trajectory — ce qui est rare ne s'affiche pas au repos —
+   et la même raison : deux cadres pleins au-dessus du champ repousseraient la conversation hors de
+   l'écran, alors qu'ils ne disent rien la plupart du temps. */
+
+.plan {
+  /* Même géométrie que `.composer` : la carte est un **frère** du champ de saisie, pas un objet
+     posé dessus. Les deux se lisent comme une paire — même largeur, même centrage. */
+  padding: 0 var(--gutter);
+  margin-bottom: 8px;
+  font-size: var(--fs-meta);
+}
+
+/* La carte : un cadre **visible**. C'est ce qui la distingue du fil, qui n'en a pas — un plan est
+   un objet à part, posé au-dessus du champ, et il doit se voir au premier regard. Le rayon et le
+   fond sont ceux du compositeur : deux cartes de même forme, l'une pour ce qu'on demande, l'autre
+   pour ce qu'on écrit. */
+.plan-card {
+  max-width: var(--measure);
+  margin: 0 auto;
+  border: 1px solid var(--line-2);
+  border-radius: 14px;
+  background: var(--bg-1);
+  overflow: hidden;
+}
+
+.plan-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 12px;
+  color: var(--text-2);
+  text-align: left;
+}
+
+.plan-head:hover {
+  background: #ffffff08;
+  color: var(--text-1);
+}
+
+.plan-chevron {
+  flex: none;
+  display: inline-block;
+  color: var(--text-3);
+  transition: transform 0.12s ease;
+}
+
+.plan-chevron.open {
+  transform: rotate(90deg);
+}
+
+.plan-title {
+  flex: none;
+  text-transform: lowercase;
+}
+
+.plan-count {
+  flex: none;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* L'item en cours (ou l'objectif) : une seule ligne, rognée — le texte entier est dans l'infobulle
+   et dans le dépli. */
+.plan-active {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+
+.plan-list {
+  list-style: none;
+  margin: 0;
+  /* L'indentation aligne les items sous le **titre**, pas sous le chevron : c'est le titre qu'on
+     suit du regard quand on descend la liste. */
+  padding: 0 12px 10px 34px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.plan-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--text-2);
+}
+
+.plan-glyph {
+  flex: none;
+  width: 10px;
+  color: var(--text-3);
+}
+
+.plan-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plan-prio {
+  flex: none;
+  color: var(--text-3);
+  font-size: var(--fs-note);
+}
+
+/* Fait : le texte s'éteint, mais reste lisible — on doit pouvoir relire ce qui a été fait. */
+.plan-item.st-completed .plan-glyph {
+  color: var(--fam-shell);
+}
+
+.plan-item.st-completed .plan-text {
+  color: var(--text-3);
+}
+
+.plan-item.st-in_progress .plan-glyph,
+.plan-item.st-in_progress .plan-text {
+  color: var(--text-1);
+}
+
+.plan-item.st-cancelled .plan-text {
+  color: var(--text-3);
+  text-decoration: line-through;
+}
+
+/* Le hors-périmètre : ce qui ne sera **pas** fait. Il se lit comme une exclusion. */
+.plan-item.out .plan-glyph {
+  color: #f85149;
+}
+
+.plan-body {
+  padding: 0 12px 10px 34px;
+}
+
+.plan-sub {
+  margin: 8px 0 3px;
+  color: var(--text-3);
+  font-size: var(--fs-note);
+  font-weight: 600;
+}
+
+.plan-goal {
+  margin: 0;
+  color: var(--text-2);
+  line-height: 1.6;
+}
+
 /* ---- Les fichiers **modifiés** de la réponse (§12.3) ----
 
    Le bilan, à la fin du dernier step : ce qui a changé, de combien, et — quand le serveur l'a

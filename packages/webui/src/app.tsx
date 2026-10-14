@@ -21,6 +21,8 @@ import {
   Boundary,
   ComposerMarkup,
   ComposerStats,
+  TaskContract,
+  TodoList,
   ContextInjections,
   ModifiedFiles,
   FileChip,
@@ -100,6 +102,7 @@ import {
   slashQuery,
   type CommandChoice,
 } from "./composer-keys"
+import { contractFrom, todosFrom, type ContractView, type TodoView } from "./plan"
 import {
   agentCounts,
   agentRows,
@@ -237,6 +240,14 @@ export default function App() {
    */
   const [composerModel, setComposerModel] = createSignal("")
   const [composerAgent, setComposerAgent] = createSignal("")
+  /**
+   * Le plan de la session — ses todos et son contrat — affiché juste au-dessus du compositeur.
+   *
+   * Il vit **hors du fil** : ce sont des informations d'état courant, pas un moment passé. Le fil
+   * raconte ce qui a eu lieu ; ceci dit où l'on en est maintenant.
+   */
+  const [todos, setTodos] = createSignal<TodoView[]>([])
+  const [contract, setContract] = createSignal<ContractView | undefined>()
   /** La fenêtre de contexte de chaque modèle — la seule donnée dont le remplissage du contexte a besoin. */
   const [modelLimits, setModelLimits] = createSignal<Record<string, number>>({})
   /** Les agents proposables — chargés à la première ouverture du choix, jamais au montage (1,5 Mo). */
@@ -725,7 +736,29 @@ export default function App() {
     if (Array.isArray(data)) setSessions(data)
   }
 
+  /**
+   * Le **plan** de la session : ses todos et son contrat de tâche.
+   *
+   * Deux routes pour une seule question — « où en est-on ? ». Les todos bougent souvent (l'agent les
+   * réécrit à chaque étape), le contrat presque jamais ; les deux se relisent au même moment, quand
+   * on ouvre une session ou quand le fil avance.
+   *
+   * Chacune échoue **pour son compte** : une session sans contrat n'a pas de `goalState`, et cela ne
+   * doit pas empêcher ses todos de s'afficher.
+   */
+  const loadPlan = async (sessionID: string) => {
+    const [todoResult, sessionResult] = await Promise.all([
+      client.session.todo({ sessionID, ...scope() }).catch(() => undefined),
+      client.session.get({ sessionID, ...scope() }).catch(() => undefined),
+    ])
+    setTodos(todosFrom(todoResult?.data))
+    setContract(contractFrom(sessionResult?.data))
+  }
+
   const loadMessages = async (sessionID: string) => {
+    // Le plan se relit avec le fil : c'est au même moment qu'on en a besoin, et l'agent réécrit ses
+    // todos à chaque étape — un plan lu une seule fois à l'ouverture serait périmé en une minute.
+    void loadPlan(sessionID)
     const result = await client.session.messages({ sessionID, ...scope() }).catch(() => undefined)
     const data = (result as { data?: Message[] } | undefined)?.data
     setMessages(Array.isArray(data) ? data : [])
@@ -1927,6 +1960,16 @@ export default function App() {
               </Show>
             </div>
           </div>
+
+          {/* Le plan de la session, collé au-dessus du champ : le contrat dit ce qui a été
+              **demandé**, les todos ce qui est **fait**. Les deux répondent à « où en est-on ? »,
+              et c'est au moment d'écrire qu'on se le demande — pas en relisant le fil. */}
+          <Show when={contract()}>
+            {(current) => <TaskContract contract={current()} />}
+          </Show>
+          <Show when={todos().length > 0}>
+            <TodoList todos={todos()} />
+          </Show>
 
           <form class="composer" onSubmit={send}>
             <div class="composer-inner">
