@@ -405,6 +405,19 @@ export function groupSteps(parts: Part[]): StepView[] {
  * Un message d'agent sans prompt devant lui (reprise, enchaînement) forme son propre tour plutôt que
  * d'être rattaché au hasard à ce qui précède — la page ne réécrit pas l'histoire, elle la montre.
  */
+/**
+ * Les agents **internes** dont les messages ne s'affichent pas.
+ *
+ * Mesuré sur une session réelle : une compaction produit un message de l'agent `compaction` portant
+ * **9 243 caractères** de texte et 4 884 de raisonnement — le résumé du contexte. Il s'affichait
+ * comme une réponse alors qu'il n'en est pas une : personne ne l'a demandé, et il n'apprend rien à
+ * qui veut lire l'échange.
+ *
+ * La **borne** de compaction (`type: "compaction"`), elle, reste visible : c'est elle qui explique
+ * la coupure du récit, et la cacher reviendrait à mentir sur ce qui s'est passé.
+ */
+const HIDDEN_AGENTS = new Set(["compaction"])
+
 export function groupTurns(messages: Message[]): TurnView[] {
   const turns: TurnView[] = []
   let current: TurnView | undefined
@@ -412,6 +425,9 @@ export function groupTurns(messages: Message[]): TurnView[] {
   for (const message of messages) {
     const role = message.info.role
     const parts = message.parts ?? []
+    // Le message est écarté **avant** toute construction de tour : le laisser passer produirait un
+    // tour vide (des étapes sans texte), et l'écran montrerait une réponse blanche.
+    if (HIDDEN_AGENTS.has(String(message.info.agent ?? ""))) continue
     if (role === "user") {
       current = {
         id: message.info.id,

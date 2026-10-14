@@ -248,6 +248,22 @@ export function ClockIcon(props: { size?: number }) {
   )
 }
 
+/**
+ * Le **raisonnement** de l'agent — une étincelle.
+ *
+ * La ligne de thinking se lit désormais dans la même grammaire que les lignes d'action : une icône,
+ * un mot, une durée. Sans elle, `thinking` était le seul fait du fil à n'avoir **aucune** forme, et
+ * l'œil devait le lire au lieu de le reconnaître — c'est précisément ce que l'icône évite.
+ */
+export function ThinkIcon(props: { size?: number }) {
+  return (
+    <Glyph size={props.size ?? 12}>
+      <path d="M11 3l1.7 4.6L17.3 9.3l-4.6 1.7L11 15.6 9.3 11 4.7 9.3 9.3 7.6z" />
+      <path d="M18 15l.7 1.9 1.9.7-1.9.7-.7 1.9-.7-1.9-1.9-.7 1.9-.7z" />
+    </Glyph>
+  )
+}
+
 export function ListIcon(props: { size?: number }) {
   return (
     <Glyph size={props.size ?? 12}>

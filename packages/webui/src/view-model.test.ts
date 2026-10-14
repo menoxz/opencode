@@ -1068,3 +1068,41 @@ describe("patchLines — le diff, ligne par ligne", () => {
   })
 })
 
+describe("groupTurns — les agents internes ne parlent pas à l'utilisateur", () => {
+  const text = (id: string, value: string) => ({ type: "text", id, text: value })
+
+  test("le message du compresseur de contexte ne forme pas de tour", () => {
+    // Mesuré sur une session réelle : la compaction écrit 9 243 caractères de résumé (plus 4 884 de
+    // raisonnement) dans un message d'agent `compaction`, qui s'affichait comme une réponse. Ce
+    // n'en est pas une : personne ne l'a demandée, et elle n'apprend rien à qui lit l'échange.
+    const turns = groupTurns([
+      { info: { id: "u1", role: "user" }, parts: [text("u1", "salut")] },
+      { info: { id: "a1", role: "assistant", agent: "compaction" }, parts: [text("a1", "RÉSUMÉ DU CONTEXTE…")] },
+    ])
+    expect(turns).toHaveLength(1)
+    expect(turns[0]!.role).toBe("user")
+    // Et surtout : aucun tour vide laissé derrière, qui afficherait une réponse blanche.
+    expect(turns.every((turn) => turn.steps.length > 0 || turn.prompt.length > 0)).toBe(true)
+  })
+
+  test("la **borne** de compaction reste : c'est elle qui explique la coupure du récit", () => {
+    // La masquer reviendrait à mentir sur ce qui s'est passé : après une compaction, ce qui suit ne
+    // s'appuie plus sur ce qui précède, et rien ne le dirait.
+    const turns = groupTurns([
+      { info: { id: "u1", role: "user" }, parts: [text("u1", "salut")] },
+      { info: { id: "u2", role: "user" }, parts: [{ type: "compaction", auto: true }] },
+    ])
+    expect(turns).toHaveLength(2)
+    expect(turns[1]!.prompt.some((part) => part.type === "compaction")).toBe(true)
+  })
+
+  test("un agent ordinaire reste affiché", () => {
+    const turns = groupTurns([
+      { info: { id: "u1", role: "user" }, parts: [text("u1", "salut")] },
+      { info: { id: "a1", role: "assistant", agent: "lean" }, parts: [text("a1", "bonjour")] },
+    ])
+    expect(turns).toHaveLength(1)
+    expect(turns[0]!.steps.length).toBeGreaterThan(0)
+  })
+})
+

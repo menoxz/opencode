@@ -43,7 +43,7 @@ import { markdownSpans, parseMarkdown, safeHref, type MdBlock, type MdInline } f
 import { todoProgress, type ContractView, type TodoView } from "./plan"
 import { writeClipboard } from "./clipboard"
 import { formatChars, injectionLabel, share, sourceLabel, type Injections } from "./injections"
-import { CheckIcon, ChevronIcon, CopyIcon, CrossIcon, FolderIcon, PluginIcon, SessionIcon, ToolIcon, toolHint } from "./icons"
+import { CheckIcon, ChevronIcon, CopyIcon, CrossIcon, FolderIcon, PluginIcon, SessionIcon, ThinkIcon, ToolIcon, toolHint } from "./icons"
 import { toolIcon } from "./tool-icons"
 import { relativeTime } from "./time"
 
@@ -519,6 +519,7 @@ export function Reasoning(props: { text: string; durationMs?: number; open: bool
   return (
     <div class="reasoning">
       <button class="reasoning-line" onClick={() => props.onToggle()}>
+        <ThinkIcon />
         <span>thinking</span>
         <Show when={formatDuration(props.durationMs)}>{(value) => <span class="reasoning-time">{value()}</span>}</Show>
         <span class="tool-chev">{props.open ? "▾" : "▸"}</span>
