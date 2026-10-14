@@ -1684,6 +1684,118 @@ export default function App() {
     return <ContextInjections injections={injections} open={Boolean(expanded()[id])} onToggle={() => toggle(id)} loadSource={loadInstructionSource} />
   }
 
+  /**
+   * Envoyer depuis l'accueil **crée la session d'abord**.
+   *
+   * C'est le premier message qui fait naître la session, sans qu'on ait à cliquer « New session »
+   * avant d'écrire. L'ordre compte : `send()` écrit dans la session **ouverte**, donc elle doit
+   * exister avant l'envoi.
+   */
+  const sendFromHome = async (event?: { preventDefault: () => void }) => {
+    event?.preventDefault()
+    if (!draft().trim() && attachments().length === 0) return
+    await createSession()
+    if (!active()) return
+    await send()
+  }
+
+  /**
+   * L'accueil, quand **aucune session n'est ouverte**.
+   *
+   * Avant, une phrase — « Pick a session, or start one. » — c'est-à-dire du vide avec une consigne.
+   * Or c'est le premier écran qu'on voit, et l'endroit où l'on écrit son premier message : il doit
+   * porter ce qu'il faut pour **commencer**, pas dire où cliquer.
+   *
+   * Le champ **réutilise les classes du compositeur** (`.composer-field`, `.composer-input`,
+   * `.composer-bar`) : le calque du markdown n'est aligné avec le curseur que parce que les deux
+   * partagent leurs métriques. Les redéclarer ici les ferait dériver dès la première retouche d'un
+   * seul côté.
+   */
+  const renderHome = () => (
+    <div class="home">
+      <div class="home-inner">
+        <div class="home-head">
+          <h1 class="home-title">Into the Unknown</h1>
+          <p class="home-sub">Describe what you want done. The folder decides which project it joins.</p>
+        </div>
+
+        {/* Le dossier **avant** le champ : c'est lui qui décide à quel projet la session appartiendra,
+            et il ne se change plus sans rouvrir une session. */}
+        <div class="home-picks">
+          <label class="home-folder" title="Working directory — the new session joins this project">
+            <span class="home-icon">⌂</span>
+            <input
+              type="text"
+              list="oc-workspaces"
+              placeholder={serverPath() ?? "server directory"}
+              value={directory()}
+              onChange={(event) => applyDirectory(event.currentTarget.value)}
+            />
+          </label>
+        </div>
+
+        <form class="home-composer" onSubmit={(event) => void sendFromHome(event)}>
+          <div class="composer-field">
+            <ComposerMarkup text={draft()} />
+            <textarea
+              class="composer-input"
+              rows="3"
+              placeholder="Describe what you want to build, / commands, @ files"
+              value={draft()}
+              onInput={(event) => setDraft(event.currentTarget.value)}
+            />
+          </div>
+          <Show when={attachError()}>{(message) => <p class="error">{message()}</p>}</Show>
+          <div class="composer-bar">
+            <label class="attach" title="Attach files">
+              +
+              <input
+                class="hidden-input"
+                type="file"
+                multiple
+                onChange={(event) => {
+                  void addFiles(event.currentTarget.files)
+                  // Remis à zéro pour qu'attacher deux fois le même fichier soit possible.
+                  event.currentTarget.value = ""
+                }}
+              />
+            </label>
+            {/* Le modèle et l'agent se choisissent **ici** : ils partent avec le premier message, donc
+                les choisir après coup serait les choisir trop tard. */}
+            <div class="composer-picks">
+              <Picker
+                choices={modelOptions()}
+                value={composerModel()}
+                placeholder="Default model"
+                label="model"
+                onOpen={() => void loadModelCatalog()}
+                onChange={setComposerModel}
+              />
+              <Picker
+                choices={agentOptions()}
+                value={composerAgent()}
+                placeholder="Default agent"
+                label="agent"
+                onOpen={() => void loadAgentOptions()}
+                onChange={setComposerAgent}
+              />
+            </div>
+            <span class="spacer" />
+            <button
+              class="send"
+              type="submit"
+              title="Send"
+              aria-label="Send"
+              disabled={!draft().trim() && attachments().length === 0}
+            >
+              <SendIcon />
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+
   const renderTurn = (turn: TurnView) => (
     <>
       <Show when={turn.prompt.length > 0}>
@@ -1939,7 +2051,7 @@ export default function App() {
           </div>
         </Show>
 
-        <Show when={active()} fallback={<p class="empty">Pick a session, or start one.</p>}>
+        <Show when={active()} fallback={renderHome()}>
           {/* La barre des **vues**, au-dessus du chat. Elle commute le contenu du panneau principal
               — la conversation ou le journal — comme les dialogues du TUI. Elle est ici, et non dans
               le rail, parce que c'est le contenu du chat qu'elle remplace : on la cherche là où l'on

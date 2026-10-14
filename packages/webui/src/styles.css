@@ -1264,6 +1264,101 @@ textarea {
   color: var(--text-3);
 }
 
+/* ---- L'accueil, quand aucune session n'est ouverte ----
+
+   Il porte ce qu'il faut pour **commencer**, et rien d'autre : un titre, le dossier où la session
+   naîtra, et le champ. Pas de statistiques (il n'y a rien à mesurer), pas de fil (il n'y en a pas),
+   pas de barre de vues (il n'y a rien à commuter) — le rare ne s'affiche pas au repos.
+
+   Le champ **réutilise les classes du compositeur** (`.composer-field`, `.composer-input`,
+   `.composer-bar`) : le calque du markdown n'est aligné avec le curseur que parce que les deux
+   partagent leurs métriques. Les redéclarer ici les ferait dériver dès la première retouche d'un
+   seul côté. Seule la boîte qui les entoure appartient à l'accueil. */
+
+.home {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  overflow-y: auto;
+  padding: 32px var(--gutter);
+}
+
+.home-inner {
+  width: 100%;
+  max-width: 720px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.home-title {
+  margin: 0;
+  color: var(--text-1);
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-align: center;
+}
+
+.home-sub {
+  margin: 6px 0 0;
+  color: var(--text-3);
+  font-size: var(--fs-note);
+  text-align: center;
+}
+
+/* Le dossier : une **pastille**. Il se change rarement, et une fois choisi il ne dispute pas la
+   vedette au champ — c'est le champ, le geste. */
+.home-picks {
+  display: flex;
+  justify-content: center;
+}
+
+.home-folder {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 5px 12px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  color: var(--text-2);
+}
+
+.home-folder:focus-within {
+  border-color: var(--text-3);
+}
+
+.home-folder input {
+  width: 260px;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--fs-note);
+}
+
+.home-folder input:focus {
+  outline: none;
+}
+
+.home-icon {
+  color: var(--text-3);
+}
+
+.home-composer {
+  padding: 10px 12px;
+  border: 1px solid var(--line-2);
+  border-radius: 16px;
+  background: var(--bg-1);
+}
+
+.home-composer:focus-within {
+  border-color: var(--text-3);
+}
+
 .turn {
   display: flex;
   flex-direction: column;
