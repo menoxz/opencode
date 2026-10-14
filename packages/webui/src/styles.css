@@ -1596,6 +1596,56 @@ textarea {
   white-space: nowrap;
 }
 
+/* ---- La liste de suggestions du champ (`/` et `@`) ----
+
+   Elle vit **dans la boîte du champ, au-dessus de lui** : elle pousse le champ vers le bas au lieu de
+   le recouvrir. Un menu flottant cacherait justement la ligne qu'on est en train d'écrire — et c'est
+   cette ligne qu'on relit pour choisir. */
+
+.suggest {
+  display: flex;
+  flex-direction: column;
+  max-height: 220px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line-2);
+}
+
+.suggest-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 5px 8px;
+  border-radius: 6px;
+  text-align: left;
+  font-size: var(--fs-note);
+  color: var(--text-1);
+}
+
+.suggest-row.is-active {
+  background: #ffffff0f;
+}
+
+.suggest-name {
+  flex: none;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.suggest-detail {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-3);
+  font-size: var(--fs-meta);
+}
+
 /* ---- Zone 5 — le tiroir droit : uniquement quand l'agent attend une décision ---- */
 
 /* Fermé, le tiroir ne peint rien : sa piste est à 0, mais un `border-left` dessinerait quand même

@@ -85,6 +85,20 @@ import {
 import { Picker } from "./picker"
 import { SendIcon } from "./icons"
 import {
+  commandChoices,
+  commandInsert,
+  fileInsert,
+  filterCommands,
+  historyStep,
+  isDoubleEscape,
+  mentionQuery,
+  nextChoice,
+  promptHistory,
+  replaceRange,
+  slashQuery,
+  type CommandChoice,
+} from "./composer-keys"
+import {
   agentCounts,
   agentRows,
   agentSummary,
@@ -214,6 +228,29 @@ export default function App() {
     }
   })
   const [shellOptions, setShellOptions] = createSignal<Choice[]>([])
+  /**
+   * Le menu de suggestions de la saisie : les commandes (`/`) ou les fichiers (`@`).
+   *
+   * Il vit **au-dessus du champ**, dans la même boîte : c'est le clavier qui le pilote, donc il doit
+   * être à portée de regard sans faire quitter le champ des yeux.
+   */
+  const [menu, setMenu] = createSignal<"commands" | "files" | undefined>()
+  const [menuIndex, setMenuIndex] = createSignal(0)
+  /**
+   * Les commandes, lues à la **première** frappe de `/` seulement — `GET /command` pèse 1,95 Mo de
+   * gabarits dont la liste n'affiche que le nom et la description.
+   */
+  const [commandOptions, setCommandOptions] = createSignal<CommandChoice[]>([])
+  const [fileOptions, setFileOptions] = createSignal<string[]>([])
+  /** La mention en cours : son intervalle, pour remplacer le **mot entier** et pas le seul curseur. */
+  const [mentionRange, setMentionRange] = createSignal<{ start: number; end: number } | undefined>()
+  /** La position dans l'historique des prompts ; `-1` = un brouillon neuf. */
+  const [historyIndex, setHistoryIndex] = createSignal(-1)
+  /** Le champ, pour reposer le curseur après un remplacement. */
+  let input: HTMLTextAreaElement | undefined
+  /** L'instant du dernier `Échap` — un `let`, pas un signal : rien ne l'affiche. */
+  let lastEscape: number | undefined
+  let fileTimer: ReturnType<typeof setTimeout> | undefined
   const [query, setQuery] = createSignal("")
   const [renaming, setRenaming] = createSignal<string | undefined>()
   const [renameDraft, setRenameDraft] = createSignal("")
@@ -411,11 +448,184 @@ export default function App() {
   }
 
   /** Les agents proposables — payés à la première ouverture du choix, pas au montage. */
-  const loadAgentOptions = async () => {
-    if (agentOptions().length > 0) return
+  const loadAgentOptions = async (): Promise<Choice[]> => {
+    if (agentOptions().length > 0) return agentOptions()
     const result = await client.app.agents(scope()).catch(() => undefined)
     const data = (result as { data?: Agent[] } | undefined)?.data
-    setAgentOptions(agentChoices(data))
+    const choices = agentChoices(data)
+    setAgentOptions(choices)
+    return choices
+  }
+
+  /** Les commandes du serveur — lues une fois, à la première frappe de `/`. */
+  const loadCommands = async () => {
+    if (commandOptions().length > 0) return
+    const result = await client.command.list(scope()).catch(() => undefined)
+    setCommandOptions(commandChoices((result as { data?: unknown } | undefined)?.data))
+  }
+
+  /** Les fichiers qui correspondent à une mention. Borné à 20 : une liste plus longue ne se lit pas. */
+  const loadFiles = async (query: string) => {
+    const result = await client.find.files({ query, limit: 20, ...scope() }).catch(() => undefined)
+    const data = (result as { data?: unknown } | undefined)?.data
+    setFileOptions(Array.isArray(data) ? data.filter((path): path is string => typeof path === "string") : [])
+  }
+
+  /**
+   * Recale le menu sur ce qui est écrit et sur la position du curseur.
+   *
+   * Appelé à la frappe et après un déplacement du curseur, plutôt que depuis un `createEffect` : la
+   * position du curseur n'est pas un signal, et en fabriquer un pour ça obligerait à le tenir à jour
+   * sur chaque `clic`, `sélection` et `Tab` — c'est-à-dire à reproduire ce que le champ sait déjà.
+   *
+   * La recherche de fichiers est **temporisée** : une requête par frappe serait une requête par
+   * caractère, alors que la réponse ne sert qu'à la liste qu'on regarde.
+   */
+  const refreshMenu = (text: string, caret: number) => {
+    const slash = slashQuery(text)
+    if (slash !== undefined) {
+      clearTimeout(fileTimer)
+      setMenu("commands")
+      setMenuIndex(0)
+      void loadCommands()
+      return
+    }
+    const mention = mentionQuery(text, caret)
+    if (mention) {
+      setMentionRange({ start: mention.start, end: mention.end })
+      setMenu("files")
+      setMenuIndex(0)
+      clearTimeout(fileTimer)
+      fileTimer = setTimeout(() => void loadFiles(mention.query), 150)
+      return
+    }
+    clearTimeout(fileTimer)
+    setMentionRange(undefined)
+    setMenu(undefined)
+  }
+
+  /** Ce que la liste ouverte propose, déjà réduit à deux colonnes : le nom, et le détail s'il y en a. */
+  const suggestions = createMemo(() => {
+    if (menu() === "commands") {
+      return filterCommands(commandOptions(), slashQuery(draft()) ?? "").map((command) => ({
+        name: `/${command.name}`,
+        detail: command.description ?? command.source,
+      }))
+    }
+    return fileOptions().map((path) => ({ name: path, detail: undefined as string | undefined }))
+  })
+
+  /**
+   * Choisir une suggestion.
+   *
+   * Une commande **remplace tout le texte** : elle s'écrit en tête, et il n'y a donc rien à conserver
+   * avant elle. Une mention, elle, remplace **son mot** — `lis @src/a.ts et compare` garde sa phrase.
+   */
+  const acceptSuggestion = (index: number) => {
+    if (menu() === "commands") {
+      const command = suggestions()[index]
+      if (!command) return
+      setDraft(commandInsert(command.name.replace(/^\//, "")))
+      setMenu(undefined)
+      input?.focus()
+      return
+    }
+    const path = fileOptions()[index]
+    const range = mentionRange()
+    if (!path || !range) return
+    const edit = replaceRange(draft(), range.start, range.end, fileInsert(path))
+    setDraft(edit.text)
+    setMenu(undefined)
+    setMentionRange(undefined)
+    // Le curseur se repose **après** le rendu : `setSelectionRange` s'applique au texte déjà posé.
+    queueMicrotask(() => {
+      input?.focus()
+      input?.setSelectionRange(edit.caret, edit.caret)
+    })
+  }
+
+  /**
+   * Arrêter le travail en cours.
+   *
+   * L'agent est bloqué sur sa boucle, et c'est le serveur qui le dit (`session.status` → `busy`) : on
+   * ne devine pas qu'il travaille, donc on ne devine pas non plus qu'il faut l'arrêter.
+   */
+  const abortRun = async () => {
+    const sessionID = active()
+    if (!sessionID) return
+    await client.session.abort({ sessionID, ...scope() }).catch((cause: unknown) => setError(String(cause)))
+  }
+
+  /**
+   * Le clavier du champ — dans l'ordre où les touches se disputent.
+   *
+   * Le menu **consomme** les flèches, `Entrée` et `Échap` tant qu'il est ouvert : sinon on déplacerait
+   * le curseur sous la liste, et `Entrée` enverrait le message au lieu de choisir la ligne.
+   */
+  const onComposerKey = (event: KeyboardEvent & { currentTarget: HTMLTextAreaElement }) => {
+    const element = event.currentTarget
+    const rows = suggestions()
+    if (menu() && rows.length > 0) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault()
+        setMenuIndex((index) => Math.min(index + 1, rows.length - 1))
+        return
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault()
+        setMenuIndex((index) => Math.max(index - 1, 0))
+        return
+      }
+      if (event.key === "Enter" || event.key === "Tab") {
+        event.preventDefault()
+        acceptSuggestion(menuIndex())
+        return
+      }
+      if (event.key === "Escape") {
+        event.preventDefault()
+        setMenu(undefined)
+        return
+      }
+    }
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault()
+      void send()
+      return
+    }
+    if (event.key === "Tab") {
+      // `Tab` change l'agent. La liste se charge au premier appui et le changement suit **ce même
+      // appui** : sans cela, la première pression ne ferait que charger la liste et il faudrait
+      // appuyer deux fois pour voir un changement — ce qui se lit comme une panne.
+      event.preventDefault()
+      void loadAgentOptions().then((choices) => setComposerAgent((current) => nextChoice(choices, current)))
+      return
+    }
+    if (event.key === "Escape") {
+      // Deux `Échap` rapprochés arrêtent le travail ; un seul n'a rien fait de plus (le menu est
+      // déjà fermé ci-dessus, ou il n'était pas ouvert).
+      const now = Date.now()
+      if (working() && isDoubleEscape(lastEscape, now)) {
+        lastEscape = undefined
+        void abortRun()
+        return
+      }
+      lastEscape = now
+      return
+    }
+    if (event.key === "ArrowUp" && element.selectionStart === 0 && element.selectionEnd === 0) {
+      event.preventDefault()
+      const step = historyStep(promptHistory(messages()), historyIndex(), "up")
+      setHistoryIndex(step.index)
+      setDraft(step.text)
+      return
+    }
+    if (event.key === "ArrowDown" && historyIndex() >= 0) {
+      event.preventDefault()
+      const step = historyStep(promptHistory(messages()), historyIndex(), "down")
+      setHistoryIndex(step.index)
+      setDraft(step.text)
+      return
+    }
   }
 
   const loadSessions = async () => {
@@ -1616,6 +1826,30 @@ export default function App() {
               {/* Le champ et son calque, dans une même boîte : le calque est **dessous**, à métriques
                   identiques, et le texte du champ est transparent. Le champ reste un `textarea` — le
                   seul contrôle qui garde un curseur, une sélection et le copier-coller du système. */}
+              {/* La liste des suggestions, **au-dessus** du champ : c'est le clavier qui la pilote,
+                  donc elle reste dans la même boîte et ne fait pas quitter le champ des yeux. */}
+              <Show when={menu() && suggestions().length > 0}>
+                <div class="suggest" role="listbox" aria-label={menu() === "commands" ? "commands" : "files"}>
+                  <For each={suggestions()}>
+                    {(entry, index) => (
+                      <button
+                        type="button"
+                        class="suggest-row"
+                        classList={{ "is-active": menuIndex() === index() }}
+                        role="option"
+                        aria-selected={menuIndex() === index()}
+                        onMouseEnter={() => setMenuIndex(index())}
+                        onClick={() => acceptSuggestion(index())}
+                      >
+                        <span class="suggest-name">{entry.name}</span>
+                        <Show when={entry.detail}>
+                          {(detail) => <span class="suggest-detail">{detail()}</span>}
+                        </Show>
+                      </button>
+                    )}
+                  </For>
+                </div>
+              </Show>
               <div class="composer-field">
                 <ComposerMarkup text={draft()} />
                 <textarea
@@ -1623,13 +1857,23 @@ export default function App() {
                   rows="2"
                   placeholder="Message, / commands, @ files"
                   value={draft()}
-                  onInput={(event) => setDraft(event.currentTarget.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" && !event.shiftKey) {
-                      event.preventDefault()
-                      void send()
+                  ref={(element: HTMLTextAreaElement) => (input = element)}
+                  onInput={(event) => {
+                    const value = event.currentTarget.value
+                    setDraft(value)
+                    // Toute frappe sort de l'historique : on écrit du neuf.
+                    setHistoryIndex(-1)
+                    refreshMenu(value, event.currentTarget.selectionStart)
+                  }}
+                  onKeyDown={onComposerKey}
+                  /* Le curseur qui se déplace sans frappe (flèches, `Home`, `End`) change aussi ce
+                     qu'une mention recouvre — mais seulement ces touches-là, pas toutes. */
+                  onKeyUp={(event) => {
+                    if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
+                      refreshMenu(draft(), event.currentTarget.selectionStart)
                     }
                   }}
+                  onClick={(event) => refreshMenu(draft(), event.currentTarget.selectionStart)}
                 />
               </div>
               <div class="composer-bar">
@@ -1678,7 +1922,7 @@ export default function App() {
                 </button>
               </div>
             </div>
-            <ComposerStats stats={stats()} contextLimit={modelLimits()[composerModel()]} />
+            <ComposerStats stats={stats()} contextLimit={modelLimits()[composerModel()]} working={working()} />
           </form>
         </Show>
       </main>

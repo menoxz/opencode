@@ -919,7 +919,7 @@ export function SessionPanel(props: { stats: SessionStats }) {
       ferait croire à une fenêtre vide.
    ============================================================================= */
 
-export function ComposerStats(props: { stats: SessionStats; contextLimit?: number }) {
+export function ComposerStats(props: { stats: SessionStats; contextLimit?: number; working?: boolean }) {
   const rate = () => formatRate(tokensPerSecond(props.stats))
   const cached = () => formatPercent(cacheHitRate(props.stats))
   const fill = () => formatPercent(contextFill(props.stats.contextTokens, props.contextLimit))
@@ -968,6 +968,13 @@ export function ComposerStats(props: { stats: SessionStats; contextLimit?: numbe
               {value()} context
             </span>
           )}
+        </Show>
+        {/* L'arrêt n'est **pas** un bouton au repos : il ne s'affiche que pendant que l'agent
+            travaille, et il dit la touche plutôt que de laisser la deviner. */}
+        <Show when={props.working}>
+          <span class="stat stop-hint" title="Press Escape twice to stop the agent">
+            esc esc to stop
+          </span>
         </Show>
       </div>
     </Show>
