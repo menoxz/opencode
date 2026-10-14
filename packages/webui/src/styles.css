@@ -183,6 +183,51 @@ textarea {
   text-transform: uppercase;
 }
 
+/* L'**entrée courte** : une ligne, un compte, un chevron. Elle remplace une liste dépliée en
+   permanence — le rail appartient aux sessions, qui sont le quotidien, pas aux plugins, qu'on
+   ouvre rarement. La forme vient de la référence ; les boutons restent derrière elle. */
+.rail-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border-radius: 6px;
+  color: var(--text-2);
+  font-size: var(--fs-base);
+  text-align: left;
+}
+
+.rail-entry:hover {
+  color: var(--text-1);
+  background: #ffffff0a;
+}
+
+.rail-entry-chevron {
+  flex: none;
+  display: inline-block;
+  color: var(--text-3);
+  transition: transform 0.12s ease;
+}
+
+.rail-entry.open .rail-entry-chevron {
+  transform: rotate(90deg);
+}
+
+.rail-entry-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rail-entry-count {
+  flex: none;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
 .plugin-row {
   display: flex;
   align-items: center;

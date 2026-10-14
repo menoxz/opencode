@@ -305,6 +305,15 @@ export default function App() {
   let lastEscape: number | undefined
   let fileTimer: ReturnType<typeof setTimeout> | undefined
   const [query, setQuery] = createSignal("")
+  /**
+   * Les plugins sont **repliés** au repos.
+   *
+   * Quatre boutons ouverts occupaient une bande entière du rail pour une action qu'on déclenche
+   * rarement — et cette bande est la place des sessions, qui sont le quotidien. DSH montre une
+   * **entrée courte** ; on prend la forme, en gardant les boutons derrière elle : l'accès reste
+   * direct, il cesse simplement de se payer au repos.
+   */
+  const [pluginsOpen, setPluginsOpen] = createSignal(false)
   const [renaming, setRenaming] = createSignal<string | undefined>()
   const [renameDraft, setRenameDraft] = createSignal("")
   // Confirmation en ligne : un `window.confirm` natif ne se style pas et bloque tout pilotage.
@@ -1853,18 +1862,34 @@ export default function App() {
           </button>
         </div>
 
-        {/* 2 — Les plugins : un bouton par plugin. La section **n'existe pas** s'il n'y en a aucun. */}
+        {/* 2 — Les plugins, en **une entrée courte**. Le rail appartient aux sessions ; une liste
+            dépliée en permanence y prenait la place du quotidien pour une action rare. La section
+            **n'existe pas** s'il n'y a aucun plugin. */}
         <Show when={pluginEntries(plugins()).length > 0}>
           <div class="rail-plugins">
-            <span class="rail-label">plugins</span>
-            <For each={pluginEntries(plugins())}>
-              {(entry) => <PluginButton label={entry.label} hint={entry.hint} />}
-            </For>
+            <button
+              class="rail-entry"
+              classList={{ open: pluginsOpen() }}
+              title="Plugins loaded in this workspace"
+              onClick={() => setPluginsOpen(!pluginsOpen())}
+            >
+              <span class="rail-entry-chevron">›</span>
+              <span class="rail-entry-label">plugins</span>
+              <span class="rail-entry-count">{pluginEntries(plugins()).length}</span>
+            </button>
+            <Show when={pluginsOpen()}>
+              <For each={pluginEntries(plugins())}>
+                {(entry) => <PluginButton label={entry.label} hint={entry.hint} />}
+              </For>
+            </Show>
           </div>
         </Show>
 
-        {/* B — Workspaces : la seule partie qui défile. */}
+        {/* B — Workspaces : la seule partie qui défile. Le libellé **nomme** le groupe, comme dans
+            la référence : sans lui, la recherche flottait au-dessus d'une liste de dossiers dont
+            rien ne disait ce qu'ils étaient. */}
         <div class="rail-workspaces">
+          <span class="rail-label">workspaces</span>
           <input
             class="search"
             type="search"

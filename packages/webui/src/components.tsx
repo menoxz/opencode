@@ -129,7 +129,7 @@ export function ShowMore(props: { hidden: number; expanded: boolean; onToggle: (
   return (
     <button class="show-more" onClick={() => props.onToggle()}>
       <ChevronIcon size={11} open={props.expanded} />
-      <span>{props.expanded ? "show less" : `show more · ${props.hidden}`}</span>
+      <span>{props.expanded ? "show less" : `show ${props.hidden} more sessions`}</span>
     </button>
   )
 }
