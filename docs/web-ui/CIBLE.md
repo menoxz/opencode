@@ -584,8 +584,29 @@ Quatre règles, toutes reprises de DSH :
 2. **Le raisonnement et les étapes s'atténuent** : ils encadrent le travail, ils ne le sont pas.
 3. **La durée apparaît quand la fin est connue** — `(…)` pour un travail en cours, rien quand il n'y a
    pas de paire à mesurer.
-4. **Les filtres de type** — `all`, `tool`, `thinking`, `message`, `progress` — découpent la timeline
-   sans la réordonner.
+4. **Les filtres de type** découpent la timeline sans la réordonner.
+
+**Les libellés sont ceux de DSH, mot pour mot** — et une clé interne n'est pas un libellé. DSH tient
+les siens dans son `i18n.ts` (`trace-filter-*`) :
+
+| clé | libellé DSH |
+|---|---|
+| `all` | `all` |
+| `tool` | **`tools`** |
+| `thinking` | `thinking` |
+| `message` | **`messages`** |
+| `progress` | `progress` |
+
+Le pluriel est **dans DSH**, ce n'est pas une fantaisie de traduction : afficher `tool` là où DSH dit
+`tools` serait déjà une divergence. Même exigence pour l'en-tête — le titre est **`Trace`**, et le
+sous-titre est son gabarit exact : `Session event timeline · filter: <libellé> · <n> entries`. Le
+message vide est le sien : `No trace events yet`.
+
+**Une seule divergence, volontaire :** DSH cache ses filtres derrière la touche `f` et affiche une
+ligne d'aide (`↑/↓ PgUp/PgDn g/G to scroll · f to filter · Esc/q to close`), parce qu'un terminal n'a
+pas la place. Un navigateur l'a : les filtres sont des **boutons visibles**, et cette ligne d'aide
+serait un mensonge — ces touches n'existent pas ici. Rendre visible ce que DSH cache derrière une touche
+est la traduction fidèle de la même information, pas un écart de design.
 
 **Le contexte injecté n'est pas un prompt.** DSH est explicite : « Only direct human prompts are
 trajectory items; injected context … mirrors the transcript's filtering ». Chez nous le contexte

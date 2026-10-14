@@ -2815,10 +2815,25 @@ vitest run     -> 18 fichiers, 495 tests, exit 0
 tsgo --noEmit  -> exit 0
 ```
 
-Au navigateur (instance isolée 5181) : titre `Trajectory`, compteur `5 lines`, filtres
-`[all*, tool, thinking, message, progress]`, lignes `▶ turn 1 (7m23s)` · `❯ Use the question tool…` ·
-`∙ turn 1 · step 1 (1.2s)` · `✻ Simple: call question tool…` · `⏺ question (7m16s)` en rouge,
-`font-family: "JetBrains Mono", ui-monospace, monospace`. Aucune erreur de console.
+Au navigateur (instance isolée 5181) : titre `Trace`, sous-titre `Session event timeline · filter: all ·
+1562 entries`, filtres `[all*, tools, thinking, messages, progress]`, lignes `▶ turn 1 (1m50s)` ·
+`❯ Nous allons poursuivre…` · `∙ turn 1 · step 1 (3.0s)` · `✻ The user wants me to…` ·
+`⏺ bash Shows working tree status… (13ms)` en vert, `font-family: "JetBrains Mono", ui-monospace,
+monospace`. Clic sur `tools` -> `filter: tools · 607 entries`. Aucune erreur de console.
+
+### Les libellés, mot pour mot
+
+`7dedc683a`. Ma première version **inventait** ses libellés (« Trajectory », « 7 lines »,
+« tool », « message », « No trajectory lines. »). J'ai ensuite lu l'`i18n.ts` de DSH : ce sont
+`Trace`, `Session event timeline · filter: {{filter}} · {{count}} entries`, `tools`, `messages`,
+`No trace events yet`. Le pluriel est **dans DSH** — une clé interne (`tool`) n'est pas un libellé, et
+confondre les deux suffisait à diverger. Alignés.
+
+**Une divergence assumée** : DSH cache ses filtres derrière `f` et affiche
+`↑/↓ PgUp/PgDn g/G to scroll · f to filter · Esc/q to close`. Ces touches n'existent pas dans un
+navigateur : reprendre la ligne d'aide aurait été un **faux affordance**. Les filtres sont donc des
+boutons visibles — ce que DSH cache faute de place, ici montré faute de raison de le cacher.
+
 
 
 
