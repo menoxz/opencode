@@ -226,6 +226,23 @@ export function GearIcon(props: { size?: number }) {
   )
 }
 
+/**
+ * Statistiques : des barres sur une ligne de base.
+ *
+ * Une icône doit dire ce que le bouton **ouvre**, et rien d'autre. Le bouton porte d'abord eu une
+ * icône de liste (trois traits) : mesurée sur la capture du rail, elle se lit comme un **menu** —
+ * une forme universellement comprise comme « afficher la navigation ». Des barres de hauteurs
+ * différentes se lisent comme une **mesure**, qui est exactement ce que la section contient.
+ */
+export function ChartIcon(props: { size?: number }) {
+  return (
+    <Glyph size={props.size ?? 13}>
+      <path d="M4 20h16" />
+      <path d="M8 20v-6M12 20v-10M16 20v-4" />
+    </Glyph>
+  )
+}
+
 /* =============================================================================
    Les trois états d'un geste de copie.
 

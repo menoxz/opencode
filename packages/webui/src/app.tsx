@@ -85,7 +85,7 @@ import {
   toggleModel,
 } from "./settings"
 import { FolderPicker, Picker } from "./picker"
-import { FolderPlusIcon, GearIcon, ListIcon, SearchIcon, SendIcon } from "./icons"
+import { ChartIcon, FolderPlusIcon, GearIcon, SearchIcon, SendIcon } from "./icons"
 import { TrajectoryView } from "./trajectory-view"
 import {
   commandChoices,
@@ -2106,7 +2106,7 @@ export default function App() {
                 setDrawerOpen(drawerOpen() && drawerTab() === "session" ? false : true)
               }}
             >
-              <ListIcon size={13} />
+              <ChartIcon size={13} />
               <span>stats</span>
             </button>
             <button

@@ -3075,6 +3075,20 @@ La ligne de dossier et son bouton étaient décalés de **3 px** : l'air du grou
 l'icône voisine. Corrigé en `margin-top: 8px` sur `.workspace` — ce qui est aussi la règle du §3.7
 (l'air se met **au-dessus** de ce qui ouvre un bloc, jamais dans une boîte). Mesuré après : **1 px**.
 
+### Et une icône qui disait autre chose
+
+La capture du pied, lue après correction, a montré ce que les mesures ne pouvaient pas dire : le bouton
+`stats` portait une icône de **liste** (trois traits horizontaux) — la forme que tout le monde lit comme
+« menu », c'est-à-dire « afficher la navigation ». Mesuré : la même icône sert dans `trajectory-view`
+pour l'onglet `Turns`, où elle est juste ; au pied du rail, elle promettait un menu.
+
+Remplacée par `ChartIcon` — une ligne de base et trois barres de hauteurs différentes, soit **une
+mesure**, qui est exactement ce que la section contient. Deux tracés, trait 1,6, comme les autres.
+
+⇒ **La remarque sur l'icône s'appliquait aux deux boutons, pas seulement à celui qu'elle nommait.** Le
+défaut se voit sur une capture et jamais dans une mesure de position : c'est la **lisibilité** de la
+forme, et elle ne se vérifie qu'en regardant.
+
 
 
 
