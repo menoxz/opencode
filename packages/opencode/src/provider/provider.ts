@@ -194,6 +194,20 @@ export function custom(dep: CustomDep): Record<string, CustomLoader> {
           if (value.cost.input === 0) continue
           delete input.models[key]
         }
+      } else {
+        // Even with a credential, the cost-0 models cannot answer: they are the
+        // anonymous free tier, which the server refuses to every client but the
+        // official one (measured 2026-10-15 three ways — no credential, a valid
+        // Zen key created on the account, and the official 1.18.58 client on an
+        // isolated config — all answering 403 FreeTierError; a third sample,
+        // `ling-3.0-flash-fin-free`, answers 400 `Model is unavailable`). The
+        // paid models stay: they answer as soon as the account holds funds (402
+        // `Insufficient account funds` until then). Offering a model that can
+        // never reply is worse than not offering it, so it is dropped here.
+        for (const [key, value] of Object.entries(input.models)) {
+          if (value.cost.input > 0) continue
+          delete input.models[key]
+        }
       }
 
       return {
