@@ -3226,6 +3226,71 @@ pour `/folder`, donc le parcours n'y apparaîtra qu'après redémarrage — je n
 n'appartient pas à cette session. Le **binaire publié** demande également un rebuild (`skill
 fork-build`) : la route existe dans les sources, pas encore dans `opencodev2.exe`.
 
+---
+
+## Lot 17 — la typographie : une échelle écrite n'est pas une échelle appliquée (livré)
+
+Dernière remarque du retour d'usage : « de façon globale la typo et les tailles surtout d'icône ne
+sont pas conventionnelles ». Les icônes avaient reçu leur échelle au lot 15 ; la **typographie**,
+non — et la mesure a montré pourquoi, ce qui n'était pas la raison attendue.
+
+### Ce que la mesure a dit
+
+**L'échelle existait déjà, et elle était documentée.** Le bloc `:root` portait quatre jetons et un
+commentaire citant lui-même une mesure antérieure (« 8 valeurs en px distinctes, 56 déclarations,
+base de fait a 12,5 px »). Donc quelqu'un avait déjà fait le travail de conception — et le résultat
+n'y ressemblait pas :
+
+| ce qui était déclaré | ce qui était appliqué |
+|---|---|
+| 4 jetons : `--fs-title` 16, `--fs-base` 14, `--fs-note` 13, `--fs-meta` 12 | **9 valeurs distinctes** : les 4 jetons, plus `9px` ×3, `10px`, `0.92em`, `1.5rem` |
+| rien pour l'interlignage | **8 valeurs distinctes** : 1, 1.25, 1.3, 1.35, 1.5, 1.55, 1.6, 1.75 |
+| — | `var(--fs-label)` utilisé **2 fois**… et **défini nulle part** |
+| `--mono` défini | `var(--font-mono, …)` utilisé **3 fois** — un jeton qui **n'existe pas** |
+
+**Le symptôme arrive formulé « ce n'est pas conventionnel », et c'est exactement ce qu'il est** :
+il n'y a pas de règle visible dans le *résultat*, même quand la règle est écrite dans le *fichier*.
+
+### Deux modes de défaillance silencieux
+
+1. **Un jeton référencé mais non défini ne produit aucune erreur.** `var(--fs-label)` fait simplement
+   **hériter** la règle : la taille est celle du parent, qui n'a jamais été choisie pour elle. Rien
+   ne le signale — ni le typecheck, ni le lint, ni l'œil, puisque la valeur obtenue est plausible.
+2. **Un jeton avec liste de repli fonctionne tout en étant faux.** `var(--font-mono, ui-monospace,
+   "JetBrains Mono", …)` s'affiche correctement, mais duplique la famille **à la main**, et en deux
+   ordres différents selon la règle. Deux écritures d'une même décision.
+
+### Ce qui est livré
+
+| | avant | après |
+|---|---|---|
+| tailles | 9 valeurs | **4 jetons** + `--fs-display` (le titre de page, seul niveau au-dessus) + `0.9em` (relatif **exprès**, pour un extrait de code dans un titre) |
+| interlignages | 8 valeurs | **3 jetons** (`--lh-tight` 1.25 · `--lh-normal` 1.5 · `--lh-prose` 1.6) + `1` pour les **glyphes** |
+| jetons fantômes | `--fs-label`, `--font-mono` | **0** |
+
+Les six valeurs orphelines sont rentrées sur l'échelle par leur **rôle**, pas par ressemblance :
+`--fs-label` (deux listes de contenu) → `--fs-base` ; les trois `9px` et le `10px` (badges, chevron,
+case à cocher) → `--fs-meta` ; le titre de page `1.5rem` → `--fs-display` ; `0.92em` → `0.9em`.
+
+### Preuve
+
+```
+packages/webui : tsgo --noEmit -> exit 0 ; vitest -> 22 fichiers, 572 tests
+relevé après   : --fs-label 0 · --font-mono 0
+                 tailles : meta 64 · note 47 · base 45 · title 4 · display 1 · 0.9em 1
+                 interlignages : lh-normal 7 · lh-prose 6 · lh-tight 4 · 1 (glyphes) 4
+```
+
+### La règle
+
+**Une échelle écrite mais non appliquée n'est pas une échelle** — c'est un commentaire. Ce qui se
+vérifie n'est pas l'intention du fichier mais le **nombre de valeurs distinctes** qu'il contient :
+compter suffit à trancher, et personne ne le fait.
+
+Et surtout : **un jeton référencé mais non défini ne dit rien.** Il hérite, silencieusement, une
+taille que personne n'a choisie. ⇒ Un inventaire des jetons **utilisés** contre les jetons **définis**
+est la seule façon de le voir.
+
 
 
 
