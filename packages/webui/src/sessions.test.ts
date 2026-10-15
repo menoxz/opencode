@@ -160,7 +160,6 @@ describe("regroupement par workspace", () => {
 
   test("une session est rattachée au projet qui la contient, pas à son sous-chemin", () => {
     const groups = groupByWorkspace([inPackages], projects, "")
-    expect(groups).toHaveLength(1)
     expect(groups[0]?.label).toBe("opencode-fork")
     expect(groups[0]?.key).toBe("c:/jeanluc/opencode-fork")
     expect(groups[0]?.sessions).toHaveLength(1)
@@ -168,7 +167,10 @@ describe("regroupement par workspace", () => {
 
   test("le projet le plus long gagne", () => {
     const nested = [...projects, "C:\\jeanluc\\opencode-fork\\packages\\opencode"]
-    expect(groupByWorkspace([inPackages], nested, "")[0]?.label).toBe("opencode")
+    // Tous les projets connus figurent dans la liste : c'est donc celui qui **porte la session**
+    // qu'on interroge, pas le premier affiché.
+    const carrier = groupByWorkspace([inPackages], nested, "").find((group) => group.sessions.length > 0)
+    expect(carrier?.label).toBe("opencode")
   })
 
   test("le courant se reconnaît par préfixe — on travaille dans un sous-dossier du workspace", () => {
@@ -188,8 +190,11 @@ describe("regroupement par workspace", () => {
   test("une session hors de tout projet connu retombe sur son propre dossier", () => {
     const orphan: SessionSummary = { id: "ses_orphan", directory: "D:\\ailleurs\\projet", path: "" }
     const groups = groupByWorkspace([orphan], projects, "")
-    expect(groups[0]?.label).toBe("projet")
-    expect(groups[0]?.key).toBe("d:/ailleurs/projet")
+    // Les projets connus figurent tous dans la liste : c'est donc le groupe qui **porte** la session
+    // qu'on interroge — pas le premier affiché.
+    const carrier = groups.find((group) => group.sessions.length > 0)
+    expect(carrier?.label).toBe("projet")
+    expect(carrier?.key).toBe("d:/ailleurs/projet")
   })
 
   test("l'ordre d'apparition est conservé, et les sessions se groupent", () => {
@@ -206,14 +211,21 @@ describe("regroupement par workspace", () => {
     ])
   })
 
-  test("aucune session : aucune liste, et pas de groupe fantôme", () => {
-    expect(groupByWorkspace([], projects, "C:/jeanluc/opencode-fork")).toEqual([])
+  test("tous les workspaces connus figurent, même sans session", () => {
+    // Règle corrigée le 2026-10-15 : la référence (DSH) montre **tous** ses projets et n'ouvre que
+    // le courant. La question « où ai-je travaillé ? » appelle aussi « où puis-je travailler ? ».
+    const groups = groupByWorkspace([], projects, "C:/jeanluc/opencode-fork")
+    expect(groups.map((group) => group.label)).toEqual(["opencode-fork", "boutikV2"])
+    expect(groups.every((group) => group.sessions.length === 0)).toBe(true)
   })
 
   test("les sessions sans dossier ne sont pas perdues", () => {
     // Repris de `groupByDirectory`, qu'on remplace : l'invariant survit au changement de regroupement.
+    // Elles se rassemblent dans **un** groupe — celui des sessions sans lieu — quels que soient les
+    // projets connus affichés à côté.
     const groups = groupByWorkspace([{ id: "a" }, { id: "b" }], projects, "")
-    expect(groups).toHaveLength(1)
-    expect(groups[0]?.sessions).toHaveLength(2)
+    const carrier = groups.filter((group) => group.sessions.length > 0)
+    expect(carrier).toHaveLength(1)
+    expect(carrier[0]?.sessions).toHaveLength(2)
   })
 })

@@ -3291,6 +3291,63 @@ Et surtout : **un jeton référencé mais non défini ne dit rien.** Il hérite,
 taille que personne n'a choisie. ⇒ Un inventaire des jetons **utilisés** contre les jetons **définis**
 est la seule façon de le voir.
 
+---
+
+## Lot 18 — DSH ouverte et regardée : ce que je n'avais pas imaginé (livré)
+
+Consigne reçue : « lance dsh et explore toi-même comment la navbar est construite, les
+fonctionnalités prévues et comment elle marche ; en comparant avec ce que tu as déjà fait tu
+découvriras ce à quoi tu n'as pas pensé — et évite de réfléchir en termes de code, l'utilisateur ne
+voit que l'interface et la maniabilité. »
+
+### Comment l'observation a été faite
+
+DSH est une application **Electron** (`C:\Users\jeanl\AppData\Local\Programs\DeepSeek Harness`), déjà
+lancée. Son arbre d'accessibilité ne rend **que des panneaux vides** (`RootView`, `View`, aucune
+étiquette) : une application Electron est opaque à l'introspection par éléments. ⇒ **Seule la capture
+d'écran dit quelque chose**, et c'est exactement le point de la consigne. La fenêtre était **réduite**
+(`GetWindowRect` = -32000), donc restaurée avant capture ; et le type P/Invoke persiste entre les
+appels du shell, donc son nom doit être unique — deux pièges payés une fois.
+
+### Ce que la barre de DSH montre, et ce que j'en retiens
+
+| ce que DSH fait | ce que le harnais faisait | à quoi je n'avais pas pensé |
+|---|---|---|
+| `Plugins` **et** `Automation tasks`, deux destinations avec icône, **sans compteur ni pli** | une seule entrée `plugins` **avec un compteur** | **une destination de premier niveau pour les tâches planifiées.** Je déclarais cette capacité impossible ; DSH montre la **place**, pas la fonction — et le harnais a déjà le plugin `schedule` |
+| La ligne `Workspaces` porte **trois** gestes : loupe, **curseurs**, dossier-plus | deux : recherche, ajout | un troisième contrôle, dont la fonction n'est pas vérifiable sans cliquer |
+| **Tous** les workspaces listés (sept), **seul le courant déplié** | seulement ceux portant une session | **ma règle était fausse** — corrigée ci-dessous |
+| Le pied est une **identité** : `DS Bot` + pastille d'état, `Signed in to DeepSeek` | paire de boutons `stats` / `settings` | le pied dit **qui vous êtes et à quoi vous êtes connecté** ; les réglages vivent dans la barre de menus de l'application |
+| Lignes de session : ni icône, ni flèche, ni badge — titre + âge (`2d`) ; `Show 10 more sessions` en **texte discret** | convergé au lot 15, sauf le « show more » **encadré** | la forme du « show more » : une ligne de texte, pas un bouton |
+| Le nom du produit porte un **badge** (`HARNESS`) | rien | distinguer plusieurs harnais |
+
+### La règle corrigée, et pourquoi c'est la plus importante
+
+**Tous les workspaces connus figurent dans la liste, même sans session.** C'était l'inverse chez moi
+— « un workspace vide est une ligne qui ne dit rien » (§8) — et je l'avais même inscrit dans la cible.
+DSH tranche autrement : sa liste montre ses **sept** projets et n'ouvre que le courant. La règle
+inverse était **la mienne**, pas celle de la référence, et elle **cachait à l'utilisateur des lieux
+où il peut travailler**.
+
+⇒ La question posée par la section n'est pas seulement « où ai-je travaillé ? », mais **« où puis-je
+travailler ? »**. Un espace de travail connu est une réponse, même vide.
+
+Effet mesuré : `groupByWorkspace` sème un groupe par projet connu **avant** d'y répartir les sessions ;
+le tri par longueur ne sert plus qu'au **rattachement** (`…\packages\opencode` gagne sur
+`…\opencode-fork`). Deux tests encodaient l'ancienne règle — réécrits en gardant leurs invariants
+(le groupe qui **porte** une session, et le rassemblement des sessions sans lieu).
+
+### Preuve
+
+```
+packages/webui : tsgo --noEmit -> exit 0 ; vitest -> 22 fichiers, 572 tests
+```
+
+### La leçon
+
+**Une règle d'interface se vérifie contre l'interface de la référence, jamais contre un raisonnement
+sur les données.** « Un workspace vide ne dit rien » était défendable dans l'abstraction — et faux
+devant un écran. Ce qu'on voit décide de ce qu'on peut faire.
+
 
 
 

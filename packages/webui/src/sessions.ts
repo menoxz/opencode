@@ -188,13 +188,41 @@ export function groupByWorkspace(
   const known = projects
     .filter((path) => typeof path === "string" && path.trim().length > 0)
     .map((path) => ({ path, key: pathKey(path) }))
-    // Du plus long au plus court : le premier qui contient le dossier est le bon.
-    .sort((a, b) => b.key.length - a.key.length)
 
+  /**
+   * **Tous les workspaces connus figurent dans la liste, même sans session.**
+   *
+   * Règle corrigée le 2026-10-15, après avoir **observé DSH** : sa liste montre *tous* ses projets
+   * (`DS Bot`, `mcp-servers`, `opencodev2`, `opencode-fork`, `auxiflow`, `jeanluc`,
+   * `deepseek_harness`) et n'ouvre que le courant. La règle inverse — « un workspace vide ne dit
+   * rien » — était **la mienne**, pas celle de la référence, et elle cachait à l'utilisateur des
+   * lieux où il peut justement travailler. C'est la question posée qui tranche : « où ai-je
+   * travaillé ? » appelle aussi « où puis-je travailler ? ».
+   *
+   * L'ordre est celui du serveur ; seul le **rattachement** d'une session a besoin du tri par
+   * longueur de chemin.
+   */
   const groups: WorkspaceGroup[] = []
   const index = new Map<string, WorkspaceGroup>()
+  for (const entry of known) {
+    if (index.has(entry.key)) continue
+    const group: WorkspaceGroup = {
+      key: entry.key,
+      label: leaf(entry.path),
+      hint: entry.path,
+      current: false,
+      sessions: [],
+    }
+    index.set(entry.key, group)
+    groups.push(group)
+  }
+
+  // Pour le rattachement seulement : du plus long au plus court, le premier qui contient le dossier
+  // est le bon (`…\opencode-fork\packages` doit gagner sur `…\opencode-fork`).
+  const matchable = [...known].sort((a, b) => b.key.length - a.key.length)
+
   for (const session of sessions) {
-    const home = known.find((entry) => within(pathKey(session.directory ?? ""), entry.key))
+    const home = matchable.find((entry) => within(pathKey(session.directory ?? ""), entry.key))
     const own = home ? undefined : groupOf(session)
     // La clé est **normalisée** dans les deux branches : deux écritures du même dossier (`C:/…` et
     // `C:\…`, relevé sur `GET /project`) doivent donner **un** groupe, pas deux.
