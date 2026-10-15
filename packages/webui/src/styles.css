@@ -401,12 +401,16 @@ textarea {
   margin-top: 6px;
 }
 
-/* « voir plus » / « voir moins » : une commande discrète, alignée sur les sessions qu'elle cache. */
+/* « voir plus » / « voir moins » : une commande discrète, alignée sur les sessions qu'elle cache.
+   Le retrait suit celui des lignes (`margin-left` identique) : à 22 px alors que les sessions étaient
+   passées à 12, la ligne du « show more » siégeait **10 px à droite** de celles qu'elle masque
+   (mesuré le 2026-10-15 : show-more à x=34, sessions à x=24), et son texte à 42 au lieu de 32.
+   Un défaut d'alignement, invisible dans un relevé par élément — les deux boîtes existaient. */
 .show-more {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-left: 22px;
+  margin-left: 12px;
   padding: 4px 8px;
   border-radius: 6px;
   color: var(--text-3);

@@ -3348,6 +3348,27 @@ packages/webui : tsgo --noEmit -> exit 0 ; vitest -> 22 fichiers, 572 tests
 sur les données.** « Un workspace vide ne dit rien » était défendable dans l'abstraction — et faux
 devant un écran. Ce qu'on voit décide de ce qu'on peut faire.
 
+### Addendum — un écart que j'avais inventé, et un vrai que la mesure a trouvé
+
+J'avais consigné comme écart ouvert : « *Show N more sessions* est un texte discret chez DSH, un
+**bouton encadré** de 170×29 px chez nous ». **C'était faux**, et la mesure le dit :
+
+```
+.show-more  -> bordure: 0px none | fond: rgba(0,0,0,0) | couleur: rgb(140,150,151) | 13px
+.row        -> bordure: 0px none | fond: rgba(0,0,0,0)
+```
+
+`.show-more` était **déjà** un texte discret, sans bordure ni fond. Je n'avais pas mesuré son
+apparence : j'avais mesuré sa **boîte** (170×29), et conclu un encadrement qu'aucune règle ne posait.
+⇒ **Une taille de boîte ne dit rien d'une apparence.** Un relevé par élément donne des rectangles ;
+`border`, `background` et `color` sont d'autres propriétés, et il faut les demander.
+
+Mais la même mesure a trouvé un défaut **réel**, du type que l'œil voit et qu'un relevé par élément
+manque : le « show more » siégeait à **x=34** quand les sessions qu'il masque sont à **x=24** (et son
+texte à 42 au lieu de 32). Cause : je les avais désalignés moi-même au lot 15, en passant les lignes
+de 22 px à 12 px **sans toucher** au « show more ». Corrigé : retrait identique, alignement sur les
+sessions que la commande masque.
+
 
 
 
