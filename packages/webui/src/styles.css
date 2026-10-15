@@ -2539,6 +2539,10 @@ textarea {
   flex: 1;
 }
 
+/* Le geste d'attache : un **cercle**, comme chez DSH, et une **icône dessinée**.
+   Il portait le caractère texte `+` : sa taille et son centrage dépendaient de la police, et à
+   16 px de glyphe il ne se lisait pas comme le cercle-plus de la référence. Mesuré sur pile neuve :
+   le caractère donnait `signe: "+"` et `icones: 0`. */
 .attach {
   position: relative;
   display: grid;
@@ -2547,7 +2551,6 @@ textarea {
   height: 26px;
   border-radius: 50%;
   color: var(--text-2);
-  font-size: var(--fs-title);
 }
 
 .attach:hover {

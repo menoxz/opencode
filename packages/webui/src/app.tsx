@@ -1784,7 +1784,7 @@ export default function App() {
           <Show when={attachError()}>{(message) => <p class="error">{message()}</p>}</Show>
           <div class="composer-bar">
             <label class="attach" title="Attach files">
-              +
+              <PlusIcon size={16} />
               <input
                 class="hidden-input"
                 type="file"
@@ -2307,7 +2307,7 @@ export default function App() {
               </div>
               <div class="composer-bar">
                 <label class="attach" title="Attach files">
-                  +
+                  <PlusIcon size={16} />
                   <input
                     class="hidden-input"
                     type="file"
