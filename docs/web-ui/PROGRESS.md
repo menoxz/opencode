@@ -3331,6 +3331,20 @@ où il peut travailler**.
 ⇒ La question posée par la section n'est pas seulement « où ai-je travaillé ? », mais **« où puis-je
 travailler ? »**. Un espace de travail connu est une réponse, même vide.
 
+> **Correction, même jour — cette règle est FAUSSE, et je l'ai défaite.** Vérifiée par l'utilisateur,
+> qui se sert de DSH tous les jours : **DSH masque les dossiers sans session.** J'avais lu une
+> *liste* — sept dossiers — et j'en avais tiré une *règle*. Ce qui précède est donc conservé comme la
+> trace de l'erreur, pas comme la règle. Conséquence mesurée du mauvais réglage : le rail affichait
+> **25** projets là où la référence en montre **7**, et la question « où ai-je travaillé ? » se noyait
+> dans « quels dossiers existent sur cette machine ? ». Défait dans `64157cbe4` : un groupe naît
+> d'une **session**. Le filtre par nom ajouté au même moment ne pouvait alors plus rien changer — un
+> groupe existe parce qu'une session y est entrée — donc il a été **retiré** plutôt que laissé inerte.
+>
+> ⇒ **La leçon, et elle est plus large que ce cas** : une liste observée n'est pas une règle. J'ai
+> déduit « tous les projets figurent » de « sept projets figurent » — une inférence sur une
+> observation partielle, prise pour une mesure, et assez confiante pour changer le comportement et
+> écrire dans la cible. Quand la règle n'est pas démontrable, il faut **la demander** à qui l'utilise.
+
 Effet mesuré : `groupByWorkspace` sème un groupe par projet connu **avant** d'y répartir les sessions ;
 le tri par longueur ne sert plus qu'au **rattachement** (`…\packages\opencode` gagne sur
 `…\opencode-fork`). Deux tests encodaient l'ancienne règle — réécrits en gardant leurs invariants
