@@ -1992,7 +1992,7 @@ export default function App() {
           </Show>
 
           <div class="rows">
-          <For each={groupByWorkspace(sessions(), projects(), directory())}>
+          <For each={groupByWorkspace(sessions(), projects(), directory(), query())}>
               {(group) => {
                 const split = () => splitSessions(group.sessions, Boolean(moreOpen()[group.key]))
                 return (

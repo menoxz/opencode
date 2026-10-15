@@ -211,23 +211,39 @@ describe("regroupement par workspace", () => {
     ])
   })
 
-test("tous les workspaces connus figurent, même sans session", () => {
-  // Règle corrigée le 2026-10-15 : la référence (DSH) montre **tous** ses projets et n'ouvre que
-  // le courant. La question « où ai-je travaillé ? » appelle aussi « où puis-je travailler ? ».
-  const groups = groupByWorkspace([], projects, "C:/jeanluc/opencode-fork")
-  expect(groups.map((group) => group.label)).toEqual(["opencode-fork", "boutikV2"])
-  expect(groups.every((group) => group.sessions.length === 0)).toBe(true)
-})
+  test("tous les workspaces connus figurent, même sans session", () => {
+    // Règle corrigée le 2026-10-15 : la référence (DSH) montre **tous** ses projets et n'ouvre que
+    // le courant. La question « où ai-je travaillé ? » appelle aussi « où puis-je travailler ? ».
+    const groups = groupByWorkspace([], projects, "C:/jeanluc/opencode-fork")
+    expect(groups.map((group) => group.label)).toEqual(["opencode-fork", "boutikV2"])
+    expect(groups.every((group) => group.sessions.length === 0)).toBe(true)
+  })
 
-test("un seul workspace est marqué courant : le plus précis", () => {
-  // Relevé à la mesure le 2026-10-15 : `opencode-fork` **et** `jeanluc` portaient la marque, parce
-  // que l'un contient l'autre. La référence n'en marque jamais qu'un — « où suis-je ? » n'a qu'une
-  // réponse, et deux marques la rendent illisible.
-  const nested = ["C:\\jeanluc", "C:\\jeanluc\\opencode-fork"]
-  const here = "C:/jeanluc/opencode-fork/packages/opencode"
-  const marked = groupByWorkspace([inPackages], nested, here).filter((group) => group.current)
-  expect(marked.map((group) => group.label)).toEqual(["opencode-fork"])
-})
+  test("la recherche garde un workspace trouvé par son nom, même sans session correspondante", () => {
+    // Comportement de la référence : la loupe de DSH est **sur la ligne Workspaces**. Et c'est devenu
+    // nécessaire du jour où la liste a montré tous les projets connus — 25 sur ce serveur.
+    const groups = groupByWorkspace([], projects, "", "boutik")
+    expect(groups.map((group) => group.label)).toEqual(["boutikV2"])
+  })
+
+  test("la recherche ignore la casse et les accents", () => {
+    const accented = ["C:\\jeanluc\\École"]
+    expect(groupByWorkspace([], accented, "", "ecole").map((group) => group.label)).toEqual(["École"])
+  })
+
+  test("sans saisie, tous les workspaces restent affichés", () => {
+    expect(groupByWorkspace([], projects, "", "   ")).toHaveLength(2)
+  })
+
+  test("un seul workspace est marqué courant : le plus précis", () => {
+    // Relevé à la mesure le 2026-10-15 : `opencode-fork` **et** `jeanluc` portaient la marque, parce
+    // que l'un contient l'autre. La référence n'en marque jamais qu'un — « où suis-je ? » n'a qu'une
+    // réponse, et deux marques la rendent illisible.
+    const nested = ["C:\\jeanluc", "C:\\jeanluc\\opencode-fork"]
+    const here = "C:/jeanluc/opencode-fork/packages/opencode"
+    const marked = groupByWorkspace([inPackages], nested, here).filter((group) => group.current)
+    expect(marked.map((group) => group.label)).toEqual(["opencode-fork"])
+  })
 
   test("les sessions sans dossier ne sont pas perdues", () => {
     // Repris de `groupByDirectory`, qu'on remplace : l'invariant survit au changement de regroupement.

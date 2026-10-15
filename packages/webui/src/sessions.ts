@@ -184,6 +184,8 @@ export function groupByWorkspace(
   sessions: SessionSummary[],
   projects: string[],
   current: string,
+  /** Ce que la recherche a saisi : filtre **les workspaces aussi**, pas seulement les sessions. */
+  filter = "",
 ): WorkspaceGroup[] {
   const known = projects
     .filter((path) => typeof path === "string" && path.trim().length > 0)
@@ -261,5 +263,29 @@ export function groupByWorkspace(
     if (best) best.current = true
   }
 
-  return groups
+  /**
+   * La recherche porte sur **les workspaces autant que sur les sessions**.
+   *
+   * Relevé en observant DSH (2026-10-15) : sa loupe est posée **sur la ligne `Workspaces`**, donc
+   * elle cherche des lieux de travail, pas seulement des conversations. Et c'est devenu nécessaire du
+   * jour où la liste a montré **tous** les projets connus — 25 sur ce serveur : sans filtre sur les
+   * noms, la recherche d'un projet par son nom ne rendait rien, la liste des workspaces restant
+   * entière.
+   *
+   * Un groupe est gardé s'il **porte une session** (le serveur a déjà filtré par titre) ou si son
+   * **nom** contient la saisie. Les accents et la casse sont ignorés : taper `ecole` doit trouver
+   * `École`.
+   */
+  const needle = searchable(filter)
+  if (!needle) return groups
+  return groups.filter((group) => group.sessions.length > 0 || searchable(group.label).includes(needle))
+}
+
+/** Comparaison de saisie : sans casse, sans accent — « ecole » doit trouver « École ». */
+export function searchable(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
 }
