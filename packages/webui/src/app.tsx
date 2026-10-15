@@ -84,7 +84,7 @@ import {
 } from "./settings"
 import { FolderPicker, Picker } from "./picker"
 import { FolderBrowser } from "./folder-browser"
-import { CrossIcon, FolderPlusIcon, GearIcon, SearchIcon, SendIcon } from "./icons"
+import { CrossIcon, FolderPlusIcon, GearIcon, PlusIcon, SearchIcon, SendIcon } from "./icons"
 import { TrajectoryView } from "./trajectory-view"
 import {
   commandChoices,
@@ -1879,13 +1879,17 @@ export default function App() {
             pas un généraliste : on garde la place, sans inventer de marque. */}
         <div class="rail-head">
           <span class="wordmark">opencodev2</span>
+          <span class="wordmark-badge">HARNESS</span>
         </div>
 
         {/* 1 — Le geste le plus fréquent, donc en premier et sans clic. */}
         <div class="rail-new">
-          <button class="new-session rail-button" title="Start an empty conversation" onClick={() => void createSession()}>
-            <span class="new-session-plus">+</span>
-            <span>New session</span>
+          {/* Reproduit de DSH : un bouton **plein, pleine largeur, libellé centré**, avec l'icône
+              **avant** le texte. Le nôtre portait le signe à gauche et le mot collé à gauche sous un
+              filet — trois écarts pour un même bouton. */}
+          <button class="new-session" title="Start an empty conversation" onClick={() => void createSession()}>
+            <PlusIcon size={15} />
+            <span>New Session</span>
           </button>
         </div>
 

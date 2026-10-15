@@ -186,21 +186,49 @@ textarea {
   border-color: var(--text-3);
 }
 
-/* 1. Nouvelle session — le geste le plus fréquent, donc la première chose et la plus large.
-   Le libellé est **centré** : un bouton plein largeur dont le texte colle à gauche se lit comme une
-   ligne de liste, pas comme le bouton qu'il est. */
+/* 1. Nouvelle session — le geste le plus fréquent, donc la première chose.
+   **Reproduit de DSH** (relevé à l'écran, 2026-10-15) : un bouton **plein** qui remplit la largeur,
+   libellé **centré**, icône **avant** le mot, fond de surface **sans filet**. Les valeurs du relevé :
+   hauteur 40 px, rayon 10 px, fond `bg-2`, texte 14 px, icône 15 px. */
 .rail-new {
   flex: 0 0 auto;
   padding: 0 var(--rail-pad) 8px;
 }
 
 .new-session {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   width: 100%;
+  height: 40px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--bg-2);
+  color: var(--text-1);
+  font-size: var(--fs-base);
 }
 
-.new-session-plus {
+.new-session:hover {
+  background: var(--bluish-800);
+}
+
+/* L'icône est **au-dessus** du texte dans l'ordre, comme chez DSH — le signe se lit avant le mot. */
+.new-session .glyph {
+  flex: 0 0 auto;
+  color: var(--text-2);
+}
+
+/* Le nom du produit, puis le **badge** qui dit de quel produit il s'agit : `HARNESS`, en capitales,
+   encadré, plus petit que le nom. Relevé de DSH : `deepseek` + `HARNESS`. */
+.wordmark-badge {
+  margin-left: 6px;
+  padding: 1px 5px;
+  border: 1px solid var(--line-2);
+  border-radius: 4px;
   color: var(--text-3);
-  line-height: 1;
+  font-size: var(--fs-meta);
+  letter-spacing: 0.06em;
 }
 
 /* 2. Plugins — des boutons d'accès, pas un catalogue. La section n'existe que s'il y a des plugins. */
@@ -2452,13 +2480,17 @@ textarea {
   padding: 0 var(--gutter) 22px;
 }
 
+/* **Reproduit de DSH** (relevé à l'écran, 2026-10-15) : la boîte de saisie est un rectangle très
+   arrondi, **sans filet visible**, posé sur le fond de page ; les gestes qu'elle porte sont des
+   **cercles** — le trombone comme l'envoi. La nôtre avait un filet, un rayon de 14 et deux carrés
+   arrondis de 8 px : la forme disait « formulaire », pas « zone d'écriture ». */
 .composer-inner {
   max-width: var(--measure);
   margin: 0 auto;
   padding: 10px 12px;
   background: var(--bg-1);
-  border: 1px solid var(--line-2);
-  border-radius: 14px;
+  border: 0;
+  border-radius: 16px;
 }
 
 .pending {
@@ -2501,7 +2533,7 @@ textarea {
   place-items: center;
   width: 26px;
   height: 26px;
-  border-radius: 8px;
+  border-radius: 50%;
   color: var(--text-2);
   font-size: var(--fs-title);
 }
@@ -2572,12 +2604,14 @@ textarea {
 }
 
 /* Le bouton d'envoi, réduit à une flèche : le sens dit l'action, sans mot. */
+/* L'envoi est un **cercle**, comme chez DSH : c'est la forme du geste, et elle se distingue au premier
+   coup d'œil des contrôles à coins arrondis qui l'entourent. */
 .send {
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
   background: var(--text-1);
   color: var(--bg-0);
 }
