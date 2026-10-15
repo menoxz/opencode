@@ -7,6 +7,7 @@ import {
   validateAttachment,
   type Attachment,
 } from "./attachments"
+import { authHeaders } from "./auth"
 import { client, credentials, fetchHealth, rememberCredentials, serverUrl, type Health } from "./client"
 import {
   DETAILS_DEFAULT,
@@ -115,6 +116,13 @@ import { parseInjections, relativeTo } from "./injections"
 import { pluginEntries, type PluginList } from "./nav"
 import { SESSION_LIMIT, groupByWorkspace, sessionDetails, splitSessions, type ProjectRef, type SessionSummary, type WorkspaceGroup as WorkspaceGrouping } from "./sessions"
 import { subscribeEvents, type EventStreamState } from "./events"
+import {
+  activityFromStatus,
+  createReloadGate,
+  createTicketGuard,
+  resyncPlan,
+  threadEventOutcome,
+} from "./stream-sync"
 import { sessionTimestamp } from "./time"
 import {
   answerDocuments,
@@ -126,7 +134,6 @@ import {
   partMedia,
   reducePermissions,
   reduceQuestions,
-  reduceThread,
   sessionStats,
   setCustomAnswer,
   toggleAnswer,
@@ -186,7 +193,7 @@ export default function App() {
    *
    * Borné : un journal qui grossit sans fin est une fuite, pas un journal.
    */
-  const [logEntries, setLogEntries] = createSignal<Array<{ at: number; type: string }>>([])
+  const [logEntries, setLogEntries] = createSignal<Array<{ at: number; type: string; note?: string }>>([])
   const LOG_LIMIT = 200
   /**
    * Le **schéma déclaré** de chaque outil (`GET /experimental/tool`), pour le panneau de détail.
@@ -870,6 +877,52 @@ export default function App() {
     const result = await client.session.messages({ sessionID, ...scope() }).catch(() => undefined)
     const data = (result as { data?: Message[] } | undefined)?.data
     setMessages(Array.isArray(data) ? data : [])
+  }
+
+  /**
+   * La resynchronisation du fil porte **son propre garde-fou** : une relecture en vol au plus, une en
+   * attente au plus (la dernière demande gagne), et un jeton monotone pour qu'une réponse ancienne
+   * n'écrase pas un état plus récent.
+   *
+   * Sans cela, chaque événement non applicable lançait une lecture complète — une session en cours de
+   * réponse en produit plusieurs par seconde — et deux réponses concurrentes écrivaient dans le même
+   * signal : la plus lente gagnait, donc le fil reculait sous les yeux de l'utilisateur, sans erreur.
+   */
+  const reloadGate = createReloadGate()
+  const threadTickets = createTicketGuard()
+
+  const reloadThread = (sessionID: string) => {
+    reloadGate.request(sessionID, async (key) => {
+      const ticket = threadTickets.issue()
+      // Le plan se relit avec le fil, comme dans `loadMessages`.
+      void loadPlan(key)
+      const result = await client.session.messages({ sessionID: key, ...scope() }).catch(() => undefined)
+      // Le jeton se vérifie **après** l'attente : c'est la réponse la plus récente qui écrit.
+      if (!threadTickets.accept(ticket)) return
+      const data = (result as { data?: Message[] } | undefined)?.data
+      if (Array.isArray(data)) setMessages(data)
+    })
+  }
+
+  /**
+   * L'état d'activité, relu par REST (`GET /session/status`).
+   *
+   * Il ne venait que du flux : un `session.idle` manqué pendant une coupure laissait l'écran sur
+   * « travail en cours » indéfiniment alors que l'agent avait fini depuis longtemps. La route
+   * **existe** (groupe `session`, identifiant `session.status`, valeurs `idle` / `busy` / `retry`) et
+   * le CLI s'en sert déjà quand l'événement manque (`cli/cmd/run/stream.transport.ts:10`). Elle n'est
+   * pas dans le SDK : appel direct sur `/session`, déjà proxifié.
+   *
+   * Lue **à la reconnexion seulement** — jamais en boucle : les événements restent la voie normale.
+   */
+  const loadActivity = async () => {
+    const query = new URLSearchParams(scope() as Record<string, string>).toString()
+    const response = await fetch(`${serverUrl}/session/status${query ? `?${query}` : ""}`, {
+      headers: authHeaders(credentials),
+    }).catch(() => undefined)
+    if (!response?.ok) return
+    const data = (await response.json().catch(() => undefined)) as unknown
+    setWorking(activityFromStatus(data, active()))
   }
 
   const loadPermissions = async () => {
@@ -1615,15 +1668,24 @@ export default function App() {
       searchTimer = setTimeout(() => void loadSessions(), 250)
     })
 
-    // Tracks transitions so a recovered stream can re-sync what it missed while down.
-    let wasConnected = false
-
     const unsubscribe = subscribeEvents({
       onEvent: (event) => {
+        /**
+         * Le fil se décide **ici**, avant l'aiguillage, pour que le journal porte la **raison** : un
+         * événement qui arrive et ne change rien est exactement ce qu'on cherche quand l'écran semble
+         * mort. La décision est pure (`stream-sync.ts`), donc c'est la même que celle testée hors DOM.
+         */
+        const sessionID = active()
+        const outcome = event.type.startsWith("message.")
+          ? threadEventOutcome(messages(), sessionID, event)
+          : undefined
         // Le journal se remplit **avant** l'aiguillage : ce qui n'est traité nulle part doit rester
         // visible, sinon on ne peut pas voir qu'un événement arrive et n'est pas pris en charge.
         setLogEntries((current) => {
-          const next = [...current, { at: Date.now(), type: event.type }]
+          const next = [
+            ...current,
+            { at: Date.now(), type: event.type, note: outcome && outcome.kind !== "applied" ? outcome.reason : undefined },
+          ]
           return next.length > LOG_LIMIT ? next.slice(next.length - LOG_LIMIT) : next
         })
         if (event.type === "permission.asked" || event.type === "permission.replied") {
@@ -1655,32 +1717,35 @@ export default function App() {
          * clignoter le texte. `reduceThread` applique l'événement, et le rechargement ne subsiste que
          * pour un cas nommé : un message encore inconnu de la page (le début d'un tour).
          */
-        if (event.type.startsWith("message.")) {
-          const sessionID = active()
-          if (!sessionID) return
-          const properties = (event.properties ?? {}) as { sessionID?: string }
-          if (properties.sessionID !== sessionID) return
-          const next = reduceThread(messages(), event)
-          if (next) setMessages(next)
-          else void loadMessages(sessionID)
-        }
+        if (outcome?.kind === "applied") setMessages(outcome.messages)
+        else if (outcome?.kind === "resync" && sessionID) reloadThread(sessionID)
         if (event.type === "session.status" || event.type === "session.idle") {
           const properties = (event.properties ?? {}) as { sessionID?: string; status?: { type?: string } }
           if (properties.sessionID === active()) setWorking(properties.status?.type === "busy")
         }
       },
       onState: (state) => {
+        const previous = stream()
         setStream(state)
-        // A dropped stream means events were missed while it was down. Without this re-sync, a
-        // permission asked during the outage would never surface — observed in P5: the pill read
-        // "SSE connecté" while a pending request stayed invisible until a manual reload.
-        if (state.connected && !wasConnected) {
-          wasConnected = true
-          void loadPermissions()
-          void loadQuestions()
-          void loadSessions()
+        /**
+         * Ce qu'une (re)connexion demande de relire est décidé par une fonction pure (`resyncPlan`) :
+         * le premier branchement ne relit pas le fil — il vient d'être chargé et le relire doublerait
+         * la requête la plus lourde —, une **coupure** le relit, ainsi que l'état d'activité.
+         *
+         * Sans cela, un `session.idle` manqué pendant la coupure laissait l'écran sur « travail en
+         * cours » indéfiniment, et les deltas émis pendant l'interruption étaient perdus pour de bon :
+         * `/event` ne rejoue rien (aucun `Last-Event-ID` côté serveur), donc la page ne peut pas
+         * espérer les rattraper par le flux — elle doit relire.
+         */
+        for (const target of resyncPlan(previous, state)) {
+          if (target === "permissions") void loadPermissions()
+          else if (target === "questions") void loadQuestions()
+          else if (target === "sessions") void loadSessions()
+          else if (target === "messages") {
+            const sessionID = active()
+            if (sessionID) reloadThread(sessionID)
+          } else void loadActivity()
         }
-        if (!state.connected) wasConnected = false
       },
     })
 
@@ -2269,7 +2334,7 @@ export default function App() {
                     {(entry) => (
                       <li class="log-row">
                         <span class="log-time">{new Date(entry.at).toLocaleTimeString()}</span>
-                        <span class="log-type">{entry.type}</span>
+                        <span class="log-type">{entry.type}{entry.note ? ` → ${entry.note}` : ""}</span>
                       </li>
                     )}
                   </For>
