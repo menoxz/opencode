@@ -247,10 +247,18 @@ export function groupByWorkspace(
    * `…\opencode-fork\packages\opencode` alors que le workspace est `…\opencode-fork`. Comparés
    * entiers, aucun ne correspondait — mesuré : le sélecteur de dossier du rail n'affichait **aucune**
    * coche, alors que la référence en montre une.
+   *
+   * Mais **un seul** workspace est courant : le plus précis. Marquer tous ceux dont le chemin
+   * contient le dossier en marquait **deux** — mesuré le 2026-10-15 sur ce serveur, `opencode-fork`
+   * **et** `jeanluc` portaient la marque, parce que l'un contient l'autre. La référence n'en marque
+   * jamais qu'un, et « où suis-je ? » n'a qu'une réponse.
    */
   const here = pathKey(current)
   if (here) {
-    for (const group of groups) if (within(here, group.key)) group.current = true
+    const best = groups
+      .filter((group) => within(here, group.key))
+      .sort((a, b) => b.key.length - a.key.length)[0]
+    if (best) best.current = true
   }
 
   return groups
