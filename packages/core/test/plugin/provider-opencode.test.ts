@@ -33,7 +33,7 @@ describe("OpencodePlugin", () => {
     ),
   )
 
-  it.effect("keeps free models without credentials", () =>
+  it.effect("disables free models without credentials: the anonymous tier is closed server-side", () =>
     withEnv({ OPENCODE_API_KEY: undefined }, () =>
       Effect.gen(function* () {
         const plugin = yield* PluginV2.Service
@@ -49,12 +49,12 @@ describe("OpencodePlugin", () => {
           })
         })
         expect((yield* catalog.provider.get(ProviderV2.ID.opencode)).options.aisdk.provider.apiKey).toBe("public")
-        expect((yield* catalog.model.get(ProviderV2.ID.opencode, ModelV2.ID.make("free"))).enabled).toBe(true)
+        expect((yield* catalog.model.get(ProviderV2.ID.opencode, ModelV2.ID.make("free"))).enabled).toBe(false)
       }),
     ),
   )
 
-  it.effect("treats output-only cost as free without credentials", () =>
+  it.effect("disables output-only cost models without credentials too", () =>
     withEnv({ OPENCODE_API_KEY: undefined }, () =>
       Effect.gen(function* () {
         const plugin = yield* PluginV2.Service
@@ -70,7 +70,7 @@ describe("OpencodePlugin", () => {
           })
         })
         expect((yield* catalog.provider.get(ProviderV2.ID.opencode)).options.aisdk.provider.apiKey).toBe("public")
-        expect((yield* catalog.model.get(ProviderV2.ID.opencode, ModelV2.ID.make("output-only"))).enabled).toBe(true)
+        expect((yield* catalog.model.get(ProviderV2.ID.opencode, ModelV2.ID.make("output-only"))).enabled).toBe(false)
       }),
     ),
   )

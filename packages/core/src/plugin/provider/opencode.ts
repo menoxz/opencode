@@ -20,8 +20,13 @@ export const OpencodePlugin = PluginV2.define({
           if (!hasKey) provider.options.aisdk.provider.apiKey = "public"
         })
         if (hasKey) return
+        // With no credential none of these models can be served: the anonymous
+        // free tier is closed server-side (measured 2026-10-15 — `Bearer public`
+        // answers 403 FreeTierError for every header variant tried, session
+        // `ses_`-shaped or not, and the official 1.18.58 client on an isolated
+        // config gets the same refusal). Keeping the cost-0 models enabled would
+        // only offer models that always fail.
         for (const model of item.models.values()) {
-          if (!model.cost.some((cost) => cost.input > 0)) continue
           evt.model.update(item.provider.id, model.id, (draft) => {
             draft.enabled = false
           })
