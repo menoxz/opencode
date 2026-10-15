@@ -3165,6 +3165,67 @@ recherche: ouverte par le bouton (« Close search ») -> refermée par le même 
 une par une : elles se voient quand on les compte — et le symptôme, lui, arrive formulé comme « pour
 une raison inconnue », ce qui est exactement le signe qu'il n'y a pas de règle.
 
+---
+
+## Lot 16 — choisir un dossier au lieu de le taper (livré)
+
+Demande d'usage : « l'ajout de dossier demande de rentrer le chemin, avec possibilité d'erreur, alors
+qu'on pourrait ouvrir l'explorateur pour choisir directement ». **Ce n'était pas un ajustement mais
+une capacité manquante**, et deux vérifications l'ont établi avant d'écrire une ligne.
+
+### Deux faits, mesurés avant le code
+
+| question | ce que la vérification a établi |
+|---|---|
+| une route choisit-elle un dossier ? | **non.** Sur les **119 routes**, les seules « sélections » sont des ordres donnés au **TUI**. Et le navigateur ne peut pas rendre un chemin absolu : `showDirectoryPicker()` rend un *handle* sans chemin, `<input webkitdirectory>` ne rend que du **relatif** — donc aucun des deux n'alimente un dossier de travail. Un dialogue ouvert par le serveur s'afficherait sur la machine du **serveur** : invisible pour un client distant, hors de portée de tout test |
+| `GET /file` ne le fait-il pas déjà ? | **il le fait, mais borné au projet.** Il résout `path.join(ctx.directory, dir)` : un chemin **absolu** y est traité comme relatif, donne un chemin inexistant, et l'erreur est **avalée**. Mesuré : `GET /file?path=C:\Users\jeanl` rend **200 avec `[]`** — indiscernable d'un dossier vide. Or c'est précisément **hors du projet** qu'on choisit un workspace |
+
+### Ce qui est livré
+
+- **`src/folder/index.ts`** — service de parcours : dossiers seulement, tri insensible à la casse et
+  aux accents, borné à 500, et une **erreur typée qui nomme la cause** (`path not found`,
+  `not a directory`, `directory not readable`, `no path given`) au lieu d'une liste vide.
+- **`GET /folder?path=…`** dans `RootHttpApi` — elle sert **avant** qu'une instance existe, et le
+  parcours sort par nature du projet. L'erreur est déclarée en `404` sur la classe elle-même.
+- **`FolderBrowser`** (webui), affiché par le mode « ajouter » du rail : on regarde les dossiers, on
+  entre, on remonte, on choisit. Pas de troisième bouton — le mode « ajouter » **est** la demande.
+
+### Deux erreurs de conception corrigées en route
+
+1. **Le canal d'erreur élargi.** La première version listait les noms puis faisait un `stat` par
+   entrée, en écrasant l'échec dans le canal d'erreur — ce qui élargissait le type de l'effet entier à
+   `NotAFolder | undefined` (relevé au typecheck). `readdir(withFileTypes)` donne le type sans second
+   appel : **un appel système au lieu de N**, et aucune erreur à rattraper.
+2. **Les séparateurs mêlés**, vus à la mesure : entrer dans un dossier affichait
+   `…\opencode-fork/.dsh-vision-toolkit`. Le serveur rend le chemin tel qu'il l'a reçu, donc
+   l'unification se fait **avant l'envoi** — sinon deux écritures du même dossier circuleraient
+   (défaut déjà payé sur `GET /project`).
+
+### Preuve
+
+```
+packages/opencode : tsgo --noEmit -> exit 0 ; bun test test/folder -> 13 pass / 0 fail
+packages/webui    : tsgo --noEmit -> exit 0 ; vitest -> 22 fichiers, 572 tests
+route, de bout en bout : dossier réel -> 200 application/json (parent "C:/")
+                         chemin absent -> 404 · un fichier -> 404
+navigateur (pile jetable 4099 + 5182) : /folder -> 200 application/json **par le proxy** ;
+   le mode « ajouter » liste **24 dossiers réels** ; cliquer un dossier y entre (1 ligne) ;
+   « Use this folder » présent. Pile démontée après (4099 et 5182 fermés, onglet revenu sur 5181).
+```
+
+### La règle
+
+**Une liste qui ne distingue pas « vide » de « refusé » est un défaut, pas un détail.** `GET /file`
+rendait `200` avec `[]` pour un chemin hors projet : l'écran ne pouvait pas dire la différence, et
+l'utilisateur non plus. ⇒ Tout parcours **dit** ses refus, et les nomme par leur cause.
+
+### Ce qui reste
+
+Le serveur de dev en place (**4097**) a démarré **avant** cette route : il rend encore le SPA en `200`
+pour `/folder`, donc le parcours n'y apparaîtra qu'après redémarrage — je ne l'ai pas redémarré, il
+n'appartient pas à cette session. Le **binaire publié** demande également un rebuild (`skill
+fork-build`) : la route existe dans les sources, pas encore dans `opencodev2.exe`.
+
 
 
 

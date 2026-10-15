@@ -196,6 +196,16 @@ ce document : une donnée exposée par le serveur n'est pas une raison de l'affi
   et elle suffit.
 - **La ligne du dossier porte son geste** : ouvrir une session **ici**. Ce bouton est **visible en
   permanence** — c'est l'action qu'on vient chercher sur cette ligne, pas une action rare.
+- **On choisit un dossier, on ne le tape pas.** Ajouter un workspace ouvre un **parcours** des
+  sous-dossiers (`GET /folder?path=…`) : on regarde, on entre, on remonte, on choisit. Le champ de
+  saisie reste, pour qui connaît le chemin — mais il n'est plus la seule voie, et une faute de frappe
+  n'est plus la façon normale d'échouer.
+  - Côté serveur, ce parcours **dit ses refus** : `404` avec la cause (`path not found`,
+    `not a directory`, `directory not readable`). `GET /file`, lui, rendait `200` avec `[]` pour un
+    chemin hors projet — **une liste qui ne distingue pas « vide » de « refusé » est un défaut**.
+  - Il n'ouvre **aucun dialogue du système** : le navigateur ne peut pas rendre un chemin absolu
+    (`showDirectoryPicker()` rend un *handle*, `<input webkitdirectory>` du relatif), et un dialogue
+    ouvert par le serveur s'afficherait sur la machine du **serveur**.
 - **Aucun compteur sur la ligne.** « Combien de sessions ai-je créées » n'est pas une question qu'on
   se pose en lisant un nom ; un nombre à côté d'un nom prend la place du nom.
 - **Une session se lit *sous* son workspace**, par une indentation franche mais **courte** — 12 px.

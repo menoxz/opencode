@@ -294,6 +294,95 @@ textarea {
   font-size: var(--fs-base);
 }
 
+/* ---- Le parcours de dossiers (mode « ajouter ») ----
+   Il vit **sous** la ligne du libellé, dans la place de la liste : on choisit un dossier au lieu de
+   l'écrire. Borné en hauteur et défilant, pour ne pas pousser les sessions hors de l'écran. */
+
+.folder-browse {
+  flex: 0 0 auto;
+  max-height: 260px;
+  display: flex;
+  flex-direction: column;
+  padding: 0 var(--rail-pad) 8px;
+  border-bottom: 1px solid var(--line-1);
+}
+
+.folder-browse-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-bottom: 4px;
+}
+
+/* Le chemin se lit **par sa fin** : c'est le dernier segment qui distingue deux dossiers. */
+.folder-browse-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+  color: var(--text-3);
+  font-size: var(--fs-note);
+}
+
+.folder-browse-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.folder-browse-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 0 6px;
+  height: 26px;
+  border-radius: 6px;
+  color: var(--text-2);
+  font-size: var(--fs-base);
+  text-align: left;
+}
+
+.folder-browse-row:hover {
+  color: var(--text-1);
+  background: #ffffff0a;
+}
+
+.folder-browse-row svg {
+  flex: 0 0 auto;
+  color: var(--text-3);
+}
+
+.folder-browse-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-browse-empty,
+.folder-browse-error {
+  margin: 4px 6px;
+  font-size: var(--fs-note);
+}
+
+.folder-browse-empty {
+  color: var(--text-3);
+}
+
+/* Un refus se dit : le serveur nomme la cause, l'écran la montre. */
+.folder-browse-error {
+  color: var(--danger);
+}
+
+.folder-browse-choose {
+  margin-top: 6px;
+}
+
 /* « voir plus » / « voir moins » : une commande discrète, alignée sur les sessions qu'elle cache. */
 .show-more {
   display: flex;

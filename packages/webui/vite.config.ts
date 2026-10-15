@@ -23,6 +23,10 @@ const API_PREFIXES = [
   "/mcp",
   "/log",
   "/file",
+  // Le parcours de dossiers (`GET /folder?path=…`), pour **choisir** un workspace au lieu de le
+  // taper. Même piège que les autres : sans cette entrée, Vite rend `index.html` avec un 200 et le
+  // parcours resterait vide sans erreur visible.
+  "/folder",
   "/skill",
   // Les menus du rail. Sans ces deux entrées, Vite sert `index.html` avec un **status 200** : le
   // SDK croit recevoir du JSON, échoue à le parser, et la section reste vide sans erreur visible.

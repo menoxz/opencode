@@ -83,6 +83,7 @@ import {
   toggleModel,
 } from "./settings"
 import { FolderPicker, Picker } from "./picker"
+import { FolderBrowser } from "./folder-browser"
 import { CrossIcon, FolderPlusIcon, GearIcon, SearchIcon, SendIcon } from "./icons"
 import { TrajectoryView } from "./trajectory-view"
 import {
@@ -1975,6 +1976,20 @@ export default function App() {
               </button>
             </span>
           </div>
+
+          {/* Le mode « ajouter » **est** la demande de choisir un dossier : le parcours s'affiche
+              donc ici, et il n'y a pas de troisième bouton à ajouter à la ligne du libellé. On
+              regarde les dossiers au lieu de taper leur chemin — et le chemin tapé reste possible
+              par le champ au-dessus, pour qui le connaît déjà. */}
+          <Show when={headMode() === "add"}>
+            <FolderBrowser
+              start={directory() || serverPath() || ""}
+              onChoose={(path) => {
+                applyDirectory(path)
+                setHeadMode("none")
+              }}
+            />
+          </Show>
 
           <div class="rows">
           <For each={groupByWorkspace(sessions(), projects(), directory())}>
