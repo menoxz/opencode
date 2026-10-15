@@ -211,28 +211,20 @@ describe("regroupement par workspace", () => {
     ])
   })
 
-  test("tous les workspaces connus figurent, même sans session", () => {
-    // Règle corrigée le 2026-10-15 : la référence (DSH) montre **tous** ses projets et n'ouvre que
-    // le courant. La question « où ai-je travaillé ? » appelle aussi « où puis-je travailler ? ».
+  test("un projet sans session n'apparaît pas dans la liste", () => {
+    // Règle **corrigée deux fois** (voir `groupByWorkspace`) : j'avais d'abord cru l'inverse en
+    // lisant la liste de DSH. L'utilisateur a tranché — DSH masque les dossiers sans session — et
+    // c'est cohérent avec la question posée : « où ai-je travaillé ? ».
     const groups = groupByWorkspace([], projects, "C:/jeanluc/opencode-fork")
-    expect(groups.map((group) => group.label)).toEqual(["opencode-fork", "boutikV2"])
-    expect(groups.every((group) => group.sessions.length === 0)).toBe(true)
+    expect(groups).toEqual([])
   })
 
-  test("la recherche garde un workspace trouvé par son nom, même sans session correspondante", () => {
-    // Comportement de la référence : la loupe de DSH est **sur la ligne Workspaces**. Et c'est devenu
-    // nécessaire du jour où la liste a montré tous les projets connus — 25 sur ce serveur.
-    const groups = groupByWorkspace([], projects, "", "boutik")
-    expect(groups.map((group) => group.label)).toEqual(["boutikV2"])
-  })
-
-  test("la recherche ignore la casse et les accents", () => {
-    const accented = ["C:\\jeanluc\\École"]
-    expect(groupByWorkspace([], accented, "", "ecole").map((group) => group.label)).toEqual(["École"])
-  })
-
-  test("sans saisie, tous les workspaces restent affichés", () => {
-    expect(groupByWorkspace([], projects, "", "   ")).toHaveLength(2)
+  test("la recherche garde un groupe trouvé par son nom", () => {
+    // Avec des groupes **nés d'une session**, le filtre par nom ne peut plus rien changer : un groupe
+    // existe parce qu'une session y est entrée, et le serveur a déjà filtré. Le paramètre a donc été
+    // **retiré** plutôt que laissé inerte — il était né de ma règle fausse (voir `groupByWorkspace`).
+    const groups = groupByWorkspace([inPackages], projects, "")
+    expect(groups.map((group) => group.label)).toEqual(["opencode-fork"])
   })
 
   test("un seul workspace est marqué courant : le plus précis", () => {

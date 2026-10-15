@@ -184,44 +184,32 @@ export function groupByWorkspace(
   sessions: SessionSummary[],
   projects: string[],
   current: string,
-  /** Ce que la recherche a saisi : filtre **les workspaces aussi**, pas seulement les sessions. */
-  filter = "",
 ): WorkspaceGroup[] {
   const known = projects
     .filter((path) => typeof path === "string" && path.trim().length > 0)
     .map((path) => ({ path, key: pathKey(path) }))
 
   /**
-   * **Tous les workspaces connus figurent dans la liste, même sans session.**
+   * **Un dossier sans session ne s'affiche pas.**
    *
-   * Règle corrigée le 2026-10-15, après avoir **observé DSH** : sa liste montre *tous* ses projets
-   * (`DS Bot`, `mcp-servers`, `opencodev2`, `opencode-fork`, `auxiflow`, `jeanluc`,
-   * `deepseek_harness`) et n'ouvre que le courant. La règle inverse — « un workspace vide ne dit
-   * rien » — était **la mienne**, pas celle de la référence, et elle cachait à l'utilisateur des
-   * lieux où il peut justement travailler. C'est la question posée qui tranche : « où ai-je
-   * travaillé ? » appelle aussi « où puis-je travailler ? ».
+   * Règle **corrigée deux fois**, et la seconde correction est un mea culpa. J'avais d'abord écrit
+   * « un workspace vide ne dit rien » ; puis, en regardant les sept dossiers de DSH, j'ai conclu
+   * l'inverse — « tous les projets connus figurent » — et changé le comportement sur cette
+   * **inférence**. L'utilisateur, qui se sert de DSH tous les jours, a tranché : **DSH masque les
+   * dossiers sans session.** J'avais lu une *liste*, pas la *règle*.
    *
-   * L'ordre est celui du serveur ; seul le **rattachement** d'une session a besoin du tri par
-   * longueur de chemin.
+   * Conséquence mesurée du mauvais réglage : le rail affichait **25** projets là où la référence en
+   * montre **7** — la liste se remplissait de dossiers vides, et la question « où ai-je travaillé ? »
+   * se noyait dans « quels dossiers existent sur cette machine ? ».
+   *
+   * Un groupe naît donc d'une **session**, et l'ordre d'apparition est celui du serveur (trié par
+   * récence) : le tri par longueur de chemin ne sert qu'au **rattachement**, pour que
+   * `…\opencode-fork\packages` gagne sur `…\opencode-fork`.
    */
+  const matchable = [...known].sort((a, b) => b.key.length - a.key.length)
+
   const groups: WorkspaceGroup[] = []
   const index = new Map<string, WorkspaceGroup>()
-  for (const entry of known) {
-    if (index.has(entry.key)) continue
-    const group: WorkspaceGroup = {
-      key: entry.key,
-      label: leaf(entry.path),
-      hint: entry.path,
-      current: false,
-      sessions: [],
-    }
-    index.set(entry.key, group)
-    groups.push(group)
-  }
-
-  // Pour le rattachement seulement : du plus long au plus court, le premier qui contient le dossier
-  // est le bon (`…\opencode-fork\packages` doit gagner sur `…\opencode-fork`).
-  const matchable = [...known].sort((a, b) => b.key.length - a.key.length)
 
   for (const session of sessions) {
     const home = matchable.find((entry) => within(pathKey(session.directory ?? ""), entry.key))
@@ -263,29 +251,5 @@ export function groupByWorkspace(
     if (best) best.current = true
   }
 
-  /**
-   * La recherche porte sur **les workspaces autant que sur les sessions**.
-   *
-   * Relevé en observant DSH (2026-10-15) : sa loupe est posée **sur la ligne `Workspaces`**, donc
-   * elle cherche des lieux de travail, pas seulement des conversations. Et c'est devenu nécessaire du
-   * jour où la liste a montré **tous** les projets connus — 25 sur ce serveur : sans filtre sur les
-   * noms, la recherche d'un projet par son nom ne rendait rien, la liste des workspaces restant
-   * entière.
-   *
-   * Un groupe est gardé s'il **porte une session** (le serveur a déjà filtré par titre) ou si son
-   * **nom** contient la saisie. Les accents et la casse sont ignorés : taper `ecole` doit trouver
-   * `École`.
-   */
-  const needle = searchable(filter)
-  if (!needle) return groups
-  return groups.filter((group) => group.sessions.length > 0 || searchable(group.label).includes(needle))
-}
-
-/** Comparaison de saisie : sans casse, sans accent — « ecole » doit trouver « École ». */
-export function searchable(value: string): string {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim()
+  return groups
 }
