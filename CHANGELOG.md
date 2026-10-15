@@ -5,6 +5,11 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v2.4.7] - 2026-10-15
+
+### Fixed
+- **Le fork ne propose plus les modèles du palier gratuit d'`opencode`, qui ne peuvent pas répondre.** Le sélecteur offrait `opencode/deepseek-v4.1-flash-free`, et l'utilisateur tombait dessus pour recevoir un refus. Ce palier est fermé côté serveur pour tout client autre que le client officiel — refus mesuré trois fois : sans credential, avec une clé Zen créée sur le compte, et par le client officiel 1.18.58 sur une configuration isolée, tous rendant `403 FreeTierError` (un quatrième modèle gratuit, `ling-3.0-flash-fin-free`, rend `400 Model is unavailable`). Le chargeur `opencode` écarte désormais les modèles à coût nul **dès qu'un credential est présent**, et garde les modèles payants — ceux-là répondent dès que le compte est approvisionné (`402 Insufficient account funds` en attendant). Sans credential, le comportement est inchangé : le fournisseur reste listé, car c'est par lui qu'on atteint la saisie de clé. Mesure sur le binaire déployé, avec la clé réelle : `opencode` expose 74 modèles, dont **0** `-free`.
+
 ## [v2.4.6] - 2026-10-15
 
 ### Added
