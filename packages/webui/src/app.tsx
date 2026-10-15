@@ -84,7 +84,7 @@ import {
 } from "./settings"
 import { FolderPicker, Picker } from "./picker"
 import { FolderBrowser } from "./folder-browser"
-import { CrossIcon, FolderPlusIcon, GearIcon, PlusIcon, SearchIcon, SendIcon } from "./icons"
+import { CrossIcon, FolderPlusIcon, GearIcon, PluginIcon, PlusIcon, SearchIcon, SendIcon } from "./icons"
 import { TrajectoryView } from "./trajectory-view"
 import {
   commandChoices,
@@ -1900,8 +1900,8 @@ export default function App() {
         <Show when={pluginEntries(plugins()).length > 0}>
           <div class="rail-plugins">
             <button class="rail-entry" title="Plugins: add or remove one" onClick={openPlugins}>
-              <span class="rail-entry-label">plugins</span>
-              <span class="rail-entry-count">{pluginEntries(plugins()).length}</span>
+              <PluginIcon size={16} />
+              <span class="rail-entry-label">Plugins</span>
             </button>
           </div>
         </Show>
