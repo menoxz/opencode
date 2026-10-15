@@ -178,3 +178,35 @@ export function activityFromStatus(statuses: unknown, sessionID: string | undefi
   if (!info || typeof info !== "object") return false
   return info.type !== "idle"
 }
+
+/**
+ * Le battement du serveur, **mesuré** : `server.heartbeat` toutes les 10 s, dans les deux flux
+ * (`server/routes/instance/httpapi/handlers/event.ts:30`, `handlers/global.ts:48`).
+ *
+ * C'est ce qui rend le silence mesurable : sans battement, « rien depuis longtemps » voudrait
+ * seulement dire « il ne se passe rien », ce qui est le fonctionnement normal d'une session au repos.
+ */
+export const STREAM_HEARTBEAT_MS = 10_000
+
+/** Trois battements manqués : en dessous, on risquerait de couper un flux sain et lent à démarrer. */
+export const STREAM_SILENCE_LIMIT_MS = 3 * STREAM_HEARTBEAT_MS
+
+/**
+ * Un flux **ouvert mais muet** est mort, et `EventSource` ne le verra jamais : il ne rappelle
+ * `onerror` que si la socket échoue vraiment. Une socket qui reste ouverte sans rien livrer — un
+ * proxy qui tient la connexion après le redémarrage du serveur, une connexion TCP à demi fermée —
+ * laisse la page figée en silence pendant que l'indicateur affiche « connecté ». Mesuré sur la pile
+ * isolée le 2026-10-15 : serveur arrêté puis relancé, **zéro** erreur console, journal figé, aucun
+ * `server.connected` de retour — la lecture seule ne suffit donc pas, il faut une garde.
+ *
+ * `undefined` = « rien reçu depuis l'ouverture » : ce n'est pas un silence, c'est un flux neuf dont
+ * on n'a pas encore eu de nouvelles.
+ */
+export function streamSilent(
+  lastEventAt: number | undefined,
+  now: number,
+  limit = STREAM_SILENCE_LIMIT_MS,
+): boolean {
+  if (lastEventAt === undefined) return false
+  return now - lastEventAt > limit
+}

@@ -1,5 +1,14 @@
 import { describe, expect, test } from "vitest"
-import { activityFromStatus, createReloadGate, createTicketGuard, resyncPlan, threadEventOutcome } from "./stream-sync"
+import {
+  activityFromStatus,
+  createReloadGate,
+  createTicketGuard,
+  resyncPlan,
+  STREAM_HEARTBEAT_MS,
+  STREAM_SILENCE_LIMIT_MS,
+  streamSilent,
+  threadEventOutcome,
+} from "./stream-sync"
 import type { Message } from "./view-model"
 
 const base = (): Message[] => [
@@ -236,5 +245,24 @@ describe("l'activité relue par REST", () => {
     expect(activityFromStatus({ ses_1: { type: "idle" } }, "ses_2")).toBe(false)
     expect(activityFromStatus(undefined, "ses_1")).toBe(false)
     expect(activityFromStatus({}, undefined)).toBe(false)
+  })
+})
+
+describe("le silence du flux", () => {
+  test("rien reçu depuis l'ouverture n'est pas un silence", () => {
+    expect(streamSilent(undefined, 1_000_000)).toBe(false)
+  })
+
+  test("trois battements manqués ne suffisent pas encore", () => {
+    expect(streamSilent(1_000, 1_000 + STREAM_SILENCE_LIMIT_MS)).toBe(false)
+  })
+
+  test("au-delà, le flux est muet et doit être remplacé", () => {
+    expect(streamSilent(1_000, 1_000 + STREAM_SILENCE_LIMIT_MS + 1)).toBe(true)
+  })
+
+  test("la limite se déduit du battement du serveur, pas d'un chiffre choisi", () => {
+    expect(STREAM_HEARTBEAT_MS).toBe(10_000)
+    expect(STREAM_SILENCE_LIMIT_MS).toBe(3 * STREAM_HEARTBEAT_MS)
   })
 })

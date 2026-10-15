@@ -910,8 +910,11 @@ export default function App() {
    * Il ne venait que du flux : un `session.idle` manqué pendant une coupure laissait l'écran sur
    * « travail en cours » indéfiniment alors que l'agent avait fini depuis longtemps. La route
    * **existe** (groupe `session`, identifiant `session.status`, valeurs `idle` / `busy` / `retry`) et
-   * le CLI s'en sert déjà quand l'événement manque (`cli/cmd/run/stream.transport.ts:10`). Elle n'est
-   * pas dans le SDK : appel direct sur `/session`, déjà proxifié.
+   * le CLI s'en sert déjà quand l'événement manque (`cli/cmd/run/stream.transport.ts:10`). L'appel
+   * passe par `fetch` direct, comme `/pty/shells` : c'est le chemin dont la preuve est faite ici
+   * (`200` et un corps JSON **par le proxy Vite** — un `200` qui rendrait `index.html` serait un échec
+   * muet, cf. `API_PREFIXES`), et la forme rendue est celle du serveur, pas celle qu'un wrapper
+   * suppose.
    *
    * Lue **à la reconnexion seulement** — jamais en boucle : les événements restent la voie normale.
    */
@@ -1650,7 +1653,12 @@ export default function App() {
     // doit être prêt avant qu'on écrive. Les agents, eux, attendent la première ouverture (1,5 Mo).
     void loadModelCatalog()
 
-    const healthTimer = setInterval(async () => setHealth(await fetchHealth()), 10_000)
+    const healthTimer = setInterval(async () => {
+      setHealth(await fetchHealth())
+      // Le même battement de 10 s sert de chien de garde : le serveur bat toutes les 10 s, donc un
+      // flux ouvert mais muet depuis trois battements est mort — et `EventSource` ne le verra jamais.
+      eventStream.watchdog(Date.now())
+    }, 10_000)
     // La charpente suit la largeur de fenêtre : le solveur est pur, donc rien à mémoriser ici.
     const onResize = () => setViewport(window.innerWidth)
     window.addEventListener("resize", onResize)
@@ -1668,7 +1676,7 @@ export default function App() {
       searchTimer = setTimeout(() => void loadSessions(), 250)
     })
 
-    const unsubscribe = subscribeEvents({
+    const eventStream = subscribeEvents({
       onEvent: (event) => {
         /**
          * Le fil se décide **ici**, avant l'aiguillage, pour que le journal porte la **raison** : un
@@ -1754,7 +1762,7 @@ export default function App() {
       clearTimeout(searchTimer)
       window.removeEventListener("resize", onResize)
       window.removeEventListener("keydown", onKey)
-      unsubscribe()
+      eventStream.stop()
     })
   })
 

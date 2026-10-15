@@ -3437,6 +3437,84 @@ pas seulement la valeur calculée. Un écart entre « ce que le serveur sert » 
 chargé » invalide **toutes** les mesures visuelles de cet onglet, et il est invisible : l'écran
 affiche quelque chose de plausible. J'ai mesuré six fois avant de poser la bonne question.
 
+## Lot 20 — le flux : un trou, un silence, et un journal muet (livré)
+
+Demande : « rends le stream entièrement fonctionnel ». Le réducteur était juste — les trois défauts
+étaient tous dans le **câblage**, et c'est ce qui les rendait invisibles : le fil s'affichait, les
+tests passaient, et pourtant trois situations réelles laissaient l'écran faux ou muet.
+
+### 1. Une coupure laissait un trou définitif
+
+`/event` **ne rejoue rien** : aucun `Last-Event-ID` n'apparaît dans `packages/opencode/src/server`
+(`rg`), et le flux n'est qu'un *stream* vivant. Donc tout événement émis pendant une interruption
+était perdu pour de bon — et un `session.idle` manqué laissait l'écran sur « travail en cours »
+indéfiniment. Côté client, le seul remède possible est de **relire** ce qui a été manqué.
+
+### 2. La resynchronisation relisait le fil entier, sans ordre
+
+`reduceThread` rend `undefined` dès qu'il ne peut pas appliquer un événement en place (message ou
+partie encore inconnu de la page), et l'appelant relançait aussitôt un `GET /session/:id/message`.
+Une session en cours de réponse produit plusieurs de ces événements par seconde : plusieurs lectures
+complètes se chevauchaient donc, et **la plus lente écrasait la plus récente** — le fil reculait sous
+les yeux de l'utilisateur, sans qu'aucune erreur ne soit levée.
+
+### 3. Le journal nommait l'événement, jamais la raison
+
+« Raw events » listait les types reçus. Un événement qui arrive et ne change rien — la question exacte
+qu'on se pose devant un écran qui semble mort — y figurait à l'identique d'un événement appliqué.
+
+### Le fait qui a changé la conception
+
+Première preuve navigateur, mesurée : serveur isolé (4097) arrêté puis relancé ⇒ journal figé sur ses
+6 lignes (`server.connected` à 06:37:17 + battements, dernier à 06:38:07), **zéro** erreur console,
+aucun `server.connected` de retour, et `GET /session/status` **jamais** appelé (journal des `fetch` de
+la page) — alors que la page chargeait bien, elle, ses sessions.
+
+Autrement dit : la page n'a pas vu la coupure. `EventSource` ne rappelle `onerror` que si la socket
+échoue **vraiment** ; une socket qui reste ouverte sans rien livrer ne déclenche rien. *Cause probable,
+non confirmée* : le proxy Vite maintient la connexion SSE. Conséquence certaine, elle : toute la
+resynchronisation était **inatteignable** en développement, et l'indicateur affichait « connecté »
+pendant que la page gelait — le pire cas, un état plausible et faux.
+
+### La correction
+
+| pièce | rôle |
+|---|---|
+| `stream-sync.ts` (pur) | `threadEventOutcome` (appliquer / relire / ignorer **en le nommant**), `resyncPlan` (ce qu'une (re)connexion doit relire), `createTicketGuard` (une réponse ancienne n'écrase pas un état récent), `createReloadGate` (une lecture en vol, une en attente, la dernière gagne), `activityFromStatus`, `streamSilent` |
+| `events.ts` | rend `{ stop, watchdog }` : le flux muet est **remplacé**, et la reconnexion est comptée |
+| `app.tsx` | le journal porte la raison ; le fil se relit par la porte ; `GET /session/status` à la reconnexion ; `watchdog` appelé au battement de 10 s du sondage de santé |
+| `events.test.ts` | le **câblage** du flux (jsdom n'a pas d'`EventSource`) |
+
+Le seuil du silence n'est pas choisi : le serveur bat toutes les **10 s** (`handlers/event.ts:30`,
+`handlers/global.ts:48`), donc `streamSilent` déclare muet à **3 battements manqués** — en dessous, on
+risquerait de couper un flux sain. « Jamais connecté » (`connected:false`, `reconnects:0`) est un
+premier branchement, **pas** une coupure : le compter comme telle ferait relire le fil entier à chaque
+ouverture de page.
+
+### Mesures
+
+```
+tests webui (vitest) : 22 fichiers / 577 tests -> 24 fichiers / 612 tests, exit 0
+tsgo --noEmit        : exit 0
+nouveaux tests       : 24 (stream-sync) + 7 (events), dont le câblage du chien de garde
+
+route relue : GET /session/status (groupe `session`, identifiant `session.status`,
+              StatusMap = Record<sessionID, { type: idle | retry | busy }>, `session/status.ts:8-31`)
+par le proxy Vite 5181 -> 4097 : 200, corps `{}` (2 octets) — du JSON, pas `index.html` (1136 octets)
+
+preuve navigateur 1 (négative, et décisive) : serveur tué -> 0 erreur console,
+  journal figé, aucun server.connected de retour, /session/status jamais appelé
+```
+
+### Ce qui reste
+
+La preuve navigateur du **chien de garde** — silence > 30 s ⇒ nouvelle `EventSource` ⇒ relecture du
+fil et appel `GET /session/status` — n'est pas encore constatée dans un navigateur : le premier essai
+a échoué pour la raison ci-dessus (la page ne voyait pas la coupure), et la vérification est
+**limitée par le proxy de développement**, qui garde la connexion SSE ouverte quand le serveur tombe.
+Le verdict est prouvé hors navigateur (tests) ; en navigateur, c'est le déclencheur qui reste à
+constater. Rien n'est revendiqué ici qui n'ait été mesuré.
+
 
 
 
