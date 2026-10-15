@@ -615,7 +615,11 @@ textarea {
   align-items: center;
   gap: 7px;
   text-align: left;
-  padding: 4px 4px 4px 8px;
+  /* **Hauteur relevée sur DSH** : ses lignes de dossier font 34 px (relevé à l'écran : pas de 34 px
+     entre deux dossiers), les nôtres 28. Une liste de 25 workspaces se lit d'autant mieux qu'elle
+     respire, et la hauteur ne dépend plus du contenu. */
+  min-height: 34px;
+  padding: 0 4px 0 8px;
   color: var(--text-2);
   font-size: var(--fs-base);
   line-height: var(--lh-tight);
@@ -686,8 +690,10 @@ textarea {
   padding: 0 8px;
   /* 24 px et 1.5 : deux valeurs rondes et usuelles. La ligne mesurait 26 px pour un interlignage de
      1.3 (18,2 px) — ni l'une ni l'autre n'est une convention, donc rien ne se reproduisait à
-     l'identique en ajoutant une ligne. */
-  height: 24px;
+     l'identique en ajoutant une ligne.
+     **Portée à 28 px** après relevé de DSH : ses lignes de session font 28 px (pas de 28 px entre
+     deux sessions dans sa capture), les nôtres 24. */
+  height: 28px;
   border-radius: 6px;
   cursor: pointer;
   font-size: var(--fs-base);
