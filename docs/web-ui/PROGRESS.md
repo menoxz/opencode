@@ -3369,6 +3369,60 @@ texte à 42 au lieu de 32). Cause : je les avais désalignés moi-même au lot 1
 de 22 px à 12 px **sans toucher** au « show more ». Corrigé : retrait identique, alignement sur les
 sessions que la commande masque.
 
+---
+
+## Lot 19 — un onglet qui ne relit pas sa feuille : le piège de vérification (constaté, ouvert)
+
+**À lire avant de conclure quoi que ce soit d'une mesure faite dans un onglet depuis longtemps
+ouvert.** Ce n'est pas un défaut du code : c'est un défaut de **mesure**, et il m'a fait chercher six
+hypothèses fausses.
+
+### Le fait
+
+Après avoir modifié `styles.css` (`.send` : 28 px rayon 8 → **30 px rayon 50 %**), la mesure dans
+l'onglet d'une pile de développement de longue durée rend **l'ancienne** valeur, indéfiniment :
+
+```
+feuille CHARGÉE (document.styleSheets) : 1 règle .send
+  .send { width: 28px; height: 28px; border-radius: 8px }
+feuille SERVIE (deux clients HTTP distincts) : 111 167 octets
+  .send { width: 30px; height: 30px; border-radius: 50% }
+```
+
+Les deux portent le **même** `href` (`http://127.0.0.1:5181/src/styles.css`), et il y a **une seule**
+règle `.send` de chaque côté.
+
+### Ce qui a été écarté, avec preuve
+
+| hypothèse | écartée par |
+|---|---|
+| mon fichier est faux | `rg` sur `styles.css` : `.send` en 30 px / 50 % (ligne 2614) |
+| le serveur sert l'ancienne | `Invoke-WebRequest` **et** `curl --noproxy` : 111 167 octets, `50%` présent |
+| un proxy répond à ma place | aucun proxy (`netsh winhttp` = accès direct) ; un port **mort** échoue bien |
+| le cache HTTP | `Network.setCacheDisabled` posé avant navigation |
+| une règle plus spécifique | le navigateur n'énumère **qu'une** règle `.send` |
+| un service worker | `navigator.serviceWorker.controller` = null, `getRegistrations()` = [] |
+| une page non rechargée | `Page.reload({ignoreCache})`, navigation **versionnée**, puis `about:blank` **puis** retour |
+
+Le balisage **neuf** est pourtant bien à l'écran dans ce même onglet : bouton sans filet, centré, une
+icône, badge `HARNESS` présent. Donc le document exécute le nouveau code — avec une **feuille
+ancienne**.
+
+### Ce qui reste ouvert
+
+La feuille **chargée** de cet onglet ne se relit pas, alors que la même adresse rend la neuve à tout
+autre client. Je n'ai pas trouvé le mécanisme. **Ce qui débloque, en revanche, est connu** : une pile
+relancée **et un onglet créé par le navigateur lui-même** — mes tentatives de créer l'onglet par CDP
+(`/json/new`, `Target.createTarget`) ne l'ont pas rendu visible dans `/json/list`, ce qui est un
+second problème, distinct.
+
+### La règle
+
+**Avant de croire une mesure faite dans un navigateur, constater ce que la feuille CHARGÉE déclare** —
+pas seulement la valeur calculée. Un écart entre « ce que le serveur sert » et « ce que l'onglet a
+chargé » invalide **toutes** les mesures visuelles de cet onglet, et il est invisible : l'écran
+affiche quelque chose de plausible. J'ai mesuré six fois avant de poser la bonne question.
+
 
 
 
