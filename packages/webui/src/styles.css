@@ -234,7 +234,11 @@ textarea {
 /* 2. Plugins — des boutons d'accès, pas un catalogue. La section n'existe que s'il y a des plugins. */
 .rail-plugins {
   flex: 0 0 auto;
-  padding: 0 var(--rail-pad) 8px;
+  /* **Rythme lu sur la capture de DSH** : entre son bouton « New Session » et sa destination suivante
+     il y a ≈ 22 px — le nôtre n'en laissait que 8, d'où un haut de rail tassé. L'écart est ici, en
+     haut du bloc, plutôt qu'en bas du bouton : l'air appartient à ce qu'on sépare, pas à ce qu'on
+     quitte. */
+  padding: 14px var(--rail-pad) 8px;
   border-bottom: 1px solid var(--line-1);
 }
 
@@ -292,12 +296,14 @@ textarea {
 }
 
 /* La ligne du libellé, qui porte les **deux gestes de premier niveau**. Au repos elle n'est qu'un
-   libellé : le champ n'existe que le temps de l'action, donc il ne coûte rien (§8). */
+   libellé : le champ n'existe que le temps de l'action, donc il ne coûte rien (§8).
+   Son écart au-dessus suit le rythme de DSH (≈ 24 px entre la dernière destination et son libellé
+   `Workspaces`) : le nôtre n'en laissait que 9. */
 .ws-head {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 2px var(--rail-pad) 6px;
+  padding: 14px var(--rail-pad) 6px;
 }
 
 .ws-head .rail-label {
