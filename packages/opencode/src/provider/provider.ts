@@ -136,7 +136,7 @@ type CustomLoader = (provider: Info) => Effect.Effect<{
   discoverModels?: CustomDiscoverModels
 }>
 
-type CustomDep = {
+export type CustomDep = {
   auth: (id: string) => Effect.Effect<Auth.Info | undefined>
   config: () => Effect.Effect<Config.Info>
   env: () => Effect.Effect<Record<string, string | undefined>>
@@ -155,7 +155,7 @@ function selectAzureLanguageModel(sdk: any, modelID: string, useChat: boolean) {
   return sdk.languageModel(modelID)
 }
 
-function custom(dep: CustomDep): Record<string, CustomLoader> {
+export function custom(dep: CustomDep): Record<string, CustomLoader> {
   return {
     anthropic: () =>
       Effect.succeed({
@@ -172,16 +172,26 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
         if (input.env.some((item) => env[item])) return true
         return false
       })
+      const auth = yield* dep.auth(input.id)
+      // An auth record is not proof of authentication: a credential whose key or
+      // access token is empty carries nothing, and counting it as `ok` sent the
+      // request out with no Authorization header at all.
+      const hasAuth =
+        auth?.type === "oauth" ? auth.access !== "" : auth?.type === "api" ? auth.key !== "" : false
       const ok =
         hasKey ||
-        Boolean(yield* dep.auth(input.id)) ||
+        hasAuth ||
         Boolean((yield* dep.config()).provider?.["opencode"]?.options?.apiKey)
 
       if (!ok) {
-        for (const [key, value] of Object.entries(input.models)) {
-          if (value.cost.input === 0) continue
-          delete input.models[key]
-        }
+        // The anonymous free tier is closed server-side, so with no credential
+        // none of these models can be served. Measured 2026-10-15: `Bearer public`
+        // answers 403 FreeTierError for every header variant tried (User-Agent
+        // `opencode/2.4.5`, `opencode/local`, `opencode/latest`, none at all;
+        // session `ses_`-shaped, UUID or absent) and the official 1.18.58 client,
+        // on an isolated config, gets the same refusal. Keeping the cost-0 models
+        // would therefore only offer models that always fail.
+        for (const id of Object.keys(input.models)) delete input.models[id]
       }
 
       return {
