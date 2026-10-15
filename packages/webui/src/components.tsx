@@ -154,6 +154,17 @@ export function WorkspaceGroup(props: {
   onToggle: () => void
   /** Ouvrir une session **dans ce dossier** — le geste qui vit sur la ligne du dossier. */
   onNew: () => void
+  /**
+   * Le menu « … » de la ligne, comme chez DSH. Il ne porte qu'une action, et elle est **réelle** :
+   * `PATCH /project/{id}` accepte un `name`, donc renommer change ce que la ligne affiche.
+   * Le serveur n'offre **aucune** suppression de projet — un « Delete » ici serait un bouton mort.
+   */
+  menuOpen?: boolean
+  onMenu?: () => void
+  onRename?: () => void
+  /** La ligne est en cours de renommage : le champ remplace le libellé. */
+  renaming?: boolean
+  children?: unknown
 }) {
   return (
     <div class="workspace" classList={{ current: Boolean(props.current) }}>
@@ -161,7 +172,9 @@ export function WorkspaceGroup(props: {
         <span class="workspace-icon">
           <FolderIcon size={16} />
         </span>
-        <span class="workspace-label">{props.label}</span>
+        <Show when={props.renaming} fallback={<span class="workspace-label">{props.label}</span>}>
+          {props.children as never}
+        </Show>
       </button>
       <button
         class="icon-btn workspace-new"
@@ -171,6 +184,27 @@ export function WorkspaceGroup(props: {
       >
         <PlusIcon size={16} />
       </button>
+      <Show when={props.onMenu}>
+        <Show
+          when={props.menuOpen}
+          fallback={
+            <button
+              class="icon-btn workspace-more"
+              title="Folder actions"
+              aria-label="Folder actions"
+              onClick={() => props.onMenu?.()}
+            >
+              …
+            </button>
+          }
+        >
+          <span class="row-menu workspace-menu">
+            <button class="row-menu-item" onClick={() => props.onRename?.()}>
+              Rename
+            </button>
+          </span>
+        </Show>
+      </Show>
     </div>
   )
 }

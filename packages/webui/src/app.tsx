@@ -113,7 +113,7 @@ import {
 } from "./config"
 import { parseInjections, relativeTo } from "./injections"
 import { pluginEntries, type PluginList } from "./nav"
-import { SESSION_LIMIT, groupByWorkspace, sessionDetails, splitSessions, type SessionSummary } from "./sessions"
+import { SESSION_LIMIT, groupByWorkspace, sessionDetails, splitSessions, type ProjectRef, type SessionSummary, type WorkspaceGroup as WorkspaceGrouping } from "./sessions"
 import { subscribeEvents, type EventStreamState } from "./events"
 import { sessionTimestamp } from "./time"
 import {
@@ -223,7 +223,7 @@ export default function App() {
    * Elle vit sur le champ, pas dans la feuille de réglages : la complétion accompagne l'action, et
    * l'action est au premier plan. `GET /project` pèse 962 octets, donc elle se lit au montage.
    */
-  const [projects, setProjects] = createSignal<string[]>([])
+  const [projects, setProjects] = createSignal<ProjectRef[]>([])
   /**
    * Les choix que le serveur publie, déjà projetés. **Jamais les charges brutes** : celle des
    * modèles porte les clés des fournisseurs, et elle est abandonnée dès la projection.
@@ -320,6 +320,38 @@ export default function App() {
    * qu'il faut viser à la souris, là où un menu se découvre d'un clic et se range aussitôt.
    */
   const [menuOpen, setMenuOpen] = createSignal<string | undefined>()
+  /** Le menu « … » d'une **ligne de dossier** — même principe, clé de groupe. */
+  const [wsMenu, setWsMenu] = createSignal<string | undefined>()
+  /** Le dossier en cours de renommage, et ce qu'on tape. `PATCH /project/{id}` porte le `name`. */
+  const [renamingProject, setRenamingProject] = createSignal<string | undefined>()
+  const [projectDraft, setProjectDraft] = createSignal("")
+
+  const startRenameProject = (group: WorkspaceGrouping) => {
+    setWsMenu(undefined)
+    setRenamingProject(group.key)
+    setProjectDraft(group.label)
+  }
+
+  /**
+   * Renommer un dossier — **une action réelle**, et c'est ce qui autorise le menu.
+   *
+   * `PATCH /project/{id}` accepte un `name` : le serveur le retient, `GET /project` le rend, et la
+   * ligne du rail affiche donc le nouveau nom. Le serveur n'offre **aucune** suppression de projet :
+   * un « Delete » sur une ligne de dossier serait un bouton sans effet, exactement le défaut qu'on
+   * vient de corriger ailleurs.
+   */
+  const commitProjectRename = async () => {
+    const key = renamingProject()
+    if (!key) return
+    const group = groupByWorkspace(sessions(), projects(), directory()).find((candidate) => candidate.key === key)
+    const title = projectDraft().trim()
+    setRenamingProject(undefined)
+    if (!group?.projectID || !title || title === group.label) return
+    await client.project
+      .update({ projectID: group.projectID, name: title, ...scope() })
+      .catch((cause: unknown) => setError(String(cause)))
+    void loadProjects()
+  }
   // Deux replis indépendants : un dossier entier, et une ligne de session (son détail).
   const [groupsOpen, setGroupsOpen] = createSignal<Record<string, boolean>>({})
   /**
@@ -488,9 +520,19 @@ export default function App() {
    */
   const loadProjects = async () => {
     const result = await client.project.list({}).catch(() => undefined)
-    const data = (result as { data?: Array<{ worktree?: string }> } | undefined)?.data
+    const data = (result as { data?: Array<{ id?: string; worktree?: string; name?: string }> } | undefined)?.data
     if (!Array.isArray(data)) return
-    setProjects(data.map((project) => project.worktree).filter((path): path is string => Boolean(path) && path !== "/"))
+    /*
+     * On garde l'**identifiant** et le **nom** avec le chemin, et pas seulement le chemin :
+     * `PATCH /project/{id}` ne prend pas un chemin mais un identifiant, et c'est le **nom** qui
+     * permet à un renommage de se voir sur la ligne du rail. Ne garder que le chemin rendait le
+     * renommage impossible sans un second appel.
+     */
+    setProjects(
+      data
+        .filter((project) => Boolean(project.worktree) && project.worktree !== "/")
+        .map((project) => ({ path: project.worktree as string, id: project.id, name: project.name })),
+    )
   }
 
   /**
@@ -1771,7 +1813,7 @@ export default function App() {
             et il ne se change plus sans rouvrir une session. */}
         <div class="home-picks">
           <FolderPicker
-            folders={projects()}
+            folders={projects().map((project) => (typeof project === "string" ? project : project.path))}
             value={directory()}
             placeholder={serverPath()}
             label="Working directory — the new session joins this project"
@@ -2016,7 +2058,23 @@ export default function App() {
                   current={group.current}
                   onToggle={() => toggleGroup(group.key)}
                   onNew={() => newSessionIn(group.hint)}
-                />
+                  menuOpen={wsMenu() === group.key}
+                  onMenu={() => setWsMenu(wsMenu() === group.key ? undefined : group.key)}
+                  onRename={() => startRenameProject(group)}
+                  renaming={renamingProject() === group.key}
+                >
+                  <input
+                    class="rename"
+                    autofocus
+                    value={projectDraft()}
+                    onInput={(event) => setProjectDraft(event.currentTarget.value)}
+                    onBlur={() => void commitProjectRename()}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") void commitProjectRename()
+                      if (event.key === "Escape") setRenamingProject(undefined)
+                    }}
+                  />
+                </WorkspaceGroup>
                 <Show when={groupOpen(group.key)}>
                     <For each={split().shown}>
                     {(session) => (

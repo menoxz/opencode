@@ -608,10 +608,30 @@ textarea {
 .workspace {
   display: flex;
   align-items: center;
+  /* Repère de position : le menu de la ligne s'y ancre (`position: absolute`), donc l'ouvrir ne
+     pousse aucune ligne. */
+  position: relative;
   /* L'air se met **au-dessus** de ce qui ouvre un bloc (§3.7) — un workspace ouvre le sien, ses
      sessions suivent. En `margin`, et non en `padding` : un `padding` asymétrique sur le bouton du
      dossier décalait son texte de 3 px sous l'icône voisine (mesuré au lot 14). */
   margin-top: 8px;
+}
+
+/* Le « … » du dossier suit la même règle que celui d'une session : sa place est réservée, il se
+   révèle à l'opacité — une action qui apparaît en modifiant la grille fait bouger la ligne. */
+.workspace-more {
+  opacity: 0;
+  font-size: var(--fs-title);
+  line-height: 1;
+}
+
+.workspace:hover .workspace-more,
+.workspace.current .workspace-more {
+  opacity: 1;
+}
+
+.workspace-menu {
+  top: calc(100% - 4px);
 }
 
 .workspace-main {

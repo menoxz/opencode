@@ -153,6 +153,20 @@ export function sessionDetails(session: SessionSummary): Array<{ label: string; 
 export type WorkspaceGroup = SessionGroup & {
   /** Est-ce le workspace où l'on travaille ? C'est lui qui porte la coche. */
   current: boolean
+  /** L'identifiant du projet côté serveur — ce que `PATCH /project/{id}` demande pour le renommer. */
+  projectID?: string
+}
+
+/**
+ * Un projet du serveur : son chemin, et ce que la mise à jour réclame.
+ *
+ * La forme « chaîne » reste acceptée : `GET /project` rendait des chemins, et les appelants qui n'ont
+ * que cela (tests, complétion) ne doivent pas porter un objet pour rien.
+ */
+export type ProjectRef = string | { path: string; id?: string; name?: string }
+
+function asRef(project: ProjectRef): { path: string; id?: string; name?: string } {
+  return typeof project === "string" ? { path: project } : project
 }
 
 /**
@@ -182,12 +196,13 @@ function within(directory: string, project: string): boolean {
  */
 export function groupByWorkspace(
   sessions: SessionSummary[],
-  projects: string[],
+  projects: ProjectRef[],
   current: string,
 ): WorkspaceGroup[] {
   const known = projects
-    .filter((path) => typeof path === "string" && path.trim().length > 0)
-    .map((path) => ({ path, key: pathKey(path) }))
+    .map(asRef)
+    .filter((project) => typeof project.path === "string" && project.path.trim().length > 0)
+    .map((project) => ({ path: project.path, id: project.id, name: project.name, key: pathKey(project.path) }))
 
   /**
    * **Un dossier sans session ne s'affiche pas.**
@@ -221,9 +236,13 @@ export function groupByWorkspace(
     if (!group) {
       group = {
         key,
-        label: home ? leaf(home.path) : own!.label,
+        // Le **nom donné au projet** prime sur le nom du dossier : c'est ce que le renommage
+        // change, et sans cela renommer n'aurait aucun effet visible — un bouton qui agit sans
+        // effet se voit, et il est pire qu'un bouton mort.
+        label: home?.name || (home ? leaf(home.path) : own!.label),
         hint: home ? home.path : own!.hint,
         current: false,
+        projectID: home?.id,
         sessions: [],
       }
       index.set(key, group)
