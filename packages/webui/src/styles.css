@@ -773,17 +773,51 @@ textarea {
 /* Les actions (renommer, supprimer) occupent leur place en permanence et se révèlent par l'opacité.
    L'ancien `display: none → flex` changeait la grille, donc la largeur du titre : la ligne entière
    bougeait sous le curseur au moment précis où l'on visait un bouton. */
-.row-actions {
-  display: flex;
-  gap: 2px;
-  opacity: 0;
-  pointer-events: none;
+/* ---- Le menu « … » d'une ligne de session ----
+   Reproduit de DSH : la ligne porte un « … » qui ouvre ses actions, plutôt que des glyphes posés
+   dessus. Le menu **flotte** au-dessus du fil : l'ouvrir ne déplace aucune ligne.
+   (Le bloc `.row-actions` qui suivait ici était un **doublon** du premier, avec moins de
+   propriétés — le premier porte `position: absolute` et le dégradé qui détache les actions du
+   titre ; le second ne faisait que le répéter. Retiré le 2026-10-15.) */
+
+.row-menu-trigger {
+  padding: 0 6px;
+  font-size: var(--fs-title);
+  line-height: 1;
 }
 
-.row:hover .row-actions,
-.row.active .row-actions {
-  opacity: 1;
-  pointer-events: auto;
+.row-menu {
+  position: absolute;
+  top: calc(100% - 2px);
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 148px;
+  padding: 4px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--bg-2);
+  /* Une ombre, parce que le menu flotte au-dessus du fil : sans elle, ses bords se confondent avec
+     les lignes qu'il recouvre. */
+  box-shadow: 0 10px 24px #00000066;
+}
+
+.row-menu-item {
+  padding: 6px 8px;
+  border-radius: 6px;
+  color: var(--text-2);
+  font-size: var(--fs-base);
+  text-align: left;
+}
+
+.row-menu-item:hover {
+  background: #ffffff0f;
+  color: var(--text-1);
+}
+
+.row-menu-item.danger:hover {
+  color: #f85149;
 }
 
 .rename {

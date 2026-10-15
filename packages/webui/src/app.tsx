@@ -311,6 +311,15 @@ export default function App() {
   const [renameDraft, setRenameDraft] = createSignal("")
   // Confirmation en ligne : un `window.confirm` natif ne se style pas et bloque tout pilotage.
   const [confirming, setConfirming] = createSignal<string | undefined>()
+  /**
+   * Le menu « … » d'une ligne de session : quelle ligne l'a ouvert. **Une seule à la fois** — c'est
+   * ce qui distingue un menu d'une rangée de boutons : le menu se ferme en s'ouvrant ailleurs.
+   *
+   * Reproduit de DSH : ses lignes portent un « … » qui ouvre `Rename` / `Delete`. Les nôtres
+   * posaient **deux glyphes** (✎ et ✕) sur la ligne — une affordance qui prend la place du titre et
+   * qu'il faut viser à la souris, là où un menu se découvre d'un clic et se range aussitôt.
+   */
+  const [menuOpen, setMenuOpen] = createSignal<string | undefined>()
   // Deux replis indépendants : un dossier entier, et une ligne de session (son détail).
   const [groupsOpen, setGroupsOpen] = createSignal<Record<string, boolean>>({})
   /**
@@ -2023,54 +2032,75 @@ export default function App() {
                             time={sessionTimestamp(session)}
                             now={now()}
                             active={session.id === active()}
-                            onSelect={() => void selectSession(session.id)}
+                            onSelect={() => {
+                              setMenuOpen(undefined)
+                              void selectSession(session.id)
+                            }}
                           >
                             <span class="row-actions">
-                              <button
-                                class="ghost"
-                                title="Rename"
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  startRename(session)
-                                }}
-                              >
-                                ✎
-                              </button>
                               <Show
-                                when={confirming() === session.id}
+                                when={menuOpen() === session.id}
                                 fallback={
                                   <button
-                                    class="ghost"
-                                    title="Delete"
+                                    class="ghost row-menu-trigger"
+                                    title="Actions"
+                                    aria-label="Session actions"
                                     onClick={(event) => {
                                       event.stopPropagation()
-                                      setConfirming(session.id)
+                                      setMenuOpen(session.id)
                                     }}
                                   >
-                                    ✕
+                                    …
                                   </button>
                                 }
                               >
-                                <button
-                                  class="ghost"
-                                  title="Confirm delete"
-                                  onClick={(event) => {
-                                    event.stopPropagation()
-                                    void removeSession(session)
-                                  }}
-                                >
-                                  delete
-                                </button>
-                                <button
-                                  class="ghost"
-                                  title="Cancel"
-                                  onClick={(event) => {
-                                    event.stopPropagation()
-                                    setConfirming(undefined)
-                                  }}
-                                >
-                                  cancel
-                                </button>
+                                <span class="row-menu">
+                                  <button
+                                    class="row-menu-item"
+                                    onClick={(event) => {
+                                      event.stopPropagation()
+                                      setMenuOpen(undefined)
+                                      startRename(session)
+                                    }}
+                                  >
+                                    Rename
+                                  </button>
+                                  <Show
+                                    when={confirming() === session.id}
+                                    fallback={
+                                      <button
+                                        class="row-menu-item danger"
+                                        onClick={(event) => {
+                                          event.stopPropagation()
+                                          setConfirming(session.id)
+                                        }}
+                                      >
+                                        Delete
+                                      </button>
+                                    }
+                                  >
+                                    <button
+                                      class="row-menu-item danger"
+                                      onClick={(event) => {
+                                        event.stopPropagation()
+                                        setMenuOpen(undefined)
+                                        void removeSession(session)
+                                      }}
+                                    >
+                                      Confirm delete
+                                    </button>
+                                    <button
+                                      class="row-menu-item"
+                                      onClick={(event) => {
+                                        event.stopPropagation()
+                                        setConfirming(undefined)
+                                        setMenuOpen(undefined)
+                                      }}
+                                    >
+                                      Cancel
+                                    </button>
+                                  </Show>
+                                </span>
                               </Show>
                             </span>
                           </SessionRow>
