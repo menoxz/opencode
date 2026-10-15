@@ -2672,7 +2672,11 @@ textarea {
 
 .inj-chev {
   flex: none;
-  width: 10px;
+  /* **Plus de largeur fixe.** Elle valait `10px`, calibrée sur un glyphe de 9 px — et le barème a
+     porté ce glyphe à 12 : la boîte ne pouvait que déborder (mesuré le 2026-10-15 : la règle n'a
+     pas d'`overflow`). Suivre le chiffre aurait recréé le même couplage un cran plus loin.
+     Sans largeur, la boîte prend celle du glyphe — et l'alignement tient quand même, puisque toutes
+     les lignes portent **le même caractère**, donc la même avance. */
   color: var(--text-3);
   font-size: var(--fs-meta);
 }
