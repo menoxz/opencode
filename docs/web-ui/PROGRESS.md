@@ -3550,10 +3550,22 @@ compteur de reconnexions).
 
 ### Ce qui reste
 
-- `sse=1` dans les deux relevés : sur cette pile la socket **casse vraiment**, donc `EventSource`
-  se reconnecte seul et **le chien de garde n'a pas eu à jouer**. Son déclenchement (flux ouvert
-  mais muet) reste couvert **par les tests purs seulement** — c'est le cas que seul un proxy tolérant
-  produit, et il n'a pas été reproduit en navigateur.
+- Le chien de garde, lui, est **constaté en navigateur** depuis, par le seul cas qui le déclenche. La
+  pile sans proxy ne le produit pas (`sse=1` : la socket casse vraiment et `EventSource` se
+  reconnecte seul). Un **proxy muet** a donc été mis devant le serveur (4099 → 4097) : il relaie
+  tout, et sur `/event` **jette les octets sans fermer la socket** — exactement ce que `EventSource`
+  ne signale jamais.
+
+  ```
+  avant      : sse=1 · consoleErrors=[]      (flux bavard, page servie via le proxy)
+  drapeau    -> le flux ne livre plus rien, la socket reste ouverte
+  apres 45 s : sse=2 · consoleErrors=[]      (le chien de garde a remplacé le flux)
+  ```
+
+  Une **deuxième** `EventSource` construite est la signature du remplacement : `EventSource` ne
+  reconstruit jamais son objet pour ses propres reconnexions. Le remplacement est silencieux, et
+  c'est voulu — le flux se répare, l'écran n'a rien à dire. Instrument : `%TEMP%\opencodev2\silent-proxy.ts`
+  (hors dépôt, c'est un outil de mesure, pas du code livré).
 - Les lignes `TIMEOUT ouverture du websocket` des relevés sont un **artefact de la sonde** : la borne
   de 8 s sur l'attachement a été atteinte alors que les évaluations suivantes ont rendu leur valeur
   (et la navigation est prouvée par le changement d'URL du même onglet entre les deux relevés).
