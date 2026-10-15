@@ -189,14 +189,19 @@ ce document : une donnée exposée par le serveur n'est pas une raison de l'affi
   seul groupe, par construction, alors que la question posée est « où ai-je travaillé ? ». Le
   rattachement se calcule : `GET /session` porte `directory`, `GET /project` porte les workspaces.
   Le libellé est le **nom du projet** ; l'absolu reste en infobulle.
-- **Le workspace courant porte la coche**, et il se reconnaît par **préfixe** : on travaille dans
-  `…\opencode-fork\packages\opencode` alors que le workspace est `…\opencode-fork`. Comparés entiers,
-  aucun ne correspondait — la coche ne s'affichait donc **jamais**.
-- **Un workspace sans session n'apparaît pas.** La liste répond à « où ai-je travaillé ? » : une ligne
-  vide ne répond à rien (§8). Ce serveur connaît 26 projets et 100 sessions, toutes dans un seul —
-  la liste en montre donc **un**, et c'est le résultat juste : la référence donne la forme, jamais les
-  données.
-- **Une session se lit *sous* son workspace**, par une indentation franche.
+- **L'icône dit le dossier ; rien ne dit « ouvert ».** L'état se lit à l'**indentation** des sessions
+  sous le dossier — retirer le chevron (lot 14) et la coche du courant (lot 15) a laissé la ligne à
+  son nom, ce qui est ce qu'on y cherche.
+- **Le dossier courant se lit au contraste**, jamais à un symbole : c'est la seule marque qui reste,
+  et elle suffit.
+- **La ligne du dossier porte son geste** : ouvrir une session **ici**. Ce bouton est **visible en
+  permanence** — c'est l'action qu'on vient chercher sur cette ligne, pas une action rare.
+- **Aucun compteur sur la ligne.** « Combien de sessions ai-je créées » n'est pas une question qu'on
+  se pose en lisant un nom ; un nombre à côté d'un nom prend la place du nom.
+- **Une session se lit *sous* son workspace**, par une indentation franche mais **courte** — 12 px.
+  Mesuré : à 22 px, le nom ne disposait plus que de 156 px sur 280, et il est la seule information de
+  la ligne. Une session porte son **nom** et son **heure**, rien d'autre : ni icône (identique sur
+  toutes les lignes, donc muette), ni flèche, ni détail repliable — le détail est dans l'infobulle.
 - **Un dossier se replie**, ouvert par défaut : on replie pour dégager, on ne déplie pas pour
   découvrir. Au-delà de **4 sessions**, « show more » ; « show less » pour replier.
 - **Le survol ne déplace rien.** Une action qui apparaît en modifiant la grille fait bouger toute la
@@ -225,6 +230,16 @@ contrôles pour un geste font douter de celui qui agit.
 3. **L'indentation dit l'appartenance, et elle suffit.** Le chevron d'ouverture est retiré des lignes
    de dossier : l'état ouvert se lit aux sessions **indentées dessous**, et le chevron doublait cette
    information sur chaque ligne. Le pli reste au clic du nom, qui est l'information.
+4. **Une seule taille d'icône dans la colonne : 16 px** pour du texte à 14 — l'échelle des barres
+   latérales. Mesuré le 2026-10-15 : la colonne portait **huit icônes en cinq tailles** (14, 13, 14,
+   13, 13, 11, 13, 14), donc aucune valeur reproductible. Le symptôme est venu formulé « trop petite
+   pour une raison inconnue » — c'est le signe qu'il n'y a pas de règle, et non qu'un chiffre est mal
+   choisi. **Une taille choisie à la main n'est pas une échelle.**
+5. **Une action qu'on vient chercher est visible au repos.** Le bouton « nouvelle session » d'un
+   dossier était à l'opacité zéro : montrer au survol ce qu'on cherche est le contraire de le montrer.
+6. **Un geste qui ouvre est le même qui ferme.** Le bouton de recherche faisait apparaître un champ
+   **derrière** lui : une fois ouvert, plus rien ne le refermait à la souris. Le bouton actif devient
+   une croix, et le champ prend la place du libellé.
 
 Corollaire : **la ligne d'un dossier porte son geste** — ouvrir une session ici —, parce que c'est là
 qu'on en a l'idée. Et la coche du courant se reconnaît par **préfixe** : le dossier de travail est un
@@ -535,6 +550,16 @@ devient ainsi **plus pauvre** que le lot précédent : c'est voulu, et c'est le 
 ---
 
 ## 10. Les statistiques — une section, pas le fil
+
+> **Révision du lot 15 (2026-10-15).** La « porte » décrite ci-dessous — un bouton `stats` au pied du
+> rail — **est retirée**, et l'onglet `Session` du tiroir avec elle. Verdict d'usage : la page
+> `Trajectory` porte le détail par tour, et la barre sous la saisie (§10.1) porte les agrégats qu'on
+> veut lire **en écrivant**. Un troisième endroit pour la même donnée n'est pas une commodité : c'est
+> un endroit de plus où elle peut diverger, et un bouton de plus pour y aller. Le **journal brut**
+> (`Raw events`) qui vivait dans ce panneau est déplacé dans la vue **Logs**, où §4 le place déjà.
+>
+> Ce qui reste vrai de cette section : **le fil ne porte aucune statistique** (§9.3), et le détail par
+> tour vit dans la vue `Trajectory`.
 
 **Une porte toujours au même endroit, un contenu qui ne bouge pas.**
 

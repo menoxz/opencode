@@ -150,15 +150,6 @@ export function FolderIcon(props: { size?: number }) {
   )
 }
 
-/** Session : une conversation. */
-export function SessionIcon(props: { size?: number }) {
-  return (
-    <Glyph size={props.size}>
-      <path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H9l-4 4v-4H6a2 2 0 0 1-2-2z" />
-    </Glyph>
-  )
-}
-
 /** Chevron : l'état de pli. Il tourne, il n'est jamais remplacé par un autre dessin. */
 export function ChevronIcon(props: { size?: number; open: boolean }) {
   return (
@@ -226,22 +217,8 @@ export function GearIcon(props: { size?: number }) {
   )
 }
 
-/**
- * Statistiques : des barres sur une ligne de base.
- *
- * Une icône doit dire ce que le bouton **ouvre**, et rien d'autre. Le bouton porte d'abord eu une
- * icône de liste (trois traits) : mesurée sur la capture du rail, elle se lit comme un **menu** —
- * une forme universellement comprise comme « afficher la navigation ». Des barres de hauteurs
- * différentes se lisent comme une **mesure**, qui est exactement ce que la section contient.
- */
-export function ChartIcon(props: { size?: number }) {
-  return (
-    <Glyph size={props.size ?? 13}>
-      <path d="M4 20h16" />
-      <path d="M8 20v-6M12 20v-10M16 20v-4" />
-    </Glyph>
-  )
-}
+/* `ChartIcon` (barres de statistiques) est partie avec la section Stats, retirée le 2026-10-15 : la
+   page Trajectory porte le détail par tour et la barre sous la saisie porte les agrégats. */
 
 /* =============================================================================
    Les trois états d'un geste de copie.

@@ -3089,6 +3089,82 @@ mesure**, qui est exactement ce que la section contient. Deux tracés, trait 1,6
 défaut se voit sur une capture et jamais dans une mesure de position : c'est la **lisibilité** de la
 forme, et elle ne se vérifie qu'en regardant.
 
+---
+
+## Lot 15 — la section Workspaces : enlever, et une échelle d'icônes (livré)
+
+Deuxième retour d'usage sur la même zone. **Deux des demandes n'étaient pas des corrections mais des
+capacités manquantes**, et je l'ai établi avant de toucher au code.
+
+### Deux demandes qui demandent un travail natif, pas un ajustement
+
+| demande | ce que la vérification a établi |
+|---|---|
+| ouvrir l'explorateur de fichiers pour choisir un dossier | **aucune route ne le fait.** Surface entière relevée : **119 routes**, les seules « sélections » sont `POST /tui/open-help\|open-sessions\|open-themes\|open-models` et `/tui/select-session` — des ordres donnés au **TUI**, pas un sélecteur serveur. `/file` n'a que `content` et `status`. Et le navigateur ne peut pas rendre un chemin absolu : `showDirectoryPicker()` rend un *handle* sans chemin, `<input webkitdirectory>` ne rend que du relatif |
+| un **menu par plugin**, ouvrant sa configuration (Schedule et ses tâches) | **l'API plugin n'a aucune surface d'interface** : `PluginInput` et `Hooks`, rien qui déclare un panneau, une route ou un composant. La vision demande une **capacité** : que le plugin déclare son panneau, que la webui le rende |
+
+Ce qui a été **appliqué** en attendant, sans promettre le reste : le champ d'ajout de dossier dit
+maintenant ce qu'il attend et offre les dossiers connus (il le faisait déjà), et l'entrée `plugins`
+mène à la section où ils s'ajoutent et se retirent.
+
+### L'échelle d'icônes — la cause du « pour une raison inconnue »
+
+Mesuré : la colonne portait **huit icônes en cinq tailles** — 14, 13, 13, 14, 13, 13, 11, 13, 14.
+Il n'y avait **aucune échelle** : chaque appel choisissait son nombre à la main, donc aucune valeur
+n'était reproductible ni discutable. **Une seule valeur désormais : 16 px** dans le rail, pour du texte
+à 14 — la convention des barres latérales. Vérifié : dossier 16, session 16, en-tête 16, pied 16.
+
+### Ce qui a été retiré, et pourquoi
+
+| retiré | raison |
+|---|---|
+| **coche** du dossier courant | doublait un contraste qui suffit, sur une ligne qu'on parcourt pour trouver un nom |
+| **compteur** de sessions | personne ne cherche « combien j'en ai créées » ; il occupait la place du nom |
+| **icône de session** | identique sur toutes les lignes, donc elle ne distinguait rien |
+| **flèche de survol** + **détail repliable** | la flèche tenait une colonne de la grille — d'où l'heure à **39 px** du bord ; le détail est déjà dans l'infobulle et dans la page Logs |
+| **indentation** 22 → **12 px** | le nom ne disposait que de **156 px** sur 280 |
+| **onglet `Session`** du tiroir et **bouton `stats`** | la page `Trajectory` porte le détail par tour, la barre sous la saisie porte les agrégats : un troisième endroit pour la même donnée est un endroit de plus où elle diverge |
+| **onglets** du tiroir | un onglet unique n'est pas un choix à offrir ; le titre nomme, le compteur compte |
+
+Le **journal brut** (`Raw events`), qui vivait dans le panneau retiré, **n'a pas été supprimé** : la
+cible §4 le place dans la vue Logs — « le journal montre ce que la page a réellement reçu ». Il y est
+désormais, sous la trajectoire.
+
+### Ce qui a été ajouté ou renforcé
+
+- **Le bouton de session de la ligne du dossier reste visible** (il était à l'opacité **0** — invisible
+  au moment précis où on le cherche) et passe à 16 px.
+- **La recherche se referme par le bouton qui l'a ouverte.** Défaut relevé : le champ ouvert, les
+  boutons disparaissaient derrière lui, donc plus aucun moyen de le fermer à la souris. Le bouton actif
+  devient une croix. ⇒ **Un geste qui ouvre doit être le même qui ferme.**
+- **Interlignage conventionnel** : la ligne mesurait 26 px pour un `line-height` de 1.3 (18,2 px) — ni
+  l'une ni l'autre n'est une valeur qu'on reproduit. Désormais **24 px** et **1.5**.
+
+### Preuve
+
+```
+vitest run     -> 21 fichiers, 563 tests, exit 0
+tsgo --noEmit  -> exit 0
+```
+
+Au navigateur (5181), après rechargement :
+
+```
+retirés : coche 0 · compteur 0 · icône de session 0 · flèche 0 · détail 0 · onglets 0
+pied     : ["settings"]  (plus de « stats »)
+ligne    : margin-left 12px · hauteur 24px · line-height 1.5 · nom 203px (avant 156)
+heure    : 21px du bord (avant 39)
+icônes   : dossier 16 · session 16 · en-tête 16 · pied 16
+bouton   : opacité 1 (avant 0)
+recherche: ouverte par le bouton (« Close search ») -> refermée par le même -> « workspaces »
+```
+
+### La règle
+
+**Une taille choisie à la main n'est pas une échelle.** Huit icônes en cinq tailles ne se voient pas
+une par une : elles se voient quand on les compte — et le symptôme, lui, arrive formulé comme « pour
+une raison inconnue », ce qui est exactement le signe qu'il n'y a pas de règle.
+
 
 
 

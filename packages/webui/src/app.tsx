@@ -32,10 +32,8 @@ import {
   Prose,
   QuestionSheet,
   Reasoning,
-  SessionPanel,
-  SessionRow,
   ShowMore,
-  TrajectoryPanel,
+  SessionRow,
   ToolLine,
   Turn,
   UserPrompt,
@@ -85,7 +83,7 @@ import {
   toggleModel,
 } from "./settings"
 import { FolderPicker, Picker } from "./picker"
-import { ChartIcon, FolderPlusIcon, GearIcon, SearchIcon, SendIcon } from "./icons"
+import { CrossIcon, FolderPlusIcon, GearIcon, SearchIcon, SendIcon } from "./icons"
 import { TrajectoryView } from "./trajectory-view"
 import {
   commandChoices,
@@ -321,8 +319,6 @@ export default function App() {
    */
   const [headMode, setHeadMode] = createSignal<"none" | "search" | "add">("none")
   const [headDraft, setHeadDraft] = createSignal("")
-  const [detailsOpen, setDetailsOpen] = createSignal<Record<string, boolean>>({})
-
   // Configuration : lue seulement quand la feuille s'ouvre. Rien de tout cela ne s'affiche au repos.
   const [configOpen, setConfigOpen] = createSignal(false)
   const [config, setConfig] = createSignal<{
@@ -1502,7 +1498,6 @@ export default function App() {
   /** Un dossier est ouvert par défaut : on replie pour dégager, on ne déplie pas pour découvrir. */
   const groupOpen = (key: string) => groupsOpen()[key] !== false
   const toggleGroup = (key: string) => setGroupsOpen((current) => ({ ...current, [key]: current[key] === false }))
-  const toggleDetail = (id: string) => setDetailsOpen((current) => ({ ...current, [id]: !current[id] }))
 
   /**
    * Les plugins seulement — les seuls accès hors session.
@@ -1914,65 +1909,71 @@ export default function App() {
               et devient le champ correspondant. Au repos elle n'est qu'un libellé : ce qui est rare
               ne s'affiche pas (§8), et ces deux fonctions se trouvent là où on les cherche. */}
           <div class="ws-head">
-            <Show
-              when={headMode() !== "none"}
-              fallback={
-                <>
-                  <span class="rail-label">workspaces</span>
-                  <span class="ws-actions">
-                    <button
-                      class="icon-btn"
-                      title="Search sessions"
-                      aria-label="Search sessions"
-                      onClick={() => {
-                        setHeadDraft("")
-                        setHeadMode("search")
-                      }}
-                    >
-                      <SearchIcon size={14} />
-                    </button>
-                    <button
-                      class="icon-btn"
-                      title="Add a workspace folder"
-                      aria-label="Add a workspace folder"
-                      onClick={() => {
-                        setQuery("")
-                        setHeadDraft("")
-                        setHeadMode("add")
-                      }}
-                    >
-                      <FolderPlusIcon size={14} />
-                    </button>
-                  </span>
-                </>
+            <Show when={headMode() === "none"} fallback={<input
+              class="ws-input"
+              autofocus
+              placeholder={headMode() === "search" ? "Search sessions" : "path to a project folder"}
+              aria-label={headMode() === "search" ? "Search sessions" : "path to a project folder"}
+              value={headMode() === "search" ? query() : headDraft()}
+              onInput={(event) =>
+                headMode() === "search" ? setQuery(event.currentTarget.value) : setHeadDraft(event.currentTarget.value)
               }
-            >
-              <input
-                class="ws-input"
-                autofocus
-                placeholder={headMode() === "search" ? "Search sessions" : "path to a project folder"}
-                aria-label={headMode() === "search" ? "Search sessions" : "path to a project folder"}
-                value={headMode() === "search" ? query() : headDraft()}
-                onInput={(event) =>
-                  headMode() === "search" ? setQuery(event.currentTarget.value) : setHeadDraft(event.currentTarget.value)
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  const path = headMode() === "add" ? headDraft().trim() : ""
+                  setHeadMode("none")
+                  setHeadDraft("")
+                  if (path) applyDirectory(path)
                 }
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    const path = headMode() === "add" ? headDraft().trim() : ""
-                    setHeadMode("none")
-                    setHeadDraft("")
-                    if (path) applyDirectory(path)
-                  }
-                  if (event.key === "Escape") {
-                    // Fermer un filtre le retire aussi : une liste filtrée sans champ visible ne
-                    // dirait plus pourquoi elle est courte.
-                    setHeadMode("none")
-                    setHeadDraft("")
-                    setQuery("")
-                  }
-                }}
-              />
+                if (event.key === "Escape") {
+                  // Fermer un filtre le retire aussi : une liste filtrée sans champ visible ne
+                  // dirait plus pourquoi elle est courte.
+                  setHeadMode("none")
+                  setHeadDraft("")
+                  setQuery("")
+                }
+              }}
+            />}>
+              <span class="rail-label">workspaces</span>
             </Show>
+            {/* Les deux boutons **restent visibles quand le champ est ouvert**, et celui qui a ouvert
+                le champ le referme : la première version les cachait derrière l'input, donc la
+                recherche ouverte n'avait plus aucun moyen d'être fermée à la souris (défaut relevé
+                le 2026-10-15). Un geste qui ouvre doit être le même qui ferme. */}
+            <span class="ws-actions">
+              <button
+                class="icon-btn"
+                classList={{ active: headMode() === "search" }}
+                title={headMode() === "search" ? "Close search" : "Search sessions"}
+                aria-label={headMode() === "search" ? "Close search" : "Search sessions"}
+                onClick={() => {
+                  setHeadDraft("")
+                  if (headMode() === "search") {
+                    setHeadMode("none")
+                    setQuery("")
+                  } else setHeadMode("search")
+                }}
+              >
+                <Show when={headMode() === "search"} fallback={<SearchIcon size={16} />}>
+                  <CrossIcon size={16} />
+                </Show>
+              </button>
+              <button
+                class="icon-btn"
+                classList={{ active: headMode() === "add" }}
+                title={headMode() === "add" ? "Cancel" : "Add a workspace folder"}
+                aria-label={headMode() === "add" ? "Cancel" : "Add a workspace folder"}
+                onClick={() => {
+                  setQuery("")
+                  setHeadDraft("")
+                  setHeadMode(headMode() === "add" ? "none" : "add")
+                }}
+              >
+                <Show when={headMode() === "add"} fallback={<FolderPlusIcon size={16} />}>
+                  <CrossIcon size={16} />
+                </Show>
+              </button>
+            </span>
           </div>
 
           <div class="rows">
@@ -1984,7 +1985,6 @@ export default function App() {
                   <WorkspaceGroup
                   label={group.label}
                   hint={group.hint}
-                  count={group.sessions.length}
                   current={group.current}
                   onToggle={() => toggleGroup(group.key)}
                   onNew={() => newSessionIn(group.hint)}
@@ -2004,10 +2004,7 @@ export default function App() {
                             time={sessionTimestamp(session)}
                             now={now()}
                             active={session.id === active()}
-                            open={Boolean(detailsOpen()[session.id])}
-                            details={sessionDetails(session)}
                             onSelect={() => void selectSession(session.id)}
-                            onToggle={() => toggleDetail(session.id)}
                           >
                             <span class="row-actions">
                               <button
@@ -2098,24 +2095,11 @@ export default function App() {
           <span class="foot-row">
             <button
               class="rail-button"
-              classList={{ active: drawerOpen() && drawerTab() === "session" }}
-              title="Session statistics: turns, steps, time, tokens, cost"
-              aria-label="Session statistics"
-              onClick={() => {
-                setDrawerTab("session")
-                setDrawerOpen(drawerOpen() && drawerTab() === "session" ? false : true)
-              }}
-            >
-              <ChartIcon size={13} />
-              <span>stats</span>
-            </button>
-            <button
-              class="rail-button"
               classList={{ active: configOpen() }}
               title="Settings: defaults, providers, agents, MCP"
               onClick={openConfig}
             >
-              <GearIcon size={14} />
+              <GearIcon size={16} />
               <span>settings</span>
             </button>
           </span>
@@ -2167,6 +2151,24 @@ export default function App() {
             <div class="scroll tj-scroll">
               <TrajectoryView turns={turns()} toolSchema={(id) => toolSchemas()[id]} />
             </div>
+            {/* Le **journal brut** — ce que la page a réellement reçu. Il vivait dans le tiroir avec
+                les statistiques, retirées le 2026-10-15 ; sa place est ici, où la cible §4 le met :
+                la vue Logs est le seul endroit qu'on ouvre en se demandant « il ne se passe rien ? ». */}
+            <details class="log-events">
+              <summary>Raw events ({logEntries().length})</summary>
+              <Show when={logEntries().length > 0} fallback={<p class="log-empty">No events received yet.</p>}>
+                <ul class="log-list">
+                  <For each={[...logEntries()].reverse()}>
+                    {(entry) => (
+                      <li class="log-row">
+                        <span class="log-time">{new Date(entry.at).toLocaleTimeString()}</span>
+                        <span class="log-type">{entry.type}</span>
+                      </li>
+                    )}
+                  </For>
+                </ul>
+              </Show>
+            </details>
           </Show>
           <Show when={view() === "chat"}>
           <div class="scroll" ref={scroller} onScroll={onScroll}>
@@ -2339,49 +2341,18 @@ export default function App() {
       <aside class="side" classList={{ open: drawerOpen() }}>
         <div class="side-inner">
           <div class="side-tabs">
-            <button
-              class="side-tab"
-              classList={{ active: drawerTab() === "session" }}
-              onClick={() => setDrawerTab("session")}
-            >
-              Session
-            </button>
+            <span class="side-title">Decisions</span>
             <Show when={permissions().length > 0}>
-              <button
-                class="side-tab"
-                classList={{ active: drawerTab() === "decisions" }}
-                onClick={() => setDrawerTab("decisions")}
-              >
-                Decisions
-                <span class="pill-count">{permissions().length}</span>
-              </button>
+              <span class="pill-count">{permissions().length}</span>
             </Show>
             <button class="side-close" title="Close" onClick={() => setDrawerOpen(false)}>
               ✕
             </button>
           </div>
-          <Show when={drawerTab() === "session"}>
-            <SessionPanel stats={stats()} />
-            {/* Le détail par tour et les événements bruts vivent ici, pas dans la vue Logs : celle-ci
-                **est** la timeline de DSH, et ces deux lectures sont du diagnostic qu'on ouvre à
-                côté. */}
-            <TrajectoryPanel turns={turns()} />
-            <details class="log-events">
-              <summary>Raw events ({logEntries().length})</summary>
-              <Show when={logEntries().length > 0} fallback={<p class="log-empty">No events received yet.</p>}>
-                <ul class="log-list">
-                  <For each={[...logEntries()].reverse()}>
-                    {(entry) => (
-                      <li class="log-row">
-                        <span class="log-time">{new Date(entry.at).toLocaleTimeString()}</span>
-                        <span class="log-type">{entry.type}</span>
-                      </li>
-                    )}
-                  </For>
-                </ul>
-              </Show>
-            </details>
-          </Show>
+          {/* Le panneau « Session » vivait ici — **retiré le 2026-10-15**. Ce qu'il montrait existe
+              deux fois ailleurs et mieux : la page `Trajectory` porte le détail par tour, et la barre
+              sous la saisie porte les agrégats qu'on veut lire en écrivant. Un troisième endroit pour
+              la même donnée n'est pas une commodité, c'est un endroit de plus où elle peut diverger. */}
           <Show when={drawerTab() === "decisions"}>
             <For each={permissions()}>
               {(request) => (

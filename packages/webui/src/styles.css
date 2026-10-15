@@ -511,40 +511,48 @@ textarea {
   white-space: nowrap;
 }
 
-.workspace-count {
-  color: var(--text-3);
-  font-size: var(--fs-meta);
-  font-variant-numeric: tabular-nums;
-}
+/* Le compteur de sessions a été retiré (2026-10-15) : il occupait la place du nom pour un nombre que
+   personne ne cherche. Sa règle est partie avec lui. */
 
-/* Le workspace **courant** — la coche. Le libellé monte d'un cran de contraste : une coche seule ne
-   se lit pas en balayant la colonne. */
+/* Le compteur et la coche du dossier ont été retirés (2026-10-15) : l'un occupait la place du nom
+   pour un nombre que personne ne cherche, l'autre doublait un contraste qui suffit. Le contraste du
+   dossier courant, lui, reste — c'est la seule marque qui dit « on travaille ici ». */
 .workspace.current .workspace-main {
   color: var(--text-1);
 }
 
-.workspace-check {
-  flex: 0 0 auto;
-  display: flex;
+/* Le bouton de session **reste visible** : c'est l'action qu'on vient chercher sur cette ligne, et
+   la première version le montrait à l'opacité zéro — donc invisible au moment où on le cherche. */
+.workspace-new {
   color: var(--text-3);
+}
+
+.workspace:hover .workspace-new {
+  color: var(--text-1);
 }
 
 /* ---- 3. Une session : nettement en retrait de son dossier ---- */
 
 .row {
   display: grid;
-  /* icône · nom · temps · chevron. Les actions ne tiennent **aucune** colonne : elles se
-     superposent au nom, donc le titre garde toute la largeur disponible. */
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  /* nom · temps. Les actions ne tiennent **aucune** colonne : elles se superposent au nom, donc le
+     titre garde toute la largeur disponible. */
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 7px;
-  /* 22 px : à 16 px, dossiers et sessions se confondaient. */
-  margin-left: 22px;
-  padding: 4px 8px;
+  gap: 8px;
+  /* **12 px** : l'indentation dit l'appartenance au dossier, et rien de plus. Mesuré le 2026-10-15 :
+     à 22 px, le nom ne disposait plus que de 156 px sur 280 — la seule information de la ligne
+     payait le prix d'un rappel que le dossier au-dessus dit déjà. */
+  margin-left: 12px;
+  padding: 0 8px;
+  /* 24 px et 1.5 : deux valeurs rondes et usuelles. La ligne mesurait 26 px pour un interlignage de
+     1.3 (18,2 px) — ni l'une ni l'autre n'est une convention, donc rien ne se reproduisait à
+     l'identique en ajoutant une ligne. */
+  height: 24px;
   border-radius: 6px;
   cursor: pointer;
   font-size: var(--fs-base);
-  line-height: 1.3;
+  line-height: 1.5;
   /* La couleur de fond de la ligne, exposée pour que les actions superposées s'y fondent. */
   --row-bg: var(--bg-1);
 }
@@ -561,12 +569,6 @@ textarea {
 
 .row.active .row-title {
   color: var(--text-1);
-}
-
-.row-icon {
-  display: flex;
-  flex: 0 0 auto;
-  color: var(--text-3);
 }
 
 /* Le nom porte l'information : c'est lui qui reçoit l'infobulle, et lui que les actions recouvrent. */
@@ -588,21 +590,6 @@ textarea {
   color: var(--text-3);
   font-size: var(--fs-note);
   font-variant-numeric: tabular-nums;
-}
-
-/* L'affordance du détail n'apparaît qu'au survol : au repos, la ligne reste nue.
-   Sa **place est réservée** (`opacity`, jamais `display`), sinon la colonne du titre se rétrécit
-   à l'apparition et toute la ligne bouge sous le curseur. */
-.row-more {
-  display: flex;
-  color: var(--text-3);
-  opacity: 0;
-  transition: opacity 0.1s;
-}
-
-.row:hover .row-more,
-.row.active .row-more {
-  opacity: 1;
 }
 
 /* Les actions (renommer, supprimer) se posent **par-dessus** le nom, au survol.
@@ -628,27 +615,9 @@ textarea {
   pointer-events: auto;
 }
 
-/* Le détail occupe toute la largeur, sous la ligne. */
-.row-detail {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: 62px minmax(0, 1fr);
-  gap: 2px 10px;
-  margin: 6px 0 2px;
-  font-size: var(--fs-note);
-}
-
-.row-detail dt {
-  color: var(--text-3);
-}
-
-.row-detail dd {
-  margin: 0;
-  color: var(--text-2);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+/* Le détail repliable de la ligne a été retiré (2026-10-15) avec sa flèche : il occupait une colonne
+   de la grille — d'où l'heure repoussée à 39 px du bord — pour une information que l'infobulle porte
+   déjà. Ses règles `.row-detail*` sont parties avec lui. */
 
 /* Les actions (renommer, supprimer) occupent leur place en permanence et se révèlent par l'opacité.
    L'ancien `display: none → flex` changeait la grille, donc la largeur du titre : la ligne entière
@@ -4171,26 +4140,13 @@ textarea {
   border-bottom: 1px solid var(--line-1);
 }
 
-.side-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
+/* Les onglets du tiroir ont disparu avec l'onglet `Session` (2026-10-15) : le tiroir n'a plus qu'une
+   raison de s'ouvrir — une décision en attente — et un onglet unique n'est pas un choix à offrir.
+   Le titre nomme ce qu'on regarde ; le compteur dit combien il en reste. */
+.side-title {
+  flex: 1;
   font-size: var(--fs-note);
-  color: var(--text-3);
-  background: transparent;
-  border: 0;
-  border-radius: 7px;
-}
-
-.side-tab:hover {
-  background: #ffffff08;
   color: var(--text-2);
-}
-
-.side-tab.active {
-  background: var(--grad-active);
-  color: var(--text-1);
 }
 
 .side-close {

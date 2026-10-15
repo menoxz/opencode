@@ -43,7 +43,7 @@ import { markdownSpans, parseMarkdown, safeHref, type MdBlock, type MdInline } f
 import { addItem, draftFrom, removeItem, setItem, todoProgress, type ContractDraft, type ContractView, type TodoView } from "./plan"
 import { writeClipboard } from "./clipboard"
 import { formatChars, injectionLabel, share, sourceLabel, type Injections } from "./injections"
-import { CheckIcon, ChevronIcon, CopyIcon, CrossIcon, FolderIcon, PlusIcon, SessionIcon, ThinkIcon, ToolIcon, toolHint } from "./icons"
+import { CheckIcon, ChevronIcon, CopyIcon, CrossIcon, FolderIcon, PlusIcon, ThinkIcon, ToolIcon, toolHint } from "./icons"
 import { toolIcon } from "./tool-icons"
 import { relativeTime } from "./time"
 
@@ -134,60 +134,61 @@ export function ShowMore(props: { hidden: number; expanded: boolean; onToggle: (
    ============================================================================= */
 
 /**
- * Ligne de workspace : le dossier, son nom, la coche du courant — et **le geste qui compte**,
- * ouvrir une session ici.
+ * Ligne de workspace : le dossier, son nom — et **le geste qui compte**, ouvrir une session ici.
  *
- * **Sans chevron.** L'état ouvert se lit à l'**indentation** des sessions sous le dossier, qui est
- * une information ; un chevron en était une seconde fois la même, à une place que l'œil paie sur
- * chaque ligne. Le clic sur le nom replie toujours — le nom est l'information, son clic est le geste.
+ * Ce qui a été **retiré**, et pourquoi (mesuré le 2026-10-15) :
+ *   - la **coche** du dossier courant : elle doublait un contraste qui suffit, sur une ligne que
+ *     l'œil parcourt pour trouver un nom ;
+ *   - le **compteur de sessions** : personne ne cherche « combien j'en ai créées » — le nombre
+ *     occupait la place du nom ;
+ *   - le **chevron** de pli : l'indentation des sessions sous le dossier dit déjà l'état.
  *
- * Ce n'est plus un `<button>` : la ligne porte désormais un vrai bouton, et deux boutons imbriqués
- * ne sont pas du HTML valide. La forme reste la même — l'icône, le libellé, la coche, le compte.
+ * Le bouton de session, lui, **gagne** au contraire : icône à l'échelle de la colonne (16 px) et
+ * visible **en permanence**, parce que c'est l'action qu'on vient chercher sur cette ligne.
  */
 export function WorkspaceGroup(props: {
   label: string
   hint: string
-  count: number
-  /** Est-ce le workspace où l'on travaille ? */
+  /** Est-ce le workspace où l'on travaille ? Il porte alors un contraste plus haut. */
   current?: boolean
   onToggle: () => void
-  /** Ouvrir une session **dans ce dossier** — le geste qui doit vivre sur la ligne du dossier. */
+  /** Ouvrir une session **dans ce dossier** — le geste qui vit sur la ligne du dossier. */
   onNew: () => void
 }) {
   return (
     <div class="workspace" classList={{ current: Boolean(props.current) }}>
       <button class="workspace-main" title={props.hint} onClick={() => props.onToggle()}>
         <span class="workspace-icon">
-          <FolderIcon size={14} />
+          <FolderIcon size={16} />
         </span>
         <span class="workspace-label">{props.label}</span>
-        <Show when={props.current}>
-          <span class="workspace-check">
-            <CheckIcon size={13} />
-          </span>
-        </Show>
-        <span class="workspace-count">{props.count}</span>
       </button>
-      {/* Sa place est réservée en permanence et il se révèle à l'opacité : une action qui apparaît
-          en modifiant la grille fait bouger la ligne au moment précis où on la vise (défaut mesuré). */}
       <button
         class="icon-btn workspace-new"
         title="New session in this folder"
         aria-label="New session in this folder"
         onClick={() => props.onNew()}
       >
-        <PlusIcon size={13} />
+        <PlusIcon size={16} />
       </button>
     </div>
   )
 }
 
 /**
- * Ligne de session : le **libellé d'abord**. Au repos, la ligne ne porte que son nom et son temps ;
- * les actions (renommer, supprimer) se posent **par-dessus** le nom au survol, donc sans consommer
- * de place — c'est ce qui rendait le titre illisible quand elles tenaient une colonne de la grille.
- * L'infobulle porte le nom complet **et** l'activité de la session, puisque le titre peut être
- * tronqué.
+ * Ligne de session : le **nom**, puis son heure. Rien d'autre.
+ *
+ * Ce qui a été **retiré**, et pourquoi (mesuré le 2026-10-15) :
+ *   - l'**icône de session** : identique sur toutes les lignes, elle ne distinguait rien — et elle
+ *     coûtait de la largeur au nom, la seule information de la ligne ;
+ *   - la **flèche de survol** et le détail repliable : la flèche occupait une colonne de la grille,
+ *     ce qui repoussait l'heure à **39 px du bord** ; et le détail qu'elle révélait est déjà dans
+ *     l'infobulle et dans la page Logs ;
+ *   - l'**indentation** revient à 12 px : elle dit l'appartenance sans manger le nom, qui ne
+ *     disposait plus que de 156 px sur 280.
+ *
+ * L'infobulle reste : elle porte le nom complet, l'agent, le modèle, les jetons et le coût — un
+ * endroit pour ce qui n'a pas à tenir à l'écran.
  */
 export function SessionRow(props: {
   title: string
@@ -196,17 +197,11 @@ export function SessionRow(props: {
   time: number | undefined
   now: number
   active: boolean
-  open: boolean
-  details: Array<{ label: string; value: string }>
   onSelect: () => void
-  onToggle: () => void
   children?: unknown
 }) {
   return (
     <div class="row" classList={{ active: props.active }} onClick={() => props.onSelect()}>
-      <span class="row-icon">
-        <SessionIcon size={13} />
-      </span>
       <span class="row-main">
         <span class="row-title" title={props.hint}>
           {props.title}
@@ -214,28 +209,6 @@ export function SessionRow(props: {
         {props.children as never}
       </span>
       <span class="row-time">{relativeTime(props.time, props.now)}</span>
-      <button
-        class="row-more"
-        title={props.open ? "Hide details" : "Show details"}
-        onClick={(event) => {
-          event.stopPropagation()
-          props.onToggle()
-        }}
-      >
-        <ChevronIcon size={11} open={props.open} />
-      </button>
-      <Show when={props.open}>
-        <dl class="row-detail">
-          <For each={props.details}>
-            {(line) => (
-              <>
-                <dt>{line.label}</dt>
-                <dd>{line.value}</dd>
-              </>
-            )}
-          </For>
-        </dl>
-      </Show>
     </div>
   )
 }
