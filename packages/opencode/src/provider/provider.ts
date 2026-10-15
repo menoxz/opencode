@@ -184,14 +184,16 @@ export function custom(dep: CustomDep): Record<string, CustomLoader> {
         Boolean((yield* dep.config()).provider?.["opencode"]?.options?.apiKey)
 
       if (!ok) {
-        // The anonymous free tier is closed server-side, so with no credential
-        // none of these models can be served. Measured 2026-10-15: `Bearer public`
-        // answers 403 FreeTierError for every header variant tried (User-Agent
-        // `opencode/2.4.5`, `opencode/local`, `opencode/latest`, none at all;
-        // session `ses_`-shaped, UUID or absent) and the official 1.18.58 client,
-        // on an isolated config, gets the same refusal. Keeping the cost-0 models
-        // would therefore only offer models that always fail.
-        for (const id of Object.keys(input.models)) delete input.models[id]
+        // Without a credential only the cost-0 models stay. Those belong to the
+        // anonymous free tier, which is closed server-side (measured 2026-10-15:
+        // `Bearer public` answers 403 FreeTierError for every header variant
+        // tried), so they cannot be served either — but dropping every model
+        // would remove the provider from the catalogue altogether, and the
+        // provider is what the key prompt is reached through.
+        for (const [key, value] of Object.entries(input.models)) {
+          if (value.cost.input === 0) continue
+          delete input.models[key]
+        }
       }
 
       return {
