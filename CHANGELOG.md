@@ -5,6 +5,15 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v2.4.6] - 2026-10-15
+
+### Added
+- **Le fournisseur `opencode` (Zen) a enfin une méthode d'authentification.** `ProviderAuth.methods()` ne remplit sa carte que depuis les hooks `auth` des greffons, et aucun n'en déclarait pour lui : la commande d'authentification ne pouvait donc enregistrer aucun credential Zen, et le fournisseur restait cloué à la clé anonyme. Nouveau greffon `plugin/opencode.ts` (méthode `api`, `label: "API key"`), enregistré dans `INTERNAL_PLUGINS`. Vérifié en bout de chaîne sur le binaire déployé : `/provider/auth` rend `opencode -> {"type":"api","label":"API key"}`.
+
+### Fixed
+- **Un credential d'authentification vide ne vaut plus authentification.** Le chargeur `opencode` comptait n'importe quelle entrée de `auth.json` comme valide : avec une clé vide, le fournisseur était réputé configuré et la requête partait **sans aucun en-tête `Authorization`** — le défaut était silencieux. La condition exige désormais une clé ou un jeton non vide. Le catalogue garde son contrat : sans credential le fournisseur reste listé avec ses seuls modèles gratuits, un catalogue vide le supprimant de la liste.
+- **La voie catalogue (v2) n'expose plus de modèles inservables sans credential.** Le greffon `core/src/plugin/provider/opencode.ts` ne désactivait que les modèles payants et laissait les modèles gratuits activés ; or le palier anonyme est fermé côté serveur — mesuré le 2026-10-15 : `Bearer public` rend 403 `FreeTierError` pour toutes les variantes d'en-tête essayées, et le client officiel 1.18.58 sur une configuration isolée reçoit le même refus. Sans credential, tous les modèles sont donc désactivés ; le fournisseur, lui, reste listé (le catalogue ne filtre les fournisseurs que sur leur propre `enabled`).
+
 ## [v2.4.5] - 2026-10-12
 
 ### Fixed
