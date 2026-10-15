@@ -227,6 +227,28 @@ describe("regroupement par workspace", () => {
     expect(groups.map((group) => group.label)).toEqual(["opencode-fork"])
   })
 
+  test("le nom donné au projet prime sur le nom du dossier, et l'identifiant suit", () => {
+    // Sans cela, **renommer un dossier n'aurait aucun effet visible** : `PATCH /project/{id}` retient
+    // un `name`, et la ligne affichait quand même le nom du dossier. Un bouton qui agit sans effet se
+    // voit — et il est pire qu'un bouton mort.
+    const named = [{ path: "C:\\jeanluc\\opencode-fork", id: "prj_1", name: "Mon atelier" }]
+    const groups = groupByWorkspace([inPackages], named, "")
+    expect(groups[0]?.label).toBe("Mon atelier")
+    expect(groups[0]?.projectID).toBe("prj_1")
+  })
+
+  test("sans nom donné, la ligne affiche le nom du dossier", () => {
+    const bare = [{ path: "C:\\jeanluc\\opencode-fork", id: "prj_1" }]
+    const groups = groupByWorkspace([inPackages], bare, "")
+    expect(groups[0]?.label).toBe("opencode-fork")
+  })
+
+  test("la forme « chemin seul » reste acceptée", () => {
+    // Les appelants qui n'ont que des chemins (complétion, tests) ne doivent pas porter un objet pour
+    // rien : `GET /project` en rendait, et la fonction les accepte toujours.
+    expect(groupByWorkspace([inPackages], ["C:\\jeanluc\\opencode-fork"], "")[0]?.label).toBe("opencode-fork")
+  })
+
   test("un seul workspace est marqué courant : le plus précis", () => {
     // Relevé à la mesure le 2026-10-15 : `opencode-fork` **et** `jeanluc` portaient la marque, parce
     // que l'un contient l'autre. La référence n'en marque jamais qu'un — « où suis-je ? » n'a qu'une

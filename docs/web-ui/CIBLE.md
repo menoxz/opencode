@@ -196,6 +196,14 @@ ce document : une donnée exposée par le serveur n'est pas une raison de l'affi
   et elle suffit.
 - **La ligne du dossier porte son geste** : ouvrir une session **ici**. Ce bouton est **visible en
   permanence** — c'est l'action qu'on vient chercher sur cette ligne, pas une action rare.
+- **La ligne du dossier porte un « … »**, comme chez DSH, et il porte ce qui **agit vraiment** :
+  `Rename`, qui appelle `PATCH /project/{id}` — la route existe et accepte un `name`. **Pas de
+  `Delete`** : le serveur n'offre aucune suppression de projet, donc un tel bouton n'aurait aucun
+  effet. Un menu d'un seul item vrai vaut mieux qu'un menu de deux dont un ment.
+  - Conséquence assumée : le renommage porte sur le **projet côté serveur**, donc il s'applique
+    partout où ce projet apparaît — c'est la sémantique de la route, pas un choix d'affichage.
+  - Et le libellé de la ligne **préfère le nom du projet** au nom du dossier : sans cela, renommer
+    n'aurait rien changé à l'écran.
 - **On choisit un dossier, on ne le tape pas.** Ajouter un workspace ouvre un **parcours** des
   sous-dossiers (`GET /folder?path=…`) : on regarde, on entre, on remonte, on choisit. Le champ de
   saisie reste, pour qui connaît le chemin — mais il n'est plus la seule voie, et une faute de frappe
