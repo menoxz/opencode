@@ -3509,11 +3509,31 @@ preuve navigateur 1 (négative, et décisive) : serveur tué -> 0 erreur console
 ### Ce qui reste
 
 La preuve navigateur du **chien de garde** — silence > 30 s ⇒ nouvelle `EventSource` ⇒ relecture du
-fil et appel `GET /session/status` — n'est pas encore constatée dans un navigateur : le premier essai
-a échoué pour la raison ci-dessus (la page ne voyait pas la coupure), et la vérification est
-**limitée par le proxy de développement**, qui garde la connexion SSE ouverte quand le serveur tombe.
-Le verdict est prouvé hors navigateur (tests) ; en navigateur, c'est le déclencheur qui reste à
-constater. Rien n'est revendiqué ici qui n'ait été mesuré.
+fil et appel `GET /session/status` — n'est **pas constatée**. Deux tentatives, deux blocages
+distincts, tous deux de la **mesure** et non du code :
+
+1. **Premier essai** : la page n'a pas vu la coupure (ci-dessus). C'est ce fait qui a motivé le
+   chien de garde.
+2. **Second essai, mesuré** : toute requête CDP vers un onglet ayant chargé `http://127.0.0.1:5181/`
+   expire (`Page.navigate` puis `Runtime.evaluate`), alors que **le même attachement** répond en
+   moins de 30 ms sur `about:blank`, sur `data:text/html` et sur `http://127.0.0.1:4097/` — donc
+   l'attachement fonctionne et c'est bien **cette page servie par Vite** qui le bloque. Aucun relevé
+   `__sse` / `__calls` n'en est sorti. Deux `500` ont été vus sur cette page **pendant** que le
+   serveur isolé était arrêté puis relancé par la mesure elle-même.
+
+Contrôle fait après coup, pile debout — **aucune route de la page ne rend 500** :
+
+```
+/global/health 200 · /path 200 · /project 200 · /session 200 · /permission 200
+/question 200 · /plugin 200 · /config/providers 200 · /session/status 200 (2 octets)
+/experimental/tool 400 sans ses paramètres (Bad Request de la sonde, pas un défaut)
+```
+
+Donc les deux `500` ne se reproduisent pas : ils datent de l'arrêt/relance du serveur pendant la
+mesure. *Hypothèse, non mesurée* : c'est `/event` qui les a produits, route volontairement exclue de
+la sonde (c'est un flux). Le déclencheur du chien de garde reste donc à constater **dans un
+navigateur**, et la vérification en développement est limitée par le proxy Vite, qui garde la
+connexion SSE ouverte quand le serveur tombe. Rien n'est revendiqué ici qui n'ait été mesuré.
 
 
 
