@@ -3506,34 +3506,58 @@ preuve navigateur 1 (négative, et décisive) : serveur tué -> 0 erreur console
   journal figé, aucun server.connected de retour, /session/status jamais appelé
 ```
 
-### Ce qui reste
+### Trois tentatives, dont deux qui ont mesuré autre chose
 
-La preuve navigateur du **chien de garde** — silence > 30 s ⇒ nouvelle `EventSource` ⇒ relecture du
-fil et appel `GET /session/status` — n'est **pas constatée**. Deux tentatives, deux blocages
-distincts, tous deux de la **mesure** et non du code :
+La preuve navigateur a demandé **trois** voies, parce que les deux premières butaient sur l'outillage
+et non sur le code :
 
 1. **Premier essai** : la page n'a pas vu la coupure (ci-dessus). C'est ce fait qui a motivé le
    chien de garde.
 2. **Second essai, mesuré** : toute requête CDP vers un onglet ayant chargé `http://127.0.0.1:5181/`
    expire (`Page.navigate` puis `Runtime.evaluate`), alors que **le même attachement** répond en
    moins de 30 ms sur `about:blank`, sur `data:text/html` et sur `http://127.0.0.1:4097/` — donc
-   l'attachement fonctionne et c'est bien **cette page servie par Vite** qui le bloque. Aucun relevé
-   `__sse` / `__calls` n'en est sorti. Deux `500` ont été vus sur cette page **pendant** que le
-   serveur isolé était arrêté puis relancé par la mesure elle-même.
+   l'attachement fonctionne, et c'est bien la page servie par Vite qui le bloque. Aucun relevé
+   `__sse` / `__calls` n'en est sorti. Deux `500` vus sur cette page **pendant** l'arrêt/relance du
+   serveur par la mesure elle-même : contrôle fait après coup, pile debout, **aucune route de la
+   page ne rend 500** (`/global/health`, `/path`, `/project`, `/session`, `/permission`, `/question`,
+   `/plugin`, `/config/providers`, `/session/status` → 200 ; `/experimental/tool` → 400 parce que la
+   sonde l'appelait sans ses paramètres).
 
-Contrôle fait après coup, pile debout — **aucune route de la page ne rend 500** :
+### La troisième voie — la page servie par le serveur (mesurée)
+
+Les deux blocages avaient la même racine : le **proxy de développement**. Le serveur sait servir une
+UI construite (`server/shared/ui.ts:97`, `OPENCODE_WEB_UI_DIR`) ⇒ `bun run build` dans
+`packages/webui`, puis le serveur isolé 4097 sert lui-même la page. Plus de proxy pour tenir la
+connexion SSE artificiellement ouverte, et une page à laquelle CDP s'attache.
 
 ```
-/global/health 200 · /path 200 · /project 200 · /session 200 · /permission 200
-/question 200 · /plugin 200 · /config/providers 200 · /session/status 200 (2 octets)
-/experimental/tool 400 sans ses paramètres (Bad Request de la sonde, pas un défaut)
+avant  : sse=1 · calls=[/global/health, [object Request]]            · url=127.0.0.1:4097
+coupure: kill 34320 bun.exe · port 4097 = False pendant 60 s
+relance: serveur relancé sur la même base isolée, +25 s
+apres  : sse=1 · calls=[/global/health, [object Request], /session/status]
 ```
 
-Donc les deux `500` ne se reproduisent pas : ils datent de l'arrêt/relance du serveur pendant la
-mesure. *Hypothèse, non mesurée* : c'est `/event` qui les a produits, route volontairement exclue de
-la sonde (c'est un flux). Le déclencheur du chien de garde reste donc à constater **dans un
-navigateur**, et la vérification en développement est limitée par le proxy Vite, qui garde la
-connexion SSE ouverte quand le serveur tombe. Rien n'est revendiqué ici qui n'ait été mesuré.
+**`/session/status` apparaît après la coupure et n'était pas là avant** — c'est l'observation
+décisive : cet appel est la seule écriture de `loadActivity`, elle-même atteinte seulement par
+`resyncPlan`, donc le chemin de resynchronisation a fonctionné de bout en bout, dans un navigateur,
+sur une session réelle. Les appels du SDK apparaissent comme `[object Request]` dans l'espion (il
+reçoit un objet `Request`) : la chaîne `/session/status` ne peut donc venir que du `fetch` direct,
+jamais d'un appel du SDK — c'est ce qui rend le relevé concluant.
+
+`server.connected` n'était pas nécessaire pour cela : la reconnexion suffit
+(`stream-sync.ts:resyncPlan` traite indifféremment le passage `false → true` et la hausse du
+compteur de reconnexions).
+
+### Ce qui reste
+
+- `sse=1` dans les deux relevés : sur cette pile la socket **casse vraiment**, donc `EventSource`
+  se reconnecte seul et **le chien de garde n'a pas eu à jouer**. Son déclenchement (flux ouvert
+  mais muet) reste couvert **par les tests purs seulement** — c'est le cas que seul un proxy tolérant
+  produit, et il n'a pas été reproduit en navigateur.
+- Les lignes `TIMEOUT ouverture du websocket` des relevés sont un **artefact de la sonde** : la borne
+  de 8 s sur l'attachement a été atteinte alors que les évaluations suivantes ont rendu leur valeur
+  (et la navigation est prouvée par le changement d'URL du même onglet entre les deux relevés).
+- `rows=[]` : le journal brut n'est rendu que dans la vue Logs, pas dans la vue conversation.
 
 
 
