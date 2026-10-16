@@ -39,7 +39,8 @@ test("the task contract is one button, with none of its content in the sidebar",
   const frame = app.captureCharFrame()
   const lines = frame.split("\n").filter((line) => line.trim())
   expect(lines).toHaveLength(1)
-  expect(lines[0]).toContain("✎ Goal definition")
+  expect(lines[0]).toContain("Goal definition")
+  expect(lines[0]).not.toContain("✎")
   for (const absent of ["Obj", "DoD", "OOS", "Details"]) {
     expect(frame).not.toContain(absent)
   }

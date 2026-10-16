@@ -81,13 +81,15 @@ Click to expand
   written (`instructionsInjecting`), not when the answer finishes. Before that part exists,
   the line reads `core/instructions · injecting`.
 - **TASK CONTRACT is a button, and nothing else**: the sidebar shows one focusable, clickable
-  line (`✎ Goal definition`, underlined on hover and focus) which dispatches
-  `session.goal.edit`. The objective, the DoD and the out-of-scope list are visible **only**
-  in the editor panel it opens — xlarge minimum size, scrolling textarea, `ctrl+return` to
-  save, esc to close. Without an existing contract the same click builds an empty one, so the
-  button is also how a contract gets created; the editor's own guard still refuses an empty
-  goal. The compact one-line summary that used to live in the sidebar, and its helper, were
-  removed with it.
+  line (`Goal definition`) which dispatches `session.goal.edit`. The objective, the DoD and
+  the out-of-scope list are visible **only** in the editor panel it opens — xlarge minimum
+  size, scrolling textarea, `ctrl+return` to save, esc to close. Without an existing contract
+  the same click builds an empty one, so the button is also how a contract gets created; the
+  editor's own guard still refuses an empty goal. The compact one-line summary that used to
+  live in the sidebar, and its helper, were removed with it. No icon, no underline: the label
+  is the button, and it opens on the **release** of the click — the dialog is a full-screen
+  veil that closes on a `mouseup` outside its frame (`ui/dialog.tsx`), so opening on the press
+  would receive that same click's release and close itself at once.
 - **The Context section headline** is `Context`: the `(last call)` suffix is gone.
 
 ## Verification
