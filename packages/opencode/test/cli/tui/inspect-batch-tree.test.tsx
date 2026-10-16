@@ -43,6 +43,24 @@ async function settled(app: { renderOnce(): Promise<void>; captureCharFrame(): s
   }
 }
 
+type App = Awaited<ReturnType<typeof testRender>>
+
+/**
+ * Le bloc se présente fermé : on l'ouvre (ou on le referme) en cliquant sur son
+ * en-tête. L'index de la ligne dans la trame *est* sa coordonnée y.
+ */
+async function clickHeader(app: App) {
+  const y = app.captureCharFrame().split("\n").findIndex((line) => line.includes("inspect_batch"))
+  await app.mockMouse.click(1, y)
+  await settled(app)
+}
+
+const nonEmpty = (app: App) =>
+  app
+    .captureCharFrame()
+    .split("\n")
+    .filter((line) => line.trim())
+
 test("pending and running preserve targets without inventing child execution", () => {
   const pending = inspectBatchTree({ input: JSON.stringify(input), status: "pending" })
   expect(pending.rows[0].label).toBe("Read src/main.ts [offset=10, limit=20]")
@@ -75,10 +93,8 @@ test("each action takes exactly one row, with its parameters inline and no tree 
   )
   renderers.push(app.renderer)
   await settled(app)
-  const lines = app
-    .captureCharFrame()
-    .split("\n")
-    .filter((line) => line.trim())
+  await clickHeader(app)
+  const lines = nonEmpty(app)
   expect(lines).toHaveLength(3)
   expect(lines[1]).toContain('Grep "export" in src')
   expect(lines[2]).toContain("Read src/main.ts [offset=10, limit=20]")
@@ -86,6 +102,40 @@ test("each action takes exactly one row, with its parameters inline and no tree 
   expect(frame).not.toContain("├─")
   expect(frame).not.toContain("└─")
   expect(frame).not.toContain("after")
+})
+
+test("the batch reads as one line until clicked, and closes again on a second click", async () => {
+  const app = await testRender(
+    () =>
+      withProviders(() => (
+        <InspectBatchTree
+          input={{ actions: input.actions }}
+          status="completed"
+          output={JSON.stringify({
+            results: input.actions.map(({ id, type }) => ({ id, type, status: "success" })),
+          })}
+          color="#ffffff"
+          muted="#888888"
+        />
+      )),
+    { width: 100, height: 8 },
+  )
+  renderers.push(app.renderer)
+  await settled(app)
+  const closed = nonEmpty(app)
+  expect(closed).toHaveLength(1)
+  expect(closed[0]).toContain("inspect_batch · 3 actions")
+  expect(closed[0]).toContain("▸")
+  expect(closed[0]).not.toContain("Read src/main.ts")
+  await clickHeader(app)
+  const opened = nonEmpty(app)
+  expect(opened).toHaveLength(4)
+  expect(opened[0]).toContain("▾")
+  const body = opened.join("\n")
+  expect(body).toContain("Read src/main.ts")
+  expect(body).toContain('Grep "export" in src')
+  await clickHeader(app)
+  expect(nonEmpty(app)).toHaveLength(1)
 })
 
 test("results join by id and type, mark errors/skips without exposing their text", () => {
@@ -204,6 +254,7 @@ test("real terminal component updates from pending to completed then batch error
   })
   renderers.push(app.renderer)
   await settled(app)
+  await clickHeader(app)
   const pendingFrame = app.captureCharFrame()
   expect(pendingFrame).toContain("inspect_batch")
   expect(pendingFrame).toContain("Read src/main.ts")
@@ -265,6 +316,7 @@ test("real narrow terminal keeps long child rows from wrapping into unbounded ou
   )
   renderers.push(app.renderer)
   await settled(app)
+  await clickHeader(app)
   const frame = app.captureCharFrame()
   expect(frame).toContain("Read ")
   expect(frame.split("\n").filter((line) => line.trim()).length).toBe(17)
@@ -301,6 +353,7 @@ test("six successful actions need only a heading and six rows", async () => {
   )
   renderers.push(app.renderer)
   await settled(app)
+  await clickHeader(app)
   const frame = app.captureCharFrame()
   expect(frame).not.toContain("hidden_id")
   expect(frame).not.toContain("dependencies")

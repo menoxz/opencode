@@ -58,7 +58,13 @@ test("the batch block is indented to the prose gutter and stays one row per acti
   expect(heading).toBeDefined()
   // Same column as the plain prose, not flush at the margin.
   expect(heading!.indexOf("inspect_batch")).toBe(3)
-  const rows = lines.filter((line) => line.includes("✓"))
+  // Closed: the actions are behind the click, so nothing else is drawn for the batch.
+  expect(lines.filter((line) => line.includes("✓"))).toHaveLength(0)
+  await app.mockMouse.click(3, lines.findIndex((line) => line.includes("inspect_batch")))
+  await settled(app)
+  const rows = app.captureCharFrame()
+    .split("\n")
+    .filter((line) => line.includes("✓"))
   expect(rows).toHaveLength(3)
   for (const row of rows) {
     expect(row.indexOf("✓")).toBe(3)

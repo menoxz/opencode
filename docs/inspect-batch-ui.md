@@ -4,6 +4,15 @@ Both the standard session route and the internal `session.v2.messages` plugin
 route use `InspectBatchTree`. The standard route still respects its existing
 hide-completed-tool-details setting. No tool execution or scheduling changes.
 
+The heading is a single line: the action count plus a `▸`/`▾` chevron. The
+children and the note stay behind it and are drawn only after a click on the
+heading, so a batch costs one row in the transcript until the reader asks for
+the detail. A second click folds it back. The state is local to the component,
+so two batches in the same transcript fold independently. The heading is only
+clickable when there is something to reveal (at least one row, or a note);
+hovering it brightens the title instead of adding another control. Nothing
+auto-expands while a batch runs: the reader, not the run, decides.
+
 The batch heading shows the action count. Each child uses one line: tool first,
 target and optional read range/grep include, then a trailing status icon.
 Technical IDs and empty dependency notices are hidden. Actual dependencies use
@@ -46,5 +55,17 @@ bun typecheck
 
 Tests exercise the production helper and real OpenTUI component without mocks,
 including reactive updates and narrow-terminal character-frame capture. These
-are headless terminal render checks, not a live application screenshot or a
-full-session navigation test. No running application must be restarted.
+are headless terminal render checks.
+
+For a live frame (real session, real mouse click), `script/tui-shot.ts` runs the
+dev TUI inside a PTY, replays its ANSI stream through a minimal terminal
+emulator and prints text frames:
+
+```text
+bun script/tui-shot.ts --session <id> --db <db> --cwd packages/opencode \
+  --click inspect_batch --click inspect_batch
+```
+
+The anchored click sends a real SGR mouse event, so the two frames show the
+folded line, the expanded actions, then the folded line again. No running
+application must be restarted, and no browser or screenshot tool is involved.
