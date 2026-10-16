@@ -13,8 +13,9 @@ in light, dark and custom themes — a fixed grey would not.
 - **loud** (`text`): the agent's prose, and the command of a bash call.
 - **low** (`textLow`): what the agent reports — bash output, generic tool output, written
   and patched file content, diff context, and the batch heading.
-- Reasoning was already below full text (`thinkingOpacity`), and inline tool labels are
-  already `textMuted` once complete: both were left alone.
+- Reasoning sits at `textLow` too: it is reported content, and its `+`/`-` glyph already
+  carries the open/closed state, so `thinkingOpacity` no longer applies there. Inline tool
+  labels are already `textMuted` once complete.
 
 `generateSyntax`, `generateSubtleSyntax` and `selectedForeground` take the pre-ladder shape
 (`ResolvedThemeBase`), because the run surface reuses them with its own theme object.
@@ -81,7 +82,9 @@ Click to expand
   written (`instructionsInjecting`), not when the answer finishes. Before that part exists,
   the line reads `core/instructions · injecting`.
 - **TASK CONTRACT is a button, and nothing else**: the sidebar shows one focusable, clickable
-  line (`Goal definition`) which dispatches `session.goal.edit`. The objective, the DoD and
+  line which carries the label (`Goal definition`) **and its status** (`DOD(2) OOS(1)` — counts
+  only, empty items excluded, a skipped contract counting as absent), and highlights its
+  background on hover. It dispatches `session.goal.edit`. The objective, the DoD and
   the out-of-scope list are visible **only** in the editor panel it opens — xlarge minimum
   size, scrolling textarea, `ctrl+return` to save, esc to close. Without an existing contract
   the same click builds an empty one, so the button is also how a contract gets created; the

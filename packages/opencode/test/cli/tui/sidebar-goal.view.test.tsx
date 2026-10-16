@@ -23,16 +23,26 @@ function goalButton(renderer: Awaited<ReturnType<typeof testRender>>["renderer"]
   return control
 }
 
+function section(props: { dod?: number; outOfScope?: number; onEdit?: () => void } = {}) {
+  return (
+    <TaskContractSection
+      color="#ffffff"
+      muted="#888888"
+      hoverBackground="#222222"
+      dod={props.dod ?? 2}
+      outOfScope={props.outOfScope ?? 1}
+      onEdit={props.onEdit ?? (() => {})}
+    />
+  )
+}
+
 /**
- * Le contrat n'est plus montré dans la barre latérale : elle ne porte qu'un bouton, et son
- * contenu vit dans le panneau d'édition. Ce test tient la promesse « seulement un bouton » :
- * rien de l'objectif, du DoD, du hors périmètre ni des compteurs ne doit apparaître ici.
+ * La barre latérale ne porte qu'un bouton **et son statut** : des comptes, jamais le contenu.
+ * Le contrat lui-même (objectif, critères, hors périmètre) n'existe que dans le panneau
+ * d'édition.
  */
-test("the task contract is one button, with none of its content in the sidebar", async () => {
-  const app = await testRender(() => <TaskContractSection color="#ffffff" onEdit={() => {}} />, {
-    width: 40,
-    height: 20,
-  })
+test("the task contract is one button with its status, and none of its content", async () => {
+  const app = await testRender(() => section(), { width: 40, height: 20 })
   renderers.push(app.renderer)
   await app.renderOnce()
 
@@ -40,23 +50,31 @@ test("the task contract is one button, with none of its content in the sidebar",
   const lines = frame.split("\n").filter((line) => line.trim())
   expect(lines).toHaveLength(1)
   expect(lines[0]).toContain("Goal definition")
+  expect(lines[0]).toContain("DOD(2) OOS(1)")
   expect(lines[0]).not.toContain("✎")
-  for (const absent of ["Obj", "DoD", "OOS", "Details"]) {
+  for (const absent of ["Obj:", "Details", "First acceptance criterion"]) {
     expect(frame).not.toContain(absent)
   }
 })
 
-test("a click on the button asks for the editor", async () => {
-  let opened = 0
-  const app = await testRender(() => <TaskContractSection color="#ffffff" onEdit={() => (opened += 1)} />, {
-    width: 40,
-    height: 20,
-  })
+test("an empty contract still shows its counts, at zero", async () => {
+  const app = await testRender(() => section({ dod: 0, outOfScope: 0 }), { width: 40, height: 20 })
   renderers.push(app.renderer)
   await app.renderOnce()
 
-  // Le bouton occupe la première ligne : un clic souris dessus doit atteindre le gestionnaire,
-  // et une seconde fois encore (pas un simple « premier clic »).
+  expect(app.captureCharFrame()).toContain("DOD(0) OOS(0)")
+})
+
+/**
+ * Un clic = une ouverture. Le gestionnaire est branché sur le relâchement, donc un clic ne
+ * peut pas déclencher deux fois : le test clique et compte.
+ */
+test("a click on the button asks for the editor, once per click", async () => {
+  let opened = 0
+  const app = await testRender(() => section({ onEdit: () => (opened += 1) }), { width: 40, height: 20 })
+  renderers.push(app.renderer)
+  await app.renderOnce()
+
   await app.mockMouse.click(1, 0)
   await app.renderOnce()
   expect(opened).toBe(1)
