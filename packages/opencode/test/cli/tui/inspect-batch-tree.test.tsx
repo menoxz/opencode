@@ -50,7 +50,7 @@ type App = Awaited<ReturnType<typeof testRender>>
  * en-tête. L'index de la ligne dans la trame *est* sa coordonnée y.
  */
 async function clickHeader(app: App) {
-  const y = app.captureCharFrame().split("\n").findIndex((line) => line.includes("inspect_batch"))
+  const y = app.captureCharFrame().split("\n").findIndex((line) => line.includes("Explore"))
   await app.mockMouse.click(1, y)
   await settled(app)
 }
@@ -124,7 +124,7 @@ test("the batch reads as one line until clicked, and closes again on a second cl
   await settled(app)
   const closed = nonEmpty(app)
   expect(closed).toHaveLength(1)
-  expect(closed[0]).toContain("inspect_batch · 3 actions")
+  expect(closed[0]).toContain("Explore · 1 read · 1 grep · 1 glob")
   expect(closed[0]).toContain("▸")
   expect(closed[0]).not.toContain("Read src/main.ts")
   await clickHeader(app)
@@ -140,7 +140,7 @@ test("the batch reads as one line until clicked, and closes again on a second cl
 
 test("results join by id and type, mark errors/skips without exposing their text", () => {
   const tree = inspectBatchTree({ input, output, status: "completed" })
-  expect(tree.title).toBe("inspect_batch · 3 actions")
+  expect(tree.title).toBe("Explore · 1 read · 1 grep · 1 glob")
   expect(tree.rows[0].label).toContain("· truncated")
   expect(tree.rows.map((row) => row.icon)).toEqual(["✓", "✗", "−"])
   expect(tree.rows.map((row) => row.spinning)).toEqual([false, false, false])
@@ -256,7 +256,7 @@ test("real terminal component updates from pending to completed then batch error
   await settled(app)
   await clickHeader(app)
   const pendingFrame = app.captureCharFrame()
-  expect(pendingFrame).toContain("inspect_batch")
+  expect(pendingFrame).toContain("Explore")
   expect(pendingFrame).toContain("Read src/main.ts")
   const pendingRow = pendingFrame.split("\n").find((line) => line.includes("Read src/main.ts"))!
   // Rows lead with their state slot; no bullet is rendered before the tool call.
@@ -281,8 +281,8 @@ test("real terminal component updates from pending to completed then batch error
   expect(rows[2].indexOf("−")).toBeLessThan(rows[2].indexOf('Glob "**/*.ts"'))
   // The block is flush with the transcript edge: neither the heading nor a row
   // carries a leading indent, so the first column is already content.
-  const heading = frame.split("\n").find((line) => line.includes("inspect_batch"))!
-  expect(heading.startsWith("inspect_batch")).toBe(true)
+  const heading = frame.split("\n").find((line) => line.includes("Explore"))!
+  expect(heading.startsWith("Explore")).toBe(true)
   for (const row of rows) expect(row[0]).not.toBe(" ")
   expect(frame).not.toContain("RAW")
   setState({ input, status: "error", error: "Denied" })

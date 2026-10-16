@@ -76,8 +76,34 @@ export function inspectBatchTree(props: InspectBatchViewInput) {
       spinning: state === "pending" || state === "awaiting result",
     }
   })
+  // Ce que le lot **est**, plutôt que le nom de son outil : un lot d'inspection est
+  // toujours une exploration, et sa composition (`3 read · 2 grep`) dit plus que son
+  // nombre d'actions. Les types inconnus sont comptés à part, jamais ramenés à une lecture.
+  const counts = actions.reduce(
+    (total, value) => {
+      const type = record(value).type
+      if (type === "read" || type === "grep" || type === "glob") {
+        total[type] += 1
+      } else {
+        total.invalid += 1
+      }
+
+      return total
+    },
+    { read: 0, grep: 0, glob: 0, invalid: 0 },
+  )
+  const breakdown = [
+    counts.read ? `${counts.read} read` : "",
+    counts.grep ? `${counts.grep} grep` : "",
+    counts.glob ? `${counts.glob} glob` : "",
+    counts.invalid ? `${counts.invalid} invalid` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ")
+  const planned = Array.isArray(input.actions) ? "" : `${positive(metadata.actions) ?? "?"} actions`
+
   return {
-    title: `inspect_batch · ${Array.isArray(input.actions) ? actions.length : (positive(metadata.actions) ?? "?")} actions`,
+    title: breakdown ? `Explore · ${breakdown}` : `Explore${planned ? ` · ${planned}` : ""}`,
     rows,
     note: [
       actions.length === 0 ? (status === "pending" ? "Waiting for actions" : "Actions unavailable") : "",

@@ -45,13 +45,18 @@ import { useTuiConfig } from "./tui-config"
 import { isRecord } from "@/util/record"
 import type { TuiThemeCurrent } from "@opencode-ai/plugin/tui"
 
-type Theme = TuiThemeCurrent & {
+/** Forme d'un thème résolu, avant les crans d'opacité calculés par `resolveTheme`. */
+export type ResolvedThemeBase = TuiThemeCurrent & {
   _hasSelectedListItemText: boolean
+}
+type Theme = ResolvedThemeBase & {
+  /** Cran bas d'opacité du fil : voir le calcul dans `resolveTheme`. */
+  textLow: RGBA
 }
 type ThemeColor = Exclude<keyof TuiThemeCurrent, "thinkingOpacity">
 type SyntaxStyleOverrides = Record<string, { italic?: boolean }>
 
-export function selectedForeground(theme: Theme, bg?: RGBA): RGBA {
+export function selectedForeground(theme: ResolvedThemeBase, bg?: RGBA): RGBA {
   // If theme explicitly defines selectedListItemText, use it
   if (theme._hasSelectedListItemText) {
     return theme.selectedListItemText
@@ -249,10 +254,18 @@ export function resolveTheme(theme: ThemeJson, mode: "dark" | "light") {
   // Handle thinkingOpacity - optional with default of 0.6
   const thinkingOpacity = theme.theme.thinkingOpacity ?? 0.6
 
+  // Opacité du fil, deux crans : le texte de l'agent et la commande bash gardent `text`,
+  // tout ce que l'agent **rapporte** (sortie d'outil, lecture, diff, résumé de lot) recule
+  // à `textLow`. L'alpha se calcule depuis le `text` du thème, jamais depuis un gris figé,
+  // pour que le rapport entre les deux crans reste le même dans tous les thèmes.
+  const base = resolved.text ?? resolved.primary ?? RGBA.fromValues(1, 1, 1, 1)
+  const textLow = RGBA.fromValues(base.r, base.g, base.b, 0.5)
+
   return {
     ...resolved,
     _hasSelectedListItemText: hasSelectedListItemText,
     thinkingOpacity,
+    textLow,
   } as Theme
 }
 
@@ -715,11 +728,11 @@ function generateMutedTextColor(bg: RGBA, isDark: boolean): RGBA {
   return RGBA.fromInts(grayValue, grayValue, grayValue)
 }
 
-export function generateSyntax(theme: Theme) {
+export function generateSyntax(theme: ResolvedThemeBase) {
   return SyntaxStyle.fromTheme(getSyntaxRules(theme))
 }
 
-export function generateSubtleSyntax(theme: Theme, overrides?: SyntaxStyleOverrides) {
+export function generateSubtleSyntax(theme: ResolvedThemeBase, overrides?: SyntaxStyleOverrides) {
   const rules = getSyntaxRules(theme)
   return SyntaxStyle.fromTheme(
     rules.map((rule) => {
@@ -745,7 +758,7 @@ export function generateSubtleSyntax(theme: Theme, overrides?: SyntaxStyleOverri
   )
 }
 
-function getSyntaxRules(theme: Theme) {
+function getSyntaxRules(theme: ResolvedThemeBase) {
   return [
     {
       scope: ["default"],

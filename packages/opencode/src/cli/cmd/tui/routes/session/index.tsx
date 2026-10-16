@@ -115,6 +115,7 @@ import { useTuiConfig } from "../../context/tui-config"
 import { nextThinkingMode, reasoningSummary, useThinkingMode, type ThinkingMode } from "../../context/thinking"
 import { getScrollAcceleration } from "../../util/scroll"
 import { collapseToolOutput } from "../../util/collapse-tool-output"
+import { instructionSources, instructionsHeading } from "../../util/instructions-injection"
 import { isHiddenTool } from "../../util/hidden-tools"
 import { TuiPluginRuntime } from "@/cli/cmd/tui/plugin/runtime"
 import { DialogRetryAction } from "../../component/dialog-retry-action"
@@ -1926,7 +1927,55 @@ function UserMessage(props: {
           </box>
         </box>
       </Show>
+      <Instructions parts={props.parts} sessionID={props.message.sessionID} />
     </>
+  )
+}
+
+/**
+ * Les instructions chargées automatiquement (AGENTS.md global et projet, fichiers
+ * `*.instructions.md`) sont injectées à **chaque étape** et persistées une fois par message
+ * utilisateur, dans une part synthétique et ignorée — donc invisible dans le fil, alors que
+ * c'est ce que l'agent relit à chaque tour. Elle revient ici sur une ligne, au cran bas
+ * d'opacité : le statut s'anime tant que le tour tourne, et le dépliage donne les sources.
+ */
+function Instructions(props: { parts: Part[]; sessionID: string }) {
+  const { theme } = useTheme()
+  const sync = useSync()
+  const renderer = useRenderer()
+  const [open, setOpen] = createSignal(false)
+  const sources = createMemo(() => instructionSources(props.parts))
+  const running = createMemo(() => {
+    const status = sync.data.session_status?.[props.sessionID]
+    return status !== undefined && status.type !== "idle"
+  })
+  const heading = createMemo(() => instructionsHeading(sources().length))
+
+  return (
+    <Show when={sources().length > 0}>
+      <box paddingLeft={3} flexShrink={0}>
+        <box
+          flexDirection="row"
+          gap={1}
+          onMouseUp={() => {
+            if (renderer.getSelection()?.getSelectedText()) return
+            setOpen((prev) => !prev)
+          }}
+        >
+          <Show when={running()}>
+            <Spinner color={theme.textLow} />
+          </Show>
+          <text fg={theme.textLow}>
+            {heading()} {open() ? "▾" : "▸"}
+          </text>
+        </box>
+        <Show when={open()}>
+          <For each={sources()}>
+            {(source) => <text fg={theme.textMuted}>{source.replace(/^Instructions from:\s*/, "")}</text>}
+          </For>
+        </Show>
+      </box>
+    </Show>
   )
 }
 
@@ -2231,7 +2280,7 @@ function ToolPart(props: { last: boolean; part: ToolPart; message: AssistantMess
               metadata={toolprops.metadata}
               status={props.part.state.status}
               error={props.part.state.status === "error" ? props.part.state.error : undefined}
-              color={theme.text}
+              color={theme.textLow}
               muted={theme.textMuted}
               success={theme.success}
               errorColor={theme.error}
@@ -2321,7 +2370,7 @@ function GenericTool(props: ToolProps<any>) {
         onClick={collapsed().overflow ? () => setExpanded((prev) => !prev) : undefined}
       >
         <box gap={1}>
-          <text fg={theme.text}>{limited()}</text>
+          <text fg={theme.textLow}>{limited()}</text>
           <Show when={collapsed().overflow}>
             <text fg={theme.textMuted}>{expanded() ? "Click to collapse" : "Click to expand"}</text>
           </Show>
@@ -2482,13 +2531,25 @@ function Shell(props: ToolProps<typeof ShellTool>) {
   const isRunning = createMemo(() => props.part.state.status === "running")
   const output = createMemo(() => stripAnsi(props.metadata.output?.trim() ?? ""))
   const [expanded, setExpanded] = createSignal(false)
-  const maxLines = 10
+  // Plafond volontairement bas : moins de lignes rendues, moins de trame à charger, et une
+  // sortie de commande se lit par son début — l'erreur, elle, apparaît en fin de sortie et
+  // reste accessible d'un clic.
+  const maxLines = 5
   const maxChars = createMemo(() => maxLines * Math.max(20, ctx.width - 6))
   const collapsed = createMemo(() => collapseToolOutput(output(), maxLines, maxChars()))
   const limited = createMemo(() => {
     if (expanded() || !collapsed().overflow) return output()
     return collapsed().output
   })
+  // La commande est l'**instruction** : une seule ligne au repos, le reste derrière le même
+  // clic que la sortie. Un script de 40 lignes ne doit pas charger la trame à lui seul.
+  const command = createMemo(() => props.input.command ?? "")
+  const commandLines = createMemo(() => command().split("\n").length)
+  const commandPreview = createMemo(() => {
+    if (expanded() || commandLines() < 2) return command()
+    return `${command().split("\n")[0]} · +${commandLines() - 1} lines`
+  })
+  const truncated = createMemo(() => collapsed().overflow || commandLines() > 1)
 
   const workdirDisplay = createMemo(() => {
     const workdir = props.input.workdir
@@ -2511,14 +2572,14 @@ function Shell(props: ToolProps<typeof ShellTool>) {
           title={title()}
           part={props.part}
           spinner={isRunning()}
-          onClick={collapsed().overflow ? () => setExpanded((prev) => !prev) : undefined}
+          onClick={truncated() ? () => setExpanded((prev) => !prev) : undefined}
         >
           <box gap={1}>
-            <text fg={theme.text}>$ {props.input.command}</text>
+            <text fg={theme.text}>$ {commandPreview()}</text>
             <Show when={output()}>
-              <text fg={theme.text}>{limited()}</text>
+              <text fg={theme.textLow}>{limited()}</text>
             </Show>
-            <Show when={collapsed().overflow}>
+            <Show when={truncated()}>
               <text fg={theme.textMuted}>{expanded() ? "Click to collapse" : "Click to expand"}</text>
             </Show>
           </box>
@@ -2548,7 +2609,7 @@ function Write(props: ToolProps<typeof WriteTool>) {
           <line_number fg={theme.textMuted} minWidth={3} paddingRight={1}>
             <code
               conceal={false}
-              fg={theme.text}
+              fg={theme.textLow}
               filetype={filetype(props.input.filePath!)}
               syntaxStyle={syntax()}
               content={code()}
@@ -2757,7 +2818,7 @@ function Edit(props: ToolProps<typeof EditTool>) {
               showLineNumbers={true}
               width="100%"
               wrapMode={ctx.diffWrapMode()}
-              fg={theme.text}
+              fg={theme.textLow}
               addedBg={theme.diffAddedBg}
               removedBg={theme.diffRemovedBg}
               contextBg={theme.diffContextBg}
@@ -2805,7 +2866,7 @@ function ApplyPatch(props: ToolProps<typeof ApplyPatchTool>) {
           showLineNumbers={true}
           width="100%"
           wrapMode={ctx.diffWrapMode()}
-          fg={theme.text}
+          fg={theme.textLow}
           addedBg={theme.diffAddedBg}
           removedBg={theme.diffRemovedBg}
           contextBg={theme.diffContextBg}
