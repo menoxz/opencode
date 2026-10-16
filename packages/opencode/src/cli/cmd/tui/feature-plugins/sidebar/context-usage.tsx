@@ -50,7 +50,7 @@ export function ContextUsage(props: {
   return (
     <box>
       <text fg={props.color}>
-        <b>{props.message && !recorded() ? "Context (stored usage)" : "Context (last call)"}</b>
+        <b>{props.message && !recorded() ? "Context (stored usage)" : "Context"}</b>
       </text>
       <Show when={props.message} fallback={<text fg={props.muted}>No completed call</text>}>
         <text fg={props.muted}>

@@ -23,12 +23,10 @@ export function InspectBatchTree(
     if (renderer.getSelection()?.getSelectedText()) return
     setOpen((prev) => !prev)
   }
-  const stateColor = (row: InspectBatchRow) =>
-    row.icon === "✓"
-      ? (props.success ?? props.color)
-      : row.icon === "✗"
-        ? (props.errorColor ?? props.color)
-        : props.muted
+  // Ce que le lot **est** : l'icône précède un titre qui se lit comme une phrase
+  // (`✱ Explore 2 read 1 grep`). Aucun état par enfant — le succès ne s'annonce pas —
+  // sauf l'échec, qui met la ligne en rouge, et l'attente, qui garde son spinner.
+  const failed = (row: InspectBatchRow) => row.failed
   return (
     <box marginTop={1} flexShrink={0}>
       <box
@@ -36,8 +34,8 @@ export function InspectBatchTree(
         onMouseOut={() => setHover(false)}
         onMouseUp={toggle}
       >
-        <text fg={hover() ? props.color : props.muted} wrapMode="none">
-          {tree().title}
+        <text fg={hover() ? props.color : props.muted} wrapMode="none" truncate>
+          {`✱ ${tree().title}`}
           {expandable() ? (open() ? " ▾" : " ▸") : ""}
         </text>
       </box>
@@ -46,11 +44,24 @@ export function InspectBatchTree(
           {(row) => (
             <box flexDirection="row" height={1} flexShrink={0}>
               <box width={2} flexShrink={0}>
-                <Show when={row.spinning} fallback={<text fg={stateColor(row)}>{row.icon}</text>}>
+                <Show
+                  when={row.spinning}
+                  fallback={
+                    <text fg={failed(row) ? (props.errorColor ?? props.color) : props.color} wrapMode="none">
+                      {"→"}
+                    </text>
+                  }
+                >
                   <Spinner />
                 </Show>
               </box>
-              <text fg={props.color} wrapMode="none" truncate flexShrink={1} minWidth={0}>
+              <text
+                fg={failed(row) ? (props.errorColor ?? props.color) : props.color}
+                wrapMode="none"
+                truncate
+                flexShrink={1}
+                minWidth={0}
+              >
                 {row.label}
               </text>
             </box>

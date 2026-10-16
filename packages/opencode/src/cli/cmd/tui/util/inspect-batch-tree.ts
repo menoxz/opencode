@@ -13,6 +13,8 @@ export type InspectBatchRow = {
   label: string
   state: string
   icon: string
+  /** L'enfant a rapporté une erreur : la seule ligne qui se distingue dans le fil. */
+  failed: boolean
   spinning: boolean
 }
 
@@ -63,6 +65,7 @@ export function inspectBatchTree(props: InspectBatchViewInput) {
     return {
       label: `${valid ? target : "invalid action"}${extra ? ` [${extra}]` : ""}${cut ? " · truncated" : ""}${state === "empty" ? " · empty" : ""}`,
       state,
+      failed: state === "error",
       icon:
         state === "success" || state === "empty"
           ? "✓"
@@ -99,7 +102,7 @@ export function inspectBatchTree(props: InspectBatchViewInput) {
     counts.invalid ? `${counts.invalid} invalid` : "",
   ]
     .filter(Boolean)
-    .join(" · ")
+    .join(" ")
   const planned = Array.isArray(input.actions) ? "" : `${positive(metadata.actions) ?? "?"} actions`
 
   return {

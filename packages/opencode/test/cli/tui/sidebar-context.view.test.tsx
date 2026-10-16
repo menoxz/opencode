@@ -48,7 +48,7 @@ for (const width of [40, 24]) {
     renderers.push(app.renderer)
     await app.renderOnce()
     const frame = app.captureCharFrame()
-    for (const line of ["Context (last call)", "200 tokens", "20% used", "Cost: $4.50", "▶ Details"])
+    for (const line of ["Context", "200 tokens", "20% used", "Cost: $4.50", "▶ Details"])
       expect(frame).toContain(line)
     for (const line of ["Non-cache input", "Cache read", "Cache write", "Last call"]) expect(frame).not.toContain(line)
     expect(frame).not.toMatch(/spent|billed|0\.375|999 tokens/)
@@ -92,7 +92,7 @@ for (const width of [40, 24]) {
     expect(app.captureCharFrame()).toContain("Context (stored usage)")
     setParts([step()])
     await app.renderOnce()
-    expect(app.captureCharFrame()).toContain("Context (last call)")
+    expect(app.captureCharFrame()).toContain("Context")
     const partial = assistant({
       id: "partial",
       time: { created: 3 },
@@ -207,7 +207,7 @@ for (const width of [24, 48]) {
     expect(text()).toContain("Desc. loaded: $0.00")
     setParts([step({ cost: NaN })])
     await app.renderOnce()
-    expect(text()).toContain("Context (last call)")
+    expect(text()).toContain("Context")
     expect(text()).toContain("Last call: unavailable")
     expect(text()).not.toContain("No step-finish data")
   })

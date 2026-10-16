@@ -114,7 +114,7 @@ import { UI } from "@/cli/ui.ts"
 import { useTuiConfig } from "../../context/tui-config"
 import { nextThinkingMode, reasoningSummary, useThinkingMode, type ThinkingMode } from "../../context/thinking"
 import { getScrollAcceleration } from "../../util/scroll"
-import { collapseToolOutput } from "../../util/collapse-tool-output"
+import { collapseToolOutput, collapseToolOutputTail } from "../../util/collapse-tool-output"
 import { instructionSources, instructionsHeading } from "../../util/instructions-injection"
 import { isHiddenTool } from "../../util/hidden-tools"
 import { TuiPluginRuntime } from "@/cli/cmd/tui/plugin/runtime"
@@ -1965,8 +1965,8 @@ function Instructions(props: { parts: Part[]; sessionID: string }) {
           <Show when={running()}>
             <Spinner color={theme.textLow} />
           </Show>
-          <text fg={theme.textLow}>
-            {heading()} {open() ? "▾" : "▸"}
+          <text fg={theme.textLow} wrapMode="none" truncate>
+            {`§ ${heading()}`} {open() ? "▾" : "▸"}
           </text>
         </box>
         <Show when={open()}>
@@ -2458,7 +2458,15 @@ function InlineTool(props: {
           <Spinner color={fg()} children={props.children} />
         </Match>
         <Match when={true}>
-          <text paddingLeft={3} fg={fg()} attributes={denied() ? TextAttributes.STRIKETHROUGH : undefined}>
+          <text
+            paddingLeft={3}
+            fg={fg()}
+            attributes={denied() ? TextAttributes.STRIKETHROUGH : undefined}
+            wrapMode="none"
+            truncate
+            flexShrink={1}
+            minWidth={0}
+          >
             <Show
               fallback={
                 <>
@@ -2536,7 +2544,7 @@ function Shell(props: ToolProps<typeof ShellTool>) {
   // reste accessible d'un clic.
   const maxLines = 5
   const maxChars = createMemo(() => maxLines * Math.max(20, ctx.width - 6))
-  const collapsed = createMemo(() => collapseToolOutput(output(), maxLines, maxChars()))
+  const collapsed = createMemo(() => collapseToolOutputTail(output(), maxLines, maxChars()))
   const limited = createMemo(() => {
     if (expanded() || !collapsed().overflow) return output()
     return collapsed().output
@@ -2575,7 +2583,9 @@ function Shell(props: ToolProps<typeof ShellTool>) {
           onClick={truncated() ? () => setExpanded((prev) => !prev) : undefined}
         >
           <box gap={1}>
-            <text fg={theme.text}>$ {commandPreview()}</text>
+            <text fg={theme.text} wrapMode={expanded() ? "word" : "none"} truncate={!expanded()}>
+              $ {commandPreview()}
+            </text>
             <Show when={output()}>
               <text fg={theme.textLow}>{limited()}</text>
             </Show>

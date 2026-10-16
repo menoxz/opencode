@@ -60,6 +60,28 @@ Line |
 Click to expand
 ```
 
+## Second pass (2026-10-16): what the reader asked for next
+
+- **The bash command is one row.** It is truncated to the transcript width while collapsed
+  (`wrapMode="none"` + `truncate`) and wraps again once expanded, so the instruction costs
+  one row at rest and stays fully readable on demand.
+- **The bash output keeps its tail.** `collapseToolOutputTail` keeps the last five lines and
+  marks the cut with a leading `…`: the verdict, the error and the totals live at the end,
+  not at the beginning.
+- **Every tool call stays on one line.** `InlineTool` truncates its label now; the batch rows
+  already did.
+- **The batch heading reads `✱ Explore 2 read 1 grep 2 glob`**: an icon leads, the dots
+  between the counters are gone (the one after the title stays — it separates the label from
+  the counts), and every row leads with `→`. No per-child state glyph any more: success is
+  silent, a failed child turns its row red (`row.failed`, the same field the tests assert),
+  and a running child keeps its spinner in the leading slot.
+- **`§ core/instructions · N sources`**: the injected-instructions line is named after the
+  flag it carries and gets an icon like the other entries.
+- **TASK CONTRACT is a button**: the sidebar title is focusable and clickable (underlined on
+  hover and focus) and dispatches `session.goal.edit`, which opens the existing editor —
+  xlarge minimum size, scrolling textarea, `ctrl+return` to save, esc to close.
+- **The Context section headline** is `Context`: the `(last call)` suffix is gone.
+
 ## Verification
 
 From `packages/opencode`:

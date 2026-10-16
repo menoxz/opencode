@@ -1,12 +1,13 @@
 import type { TuiPlugin, TuiPluginApi } from "@opencode-ai/plugin/tui"
 import type { InternalTuiPlugin } from "../../plugin/internal"
-import type { KeyEvent, RGBA } from "@opentui/core"
+import { TextAttributes, type KeyEvent, type RGBA } from "@opentui/core"
 import { createMemo, Show, createSignal, For } from "solid-js"
 
 const id = "internal:sidebar-goal"
 
 export const TASK_CONTRACT_SIDEBAR_COPY = {
   sectionTitle: "TASK CONTRACT",
+  editIcon: "✎",
   emptyState: "no contract defined",
   objectiveLabel: "Obj",
   dodLabel: "DoD",
@@ -25,9 +26,11 @@ export function TaskContractSection(props: {
   color: RGBA | string
   muted: RGBA | string
   warning: RGBA | string
+  onEdit?: () => void
 }) {
   const [detailsOpen, setDetailsOpen] = createSignal(false)
   const [detailsFocused, setDetailsFocused] = createSignal(false)
+  const [headerFocused, setHeaderFocused] = createSignal(false)
   const hasDetails = () => props.dod.length > 0 || props.outOfScope.length > 0
   const toggleDetails = () => setDetailsOpen((open) => !open)
   const handleDetailsKey = (event: KeyEvent) => {
@@ -36,12 +39,38 @@ export function TaskContractSection(props: {
     event.stopPropagation()
     toggleDetails()
   }
+  // Le titre n'est plus une étiquette mais un **bouton** : il ouvre l'éditeur du contrat
+  // (taille minimale large, zone de texte défilante et éditable, ctrl+return pour
+  // enregistrer). Un bouton qui agit doit le montrer : soulignement au survol et au focus.
+  const openEditor = () => props.onEdit?.()
+  const handleHeaderKey = (event: KeyEvent) => {
+    if (!["return", "enter", "space"].includes(event.name)) return
+    event.preventDefault()
+    event.stopPropagation()
+    openEditor()
+  }
 
   return (
     <box gap={0}>
-      <text fg={props.color}>
-        <b>{TASK_CONTRACT_SIDEBAR_COPY.sectionTitle}</b>
-      </text>
+      <box
+        id="task-contract-edit"
+        flexDirection="row"
+        gap={1}
+        focusable
+        onMouseDown={(event) => {
+          event.target?.focus()
+          openEditor()
+        }}
+        onMouseOver={() => setHeaderFocused(true)}
+        onMouseOut={() => setHeaderFocused(false)}
+        onKeyDown={handleHeaderKey}
+        on:focused={() => setHeaderFocused(true)}
+        on:blurred={() => setHeaderFocused(false)}
+      >
+        <text fg={props.color} attributes={headerFocused() ? TextAttributes.UNDERLINE : undefined}>
+          <b>{`${TASK_CONTRACT_SIDEBAR_COPY.editIcon} ${TASK_CONTRACT_SIDEBAR_COPY.sectionTitle}`}</b>
+        </text>
+      </box>
       <text fg={props.color} wrapMode="word" width="100%">
         <span style={{ fg: props.muted }}>{TASK_CONTRACT_SIDEBAR_COPY.objectiveLabel}: </span>
         {props.goal}
@@ -171,6 +200,7 @@ function View(props: { api: TuiPluginApi; session_id: string }) {
           color={theme().text}
           muted={theme().textMuted}
           warning={theme().warning}
+          onEdit={() => props.api.keymap.dispatchCommand("session.goal.edit")}
         />
       </Show>
     </box>

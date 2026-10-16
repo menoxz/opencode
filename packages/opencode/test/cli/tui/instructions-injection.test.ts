@@ -44,7 +44,7 @@ describe("instructions injection", () => {
   })
 
   test("the heading counts, and never announces zero", () => {
-    expect(instructionsHeading(1)).toBe("core · instructions · 1 source")
-    expect(instructionsHeading(3)).toBe("core · instructions · 3 sources")
+    expect(instructionsHeading(1)).toBe("core/instructions · 1 source")
+    expect(instructionsHeading(3)).toBe("core/instructions · 3 sources")
   })
 })

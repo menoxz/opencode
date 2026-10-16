@@ -23,5 +23,5 @@ export function instructionSources(parts: Part[]): string[] {
 
 /** En-tête de la ligne : un compte, jamais un zéro (la ligne n'existe pas sans sources). */
 export function instructionsHeading(count: number): string {
-  return `core · instructions · ${count} source${count === 1 ? "" : "s"}`
+  return `core/instructions · ${count} source${count === 1 ? "" : "s"}`
 }

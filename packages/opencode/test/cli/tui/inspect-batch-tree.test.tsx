@@ -124,7 +124,7 @@ test("the batch reads as one line until clicked, and closes again on a second cl
   await settled(app)
   const closed = nonEmpty(app)
   expect(closed).toHaveLength(1)
-  expect(closed[0]).toContain("Explore · 1 read · 1 grep · 1 glob")
+  expect(closed[0]).toContain("✱ Explore · 1 read 1 grep 1 glob")
   expect(closed[0]).toContain("▸")
   expect(closed[0]).not.toContain("Read src/main.ts")
   await clickHeader(app)
@@ -140,9 +140,10 @@ test("the batch reads as one line until clicked, and closes again on a second cl
 
 test("results join by id and type, mark errors/skips without exposing their text", () => {
   const tree = inspectBatchTree({ input, output, status: "completed" })
-  expect(tree.title).toBe("Explore · 1 read · 1 grep · 1 glob")
+  expect(tree.title).toBe("Explore · 1 read 1 grep 1 glob")
   expect(tree.rows[0].label).toContain("· truncated")
   expect(tree.rows.map((row) => row.icon)).toEqual(["✓", "✗", "−"])
+  expect(tree.rows.map((row) => row.failed)).toEqual([false, true, false])
   expect(tree.rows.map((row) => row.spinning)).toEqual([false, false, false])
   expect(JSON.stringify(tree)).not.toContain("File missing")
   expect(JSON.stringify(tree)).not.toContain("RAW")
@@ -259,9 +260,11 @@ test("real terminal component updates from pending to completed then batch error
   expect(pendingFrame).toContain("Explore")
   expect(pendingFrame).toContain("Read src/main.ts")
   const pendingRow = pendingFrame.split("\n").find((line) => line.includes("Read src/main.ts"))!
-  // Rows lead with their state slot; no bullet is rendered before the tool call.
+  // Tant que l'appel court, la case d'état porte le spinner ; le succès n'écrit rien,
+  // et c'est la flèche qui mène la ligne une fois le résultat connu.
   expect(pendingRow).not.toContain("•")
   expect(pendingRow).toContain("Read src/main.ts")
+  expect(pendingRow).not.toContain("✓")
   expect(pendingFrame).not.toContain("├─")
   expect(pendingFrame).not.toContain("└─")
   setState({ input, status: "completed", output })
@@ -275,14 +278,14 @@ test("real terminal component updates from pending to completed then batch error
     .split("\n")
     .filter((line) => ['Read src/main.ts', 'Grep "export"', 'Glob "**/*.ts"'].some((needle) => line.includes(needle)))
   expect(rows).toHaveLength(3)
-  // The state glyph now leads the argument, so its column comes first.
-  expect(rows[0].indexOf("✓")).toBeLessThan(rows[0].indexOf("Read src/main.ts"))
-  expect(rows[1].indexOf("✗")).toBeLessThan(rows[1].indexOf('Grep "export" in src'))
-  expect(rows[2].indexOf("−")).toBeLessThan(rows[2].indexOf('Glob "**/*.ts"'))
+  // La flèche mène la ligne, et plus aucun état par enfant : le succès ne s'annonce pas.
+  expect(rows[0].indexOf("→")).toBeLessThan(rows[0].indexOf("Read src/main.ts"))
+  expect(rows[1].indexOf("→")).toBeLessThan(rows[1].indexOf('Grep "export" in src'))
+  expect(rows[2].indexOf("→")).toBeLessThan(rows[2].indexOf('Glob "**/*.ts"'))
   // The block is flush with the transcript edge: neither the heading nor a row
   // carries a leading indent, so the first column is already content.
   const heading = frame.split("\n").find((line) => line.includes("Explore"))!
-  expect(heading.startsWith("Explore")).toBe(true)
+  expect(heading.startsWith("✱ Explore")).toBe(true)
   for (const row of rows) expect(row[0]).not.toBe(" ")
   expect(frame).not.toContain("RAW")
   setState({ input, status: "error", error: "Denied" })
@@ -320,11 +323,11 @@ test("real narrow terminal keeps long child rows from wrapping into unbounded ou
   const frame = app.captureCharFrame()
   expect(frame).toContain("Read ")
   expect(frame.split("\n").filter((line) => line.trim()).length).toBe(17)
-  const rows = frame.split("\n").filter((line) => line.includes("✓"))
+  const rows = frame.split("\n").filter((line) => line.includes("→"))
   expect(rows).toHaveLength(16)
-  expect(rows.every((line) => line.includes("✓"))).toBe(true)
+  expect(rows.every((line) => line.includes("→"))).toBe(true)
   // De-indenting must not be traded for wrapping: every row still leads with its
-  // state glyph at the first column, at 40 columns wide.
+  // arrow at the first column, at 40 columns wide.
   for (const row of rows) expect(row[0]).not.toBe(" ")
 })
 
@@ -361,5 +364,5 @@ test("six successful actions need only a heading and six rows", async () => {
   expect(frame).not.toContain("├─")
   expect(frame).not.toContain("└─")
   expect(frame.split("\n").filter((line) => line.trim())).toHaveLength(7)
-  expect(frame.split("\n").filter((line) => line.includes("✓"))).toHaveLength(6)
+  expect(frame.split("\n").filter((line) => line.includes("→"))).toHaveLength(6)
 })
