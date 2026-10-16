@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { queuedUserStatus, renderInTranscript, visibleFromID, type QueuedStatus } from "./pending-turn"
+import { queuedUserStatus, visibleFromID, type QueuedStatus } from "./pending-turn"
 
 // Message ids sort lexicographically in real life (MessageID.ascending); these
 // fixtures preserve that so the `assistant.id > steer.id` comparison is
@@ -24,7 +24,8 @@ const status = (
   messages: readonly unknown[],
   busy = true,
   visibleFrom?: string,
-): QueuedStatus => queuedUserStatus({ message, parts, messages, busy, visibleFrom } as never)
+  partsOf?: (messageID: string) => readonly { type: string; metadata?: { [key: string]: unknown } }[],
+): QueuedStatus => queuedUserStatus({ message, parts, messages, busy, visibleFrom, partsOf } as never)
 
 describe("TUI user prompt delivery status", () => {
   test("an abandoned open head does not badge the in-flight prompt (anomaly: badge stuck QUEUED)", () => {
@@ -199,20 +200,51 @@ describe("TUI user prompt delivery status", () => {
     expect(status(a, [], [a])).toBeUndefined()
   })
 
-  test("a queued prompt is withheld; a served or steer prompt renders", () => {
+  test("a queued prompt keeps its badge until its own turn is served", () => {
     const q = user("03")
     const running = [user("01"), assistant("02", "01", { finish: "tool-calls" }), q]
-    // Waiting behind the served turn: withheld from the transcript.
-    expect(renderInTranscript(status(q, q.parts, running))).toBe(false)
-    // Its own turn served: it renders like any other prompt.
+    expect(status(q, q.parts, running)).toBe("queued")
+    // Its own turn served: the badge goes, like any other prompt.
     const served = [...running, assistant("04", "03", { finish: "stop", time: { created: 1, completed: 2 } })]
-    expect(renderInTranscript(status(q, q.parts, served))).toBe(true)
-    // A steer rides the running run, so it shows immediately.
-    const s = user("03", { steer: true })
-    expect(renderInTranscript(status(s, s.parts, [user("01"), assistant("02", "01", { finish: "tool-calls" }), s]))).toBe(
-      true,
-    )
-    // An idle session has no queue to hide behind.
-    expect(renderInTranscript(status(q, q.parts, [user("01"), q], false))).toBe(true)
+    expect(status(q, q.parts, served)).toBeUndefined()
+  })
+
+  test("a steer keeps STEER even when the anchor turn already closed (anomaly: badge vanished)", () => {
+    // The anchor landed its terminal step while the run keeps going on pending
+    // tool calls: the anchor scan then has no open turn and would mistake the
+    // steer for the one being served.
+    const s = user("04", { steer: true })
+    const messages = [
+      user("01"),
+      assistant("02", "01", { finish: "tool-calls" }),
+      assistant("03", "01", { finish: "stop", time: { created: 1, completed: 2 } }),
+      s,
+    ]
+    expect(status(s, s.parts, messages)).toBe("steer")
+  })
+
+  test("a runtime-shaped user message is neither badged nor taken as the anchor", () => {
+    const partsOf = (id: string) =>
+      id === "01"
+        ? [{ type: "text", text: "bg", metadata: { background_notification: true } }]
+        : id === "03"
+          ? [{ type: "compaction" }]
+          : []
+    const messages = [user("01"), user("03"), user("05"), assistant("06", "05", { finish: "tool-calls" })]
+    // The notification and the compaction are skipped, so the run serves "05".
+    expect(status(user("05"), [], messages, true, undefined, partsOf)).toBeUndefined()
+    // Neither runtime message carries a badge.
+    expect(
+      queuedUserStatus({
+        message: { id: "01", role: "user" },
+        parts: [{ type: "text", text: "bg", metadata: { background_notification: true } }],
+        messages,
+        busy: true,
+        partsOf,
+      } as never),
+    ).toBeUndefined()
+    // A real prompt behind the served one is still queued.
+    const q = user("07")
+    expect(status(q, q.parts, [...messages, q], true, undefined, partsOf)).toBe("queued")
   })
 })

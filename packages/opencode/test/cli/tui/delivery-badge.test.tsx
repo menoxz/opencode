@@ -1,6 +1,5 @@
 /** @jsxImportSource @opentui/solid */
 import { afterEach, expect, test } from "bun:test"
-import { Show } from "solid-js"
 import { testRender } from "@opentui/solid"
 import { RGBA } from "@opentui/core"
 import { ThemeProvider } from "@/cli/cmd/tui/context/theme"
@@ -8,7 +7,7 @@ import { KVProvider } from "@/cli/cmd/tui/context/kv"
 import { TuiConfigProvider } from "@/cli/cmd/tui/context/tui-config"
 import { createTuiResolvedConfig } from "../../fixture/tui-runtime"
 import { DeliveryBadge } from "@/cli/cmd/tui/component/delivery-badge"
-import { queuedUserStatus, renderInTranscript } from "@/cli/cmd/tui/routes/session/pending-turn"
+import { queuedUserStatus } from "@/cli/cmd/tui/routes/session/pending-turn"
 
 const renderers: Awaited<ReturnType<typeof testRender>>["renderer"][] = []
 const BG = RGBA.fromInts(51, 68, 85, 255)
@@ -62,27 +61,16 @@ const statusOf = (message: ReturnType<typeof user> | ReturnType<typeof assistant
     busy,
   } as never)
 
-test("a queued prompt is withheld from the transcript, never badged", async () => {
+test("a queued prompt shows QUEUED, never STEER", async () => {
   const q = user("03")
   const running = [user("01"), assistant("02", "01", { finish: "tool-calls" }), q]
-  const status = statusOf(q, running)
-  // The route withholds a queued prompt, so its badge never reaches the screen.
-  expect(renderInTranscript(status)).toBe(false)
-  const app = await testRender(
-    () =>
-      providers(() => (
-        <Show when={renderInTranscript(status)}>
-          <DeliveryBadge status={status} bg={BG} fg={FG} />
-        </Show>
-      )),
-    {
-      width: 40,
-      height: 3,
-    },
-  )
+  const app = await testRender(() => providers(() => <DeliveryBadge status={statusOf(q, running)} bg={BG} fg={FG} />), {
+    width: 40,
+    height: 3,
+  })
   renderers.push(app.renderer)
   await settled(app)
-  expect(app.captureCharFrame()).not.toContain("QUEUED")
+  expect(app.captureCharFrame()).toContain("QUEUED")
   expect(app.captureCharFrame()).not.toContain("STEER")
 })
 

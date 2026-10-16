@@ -40,7 +40,7 @@ import type {
 } from "@opencode-ai/sdk/v2"
 import { useLocal } from "@tui/context/local"
 import { Locale } from "@/util/locale"
-import { queuedUserStatus, renderInTranscript, visibleFromID } from "./pending-turn"
+import { queuedUserStatus, visibleFromID } from "./pending-turn"
 import type { Tool } from "@/tool/tool"
 import type { ReadTool } from "@/tool/read"
 import type { WriteTool } from "@/tool/write"
@@ -1721,10 +1721,8 @@ export function Session() {
                             messages: messages(),
                             busy: busy(),
                             visibleFrom: visibleFrom(),
+                            partsOf: (id) => sync.data.part[id] ?? [],
                           })
-                          // A prompt the FIFO has not served yet is withheld: an
-                          // unanswered turn must not be shown in the transcript.
-                          if (!renderInTranscript(status)) return <></>
                           return (
                             <UserMessage
                               index={index()}

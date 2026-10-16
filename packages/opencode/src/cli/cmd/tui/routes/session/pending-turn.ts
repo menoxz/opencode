@@ -28,6 +28,11 @@
 //
 // `steer`: the prompt carries the steer flag and no assistant has been written
 // after it yet — the running run serves it at its next step.
+//
+// A queued prompt is RENDERED immediately with its QUEUED badge: a waiting
+// prompt has to stay visible so the user can see (and manage) the queue, and it
+// loses the badge once the run serves it. Runtime-shaped user messages
+// (compaction, background notifications) are not prompts and are never badged.
 type MessageLike = {
   id: string
   role: string
@@ -36,7 +41,36 @@ type MessageLike = {
   error?: unknown
   parentID?: string
 }
-type PartLike = { type: string; metadata?: { [key: string]: unknown }; tail_start_id?: unknown }
+type PartLike = {
+  type: string
+  text?: string
+  synthetic?: boolean
+  metadata?: { [key: string]: unknown }
+  tail_start_id?: unknown
+}
+
+// A steering message carries the steer flag on a text part
+// (PromptQueue.isSteerUser).
+const hasSteerFlag = (parts: readonly PartLike[]) =>
+  parts.some((part) => part.type === "text" && (part.metadata as { steer?: unknown } | undefined)?.steer === true)
+
+// Mirrors PromptQueue.isRunInternalUser: runtime-shaped user messages — a
+// compaction continue/replay, a background-task notification, or a v1 legacy
+// completion report — belong to the runtime, never to the user's prompt queue.
+// They are never the prompt a run is anchored on, and they never carry a badge.
+const isInternalParts = (parts: readonly PartLike[]) =>
+  parts.some(
+    (part) =>
+      part.type === "compaction" ||
+      (part.type === "text" &&
+        ((part.metadata as { compaction_continue?: unknown } | undefined)?.compaction_continue === true ||
+          (part.metadata as { compaction_replay?: unknown } | undefined)?.compaction_replay === true ||
+          (part.metadata as { background_notification?: unknown } | undefined)?.background_notification === true ||
+          (part.synthetic === true &&
+            typeof part.text === "string" &&
+            part.text.startsWith("<task ") &&
+            part.text.includes("<summary>Background task ")))),
+  )
 
 export type QueuedStatus = "queued" | "steer" | undefined
 
@@ -66,7 +100,11 @@ const steerServed = (messages: readonly MessageLike[], steerID: string) =>
 // BEFORE that cut — an interrupted run from before a compaction — is invisible
 // to the run and can never be the prompt being served. Counting it as the
 // anchor pinned it forever and badged every later submit QUEUED.
-const servingUserID = (messages: readonly MessageLike[], visibleFrom?: string) => {
+const servingUserID = (
+  messages: readonly MessageLike[],
+  visibleFrom?: string,
+  partsOf?: (messageID: string) => readonly PartLike[],
+) => {
   // The newest turn the run already finished. Prompts are served in FIFO order,
   // so the run never walks back behind a turn it closed: an open turn older than
   // this frontier was passed — an abandoned head (every step stopped at
@@ -96,6 +134,13 @@ const servingUserID = (messages: readonly MessageLike[], visibleFrom?: string) =
     if (message.role !== "user") continue
     if (visibleFrom !== undefined && message.id < visibleFrom) continue
     if (frontier !== undefined && message.id < frontier) continue
+    if (partsOf !== undefined) {
+      const parts = partsOf(message.id)
+      // Runtime-shaped messages are not prompts; a served steer is no longer
+      // pending either (PromptQueue.pendingUserID skips both).
+      if (isInternalParts(parts)) continue
+      if (hasSteerFlag(parts) && steerServed(messages, message.id)) continue
+    }
     if (turnClosed(messages, message.id)) continue
     if (inFlight(message.id) && (oldestInFlight === undefined || message.id < oldestInFlight)) oldestInFlight = message.id
     if (oldest === undefined || message.id < oldest) oldest = message.id
@@ -134,28 +179,29 @@ export function queuedUserStatus(input: {
   // start (MessageV2.filterCompacted). Undefined means no compaction ran, so
   // the whole transcript is in view.
   visibleFrom?: string
+  // Parts of any message, needed to recognise the runtime-shaped and steering
+  // messages the anchor scan must skip. Optional: without it the scan keeps the
+  // pre-existing behaviour.
+  partsOf?: (messageID: string) => readonly PartLike[]
 }): QueuedStatus {
   if (input.message.role !== "user") return undefined
   // An idle session never shows a delivery badge: a stale marker must not
   // survive a settled or interrupted run.
   if (!input.busy) return undefined
+  // A runtime-shaped message is not a user prompt: it never carries a badge.
+  if (isInternalParts(input.parts)) return undefined
+
+  // A steer is decided by its own flag, not by the anchor scan. It rides the
+  // running run, and until an assistant is written after it the run has not
+  // served it. Keying it on the anchor dropped the badge whenever the anchor's
+  // turn had already closed while the run kept going.
+  if (hasSteerFlag(input.parts)) return steerServed(input.messages, input.message.id) ? undefined : "steer"
+
   // Nothing is waiting: no open turn means no run to queue behind.
-  const serving = servingUserID(input.messages, input.visibleFrom)
+  const serving = servingUserID(input.messages, input.visibleFrom, input.partsOf)
   if (serving === undefined) return undefined
   // At or before the served prompt this submit is not waiting for anything:
   // either the run is serving it right now, or a later turn already closed it.
   if (input.message.id <= serving) return undefined
-
-  const steer = input.parts.some(
-    (part) => part.type === "text" && (part.metadata as { steer?: unknown } | undefined)?.steer === true,
-  )
-  if (steer) return steerServed(input.messages, input.message.id) ? undefined : "steer"
   return turnClosed(input.messages, input.message.id) ? undefined : "queued"
 }
-
-// Whether a user prompt belongs in the transcript at all. A prompt the FIFO has
-// not served yet is still waiting: rendering it would put an unanswered turn on
-// screen, so it is withheld until its own turn is served — it then renders like
-// any other prompt, with no badge. A steer is already being served by the
-// running run, so it shows immediately.
-export const renderInTranscript = (status: QueuedStatus): boolean => status !== "queued"
