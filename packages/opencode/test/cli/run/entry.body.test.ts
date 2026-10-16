@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { ToolPart } from "@opencode-ai/sdk/v2"
 import { entryBody, entryCanStream, entryDone } from "@/cli/cmd/run/entry.body"
+import { toolInlineInfo } from "@/cli/cmd/run/tool"
 import type { StreamCommit, ToolSnapshot } from "@/cli/cmd/run/types"
 
 function commit(input: Partial<StreamCommit> & Pick<StreamCommit, "kind" | "text" | "phase" | "source">): StreamCommit {
@@ -558,6 +559,24 @@ describe("run entry body", () => {
         type: "text",
         content: "# Retry input mask measurement with retries\n$ $py = @\" · +39 lines",
       })
+    })
+
+    test("bounds the command in the non-interactive output too", () => {
+      const part = toolPart(
+        "bash",
+        {
+          status: "completed",
+          input: { command },
+          output: "resultat utile\n",
+          title: "",
+          metadata: { exit: 0 },
+          time: { start: 1, end: 2 },
+        },
+        "bash-non-tty",
+        "msg-bash-non-tty",
+      )
+
+      expect(toolInlineInfo(part).title).toBe('$py = @" · +39 lines')
     })
 
     test("leaves a one-line command exactly as the agent typed it", () => {

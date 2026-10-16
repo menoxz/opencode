@@ -42,6 +42,18 @@ and no verdict. Both are fixed in
   frame's `exitCode`/`exit_code`), and only for the `bash` tool: another tool
   carrying an `exit` field is not a shell failure.
 
+## The other output mode
+
+`opencode run` without `--interactive` does not use the scrollback: it prints
+through `run.ts`, and a bash block takes its title from `runBash`. The command
+was unbounded there too — measured on 2026-10-16 by redirecting the output of a
+real run, which is the path every pipe, CI job and captured log takes. The same
+`boundedCommand` helper now feeds that title.
+
+One gap is deliberate and stays open: that printer writes no exit line, so a
+non-zero exit still reads as a plain block. Its stdout is also consumed as data
+by scripts, which is why the verdict was not bolted onto the output there.
+
 ## Measured frame
 
 The same 40-line script with a non-zero exit, rendered by the production

@@ -1306,7 +1306,10 @@ export function toolFrame(commit: StreamCommit, raw: string): ToolFrame {
 function runBash(p: ToolProps<typeof BashTool>): ToolInline {
   return {
     icon: "$",
-    title: p.input.command || "",
+    // Même règle que le scrollback : la commande est l'instruction, elle n'occupe qu'une
+    // ligne. Ce chemin est celui de la sortie non-TTY (`run.ts`, stdout redirigé : pipe,
+    // CI) — mesuré le 2026-10-16, il déversait lui aussi le script entier.
+    title: boundedCommand(p.input.command || ""),
     mode: "block",
     body: p.frame.status === "completed" ? text(p.frame.state.output).trim() : undefined,
   }
