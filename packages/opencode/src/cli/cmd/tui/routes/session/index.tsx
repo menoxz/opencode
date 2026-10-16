@@ -2179,7 +2179,7 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
               syntaxStyle={syntax()}
               content={summary().body}
               conceal={ctx.conceal()}
-              fg={theme.textLow}
+              fg={theme.textMuted}
             />
           </box>
         </Show>
@@ -2196,9 +2196,9 @@ function ReasoningHeader(props: {
   duration?: string
 }) {
   const { theme } = useTheme()
-  // Le raisonnement est du contenu **rapporté** : il recule au même cran que les sorties
-  // d'outil, et ne garde ni teinte d'alerte ni écart ouvert/fermé — le `+`/`-` dit déjà l'état.
-  const fg = () => theme.textLow
+  // Le raisonnement garde sa teinte d'ambre — c'est ce qui le distingue d'une sortie d'outil —
+  // mais à l'opacité « thinking » du thème, ouverte comme repliée : le `+`/`-` dit déjà l'état.
+  const fg = () => RGBA.fromValues(theme.warning.r, theme.warning.g, theme.warning.b, theme.thinkingOpacity)
 
   return (
     <text fg={fg()} wrapMode="none">

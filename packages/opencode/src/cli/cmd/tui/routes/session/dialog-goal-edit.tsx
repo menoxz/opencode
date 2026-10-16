@@ -32,11 +32,25 @@ export function DialogGoalEdit(props: DialogGoalEditProps) {
         category: "Dialog",
         run: confirm,
       },
+      {
+        name: "dialog.prompt.cancel",
+        title: "Cancel contract edit",
+        category: "Dialog",
+        run: () => dialog.clear(),
+      },
     ],
     bindings: [
       {
         key: "ctrl+return",
         cmd: "dialog.prompt.submit",
+      },
+      {
+        // La pile de dialogues lie bien `escape` (`ui/dialog.tsx`), mais elle **désactive** sa
+        // liaison dès qu'une sélection existe (`:103`). Plutôt que de dépendre de cet état, la
+        // liaison est posée ici, à la portée de la zone de texte, et fait exactement ce que
+        // fait le `esc` cliquable de l'en-tête : fermer le panneau, donc annuler l'édition.
+        key: "escape",
+        cmd: "dialog.prompt.cancel",
       },
     ],
   }))
