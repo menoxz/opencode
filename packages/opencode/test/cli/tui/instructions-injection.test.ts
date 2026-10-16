@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import type { Part } from "@opencode-ai/sdk/v2"
-import { instructionSources, instructionsHeading } from "@/cli/cmd/tui/util/instructions-injection"
+import {
+  instructionSources,
+  instructionsHeading,
+  instructionsInjecting,
+} from "@/cli/cmd/tui/util/instructions-injection"
 
 function part(extra: Record<string, unknown>): Part {
   return { id: "p", sessionID: "s", messageID: "m", type: "text", text: "", ...extra } as Part
@@ -46,5 +50,17 @@ describe("instructions injection", () => {
   test("the heading counts, and never announces zero", () => {
     expect(instructionsHeading(1)).toBe("core/instructions · 1 source")
     expect(instructionsHeading(3)).toBe("core/instructions · 3 sources")
+  })
+
+  /**
+   * Le spinner ne dit pas « le tour tourne » mais « les instructions entrent dans le
+   * contexte » : dès que la part qui porte les sources est écrite, l'injection est finie et
+   * l'animation doit s'arrêter, même si la réponse continue de couler.
+   */
+  test("no source yet means injecting, and any source ends the animation", () => {
+    expect(instructionsHeading(0)).toBe("core/instructions · injecting")
+    expect(instructionsInjecting([], true)).toBe(true)
+    expect(instructionsInjecting([], false)).toBe(false)
+    expect(instructionsInjecting(["Instructions from: a"], true)).toBe(false)
   })
 })

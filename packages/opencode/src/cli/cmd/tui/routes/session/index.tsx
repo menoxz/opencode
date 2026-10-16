@@ -115,7 +115,7 @@ import { useTuiConfig } from "../../context/tui-config"
 import { nextThinkingMode, reasoningSummary, useThinkingMode, type ThinkingMode } from "../../context/thinking"
 import { getScrollAcceleration } from "../../util/scroll"
 import { collapseToolOutput, collapseToolOutputTail } from "../../util/collapse-tool-output"
-import { instructionSources, instructionsHeading } from "../../util/instructions-injection"
+import { instructionSources, instructionsHeading, instructionsInjecting } from "../../util/instructions-injection"
 import { isHiddenTool } from "../../util/hidden-tools"
 import { TuiPluginRuntime } from "@/cli/cmd/tui/plugin/runtime"
 import { DialogRetryAction } from "../../component/dialog-retry-action"
@@ -906,8 +906,18 @@ export function Session() {
       run: async () => {
         const s = session()
         if (!s) return
-        const gs = (s as any).goalState
-        if (!gs) return
+        // Sans contrat existant, le bouton de la barre latérale sert à en **créer** un : un
+        // état vide passe par le même gabarit et la même garde (« Goal cannot be empty »),
+        // donc un clic ne peut pas écrire un contrat vide.
+        const gs = (s as any).goalState ?? {
+          goal: "",
+          dod: [],
+          outOfScope: [],
+          status: "edited",
+          source: "user",
+          version: 1,
+          updatedAt: Date.now(),
+        }
         const result = await DialogGoalEdit.show(dialog, {
           value: buildGoalEditTemplate(gs),
         })
@@ -1945,28 +1955,34 @@ function Instructions(props: { parts: Part[]; sessionID: string }) {
   const renderer = useRenderer()
   const [open, setOpen] = createSignal(false)
   const sources = createMemo(() => instructionSources(props.parts))
-  const running = createMemo(() => {
+  const busy = createMemo(() => {
     const status = sync.data.session_status?.[props.sessionID]
     return status !== undefined && status.type !== "idle"
   })
-  const heading = createMemo(() => instructionsHeading(sources().length))
+  // Le spinner dit « les instructions entrent dans le contexte », rien de plus : dès que la
+  // part qui les porte est écrite, l'injection est faite et l'animation s'arrête, même si la
+  // réponse continue.
+  const injecting = createMemo(() => instructionsInjecting(sources(), busy()))
+  const heading = createMemo(() => `§ ${instructionsHeading(sources().length)}`)
+  const expandable = createMemo(() => sources().length > 0)
 
   return (
-    <Show when={sources().length > 0}>
+    <Show when={injecting() || expandable()}>
       <box paddingLeft={3} flexShrink={0}>
         <box
           flexDirection="row"
           gap={1}
           onMouseUp={() => {
+            if (!expandable()) return
             if (renderer.getSelection()?.getSelectedText()) return
             setOpen((prev) => !prev)
           }}
         >
-          <Show when={running()}>
+          <Show when={injecting()}>
             <Spinner color={theme.textLow} />
           </Show>
           <text fg={theme.textLow} wrapMode="none" truncate>
-            {`§ ${heading()}`} {open() ? "▾" : "▸"}
+            {heading()} {expandable() ? (open() ? "▾" : "▸") : ""}
           </text>
         </box>
         <Show when={open()}>

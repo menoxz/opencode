@@ -21,7 +21,20 @@ export function instructionSources(parts: Part[]): string[] {
   return sources.filter((item): item is string => typeof item === "string")
 }
 
-/** En-tête de la ligne : un compte, jamais un zéro (la ligne n'existe pas sans sources). */
+/** En-tête de la ligne. Zéro source connue = les instructions **entrent** dans le contexte. */
 export function instructionsHeading(count: number): string {
+  if (count === 0) {
+    return "core/instructions · injecting"
+  }
+
   return `core/instructions · ${count} source${count === 1 ? "" : "s"}`
+}
+
+/**
+ * La part qui porte les sources est écrite **au moment** de l'injection : sa présence veut
+ * dire « les instructions sont dans le contexte ». L'animation ne dit donc que cela, et
+ * s'arrête là — elle ne tourne pas pendant toute la réponse.
+ */
+export function instructionsInjecting(sources: string[], busy: boolean): boolean {
+  return busy && sources.length === 0
 }

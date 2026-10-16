@@ -76,10 +76,18 @@ Click to expand
   silent, a failed child turns its row red (`row.failed`, the same field the tests assert),
   and a running child keeps its spinner in the leading slot.
 - **`§ core/instructions · N sources`**: the injected-instructions line is named after the
-  flag it carries and gets an icon like the other entries.
-- **TASK CONTRACT is a button**: the sidebar title is focusable and clickable (underlined on
-  hover and focus) and dispatches `session.goal.edit`, which opens the existing editor —
-  xlarge minimum size, scrolling textarea, `ctrl+return` to save, esc to close.
+  flag it carries and gets an icon like the other entries. Its spinner says one thing only —
+  *the instructions are entering the context* — so it stops as soon as the carrier part is
+  written (`instructionsInjecting`), not when the answer finishes. Before that part exists,
+  the line reads `core/instructions · injecting`.
+- **TASK CONTRACT is a button, and nothing else**: the sidebar shows one focusable, clickable
+  line (`✎ Goal definition`, underlined on hover and focus) which dispatches
+  `session.goal.edit`. The objective, the DoD and the out-of-scope list are visible **only**
+  in the editor panel it opens — xlarge minimum size, scrolling textarea, `ctrl+return` to
+  save, esc to close. Without an existing contract the same click builds an empty one, so the
+  button is also how a contract gets created; the editor's own guard still refuses an empty
+  goal. The compact one-line summary that used to live in the sidebar, and its helper, were
+  removed with it.
 - **The Context section headline** is `Context`: the `(last call)` suffix is gone.
 
 ## Verification
