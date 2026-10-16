@@ -27,6 +27,36 @@ export const RETRY_BACKOFF_FACTOR = 2
 export const RETRY_MAX_DELAY_NO_HEADERS = 30_000 // 30 seconds
 export const RETRY_MAX_DELAY = 2_147_483_647 // max 32-bit signed integer for setTimeout
 export const RETRY_MIN_DELAY = 1 // avoid zero-duration retry loops
+// Plafond explicite : un provider durablement en erreur ne doit pas retenir la session pour
+// toujours. Un `retry-after` serveur peut valoir des heures (quota), et sans plafond la
+// session attendrait indéfiniment au lieu de rendre l'erreur au client.
+export const RETRY_MAX_ATTEMPTS = 10
+// Statuts qui coupent la session alors qu'ils se résolvent seuls : délai dépassé, trop tôt,
+// débit trop élevé. Ils rejoignent les 5xx, même quand le SDK du provider ne les marque pas.
+export const RETRYABLE_STATUS = new Set([408, 425, 429])
+// Erreurs de transport et de flux, qui n'arrivent pas en `APIError` : connexion coupée, flux
+// fermé avant la fin, délai dépassé. Elles interrompaient la session ; elles se réessaient.
+export const TRANSIENT_MESSAGE_PATTERNS = [
+  "fetch failed",
+  "socket hang up",
+  "econnreset",
+  "econnrefused",
+  "etimedout",
+  "epipe",
+  "eai_again",
+  "connection reset",
+  "connection closed",
+  "premature close",
+  "other side closed",
+  "terminated",
+  "stream closed",
+  "stream ended",
+  "stream error",
+  "timed out",
+  "timeout",
+  "temporarily unavailable",
+  "service unavailable",
+]
 
 function cap(ms: number) {
   return Math.min(ms, RETRY_MAX_DELAY)
@@ -75,11 +105,14 @@ export function delay(attempt: number, error?: MessageV2.APIError) {
 export function retryable(error: Err, provider: string) {
   // context overflow errors should not be retried
   if (MessageV2.ContextOverflowError.isInstance(error)) return undefined
+  // un abandon demandé (interruption utilisateur) n'est pas une panne : on ne le réessaie pas.
+  if (error.name === "AbortError") return undefined
   if (MessageV2.APIError.isInstance(error)) {
     const status = error.data.statusCode
     // 5xx errors are transient server failures and should always be retried,
     // even when the provider SDK doesn't explicitly mark them as retryable.
-    if (!error.data.isRetryable && !(status !== undefined && status >= 500)) return undefined
+    const transient = status !== undefined && (status >= 500 || RETRYABLE_STATUS.has(status))
+    if (!error.data.isRetryable && !transient) return undefined
     if (error.data.responseBody?.includes("FreeUsageLimitError")) {
       return {
         message: GO_UPSELL_MESSAGE,
@@ -140,6 +173,12 @@ export function retryable(error: Err, provider: string) {
     ) {
       return { message: msg }
     }
+
+    // Une coupure de transport ou de flux se lit dans le texte, pas dans un statut : ces
+    // erreurs interrompaient la session alors qu'un réessai suffit presque toujours.
+    if (TRANSIENT_MESSAGE_PATTERNS.some((pattern) => lower.includes(pattern))) {
+      return { message: msg }
+    }
   }
 
   const json = parseJSON(msg)
@@ -192,6 +231,9 @@ export function policy(opts: {
       const error = opts.parse(meta.input)
       const retry = retryable(error, opts.provider)
       if (!retry) return Cause.done(meta.attempt)
+      // Plafond : passé RETRY_MAX_ATTEMPTS tentatives, on rend l'erreur au client. La dernière
+      // ligne « session retry scheduled » du journal marque la tentative finale.
+      if (meta.attempt > RETRY_MAX_ATTEMPTS) return Cause.done(meta.attempt)
       return Effect.gen(function* () {
         const wait = delay(meta.attempt, MessageV2.APIError.isInstance(error) ? error : undefined)
         const now = yield* Clock.currentTimeMillis
