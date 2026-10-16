@@ -621,8 +621,25 @@ function snapQuestion(p: ToolProps<typeof QuestionTool>): ToolSnapshot {
   }
 }
 
+/**
+ * La commande est l'**instruction**, jamais le résultat : au-delà d'une ligne, seule la
+ * première est écrite et le nombre de lignes masquées l'annonce. Mesuré le 2026-10-16 :
+ * 40 lignes de script pour 1 ligne de sortie — le moyen prenait la place du sujet, et
+ * rien ne bornait l'entrée (la sortie, elle, l'est par la place du terminal).
+ */
+function boundedCommand(command: string): string {
+  const lines = command.replace(/\r\n?/g, "\n").trim().split("\n")
+  const first = (lines[0] ?? "").trim()
+  const hidden = lines.length - 1
+  if (hidden < 1) {
+    return first
+  }
+
+  return `${first} · +${hidden} line${hidden > 1 ? "s" : ""}`
+}
+
 function scrollBashStart(p: ToolProps<typeof BashTool>): string {
-  const cmd = p.input.command ?? ""
+  const cmd = boundedCommand(p.input.command ?? "")
   const desc = p.input.description || "Shell"
   const wd = p.input.workdir ?? ""
   const dir = wd && wd !== "." ? toolPath(wd) : ""
@@ -672,18 +689,30 @@ function scrollBashProgress(p: ToolProps<typeof BashTool>): string {
   return fmt(out)
 }
 
-function scrollBashFinal(p: ToolProps<typeof BashTool>): string {
-  const code = p.metadata.exit ?? num(p.frame.meta.exitCode) ?? num(p.frame.meta.exit_code)
-  const time = span(p.frame.state)
-  if (code === undefined) {
-    if (!time) {
-      return "bash completed"
-    }
+/**
+ * Le code de sortie d'une commande, d'où qu'il vienne : la métadonnée de l'outil
+ * (`shell.ts` écrit `exit`), puis les deux orthographes du cadre (`exitCode`/`exit_code`).
+ */
+function shellExitCode(metadata: unknown, meta: ToolDict): number | undefined {
+  return num(dict(metadata).exit) ?? num(meta.exitCode) ?? num(meta.exit_code)
+}
 
-    return `bash completed · ${time}`
+/**
+ * Statut d'une commande, écrit **après** sa sortie : le code de sortie n'existe pas encore
+ * quand l'en-tête est écrit, donc il ne peut pas y figurer. Le succès reste silencieux
+ * (ce qui est rare ne s'affiche pas au repos) ; l'échec s'annonce en clair et en rouge —
+ * `entryFailed` lit le même code. Sans cette ligne, une commande qui rate se lit
+ * exactement comme une qui réussit : mesuré le 2026-10-16, le formateur existait déjà
+ * (`bash completed (exit N)`) mais `view.final = false` le supprimait.
+ */
+function scrollBashFinal(p: ToolProps<typeof BashTool>): string {
+  const code = shellExitCode(p.metadata, p.frame.meta)
+  if (code === undefined || code === 0) {
+    return ""
   }
 
-  return `bash completed (exit ${code})${time ? ` · ${time}` : ""}`
+  const time = span(p.frame.state)
+  return `✗ exit ${code}${time ? ` · ${time}` : ""}`
 }
 
 function scrollReadStart(p: ToolProps<typeof ReadTool>): string {
@@ -1036,7 +1065,9 @@ const TOOL_RULES = {
   bash: {
     view: {
       output: true,
-      final: false,
+      // `final: true` ne veut pas dire « une ligne par commande » : `scrollBashFinal` reste
+      // muet sur un succès, donc seule une sortie en erreur ajoute la ligne de statut.
+      final: true,
     },
     run: runBash,
     scroll: {
@@ -1298,6 +1329,16 @@ export function toolStructuredFinal(commit: StreamCommit): boolean {
     state === "completed" &&
     Boolean(toolView(commit.tool ?? commit.part?.tool).snap)
   )
+}
+
+/**
+ * Le code de sortie porté par un commit. `state.status` reste `completed` sur un exit non
+ * nul — l'outil n'a pas échoué, la commande si — donc c'est la seule source qui dise
+ * qu'une commande a raté, pour le repli comme pour la couleur.
+ */
+export function toolExitCode(commit: StreamCommit): number | undefined {
+  const state = commit.part?.state
+  return shellExitCode(state && "metadata" in state ? state.metadata : {}, {})
 }
 
 export function toolInlineInfo(part: ToolPart): ToolInline {

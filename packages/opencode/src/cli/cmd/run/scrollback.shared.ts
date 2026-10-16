@@ -1,4 +1,5 @@
 import { SyntaxStyle, TextAttributes, type ColorInput } from "@opentui/core"
+import { toolExitCode } from "./tool"
 import { type RunEntryTheme, type RunTheme } from "./theme"
 import type { StreamCommit } from "./types"
 
@@ -14,8 +15,26 @@ export function entrySyntax(commit: StreamCommit, theme: RunTheme): SyntaxStyle 
   return syntax(theme.block.syntax)
 }
 
+/**
+ * Un exit non nul n'est pas une erreur d'outil — `state.status` reste `completed` — mais
+ * c'est pourtant la seule chose qui dise que la commande a raté : sans cette lecture, un
+ * échec s'affiche exactement comme un succès. Même source que la ligne de statut
+ * (`toolExitCode`), donc le texte et la couleur ne peuvent pas se contredire.
+ */
+function failedExit(commit: StreamCommit): boolean {
+  if (commit.kind !== "tool" || commit.tool !== "bash") {
+    return false
+  }
+
+  const code = toolExitCode(commit)
+  return code !== undefined && code !== 0
+}
+
 export function entryFailed(commit: StreamCommit): boolean {
-  return commit.kind === "tool" && (commit.toolState === "error" || commit.part?.state.status === "error")
+  return (
+    commit.kind === "tool" &&
+    (commit.toolState === "error" || commit.part?.state.status === "error" || failedExit(commit))
+  )
 }
 
 export function entryLook(commit: StreamCommit, theme: RunEntryTheme): { fg: ColorInput; attrs?: number } {

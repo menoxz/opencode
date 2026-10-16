@@ -533,4 +533,99 @@ describe("run entry body", () => {
       content: "assistant interrupted",
     })
   })
+
+  describe("bash display", () => {
+    const command = ["$py = @\"", ...Array.from({ length: 38 }, (_, index) => `body ${index}`), "\"@"].join("\n")
+
+    test("bounds a multi-line command to its first line plus the hidden count", () => {
+      expect(
+        entryBody(
+          toolCommit({
+            tool: "bash",
+            phase: "start",
+            toolState: "running",
+            state: {
+              status: "running",
+              input: {
+                command,
+                description: "Retry input mask measurement with retries",
+              },
+              time: { start: 1 },
+            },
+          }),
+        ),
+      ).toEqual({
+        type: "text",
+        content: "# Retry input mask measurement with retries\n$ $py = @\" · +39 lines",
+      })
+    })
+
+    test("leaves a one-line command exactly as the agent typed it", () => {
+      expect(
+        entryBody(
+          toolCommit({
+            tool: "bash",
+            phase: "start",
+            toolState: "running",
+            state: {
+              status: "running",
+              input: {
+                command: "git status",
+                description: "Show git status",
+              },
+              time: { start: 1 },
+            },
+          }),
+        ),
+      ).toEqual({
+        type: "text",
+        content: "# Show git status\n$ git status",
+      })
+    })
+
+    test("adds no status line to a command that exited 0", () => {
+      expect(
+        entryBody(
+          toolCommit({
+            tool: "bash",
+            phase: "final",
+            toolState: "completed",
+            state: {
+              status: "completed",
+              input: { command: "git status" },
+              output: "clean\n",
+              title: "",
+              metadata: { exit: 0 },
+              time: { start: 1, end: 2 },
+            },
+          }),
+        ),
+      ).toEqual({ type: "none" })
+    })
+
+    test("writes the exit code last when the command failed", () => {
+      const body = entryBody(
+        toolCommit({
+          tool: "bash",
+          phase: "final",
+          toolState: "completed",
+          state: {
+            status: "completed",
+            input: { command: "git status" },
+            output: "Set-Location: not found\n",
+            title: "",
+            metadata: { exit: 1 },
+            time: { start: 1000, end: 2400 },
+          },
+        }),
+      )
+
+      expect(body.type).toBe("text")
+      if (body.type !== "text") {
+        throw new Error("expected a text body")
+      }
+
+      expect(body.content).toMatch(/^✗ exit 1( · .+)?$/)
+    })
+  })
 })

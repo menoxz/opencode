@@ -969,3 +969,71 @@ test("renders promoted task markdown without a leading blank row", async () => {
     out.scrollback.destroy()
   }
 })
+
+test("bounds a long command and closes a failed run with its exit code", async () => {
+  const out = await setup()
+
+  try {
+    const lines: string[] = []
+    const take = () => {
+      const commits = claim(out.renderer)
+      try {
+        lines.push(...commits.flatMap((commit) => renderRows(commit).flatMap((row) => row.split("\n"))))
+      } finally {
+        destroy(commits)
+      }
+    }
+
+    const command = ["$py = @\"", ...Array.from({ length: 38 }, (_, index) => `body ${index}`), "\"@"].join("\n")
+    const shared = {
+      input: { command, description: "Retry input mask measurement with retries" },
+    }
+    const completed = {
+      ...shared,
+      status: "completed",
+      output: "Set-Location: not found\n",
+      title: "",
+      metadata: { exit: 1 },
+      time: { start: 1, end: 2400 },
+    }
+
+    await out.scrollback.append(
+      toolCommit({
+        tool: "bash",
+        phase: "start",
+        toolState: "running",
+        state: { ...shared, status: "running", time: { start: 1 } },
+      }),
+    )
+    take()
+    await out.scrollback.append(
+      toolCommit({
+        tool: "bash",
+        phase: "progress",
+        toolState: "completed",
+        text: "Set-Location: not found\n",
+        state: completed,
+      }),
+    )
+    take()
+    await out.scrollback.append(
+      toolCommit({
+        tool: "bash",
+        phase: "final",
+        toolState: "completed",
+        state: completed,
+      }),
+    )
+    await out.scrollback.complete()
+    take()
+
+    const output = lines.join("\n")
+    expect(output).toContain("# Retry input mask measurement with retries")
+    expect(output).toContain("$ $py = @\" · +39 lines")
+    expect(output).not.toContain("body 37")
+    expect(output).toContain("Set-Location: not found")
+    expect(output).toMatch(/✗ exit 1( · .+)?/)
+  } finally {
+    out.scrollback.destroy()
+  }
+})
