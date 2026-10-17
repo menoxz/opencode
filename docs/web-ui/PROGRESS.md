@@ -3835,3 +3835,87 @@ l'air » : seule la mesure des boîtes le dit.
 
 Contrôle de l'action au pilotage réel (`Input.dispatchMouseEvent`) : `opacity` 0 au repos, 1 au
 survol, clic -> `copy-icon done` (copie réussie). Le geste est plus discret, il n'est pas perdu.
+
+## Lot 25 — un tour raté disait rien, et trois retours d'écran (livré)
+
+Trois retours sur une capture : « ajoute des icônes au bloc d'injections, comme un losange », « le tour a
+encore échoué, j'ai posé une question et il n'y a eu aucune réponse, seulement les blocs
+d'injections », et « l'icône de copie a été déplacée en haut de la carte parce que tu as remonté les
+injections ».
+
+### 1. Le tour muet — une erreur que personne n'affichait
+
+Le fil n'a montré que le prompt et ses injections. La cause est **côté serveur** : la réponse portait
+
+```
+role=assistant provider=opencode-go model=deepseek-v4.1-flash
+  err={"name":"UnknownError","data":{"message":"getaddrinfo ENOTFOUND opencode.ai"}} parts=0
+```
+
+DNS transitoire — les **deux tours précédents** de la même session avaient réussi, avec le même
+modèle : ce n'est ni le modèle ni la page. Mais la page, elle, était fautive d'une autre façon :
+`errorText` lisait déjà l'erreur, `turn.error` la rangeait déjà… et **rien ne la rendait**. Pire : une
+réponse qui échoue n'a **aucune partie**, donc le tour entier était sauté (`steps.length > 0` faux).
+`turnError(turn)` (pur, 4 tests) remonte la première erreur d'un tour ; le fil affiche
+« The turn failed: … ». C'est la fin du silence.
+
+### 2. Le losange, repris du TUI
+
+`packages/opencode/src/cli/cmd/tui/routes/session/index.tsx` : `` `◆ ${instructionsHeading(…)}` ``.
+Le webui met le même glyphe devant chaque ligne d'injections — la même forme dit la même chose des
+deux côtés, et distingue au premier regard du **contexte injecté** d'une ligne d'action.
+
+### 3. L'icône de copie redescend, sans reprendre de hauteur
+
+Le lot 24 l'avait posée **sur** la carte pour supprimer une rangée de 23 px. Retour légitime : ce
+n'est pas sa place. Elle se pose désormais sur la ligne de la **dernière injection**, à droite, dans
+la place que le losange laisse libre (et `padding-right` réserve cette place sur chaque ligne).
+
+Deux pièges mesurés au passage :
+
+- **`bottom: 0` ne visait pas le tour** : `.prompt-block` est positionné, donc il captait l'absolu et
+  l'action revenait sur la carte (mesuré : 119 px, le bas de la carte, au lieu de 172 px). Corrigé par
+  `.turn.user:has(> .injections) > .prompt-block { position: static }`.
+- **Révélée au survol, elle était introuvable** : invisible au repos, elle ne réapparaissait qu'en
+  survolant exactement sa propre place. Mesuré à `opacity: 0` en survolant le bloc d'injections.
+  Elle est donc **toujours visible**, comme avant.
+
+```
+ecart carte -> 1re injection      :  4 px   (etait 39)
+ecart derniere injection -> agent : 10 px   (etait 34)
+pied de copie                     : 153..172, **sous** les injections (123..172)
+hauteur du tour utilisateur       : 97 px — inchangee : l'action ne coute aucune hauteur
+losanges rendus                   : 6 (2 par tour)
+erreur affichee                   : « The turn failed: getaddrinfo ENOTFOUND opencode.ai »
+clic sur l'action                 : classe « copy-icon done »
+```
+
+### 4. Un tour d'agent complet, chronométré, journaux surveillés
+
+Côté API (session de sonde, prompt « lance `git log -1 --oneline` avec l'outil bash ») :
+
+```
++ 1.26s busy | + 1.89s injections n°1 | + 5.14s injections n°2 (3,25 s d'assemblage)
++ 6.86s etape | + 7.81s raisonnement + 1er token
++ 8.00s bash pending -> + 8.15s running -> + 8.78s completed (exit=0, 20 ms)
++10.81s texte | +11.53s idle     duree totale 12,1 s
+```
+
+Réponse obtenue : `` `ee44c8018 docs(webui): correction du lot 23 …` ``. Journal du serveur : `out`
+53 o → 53 o, `err` 0 o → 0 o — **aucune erreur**. (Le serveur ne journalise pas les requêtes : sa
+sortie ne porte que la ligne d'écoute, et c'est la chronologie des événements qui fait preuve.)
+
+Depuis l'**interface**, le même tour, sans rechargement :
+
+```
++ 0.5s « working… » | + 8.0s ligne d'outil | +14.1s reponse | +15.1s working disparait
+1 outil, 1 prose, 0 exception, navigation = navigate
+```
+
+### Preuve
+
+```
+vitest (webui) : 24 fichiers / 627 tests, exit 0   (+4 : le texte d'une erreur de tour)
+tsgo --noEmit  : exit 0
+vite build     : exit 0
+```
