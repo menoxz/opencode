@@ -24,6 +24,7 @@ Scope: ce dépôt. Le fichier global (`~/.config/opencodev2/AGENTS.md`) porte la
 - SDK : `client.find.files()` (et **non** `find.file`), `client.file.read()` ; `GET /command` = **1,95 Mo** ⇒ projeter aussitôt, lire à la demande.
 - Watcher de fichiers : opt-in `OPENCODE_EXPERIMENTAL_FILEWATCHER=true` (défaut `false`) ⇒ redémarrage ; sans lui, aucune écriture externe n'émet d'événement.
 - Hot-reload MCP : preuve que le veilleur est armé = `service=mcp … MCP config watchers active` dans le log ; sans cette ligne, un changement de `mcp` n'agit qu'au redémarrage.
+- `prompt_async` rend **204 même quand aucun tour ne démarre** : sur une session occupée, le prompt part dans `PromptQueue` (`session/prompt.ts:1742-1789`), et `handlers/session.ts:346-358` **avale** toute erreur (log + `session.error` sur le bus) sans la rendre au client. Un prompt en file « reste **invisible** jusqu'au prochain tour ». Donc « j'ai envoyé un message, rien ne se passe » n'est ni une panne ni un bug de l'UI : c'est une file d'attente silencieuse.
 - Fins de ligne : `packages/opencode/src/cli/cmd/tui/routes/session/index.tsx` est commité en **CRLF** ⇒ ne pas le convertir ; vérifier `git diff --stat`.
 
 ## 3. Webui
@@ -38,6 +39,7 @@ Scope: ce dépôt. Le fichier global (`~/.config/opencodev2/AGENTS.md`) porte la
 - Contrôle de choix = `picker.tsx` (cherchable), **jamais un `<select>` natif**.
 - Copie **en anglais** (tout `packages/webui/src/*`), nombres selon la langue ; commentaires et intitulés de test en français.
 - Fil mis à jour **en place** par le flux, pas par relecture REST ; **écouter `/global/event`** — `/event` est borné à un dossier (`middleware/workspace-routing.ts:86-88`) donc muet pour toute session ouverte ailleurs ⇒ fil figé jusqu'au rechargement (le REST, lui, résout le dossier de la session, donc il « répare » tout seul : c'est ce qui masque le défaut).
+- Le flot de deltas s'applique **au plus une fois par image** (`createLatestGate`, `stream-sync.ts`) : écrire le signal des messages par événement rend le fil entier — mesuré le 2026-10-17, 75 `message.part.delta`/s ont bloqué une image **12 388 ms** et rendu la page sourde 24 s, pendant que le sondage de santé affichait « server unreachable » à tort. Ne jamais rebrancher `setMessages` directement sur un événement.
 - `message.part.updated` porte la partie **imbriquée** sous `properties.part` (`{sessionID, part, time}`) ; `message.part.delta` = `{sessionID, messageID, partID, field, delta}` ; `message.updated` = `{sessionID, info}`. Lire `properties` comme la partie rend `id` indéfini et l'événement est classé « nothing to change » — le fil ne bouge plus, sans erreur. Lecture par **étape** (`groupTurns`/`groupSteps`).
 - `question.asked` = seule écriture du fil (l'agent est bloqué dessus) ; réponse **positionnelle** `{answers: string[][]}`.
 - SSE : `EventSource` ne rappelle **jamais** `onerror` quand la socket reste ouverte sans rien livrer ⇒ garder le watchdog (silence > 30 s = flux remplacé + reconnexion).

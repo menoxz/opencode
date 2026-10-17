@@ -120,6 +120,7 @@ import {
   activityFromStatus,
   createReloadGate,
   createTicketGuard,
+  createLatestGate,
   resyncPlan,
   threadEventOutcome,
 } from "./stream-sync"
@@ -876,7 +877,7 @@ export default function App() {
     void loadPlan(sessionID)
     const result = await client.session.messages({ sessionID, ...scope() }).catch(() => undefined)
     const data = (result as { data?: Message[] } | undefined)?.data
-    setMessages(Array.isArray(data) ? data : [])
+    setThread(Array.isArray(data) ? data : [])
   }
 
   /**
@@ -891,6 +892,39 @@ export default function App() {
   const reloadGate = createReloadGate()
   const threadTickets = createTicketGuard()
 
+  /**
+   * Le fil s'applique **au plus une fois par image**.
+   *
+   * Mesuré le 2026-10-17 pendant une longue tâche : le serveur émettait 75 `message.part.delta` par
+   * seconde. Chaque delta appliqué écrit le signal des messages, donc recalcule les tours et rend le
+   * fil : l'onglet a bloqué **12 388 ms** sur une image et n'a plus répondu à `Runtime.evaluate`
+   * pendant plus de 10 s. Le débit vient du serveur et la tâche est légitime ; c'est la page qui
+   * doit absorber le flot. Une image ne rend donc que **le dernier** état, les deltas intermédiaires
+   * étant fusionnés — exactement ce que `createReloadGate` fait pour les relectures.
+   */
+  const threadGate = createLatestGate<Message[]>()
+  let threadFrame: number | undefined
+  const scheduleThread = () => {
+    if (threadFrame !== undefined) return
+    threadFrame = requestAnimationFrame(() => {
+      threadFrame = undefined
+      const next = threadGate.flush()
+      if (next) setMessages(next)
+    })
+  }
+  const applyThread = (next: Message[]) => {
+    threadGate.push(next)
+    scheduleThread()
+  }
+  /**
+   * Écriture du fil **hors flot** : une relecture REST, une session vidée. La porte est vidée avant,
+   * car une valeur différée plus ancienne écraserait l'état autoritaire qu'on vient d'obtenir.
+   */
+  const setThread = (next: Message[]) => {
+    threadGate.reset()
+    setMessages(next)
+  }
+
   const reloadThread = (sessionID: string) => {
     reloadGate.request(sessionID, async (key) => {
       const ticket = threadTickets.issue()
@@ -900,7 +934,7 @@ export default function App() {
       // Le jeton se vérifie **après** l'attente : c'est la réponse la plus récente qui écrit.
       if (!threadTickets.accept(ticket)) return
       const data = (result as { data?: Message[] } | undefined)?.data
-      if (Array.isArray(data)) setMessages(data)
+      if (Array.isArray(data)) setThread(data)
     })
   }
 
@@ -1485,7 +1519,7 @@ export default function App() {
     })
     if (active() === session.id) {
       setActive(undefined)
-      setMessages([])
+      setThread([])
     }
     await loadSessions()
   }
@@ -1583,7 +1617,7 @@ export default function App() {
     if (trimmed) localStorage.setItem(DIR_KEY, trimmed)
     else localStorage.removeItem(DIR_KEY)
     setActive(undefined)
-    setMessages([])
+    setThread([])
     void loadPath()
     void loadSessions()
     void loadPermissions()
@@ -1725,7 +1759,7 @@ export default function App() {
          * clignoter le texte. `reduceThread` applique l'événement, et le rechargement ne subsiste que
          * pour un cas nommé : un message encore inconnu de la page (le début d'un tour).
          */
-        if (outcome?.kind === "applied") setMessages(outcome.messages)
+        if (outcome?.kind === "applied") applyThread(outcome.messages)
         else if (outcome?.kind === "resync" && sessionID) reloadThread(sessionID)
         if (event.type === "session.status" || event.type === "session.idle") {
           const properties = (event.properties ?? {}) as { sessionID?: string; status?: { type?: string } }
@@ -1760,6 +1794,7 @@ export default function App() {
     onCleanup(() => {
       clearInterval(healthTimer)
       clearTimeout(searchTimer)
+      if (threadFrame !== undefined) cancelAnimationFrame(threadFrame)
       window.removeEventListener("resize", onResize)
       window.removeEventListener("keydown", onKey)
       eventStream.stop()

@@ -211,3 +211,47 @@ export function streamSilent(
   if (lastEventAt === undefined) return false
   return now - lastEventAt > limit
 }
+
+/**
+ * Une porte « la dernière valeur gagne », pour **coalescer** les applications faites en place.
+ *
+ * Mesuré le 2026-10-17 sur une longue tâche légitime : le serveur émettait **75 `message.part.delta`
+ * par seconde**. Appliquer chaque delta écrivait le signal des messages — donc recalculait les tours
+ * **et** rendait le fil — 75 fois par seconde : l'onglet a bloqué sur une seule image de
+ * **12 388 ms**, et `Runtime.evaluate` est resté sans réponse plus de 10 s. Le débit est le fait du
+ * serveur ; c'est à la page de s'y adapter. `push` garde la dernière valeur, `flush` la rend **une**
+ * fois : une image ne rend qu'un état, le plus récent.
+ *
+ * Le planificateur (l'image) vit chez l'appelant : ce module reste pur, donc testable hors
+ * navigateur. `reset` sert aux relectures REST, qui sont **autoritatives** : une valeur en attente,
+ * plus ancienne, ne doit pas repasser par-dessus.
+ */
+export type LatestGate<T> = {
+  push: (value: T) => void
+  flush: () => T | undefined
+  pending: () => boolean
+  reset: () => void
+}
+
+export function createLatestGate<T>(): LatestGate<T> {
+  let value: T | undefined
+  let held = false
+  return {
+    push: (next) => {
+      value = next
+      held = true
+    },
+    flush: () => {
+      if (!held) return undefined
+      const out = value
+      value = undefined
+      held = false
+      return out
+    },
+    pending: () => held,
+    reset: () => {
+      value = undefined
+      held = false
+    },
+  }
+}

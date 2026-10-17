@@ -3666,3 +3666,75 @@ routes d'instance). Signalé pour que la piste ne se perde pas.
 - Le fil global livre **toutes** les instances. La page filtre par session active
   (`threadEventOutcome`, raison « another session ») ; le journal brut, lui, les montre toutes —
   c'est ce qu'on lui demande.
+
+## Lot 22 — la page bloquait sous le flot, et un prompt en file était invisible (livré)
+
+Signalement : « j'ai tapé un prompt *hi* et la page a planté — comme s'il y avait un problème de
+serveur, d'après le stream ».
+
+Deux causes distinctes, et **aucune n'était un bug du serveur**. La première est un vrai défaut de la
+page ; la seconde est un comportement du serveur que rien ne disait à l'écran.
+
+### 1. Le flot de deltas saturait le fil principal (défaut de la page)
+
+Le Lot 21 a rendu le flux vivant. Conséquence mesurée : une **longue tâche agentique** en cours
+(raisonnement + `turn_plan`/`edit`/`bash`/`read`/`inspect_batch` enchaînés) émet
+**75 `message.part.delta` par seconde** en continu. Chaque delta appliqué écrivait le signal des
+messages ⇒ recalcul des tours **et** rendu du fil, 75 fois par seconde.
+
+Mesure sur la session réelle, Vite 5180 → serveur 4096, onglet au premier plan, échantillonneur
+`requestAnimationFrame` :
+
+```
+avant : médiane 16,7 ms  mais max = 12 388 ms ; `Runtime.evaluate` muet 24 s d'affilée (2 essais)
+apres : médiane 16,7 ms  max = 292 ms ; page réactive, fil 7 659 -> 7 919 caractères (17 tours, 96 outils)
+```
+
+C'est ce blocage qui produisait les **faux diagnostics à l'écran** : pendant 12 s sans boucle
+d'événements, le sondage de santé de 10 s ne répond plus et la notice affiche « **server unreachable** »
+— « il y a un problème de serveur, d'après le stream », exactement le mot de l'utilisateur, alors que
+le serveur allait bien.
+
+**Correction** : `createLatestGate` (`stream-sync.ts`, pur, 5 tests) + un planificateur d'une image
+dans `app.tsx`. Une image ne rend que le **dernier** état ; les relectures REST, elles, **vident** la
+porte (`setThread`), parce qu'elles sont autoritatives. Contrôle : après correction, un tour neuf
+s'affiche toujours en direct (prose 0 → 1, `working…` puis disparition, 165 deltas appliqués, aucune
+exception).
+
+### 2. Un prompt envoyé pendant un tour actif part en file, en silence (comportement serveur)
+
+Reproduit sur une session jetable : premier envoi qui streame, puis `hi` pendant ce tour.
+
+```
+2e envoi HTTP = 204  (corps vide)
+messages de la session : user(3 parties), assistant(en cours), user(1 partie)  <- « hi » stocké
+session.error sur /global/event : AUCUN
+```
+
+Le serveur **met le prompt en file** : « Prompts queued while this run is active are never absorbed »,
+et « a prompt queued mid-run stays invisible until a fresh run starts »
+(`session/prompt.ts:1742-1789`). Et `prompt_async` **avale toute erreur** (log + `session.error` sur le
+bus, jamais rendue au client, `handlers/session.ts:346-358`).
+
+Donc : rien n'est cassé, le message attend son tour — mais **aucune surface ne le dit**. C'est le
+« aucune réaction de l'agent » du signalement. Consigné dans `AGENTS.md` §2 ; la page, elle, ne peut
+pas le deviner (elle ne voit qu'un 204). Rendre l'attente visible (mention « queued ») est une
+décision d'écran, laissée à l'utilisateur.
+
+### Preuve
+
+```
+vitest (webui)  : 24 fichiers / 623 tests, exit 0    (+5 : la porte)
+tsgo --noEmit   : exit 0
+vite build      : exit 0
+
+profil CPU (Profiler, 500 us) sur la session lourde, apres correction :
+  40 885 ms idle · 8 252 ms program · 5 951 ms app.tsx · 1 084 ms remove · 528 ms GC
+```
+
+### Methode
+
+Le premier essai a conclu « la page gèle » sur un onglet **non visible** : Chrome gèle un onglet
+d'arrière-plan, l'échantillonneur de frames s'arrêtait net (`n` figé) — un artefact de sonde, pas le
+défaut. `Page.bringToFront` a rendu la mesure valable. Même famille que la leçon du Lot 20 : un relevé
+qui accuse le code doit d'abord être sûr de son instrument.

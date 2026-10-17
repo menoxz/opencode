@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest"
 import {
   activityFromStatus,
+  createLatestGate,
   createReloadGate,
   createTicketGuard,
   resyncPlan,
@@ -264,5 +265,48 @@ describe("le silence du flux", () => {
   test("la limite se déduit du battement du serveur, pas d'un chiffre choisi", () => {
     expect(STREAM_HEARTBEAT_MS).toBe(10_000)
     expect(STREAM_SILENCE_LIMIT_MS).toBe(3 * STREAM_HEARTBEAT_MS)
+  })
+})
+
+describe("la porte « la derniere valeur gagne »", () => {
+  test("une image ne rend que le dernier etat : les valeurs intermediaires sont fusionnees", () => {
+    const gate = createLatestGate<number[]>()
+    gate.push([1])
+    gate.push([1, 2])
+    gate.push([1, 2, 3])
+    expect(gate.pending()).toBe(true)
+    expect(gate.flush()).toEqual([1, 2, 3])
+    // Rendue une fois : la deuxieme lecture ne rejoue rien, sans quoi une image rendrait deux fois.
+    expect(gate.flush()).toBeUndefined()
+    expect(gate.pending()).toBe(false)
+  })
+
+  test("pousser apres une lecture arme de nouveau la porte", () => {
+    const gate = createLatestGate<string>()
+    gate.push("a")
+    expect(gate.flush()).toBe("a")
+    gate.push("b")
+    expect(gate.flush()).toBe("b")
+  })
+
+  test("rien de pousse n'est pas une valeur : flush rend undefined", () => {
+    const gate = createLatestGate<number[]>()
+    expect(gate.pending()).toBe(false)
+    expect(gate.flush()).toBeUndefined()
+  })
+
+  test("reset jette la valeur en attente — une relecture REST est autoritaire", () => {
+    const gate = createLatestGate<number[]>()
+    gate.push([9, 9])
+    gate.reset()
+    expect(gate.pending()).toBe(false)
+    expect(gate.flush()).toBeUndefined()
+  })
+
+  test("la porte garde l'identite de la valeur poussee, sans la copier", () => {
+    const gate = createLatestGate<{ parts: number }>()
+    const value = { parts: 1 }
+    gate.push(value)
+    expect(gate.flush()).toBe(value)
   })
 })
