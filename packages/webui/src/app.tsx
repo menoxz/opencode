@@ -138,6 +138,7 @@ import {
   sessionStats,
   setCustomAnswer,
   toggleAnswer,
+  turnError,
   type Message,
   type Part,
   type PermissionReply,
@@ -1998,7 +1999,7 @@ export default function App() {
           <For each={turn.prompt}>{(part) => renderPrompt(part)}</For>
         </Turn>
       </Show>
-      <Show when={turn.steps.length > 0}>
+      <Show when={turn.steps.length > 0 || turnError(turn)}>
         <Turn role="assistant">
           {/* Le **flux**, dans l'ordre des faits : la prose au corps de lecture, le travail en une
               ligne chacune, sans repli. Un repli qui cache tout ne montrait plus rien (§9.2 révisé) ;
@@ -2006,6 +2007,13 @@ export default function App() {
           <For each={turn.steps}>
             {(step: StepView) => <For each={step.items}>{(part) => renderItem(part)}</For>}
           </For>
+
+          {/* Une réponse qui a échoué **n'a aucune partie** : le tour ne disait donc rien du tout.
+              L'erreur vit dans `info.error`, la page la lisait déjà (`errorText`) et la rangeait dans
+              `turn.error` — mais personne ne l'affichait. Mesuré le 2026-10-17 : un tour muet alors
+              que le serveur portait `getaddrinfo ENOTFOUND opencode.ai`. C'est ce silence qui fait
+              croire à une panne de l'interface. */}
+          <Show when={turnError(turn)}>{(message) => <p class="error">The turn failed: {message()}</p>}</Show>
 
           {/* Le bilan de la dernière réponse : ses documents, à la fin de son dernier step (§12.3). */}
           <Show when={turn.id === lastWorkingTurn(turns())?.id}>

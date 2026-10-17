@@ -374,6 +374,13 @@ export function ContextInjections(props: {
   return (
     <div class="injections">
       <button class="injections-head" onClick={() => props.onToggle()}>
+        {/* Le **losange** du TUI devant la ligne d'instructions
+            (`cli/cmd/tui/routes/session/index.tsx` : `` `◆ ${instructionsHeading(...)}` ``) : la même
+            forme dit la même chose des deux côtés, et elle distingue au premier regard une ligne de
+            contexte injecté d'une ligne d'action. */}
+        <span class="injections-glyph" aria-hidden="true">
+          ◆
+        </span>
         <span class="injections-title">{title()}</span>
         <span class="injections-meta">{meta()}</span>
         <span class="tool-chev">{props.open ? "▾" : "▸"}</span>

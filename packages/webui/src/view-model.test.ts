@@ -40,6 +40,7 @@ import {
   toolOutputLines,
   toolStatusLabel,
   toolTitle,
+  turnError,
   type Message,
   type PermissionRequest,
   type QuestionRequest,
@@ -1117,6 +1118,37 @@ describe("groupTurns — les agents internes ne parlent pas à l'utilisateur", (
     ])
     expect(turns).toHaveLength(1)
     expect(turns[0]!.steps.length).toBeGreaterThan(0)
+  })
+})
+
+describe("le texte d'une erreur de tour", () => {
+  const turn = (errors: Array<unknown>): TurnView => ({
+    id: "t1",
+    role: "agent",
+    prompt: [],
+    steps: [],
+    info: { id: "m1", role: "assistant" },
+    replies: errors.map((error, index) => ({ id: "r" + index, role: "assistant", error })),
+  })
+
+  test("une réponse sans parties mais en erreur dit pourquoi", () => {
+    // Charge relevée le 2026-10-17 : c'est ce texte qui manquait à l'écran, d'où un tour muet.
+    expect(turnError(turn([{ name: "UnknownError", data: { message: "getaddrinfo ENOTFOUND opencode.ai" } }]))).toBe(
+      "getaddrinfo ENOTFOUND opencode.ai",
+    )
+  })
+
+  test("le nom sert de repli quand le message manque", () => {
+    expect(turnError(turn([{ name: "MessageAbortedError" }]))).toBe("MessageAbortedError")
+  })
+
+  test("un tour sans erreur ne rend rien — ce qui est sain ne s'affiche pas", () => {
+    expect(turnError(turn([{}, {}]))).toBeUndefined()
+    expect(turnError(turn([]))).toBeUndefined()
+  })
+
+  test("des réponses mélangées : la première erreur fait foi", () => {
+    expect(turnError(turn([{}, { data: { message: "boum" } }, { data: { message: "plus tard" } }]))).toBe("boum")
   })
 })
 

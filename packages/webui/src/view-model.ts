@@ -1027,6 +1027,20 @@ export function errorText(error: unknown): string | undefined {
   return undefined
 }
 
+/**
+ * L'erreur d'un tour, **lisible** — la première réponse qui en porte une.
+ *
+ * Un tour peut porter plusieurs réponses ; la dernière fait foi pour ce qui est *continu* (modèle,
+ * agent, fin). Une erreur, elle, n'est pas continue : dès qu'une réponse a échoué, le tour a échoué.
+ *
+ * C'est le texte que le fil affiche pour un tour raté. Sans lui, une réponse sans parties — le cas
+ * d'un échec — ne disait **rien** : mesuré le 2026-10-17, un tour muet alors que le serveur portait
+ * `getaddrinfo ENOTFOUND opencode.ai`, et c'est ce silence qui fait croire à une panne de la page.
+ */
+export function turnError(turn: TurnView): string | undefined {
+  return turn.replies.map((reply) => errorText(reply.error)).find((text) => Boolean(text))
+}
+
 /** Les outils d'une étape, dans l'ordre — le bruit de protocole (`turn_plan`) reste exclu. */
 function stepTools(step: StepView): string[] {
   const tools: string[] = []

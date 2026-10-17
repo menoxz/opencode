@@ -1841,24 +1841,39 @@ textarea {
   gap: 6px;
 }
 
-/* L'action vit **sur** la carte, révélée au survol : elle consommait sinon une **rangée** de 23 px
-   entre la carte et ses injections, pour un glyphe de 19 px. Mesuré : 27 px d'air au-dessus des
-   injections, dont 23 de rangée. Dépliée au survol de la carte — la règle de la maison (ce qui est
-   rare ne s'affiche pas au repos), la même que les actions d'une ligne de session. Le glyphe se
-   pose sur un fond opaque de carte : il recouvre au pire deux caractères de la dernière ligne, et
-   seulement pendant le survol. */
+/* L'action de copie termine la lecture **sous la carte**, alignée à droite — sa place d'origine.
+   Elle y consommait une rangée de 23 px ; quand des injections suivent, elle descend donc sur la
+   ligne de la dernière injection, à droite, dans la place que la dernière colonne laisse libre :
+   même place à l'œil, **aucune hauteur consommée**. Elle reste visible au repos : un geste qu'on ne
+   voit pas est un geste qu'on ne trouve pas. */
 .prompt-foot {
-  position: absolute;
-  top: 3px;
-  right: 6px;
-  margin-top: 0;
-  opacity: 0;
-  transition: opacity 0.12s;
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
 }
 
-.prompt-block:hover .prompt-foot,
-.prompt-block:focus-within .prompt-foot {
-  opacity: 1;
+/* Le tour devient le repère, et la carte cesse de l'être : sinon l'ancêtre positionné le plus proche
+   capte l'absolu et l'action revient se poser sur la carte — mesuré : `bottom: 0` la plaçait à
+   119 px (le bas de la carte) au lieu de 172 px (le bas des injections). */
+.turn.user:has(> .injections) {
+  position: relative;
+}
+
+.turn.user:has(> .injections) > .prompt-block {
+  position: static;
+}
+
+.turn.user:has(> .injections) > .prompt-block > .prompt-foot {
+  position: absolute;
+  bottom: 0;
+  right: 6px;
+  margin-top: 0;
+}
+
+/* La place du glyphe est réservée sur **chaque** ligne d'injections, sinon la dernière serait la
+   seule à passer sous lui. */
+.turn.user:has(> .injections) > .injections .injections-head {
+  padding-right: 34px;
 }
 
 /* Un geste réduit à son icône, dans la même boîte pour les trois états (copier, fait, échoué). */
@@ -1914,6 +1929,13 @@ textarea {
 
 .injections-title {
   color: var(--text-2);
+}
+
+/* Le losange devant la ligne : même forme que le TUI, même couleur que l'information qu'il
+   annonce. `aria-hidden` — c'est une puce, pas un mot à lire à voix haute. */
+.injections-glyph {
+  color: var(--text-2);
+  font-size: var(--fs-meta);
 }
 
 .injections-meta {
