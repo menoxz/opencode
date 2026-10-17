@@ -57,26 +57,48 @@ const SOURCE_LINE = /^Instructions from:\s*(.+)$/
  * (3 sources, 3 sections). Lire la métadonnée plutôt que le texte est ce qui rend « les instructions
  * entrent-elles dans le contexte ? » décidable **avant** que la ligne n'existe.
  */
-export function declaresInjection(part: unknown): boolean {
-  if (!part || typeof part !== "object") return false
+/** L'injection à laquelle une part appartient, ou `undefined`. */
+function injectionKind(part: unknown): string | undefined {
+  if (!part || typeof part !== "object") return undefined
   const metadata = (part as { metadata?: unknown }).metadata
-  if (!metadata || typeof metadata !== "object") return false
+  if (!metadata || typeof metadata !== "object") return undefined
   const injection = (metadata as { injection?: unknown }).injection
-  return typeof injection === "string" && injection.length > 0
+  return typeof injection === "string" && injection.length > 0 ? injection : undefined
+}
+
+export function declaresInjection(part: unknown): boolean {
+  return injectionKind(part) !== undefined
 }
 
 /**
- * Les instructions sont **en train d'entrer** dans le contexte : la session travaille et aucune part
- * ne les porte encore.
+ * Les phases d'une injection, dans l'ordre où le serveur les écrit.
  *
- * C'est la condition exacte du TUI (`instructionsInjecting`, même fichier :38-40). Elle s'arrête
- * d'elle-même — dès que la part qui porte les sources est écrite, l'injection est faite, même si la
- * réponse continue. Sans cette ligne, la page ne disait **rien** pendant les secondes que le serveur
- * met à écrire ces parts (mesuré : 1,9 s puis 5,1 s sur un tour).
+ * `loading` : les fichiers d'instructions entrent dans le contexte.
+ * `injecting` : ils y sont, le contexte (les sections) entre à son tour.
+ * `done` : les deux parts sont écrites.
  */
+export type InjectionPhase = "loading" | "injecting" | "done"
+
+/**
+ * Où en est l'injection — **par les métadonnées du serveur**, jamais par le texte.
+ *
+ * Le serveur écrit **deux** parts, à plusieurs secondes d'écart (mesuré le 2026-10-17 : 1,9 s puis
+ * 5,1 s) : `injection: "instructions"` (les fichiers chargés) puis `injection: "context"` (les
+ * sections). La ligne d'attente suit cet ordre. C'est la condition du TUI
+ * (`instructionsInjecting`, `cli/cmd/tui/util/instructions-injection.ts:38-40`), étendue à la
+ * seconde part — le TUI n'a qu'une ligne, la page en a deux.
+ */
+export function injectionPhase(parts: ReadonlyArray<unknown>, busy: boolean): InjectionPhase {
+  if (!busy) return "done"
+  const kinds = parts.map(injectionKind)
+  if (!kinds.includes("instructions")) return "loading"
+  if (!kinds.includes("context")) return "injecting"
+  return "done"
+}
+
+/** Conservé pour les appelants qui ne veulent que la première phase. */
 export function instructionsInjecting(parts: ReadonlyArray<unknown>, busy: boolean): boolean {
-  if (!busy) return false
-  return !parts.some(declaresInjection)
+  return injectionPhase(parts, busy) === "loading"
 }
 
 /**

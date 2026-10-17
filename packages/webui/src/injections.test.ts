@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest"
 import {
   declaresInjection,
+  injectionPhase,
   formatChars,
   injectionLabel,
   instructionsInjecting,
@@ -180,5 +181,22 @@ describe("les instructions qui entrent dans le contexte", () => {
 
   test("au repos, rien n'est en cours", () => {
     expect(instructionsInjecting([{ text: "salut" }], false)).toBe(false)
+  })
+})
+
+describe("les phases d'une injection et ce qui travaille", () => {
+  const carrier = (kind: string) => ({ metadata: { injection: kind } })
+
+  test("les deux phases suivent l'ordre du serveur : les fichiers, puis le contexte", () => {
+    // Mesure du 2026-10-17 : le serveur ecrit `instructions` a 1,9 s et `context` a 5,1 s.
+    expect(injectionPhase([{ text: "salut" }], true)).toBe("loading")
+    expect(injectionPhase([{ text: "salut" }, carrier("instructions")], true)).toBe("injecting")
+    expect(injectionPhase([{ text: "salut" }, carrier("instructions"), carrier("context")], true)).toBe("done")
+  })
+
+  test("au repos, aucune phase n'est en cours", () => {
+    expect(injectionPhase([{ text: "salut" }], false)).toBe("done")
+    expect(instructionsInjecting([{ text: "salut" }], true)).toBe(true)
+    expect(instructionsInjecting([{ text: "salut" }, carrier("instructions")], true)).toBe(false)
   })
 })

@@ -27,6 +27,7 @@ import {
   trajectory,
   type TurnView,
   toolOutputLines,
+  toolBusyLabel,
   toolStatusLabel,
   toolTitle,
   type DocumentRef,
@@ -325,14 +326,17 @@ export function UserPrompt(props: { text: string }) {
  * surface ne traite et qu'aucune estimation ne peut remplacer.
  */
 /**
- * Le spinner du TUI, repris tel quel : le TUI fait défiler les losanges `["⬥","◆","⬩","⬪"]`
- * (`cli/cmd/tui/ui/spinner.ts:314`) devant ce qui travaille — l'injection d'instructions, la
- * compaction. C'est **le** retour conventionnel du harnais, donc on emploie la même famille de
- * formes des deux côtés.
+ * Le spinner du TUI, **repris à l'identique** (`cli/cmd/tui/component/spinner.tsx:8,17`) :
  *
- * Le défilement est fait par le CSS (`@keyframes` sur `content`, une propriété discrète que
- * Chromium anime) : aucun minuteur, donc aucun rendu par image pour une animation — le fil continue
- * de ne rendre qu'un état par image.
+ *     SPINNER_FRAMES = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"]   interval = 80 ms
+ *
+ * Les dix points braille défilent donc à 80 ms par trame, comme dans le TUI, devant tout ce qui
+ * travaille — l'injection, le raisonnement, l'exécution d'un outil. Le défilement est fait par le CSS
+ * (`@keyframes` sur `content`, `step-end` : une trame tenue 80 ms) : aucun minuteur, donc aucun rendu
+ * par image pour une animation.
+ *
+ * Quand le mouvement est refusé (`prefers-reduced-motion`), le repli est celui du TUI — `⋯`, sa
+ * marque statique (`spinner.tsx:15`, branche `animations_enabled: false`).
  */
 export function Spinner() {
   return <span class="spinner" aria-hidden="true" />
@@ -524,12 +528,14 @@ export function ToolLine(props: { tool: string; state: ToolState; open: boolean;
         </Show>
         <Show when={props.state.status !== "completed"}>
           <span class="tool-state">
-            {/* Un outil qui travaille le dit **en mouvement** : le spinner du harnais, avant le
-                libellé — c'est le retour conventionnel, là où la ligne ne disait qu'un mot. */}
-            <Show when={props.state.status === "running"}>
+            {/* Ce qui **travaille** le dit au présent, avec le spinner (pending, running) ; une erreur
+                garde son libellé — elle n'exécute plus rien — et un outil fini reprend l'affichage
+                normal (nom, titre, résultat) : le statut n'a plus rien à dire. */}
+            <Show when={props.state.status === "pending" || props.state.status === "running"}>
               <Spinner />
+              {toolBusyLabel(props.state)}
             </Show>
-            {toolStatusLabel(props.state)}
+            <Show when={props.state.status === "error"}>{toolStatusLabel(props.state)}</Show>
           </span>
         </Show>
         <span class="tool-chev">{props.open ? "▾" : "▸"}</span>
@@ -579,12 +585,25 @@ export function ToolLine(props: { tool: string; state: ToolState; open: boolean;
  * Elle donne sa **durée**, pas son volume : `reasoning.time` est présent 1 511 fois sur 1 511, donc la
  * mesure existe ; le nombre de mots, lui, ne dit rien de ce qui s'est passé.
  */
-export function Reasoning(props: { text: string; durationMs?: number; open: boolean; onToggle: () => void }) {
+export function Reasoning(props: {
+  text: string
+  /**
+   * Le raisonnement est **en cours** : la ligne le dit au présent (« thinking », avec un temps qui
+   * avance) et porte le spinner. Fini, elle passe au passé (« Thinking ») et reprend son icône —
+   * même part, deux états.
+   */
+  live?: boolean
+  durationMs?: number
+  open: boolean
+  onToggle: () => void
+}) {
   return (
     <div class="reasoning">
       <button class="reasoning-line" onClick={() => props.onToggle()}>
-        <ThinkIcon />
-        <span>thinking</span>
+        <Show when={props.live} fallback={<ThinkIcon />}>
+          <Spinner />
+        </Show>
+        <span>{props.live ? "thinking" : "Thinking"}</span>
         <Show when={formatDuration(props.durationMs)}>{(value) => <span class="reasoning-time">{value()}</span>}</Show>
         <span class="tool-chev">{props.open ? "▾" : "▸"}</span>
       </button>

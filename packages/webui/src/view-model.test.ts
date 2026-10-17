@@ -32,10 +32,12 @@ import {
   reducePermissions,
   reduceQuestions,
   reduceThread,
+  reasoningLive,
   sessionStats,
   setCustomAnswer,
   stepSummary,
   toggleAnswer,
+  toolBusyLabel,
   toolDetail,
   toolOutputLines,
   toolStatusLabel,
@@ -1160,6 +1162,19 @@ describe("l'identité des tours", () => {
     const only = groupTurns([user("u2"), reply("a2")], cache)
     expect(only).toHaveLength(1)
     expect(only[0]!.id).toBe("u2")
+  })
+})
+
+describe("ce qui travaille se dit au présent", () => {
+  test("un outil en cours, jamais par son état interne", () => {
+    expect(toolBusyLabel(running)).toBe("Executing…")
+    expect(toolBusyLabel(pending)).toBe("Pending…")
+  })
+
+  test("un raisonnement est en cours tant que le serveur ne l'a pas borné", () => {
+    expect(reasoningLive({ time: { start: 1 } })).toBe(true)
+    expect(reasoningLive({ time: { start: 1, end: 2 } })).toBe(false)
+    expect(reasoningLive({})).toBe(false)
   })
 })
 

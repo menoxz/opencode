@@ -173,9 +173,19 @@ describe("PermissionSheet", () => {
 describe("Reasoning", () => {
   test("repliée, le texte n'est pas rendu et l'affordance est visible", () => {
     const { html, dispose } = mount(() => <Reasoning text="je pèse les options" open={false} onToggle={() => {}} />)
-    expect(html).toContain("thinking")
+    // Fini, un raisonnement s'écrit au passé — « Thinking » avec sa durée ; c'est la même part qui
+    // disait « thinking » pendant qu'elle travaillait (cf. `live`).
+    expect(html).toContain("Thinking")
     expect(html).not.toContain("je pèse les options")
     expect(html).toContain("▸")
+    dispose()
+  })
+
+  test("en cours, il porte le spinner et se dit au présent", () => {
+    const { html, dispose } = mount(() => <Reasoning text="je pèse" live={true} durationMs={3200} open={false} onToggle={() => {}} />)
+    expect(html).toContain("thinking")
+    expect(html).toContain("spinner")
+    expect(html).not.toContain("Thinking")
     dispose()
   })
 
@@ -190,7 +200,7 @@ describe("Reasoning", () => {
     // Assertion sur le texte visible, pas sur le HTML : la classe s'appelle légitimement
     // `reasoning`, c'est le mot à l'écran qui ne doit pas exister.
     const { container, dispose } = mount(() => <Reasoning text="x" open={false} onToggle={() => {}} />)
-    expect(container.textContent).toContain("thinking")
+    expect(container.textContent).toContain("Thinking")
     expect(container.textContent).not.toContain("reasoning")
     dispose()
   })

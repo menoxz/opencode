@@ -58,8 +58,27 @@ export type PermissionReply = "once" | "always" | "reject"
 
 export type UiEvent = { type: string; properties?: unknown }
 
-export function toolStatusLabel(state: ToolState): string {
-  switch (state.status) {
+/**
+ * Ce que dit la ligne d'un outil **qui travaille** : un gérondif, pas un état interne.
+ *
+ * `running` → « Executing… », `pending` → « Pending… ». Les états finis sont muets : une ligne
+ * terminée montre son résultat, pas son statut.
+ */
+export function toolBusyLabel(state: ToolState): string {
+  return state.status === "pending" ? "Pending…" : "Executing…"
+}
+
+/**
+ * Un raisonnement est **en cours** tant que le serveur ne l'a pas borné (`time.end`).
+ *
+ * C'est ce qui distingue « thinking » (avec un temps qui avance) de « Thinking » (avec sa durée) :
+ * la même part, avant et après sa fin.
+ */
+export function reasoningLive(part: { time?: PartTime }): boolean {
+  return typeof part.time?.start === "number" && typeof part.time?.end !== "number"
+}
+
+export function toolStatusLabel(state: ToolState): string {  switch (state.status) {
     case "pending":
       return "pending"
     case "running":

@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createSignal, For, Show, onCleanup, onMount, untrack } from "solid-js"
+import { createStore, reconcile } from "solid-js/store"
 import {
   buildFilePart,
   filePartLabel,
@@ -113,7 +114,7 @@ import {
   type Agent,
   type McpState,
 } from "./config"
-import { instructionsInjecting, parseInjections, relativeTo } from "./injections"
+import { injectionPhase, parseInjections, relativeTo } from "./injections"
 import { pluginEntries, type PluginList } from "./nav"
 import { SESSION_LIMIT, groupByWorkspace, sessionDetails, splitSessions, type ProjectRef, type SessionSummary, type WorkspaceGroup as WorkspaceGrouping } from "./sessions"
 import { subscribeEvents, type EventStreamState } from "./events"
@@ -135,6 +136,7 @@ import {
   lastWorkingTurn,
   partMedia,
   reducePermissions,
+  reasoningLive,
   reduceQuestions,
   sessionStats,
   setCustomAnswer,
@@ -174,8 +176,27 @@ export default function App() {
    * les identifiants de messages d'une autre session n'ont rien à y faire.
    */
   const turnCache: TurnCache = new Map()
-  /** Le fil se lit par **tour**, et chaque tour par **étape** — jamais par message brut. */
-  const turns = createMemo(() => groupTurns(messages(), turnCache))
+  /**
+   * Le fil, **dans un store réconcilié** — et c'est ce qui rend le rendu fin possible.
+   *
+   * `groupTurns` rend des objets neufs à chaque changement ; `For` de Solid recrée alors le nœud de
+   * l'élément dont la référence a changé. Mesuré sur un tour réel : la ligne d'injections a été
+   * recréée **482 fois** et l'icône de raisonnement **238 fois**, à chaque image du flux — d'où une
+   * animation d'entrée qui rejouait sans fin, et un coût de rendu qui suivait la taille du fil
+   * plutôt que ce qui change.
+   *
+   * `reconcile` **diffe** au lieu de remplacer : les objets inchangés gardent leur identité, et un
+   * champ modifié (`part.text`) est écrit **en place**. Les nœuds du fil survivent donc au flux, ce
+   * qui est la condition d'une animation d'entrée qui ne joue qu'une fois.
+   */
+  const [turnsStore, setTurnsStore] = createStore<{ list: TurnView[] }>({ list: [] })
+  createEffect(() => {
+    // `messages()` est la seule dépendance : `reconcile` **lit** le store pour le différencier, et
+    // cette lecture, faite dans le même effet, le rendrait dépendant de ce qu'il écrit — boucle.
+    const next = groupTurns(messages(), turnCache)
+    untrack(() => setTurnsStore("list", reconcile(next, { key: "id" })))
+  })
+  const turns = () => turnsStore.list
   /** Les statistiques de la session : agrégées **une fois**, pour la section — jamais pour le fil. */
   const stats = createMemo(() => sessionStats(turns()))
   /**
@@ -456,6 +477,17 @@ export default function App() {
 
   /** Horloge figée par rendu : évite que chaque ligne recalcule un temps différent. */
   const now = () => Date.now()
+  /**
+   * L'horloge de ce qui **dure** : un battement d'une seconde, et seulement pendant que l'agent
+   * travaille. Un raisonnement en cours affiche donc un temps qui avance au lieu d'un temps figé —
+   * et rien ne bat au repos (aucun minuteur ne tourne).
+   */
+  const [tick, setTick] = createSignal(Date.now())
+  createEffect(() => {
+    if (!working()) return
+    const timer = setInterval(() => setTick(Date.now()), 1000)
+    onCleanup(() => clearInterval(timer))
+  })
 
   // ---- Charpente : solveur de concession de DSH (`columns.ts`) ----
   // Les préférences sont l'état ; les largeurs rendues sont **dérivées**. C'est ce qui rend la
@@ -1827,13 +1859,25 @@ export default function App() {
       return <Prose text={part.text ?? ""} synthetic={part.synthetic} ignored={part.ignored} />
     }
     if (part.type === "reasoning") {
-      // La durée, pas le volume : `reasoning.time` est renseigné 1 511 fois sur 1 511.
+      // La durée, pas le volume : `reasoning.time` est renseigné 1 511 fois sur 1 511. Tant que le
+      // serveur ne l'a pas bornée, la durée est **vivante** — elle avance au battement de `tick` —
+      // et la ligne porte le spinner (« thinking »). Bornée, elle affiche sa durée (« Thinking »).
       const start = part.time?.start
       const end = part.time?.end
+      const live = reasoningLive(part)
+      const duration =
+        typeof start !== "number"
+          ? undefined
+          : typeof end === "number"
+            ? end - start
+            : live
+              ? tick() - start
+              : undefined
       return (
         <Reasoning
           text={part.text ?? ""}
-          durationMs={typeof start === "number" && typeof end === "number" ? end - start : undefined}
+          live={live}
+          durationMs={duration}
           open={Boolean(expanded()[id])}
           onToggle={() => toggle(id)}
         />
@@ -2010,17 +2054,18 @@ export default function App() {
         <Turn role="user">
           <For each={turn.prompt}>{(part) => renderPrompt(part)}</For>
           {/*
-            Les instructions **entrent** dans le contexte : la session travaille et aucune part ne
-            les porte encore. C'est la ligne du TUI (`◆ core/instructions · injecting`) et sa
-            condition exacte (`instructionsInjecting`) ; elle disparaît d'elle-même dès que le
-            serveur a écrit la part. Sans elle, la page restait muette pendant les secondes que cet
-            assemblage prend (mesuré : 1,9 s puis 5,1 s sur un tour).
+            Ce qui **travaille** le dit : une ligne d'attente, avec le spinner, à la place de la ligne
+            qui n'est pas encore écrite. Deux phases, dans l'ordre du serveur — « loaded … » tant que
+            les fichiers d'instructions ne sont pas écrits, « Injecting… » tant que le contexte ne
+            l'est pas. Chaque phase finie devient sa ligne posée, avec son losange.
           */}
-          <Show when={instructionsInjecting(turn.prompt, working())}>
+          <Show when={injectionPhase(turn.prompt, working()) !== "done"}>
             <div class="injections injecting">
               <span class="injections-head">
                 <Spinner />
-                <span class="injections-title">injecting instructions</span>
+                <span class="injections-title">
+                  {injectionPhase(turn.prompt, working()) === "loading" ? "loaded …" : "Injecting…"}
+                </span>
               </span>
             </div>
           </Show>
