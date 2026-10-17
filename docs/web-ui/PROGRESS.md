@@ -3919,3 +3919,76 @@ vitest (webui) : 24 fichiers / 627 tests, exit 0   (+4 : le texte d'une erreur d
 tsgo --noEmit  : exit 0
 vite build     : exit 0
 ```
+
+## Lot 26 — le spinner du harnais, et le mouvement seulement quand ça bouge (livré)
+
+Trois retours : « l'animation doit s'appliquer aux blocs **individuellement** », « elle ne doit se
+produire **que pendant l'injection** d'instructions », « ajouter un **spinner**, le retour
+conventionnel ». Et un quatrième, sur la place de l'action de copie : « mieux vaut descendre un peu
+le bloc d'instructions ».
+
+### Le spinner — repris du TUI, pas inventé
+
+Le harnais a déjà son retour conventionnel : la famille de losanges `["⬥", "◆", "⬩", "⬪"]`
+(`cli/cmd/tui/ui/spinner.ts:314`) qui défile devant ce qui travaille. Le webui emploie donc **la même
+famille de formes**, à deux endroits :
+
+| où | quand |
+|---|---|
+| la ligne d'injections | pendant l'injection |
+| `.tool-state` | un outil en `running` (là où la ligne ne disait qu'un mot) |
+
+Le défilement est fait par le CSS (`@keyframes` sur `content`, une propriété discrète que Chromium
+anime) : **aucun minuteur**, donc aucun rendu par image pour une animation — le fil continue de ne
+rendre qu'un état par image. Largeur fixe (`1em`) : les quatre glyphes n'ont pas la même chasse, et
+un libellé qui saute à chaque trame est pire que pas de libellé.
+
+### La ligne « injecting instructions » — la condition exacte du TUI
+
+`instructionsInjecting` (`cli/cmd/tui/util/instructions-injection.ts:38-40`) : la session travaille et
+**aucune** part ne porte encore les instructions. Le signal est la **métadonnée** du serveur, pas le
+texte — relevé le 2026-10-17 sur une session réelle :
+
+```
+part text  metadata={"injection":"instructions","sources":["…opencodev2/AGENTS.md","…packages/opencode/AGENTS.md","…opencode-fork/AGENTS.md"]}
+part text  metadata={"injection":"context","sections":[{"section":"core",…},{"section":"env",…}]}
+```
+
+`declaresInjection` / `instructionsInjecting` (`injections.ts`, purs, 4 tests) décident donc **avant**
+que la ligne existe. Sans elle, la page restait muette pendant les secondes que l'assemblage prend
+(mesuré : **1,9 s puis 5,1 s** sur un tour). Elle s'arrête d'elle-même dès que la part est écrite,
+même si la réponse continue — c'est la règle du TUI, et elle tient en une ligne.
+
+### Le mouvement ne joue que pendant l'injection
+
+L'entrée passe de `.injections` à **`.thread.busy .injections`** : ouvrir une session ancienne ne fait
+plus bouger les lignes, et **chaque bloc** joue la sienne quand il arrive (ils arrivent à plusieurs
+secondes d'écart). C'était le défaut : au premier lot, la règle s'appliquait aux injections d'une
+session **au repos**, donc tout le bloc montait d'un coup à l'ouverture.
+
+### La bande de l'action de copie
+
+L'action reste **sous la carte**, à sa place d'origine ; c'est le **bloc d'injections qui descend** de
+sa hauteur. Choix de l'utilisateur, et il est meilleur que le mien : la bande n'est pas du vide, elle
+porte le geste, et le raccourci de l'absolu (action posée sur la ligne d'injections) disparaît — avec
+lui la place réservée et les deux règles `:has()` qu'il fallait pour la tenir.
+
+```
+carte -> injections : 28 px (dont 19 pour la bande d'action)   contre 39 avant
+injections -> agent :  8 px
+```
+
+### Preuve
+
+```
+vitest (webui) : 24 fichiers / 631 tests, exit 0   (+4 : la metadonnee d'injection)
+tsgo --noEmit  : exit 0
+vite build     : exit 0
+
+navigation (CDP, tour reel avec outil) :
+  session ancienne : injections=2 · busy=false · animation-name = none
+  tour en cours    : « injecting instructions » des +0,1 s
+                     trames du spinner vues ["⬥","◆","⬩"]  (l'animation CSS defile)
+                     etat d'outil "running" · animation d'entree rise-in
+                     0 exception · navigation=navigate (aucun rechargement)
+```
