@@ -162,3 +162,39 @@ sans commande -> serve : /global/health 200, UI 200 a la racine (port 4099)
 serve.ts touche         : le pid qui ecoute passe de 24628 a 38328, health repond toujours
 --help                  : affiche les commandes (aucun serve force)
 ```
+
+### Le défaut de commande : « aucun positional », pas « aucun jeton sans tiret » (mesuré 2026-10-17)
+
+Le premier correctif (2.4.8) cherchait « un jeton qui ne commence pas par un tiret » pour décider
+s'il fallait insérer `serve`. Le critère est faux : la **valeur** d'une option n'a pas de tiret non
+plus ⇒ `opencodev2 --port 4099`, appel normal du serveur, retombait sur le TUI.
+
+| invocation sur 2.4.8 | attendu | mesuré |
+|---|---|---|
+| (aucun argument) | serve | serve ✓ |
+| `serve --port 4097` | serve | serve ✓ |
+| `--port 4099` | serve | **TUI** ✗ |
+| `--log-level ERROR --port 4098` | serve | **TUI** ✗ |
+
+Correctif (2.4.9) : le discriminant est « **aucun positional** », avec l'**arité** des options du
+serveur — `--port`/`--hostname`/`--mdns-domain`/`--cors`/`--log-level` consomment le jeton suivant,
+`--mdns`/`--print-logs`/`--pure` non, `--clé=valeur` porte sa valeur dans le jeton. Décision extraite
+en fonction **pure** (`packages/opencode/src/cli/default-command.ts`, `shouldDefaultToServe`) couverte
+par 7 tests (`test/cli/default-command.test.ts`). Reconnaître une option **inconnue** ferait au
+contraire insérer `serve` devant le TUI (`-s ses_…`, `--model …`) ⇒ la réponse est « non » par défaut.
+
+Relevé de la décision (2.4.9) :
+
+| invocation | décision | pourquoi |
+|---|---|---|
+| aucun argument, `serve --port 4097` | serve | défaut |
+| `--port 4099`, `--port=4099`, `--print-logs --port 4098` | serve | aucune option ne désigne de commande |
+| `--mdns`, `--log-level INFO --pure` | serve | options booléennes ou à valeur du serveur |
+| `./packages`, `monprojet`, `C:\jeanluc` | non | positional = dossier de projet (TUI) |
+| `serve`, `models` | non | un nom de commande garde son sens |
+| `-s ses_…`, `--model x`, `--continue` | non | options propres au TUI |
+| `-h`, `--help`, `-v`, `--version` | non | l'aide et la version restent intactes |
+
+Preuve de la décision sur le binaire déployé (sonde bornée : `Start-Process -WindowStyle Hidden`
++ redirection des deux flux + `taskkill /T /F`) — le serveur écrit `listening on http://…` sur
+**stdout**, le TUI `Ask anything`, l'aide `Commands:` sur **stderr**.
