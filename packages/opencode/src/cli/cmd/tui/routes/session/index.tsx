@@ -116,6 +116,7 @@ import { nextThinkingMode, reasoningSummary, useThinkingMode, type ThinkingMode 
 import { getScrollAcceleration } from "../../util/scroll"
 import { collapseToolOutput, collapseToolOutputTail } from "../../util/collapse-tool-output"
 import { instructionSources, instructionsHeading, instructionsInjecting } from "../../util/instructions-injection"
+import { compactionRunning, summaryAfter } from "../../util/compaction-row"
 import { isHiddenTool } from "../../util/hidden-tools"
 import { TuiPluginRuntime } from "@/cli/cmd/tui/plugin/runtime"
 import { DialogRetryAction } from "../../component/dialog-retry-action"
@@ -1938,6 +1939,7 @@ function UserMessage(props: {
         </box>
       </Show>
       <Instructions parts={props.parts} sessionID={props.message.sessionID} />
+      <Compaction parts={props.parts} messageID={props.message.id} sessionID={props.message.sessionID} />
     </>
   )
 }
@@ -1990,6 +1992,37 @@ function Instructions(props: { parts: Part[]; sessionID: string }) {
             {(source) => <text fg={theme.textMuted}>{source.replace(/^Instructions from:\s*/, "")}</text>}
           </For>
         </Show>
+      </box>
+    </Show>
+  )
+}
+
+/**
+ * La compaction réécrit tout le préfixe du prompt : cela prend des secondes pendant
+ * lesquelles le fil n'affiche **rien** — la part de compaction ne porte aucun texte, et le
+ * bloc `Compacted context` n'arrive qu'avec le résumé. Une ligne, au cran bas, dit ce qui se
+ * passe ; elle s'efface dès que le résumé existe, puisque le bloc prend alors le relais.
+ */
+function Compaction(props: { parts: Part[]; messageID: string; sessionID: string }) {
+  const { theme } = useTheme()
+  const sync = useSync()
+  const carries = createMemo(() => props.parts.some((part) => part.type === "compaction"))
+  const busy = createMemo(() => {
+    const status = sync.data.session_status?.[props.sessionID]
+    return status !== undefined && status.type !== "idle"
+  })
+  const summaryReady = createMemo(() => summaryAfter(sync.data.message[props.sessionID] ?? [], props.messageID))
+  const running = createMemo(() =>
+    compactionRunning({ carries: carries(), busy: busy(), summaryReady: summaryReady() }),
+  )
+
+  return (
+    <Show when={running()}>
+      <box paddingLeft={3} flexDirection="row" gap={1} flexShrink={0}>
+        <Spinner color={theme.textLow} />
+        <text fg={theme.textLow} wrapMode="none" truncate>
+          Compacting context
+        </text>
       </box>
     </Show>
   )
