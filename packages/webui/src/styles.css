@@ -1793,6 +1793,13 @@ textarea {
   margin-top: 0;
 }
 
+/* Un tour utilisateur qui finit sur ses injections finit sur une **note**, pas sur du travail : la
+   frontière de tour entière (26 px) n'a pas lieu d'être entre une note et ce qu'elle annonce.
+   Mesuré : 26 px -> 10 px. */
+.turn:has(> .injections:last-child) {
+  margin-bottom: -16px;
+}
+
 .part {
   margin: 0;
 }
@@ -1809,6 +1816,9 @@ textarea {
   /* La carte **est** le tour de l'utilisateur : elle porte l'air qui la sépare de la réponse de
      l'agent, qui commence juste après (le flux d'étapes). */
   margin: 0 0 16px;
+  /* Les injections, quoique parties distinctes du serveur, appartiennent à cette carte : c'est ce
+     qui permet d'y poser l'action de copie en absolu, sur la carte et non dans une rangée à part. */
+  position: relative;
 }
 
 /* Quand les injections suivent la carte, elles en sont la **note de bas de carte** : elles s'y
@@ -1831,11 +1841,24 @@ textarea {
   gap: 6px;
 }
 
-/* L'action vit **sous** la carte, alignée à droite : elle termine la lecture au lieu de la couper. */
+/* L'action vit **sur** la carte, révélée au survol : elle consommait sinon une **rangée** de 23 px
+   entre la carte et ses injections, pour un glyphe de 19 px. Mesuré : 27 px d'air au-dessus des
+   injections, dont 23 de rangée. Dépliée au survol de la carte — la règle de la maison (ce qui est
+   rare ne s'affiche pas au repos), la même que les actions d'une ligne de session. Le glyphe se
+   pose sur un fond opaque de carte : il recouvre au pire deux caractères de la dernière ligne, et
+   seulement pendant le survol. */
 .prompt-foot {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 4px;
+  position: absolute;
+  top: 3px;
+  right: 6px;
+  margin-top: 0;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.prompt-block:hover .prompt-foot,
+.prompt-block:focus-within .prompt-foot {
+  opacity: 1;
 }
 
 /* Un geste réduit à son icône, dans la même boîte pour les trois états (copier, fait, échoué). */
@@ -1843,14 +1866,16 @@ textarea {
   display: flex;
   padding: 3px;
   color: var(--text-3);
-  background: transparent;
+  /* Opaque : révélé, le glyphe se pose **sur** la carte et ne doit pas laisser passer le texte
+     qu'il recouvre. */
+  background: var(--bg-1);
   border: 0;
   border-radius: 5px;
 }
 
 .copy-icon:hover {
   color: var(--text-1);
-  background: #ffffff0a;
+  background: var(--bg-2);
 }
 
 .copy-icon.done {
