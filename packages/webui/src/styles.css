@@ -1785,6 +1785,14 @@ textarea {
   gap: 0;
 }
 
+/* Le **premier** bloc d'un tour ne prend pas d'air au-dessus de lui : la frontière de tour (26 px,
+   `.transcript { gap }`) le porte déjà. `.reasoning` en met 8 px pour se détacher d'une ligne
+   d'action qui le précède — quand il ouvre le tour, il n'y a rien à détacher, et l'air s'ajoutait à
+   celui de la frontière. Mesuré avant : 34 px entre la dernière ligne d'injections et le thinking. */
+.turn > :first-child {
+  margin-top: 0;
+}
+
 .part {
   margin: 0;
 }
@@ -1801,6 +1809,14 @@ textarea {
   /* La carte **est** le tour de l'utilisateur : elle porte l'air qui la sépare de la réponse de
      l'agent, qui commence juste après (le flux d'étapes). */
   margin: 0 0 16px;
+}
+
+/* Quand les injections suivent la carte, elles en sont la **note de bas de carte** : elles s'y
+   accrochent au lieu de flotter entre elle et la réponse. Mesuré avant : 16 px au-dessus, plus la
+   frontière de tour de 26 px en dessous — deux lignes de 12 px perdues entre deux blocs qui ne se
+   parlent pas. */
+.prompt-block:has(+ .injections) {
+  margin-bottom: 4px;
 }
 
 .prompt {
