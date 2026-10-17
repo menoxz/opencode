@@ -36,12 +36,20 @@ function forbidden() {
   })
 }
 
-/** Run with `COMMAND_CODE_API_KEY` removed, restoring the environment afterwards. */
-function withoutKey<A>(body: () => A): A {
+/**
+ * Run `body` with `COMMAND_CODE_API_KEY` removed, restoring the environment
+ * afterwards.
+ *
+ * It has to await the body. Callers hand it a `runPromise`, which is pending
+ * when `body()` returns: restoring the key in a synchronous `finally` would put
+ * it back before the effect under test ever read it, and a machine that has the
+ * key exported then fails with `call_failed` instead of `not_configured`.
+ */
+async function withoutKey<A>(body: () => Promise<A>): Promise<A> {
   const previous = process.env.COMMAND_CODE_API_KEY
   delete process.env.COMMAND_CODE_API_KEY
   try {
-    return body()
+    return await body()
   } finally {
     if (previous === undefined) delete process.env.COMMAND_CODE_API_KEY
     else process.env.COMMAND_CODE_API_KEY = previous

@@ -4,15 +4,16 @@ import { JevClient } from "./client"
 /**
  * The provider lock.
  *
- * Two hosts are selectable, each pinning its own model and its own key variable.
- * These tests exist to make that a property of the code rather than of the
- * environment: the moment someone reintroduces a third host, decouples a host
- * from its model, or accepts a second key variable, one of these fails with the
- * exact escape that was opened.
+ * Three hosts are selectable, each pinning its own model and its own key
+ * variable. These tests exist to make that a property of the code rather than
+ * of the environment: the moment someone adds a host that is not paired with a
+ * model and a key variable, decouples a host from its model, or accepts a second
+ * key variable, one of these fails with the exact escape that was opened.
  */
 
 const TYPESAFE = "https://api.typesafe.ai"
 const OPENJEV = "https://api.codiv.ai"
+const ZEN = JevClient.OPENCODE_ZEN_BASE_URL
 const CODE = JevClient.COMMAND_CODE_BASE_URL
 
 describe("JevClient.provider lock", () => {
@@ -22,8 +23,12 @@ describe("JevClient.provider lock", () => {
     expect(JevClient.COMMAND_CODE_MODEL).toBe("typesafe/jev")
   })
 
-  test("exactly two hosts are selectable, and each pairs a host with its model", () => {
-    expect([...JevClient.SELECTABLE_PROVIDERS]).toEqual(["command-code", "openjev"])
+  test("exactly three hosts are selectable, and each pairs a host with its model", () => {
+    expect([...JevClient.SELECTABLE_PROVIDERS]).toEqual(["opencode-zen", "command-code", "openjev"])
+    expect(JevClient.PROVIDERS["opencode-zen"]).toEqual({
+      base_url: JevClient.OPENCODE_ZEN_BASE_URL,
+      model: JevClient.OPENCODE_ZEN_MODEL,
+    })
     expect(JevClient.PROVIDERS["command-code"]).toEqual({
       base_url: JevClient.COMMAND_CODE_BASE_URL,
       model: JevClient.COMMAND_CODE_MODEL,
@@ -47,6 +52,11 @@ describe("JevClient.apiKey", () => {
     // ...and never the other provider's variable.
     expect(JevClient.apiKey({ provider: "openjev" }, { COMMAND_CODE_API_KEY: "code-key" })).toBeUndefined()
     expect(JevClient.apiKey(undefined, { CODIV_API_KEY: "codiv-key" })).toBeUndefined()
+  })
+
+  test("takes the Zen key from the opencode-zen preset only", () => {
+    expect(JevClient.apiKey({ provider: "opencode-zen" }, { OPENCODE_GO_API_KEY: "zen-key" })).toBe("zen-key")
+    expect(JevClient.apiKey({ provider: "opencode-zen" }, { COMMAND_CODE_API_KEY: "code-key" })).toBeUndefined()
   })
 
   test("no other environment variable can authenticate a call", () => {
@@ -80,6 +90,7 @@ describe("JevClient.isProviderHost", () => {
       `${CODE}/`,
       "https://api.commandcode.ai/provider/v1/systemone",
       "http://api.commandcode.ai/provider",
+      ZEN,
       OPENJEV,
       `${OPENJEV}/v1/systemone`,
     ]) {

@@ -213,11 +213,11 @@ describe("tool.goal-contract", () => {
     }),
   )
 
-  it.instance("create_objectif creates goalState with structured response", () =>
+  it.instance("create_objective creates goalState with structured response", () =>
     Effect.gen(function* () {
       const sessions = yield* Session.Service
       const session = yield* sessions.create({ title: "goal contract test" })
-      const create = yield* getTool("create_objectif")
+      const create = yield* getTool("create_objective")
 
       const result = yield* create.execute(
         {
@@ -258,12 +258,12 @@ describe("tool.goal-contract", () => {
     }),
   )
 
-  it.instance("edit_objectif updates only provided fields", () =>
+  it.instance("edit_objective updates only provided fields", () =>
     Effect.gen(function* () {
       const sessions = yield* Session.Service
       const session = yield* sessions.create({ title: "goal edit test" })
-      const create = yield* getTool("create_objectif")
-      const edit = yield* getTool("edit_objectif")
+      const create = yield* getTool("create_objective")
+      const edit = yield* getTool("edit_objective")
 
       yield* create.execute(
         {
