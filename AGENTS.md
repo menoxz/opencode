@@ -17,8 +17,9 @@ Scope: ce dépôt. Le fichier global (`~/.config/opencodev2/AGENTS.md`) porte la
 
 ## 2. API et configuration du serveur
 
-- `PATCH /config|/global/config` **fusionne** les cartes : un agent ajouté persiste, un agent **omis n'est pas retiré**, `model: null` est refusé ⇒ **aucune suppression par l'API** ; seul le fichier le permet, et un serveur en cours ne le relit pas.
-- SDK : `client.global.config.update({ config: { … } })` — corps **imbriqué** ; un patch à plat envoie un corps vide ⇒ `200` pour une écriture nulle. `/config` (projet) **matérialise** un `config.json` dans l'arbre ⇒ un panneau de réglages vise `/global/config`.
+- `PATCH /config|/global/config` **fusionne** les cartes : un agent ajouté persiste, un agent **omis n'est pas retiré**, `model: null` est refusé ⇒ **aucune suppression par l'API** ; seul le fichier le permet, et un serveur en cours ne le relit pas. Corps **sur le fil** = `Config.Info` **à plat** (`groups/global.ts:102`) ⇒ `{disabled_providers:[…]}` écrit, `{config:{…}}` rend **200 et n'écrit rien** (mesuré 2026-10-17).
+- SDK : `client.global.config.update({ config: { … } })` — le **paramètre** s'appelle `config`, le corps part à plat ; passer l'objet sans ce nom envoie un corps vide ⇒ `200` pour une écriture nulle. `/config` (projet) **matérialise** un `config.json` dans l'arbre ⇒ un panneau de réglages vise `/global/config`.
+- Fournisseur dont l'abonnement est mort (clé expirée, fonds épuisés) ⇒ le mettre dans `disabled_providers` : sinon ses modèles `discover` restent proposables, et le **composeur webui adopte le modèle de la dernière réponse de la session** ⇒ l'erreur se répète à chaque envoi (mesuré 2026-10-17 : `command-code`).
 - Paramètre de chemin contenant des `/` ⇒ `encodeURIComponent` ; un `200` ne prouve rien sans vérifier le **corps** (repli SPA).
 - `GET /path` rend **deux** bases : `directory` = dossier d'instance, `worktree` = racine du projet ⇒ un chemin du dépôt se résout sous `worktree`. `GET /file/content` résout **sous la racine du projet** seulement (absolu ⇒ vide, hors projet ⇒ 500).
 - SDK : `client.find.files()` (et **non** `find.file`), `client.file.read()` ; `GET /command` = **1,95 Mo** ⇒ projeter aussitôt, lire à la demande.
