@@ -1742,7 +1742,7 @@ export default function App() {
          *
          * Sans cela, un `session.idle` manqué pendant la coupure laissait l'écran sur « travail en
          * cours » indéfiniment, et les deltas émis pendant l'interruption étaient perdus pour de bon :
-         * `/event` ne rejoue rien (aucun `Last-Event-ID` côté serveur), donc la page ne peut pas
+         * le flux ne rejoue rien (aucun `Last-Event-ID` côté serveur), donc la page ne peut pas
          * espérer les rattraper par le flux — elle doit relire.
          */
         for (const target of resyncPlan(previous, state)) {

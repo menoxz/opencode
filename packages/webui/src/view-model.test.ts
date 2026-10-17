@@ -369,12 +369,18 @@ describe("le fil append-only", () => {
     { info: { id: "m2", role: "assistant" }, parts: [{ type: "text", id: "p2", text: "" }] },
   ]
 
-  test("message.part.updated porte la partie aplatie, pas un champ « part »", () => {
-    // Forme relevée sur le fil réel — le schéma d'origine annonce `{sessionID, part, time}`, et lire
-    // `properties.part` ne rendrait rien, silencieusement.
+  test("message.part.updated porte la partie sous « part », pas aplatie", () => {
+    // Forme relevée sur le fil réel le 2026-10-17 : `properties = { sessionID, part, time }`.
+    // Ce test remplace la version qui encodait une partie **aplatie** : elle passait sur le code
+    // fautif pendant que l'écran, lui, ne se mettait jamais à jour — l'événement réel était classé
+    // « nothing to change », car `properties.id` et `properties.messageID` étaient indéfinis.
     const next = reduceThread(base(), {
       type: "message.part.updated",
-      properties: { id: "p2", messageID: "m2", sessionID: "s1", type: "text", text: "bonjour" },
+      properties: {
+        sessionID: "s1",
+        part: { id: "p2", messageID: "m2", sessionID: "s1", type: "text", text: "bonjour" },
+        time: 1_792_231_439_043,
+      },
     })
     expect(next?.[1]?.parts[0]).toMatchObject({ text: "bonjour" })
   })
@@ -394,7 +400,11 @@ describe("le fil append-only", () => {
   test("une partie inconnue d'un message connu est ajoutée, pas ignorée", () => {
     const next = reduceThread(base(), {
       type: "message.part.updated",
-      properties: { id: "p9", messageID: "m2", sessionID: "s1", type: "reasoning", text: "je pèse" },
+      properties: {
+        sessionID: "s1",
+        part: { id: "p9", messageID: "m2", sessionID: "s1", type: "reasoning", text: "je pèse" },
+        time: 1,
+      },
     })
     expect(next?.[1]?.parts.map((part) => part.id)).toEqual(["p2", "p9"])
   })
@@ -403,7 +413,11 @@ describe("le fil append-only", () => {
     expect(
       reduceThread(base(), {
         type: "message.part.updated",
-        properties: { id: "p1", messageID: "m9", sessionID: "s1", type: "text", text: "x" },
+        properties: {
+          sessionID: "s1",
+          part: { id: "p1", messageID: "m9", sessionID: "s1", type: "text", text: "x" },
+          time: 1,
+        },
       }),
     ).toBeUndefined()
     expect(

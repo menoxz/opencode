@@ -3571,8 +3571,98 @@ compteur de reconnexions).
   (et la navigation est prouvée par le changement d'URL du même onglet entre les deux relevés).
 - `rows=[]` : le journal brut n'est rendu que dans la vue Logs, pas dans la vue conversation.
 
+## Lot 21 — le flux écoutait le mauvais fil, et lisait la mauvaise forme (livré)
 
+Signalement : « le stream n'est pas fonctionnel — aucune activité de l'agent, aucun flux dans le
+chat, il faut recharger la fenêtre pour voir les changements ».
 
+Les deux défauts sont dans le **transport**, et aucun n'était visible en test : le réducteur faisait
+ce qu'on lui demandait, et la page affichait la vérité qu'elle avait.
 
+### 1. Le mauvais fil — `/event` est borné à un dossier
 
+Le middleware résout l'instance depuis `?directory=` (ou `x-opencode-directory`), à défaut
+`process.cwd()` (`middleware/workspace-routing.ts:86-88`). La page appelait `/event` **sans dossier**,
+donc elle écoutait l'instance du dossier de lancement du serveur, et rien d'autre.
 
+Mesure décisive (serveur 4096, session créée dans `C:\jeanluc\opencode-fork`) :
+
+```
+GET /event                                      -> server.connected + battements, RIEN d'autre
+GET /event?directory=C:\jeanluc\opencode-fork    -> session.created, session.updated
+```
+
+**Pourquoi un rechargement suffisait** : les routes REST qui **nomment une session** résolvent le
+dossier *de la session* (`resolveInstanceDirectory`, `workspace-routing.ts:99-102`), donc elles
+lisent le bon fil. Le flux, lui, ne peut pas : rien dans `/event` ne nomme de session. Le remède
+n'était donc pas de deviner un dossier mais d'écouter le fil qui n'en dépend pas : `/global/event`,
+qui porte les événements de **toutes** les instances avec leur `directory` — c'est ce que consomme
+l'app de référence (`packages/app/src/context/server-sdk.tsx:132`).
+
+### 2. La mauvaise forme — la partie est imbriquée, pas aplatie
+
+`message.part.updated` porte `properties = {sessionID, part, time}`. Le réducteur lisait
+`properties` **comme** la partie : `id` et `messageID` étaient indéfinis, l'événement était classé
+« nothing to change », et le fil ne bougeait plus. Formes relevées sur un tour réel :
+
+```
+message.part.updated   properties = { sessionID, part, time }    ← la partie est imbriquée
+message.part.delta     properties = { sessionID, messageID, partID, field, delta }
+message.updated        properties = { sessionID, info }
+```
+
+Le test existant portait une partie **aplatie** — une forme qui n'existe pas sur le fil : il passait
+sur le code fautif. Même famille que le `<select>` et la course d'options (Lot « listes de choix ») :
+un test vert sur du code fautif est pire qu'aucun test, et c'est le navigateur qui tranche.
+
+### La correction
+
+| pièce | changement |
+|---|---|
+| `events.ts` | abonnement à `/global/event` ; `unwrapGlobalEvent` déballe `{directory, payload}` (pur, testé) et saute l'enveloppe `sync`, doublon interne |
+| `view-model.ts` | `message.part.updated` lit `properties.part`, avec repli sur la forme aplatie |
+| `events.test.ts` | 4 tests de câblage sur l'enveloppe **réelle** + 5 sur `unwrapGlobalEvent` ; l'assertion du fil porte `/global/event` |
+| `view-model.test.ts` | les trois fixtures de partie passent à la forme relevée |
+
+### Preuve
+
+```
+vitest (webui)  : 24 fichiers / 618 tests, exit 0
+tsgo --noEmit   : exit 0
+vite build      : exit 0
+
+contrôles positifs (le test échoue-t-il sur le code d'avant ?)
+  réducteur remis à l'état d'avant  -> 3 tests échouent, dont « porte la partie sous part »
+  abonnement remis à `/event`       -> 1 test échoue
+```
+
+Preuve navigateur — CDP direct (9222), Vite isolée 5181 → serveur sonde 4097 sur base jetable,
+l'`EventSource` de la page **instrumenté avant chargement** (`Page.addScriptToEvaluateOnNewDocument`) :
+
+```
+source réellement ouverte par la page : /global/event
+événements reçus par la page pendant un tour :
+  message.part.delta 3214 · message.part.updated 19 (props « sessionID,part,time »)
+  message.updated 8 · session.status 2 · session.idle 1 · sync 31 (ignorés)
+« travail en cours » observé pendant tout le tour (il vient de `session.status` par SSE)
+croissance **en place** du nouveau bloc de prose : 102 -> 1151 caractères, même élément
+  (proseCount inchangé), sans rechargement
+navigation type : "navigate" — chargement initial, jamais "reload"
+```
+
+### Observation signalée, non concluante
+
+Le serveur de l'utilisateur (4096), en service depuis 1 h 10, a accepté `prompt_async` (**204**) sans
+écrire aucun message et sans émettre le moindre événement ; les mêmes appels sur un serveur neuf
+(4097), même config, ont produit un tour complet. Deux différences empêchent de conclure à un défaut
+serveur : la base (la 4097 était neuve) et l'âge du processus. Le remède connu pour l'état d'instance
+périmé est le **redémarrage** (incident identique consigné au lot typographique : `499` sur toutes les
+routes d'instance). Signalé pour que la piste ne se perde pas.
+
+### Ce que ce lot ne fait pas
+
+- `/event` reste déclaré dans `API_PREFIXES` : il n'est plus consommé par la page, mais c'est le seul
+  fil qui porte un `workspace`, donc il reste la porte d'une éventuelle écoute par projet.
+- Le fil global livre **toutes** les instances. La page filtre par session active
+  (`threadEventOutcome`, raison « another session ») ; le journal brut, lui, les montre toutes —
+  c'est ce qu'on lui demande.

@@ -6,7 +6,7 @@ const AUTH_KEY = "oc.webui.auth"
 /**
  * Resolution order, most specific first:
  *   1. `VITE_OPENCODE_SERVER_URL` — a direct backend, used when the server serves this UI itself.
- *   2. same-origin — the dev proxy in `vite.config.ts` forwards `/session`, `/event`, … to the
+ *   2. same-origin — the dev proxy in `vite.config.ts` forwards `/global`, `/session`, … to the
  *      backend, so no CORS configuration is required on the server side.
  *
  * A third step used to read a URL from localStorage, with `rememberServerUrl` as its writer. Both

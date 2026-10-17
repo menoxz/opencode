@@ -586,12 +586,19 @@ export function proseKind(part: { synthetic?: boolean; ignored?: boolean }): "sy
 
    La page relisait tout le fil par REST à chaque événement citant l'identifiant de session : c'est ce
    qui faisait sauter le défilement et clignoter le texte. Le serveur fournit pourtant de quoi tenir
-   le fil à jour sur place — mesuré sur un tour réel : `/event` a porté 17 `message.part.updated` et
-   12 `message.part.delta` (`/global/event`, lui, n'en a porté aucun : autre enveloppe).
+   le fil à jour sur place — mesuré sur un tour réel : `message.part.updated` et `message.part.delta`
+   arrivent en nombre (9 et 46 sur un tour de sonde le 2026-10-17), tous deux sur `/global/event`,
+   celui que la page consomme.
 
-   **Forme relevée sur le fil, pas déduite du schéma** : `properties` porte *la partie aplatie*
-   (`{…part, messageID, sessionID}`), et non `{sessionID, part, time}` comme le laisse croire le
-   schéma d'origine. Lire `properties.part` ne rendrait rien — et cela ne se verrait pas.
+   **Formes relevées sur le fil, pas déduites du schéma** (2026-10-17) :
+
+     message.part.updated   properties = { sessionID, part, time }   ← la partie est **imbriquée**
+     message.part.delta     properties = { sessionID, messageID, partID, field, delta }
+     message.updated        properties = { sessionID, info }
+
+   La page lisait `properties` *comme* la partie : `id` était indéfini, l'événement était classé
+   « nothing to change », et **le fil ne bougeait plus** sans un rechargement complet. Cela ne se
+   voyait pas : le test portait une forme aplatie qui n'existe pas sur le fil.
    -------------------------------------------------------------------------- */
 
 /** Remplace une partie dans un message, ou l'ajoute (append-only) quand elle est encore inconnue. */
@@ -641,8 +648,17 @@ export function reduceThread(messages: Message[], event: UiEvent): Message[] | u
   }
 
   if (event.type === "message.part.updated") {
-    const part = properties as Part
-    const messageID = properties["messageID"]
+    /*
+     * La partie est **imbriquée** sous `part` : le fil porte `{sessionID, part, time}`, relevé sur
+     * le serveur le 2026-10-17 (`message.part.updated` → `properties.part.{id,messageID,type,…}`).
+     * Lire `properties` comme une partie rendait `id` et `messageID` indéfinis, donc l'événement
+     * était classé « nothing to change » et **le fil ne se mettait jamais à jour** sans un
+     * rechargement complet de la page. Le repli sur `properties` garde la lecture tolérante à une
+     * partie aplatie, qui est la forme d'un événement rejoué.
+     */
+    const nested = properties["part"]
+    const part = (nested && typeof nested === "object" ? nested : properties) as Part
+    const messageID = (part as Record<string, unknown>)["messageID"]
     if (typeof part?.id !== "string" || typeof messageID !== "string") return messages
     return replacePart(messages, messageID, part.id, part)
   }

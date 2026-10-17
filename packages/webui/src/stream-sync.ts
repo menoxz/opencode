@@ -20,11 +20,12 @@ type ThreadEvent = Parameters<typeof reduceThread>[1]
  *    qu'aucune erreur ne soit levée. `createTicketGuard` refuse tout jeton plus ancien que celui déjà
  *    accepté.
  *
- * 3. **Une coupure laissait un trou définitif.** `/event` ne rejoue pas ce qui a été manqué (aucun
- *    `Last-Event-ID` côté serveur), donc les deltas émis pendant la coupure étaient perdus pour de
- *    bon, et un `session.idle` manqué laissait l'écran sur « travail en cours » indéfiniment.
- *    `resyncPlan` dit ce qu'il faut relire, dont le fil actif et l'état d'activité
- *    (`GET /session/status`, que le CLI interroge déjà : `cli/cmd/run/stream.transport.ts:762`).
+ * 3. **Une coupure laissait un trou définitif.** Le flux (`/global/event`) ne rejoue pas ce qui a
+ *    été manqué (aucun `Last-Event-ID` côté serveur), donc les deltas émis pendant la coupure
+ *    étaient perdus pour de bon, et un `session.idle` manqué laissait l'écran sur « travail en
+ *    cours » indéfiniment. `resyncPlan` dit ce qu'il faut relire, dont le fil actif et l'état
+ *    d'activité (`GET /session/status`, que le CLI interroge déjà :
+ *    `cli/cmd/run/stream.transport.ts:762`).
  *
  * Pur : ni DOM, ni timer, ni réseau — les pièces se testent hors navigateur.
  */
@@ -87,7 +88,7 @@ export function threadEventOutcome(
  *
  * Le premier branchement ne relit pas le fil : il vient d'être chargé par l'ouverture de la session,
  * et le relire doublerait la requête la plus lourde pour rien. Une reconnexion, elle, a manqué des
- * événements et ne peut pas le savoir autrement — `/event` ne rejoue rien.
+ * événements et ne peut pas le savoir autrement — le flux ne rejoue rien.
  *
  * « Jamais connecté encore » (`connected:false`, `reconnects:0`) est un premier branchement, pas une
  * coupure : le compteur de reconnexions n'augmente qu'après une connexion établie puis perdue.
