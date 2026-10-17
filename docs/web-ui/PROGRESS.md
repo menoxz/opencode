@@ -3992,3 +3992,62 @@ navigation (CDP, tour reel avec outil) :
                      etat d'outil "running" · animation d'entree rise-in
                      0 exception · navigation=navigate (aucun rechargement)
 ```
+
+## Correction du lot 26 — l'animation d'entrée bouclait, et le pourquoi (livré)
+
+Signalement : « l'effet slide up s'exécute **en boucle** pendant toute la durée du tour et s'applique
+**à la fois** sur les deux sorties, loaded instructions et injected context ».
+
+### Ce que la mesure a dit
+
+Un compteur d'**identités de nœuds** (chaque départ d'animation marque son nœud) donne le verdict :
+
+```
+rise-in  482  départs sur 482 nœuds DISTINCTS     (2 lignes seulement à l'écran)
+breathe  238  départs sur 238 nœuds DISTINCTS     (l'icône de raisonnement, recréée aussi)
+```
+
+Et la chronologie donne le moment : **6** départs jusqu'à 12 s — c'est-à-dire pendant toute la phase
+d'injection — puis **232, 520, 708** dès que la réponse streame. L'animation ne bouclait donc pas
+« pendant le tour » : elle bouclait **pendant le flux de la réponse**.
+
+### La cause
+
+Elle n'est pas dans le CSS mais dans le **regroupement** : la première réponse d'un tour est fusionnée
+dans le tour de l'utilisateur (`groupTurns`, `current.replies.push` / `current.steps.push`). Chaque
+delta de cette réponse produit donc un **nouveau `Message`**, ce qui invalide le tour *utilisateur* —
+celui qui porte les injections. Solid `For` recrée alors le nœud, et l'animation repart. Mesuré :
+**482 recréations d'une ligne d'injections sur un tour**.
+
+Deux instruments m'ont menti avant celui-là, et c'est consigné : un observateur d'`animationstart`
+posé par `MutationObserver` **rate toujours le premier départ** (il s'attache une microtâche trop tard
+— d'où un faux « 0 »), et un compteur de `addedNodes` sur `document.body` a rendu **0 création** là où
+les identités en montraient 482. Ce qui tranche est l'identité du nœud, pas le comptage d'insertions.
+
+### La correction
+
+| quoi | pourquoi |
+|---|---|
+| l'animation passe des lignes **posées** à la ligne **en cours** (`.injections.injecting`) | la ligne « en cours » vit dans une fenêtre où rien d'autre ne bouge : son animation est donc réellement unique. Les lignes posées apparaissent **sans mouvement** — plus juste : elles sont posées |
+| `groupTurns(messages, cache)` | un tour dont les messages n'ont pas changé **garde son identité** (cache fourni par l'appelant, 4 tests). Effet mesuré : **943 → 723** départs d'animation sur un tour. Cela ne couvre **pas** le tour qui streame — c'est la cause ci-dessus |
+
+```
+mesure à 200 ms, tour réel :
+  +1,4s -> +4,6s : une ligne « injecting instructions », animation rise-in
+  +4,8s          : les deux lignes réelles, animation = none   (aucune boucle)
+```
+
+### Ce qui reste
+
+Le **rendu fin du fil** : le tour qui streame reconstruit son propre sous-arbre à chaque image
+(première réponse fusionnée + `For` keyé par référence). Le correctif de fond — un rendu par partie
+plutôt que par tour, ou `Index` au lieu de `For` — n'est pas fait ici : l'animation n'en dépend plus,
+mais le coût de rendu, lui, dépend encore de la taille du fil et non de ce qui a changé.
+
+### Preuve
+
+```
+vitest (webui) : 24 fichiers / 635 tests, exit 0   (+4 : l'identite des tours)
+tsgo --noEmit  : exit 0
+vite build     : exit 0
+```
