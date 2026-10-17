@@ -51,6 +51,7 @@ import { drizzle } from "drizzle-orm/bun-sqlite"
 import { ensureProcessMetadata } from "@opencode-ai/core/util/opencode-process"
 import { isRecord } from "@/util/record"
 import { loadExperimentalEnv } from "@/flag/experimental-env"
+import { CliDefaultCommand } from "./cli/default-command"
 
 const processMetadata = ensureProcessMetadata("main")
 
@@ -73,14 +74,17 @@ process.on("uncaughtException", (e) => {
 const args = hideBin(process.argv)
 
 /**
- * Sans argument — ou seulement des options — `opencodev2` **sert** : il démarre le serveur, et
+ * Sans commande ni positional — `opencodev2` seul, ou seulement avec les options du serveur
+ * (`--port`, `--hostname`, `--print-logs`…) — `opencodev2` **sert** : il démarre le serveur, et
  * l'interface web qu'il rend à sa racine. C'est le mode demandé par défaut, parce que c'est le
  * **serveur** qui recharge à chaud ce qui vit — skills, agents, plugins, instructions — là où une
- * session TUI ne recharge rien de ce qu'il sert. L'aide (`-h`) et la version restent intactes, et le
- * TUI reste explicite.
+ * session TUI ne recharge rien de ce qu'il sert.
+ *
+ * La décision est **pure et testée** (`cli/default-command.ts`) : la version précédente cherchait
+ * « un jeton qui ne commence pas par un tiret », ce qui compte la **valeur** d'une option
+ * (`opencodev2 --port 4099`) comme un nom de commande et retombait sur le TUI.
  */
-const asksHelpOrVersion = args.some((arg) => ["-h", "--help", "-v", "--version"].includes(arg))
-if (!asksHelpOrVersion && !args.some((arg) => !arg.startsWith("-"))) args.unshift("serve")
+if (CliDefaultCommand.shouldDefaultToServe(args)) args.unshift("serve")
 
 /**
  * Dans un **arbre de travail** (mode source), le serveur se relance à chaque modification de ses
