@@ -35,6 +35,7 @@ import {
   Reasoning,
   ShowMore,
   SessionRow,
+  Spinner,
   ToolLine,
   Turn,
   UserPrompt,
@@ -112,7 +113,7 @@ import {
   type Agent,
   type McpState,
 } from "./config"
-import { parseInjections, relativeTo } from "./injections"
+import { instructionsInjecting, parseInjections, relativeTo } from "./injections"
 import { pluginEntries, type PluginList } from "./nav"
 import { SESSION_LIMIT, groupByWorkspace, sessionDetails, splitSessions, type ProjectRef, type SessionSummary, type WorkspaceGroup as WorkspaceGrouping } from "./sessions"
 import { subscribeEvents, type EventStreamState } from "./events"
@@ -1997,6 +1998,21 @@ export default function App() {
       <Show when={turn.prompt.length > 0}>
         <Turn role="user">
           <For each={turn.prompt}>{(part) => renderPrompt(part)}</For>
+          {/*
+            Les instructions **entrent** dans le contexte : la session travaille et aucune part ne
+            les porte encore. C'est la ligne du TUI (`◆ core/instructions · injecting`) et sa
+            condition exacte (`instructionsInjecting`) ; elle disparaît d'elle-même dès que le
+            serveur a écrit la part. Sans elle, la page restait muette pendant les secondes que cet
+            assemblage prend (mesuré : 1,9 s puis 5,1 s sur un tour).
+          */}
+          <Show when={instructionsInjecting(turn.prompt, working())}>
+            <div class="injections injecting">
+              <span class="injections-head">
+                <Spinner />
+                <span class="injections-title">injecting instructions</span>
+              </span>
+            </div>
+          </Show>
         </Turn>
       </Show>
       <Show when={turn.steps.length > 0 || turnError(turn)}>
@@ -2329,7 +2345,9 @@ export default function App() {
         </div>
       </aside>
 
-      <main class="thread">
+      {/* `busy` nomme l'état pour le CSS : c'est lui qui autorise un mouvement dans le fil (le
+          curseur de la prose en cours), et rien au repos. */}
+      <main class="thread" classList={{ busy: working() }}>
         <Show when={columns().sidebar === 0 || notice()}>
           <div class="thread-head">
             <Show when={columns().sidebar === 0}>

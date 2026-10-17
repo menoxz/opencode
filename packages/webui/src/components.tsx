@@ -324,6 +324,20 @@ export function UserPrompt(props: { text: string }) {
  * lecture. Déplié, il répond à « qu'est-ce qui consomme ma fenêtre ? », question qu'aucune autre
  * surface ne traite et qu'aucune estimation ne peut remplacer.
  */
+/**
+ * Le spinner du TUI, repris tel quel : le TUI fait défiler les losanges `["⬥","◆","⬩","⬪"]`
+ * (`cli/cmd/tui/ui/spinner.ts:314`) devant ce qui travaille — l'injection d'instructions, la
+ * compaction. C'est **le** retour conventionnel du harnais, donc on emploie la même famille de
+ * formes des deux côtés.
+ *
+ * Le défilement est fait par le CSS (`@keyframes` sur `content`, une propriété discrète que
+ * Chromium anime) : aucun minuteur, donc aucun rendu par image pour une animation — le fil continue
+ * de ne rendre qu'un état par image.
+ */
+export function Spinner() {
+  return <span class="spinner" aria-hidden="true" />
+}
+
 export function ContextInjections(props: {
   injections: Injections
   open: boolean
@@ -490,7 +504,16 @@ export function ToolLine(props: { tool: string; state: ToolState; open: boolean;
   const output = () => boundLines(detail().output ?? "", OUTPUT_PREVIEW_LINES)
   const bounded = () => output().hidden > 0
   return (
-    <div class={`tool fam-${toolIcon(props.tool)}`} classList={{ failed: props.state.status === "error", open: props.open }}>
+    <div
+      class={`tool fam-${toolIcon(props.tool)}`}
+      classList={{
+        failed: props.state.status === "error",
+        open: props.open,
+        // État **nommé** pour le CSS : un outil qui travaille le dit en mouvement (balayage de la
+        // ligne), un outil fini non. La classe manquait — le CSS ne pouvait viser que `failed`.
+        running: props.state.status === "running",
+      }}
+    >
       <button class="tool-line" title={toolHint(props.tool)} onClick={() => props.onToggle()}>
         <ToolIcon tool={props.tool} />
         <span class="tool-name">{props.tool}</span>
@@ -500,7 +523,14 @@ export function ToolLine(props: { tool: string; state: ToolState; open: boolean;
           <span class="tool-size">{formatCount(toolOutputLines(props.state))} lines</span>
         </Show>
         <Show when={props.state.status !== "completed"}>
-          <span class="tool-state">{toolStatusLabel(props.state)}</span>
+          <span class="tool-state">
+            {/* Un outil qui travaille le dit **en mouvement** : le spinner du harnais, avant le
+                libellé — c'est le retour conventionnel, là où la ligne ne disait qu'un mot. */}
+            <Show when={props.state.status === "running"}>
+              <Spinner />
+            </Show>
+            {toolStatusLabel(props.state)}
+          </span>
         </Show>
         <span class="tool-chev">{props.open ? "▾" : "▸"}</span>
       </button>

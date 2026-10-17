@@ -1,5 +1,14 @@
 import { describe, expect, test } from "vitest"
-import { formatChars, injectionLabel, parseInjections, relativeTo, share, sourceLabel } from "./injections"
+import {
+  declaresInjection,
+  formatChars,
+  injectionLabel,
+  instructionsInjecting,
+  parseInjections,
+  relativeTo,
+  share,
+  sourceLabel,
+} from "./injections"
 
 /** Relevé tel quel sur `ses_edb48d77affeF6ky1NqRoE3JNH`. */
 const THREE = `Context injections · 3 section(s)
@@ -145,5 +154,31 @@ describe("relativeTo — ce qui est lisible dépend de la base", () => {
 
   test("sans base, rien n'est lisible", () => {
     expect(relativeTo("C:\\jeanluc\\opencode-fork\\AGENTS.md", "")).toBeUndefined()
+  })
+})
+
+describe("les instructions qui entrent dans le contexte", () => {
+  const carrier = { metadata: { injection: "instructions", sources: ["a.md", "b.md"] } }
+  const context = { metadata: { injection: "context", sections: [] } }
+
+  test("une part qui declare une injection est reconnue par sa metadonnee, pas par son texte", () => {
+    // Releve sur le serveur le 2026-10-17 : `{"injection":"instructions","sources":[...]}`.
+    expect(declaresInjection(carrier)).toBe(true)
+    expect(declaresInjection(context)).toBe(true)
+    expect(declaresInjection({ metadata: {} })).toBe(false)
+    expect(declaresInjection({})).toBe(false)
+    expect(declaresInjection({ metadata: { injection: "" } })).toBe(false)
+  })
+
+  test("l'injection est en cours tant que le fil travaille et qu'aucune part ne la porte", () => {
+    expect(instructionsInjecting([{ text: "salut" }], true)).toBe(true)
+  })
+
+  test("des que la part est ecrite, l'injection est faite — meme si la reponse continue", () => {
+    expect(instructionsInjecting([{ text: "salut" }, carrier], true)).toBe(false)
+  })
+
+  test("au repos, rien n'est en cours", () => {
+    expect(instructionsInjecting([{ text: "salut" }], false)).toBe(false)
   })
 })

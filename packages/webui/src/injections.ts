@@ -49,6 +49,37 @@ const TAIL = /^(\d+)\s+chars(\s+\(truncated\))?$/
 const SOURCE_LINE = /^Instructions from:\s*(.+)$/
 
 /**
+ * Ce qu'une partie **déclare** avoir injecté — la métadonnée du serveur, jamais le texte.
+ *
+ * Repris du TUI (`cli/cmd/tui/util/instructions-injection.ts:11-22`) : la part des instructions
+ * porte `metadata.injection = "instructions"` avec `metadata.sources`, celle du contexte
+ * `metadata.injection = "context"` avec `metadata.sections`. Relevé sur le serveur le 2026-10-17
+ * (3 sources, 3 sections). Lire la métadonnée plutôt que le texte est ce qui rend « les instructions
+ * entrent-elles dans le contexte ? » décidable **avant** que la ligne n'existe.
+ */
+export function declaresInjection(part: unknown): boolean {
+  if (!part || typeof part !== "object") return false
+  const metadata = (part as { metadata?: unknown }).metadata
+  if (!metadata || typeof metadata !== "object") return false
+  const injection = (metadata as { injection?: unknown }).injection
+  return typeof injection === "string" && injection.length > 0
+}
+
+/**
+ * Les instructions sont **en train d'entrer** dans le contexte : la session travaille et aucune part
+ * ne les porte encore.
+ *
+ * C'est la condition exacte du TUI (`instructionsInjecting`, même fichier :38-40). Elle s'arrête
+ * d'elle-même — dès que la part qui porte les sources est écrite, l'injection est faite, même si la
+ * réponse continue. Sans cette ligne, la page ne disait **rien** pendant les secondes que le serveur
+ * met à écrire ces parts (mesuré : 1,9 s puis 5,1 s sur un tour).
+ */
+export function instructionsInjecting(parts: ReadonlyArray<unknown>, busy: boolean): boolean {
+  if (!busy) return false
+  return !parts.some(declaresInjection)
+}
+
+/**
  * Lit un bloc d'injections, quelle que soit sa forme. Renvoie `undefined` quand le texte n'en est
  * pas un — c'est ce qui distingue une injection d'un prompt réellement écrit par l'utilisateur,
  * sans dépendre du seul drapeau `synthetic` (d'autres parties peuvent le porter).

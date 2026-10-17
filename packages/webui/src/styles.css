@@ -1816,15 +1816,12 @@ textarea {
   /* La carte **est** le tour de l'utilisateur : elle porte l'air qui la sépare de la réponse de
      l'agent, qui commence juste après (le flux d'étapes). */
   margin: 0 0 16px;
-  /* Les injections, quoique parties distinctes du serveur, appartiennent à cette carte : c'est ce
-     qui permet d'y poser l'action de copie en absolu, sur la carte et non dans une rangée à part. */
-  position: relative;
 }
 
-/* Quand les injections suivent la carte, elles en sont la **note de bas de carte** : elles s'y
-   accrochent au lieu de flotter entre elle et la réponse. Mesuré avant : 16 px au-dessus, plus la
-   frontière de tour de 26 px en dessous — deux lignes de 12 px perdues entre deux blocs qui ne se
-   parlent pas. */
+/* Quand les injections suivent, la carte est suivie de sa rangée d'action : les injections se posent
+   donc **sous cette rangée**, à 4 px — et cette bande de 27 px n'est pas du vide, elle porte le
+   geste de copie. Choix de l'utilisateur (2026-10-17) : « mieux vaut descendre un peu le bloc
+   d'instructions ». */
 .prompt-block:has(+ .injections) {
   margin-bottom: 4px;
 }
@@ -1841,56 +1838,31 @@ textarea {
   gap: 6px;
 }
 
-/* L'action de copie termine la lecture **sous la carte**, alignée à droite — sa place d'origine.
-   Elle y consommait une rangée de 23 px ; quand des injections suivent, elle descend donc sur la
-   ligne de la dernière injection, à droite, dans la place que la dernière colonne laisse libre :
-   même place à l'œil, **aucune hauteur consommée**. Elle reste visible au repos : un geste qu'on ne
-   voit pas est un geste qu'on ne trouve pas. */
+/* L'action termine la lecture **sous la carte**, alignée à droite — sa place d'origine. Quand des
+   injections suivent, c'est le **bloc d'injections qui descend** de la hauteur de cette rangée : la
+   bande n'est donc pas du vide, c'est l'action. Mesuré : carte -> injections 27 px, dont 19 de
+   rangée, au lieu de 39 (23 de rangée + 16 de marge) avant. */
 .prompt-foot {
   display: flex;
   justify-content: flex-end;
   margin-top: 4px;
 }
 
-/* Le tour devient le repère, et la carte cesse de l'être : sinon l'ancêtre positionné le plus proche
-   capte l'absolu et l'action revient se poser sur la carte — mesuré : `bottom: 0` la plaçait à
-   119 px (le bas de la carte) au lieu de 172 px (le bas des injections). */
-.turn.user:has(> .injections) {
-  position: relative;
-}
-
-.turn.user:has(> .injections) > .prompt-block {
-  position: static;
-}
-
-.turn.user:has(> .injections) > .prompt-block > .prompt-foot {
-  position: absolute;
-  bottom: 0;
-  right: 6px;
-  margin-top: 0;
-}
-
-/* La place du glyphe est réservée sur **chaque** ligne d'injections, sinon la dernière serait la
-   seule à passer sous lui. */
-.turn.user:has(> .injections) > .injections .injections-head {
-  padding-right: 34px;
-}
-
+/* La bande de l'action sépare la carte de ses injections : elle n'est plus recouverte, donc plus rien
+   à réserver sur la ligne d'injections. */
 /* Un geste réduit à son icône, dans la même boîte pour les trois états (copier, fait, échoué). */
 .copy-icon {
   display: flex;
   padding: 3px;
   color: var(--text-3);
-  /* Opaque : révélé, le glyphe se pose **sur** la carte et ne doit pas laisser passer le texte
-     qu'il recouvre. */
-  background: var(--bg-1);
+  background: transparent;
   border: 0;
   border-radius: 5px;
 }
 
 .copy-icon:hover {
   color: var(--text-1);
-  background: var(--bg-2);
+  background: #ffffff0a;
 }
 
 .copy-icon.done {
@@ -2105,6 +2077,10 @@ textarea {
 }
 
 .tool-state {
+  /* Le spinner et le mot se suivent dans la même ligne d'état. */
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   color: var(--text-3);
 }
 
@@ -4843,4 +4819,146 @@ textarea {
   margin-top: 4px;
   font-size: var(--fs-meta);
   color: var(--text-3);
+}
+
+/* =============================================================================
+   Le mouvement — ce qui vit le dit, ce qui est fini s'arrête
+
+   Demande : « ajoute des animations aux différents blocs du chat, surtout pendant
+   l'exécution d'un outil et l'injection ». Quatre mouvements, et **aucun au repos** :
+
+   - les lignes d'injections **montent** quand elles arrivent — elles arrivent par le flux, et le
+     serveur met plusieurs secondes entre les deux (mesuré : 1,9 s puis 5,1 s sur un tour) ;
+   - un outil qui travaille est **balayé** par un filet de lumière (`.running`) ; fini, il s'arrête ;
+   - la ligne « thinking » **respire** tant que la session travaille ;
+   - la prose en cours porte un **curseur** qui bat, et lui seul.
+
+   Deux règles tenues :
+
+   1. **Animer la boîte stable, jamais le contenu.** Mesuré sur un tour réel : le fil a reçu
+      **1 097 mutations `childList`** dans son sous-arbre pendant une réponse de 279 caractères — le
+      contenu d'une prose est réécrit à chaque delta. Une animation d'entrée posée sur un `p` se
+      rejouerait donc à chaque token. Les seules boîtes visées ici sont celles dont l'identité
+      survit au flux (`.injections`, `.prose`, `.tool`).
+   2. **`opacity` et `transform` seulement** : le compositeur les prend en charge et le fil principal
+      reste libre — il rend déjà tout le fil une fois par image (`createLatestGate`).
+
+   `prefers-reduced-motion` les éteint toutes : un mouvement demandé par la machine ne s'impose pas
+   à qui l'a refusé.
+   ============================================================================= */
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes breathe {
+  0%, 100% {
+    opacity: 0.55;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+}
+
+@keyframes caret {
+  0%, 45% { opacity: 1; }
+  55%, 100% { opacity: 0.12; }
+}
+
+/* Les injections montent **pendant l'injection**, chaque bloc pour son compte : elles arrivent à
+   plusieurs secondes d'écart (mesuré : 1,9 s puis 5,1 s), et ouvrir une session ancienne ne doit rien
+   faire bouger. C'est le `busy` du fil qui autorise le mouvement — pas la présence des lignes. */
+.thread.busy .injections {
+  animation: rise-in 0.22s ease-out both;
+}
+
+/* Le spinner : la famille de losanges du TUI (`⬥ ◆ ⬩ ⬪`), défilée par le CSS. Largeur fixe — les
+   quatre glyphes n'ont pas la même chasse, et un libellé qui saute à chaque trame est pire que pas
+   de libellé. */
+.spinner {
+  display: inline-block;
+  width: 1em;
+  text-align: center;
+}
+
+.spinner::before {
+  content: "⬥";
+  animation: spinner 0.6s steps(1, end) infinite;
+}
+
+@keyframes spinner {
+  0% {
+    content: "⬥";
+  }
+  25% {
+    content: "◆";
+  }
+  50% {
+    content: "⬩";
+  }
+  75% {
+    content: "⬪";
+  }
+}
+
+/* Un outil qui travaille : un filet de lumière traverse la ligne, sans jamais intercepter un clic. */
+.tool.running .tool-line {
+  position: relative;
+  overflow: hidden;
+}
+
+.tool.running .tool-line::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, #ffffff14, transparent);
+  animation: sweep 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+/* Le raisonnement respire tant que la session travaille, et seulement le dernier : un tour fini ne
+   bouge plus. */
+.thread.busy .turn:last-child .reasoning-line svg {
+  animation: breathe 1.9s ease-in-out infinite;
+}
+
+/* La prose en cours porte le curseur : c'est la seule marque qui dit « ça s'écrit encore », et elle
+   disparaît avec l'état `busy`. */
+.thread.busy .turn:last-child .prose:last-of-type::after {
+  content: "▍";
+  margin-left: 1px;
+  color: var(--text-3);
+  animation: caret 1.1s steps(1, end) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thread.busy .injections,
+  .tool.running .tool-line::after,
+  .thread.busy .turn:last-child .reasoning-line svg,
+  .thread.busy .turn:last-child .prose:last-of-type::after,
+  .spinner::before {
+    animation: none;
+  }
+
+  .thread.busy .turn:last-child .prose:last-of-type::after {
+    content: "";
+  }
 }
