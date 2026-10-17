@@ -4051,3 +4051,75 @@ vitest (webui) : 24 fichiers / 635 tests, exit 0   (+4 : l'identite des tours)
 tsgo --noEmit  : exit 0
 vite build     : exit 0
 ```
+
+## Lot 28 — la séquence demandée : spinner du TUI pendant, icône après (livré)
+
+Demande, bloc par bloc :
+
+| bloc | pendant | après |
+|---|---|---|
+| injections | spinner + « loaded … » | icône + « loaded instructions · N files » |
+| injections | spinner + « Injecting… » | icône + « injected context · N sections · X chars » |
+| raisonnement | spinner + « thinking » + temps qui avance | icône + « Thinking » + temps |
+| outil | spinner + « Executing… » (pending : « Pending… ») | affichage normal (nom, titre, résultat) |
+| texte | — | monte et se fond à l'arrivée |
+
+### Le spinner, exactement celui du TUI
+
+`cli/cmd/tui/component/spinner.tsx:8,17` :
+
+```
+SPINNER_FRAMES = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"]     interval = 80 ms
+```
+
+Les dix points braille défilent donc à **80 ms par trame** — dix paliers de 10 % sur 0,8 s en
+`step-end`, sans minuteur. Et quand le mouvement est refusé, le repli est **celui du TUI** : sa marque
+statique `⋯` (branche `animations_enabled: false`). Mesure à l'écran : **10 trames sur 10** observées.
+
+### Les phases viennent des métadonnées, jamais du texte
+
+`injectionPhase(parts, busy)` → `loading` | `injecting` | `done`, décidée sur
+`metadata.injection === "instructions"` puis `"context"` — les deux parts que le serveur écrit à
+1,9 s puis 5,1 s. `reasoningLive(part)` → `time.start` sans `time.end`. `toolBusyLabel(state)` →
+« Executing… » / « Pending… », jamais l'état interne (`running`).
+
+### L'animation du raisonnement s'arrête avec lui — c'était un défaut
+
+Le `breathe` posé sur l'icône pulsait pendant **tout le reste du tour**. Supprimé. Mesure après :
+`animation-name` = `none` sur la ligne **et** sur son icône, une fois le raisonnement fini.
+
+### Le texte qui streame monte — possible seulement maintenant
+
+Le lot 27 avait montré pourquoi une animation d'entrée bouclait : `groupTurns` rendait des objets
+neufs à chaque delta et Solid recréait les nœuds (**482** recréations d'une ligne d'injections, **238**
+de l'icône de raisonnement, sur un tour). Les tours vivent désormais dans un **store réconcilié**
+(`createStore` + `reconcile`) :
+
+- l'écriture est sous `untrack` — sinon `reconcile` **lit** le store qu'il écrit dans le même effet et
+  boucle (page figée, CDP muet : constaté, puis corrigé) ;
+- résultat mesuré : **2 nœuds de prose sur un tour**, un par tour — le texte n'est donc plus recréé à
+  chaque image, et son animation ne joue qu'à l'arrivée ;
+- `.thread.busy` réserve l'animation au **flux** : ouvrir une session ancienne ne fait rien bouger.
+
+### Séquence relevée à l'écran (tour réel)
+
+```
++0,2s  « loaded … »
++0,6s  « ◆ loaded instructions 2 files » + « Injecting… »
++2,1s  « ◆ injected context 3 sections · 29.4k chars »
++5,8s  « thinking » (en cours)      puis  « Thinking120ms » (fini), sans animation
+```
+
+### Preuve
+
+```
+vitest (webui) : 24 fichiers / 640 tests, exit 0
+tsgo --noEmit  : exit 0
+vite build     : exit 0
+```
+
+### Environnement, sans rapport avec ce lot
+
+Deux tours de vérification ont échoué : une clé `opencode-go` **expirée** (« This API key has
+expired… ») puis un DNS transitoire (`getaddrinfo ENOTFOUND api.commandcode.ai`). L'UI affiche
+désormais ces échecs (lot 25) — ce qui a d'ailleurs rendu le diagnostic immédiat.
