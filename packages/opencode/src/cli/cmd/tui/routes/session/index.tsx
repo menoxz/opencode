@@ -1965,7 +1965,7 @@ function Instructions(props: { parts: Part[]; sessionID: string }) {
   // part qui les porte est écrite, l'injection est faite et l'animation s'arrête, même si la
   // réponse continue.
   const injecting = createMemo(() => instructionsInjecting(sources(), busy()))
-  const heading = createMemo(() => `§ ${instructionsHeading(sources().length)}`)
+  const heading = createMemo(() => `◆ ${instructionsHeading(sources().length)}`)
   const expandable = createMemo(() => sources().length > 0)
 
   return (
