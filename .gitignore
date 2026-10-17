@@ -53,3 +53,16 @@ packages/opencode/watchdog-run.log
 packages/opencode/package.json.bak-*
 packages/sdk/js/openapi.json
 cc_test_*.json
+
+# local artifacts untracked in the 2026-10-17 cleanup (never committed)
+/.tmp
+/FIX_VALIDATION_truncation.txt
+/RAPPORT_HARNESS.md
+/AGENTS.OLD.md
+/AGENTS-oldeus.md
+/Gouvernance_Projets.xlsx
+/i18n-validation/
+/rapport-checklist-*
+/output.txt
+/response.txt
+packages/sdk/js/tmp-gen.ts
