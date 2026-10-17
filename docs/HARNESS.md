@@ -101,3 +101,64 @@ fait (webui, CDP, Vite, modèles, publication npm). La recherche par mot-clé su
 - TUI — bash : la commande est bornée à sa première ligne + `· +N lines` et la sortie à **5** lignes (`Shell`, `routes/session/index.tsx`), **un même clic** déplie les deux (jamais de troncature de caractères : couper un chemin masque la cible au lieu du volume). L'en-tête de lot se lit `Explore · N read · M grep · K glob` (`util/inspect-batch-tree.ts` — `inspect_batch` n'accepte que read/grep/glob, les types inconnus sont comptés `invalid`). Les instructions injectées **reviennent dans le fil** sous le message utilisateur : `core · instructions · N sources`, spinner tant que la session est occupée, sources derrière le clic (`util/instructions-injection.ts` — la part est synthétique et ignorée, seules les sources déclarées sont montrées).
 - Base de tests TUI (mesuré 2026-10-16, A/B au HEAD) : `test/cli/tui/plugin-loader.test.ts` échoue sur cette machine au HEAD aussi (chargement de plugin, sans rapport avec un changement d'affichage) ⇒ ne pas l'imputer à une modification.
 - Retry de session (mesuré 2026-10-16) : `retryable()` réessaie aussi les statuts **408/425/429** (sans exiger le drapeau du SDK) et les motifs de **transport** (`fetch failed`, `socket hang up`, `ECONNRESET`, `stream closed`, `timed out`…) — ces erreurs coupaient la session ; un `AbortError` demandé par l'utilisateur n'est **jamais** réessayé. Plafond explicite `RETRY_MAX_ATTEMPTS = 10` (`RETRYABLE_STATUS`, `TRANSIENT_MESSAGE_PATTERNS`, `src/session/retry.ts`) : sans lui, un `retry-after` serveur de plusieurs heures retenait la session indéfiniment. Deux limites à connaître : le délai **serveur** n'est pas plafonné (un quota annoncé à 8 h attend 8 h, puis l'erreur est rendue après le plafond), et la reprise reste interdite dès qu'un contenu a été facturé (`Effect.retry({ while: () => !ctx.streamed })`, `processor.ts:1058` — rouvrir le flux re-facturerait le préfixe).
+
+## Publication npm — le faux `.exe` et le veilleur (mesuré 2026-10-17)
+
+### L'erreur « not a valid application for this OS platform »
+
+Symptôme : `opencodev2` lancé dans un terminal PowerShell rendait
+
+```
+ResourceUnavailable: C:\Users\jeanl\AppData\Roaming\npm\opencodev2.ps1:14
+  & "$basedir/node_modules/@lux-tech/opencode-ai/bin/opencode.exe" …
+Le programme « opencode.exe » n'a pas pu s'exécuter … The specified executable is not a
+valid application for this OS platform.
+```
+
+Mesures, dans cet ordre :
+
+| mesure | valeur |
+|---|---|
+| `node_modules/@lux-tech/opencode-ai/bin/opencode.exe` | **346 octets**, magie `ec` (« echo … ») = le placeholder, pas un binaire |
+| `@lux-tech/opencode-ai-windows-x64` installé | **non** |
+| `npm config get ignore-scripts` | `false` |
+| paquet de plateforme sur le registre | **publié** (`2.4.3`, `os: win32`, `cpu: x64`, 338 Mo décompressés) |
+
+Conclusion : le paquet méta publie un **script shell nommé `.exe`** que `postinstall.mjs` doit
+remplacer. Or **Bun n'exécute pas les scripts d'une dépendance non approuvée**
+(`bun pm untrusted` / `bun pm trust`), pnpm non plus par défaut, et `--ignore-scripts` les supprime.
+Quand ça arrive, Windows refuse le fichier avant même que son message ne s'affiche : l'utilisateur
+reçoit une erreur d'OS au lieu du remède.
+
+Correction : le point d'entrée est un **lanceur Node** (`script/opencodev2.mjs`, copié en
+`bin/opencodev2.mjs`, `bin: { opencodev2: "./bin/opencodev2.mjs" }`). Il rejoue la résolution si le
+binaire manque, exécute le vrai binaire sinon, et dit quoi faire (`bun pm trust …`, ou
+`node node_modules/@lux-tech/opencode-ai/postinstall.mjs`) s'il ne peut pas.
+
+Vérifié : npm génère bien `probe`, `probe.cmd`, `probe.ps1` pour un `bin` en `.mjs`, et
+`probe.cmd a b` rend « probe ok a,b ».
+
+### Le veilleur : `bun --watch` ne voit que son dossier courant
+
+`bun --watch` avertit pour chaque module hors de son dossier de travail :
+
+```
+warn: File …\packages\llm\src\providers\openai.ts is not in the project directory and will not be watched
+```
+
+Lancé depuis `packages/opencode`, il ignore donc `packages/llm`, `packages/core`, `packages/sdk`.
+Lancé depuis la racine du dépôt, il les couvre tous — et la CLI s'y résout (mesuré :
+`bun packages/opencode/src/index.ts --version` → `local`).
+
+**Piège mesuré** : rejouer les options de runtime de l'enfant avec un **autre dossier** casse la
+résolution — avec `--conditions=browser` depuis la racine, `react` (importé statiquement par le TUI)
+ne se résolvait plus et le serveur ne démarrait pas (`Cannot find package 'react' imported from
+…/cli/cmd/tui/app.tsx`). L'enfant reprend donc l'invocation du parent telle quelle.
+
+### Rechargement, mesuré
+
+```
+sans commande -> serve : /global/health 200, UI 200 a la racine (port 4099)
+serve.ts touche         : le pid qui ecoute passe de 24628 a 38328, health repond toujours
+--help                  : affiche les commandes (aucun serve force)
+```
