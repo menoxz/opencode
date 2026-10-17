@@ -37,7 +37,8 @@ Scope: ce dépôt. Le fichier global (`~/.config/opencodev2/AGENTS.md`) porte la
 - Section `Providers` : **grille cherchable puis détail** (`providers.tsx`).
 - Contrôle de choix = `picker.tsx` (cherchable), **jamais un `<select>` natif**.
 - Copie **en anglais** (tout `packages/webui/src/*`), nombres selon la langue ; commentaires et intitulés de test en français.
-- Fil mis à jour **en place** par `/event` ; `properties` porte la partie **aplatie** (+ `messageID`/`sessionID`), pas `{sessionID, part, time}` ; lecture par **étape** (`groupTurns`/`groupSteps`).
+- Fil mis à jour **en place** par le flux, pas par relecture REST ; **écouter `/global/event`** — `/event` est borné à un dossier (`middleware/workspace-routing.ts:86-88`) donc muet pour toute session ouverte ailleurs ⇒ fil figé jusqu'au rechargement (le REST, lui, résout le dossier de la session, donc il « répare » tout seul : c'est ce qui masque le défaut).
+- `message.part.updated` porte la partie **imbriquée** sous `properties.part` (`{sessionID, part, time}`) ; `message.part.delta` = `{sessionID, messageID, partID, field, delta}` ; `message.updated` = `{sessionID, info}`. Lire `properties` comme la partie rend `id` indéfini et l'événement est classé « nothing to change » — le fil ne bouge plus, sans erreur. Lecture par **étape** (`groupTurns`/`groupSteps`).
 - `question.asked` = seule écriture du fil (l'agent est bloqué dessus) ; réponse **positionnelle** `{answers: string[][]}`.
 - SSE : `EventSource` ne rappelle **jamais** `onerror` quand la socket reste ouverte sans rien livrer ⇒ garder le watchdog (silence > 30 s = flux remplacé + reconnexion).
 - Affichage : ±lignes d'une écriture = `edit.state.metadata.filediff` **uniquement** ; `bash.state.output` = sortie **complète** ⇒ borner à 12 lignes + « show N more lines ».
