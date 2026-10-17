@@ -3803,3 +3803,35 @@ geometrie relevee AVANT (CDP, styles calcules) :
 geometrie relevee APRES, meme session :
   prompt-block 75..142 mb=4px  | injections 146..195 | turn agent top=221 | reasoning mt=0px
 ```
+
+## Correction du lot 23 — l'air restant était une **rangée**, pas une marge (livré)
+
+Le lot 23 avait ramené l'écart carte → injections de 16 à 4 px, et l'écart
+injections → thinking de 34 à 26 px. Retour : « il y a toujours trop d'espace au-dessus et en
+dessous ». La mesure a montré ce que la première correction avait manqué : **ce n'était pas du vide**.
+
+```
+carte           75 .. 119     (44 px)
+pied (copie)   123 .. 142     <- une RANGEE de 23 px pour un glyphe de 19 px
+injections     146 ..         <- l'air « au-dessus » était cette rangée
+agent          221            (frontière de tour : 26 px)
+```
+
+Décomposition complète, et le résultat :
+
+```
+                                    avant      apres
+au-dessus : rangee de copie         23 px  ->   0      (l'action se pose sur la carte)
+            marge de la carte       16 px  ->   4
+en dessous : frontiere de tour      26 px  ->  10      (un tour qui finit sur une note)
+             marge du raisonnement   8 px  ->   0      (fait au lot 23)
+                                    -----        ---
+                              total  73 px  ->  14 px
+```
+
+La leçon, et elle vaut au-delà de ce bloc : **compter les marges ne suffit pas — il faut relever la
+chaîne des boîtes**. Une rangée d'action vit dans le flux, et rien dans le CSS ne dit « ceci est de
+l'air » : seule la mesure des boîtes le dit.
+
+Contrôle de l'action au pilotage réel (`Input.dispatchMouseEvent`) : `opacity` 0 au repos, 1 au
+survol, clic -> `copy-icon done` (copie réussie). Le geste est plus discret, il n'est pas perdu.
