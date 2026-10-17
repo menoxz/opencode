@@ -72,6 +72,46 @@ process.on("uncaughtException", (e) => {
 
 const args = hideBin(process.argv)
 
+/**
+ * Sans argument — ou seulement des options — `opencodev2` **sert** : il démarre le serveur, et
+ * l'interface web qu'il rend à sa racine. C'est le mode demandé par défaut, parce que c'est le
+ * **serveur** qui recharge à chaud ce qui vit — skills, agents, plugins, instructions — là où une
+ * session TUI ne recharge rien de ce qu'il sert. L'aide (`-h`) et la version restent intactes, et le
+ * TUI reste explicite.
+ */
+const asksHelpOrVersion = args.some((arg) => ["-h", "--help", "-v", "--version"].includes(arg))
+if (!asksHelpOrVersion && !args.some((arg) => !arg.startsWith("-"))) args.unshift("serve")
+
+/**
+ * Dans un **arbre de travail** (mode source), le serveur se relance à chaque modification de ses
+ * propres sources : c'est le « hot reload de tout le harnais ». Un binaire installé n'a pas de
+ * sources à surveiller, donc rien n'est relancé — d'où la condition sur `isLocal()`.
+ *
+ * L'enfant reprend **l'invocation du parent telle quelle** (mêmes arguments, mêmes options de
+ * runtime, même dossier) : c'est ce qui garantit qu'il se résout comme lui. Rejouer les options avec
+ * un autre dossier a été mesuré faux le 2026-10-17 — `--conditions=browser` depuis la racine ne
+ * résolvait plus `react` (importé par le TUI), et le serveur ne démarrait pas.
+ *
+ * Conséquence à connaître : `bun --watch` ne surveille que les fichiers **sous son dossier courant**.
+ * Lancé depuis `packages/opencode`, il ignore les paquets voisins (`packages/llm`, `packages/core`) ;
+ * lancé depuis la racine du dépôt, il les couvre tous — et la CLI s'y résout (mesuré).
+ *
+ * La garde est un **marqueur d'environnement**, et non la présence de `--watch` dans `execArgv`
+ * (dont la forme dépend de Bun) : sans elle, l'enfant se relancerait lui-même sans fin.
+ */
+if (Installation.isLocal() && !process.env.OPENCODE_WATCH) {
+  const { spawn } = await import("node:child_process")
+  const child = spawn(process.execPath, ["--watch", ...process.argv.slice(1)], {
+    stdio: "inherit",
+    env: { ...process.env, OPENCODE_WATCH: "1" },
+  })
+  for (const signal of ["SIGINT", "SIGTERM"] as const) {
+    process.on(signal, () => child.kill(signal))
+  }
+  child.on("exit", (code, signal) => process.exit(signal ? 1 : (code ?? 0)))
+  await new Promise(() => {})
+}
+
 function show(out: string) {
   const text = out.trimStart()
   if (!text.startsWith("opencodev2 ") && !text.startsWith("opencode ")) {

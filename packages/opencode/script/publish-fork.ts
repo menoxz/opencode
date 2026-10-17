@@ -14,13 +14,6 @@ const version = process.env.OPENCODE_VERSION || (await Bun.file("./package.json"
 if (!version) throw new Error("OPENCODE_VERSION is required")
 const scope = "@lux-tech/opencode-ai"
 const dryRun = process.argv.includes("--dry-run")
-const fakeExe = [
-  `echo "Error: ${scope}'s postinstall script was not run." >&2`,
-  'echo "This occurs when using --ignore-scripts during installation, or when using a" >&2',
-  'echo "package manager like pnpm that does not run postinstall scripts by default." >&2',
-  `echo "To fix this, run: cd node_modules/${scope} && node postinstall.mjs" >&2`,
-  "exit 1",
-].join("\n")
 
 const optionalDependencies: Record<string, string> = {}
 
@@ -73,11 +66,16 @@ for (const rawPath of new Bun.Glob("opencode-*/package.json").scanSync({ cwd: ".
 const meta = "./dist/opencode"
 await $`mkdir -p ${meta}/bin`.cwd(".")
 await $`cp ./script/postinstall.mjs ./dist/opencode/postinstall.mjs`
+// Le point d'entrée est un **lanceur Node**, pas un binaire : le paquet est multi-plateforme, et un
+// faux `.exe` (script shell) donnait sous Windows « not a valid application for this OS platform »
+// dès que le script d'installation n'avait pas tourné (Bun, pnpm, --ignore-scripts). Le lanceur
+// répare puis exécute, et dit quoi faire s'il ne peut pas.
+await $`cp ./script/opencodev2.mjs ./dist/opencode/bin/opencodev2.mjs`
+await $`rm -f ./dist/opencode/bin/opencode.exe`
 await $`cp ../../LICENSE ./dist/opencode/LICENSE`
 // The root README is the fork README; shipping it is what makes the npm package
 // page render (npm derives readmeFilename from the README inside the tarball).
 await $`cp ../../README.md ./dist/opencode/README.md`
-await Bun.file(`./dist/opencode/bin/opencode.exe`).write(fakeExe)
 await Bun.file(`./dist/opencode/package.json`).write(
   JSON.stringify(
     {
@@ -86,8 +84,10 @@ await Bun.file(`./dist/opencode/package.json`).write(
       description:
         "opencodev2 — AI-powered development tool. Community fork of opencode (MCP auto-reconnect, hot reload, eval pipeline, memory consolidation, unified prompt); installs the opencodev2 CLI alongside the official opencode.",
       // The fork installs its command as `opencodev2` so it can coexist with
-      // the upstream `opencode` binary from the `opencode-ai` package.
-      bin: { opencodev2: "./bin/opencode.exe" },
+      // the upstream `opencode` binary from the `opencode-ai` package. The target is a Node
+      // launcher, not the binary: it is portable, and it explains itself when the platform
+      // package was never installed.
+      bin: { opencodev2: "./bin/opencodev2.mjs" },
       scripts: { postinstall: "node ./postinstall.mjs" },
       keywords: ["opencode", "opencodev2", "ai", "coding-agent", "cli", "agent", "llm", "fork"],
       license: "MIT",
