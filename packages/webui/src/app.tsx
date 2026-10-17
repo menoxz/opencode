@@ -141,6 +141,7 @@ import {
   toggleAnswer,
   turnError,
   type Message,
+  type TurnCache,
   type Part,
   type PermissionReply,
   type PermissionRequest,
@@ -166,8 +167,15 @@ export default function App() {
   const [stream, setStream] = createSignal<EventStreamState>({ connected: false, reconnects: 0 })
   /** L'agent travaille : le serveur le dit (`session.status` → `busy`), on ne le devine pas. */
   const [working, setWorking] = createSignal(false)
+  /**
+   * L'identité des tours, gardée **entre deux rendus** : un tour dont les messages n'ont pas bougé
+   * est rendu tel quel, et Solid garde donc ses nœuds (mesuré : sans ce cache, l'animation d'entrée
+   * des injections démarrait 610 fois par tour pour 2 lignes). Vidé quand on change de session —
+   * les identifiants de messages d'une autre session n'ont rien à y faire.
+   */
+  const turnCache: TurnCache = new Map()
   /** Le fil se lit par **tour**, et chaque tour par **étape** — jamais par message brut. */
-  const turns = createMemo(() => groupTurns(messages()))
+  const turns = createMemo(() => groupTurns(messages(), turnCache))
   /** Les statistiques de la session : agrégées **une fois**, pour la section — jamais pour le fil. */
   const stats = createMemo(() => sessionStats(turns()))
   /**
@@ -1480,6 +1488,8 @@ export default function App() {
   const selectSession = async (sessionID: string) => {
     setActive(sessionID)
     setError(undefined)
+    // Autre session : les identifiants de messages qui y sont gardés n'ont rien à faire ici.
+    turnCache.clear()
     await loadMessages(sessionID)
   }
 
@@ -1620,6 +1630,7 @@ export default function App() {
     else localStorage.removeItem(DIR_KEY)
     setActive(undefined)
     setThread([])
+    turnCache.clear()
     void loadPath()
     void loadSessions()
     void loadPermissions()

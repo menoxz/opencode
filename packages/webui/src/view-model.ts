@@ -418,9 +418,39 @@ export function groupSteps(parts: Part[]): StepView[] {
  */
 const HIDDEN_AGENTS = new Set(["compaction"])
 
-export function groupTurns(messages: Message[]): TurnView[] {
+/** Ce qu'un tour a consommé pour être construit : ses messages, dans l'ordre. */
+type TurnSources = Message[]
+
+/**
+ * Cache d'identité des tours, fourni par l'appelant (un `Map` gardé par le composant). La fonction
+ * reste pure : la stabilité est un **effet** de la comparaison des messages d'entrée.
+ */
+export type TurnCache = Map<string, { sources: TurnSources; turn: TurnView }>
+
+/**
+ * Deux listes de messages sont-elles **les mêmes objets, dans le même ordre** ?
+ *
+ * C'est la condition exacte d'un tour inchangé : `reduceThread` ne clone que le message touché, donc
+ * l'identité d'un message dit si son contenu a bougé.
+ */
+function sameMessages(a: TurnSources, b: TurnSources): boolean {
+  if (a.length !== b.length) return false
+  for (let index = 0; index < a.length; index++) if (a[index] !== b[index]) return false
+  return true
+}
+
+export function groupTurns(messages: Message[], cache?: TurnCache): TurnView[] {
   const turns: TurnView[] = []
+  const sources: TurnSources[] = []
   let current: TurnView | undefined
+  let currentSources: TurnSources | undefined
+
+  const open = (turn: TurnView, message: Message) => {
+    current = turn
+    currentSources = [message]
+    turns.push(turn)
+    sources.push(currentSources)
+  }
 
   for (const message of messages) {
     const role = message.info.role
@@ -429,26 +459,49 @@ export function groupTurns(messages: Message[]): TurnView[] {
     // tour vide (des étapes sans texte), et l'écran montrerait une réponse blanche.
     if (HIDDEN_AGENTS.has(String(message.info.agent ?? ""))) continue
     if (role === "user") {
-      current = {
-        id: message.info.id,
-        role,
-        info: message.info,
-        replies: [],
-        prompt: parts.filter((part) => isVisiblePart(part)),
-        steps: [],
-      }
-      turns.push(current)
+      open(
+        {
+          id: message.info.id,
+          role,
+          info: message.info,
+          replies: [],
+          prompt: parts.filter((part) => isVisiblePart(part)),
+          steps: [],
+        },
+        message,
+      )
       continue
     }
     if (!current || current.role !== "user" || current.steps.length > 0) {
-      current = { id: message.info.id, role, info: message.info, replies: [], prompt: [], steps: [] }
-      turns.push(current)
+      open({ id: message.info.id, role, info: message.info, replies: [], prompt: [], steps: [] }, message)
     }
-    current.replies.push(message.info)
-    current.steps.push(...groupSteps(parts))
+    current!.replies.push(message.info)
+    current!.steps.push(...groupSteps(parts))
+    currentSources!.push(message)
   }
 
-  return turns
+  if (!cache) return turns
+
+  /*
+   * Un tour dont les messages n'ont pas changé **garde son identité**.
+   *
+   * Solid `For` recrée le nœud d'un élément dont la **référence** a changé : sans cela, le fil entier
+   * était reconstruit à chaque delta. Mesuré sur un tour réel le 2026-10-17 : l'animation d'entrée
+   * des injections a démarré **610 fois** pour **2** lignes — c'est-à-dire à chaque image — et le
+   * coût du rendu ne dépendait plus de ce qui avait changé mais de la taille du fil.
+   */
+  const stable: TurnView[] = []
+  for (let index = 0; index < turns.length; index++) {
+    const turn = turns[index]!
+    const entry = cache.get(turn.id)
+    if (entry && sameMessages(entry.sources, sources[index]!)) {
+      stable.push(entry.turn)
+      continue
+    }
+    cache.set(turn.id, { sources: sources[index]!, turn })
+    stable.push(turn)
+  }
+  return stable
 }
 
 /* -----------------------------------------------------------------------------

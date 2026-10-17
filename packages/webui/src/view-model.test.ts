@@ -45,6 +45,7 @@ import {
   type PermissionRequest,
   type QuestionRequest,
   type ToolState,
+  type TurnCache,
   type TurnView,
 } from "./view-model"
 
@@ -1118,6 +1119,47 @@ describe("groupTurns — les agents internes ne parlent pas à l'utilisateur", (
     ])
     expect(turns).toHaveLength(1)
     expect(turns[0]!.steps.length).toBeGreaterThan(0)
+  })
+})
+
+describe("l'identité des tours", () => {
+  const text = (id: string, value: string) => ({ type: "text", id, text: value })
+  const user = (id: string): Message => ({ info: { id, role: "user" }, parts: [text(id, "salut")] })
+  const reply = (id: string): Message => ({ info: { id, role: "assistant" }, parts: [text(id, "bonjour")] })
+
+  test("un tour dont les messages n'ont pas changé garde son identité", () => {
+    // C'est ce qui décide si Solid garde le nœud ou le recrée : sans cela, l'animation d'entrée des
+    // injections a été mesurée à **610 démarrages** pour 2 lignes, sur un seul tour.
+    const cache: TurnCache = new Map()
+    const messages = [user("u1"), reply("a1")]
+    const first = groupTurns(messages, cache)
+    const second = groupTurns(messages, cache)
+    expect(second).toHaveLength(first.length)
+    expect(second[0]).toBe(first[0])
+  })
+
+  test("un tour dont un message a changé est reconstruit", () => {
+    const cache: TurnCache = new Map()
+    const before = [user("u1"), reply("a1")]
+    const first = groupTurns(before, cache)
+    // `reduceThread` clone le message touché : c'est cette nouvelle référence qui doit invalider.
+    const after = [{ ...before[0]!, parts: [text("u1", "autre")] }, before[1]!]
+    const second = groupTurns(after, cache)
+    expect(second[0]).not.toBe(first[0])
+    expect(second[0]!.prompt[0]!.text).toBe("autre")
+  })
+
+  test("sans cache, chaque appel rend des tours neufs — l'ancien comportement reste disponible", () => {
+    const messages = [user("u1"), reply("a1")]
+    expect(groupTurns(messages)[0]).not.toBe(groupTurns(messages)[0])
+  })
+
+  test("un tour qui disparaît ne fait pas ressusciter le précédent", () => {
+    const cache: TurnCache = new Map()
+    groupTurns([user("u1"), reply("a1")], cache)
+    const only = groupTurns([user("u2"), reply("a2")], cache)
+    expect(only).toHaveLength(1)
+    expect(only[0]!.id).toBe("u2")
   })
 })
 

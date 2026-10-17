@@ -4883,10 +4883,20 @@ textarea {
   55%, 100% { opacity: 0.12; }
 }
 
-/* Les injections montent **pendant l'injection**, chaque bloc pour son compte : elles arrivent à
-   plusieurs secondes d'écart (mesuré : 1,9 s puis 5,1 s), et ouvrir une session ancienne ne doit rien
-   faire bouger. C'est le `busy` du fil qui autorise le mouvement — pas la présence des lignes. */
-.thread.busy .injections {
+/* Les injections montent **pendant l'injection**, une fois — et c'est la ligne « en cours » qui monte,
+   pas les lignes posées.
+
+   Mesuré sur un tour réel (2026-10-17, compteur d'identités de nœuds) : l'animation des lignes
+   posées a démarré **482 fois sur 482 nœuds distincts**. La cause n'est pas l'injection mais le
+   **regroupement** : la première réponse d'un tour est fusionnée dans le tour *utilisateur*
+   (`groupTurns`), donc chaque delta de cette réponse reconstruit le tour qui porte les injections.
+   Le gel est visible dans la chronologie : 6 démarrages jusqu'à 12 s (fin de l'injection), puis
+   232 — 520 — 708 dès que la réponse streame.
+
+   La ligne « en cours » (`injecting`), elle, vit dans une fenêtre où rien d'autre ne bouge : son
+   animation est donc réellement unique. Les lignes posées apparaissent sans mouvement — ce qui est
+   aussi plus juste : elles sont posées, elles ne bougent plus. */
+.injections.injecting {
   animation: rise-in 0.22s ease-out both;
 }
 
@@ -4950,7 +4960,7 @@ textarea {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .thread.busy .injections,
+  .injections.injecting,
   .tool.running .tool-line::after,
   .thread.busy .turn:last-child .reasoning-line svg,
   .thread.busy .turn:last-child .prose:last-of-type::after,
