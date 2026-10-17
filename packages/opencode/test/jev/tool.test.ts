@@ -1,8 +1,9 @@
 import { describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
-import { FetchHttpClient } from "effect/unstable/http"
+import { HttpClient, HttpClientResponse } from "effect/unstable/http"
 import { Agent } from "../../src/agent/agent"
 import { Config } from "@/config/config"
+import { JevClient } from "@/jev/client"
 import { SessionID, MessageID } from "../../src/session/schema"
 import { JevTool } from "@/tool/jev"
 import { Tool } from "@/tool/tool"
@@ -10,7 +11,39 @@ import { Truncate } from "@/tool/truncate"
 import { TestConfig } from "../fixture/config"
 import { testEffect } from "../lib/effect"
 
-const it = testEffect(Layer.mergeAll(FetchHttpClient.layer, Truncate.defaultLayer, Agent.defaultLayer))
+/**
+ * A fake transport: no socket, no DNS, no credential.
+ *
+ * `JevTool` takes its HttpClient from the ambient context instead of receiving
+ * one, so the fake is installed as the layer's `HttpClient` and `respond` is
+ * swapped per test. The provider lock refuses every host that is not one of its
+ * three presets, so a local Bun server can no longer stand in for the endpoint:
+ * the call used to leave for the real API with a fake key.
+ */
+let respond: () => Response = () => new Response("no fake reply configured", { status: 500 })
+
+type Capture = { url: string; authorization?: string; body?: unknown }
+const seen: Capture[] = []
+
+const http = HttpClient.make((request) =>
+  Effect.sync(() => {
+    seen.push({ url: request.url, authorization: request.headers["authorization"], body: decode(request.body) })
+    return HttpClientResponse.fromWeb(request, respond())
+  }),
+)
+
+/** The body of an outbound request, decoded. `schemaBodyJson` encodes it as bytes. */
+function decode(body: unknown): unknown {
+  const value = body as { _tag?: string; body?: unknown } | undefined
+  if (!value) return undefined
+  if (value._tag === "Raw") return value.body
+  if (value.body instanceof Uint8Array) return JSON.parse(new TextDecoder().decode(value.body))
+  return value.body
+}
+
+const dialled = () => seen[seen.length - 1]
+
+const it = testEffect(Layer.mergeAll(Layer.succeed(HttpClient.HttpClient, http), Truncate.defaultLayer, Agent.defaultLayer))
 
 const ctx = {
   sessionID: SessionID.make("ses_jev"),
@@ -22,19 +55,6 @@ const ctx = {
   metadata: () => Effect.void,
   ask: () => Effect.void,
 }
-
-const withServer = <A, E, R>(handler: () => Response, fn: (base: string) => Effect.Effect<A, E, R>) =>
-  Effect.acquireUseRelease(
-    Effect.sync(() =>
-      Bun.serve({
-        port: 0,
-        hostname: "127.0.0.1",
-        fetch: () => handler(),
-      }),
-    ),
-    (server) => fn(server.url.origin),
-    (server) => Effect.sync(() => server.stop(true)),
-  )
 
 const ENV_NAMES = ["JEV_API_KEY", "TYPESAFE_API_KEY", "TYPESAFE_BASE_URL", "TYPESAFE_MODEL", "COMMAND_CODE_API_KEY"] as const
 
@@ -88,54 +108,59 @@ const args: Tool.InferParameters<typeof JevTool> = {
 
 describe("tool.jev", () => {
   it.instance("renders typed answers with their probabilities and confidence", () =>
-    withServer(
-      () =>
-        Response.json({
-          model: "jev-latest",
-          answers: {
-            cleanup: { type: "choice", choice: "dist", probabilities: { dist: 0.91, none: 0.09 }, confidence: 0.982 },
-            risk: { type: "score", score: 0.31, confidence: 0.77 },
-          },
-        }),
-      (base) =>
-        Effect.gen(function* () {
-          const result = yield* withConfig({ jev: { api_key: "test-key", endpoint: `${base}/v1/systemone` } }, exec(args))
-          expect(result.title).toBe("Jev decision (jev-latest)")
-          expect(result.output).toContain("[cleanup] choice=dist confidence=0.982 probabilities={dist: 0.910, none: 0.090}")
-          expect(result.output).toContain("[risk] score=0.310 confidence=0.770")
-        }),
+    cleanEnv(
+      Effect.gen(function* () {
+        respond = () =>
+          Response.json({
+            model: "jev-latest",
+            answers: {
+              cleanup: { type: "choice", choice: "dist", probabilities: { dist: 0.91, none: 0.09 }, confidence: 0.982 },
+              risk: { type: "score", score: 0.31, confidence: 0.77 },
+            },
+          })
+        const result = yield* withConfig({ jev: { api_key: "test-key" } }, exec(args))
+        expect(result.title).toBe("Jev decision (jev-latest)")
+        expect(result.output).toContain("[cleanup] choice=dist confidence=0.982 probabilities={dist: 0.910, none: 0.090}")
+        expect(result.output).toContain("[risk] score=0.310 confidence=0.770")
+        expect(dialled()?.url).toBe(`${JevClient.COMMAND_CODE_BASE_URL}/v1/systemone`)
+      }),
     ),
   )
 
   it.instance("renders a noul answer as a probability with no confidence", () =>
-    withServer(
-      () => Response.json({ model: "jev-latest", answers: { destructive: { type: "noul", noul: 0.93 } } }),
-      (base) =>
-        Effect.gen(function* () {
-          const result = yield* withConfig(
-            { jev: { api_key: "test-key", endpoint: `${base}/v1/systemone` } },
-            exec({
-              state: args.state,
-              questions: { destructive: { type: "noul", instructions: "Is the action destructive?" } },
-            }),
-          )
-          expect(result.output).toContain("[destructive] noul=0.930 (probability yes)")
-        }),
+    cleanEnv(
+      Effect.gen(function* () {
+        respond = () => Response.json({ model: "jev-latest", answers: { destructive: { type: "noul", noul: 0.93 } } })
+        const result = yield* withConfig(
+          { jev: { api_key: "test-key" } },
+          exec({
+            state: args.state,
+            questions: { destructive: { type: "noul", instructions: "Is the action destructive?" } },
+          }),
+        )
+        expect(result.output).toContain("[destructive] noul=0.930 (probability yes)")
+      }),
     ),
   )
 
-  it.instance("uses the environment base URL and model when config has none", () =>
-    withServer(
-      () => Response.json({ model: "openjev-latest", answers: { cleanup: { type: "choice", choice: "dist", confidence: 0.9 } } }),
-      (base) =>
-        withEnv(
-          { TYPESAFE_API_KEY: "env-key", TYPESAFE_BASE_URL: base, TYPESAFE_MODEL: "openjev-latest" },
-          Effect.gen(function* () {
-            const result = yield* withConfig({}, exec(args))
-            expect(result.title).toBe("Jev decision (openjev-latest)")
-            expect(result.output).toContain("[cleanup] choice=dist")
-          }),
-        ),
+  // The environment can no longer choose a host or a model: every provider is a
+  // locked preset, and only the resolved provider's own variable authenticates
+  // it. With COMMAND_CODE_API_KEY and no config, the tool dials the Command Code
+  // endpoint with the preset's model.
+  it.instance("dials the locked host with the environment key when config carries no key", () =>
+    withEnv(
+      { COMMAND_CODE_API_KEY: "env-key" },
+      Effect.gen(function* () {
+        respond = () =>
+          Response.json({ model: JevClient.COMMAND_CODE_MODEL, answers: { cleanup: { type: "choice", choice: "dist", confidence: 0.9 } } })
+        const result = yield* withConfig({}, exec(args))
+        expect(result.title).toBe(`Jev decision (${JevClient.COMMAND_CODE_MODEL})`)
+        expect(result.output).toContain("[cleanup] choice=dist")
+        const request = dialled()
+        expect(request?.url).toBe(`${JevClient.COMMAND_CODE_BASE_URL}/v1/systemone`)
+        expect(request?.authorization).toBe("Bearer env-key")
+        expect(request?.body).toMatchObject({ model: JevClient.COMMAND_CODE_MODEL })
+      }),
     ),
   )
 
@@ -145,34 +170,32 @@ describe("tool.jev", () => {
         const result = yield* withConfig({}, exec(args))
         expect(result.title).toBe("Jev decision unavailable")
         expect(result.metadata).toMatchObject({ error: "JevNotConfiguredError" })
-        expect(result.output).toContain("TYPESAFE_API_KEY")
+        expect(result.output).toContain(JevClient.PROVIDER_ENV_KEY)
       }),
     ),
   )
 
   it.instance("reports an upstream HTTP failure without throwing", () =>
-    withServer(
-      () => new Response("upstream unavailable", { status: 503 }),
-      (base) =>
-        Effect.gen(function* () {
-          const result = yield* withConfig({ jev: { api_key: "test-key", endpoint: `${base}/v1/systemone` } }, exec(args))
-          expect(result.title).toBe("Jev decision unavailable")
-          expect(result.metadata).toMatchObject({ error: "JevApiError" })
-          expect(result.output).toContain("HTTP 503")
-        }),
+    cleanEnv(
+      Effect.gen(function* () {
+        respond = () => new Response("upstream unavailable", { status: 503 })
+        const result = yield* withConfig({ jev: { api_key: "test-key" } }, exec(args))
+        expect(result.title).toBe("Jev decision unavailable")
+        expect(result.metadata).toMatchObject({ error: "JevApiError" })
+        expect(result.output).toContain("HTTP 503")
+      }),
     ),
   )
 
   it.instance("reports a malformed upstream payload without throwing", () =>
-    withServer(
-      () => Response.json({ model: "jev-latest" }),
-      (base) =>
-        Effect.gen(function* () {
-          const result = yield* withConfig({ jev: { api_key: "test-key", endpoint: `${base}/v1/systemone` } }, exec(args))
-          expect(result.title).toBe("Jev decision unavailable")
-          expect(result.metadata).toMatchObject({ error: "JevDecodeError" })
-          expect(result.output).toContain("does not match the System One schema")
-        }),
+    cleanEnv(
+      Effect.gen(function* () {
+        respond = () => Response.json({ model: "jev-latest" })
+        const result = yield* withConfig({ jev: { api_key: "test-key" } }, exec(args))
+        expect(result.title).toBe("Jev decision unavailable")
+        expect(result.metadata).toMatchObject({ error: "JevDecodeError" })
+        expect(result.output).toContain("does not match the System One schema")
+      }),
     ),
   )
 })
