@@ -3738,3 +3738,68 @@ Le premier essai a conclu « la page gèle » sur un onglet **non visible** : Ch
 d'arrière-plan, l'échantillonneur de frames s'arrêtait net (`n` figé) — un artefact de sonde, pas le
 défaut. `Page.bringToFront` a rendu la mesure valable. Même famille que la leçon du Lot 20 : un relevé
 qui accuse le code doit d'abord être sûr de son instrument.
+
+## Lot 23 — les injections accrochées à la carte, et où passent les secondes du départ (livré)
+
+Deux retours sur une capture : « le début de l'étape était trop lent, l'injection des instructions
+était très lente, je ne sais pas pourquoi » et « il y a trop d'espace au-dessus et en dessous des
+blocs d'instructions injectées ».
+
+### 1. L'espacement — mesuré, corrigé
+
+Relevé sur la session réelle (`ses_eb6354224ffe…`, `...\packages\opencode\tester`), boîtes et styles
+calculés par CDP :
+
+```
+                              avant      apres
+.prompt-block margin-bottom    16 px  ->   4 px   (quand des injections suivent)
+ecart carte -> injections      16 px  ->   4 px
+.reasoning margin-top           8 px  ->   0 px
+ecart injections -> thinking   34 px  ->  26 px
+hauteur du tour utilisateur   132 px  -> 120 px
+```
+
+Deux causes, deux règles :
+
+| regle | pourquoi |
+|---|---|
+| `.prompt-block:has(+ .injections) { margin-bottom: 4px }` | les injections sont la **note de bas de carte** du prompt : elles s'y accrochent au lieu de flotter entre la carte et la réponse |
+| `.turn > :first-child { margin-top: 0 }` | la frontière de tour (26 px, `.transcript { gap }`) porte déjà l'air ; `.reasoning` met 8 px pour se détacher d'une ligne d'action qui le précède, ce qui n'a pas lieu d'être quand il ouvre le tour |
+
+Les 26 px restants sont la frontière de tour, **identique entre toutes les paires de tours** : la
+réduire changerait le rythme de tout le fil — ce n'est pas ce qui est demandé.
+
+### 2. La lenteur du départ — mesurée, et elle est côté serveur
+
+Horodatage des événements du flux (`/global/event`), un tour réel, prompt « how are you? » :
+
+```
++ 1.25s  prompt envoye
++ 2.39s  message.updated user + part.updated « how are you? »
++ 2.40s  session.status busy          <- la page dit deja « working... »
++ 3.69s  part.updated injections n°1 (Instruction injections · 3 source(s))
++10.21s  part.updated injections n°2 (Context injections · 4 section(s) · 42.6k chars)
++11.89s  part.updated step-start
++12.74s  premier token (DELTA text)
+```
+
+**11,5 s entre l'envoi et le premier mot**, dont **6,5 s entre les deux lignes d'injections** :
+c'est le serveur qui assemble le contexte injecté (lecture des fichiers d'instructions, volume des
+sections). L'écran, lui, a dit « working… » dès **2,4 s** et n'a rien retardé.
+
+Un piège de diagnostic écarté au passage : le « 42.6k chars » affiché est la **somme des sections**
+calculée par l'UI — le texte de la partie n'en fait que **226 caractères**. `parseInjections` n'était
+donc pas en cause, et la mesure l'a dit avant toute correction.
+
+### Preuve
+
+```
+vitest (webui)  : 24 fichiers / 623 tests, exit 0
+tsgo --noEmit   : exit 0
+vite build      : exit 0   (css 52,69 ko brut / 9,37 ko gzip)
+
+geometrie relevee AVANT (CDP, styles calcules) :
+  prompt-block 75..142 mb=16px | injections 158..207 | turn agent top=233 | reasoning mt=8px
+geometrie relevee APRES, meme session :
+  prompt-block 75..142 mb=4px  | injections 146..195 | turn agent top=221 | reasoning mt=0px
+```
