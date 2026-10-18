@@ -102,6 +102,15 @@ export type StreamInput = {
    * DEFAULT_MAX_PROVIDER_STEPS; always clamped to >= 1 (the SDK default).
    */
   maxSteps?: number
+  /**
+   * Steering prompts written while this turn is already running. The turn's message list is
+   * materialised once, and the SDK chains the following tool rounds inside this same provider
+   * invocation, so the outer turn loop cannot carry a steer that arrives mid-turn: it would wait
+   * for the run to settle and then open a turn of its own. `prepareStep` asks this callback at
+   * every step boundary instead, and appends what it returns. Undefined for callers that have no
+   * session to re-read (compaction, subtasks, one-shot calls).
+   */
+  steer?: () => ModelMessage[]
 }
 
 export type StreamRequest = StreamInput & {
@@ -447,6 +456,11 @@ const live: Layer.Layer<
         // of the next step's prompt — replaying volatile state into the cached
         // history. Re-attach it as the last message of every step.
         prepareStep: ({ messages: stepMessages }) => {
+          // A steer that arrived during the previous step belongs to the step about to start.
+          // Appending it leaves every byte before it untouched, so the provider's cached prefix
+          // survives; it is also why this must stay a tail append and never a re-sort.
+          const steered = input.steer?.() ?? []
+          const base = steered.length > 0 ? [...stepMessages, ...steered] : stepMessages
           const tail = prepared.messages.at(-1)
           if (
             tail === undefined ||
@@ -454,8 +468,8 @@ const live: Layer.Layer<
             typeof tail.content !== "string" ||
             !tail.content.includes(WorkingState.MARKER)
           )
-            return { messages: stepMessages }
-          return { messages: [...stepMessages.filter((message) => message !== tail), tail] }
+            return { messages: base }
+          return { messages: [...base.filter((message) => message !== tail), tail] }
         },
         model: wrapLanguageModel({
           model: language,

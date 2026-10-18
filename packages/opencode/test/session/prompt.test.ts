@@ -3367,3 +3367,88 @@ noLLMServer.instance(
     }),
   30_000,
 )
+
+// A steer is a prompt sent while a run is active: design says it "rides that run at its next step
+// (answer + keep working)" and "must not open a second turn" (submit-mode.ts, prompt-queue.ts:43-48).
+// The first response is held so the steer lands while request 1 is still open, which is exactly the
+// real case (measured on live data: a steer sent 14 s into a run, answered only after that run's
+// message completed, as a turn of its own).
+it.instance(
+  "a steer sent during a run rides the running turn's next request",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({
+        title: "Steer",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+
+      const gate = yield* Deferred.make<void>()
+      yield* llm.push(
+        reply().wait(deferredAsPromise(gate)).tool("bash", {
+          command: "echo ok",
+          description: "noop",
+          timeout: 10_000,
+        }),
+      )
+      yield* llm.text("second done")
+
+      yield* prompt.prompt({
+        sessionID: session.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "text", text: "ANCHOR-MARKER" }],
+      })
+
+      const run = yield* prompt.loop({ sessionID: session.id }).pipe(Effect.forkChild)
+      yield* llm.wait(1)
+
+      // Exactly what the TUI sends on prompt.steer (steerMetadata): the text part carries the flag.
+      const steer = yield* sessions.updateMessage({
+        id: MessageID.ascending(),
+        role: "user",
+        sessionID: session.id,
+        agent: "build",
+        model: ref,
+        time: { created: Date.now() },
+      })
+      yield* sessions.updatePart({
+        id: PartID.ascending(),
+        messageID: steer.id,
+        sessionID: session.id,
+        type: "text",
+        text: "STEER-MARKER",
+        metadata: { steer: true },
+      })
+
+      // The steer must be readable by the run's own message view *before* the step that follows it,
+      // otherwise a missing marker in request 2 would only prove a timing mistake in this test.
+      const visible = yield* pollWithTimeout(
+        Effect.gen(function* () {
+          const seen = yield* MessageV2.filterCompactedEffect(session.id)
+          return seen.some((m) => m.info.id === steer.id) ? true : undefined
+        }),
+        "the steer never became visible to the session",
+      )
+      expect(visible).toBe(true)
+
+      succeedVoid(gate)
+      yield* llm.wait(2)
+
+      const inputs = yield* llm.inputs
+      // The steer must ride the request the *running* turn makes after it, not merely open a turn
+      // of its own once the run settles (which is what the live session showed).
+      expect(JSON.stringify(inputs.at(-1))).toContain("STEER-MARKER")
+      const msgs = yield* MessageV2.filterCompactedEffect(session.id)
+
+      expect(
+        msgs.some((m) => m.info.role === "assistant" && m.info.parentID === steer.id),
+      ).toBe(false)
+
+      yield* prompt.cancel(session.id)
+      yield* Fiber.await(run)
+    }),
+  30_000,
+)

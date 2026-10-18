@@ -93,7 +93,7 @@ import { Reference } from "@/reference/reference"
 import * as DateTime from "effect/DateTime"
 import { eq } from "@/storage/db"
 import * as Database from "@/storage/db"
-import { SessionTable } from "./session.sql"
+import { MessageTable, PartTable, SessionTable } from "./session.sql"
 import { referencePromptMetadata, referenceTextPart } from "./prompt/reference"
 import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
@@ -2576,6 +2576,55 @@ contextSummary.add("skills", skills ? "inject relevant skill summary" : "no rele
             if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
             const handleProcessStart = Date.now()
             yield* reachedProvider
+            // A steer written while this turn is running never enters the list below, and the SDK
+            // chains the following tool rounds inside this one `process` call, so the outer loop
+            // cannot carry it before the turn ends — the steer then waits and opens a turn of its
+            // own. Read it back at every step boundary instead, and deliver it exactly the way the
+            // between-turns path does (the `<system-reminder>` envelope further up this loop), so
+            // the model treats it as an interjection rather than a new request.
+            const deliveredSteers = new Set(
+              msgs.filter((message) => PromptQueue.isSteerUser(message)).map((message) => String(message.info.id)),
+            )
+            const steer = () =>
+              Database.use((db) => {
+                const fresh: { role: "user"; content: string }[] = []
+                const rows = db
+                  .select()
+                  .from(MessageTable)
+                  .where(eq(MessageTable.session_id, sessionID))
+                  .all()
+                for (const row of rows) {
+                  const id = String(row.id)
+                  // Only a prompt written after the anchored turn can be a steer for this run.
+                  if (id <= String(anchorUserID) || deliveredSteers.has(id)) continue
+                  if ((row.data as { role?: string }).role !== "user") continue
+                  const texts: string[] = []
+                  for (const part of db.select().from(PartTable).where(eq(PartTable.message_id, row.id)).all()) {
+                    // `PartData` is `Omit<Part, …>` over a union, so it does not discriminate on
+                    // `type`: name the shape this lookup actually reads.
+                    const data = part.data as { type: string; text?: string; metadata?: { steer?: unknown } }
+                    if (data.type !== "text") continue
+                    if (data.metadata?.steer !== true) continue
+                    if (typeof data.text !== "string") continue
+                    texts.push(data.text)
+                  }
+                  const text = texts.join("\n")
+                  if (!text.trim()) continue
+                  deliveredSteers.add(id)
+                  fresh.push({
+                    role: "user",
+                    content: [
+                      "<system-reminder>",
+                      "The user sent the following message:",
+                      text,
+                      "",
+                      "Address this message if it is still relevant, then continue toward the current objective.",
+                      "</system-reminder>",
+                    ].join("\n"),
+                  })
+                }
+                return fresh
+              })
             const result = yield* handle.process({
               user: lastUser,
               agent,
@@ -2583,6 +2632,7 @@ contextSummary.add("skills", skills ? "inject relevant skill summary" : "no rele
               sessionID,
               parentSessionID: session.parentID,
               system,
+              steer,
               messages: [
                 ...modelMsgs,
                 ...(injectedMessage ? [{ role: "user" as const, content: PromptMethodology.wrapInjectedGuidance(injectedMessage)! }] : []),
