@@ -234,3 +234,75 @@ Relevé de la décision (2.4.9) :
 Preuve de la décision sur le binaire déployé (sonde bornée : `Start-Process -WindowStyle Hidden`
 + redirection des deux flux + `taskkill /T /F`) — le serveur écrit `listening on http://…` sur
 **stdout**, le TUI `Ask anything`, l'aide `Commands:` sur **stderr**.
+
+## Base en avance sur le code : `session_message.seq` (mesuré 2026-10-18)
+
+Symptôme : **toute** invite échoue en `500` — `UnknownError` côté client, `SQLiteError: NOT NULL
+constraint failed: session_message.seq` côté serveur — **avant tout appel de modèle**, aussi bien par
+l'API (`/session/{id}/prompt_async`, `/session/{id}/message`) que par `opencodev2 cli "…"`. Le message
+utilisateur n'est même pas persisté (`messages = 0`), et le premier tour de soupçon (« le prompt ne
+part pas ») est faux : c'est le stockage qui refuse.
+
+Diagnostic — comparer le DDL réellement présent à celui du dépôt :
+
+```
+sqlite3 -readonly <données>/opencodev2/opencode.db "select sql from sqlite_master where name='session_message';"
+git grep -n "session_v2" -- packages/opencode/src packages/opencode/migration   # vide dans ce dépôt
+```
+
+Cas mesuré : la base portait `session_message(seq integer NOT NULL, FK → session_v2)` — créée par le
+DDL **d'exécution** d'une lignée plus récente (`CREATE TABLE IF NOT EXISTS`) — alors que le dépôt crée
+`session_message` **sans** `seq`, FK → `session`. Le code insère une ligne sans `seq` ⇒ contrainte
+violée. Indices de chronologie utiles : les dernières écritures « forme dépôt » (table `message`) et
+« forme récente » (`session_message.seq`) datent de la veille ⇒ la base a été écrite après la dernière
+mise à jour du code, et `v2.4.10` a exactement le même schéma (ce n'est donc jamais la version
+déployée qui a cassé, mais la base qui a avancé).
+
+Réparation — réversible, aucune ligne perdue :
+
+1. **Prouver sur une copie** (jamais la vraie base) :
+   `sqlite3 -readonly <base> "VACUUM INTO '<temp>/opencodev2/opencode.db';"` (≈ 44 s pour 2,9 Go), puis
+   copier `auth.json`, `account.json`, `.migrate-state` et lancer avec `XDG_DATA_HOME` pointant sur ce
+   dossier isolé.
+2. Recréer la table dans la forme du dépôt, l'ancienne gardée en `session_message_newer_backup` :
+
+```sql
+PRAGMA busy_timeout=15000;
+PRAGMA foreign_keys=OFF;
+BEGIN;
+DROP INDEX IF EXISTS `session_message_session_seq_idx`;
+DROP INDEX IF EXISTS `session_message_session_type_seq_idx`;
+DROP INDEX IF EXISTS `session_message_session_time_created_id_idx`;
+DROP INDEX IF EXISTS `session_message_time_created_idx`;
+ALTER TABLE `session_message` RENAME TO `session_message_newer_backup`;
+CREATE TABLE `session_message` (          -- DDL de migration/20260427172553_slow_nightmare
+	`id` text PRIMARY KEY,
+	`session_id` text NOT NULL,
+	`type` text NOT NULL,
+	`time_created` integer NOT NULL,
+	`time_updated` integer NOT NULL,
+	`data` text NOT NULL,
+	CONSTRAINT `fk_session_message_session_id_session_id_fk` FOREIGN KEY (`session_id`) REFERENCES `session`(`id`) ON DELETE CASCADE
+);
+INSERT INTO `session_message` (`id`,`session_id`,`type`,`time_created`,`time_updated`,`data`)
+  SELECT `id`,`session_id`,`type`,`time_created`,`time_updated`,`data` FROM `session_message_newer_backup`;
+CREATE INDEX `session_message_session_idx` ON `session_message` (`session_id`);
+CREATE INDEX `session_message_session_type_idx` ON `session_message` (`session_id`,`type`);
+CREATE INDEX `session_message_time_created_idx` ON `session_message` (`time_created`);
+COMMIT;
+```
+
+Les index de la forme récente portent les noms de colonnes `seq` : `ALTER TABLE … DROP COLUMN seq`
+échouerait sur eux, d'où la recréation complète plutôt que la suppression de colonne.
+
+3. Contrôles : même `count(*)` avant/après (53 962 dans le cas mesuré), `PRAGMA integrity_check` = `ok`,
+   `pragma_table_info('session_message')` **sans** `seq`. Preuve de bon fonctionnement : après
+   réparation, l'invite **atteint le fournisseur** et la base **gagne** des lignes (`model-switched`,
+   `agent-switched`) au lieu de refuser.
+4. Les 552 lignes orphelines préexistantes (session absente de `session`) restent : SQLite ne valide pas
+   les lignes déjà présentes, seules les insertions sont contrôlées.
+5. Ce qui reste hors de la base : les échecs fournisseurs du moment — `opencode-go/*-free` (clé
+   expirée), `orcarouter/*-free` (le prompt système du fork dépasse le plafond du palier gratuit),
+   `opencode.ai` (DNS `ENOTFOUND`), `nvidia/*` (`Unsupported parameter(s): promptCacheKey`). Un échec de
+   tour n'est donc plus un indice de stockage dès qu'un de ces messages apparaît.
+
