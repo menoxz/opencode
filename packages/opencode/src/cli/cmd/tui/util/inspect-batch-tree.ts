@@ -106,7 +106,7 @@ export function inspectBatchTree(props: InspectBatchViewInput) {
   const planned = Array.isArray(input.actions) ? "" : `${positive(metadata.actions) ?? "?"} actions`
 
   return {
-    title: breakdown ? `Explore · ${breakdown}` : `Explore${planned ? ` · ${planned}` : ""}`,
+    title: breakdown ? `Explore: ${breakdown}` : `Explore${planned ? `: ${planned}` : ""}`,
     rows,
     note: [
       actions.length === 0 ? (status === "pending" ? "Waiting for actions" : "Actions unavailable") : "",

@@ -74,7 +74,7 @@ test("a large output is folded by default and unfolds from the keyboard", async 
   await settled(app)
 
   // Folded: the summary and the collapsed marker are visible, the body is not.
-  expect(app.captureCharFrame()).toContain("▶ output · 12 lines")
+  expect(app.captureCharFrame()).toContain("▶ output: 12 lines")
   expect(app.captureCharFrame()).not.toContain("output line 0")
 
   focusToggle(app.renderer)
@@ -82,7 +82,7 @@ test("a large output is folded by default and unfolds from the keyboard", async 
   await settled(app)
 
   // Unfolded: the marker flips and the full untruncated body is present.
-  expect(app.captureCharFrame()).toContain("▼ output · 12 lines")
+  expect(app.captureCharFrame()).toContain("▼ output: 12 lines")
   expect(app.captureCharFrame()).toContain("output line 0")
   expect(app.captureCharFrame()).toContain("output line 11")
 })

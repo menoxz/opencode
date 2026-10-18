@@ -124,7 +124,7 @@ test("the batch reads as one line until clicked, and closes again on a second cl
   await settled(app)
   const closed = nonEmpty(app)
   expect(closed).toHaveLength(1)
-  expect(closed[0]).toContain("✱ Explore · 1 read 1 grep 1 glob")
+  expect(closed[0]).toContain("✱ Explore: 1 read 1 grep 1 glob")
   expect(closed[0]).toContain("▸")
   expect(closed[0]).not.toContain("Read src/main.ts")
   await clickHeader(app)
@@ -140,7 +140,7 @@ test("the batch reads as one line until clicked, and closes again on a second cl
 
 test("results join by id and type, mark errors/skips without exposing their text", () => {
   const tree = inspectBatchTree({ input, output, status: "completed" })
-  expect(tree.title).toBe("Explore · 1 read 1 grep 1 glob")
+  expect(tree.title).toBe("Explore: 1 read 1 grep 1 glob")
   expect(tree.rows[0].label).toContain("· truncated")
   expect(tree.rows.map((row) => row.icon)).toEqual(["✓", "✗", "−"])
   expect(tree.rows.map((row) => row.failed)).toEqual([false, true, false])

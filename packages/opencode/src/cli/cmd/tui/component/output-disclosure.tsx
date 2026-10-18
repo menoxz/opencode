@@ -78,7 +78,7 @@ export function OutputDisclosure(props: {
       >
         <text fg={focused() ? theme.primary : theme.textMuted}>{open() ? "▼" : "▶"}</text>
         <text fg={(props.color as never) ?? theme.textMuted} wrapMode="none">
-          {`${props.label} · ${summarizeOutput(props.value)}`}
+          {`${props.label}: ${summarizeOutput(props.value)}`}
         </text>
       </box>
       <Show when={open()}>

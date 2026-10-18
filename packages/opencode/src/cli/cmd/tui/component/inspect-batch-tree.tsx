@@ -24,7 +24,7 @@ export function InspectBatchTree(
     setOpen((prev) => !prev)
   }
   // Ce que le lot **est** : l'icône précède un titre qui se lit comme une phrase
-  // (`✱ Explore 2 read 1 grep`). Aucun état par enfant — le succès ne s'annonce pas —
+  // (`✱ Explore: 2 read 1 grep`). Aucun état par enfant — le succès ne s'annonce pas —
   // sauf l'échec, qui met la ligne en rouge, et l'attente, qui garde son spinner.
   const failed = (row: InspectBatchRow) => row.failed
   return (

@@ -24,10 +24,10 @@ export function instructionSources(parts: Part[]): string[] {
 /** En-tête de la ligne. Zéro source connue = les instructions **entrent** dans le contexte. */
 export function instructionsHeading(count: number): string {
   if (count === 0) {
-    return "core/instructions · injecting"
+    return "core/instructions: injecting"
   }
 
-  return `core/instructions · ${count} source${count === 1 ? "" : "s"}`
+  return `core/instructions: ${count} source${count === 1 ? "" : "s"}`
 }
 
 /**

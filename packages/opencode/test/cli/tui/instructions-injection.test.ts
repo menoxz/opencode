@@ -48,8 +48,8 @@ describe("instructions injection", () => {
   })
 
   test("the heading counts, and never announces zero", () => {
-    expect(instructionsHeading(1)).toBe("core/instructions · 1 source")
-    expect(instructionsHeading(3)).toBe("core/instructions · 3 sources")
+    expect(instructionsHeading(1)).toBe("core/instructions: 1 source")
+    expect(instructionsHeading(3)).toBe("core/instructions: 3 sources")
   })
 
   /**
@@ -58,7 +58,7 @@ describe("instructions injection", () => {
    * l'animation doit s'arrêter, même si la réponse continue de couler.
    */
   test("no source yet means injecting, and any source ends the animation", () => {
-    expect(instructionsHeading(0)).toBe("core/instructions · injecting")
+    expect(instructionsHeading(0)).toBe("core/instructions: injecting")
     expect(instructionsInjecting([], true)).toBe(true)
     expect(instructionsInjecting([], false)).toBe(false)
     expect(instructionsInjecting(["Instructions from: a"], true)).toBe(false)
