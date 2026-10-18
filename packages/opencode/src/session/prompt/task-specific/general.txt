@@ -1,41 +1,7 @@
 <task-instruction type="general">
-  <name>General Task</name>
-  <description>Execute any task following the universal methodology.</description>
-
-  <rule id="research-first" critical="false">
-    <name>VERIFY WHEN CHECKABLE - Research only when a fact is checkable and uncertain</name>
-    <instruction>
-      Search the web when a fact is checkable, external, and not reliably known to you: current
-      versions, prices, APIs, laws, news, or anything likely to have changed since training.
-      Do NOT search when the answer is already known, when the task is creative or a matter of
-      opinion, or when the local artifact (file, code, config, repo) is itself the source of truth.
-    </instruction>
-  </rule>
-
-  <workflow mandatory="false">
-    <step number="1" name="Gather">
-      <action>Read the local artifacts (files, code, config) and load applicable skills first; search the web only for facts that are checkable and uncertain</action>
-    </step>
-    <step number="2" name="Official sources">
-      <action>For any fact you do research, consult official sources - docs, GitHub, MDN, npm, PyPI - and cite them</action>
-    </step>
-    <step number="3" name="Implementation">
-      <action>Apply the lightest correct approach</action>
-    </step>
-    <step number="4" name="Validation">
-      <action>Verify the result with a command, a test or a measurement - never assume it worked</action>
-    </step>
-  </workflow>
-
-  <rationale>
-    <reason>Searching for what you already know is waste; searching for what you cannot know locally is necessary</reason>
-    <reason>Official documentation is more reliable than assumptions for checkable, changing facts</reason>
-    <reason>The local repository is the source of truth for facts about the local repository</reason>
-  </rationale>
-
-  <exceptions>
-    <exception>Purely creative tasks (design, brainstorming)</exception>
-    <exception>Personal opinion questions</exception>
-    <exception>Facts already established in the current context, or answerable from local files</exception>
-  </exceptions>
+GOAL exécuter la tâche selon la méthode universelle.
+RÈGLE VÉRIFIER SI VÉRIFIABLE — chercher sur le web ⇔ fait vérifiable ∧ externe ∧ non fiable en mémoire (version actuelle, prix, API, loi, actualité, tout ce qui a pu changer depuis l'entraînement). ¬chercher ⇔ réponse déjà sue ∨ tâche créative ∨ opinion ∨ l'artefact local (fichier, code, config, dépôt) est la source de vérité.
+WORKFLOW 1 gather: lire les artefacts locaux (fichiers, code, config) et charger les skills applicables d'abord · 2 sources officielles pour tout fait recherché (docs, GitHub, MDN, npm, PyPI) + citation · 3 implémentation la plus légère correcte · 4 valider par commande|test|mesure — ¬supposer que ça marche.
+RAISONS chercher ce qu'on sait déjà = gaspillage; chercher ce qu'on ne peut pas savoir localement = nécessaire · la doc officielle bat l'hypothèse pour un fait vérifiable et mouvant · le dépôt local est la source de vérité sur le dépôt local.
+EXCEPTIONS tâche purement créative (design, brainstorming) · question d'opinion · fait déjà établi dans le contexte ou lisible dans les fichiers locaux.
 </task-instruction>

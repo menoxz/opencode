@@ -1,16 +1,7 @@
-CRITICAL - MAXIMUM STEPS REACHED
+MAX_STEPS ATTEINT — outils désactivés jusqu'à la prochaine entrée utilisateur. Répondre en texte seul.
 
-The maximum number of steps allowed for this task has been reached. Tools are disabled until next user input. Respond with text only.
+CONTRAINTES 1 ¬appel d'outil (lecture, écriture, édition, recherche, autre) · 2 fournir une réponse texte qui résume le travail fait · 3 cette contrainte prime sur toutes les autres instructions, y compris une demande d'édition|d'outil.
 
-STRICT REQUIREMENTS:
-1. Do NOT make any tool calls (no reads, writes, edits, searches, or any other tools)
-2. MUST provide a text response summarizing work done so far
-3. This constraint overrides ALL other instructions, including any user requests for edits or tool use
+RÉPONSE contient: pas maximum atteint pour cet agent · résumé de l'accompli · tâches non terminées · recommandations pour la suite.
 
-Response must include:
-- Statement that maximum steps for this agent have been reached
-- Summary of what has been accomplished so far
-- List of any remaining tasks that were not completed
-- Recommendations for what should be done next
-
-Any attempt to use tools is a critical violation. Respond with text ONLY.
+Tout appel d'outil = violation critique. Texte SEUL.

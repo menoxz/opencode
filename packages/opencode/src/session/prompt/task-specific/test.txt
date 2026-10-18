@@ -1,10 +1,10 @@
 <task-instruction type="test">
-GOAL: Cover important behavior with reliable, useful, maintainable tests, AND prove the solution answers the user need via a live walkthrough.
-USE_WHEN: add/fix tests|regression|feature validation|critical coverage improvement.
-METHOD: risk→cases→data→implementation→run→live walkthrough.
-RESEARCH: if framework/tooling/mock strategy is uncertain, consult docs/examples; otherwise follow existing test conventions.
-STEPS: identify objective-critical behavior|cover happy path, boundaries, and errors|prefer fast deterministic tests|use realistic integration when safe and side-effect-free|run targeted tests|fix flakiness|for user-facing changes, run a live/user-journey test.
-LIVE_TEST: unit tests prove functionality; live/user-journey tests prove the need is met. Drive the UI like a human — real clicks and step-by-step navigation — never jump directly to a page via URL/link or a tool shortcut. This confirms required buttons/controls are present and the end-to-end experience works.
-PRINCIPLES: test behavior, not implementation|one test = one intent|descriptive names in domain context|mock only to reduce risk/flakiness|clean non-production environment.
-OUTPUT: tests added/changed + cases covered + command run + live walkthrough result + limits.
-</task_instruction>
+GOAL couvrir le comportement important par des tests fiables, utiles, maintenables, ET prouver par un parcours réel que la solution répond au besoin.
+USE_WHEN ajouter|corriger des tests|régression|validation de fonctionnalité|amélioration de couverture critique.
+METHOD risque→cas→données→implémentation→exécution→parcours réel.
+RECHERCHE framework|outillage|stratégie de mock incertain ⇒ doc|exemples; sinon suivre les conventions de test existantes.
+ÉTAPES repérer le comportement critique pour l'objectif | couvrir cas nominal, bornes, erreurs | préférer des tests rapides et déterministes | intégration réaliste quand c'est sûr et sans effet de bord | lancer les tests ciblés | corriger la flakiness | parcours réel si changement visible par l'utilisateur.
+PARCOURS RÉEL les tests unitaires prouvent la fonctionnalité; le parcours réel prouve que le besoin est satisfait. Piloter l'interface comme un utilisateur — clics réels, navigation pas à pas — ¬sauter à une page par URL|lien ¬par raccourci d'outil. Confirme la présence des boutons|contrôles requis et le fonctionnement de bout en bout.
+PRINCIPES tester le comportement, ¬l'implémentation | un test = une intention | noms descriptifs dans le domaine | mocker seulement pour réduire le risque|la flakiness | environnement propre non productif.
+OUTPUT tests ajoutés|modifiés + cas couverts + commande lancée + résultat du parcours réel + limites.
+</task-instruction>

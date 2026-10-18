@@ -1,30 +1,6 @@
 <task-instruction type="refactor">
-  <name>Refactoring</name>
-  <description>Improve code structure without changing behavior.</description>
-
-  <phase name="research" required="true">
-    <name>FIRST STEP — Research refactoring best practices</name>
-    <instruction>Before starting:</instruction>
-    <actions>
-      <action>Search for refactoring patterns specific to the problem</action>
-      <action>Check API migration documentation if applicable</action>
-      <action>Find examples of the target structure</action>
-    </actions>
-  </phase>
-
-  <workflow>
-    <step number="1" icon="🔍" name="Research">Which refactoring patterns are most suitable?</step>
-    <step number="2" icon="🗺️" name="Mapping">Understand the current architecture and all callers</step>
-    <step number="3" icon="📋" name="Planning">Design the target structure, identify extraction points</step>
-    <step number="4" icon="✂️" name="Execution">One small change at a time</step>
-    <step number="5" icon="✅" name="Validation">Tests must pass at every commit</step>
-    <step number="6" icon="🧹" name="Cleanup">Remove dead code, update imports</step>
-  </workflow>
-
-  <principles>
-    <principle>NEVER change behavior during refactoring</principle>
-    <principle>Each commit must be a safe atomic transformation</principle>
-    <principle>Keep PRs reviewable — max 200 lines changed per PR</principle>
-    <principle>Run the full test suite after each significant change</principle>
-  </principles>
+GOAL structure améliorée, comportement identique, chaque commit sûr.
+ÉTAPE1 RECHERCHE avant de commencer: motifs de refactoring adaptés au problème·doc de migration d'API si applicable·exemples de la structure cible.
+WORKFLOW 1 recherche (motifs adaptés) · 2 cartographier l'architecture actuelle et tous les appelants · 3 concevoir la structure cible et repérer les points d'extraction · 4 exécuter une petite transformation à la fois · 5 validation: tests verts à chaque commit · 6 nettoyage: code mort supprimé, imports à jour.
+PRINCIPES ¬changer le comportement · chaque commit = transformation atomique sûre · diff ≤200 lignes par PR (revue) · suite complète après chaque changement significatif.
 </task-instruction>

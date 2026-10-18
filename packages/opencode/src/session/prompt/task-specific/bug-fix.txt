@@ -1,30 +1,6 @@
 <task-instruction type="bug-fix">
-  <name>Bug Fix</name>
-  <description>Focus on finding and fixing the root cause.</description>
-
-  <phase name="research" required="true">
-    <name>FIRST STEP — Search for the bug online</name>
-    <instruction>Before touching any code, search the web for:</instruction>
-    <actions>
-      <action>The exact error (stack trace, message)</action>
-      <action>Similar GitHub issues</action>
-      <action>Relevant API documentation</action>
-      <action>Known solutions for this error pattern</action>
-    </actions>
-  </phase>
-
-  <workflow>
-    <step number="1" icon="🔍" name="Symptom research">Search online for the symptom — someone has likely hit this bug before</step>
-    <step number="2" icon="🔬" name="Reproduction">Understand the exact failure</step>
-    <step number="3" icon="🎯" name="Isolation">Isolate the root cause using minimal reproduction</step>
-    <step number="4" icon="🔧" name="Fix">Apply the minimal fix — change ONLY what is necessary</step>
-    <step number="5" icon="✅" name="Verification">Confirm the fix works AND existing behavior is preserved</step>
-  </workflow>
-
-  <principles>
-    <principle>Prefer the simplest fix that addresses the root cause</principle>
-    <principle>Add regression tests</principle>
-    <principle>If the bug is in a dependency, consider a workaround first</principle>
-    <principle>Document the root cause and fix rationale</principle>
-  </principles>
+GOAL cause racine corrigée, correctif minimal, comportement existant préservé.
+ÉTAPE1 RECHERCHE avant de toucher au code: erreur exacte (pile, message)·issues GitHub proches·doc de l'API concernée·solutions connues du motif d'erreur.
+WORKFLOW 1 rechercher le symptôme en ligne (quelqu'un l'a probablement déjà rencontré) · 2 reproduire la panne exacte · 3 isoler la cause racine par reproduction minimale · 4 correctif minimal — ne changer QUE le nécessaire · 5 vérifier que le correctif marche ET que l'existant est préservé.
+PRINCIPES correctif le plus simple qui traite la cause racine · ajouter test de régression · bug dans une dépendance ⇒ envisager un contournement d'abord · documenter cause racine + raison du correctif.
 </task-instruction>

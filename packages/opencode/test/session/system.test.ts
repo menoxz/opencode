@@ -126,11 +126,14 @@ describe("session.system", () => {
       // (removed <tool_policy>/<runtime_awareness>/<memory_and_skills>/<user_interaction> and
       // rewrote the tools and delegation lines) without updating these strings, so the guard
       // had been dead since then. Assertions pin the current wording, same intent.
-      expect(core).toContain("Locate before reading: search for the relevant file, symbol or passage")
-      expect(core).toContain("Keep outputs bounded")
-      expect(core).toContain("Delegate when work is independent")
-      expect(core).toContain("Don't delegate trivial or tightly sequential work")
-      expect(core).toContain("Verify any critical claim a sub-agent makes")
+      // Re-baselined 2026-10-18: core.txt now carries rules as `X ⇒ Y` keys with no prose, so
+      // no sentence of it exists for a human reader. Same five policies, same intent; the
+      // anchors below are the new wording and this edit is the review signal.
+      expect(core).toContain("Localiser avant lire")
+      expect(core).toContain("Sorties bornées")
+      expect(core).toContain("DÉLÉGUER")
+      expect(core).toContain("¬déléguer trivial")
+      expect(core).toContain("sous-agent ⇒ vérifier")
     }),
   )
 })

@@ -1,31 +1,6 @@
 <task-instruction type="code-review">
-  <name>Code Review</name>
-  <description>Review code for correctness, security, performance, and maintainability.</description>
-
-  <phase name="research" required="true">
-    <name>FIRST STEP — Research known vulnerabilities and patterns</name>
-    <instruction>Before commenting:</instruction>
-    <actions>
-      <action>Search for CVEs and known vulnerabilities in used dependencies</action>
-      <action>Check OWASP Top 10 for the relevant language</action>
-      <action>Search security best practices for the API/framework</action>
-      <action>Find similar reviews to identify risky patterns</action>
-    </actions>
-  </phase>
-
-  <workflow>
-    <step number="1" icon="🔍" name="Research">What are the known risks for this type of code?</step>
-    <step number="2" icon="✅" name="Correctness">Does the code do what it's supposed to?</step>
-    <step number="3" icon="🔒" name="Security">Are there vulnerabilities?</step>
-    <step number="4" icon="⚡" name="Performance">Are there obvious scale issues?</step>
-    <step number="5" icon="🧹" name="Maintainability">Is the code clear and tested?</step>
-    <step number="6" icon="📋" name="Standards">Does it follow project conventions?</step>
-  </workflow>
-
-  <principles>
-    <principle>Comment on what MUST change, not what could be improved</principle>
-    <principle>Propose solutions, not just problems</principle>
-    <principle>Be specific: cite line numbers and suggest replacement code</principle>
-    <principle>Check dependencies (supply chain security)</principle>
-  </principles>
+GOAL ce qui DOIT changer, avec la correction proposée — ¬catalogue d'améliorations possibles.
+ÉTAPE1 RECHERCHE avant de commenter: CVE et vulnérabilités connues des dépendances·OWASP Top 10 du langage·bonnes pratiques sécurité de l'API|framework·revues similaires pour repérer les motifs à risque.
+WORKFLOW 1 risques connus de ce type de code · 2 exactitude (fait ce qu'il doit) · 3 sécurité (vulnérabilités) · 4 performance (limites d'échelle évidentes) · 5 maintenabilité (clarté, tests) · 6 conformité aux conventions du projet.
+PRINCIPES commenter ce qui DOIT changer · proposer des solutions, ¬seulement des problèmes · précis: numéros de ligne + code de remplacement · contrôler les dépendances (chaîne d'approvisionnement).
 </task-instruction>
