@@ -378,3 +378,28 @@ Les index de la forme récente portent les noms de colonnes `seq` : `ALTER TABLE
   sortie distinctif et avec une sortie vide sous filtre. Toujours lancer depuis `packages/opencode`,
   et vérifier que la sortie contient bien une ligne `Ran N tests` avant de conclure.
 
+---
+
+## Publication 2.4.13 : ce que la voie canonique exige vraiment — mesuré 2026-10-18
+
+- `release-fork.yml` n'a **qu'un** déclencheur : `workflow_dispatch`. Un push de branche ne publie
+  rien. `release.yml` a `push: tags: ['v*']` ⇒ c'est **le tag** qui déclenche la release GitHub
+  (matrice 3 plateformes).
+- Le hook git `pre-push` fait échouer tout push tant que `packages/opencode/package.json` ne
+  correspond pas à un tag : `script/sync-version.ts --check` compare au tag de HEAD, sinon au tag
+  atteignable le plus proche (`git describe --tags --abbrev=0 --match "v*"`). Bumper la version sans
+  poser le tag `v<version>` **bloque donc le push** — la manœuvre correcte est de poser le tag, pas de
+  passer `--no-verify`.
+- `gh` **ne résout pas** ces deux workflows : `gh run list --workflow=release-fork.yml` et
+  `gh workflow run release-fork.yml` rendent `HTTP 404 … not found on the default branch`, et l'appel
+  par identifiant numérique échoue pareil — alors que les six workflows de publication sont `active`.
+  Le POST direct, lui, fonctionne :
+  `gh api -X POST repos/menoxz/opencode/actions/workflows/<id>/dispatches -f ref=dev`.
+- `gh run list` ne retrouve pas `release-fork` par son nom : le run s'appelle **« release-fork dev »**
+  (`run-name: "release-fork ${{ github.ref_name }}"`) ⇒ filtrer par préfixe, sinon le run paraît absent.
+- Mesure de bout en bout : `release` = `completed|success` et `release-fork` = `completed|success` ;
+  méta `@lux-tech/opencode-ai@2.4.13` servie avec ses **12** dépendances de plateforme ; 12/12 endpoints
+  de version présents ; release GitHub `v2.4.13` à **15 assets**. Le registre a mis ~4 min, et un
+  passage intermédiaire a rendu **0/12** : la propagation n'est pas monotone ⇒ ne jamais conclure à
+  l'échec sur un seul relevé.
+
