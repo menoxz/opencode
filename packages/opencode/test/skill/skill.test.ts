@@ -694,4 +694,39 @@ description: A skill in the .opencode/skills directory.
       { git: true },
     ),
   )
+
+  // Un frontmatter dont une valeur contient « : » n'est pas du YAML valide : le premier parse
+  // passe par fallbackSanitization. Le catalogue etant relu a chaque rechargement, le skill
+  // apparaissait au demarrage puis disparaissait du catalogue des le rechargement suivant.
+  it.live("keeps a skill whose frontmatter needs sanitizing across a reload", () =>
+    provideTmpdirInstance(
+      (dir) =>
+        Effect.gen(function* () {
+          yield* Effect.promise(() =>
+            Bun.write(
+              path.join(dir, ".opencode", "skill", "colon-skill", "SKILL.md"),
+              `---
+name: colon-skill
+description: Use it when a value has a colon: like this one
+---
+
+Body.
+`,
+            ),
+          )
+
+          const skill = yield* Skill.Service
+          const noms = Effect.map(skill.all(), (list) =>
+            list.filter((s) => s.location !== "<built-in>").map((s) => s.name),
+          )
+
+          expect(yield* noms).toEqual(["colon-skill"])
+
+          yield* skill.reload()
+
+          expect(yield* noms).toEqual(["colon-skill"])
+        }),
+      { git: true },
+    ),
+  )
 })

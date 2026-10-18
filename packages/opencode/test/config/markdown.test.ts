@@ -226,3 +226,23 @@ describe("ConfigMarkdown: frontmatter has weird model id", async () => {
     expect(result.content.trim()).toBe("Strictly follow da rules")
   })
 })
+
+describe("ConfigMarkdown: repeated parse of a recoverable file", () => {
+  // Le frontmatter de ce fichier n'est pas du YAML valide (deux-points dans une valeur) : le
+  // premier parse leve et passe par fallbackSanitization. gray-matter met en cache l'objet brut
+  // *avant* de parser, donc sans correctif le second parse rend des donnees vides au lieu de
+  // lever. Les skills sont re-parses a chaque rechargement a chaud : un skill ainsi ecrit
+  // apparaissait au demarrage puis disparaissait du catalogue au rechargement suivant.
+  const file = import.meta.dir + "/fixtures/frontmatter.md"
+
+  test("each parse returns the same data", async () => {
+    const first = await ConfigMarkdown.parse(file)
+    const second = await ConfigMarkdown.parse(file)
+    const third = await ConfigMarkdown.parse(file)
+
+    expect(first.data.occupation).toBe("This man has the following occupation: Software Engineer")
+    expect(second.data).toEqual(first.data)
+    expect(third.data).toEqual(first.data)
+    expect(second.data.name).toBe('John "Doe"')
+  })
+})

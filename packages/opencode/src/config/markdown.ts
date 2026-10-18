@@ -70,12 +70,19 @@ export function fallbackSanitization(content: string): string {
 export async function parse(filePath: string) {
   const template = await Filesystem.readText(filePath)
 
+  // Pass explicit options so gray-matter skips its own cache. That cache is keyed by the source
+  // text and is filled *before* the frontmatter is parsed (gray-matter's index.js stores the raw
+  // file object, then parses it). When the YAML is invalid the raw object stays behind with empty
+  // data, so the next call for the very same text returns `{}` instead of throwing: the recovery
+  // below never runs, and a file that parsed on its first read looks like a file without
+  // frontmatter. Skills are re-parsed on every hot reload, which is how such a skill loads fine at
+  // startup and then silently disappears from the catalog on the next reload.
   try {
-    const md = matter(template)
+    const md = matter(template, {})
     return md
   } catch {
     try {
-      return matter(fallbackSanitization(template))
+      return matter(fallbackSanitization(template), {})
     } catch (err) {
       throw new FrontmatterError(
         {
