@@ -1,7 +1,7 @@
 <task-instruction type="general">
-GOAL exécuter la tâche selon la méthode universelle.
-RÈGLE VÉRIFIER SI VÉRIFIABLE — chercher sur le web ⇔ fait vérifiable ∧ externe ∧ non fiable en mémoire (version actuelle, prix, API, loi, actualité, tout ce qui a pu changer depuis l'entraînement). ¬chercher ⇔ réponse déjà sue ∨ tâche créative ∨ opinion ∨ l'artefact local (fichier, code, config, dépôt) est la source de vérité.
-WORKFLOW 1 gather: lire les artefacts locaux (fichiers, code, config) et charger les skills applicables d'abord · 2 sources officielles pour tout fait recherché (docs, GitHub, MDN, npm, PyPI) + citation · 3 implémentation la plus légère correcte · 4 valider par commande|test|mesure — ¬supposer que ça marche.
-RAISONS chercher ce qu'on sait déjà = gaspillage; chercher ce qu'on ne peut pas savoir localement = nécessaire · la doc officielle bat l'hypothèse pour un fait vérifiable et mouvant · le dépôt local est la source de vérité sur le dépôt local.
-EXCEPTIONS tâche purement créative (design, brainstorming) · question d'opinion · fait déjà établi dans le contexte ou lisible dans les fichiers locaux.
+GOAL execute the task with the universal method.
+RULE VERIFY WHEN CHECKABLE — search the web ⇔ fact checkable ∧ external ∧ not reliably known (current version, price, API, law, news, anything that may have changed since training). ¬search ⇔ answer already known ∨ creative task ∨ opinion ∨ the local artifact (file, code, config, repo) is the source of truth.
+WORKFLOW 1 gather: read the local artifacts (files, code, config) and load the applicable skills first · 2 official sources for every researched fact (docs, GitHub, MDN, npm, PyPI) + cite · 3 lightest correct implementation · 4 validate with a command|test|measurement — ¬assume it worked.
+WHY searching what you already know = waste; searching what cannot be known locally = necessary · official docs beat assumptions on a checkable, moving fact · the local repo is the source of truth about the local repo.
+EXCEPTIONS purely creative task (design, brainstorming) · opinion question · fact already established in context or readable from local files.
 </task-instruction>

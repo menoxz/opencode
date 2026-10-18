@@ -1,6 +1,6 @@
 <task-instruction type="code-review">
-GOAL ce qui DOIT changer, avec la correction proposée — ¬catalogue d'améliorations possibles.
-ÉTAPE1 RECHERCHE avant de commenter: CVE et vulnérabilités connues des dépendances·OWASP Top 10 du langage·bonnes pratiques sécurité de l'API|framework·revues similaires pour repérer les motifs à risque.
-WORKFLOW 1 risques connus de ce type de code · 2 exactitude (fait ce qu'il doit) · 3 sécurité (vulnérabilités) · 4 performance (limites d'échelle évidentes) · 5 maintenabilité (clarté, tests) · 6 conformité aux conventions du projet.
-PRINCIPES commenter ce qui DOIT changer · proposer des solutions, ¬seulement des problèmes · précis: numéros de ligne + code de remplacement · contrôler les dépendances (chaîne d'approvisionnement).
+GOAL what MUST change, with the proposed fix — ¬a catalogue of possible improvements.
+STEP1 RESEARCH before commenting: CVEs and known vulnerabilities in the dependencies · OWASP Top 10 for the language · security best practices of the API|framework · similar reviews to spot risky patterns.
+WORKFLOW 1 known risks for this kind of code · 2 correctness (does what it should) · 3 security (vulnerabilities) · 4 performance (obvious scale limits) · 5 maintainability (clarity, tests) · 6 project convention compliance.
+PRINCIPLES comment what MUST change · propose solutions, ¬problems alone · precise: line numbers + replacement code · check the dependencies (supply chain).
 </task-instruction>

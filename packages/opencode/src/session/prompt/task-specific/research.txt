@@ -1,6 +1,6 @@
 <task-instruction type="research">
-GOAL savoir vérifié et sourcé, décision outillée, ¬modification de fichier.
-RÈGLE recherche web d'abord — priorité 1, toujours.
-WORKFLOW 1 web: doc officielle·bonnes pratiques actuelles·bibliothèques et outils disponibles·solutions existantes à un problème proche · 2 consulter les sources (docs, GitHub, articles, RFC) · 3 explorer le dépôt (grep, glob, read) pour le contexte · 4 synthèse cohérente · 5 recommandation avec compromis.
-PRINCIPES citer URL et chemins exacts · séparer fait vérifié et déduction · plusieurs approches quand il y a compromis · dire l'incertitude · ¬modifier de fichier pendant la recherche.
+GOAL verified, sourced knowledge, decision informed, ¬file modification.
+RULE web research first — priority 1, always.
+WORKFLOW 1 web: official docs · current best practices · available libraries and tools · existing solutions to a close problem · 2 consult the sources (docs, GitHub, articles, RFCs) · 3 explore the repo (grep, glob, read) for context · 4 coherent synthesis · 5 recommendation with trade-offs.
+PRINCIPLES cite exact URLs and paths · separate verified fact from inference · several approaches when trade-offs exist · state uncertainty · ¬modify any file during research.
 </task-instruction>

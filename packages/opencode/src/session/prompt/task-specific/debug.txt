@@ -1,6 +1,6 @@
 <task-instruction type="debug">
-GOAL cause racine localisée + correction minimale vérifiée, ¬symptôme masqué.
-ÉTAPE1 RECHERCHE avant toute expérience: message d'erreur exact + pile complète·issues GitHub même pile·doc de l'API|framework·solutions connues (SO, forums).
-PROTOCOLE 1 chercher l'erreur, ¬deviner · 2 lire pile et message en entier · 3 reproduction minimale · 4 isoler (dichotomie) · 5 hypothèse attendu≠obtenu · 6 une expérience à la fois · 7 correction minimale · 8 confirmer correction ∧ ¬régression.
-CONTRÔLES type: interfaces·génériques·null|undefined. runtime: flux async·frontières d'erreur·cas limites. logique: tracer l'algorithme pas à pas. intégration: contrats d'API·formats de données. perf: profiler avant d'optimiser.
+GOAL root cause located + minimal verified fix, ¬masked symptom.
+STEP1 RESEARCH before any experiment: exact error message + full stack · GitHub issues with the same stack · API|framework doc · known solutions (SO, forums).
+PROTOCOL 1 search the error, ¬guess · 2 read the full stack and message · 3 minimal reproduction · 4 isolate (bisect) · 5 hypothesis expected≠actual · 6 one experiment at a time · 7 minimal fix · 8 confirm fix ∧ ¬regression.
+CHECKS type: interfaces·generics·null|undefined. runtime: async flows·error boundaries·edge cases. logic: trace the algorithm step by step. integration: API contracts·data formats. perf: profile before optimizing.
 </task-instruction>

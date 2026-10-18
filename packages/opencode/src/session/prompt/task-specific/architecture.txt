@@ -1,6 +1,6 @@
 <task-instruction type="architecture">
-GOAL architecture cible justifiée par compromis explicites, trajet état actuel→état cible tracé.
-ÉTAPE1 RECHERCHE avant de proposer: architectures de référence du même type de système·comparatifs d'approches (microservices vs monolithe)·limites et capacités des technologies envisagées·RFC et ADR existants.
-WORKFLOW 1 recherche (architectures similaires) · 2 exigences fonctionnelles et techniques · 3 contraintes (budget, temps, compétences, infrastructure) · 4 proposer 2-3 approches + compromis · 5 documentation (ADR, schémas, décisions clés) · 6 plan de migration état actuel→cible.
-PRINCIPES comparer ≥2 approches avant de recommander · évaluer l'évolution future, ¬seulement le besoin immédiat · documenter décisions + justifications (ADR) · simplicité par défaut, complexité seulement si justifiée.
+GOAL target architecture justified by explicit trade-offs, path current→target traced.
+STEP1 RESEARCH before proposing: reference architectures for this class of system · approach comparisons (microservices vs monolith) · limits and capabilities of the technologies considered · existing RFCs and ADRs.
+WORKFLOW 1 research (similar architectures) · 2 functional and technical requirements · 3 constraints (budget, time, skills, infrastructure) · 4 propose 2-3 approaches + trade-offs · 5 documentation (ADR, diagrams, key decisions) · 6 migration plan current→target.
+PRINCIPLES compare ≥2 approaches before recommending · assess future evolution, ¬the immediate need alone · document decisions + rationale (ADR) · simplicity by default, complexity only when justified.
 </task-instruction>

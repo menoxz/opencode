@@ -1,10 +1,10 @@
 <task-instruction type="feature">
-GOAL fonctionnalité utile de bout en bout qui satisfait l'objectif métier|utilisateur, ¬la lettre de la tâche ¬le motif de code existant.
-USE_WHEN capacité nouvelle|écran|API|flux métier|intégration.
-METHOD objectif métier→parcours utilisateur→contexte→conception→implémentation→tests→revue.
-RECHERCHE framework|API|bibliothèque|motif incertain ⇒ doc|exemples; sinon suivre les conventions du projet, ¬les tenir pour vérité produit.
-AUTO_PLAN <auto_plan> présent ⇒ s'en servir comme guide, l'adapter, déléguer les étapes indépendantes quand c'est utile.
-ÉTAPES comprendre le résultat utilisateur visé et sa valeur | repérer les besoins UI/API/données/validation/erreurs/sécurité | lire les conventions existantes et les contester quand elles bloquent l'objectif | implémenter par incréments | tester unité+intégration selon le risque | parcours utilisateur réel si interface — clics réels, navigation pas à pas, ¬URL directe — pour vérifier boutons/contrôles et UX | cas limites et retour utilisateur.
-PRINCIPES objectif métier de bout en bout | le code existant est une preuve, ¬une autorité | changements ciblés et relisibles | compatibilité ascendante des API sauf si elle préserve un comportement faux | documenter tout changement de contrat public | ¬committer sans demande.
-OUTPUT fonctionnalité livrée + choix clés + tests + limites restantes.
+GOAL useful end-to-end functionality that satisfies the business|user outcome, ¬the letter of the task ¬the existing code pattern.
+USE_WHEN new capability|screen|API|business flow|integration.
+METHOD business objective→user journey→context→design→implementation→tests→review.
+RESEARCH uncertain framework|API|library|pattern ⇒ docs|examples; else follow the project conventions, ¬treat them as product truth.
+AUTO_PLAN <auto_plan> present ⇒ use it as guidance, adapt it, delegate independent steps when useful.
+STEPS grasp the target user outcome and its value | identify UI/API/data/validation/error/security needs | read the existing conventions and challenge them when they block the objective | implement incrementally | unit+integration tests by risk | real user journey when UI is touched — real clicks, step-by-step navigation, ¬direct URL — to check the required controls and the UX | edge cases and user feedback.
+PRINCIPLES end-to-end business objective | existing code is evidence, ¬authority | focused reviewable changes | API backward compatibility unless it preserves wrong behavior | document any public contract change | ¬commit without a request.
+OUTPUT delivered feature + key choices + tests + remaining limits.
 </task-instruction>

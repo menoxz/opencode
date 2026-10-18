@@ -1,6 +1,6 @@
 <task-instruction type="refactor">
-GOAL structure améliorée, comportement identique, chaque commit sûr.
-ÉTAPE1 RECHERCHE avant de commencer: motifs de refactoring adaptés au problème·doc de migration d'API si applicable·exemples de la structure cible.
-WORKFLOW 1 recherche (motifs adaptés) · 2 cartographier l'architecture actuelle et tous les appelants · 3 concevoir la structure cible et repérer les points d'extraction · 4 exécuter une petite transformation à la fois · 5 validation: tests verts à chaque commit · 6 nettoyage: code mort supprimé, imports à jour.
-PRINCIPES ¬changer le comportement · chaque commit = transformation atomique sûre · diff ≤200 lignes par PR (revue) · suite complète après chaque changement significatif.
+GOAL improved structure, identical behavior, every commit safe.
+STEP1 RESEARCH before starting: refactoring patterns suited to the problem · API migration doc if applicable · examples of the target structure.
+WORKFLOW 1 research (suited patterns) · 2 map the current architecture and all callers · 3 design the target structure and locate the extraction points · 4 execute one small transformation at a time · 5 validation: tests green at each commit · 6 cleanup: dead code removed, imports updated.
+PRINCIPLES ¬change behavior · each commit = safe atomic transformation · diff ≤200 lines per review · full suite after each significant change.
 </task-instruction>

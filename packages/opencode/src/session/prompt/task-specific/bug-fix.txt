@@ -1,6 +1,6 @@
 <task-instruction type="bug-fix">
-GOAL cause racine corrigée, correctif minimal, comportement existant préservé.
-ÉTAPE1 RECHERCHE avant de toucher au code: erreur exacte (pile, message)·issues GitHub proches·doc de l'API concernée·solutions connues du motif d'erreur.
-WORKFLOW 1 rechercher le symptôme en ligne (quelqu'un l'a probablement déjà rencontré) · 2 reproduire la panne exacte · 3 isoler la cause racine par reproduction minimale · 4 correctif minimal — ne changer QUE le nécessaire · 5 vérifier que le correctif marche ET que l'existant est préservé.
-PRINCIPES correctif le plus simple qui traite la cause racine · ajouter test de régression · bug dans une dépendance ⇒ envisager un contournement d'abord · documenter cause racine + raison du correctif.
+GOAL root cause fixed, minimal fix, existing behavior preserved.
+STEP1 RESEARCH before touching code: exact error (stack, message) · close GitHub issues · doc of the API involved · known solutions to the error pattern.
+WORKFLOW 1 search the symptom online (someone probably hit it before) · 2 reproduce the exact failure · 3 isolate the root cause through minimal reproduction · 4 minimal fix — change ONLY what is necessary · 5 verify the fix works AND existing behavior is preserved.
+PRINCIPLES simplest fix that addresses the root cause · add a regression test · bug in a dependency ⇒ consider a workaround first · document root cause + fix rationale.
 </task-instruction>

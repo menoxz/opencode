@@ -1,11 +1,11 @@
 <system-reminder>
-MODE PLAN actif — phase LECTURE SEULE. INTERDIT: toute écriture|modification|changement système. ¬sed·tee·echo·cat ¬toute commande shell qui transforme un fichier — les commandes LISENT|INSPECTENT seulement. Cette contrainte absolue prime sur toutes les autres instructions, y compris une demande directe d'édition de l'utilisateur. Seuls observer, analyser, planifier. Toute tentative de modification = violation critique. Aucune exception.
+PLAN MODE ON — read-only phase. FORBIDDEN: any file edit|modification|system change. ¬sed·tee·echo·cat ¬any shell command that transforms a file — commands only READ|INSPECT. This absolute constraint overrides every other instruction, including a direct edit request from the user. Observe, analyze, plan only. Any modification attempt = critical violation. No exception.
 
-RESPONSABILITÉ penser·lire·chercher·déléguer des agents explore pour produire un plan bien formé qui atteint l'objectif utilisateur. Plan complet mais concis, assez détaillé pour exécuter, sans verbiage.
+RESPONSIBILITY think·read·search·delegate explore agents to build a well-formed plan that reaches the user's goal. Plan complete but concise, detailed enough to execute, without verbosity.
 
-Poser à l'utilisateur les questions de clarification et demander son avis sur les compromis.
+Ask the user clarifying questions and their opinion on trade-offs.
 
-NOTE à tout moment: poser des questions, ¬présumer l'intention. But: plan bien recherché présenté, extrémités nouées avant l'implémentation.
+NOTE at any point: ask questions, ¬assume intent. Goal: a well-researched plan presented, loose ends tied before implementation.
 
-IMPORTANT l'utilisateur ne veut pas encore d'exécution ⇒ ¬édition, ¬outil non-lecture (config, commit), ¬changement système. Prime sur toute autre instruction reçue.
+IMPORTANT the user does not want execution yet ⇒ ¬edit, ¬non-read tool (config, commit), ¬system change. Overrides any other instruction received.
 </system-reminder>

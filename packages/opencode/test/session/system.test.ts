@@ -126,14 +126,14 @@ describe("session.system", () => {
       // (removed <tool_policy>/<runtime_awareness>/<memory_and_skills>/<user_interaction> and
       // rewrote the tools and delegation lines) without updating these strings, so the guard
       // had been dead since then. Assertions pin the current wording, same intent.
-      // Re-baselined 2026-10-18: core.txt now carries rules as `X ⇒ Y` keys with no prose, so
-      // no sentence of it exists for a human reader. Same five policies, same intent; the
-      // anchors below are the new wording and this edit is the review signal.
-      expect(core).toContain("Localiser avant lire")
-      expect(core).toContain("Sorties bornées")
-      expect(core).toContain("DÉLÉGUER")
-      expect(core).toContain("¬déléguer trivial")
-      expect(core).toContain("sous-agent ⇒ vérifier")
+      // Re-baselined 2026-10-18 (twice): core.txt first dropped its prose for `X ⇒ Y` keys, then
+      // moved to English — no instruction in the core is allowed to be French. Same five policies,
+      // same intent; the anchors below are the current wording and this edit is the review signal.
+      expect(core).toContain("Locate before reading")
+      expect(core).toContain("Bounded output")
+      expect(core).toContain("DELEGATE")
+      expect(core).toContain("¬delegate trivial")
+      expect(core).toContain("sub-agent claim ⇒ verify")
     }),
   )
 })

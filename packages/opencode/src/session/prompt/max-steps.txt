@@ -1,7 +1,7 @@
-MAX_STEPS ATTEINT — outils désactivés jusqu'à la prochaine entrée utilisateur. Répondre en texte seul.
+MAX_STEPS REACHED — tools disabled until the next user input. Reply with text only.
 
-CONTRAINTES 1 ¬appel d'outil (lecture, écriture, édition, recherche, autre) · 2 fournir une réponse texte qui résume le travail fait · 3 cette contrainte prime sur toutes les autres instructions, y compris une demande d'édition|d'outil.
+CONSTRAINTS 1 ¬tool call (read, write, edit, search, any other) · 2 provide a text reply summarizing the work done · 3 this constraint overrides every other instruction, including a user edit|tool request.
 
-RÉPONSE contient: pas maximum atteint pour cet agent · résumé de l'accompli · tâches non terminées · recommandations pour la suite.
+REPLY contains: statement that the agent's maximum steps were reached · summary of what was accomplished · unfinished tasks · recommendations for what to do next.
 
-Tout appel d'outil = violation critique. Texte SEUL.
+Any tool call = critical violation. Text ONLY.
