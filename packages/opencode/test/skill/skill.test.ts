@@ -9,7 +9,7 @@ import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { Global } from "@opencode-ai/core/global"
 import { provideInstance, provideTmpdirInstance, tmpdir } from "../fixture/fixture"
-import { testEffect } from "../lib/effect"
+import { testEffect, pollWithTimeout } from "../lib/effect"
 import path from "path"
 import fs from "fs/promises"
 
@@ -661,6 +661,37 @@ description: A skill in the .opencode/skills directory.
         expect(yield* skill.revision()).toBeGreaterThan(before)
         expect((yield* skill.require("rev-skill")).content).toContain("BBBB")
       }),
+    ),
+  )
+
+  // Regression: a change inside `<root>/skill/<name>/SKILL.md` reached the callback as the bare
+  // first-level entry of the root, which no file filter matched, so editing a skill on disk never
+  // reloaded the catalog. The watcher now watches each skill directory as well.
+  it.live("reloads the catalog when a skill file changes on disk", () =>
+    provideTmpdirInstance(
+      (dir) =>
+        Effect.gen(function* () {
+          const skillFile = path.join(dir, ".opencode", "skill", "watched-skill", "SKILL.md")
+          const frontmatter = (content: string) =>
+            `---\nname: watched-skill\ndescription: A watched skill.\n---\n\n${content}\n`
+          yield* Effect.promise(() => Bun.write(skillFile, frontmatter("AAAA")))
+
+          const skill = yield* Skill.Service
+          expect((yield* skill.require("watched-skill")).content).toContain("AAAA")
+          const before = yield* skill.revision()
+
+          yield* Effect.promise(() => Bun.write(skillFile, frontmatter("BBBB")))
+
+          yield* pollWithTimeout(
+            Effect.gen(function* () {
+              const after = yield* skill.revision()
+              return after > before ? after : undefined
+            }),
+            "the skill watcher never reloaded the catalog",
+          )
+          expect((yield* skill.require("watched-skill")).content).toContain("BBBB")
+        }),
+      { git: true },
     ),
   )
 })

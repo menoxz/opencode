@@ -25,6 +25,36 @@ const AGENTS_EXTERNAL_DIR = ".agents"
 const EXTERNAL_SKILL_PATTERN = "skills/**/SKILL.md"
 const OPENCODE_SKILL_PATTERN = "{skill,skills}/**/SKILL.md"
 const SKILL_PATTERN = "**/SKILL.md"
+// Sub-directories that hold skills themselves: the `skill` and `skills` entries of a root,
+// matching the `{skill,skills}` alternative of OPENCODE_SKILL_PATTERN.
+const CONTAINER_DIRS: readonly string[] = ["skill", "skills"]
+
+/** A directory under watch, and whether every change inside it concerns the skill catalog. */
+export type WatchTarget = { dir: string; container: boolean }
+
+/**
+ * What a raw `fs.watch` callback means for the skill catalog: the key to debounce the reload on,
+ * or `null` when the event must be ignored.
+ *
+ * A recursive watch cannot be relied on to report nested changes: a change inside
+ * `<root>/skills/<name>/SKILL.md` arrives as the bare first-level entry `skills`, which no file
+ * filter can match (measured on Windows, 2026-10-18). Hence a container target — a directory that
+ * holds skills — treats every event as a catalog change, while a root target still filters, so
+ * unrelated writes next to a root (`*.sqlite-wal`, logs) never trigger a reload storm.
+ */
+export function watchEventKey(target: WatchTarget, filename?: string | null): string | null {
+  if (target.container) return target.dir
+  // Sans nom (renommage, ou plateforme qui ne le fournit pas), on ne peut pas trier : on recharge.
+  if (filename == null) return target.dir
+  const changed = path.join(target.dir, filename.toString())
+  // Anything at or below one of this root's skills containers concerns the catalog.
+  for (const name of CONTAINER_DIRS) {
+    const dir = path.join(target.dir, name)
+    if (changed === dir || changed.startsWith(dir + path.sep)) return changed
+  }
+  if (isSkillFile(changed) || isConfigFile(changed)) return changed
+  return null
+}
 
 // Built-in skill that ships with opencode. The model's intuition for what an
 // opencode.json should look like is often wrong, and opencode hard-fails on
@@ -306,11 +336,10 @@ export const layer = Layer.effect(
       _timers.clear()
 
       const bridge = yield* EffectBridge.make()
-      const trigger = (fp: string) => {
-        if (!isSkillFile(fp) && !isConfigFile(fp)) return
-        clearTimeout(_timers.get(fp))
-        _timers.set(fp, setTimeout(() => {
-          _timers.delete(fp)
+      const trigger = (key: string) => {
+        clearTimeout(_timers.get(key))
+        _timers.set(key, setTimeout(() => {
+          _timers.delete(key)
           bridge.promise(reload()).catch((err) => log.error("reload error", { err }))
         }, DEBOUNCE_MS))
       }
@@ -318,6 +347,8 @@ export const layer = Layer.effect(
       const ctx = yield* InstanceState.context
       const cfg = yield* config.get()
       const roots = new Set<string>([Global.Path.config, ...(yield* config.directories())])
+      // A configured skills path holds the skills itself (`**/SKILL.md`), so it is its own container.
+      const containers = new Set<string>()
       if (!flags.disableExternalSkills) {
         const externalDirs = flags.disableClaudeCodeSkills
           ? [AGENTS_EXTERNAL_DIR]
@@ -330,19 +361,40 @@ export const layer = Layer.effect(
       }
       for (const item of cfg.skills?.paths ?? []) {
         const expanded = item.startsWith("~/") ? path.join(global.home, item.slice(2)) : item
-        roots.add(path.isAbsolute(expanded) ? expanded : path.join(ctx.directory, expanded))
+        const dir = path.isAbsolute(expanded) ? expanded : path.join(ctx.directory, expanded)
+        roots.add(dir)
+        containers.add(dir)
+      }
+      for (const root of roots) {
+        for (const name of CONTAINER_DIRS) containers.add(path.join(root, name))
       }
 
-      for (const dir of roots) {
+      // A recursive watch is not dependable here: a change inside `<root>/skills/<name>/SKILL.md`
+      // reaches the callback as the bare first-level entry `skills` — matched by no file filter, so
+      // skills never reloaded (measured 2026-10-18). Watching non-recursively and adding the skills
+      // containers as their own targets turns every change inside a skill into a first-level child
+      // of a watched directory, which the OS always reports.
+      const targets = new Map<string, boolean>()
+      for (const dir of roots) targets.set(dir, false)
+      for (const dir of containers) if (fs.existsSync(dir)) targets.set(dir, true)
+      // A content change inside a skill directory never reaches the container watch — the directory
+      // entry does not change — so every skill directory is watched as well. Deriving them from the
+      // catalog also means a reload re-arms them, which is how a newly created skill starts being
+      // watched.
+      const current = yield* InstanceState.get(state)
+      for (const info of Object.values(current.skills)) {
+        const dir = path.dirname(info.location)
+        if (fs.existsSync(dir)) targets.set(dir, true)
+      }
+      log.debug("hot-reload targets", { count: targets.size, roots: [...roots] })
+
+      for (const [dir, container] of targets) {
         if (!fs.existsSync(dir)) continue
         try {
           _watchers.push(
-            fs.watch(dir, { recursive: true }, (_eventType, filename) => {
-              if (!filename) {
-                bridge.promise(reload()).catch((err) => log.error("reload error", { err }))
-                return
-              }
-              trigger(path.join(dir, filename.toString()))
+            fs.watch(dir, { recursive: false }, (_eventType, filename) => {
+              const key = watchEventKey({ dir, container }, filename)
+              if (key) trigger(key)
             }),
           )
         } catch (err) {
