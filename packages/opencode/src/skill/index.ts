@@ -156,7 +156,12 @@ const add = Effect.fnUntraced(function* (state: State, match: string, bus: Bus.I
 
   if (!md) return
 
-  if (!isSkillFrontmatter(md.data)) return
+  if (!isSkillFrontmatter(md.data)) {
+    // Without a name in the frontmatter a skill cannot be referenced, so it is skipped. Say so:
+    // those files stay invisible in the catalog with no other trace anywhere.
+    log.warn("ignored skill without a frontmatter name", { skill: match })
+    return
+  }
 
   if (state.skills[md.data.name]) {
     log.warn("duplicate skill name", {
