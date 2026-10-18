@@ -326,3 +326,33 @@ Les index de la forme récente portent les noms de colonnes `seq` : `ALTER TABLE
 - Équivalence ancien/nouveau vérifiée sur les trois lookups ; `type='shell'` : 0 ligne en base,
   vérifiée sur ligne synthétique.
 
+---
+
+## Fragments de prompt du core — langue imposée, fins de ligne mixtes — mesuré 2026-10-18
+
+- `packages/opencode/src/session/prompt/**/*.txt` = les instructions du core, **embarquées dans le
+  binaire** ⇒ toute édition exige un rebuild et un redéploiement (skill `fork-build`).
+- Consigne utilisateur : **aucune instruction en français dans ces fichiers**. Anglais, notation
+  dense — clés `GOAL`/`WORKFLOW`/`PRINCIPLES`, règles `X ⇒ Y`, négation `¬`, énumération `·`, aucune
+  prose, aucune politesse, aucune justification. Mesure : 28 099 → 17 201 o sur les 14 fragments
+  (-39 %) ; `core.txt` 6 142 → 4 312 o (plafond de `src/session/prompt-budget.test.ts` : 6 400 o).
+- Contrôle d'absence de français, qui vaut preuve :
+  `rg "[àâäéèêëîïôöùûüçÀÂÉÈÊËÎÏÔÖÙÛÜÇ]" packages/opencode/src/session/prompt` ⇒ **0**. Les glyphes
+  `⇒ ¬ · ≤ ≥ ∧ ∨ →` sont de la notation, ¬du français.
+- ⚠️ **Fins de ligne mixtes dans ce dossier** : blob **CRLF** pour `core.txt` et
+  `task-specific/{architecture,bug-fix,code-review,debug,general,refactor,research}.txt` ; blob **LF**
+  pour `build-switch`, `max-steps`, `plan`, `plan-mode`, `task-specific/{feature,test}.txt`. L'outil
+  d'édition écrit en LF ⇒ un fichier à blob CRLF produit un diff de fichier entier (mesuré : 418
+  lignes au lieu de 62). Lire `git ls-files --eol packages/opencode/src/session/prompt` **avant**
+  d'éditer, puis reconvertir les fichiers à blob CRLF (Latin-1, `\n` → `\r\n`).
+- Deux tests épinglent ce contenu : `src/prompt-composer/composer.test.ts` (chaque
+  `task-specific/*.txt` > 50 o et contenant `<task-instruction`) et `test/session/system.test.ts`
+  (« core policy » : ancres de formulation à re-baseliner dans le même commit que toute réécriture —
+  c'est le signal de revue prévu par le fichier).
+- Échecs **préexistants** prouvés par A/B (famille `Jev skill selection`, `test/session/system.test.ts`) :
+  « a trivial prompt selects no skill once Jev is reachable » et « a relevant prompt keeps only the
+  skills Jev affirms » échouent identiquement à `HEAD~1` ⇒ ne pas les imputer à une livraison.
+- Piège d'outillage : les commandes contenant `Select-Object -First` sur une commande native sont
+  refusées par un garde pré-vol (troncature d'un flux d'écriture) ⇒ capturer puis découper
+  (`$out = <cmd>; $out | Select-Object -Last N`).
+
