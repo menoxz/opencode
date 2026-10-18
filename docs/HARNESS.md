@@ -356,3 +356,25 @@ Les index de la forme récente portent les noms de colonnes `seq` : `ALTER TABLE
   refusées par un garde pré-vol (troncature d'un flux d'écriture) ⇒ capturer puis découper
   (`$out = <cmd>; $out | Select-Object -Last N`).
 
+---
+
+## En-têtes de bloc de la TUI : séparateur `:`, et les tests qui les épinglent — mesuré 2026-10-18
+
+- Convention du fil : un en-tête de bloc sépare le **libellé** de son détail par `: ` — `✱ Explore: 2
+  read 1 grep`, `core/instructions: 2 sources` (variante `: injecting`), `libellé: 12 lines · 340
+  chars` pour une sortie repliée. Trois sites seulement : `util/inspect-batch-tree.ts:109` (titre du
+  lot, rendu par `component/inspect-batch-tree.tsx`), `util/instructions-injection.ts:27` et `:30`,
+  `component/output-disclosure.tsx:81`.
+- Ce qui **n'est pas** ce séparateur et ne se change pas avec lui : le `·` interne du résumé
+  (`summarizeOutput`, `N lines · M chars`) et l'en-tête `Thought: titre`
+  (`routes/session/index.tsx:2250`), qui portait déjà `:`.
+- **Trois fichiers de test épinglent ces chaînes** ⇒ toute retouche du libellé les casse :
+  `test/cli/tui/inspect-batch-tree.test.tsx:127` et `:143`, `test/cli/tui/instructions-injection.test.ts:51`,
+  `:52`, `:61`, `test/cli/tui/output-disclosure.test.tsx:77` et `:85`. Les deux dernières sont des
+  **assertions de trame** (`▶ output: 12 lines`) : c'est elles qui ont attrapé la régression, parce
+  qu'elles lisent la sortie peinte et non la fonction.
+- Lancer `bun test` depuis la **racine** du dépôt ne teste rien : la racine refuse le balayage
+  (`Failed to scan non-existent root directory for tests: …\do-not-run-tests-from-root`), sans code de
+  sortie distinctif et avec une sortie vide sous filtre. Toujours lancer depuis `packages/opencode`,
+  et vérifier que la sortie contient bien une ligne `Ran N tests` avant de conclure.
+
