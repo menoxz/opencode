@@ -138,6 +138,42 @@ binaire manque, exécute le vrai binaire sinon, et dit quoi faire (`bun pm trust
 Vérifié : npm génère bien `probe`, `probe.cmd`, `probe.ps1` pour un `bin` en `.mjs`, et
 `probe.cmd a b` rend « probe ok a,b ».
 
+### Ce qui a manqué pour publier, et ce qui rend le correctif suffisant (2.4.10, mesuré 2026-10-18)
+
+Trois obstacles, tous indépendants du code du fork :
+
+| constat | mesure |
+|---|---|
+| jeton npm de `~/.npmrc` | **401** à `whoami`. Corrigé en y recopiant `npm-lux-tech-publish-token` (coffre) : `whoami` → `lux-tech` |
+| jetons GitHub du coffre | `github-menoxz-release-token` et `github-menoxz-workflow-token` = **401** ; `gh` est authentifié (compte `menoxz`, keyring, scope `workflow`) ⇒ dispatcher par `gh` |
+| `origin/dev` | **255 commits** de retard sur `dev` ; la CI construit le ref **poussé** ⇒ un dispatch sans push republie l'ancien code |
+
+Ce dernier point explique le registre : `gh run list -w release-fork` rend un dernier run vert sur
+`headSha = 328dc107f` (= 2.4.3), alors que `package.json` était déjà à 2.4.7 → **le registre était
+figé sur 2.4.3** parce que rien n'avait été poussé, pas parce que la publication échouait.
+
+**Un publish local ne remplace pas la CI.** Le build local (`--single`) n'écrit qu'**une**
+plateforme, or la méta doit lister les **12** (`optionalDependencies`), et `postinstall.mjs` rejoue
+la résolution par `npm install <plateforme>@<version>` : une méta à 1 plateforme fait **échouer**
+l'installation sur les autres OS, en remplaçant un `latest` qui marche.
+
+**Le lanceur est ce qui rend le correctif suffisant : npm lui-même ne lance plus les scripts
+d'installation.** Mesuré sur l'installation propre du 2.4.10 :
+
+```
+npm warn install-scripts 1 package had install scripts blocked because they are not covered
+by allowScripts: @lux-tech/opencode-ai@2.4.10 (postinstall: node ./postinstall.mjs)
+```
+
+`bin/` ne contient alors que `opencodev2.mjs` — exactement le mode de défaillance d'origine. Le
+premier appel répare (`opencodev2: binaire de plateforme absent, résolution…` puis `2.4.10`,
+exit 0) et les appels suivants sont directs. Contrôle positif en préfixe propre : `added 2
+packages`, trois shims (`opencodev2`, `.cmd`, `.ps1`), `bin/opencode.exe` = vrai PE (magie `MZ`).
+
+Une même version peut désigner **deux binaires différents** : le build local 2.4.10 faisait 217,3 Mo,
+celui de la CI 162 Mo (`--minify=false --splitting=false`, sans `--single`) — raison de plus pour ne
+pas réutiliser un numéro déjà construit (2.4.8 et 2.4.9 sont restés des builds locaux).
+
 ### Le veilleur : `bun --watch` ne voit que son dossier courant
 
 `bun --watch` avertit pour chaque module hors de son dossier de travail :
