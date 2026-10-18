@@ -5,6 +5,14 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v2.4.10] - 2026-10-18
+
+### Fixed
+- **`opencodev2` lancé sans commande sert désormais, même accompagné des options du serveur.** Le critère qui décidait d'insérer `serve` cherchait « un jeton qui ne commence pas par un tiret » : la **valeur** d'une option n'en a pas, donc `opencodev2 --port 4099` — un appel normal du serveur — était pris pour une commande et démarrait le **TUI** (mesuré le 2026-10-17 sur le binaire déployé : `--port 4099` rendait le TUI, `serve --port 4097` servait). Le discriminant est désormais « **aucun positional** », avec l'arité des options du serveur (`--port`/`--hostname`/`--mdns-domain`/`--cors`/`--log-level` consomment le jeton suivant, `--mdns`/`--print-logs`/`--pure` non, `--clé=valeur` porte sa valeur). Décision extraite en fonction pure testable (`cli/default-command.ts`, 7 tests) ; l'aide, la version, un nom de commande, un dossier de projet et les options du TUI gardent leur sens. Compter sur le serveur par défaut, c'est aussi compter sur le **hot reload** de ce qu'il sert — skills, agents, plugins, instructions — qu'une session TUI ne recharge pas.
+- **Le paquet npm installe un lanceur Node au lieu d'un faux `.exe`.** Le point d'entrée `bin/opencode.exe` était un **script shell de 346 octets** que `postinstall` devait remplacer ; quand le gestionnaire n'exécute pas les scripts d'installation (Bun sans approbation, pnpm par défaut, `--ignore-scripts`), Windows refusait le fichier avant tout message : « The specified executable is not a valid application for this OS platform ». Le point d'entrée est maintenant `bin/opencodev2.mjs`, portable, qui **répare** (rejoue la résolution du postinstall), **exécute**, et **dit quoi faire** s'il ne peut pas.
+
+> Les versions 2.4.8 et 2.4.9 n'ont été que des builds locaux de vérification : elles n'ont été ni taguées ni publiées, et leurs correctifs sont repris ici.
+
 ## [v2.4.7] - 2026-10-15
 
 ### Fixed
