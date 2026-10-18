@@ -147,6 +147,16 @@ export const SessionMessageTable = sqliteTable(
     index("session_message_session_idx").on(table.session_id),
     index("session_message_session_type_idx").on(table.session_id, table.type),
     index("session_message_time_created_idx").on(table.time_created),
+    // "newest event of this type in this session" — `getCurrentAssistant` /
+    // `getCurrentCompaction` / `getCurrentShell` (projectors-next.ts), called at the top
+    // of every projected event. They order by id within (session_id, type); without `id`
+    // in the key SQLite sorts the whole session's events through a temp B-tree, so the
+    // read cost grew with the session (measured: 103 ms on a 1 309-assistant session).
+    index("session_message_session_type_id_idx").on(table.session_id, table.type, table.id),
+    // "page of events, oldest or newest first" within a session — `V2Session.messages`
+    // and `V2Session.context` order by (time_created, id). Mirrors the equivalent key
+    // already carried by `message` (message_session_time_created_id_idx).
+    index("session_message_session_time_created_id_idx").on(table.session_id, table.time_created, table.id),
   ],
 )
 

@@ -1,5 +1,5 @@
-import { and, desc, eq } from "@/storage/db"
-import type { Database } from "@/storage/db"
+import { and, desc, eq, isNull, sql } from "@/storage/db"
+import type { Database, SQL } from "@/storage/db"
 import { SessionMessage } from "@opencode-ai/core/session-message"
 import { SessionMessageUpdater } from "@opencode-ai/core/session-message-updater"
 import { SessionEvent } from "@opencode-ai/core/session-event"
@@ -26,37 +26,47 @@ function encodeMessageData(value: unknown): SessionMessageData {
   return encodeDateTimes(value) as SessionMessageData
 }
 
+const decode = (row: typeof SessionMessageTable.$inferSelect) =>
+  decodeMessage({ ...row.data, id: row.id, type: row.type })
+
+// A field of the JSON blob, referenced from SQL so the "current row" lookups stop
+// pulling every matching row (and its payload) into JS to pick one out of it.
+function jsonField(path: string) {
+  return sql`json_extract(${SessionMessageTable.data}, ${path})`
+}
+
+// Newest row of a type inside a session — the `id DESC` order is carried by
+// session_message_session_type_id_idx, so this reads one row instead of the session.
 function sqlite(db: Database.TxOrDb, sessionID: SessionID): SessionMessageUpdater.Adapter<void> {
+  const newest = (type: SessionMessage.Type, filter?: SQL) =>
+    db
+      .select()
+      .from(SessionMessageTable)
+      .where(and(eq(SessionMessageTable.session_id, sessionID), eq(SessionMessageTable.type, type), filter))
+      .orderBy(desc(SessionMessageTable.id))
+      .limit(1)
+      .get()
+
   return {
     getCurrentAssistant() {
-      return db
-        .select()
-        .from(SessionMessageTable)
-        .where(and(eq(SessionMessageTable.session_id, sessionID), eq(SessionMessageTable.type, "assistant")))
-        .orderBy(desc(SessionMessageTable.id))
-        .all()
-        .map((row) => decodeMessage({ ...row.data, id: row.id, type: row.type }))
-        .find((message): message is SessionMessage.Assistant => message.type === "assistant" && !message.time.completed)
+      // An assistant is "current" while it has no completion time: the predicate lives
+      // inside the payload, so it is evaluated by SQLite on the candidate row only.
+      const row = newest("assistant", isNull(jsonField("$.time.completed")))
+      if (!row) return undefined
+      const message = decode(row)
+      return message.type === "assistant" && !message.time.completed ? message : undefined
     },
     getCurrentCompaction() {
-      return db
-        .select()
-        .from(SessionMessageTable)
-        .where(and(eq(SessionMessageTable.session_id, sessionID), eq(SessionMessageTable.type, "compaction")))
-        .orderBy(desc(SessionMessageTable.id))
-        .all()
-        .map((row) => decodeMessage({ ...row.data, id: row.id, type: row.type }))
-        .find((message): message is SessionMessage.Compaction => message.type === "compaction")
+      const row = newest("compaction")
+      if (!row) return undefined
+      const message = decode(row)
+      return message.type === "compaction" ? message : undefined
     },
     getCurrentShell(callID) {
-      return db
-        .select()
-        .from(SessionMessageTable)
-        .where(and(eq(SessionMessageTable.session_id, sessionID), eq(SessionMessageTable.type, "shell")))
-        .orderBy(desc(SessionMessageTable.id))
-        .all()
-        .map((row) => decodeMessage({ ...row.data, id: row.id, type: row.type }))
-        .find((message): message is SessionMessage.Shell => message.type === "shell" && message.callID === callID)
+      const row = newest("shell", sql`${jsonField("$.callID")} = ${callID}`)
+      if (!row) return undefined
+      const message = decode(row)
+      return message.type === "shell" && message.callID === callID ? message : undefined
     },
     updateAssistant(assistant) {
       const { id, type, ...data } = assistant

@@ -306,3 +306,23 @@ Les index de la forme récente portent les noms de colonnes `seq` : `ALTER TABLE
    `opencode.ai` (DNS `ENOTFOUND`), `nvidia/*` (`Unsupported parameter(s): promptCacheKey`). Un échec de
    tour n'est donc plus un indice de stockage dès qu'un de ces messages apparaît.
 
+---
+
+## `session_message` : index et lookups « current » — mesuré 2026-10-18
+
+- Base réelle (4,04 Go, 53 976 `session_message`, session la plus chargée : 1 309 assistants,
+  charge utile moyenne 16,7 Ko/ligne) : `projectors-next.ts` lisait **toutes** les lignes du type
+  puis choisissait en JS → 109 ms par événement projeté.
+- Deux index ajoutés (migration `20261018122748_session-message-read-indexes`, ~4,1 Mo chacun) :
+  `session_message(session_id,type,id)` et `session_message(session_id,time_created,id)`. Sans `id`
+  dans la clé, SQLite triait toute la session par B-tree temporaire (`USE TEMP B-TREE FOR ORDER BY`).
+- Mesure sur copie de la base (fichiers `.db`/`-wal`/`-shm` copiés) : `getCurrentAssistant`
+  109 → 47,7 ms (le cas où **aucun** assistant n'est ouvert parcourt la session, le cas vivant
+  s'arrête à la première ligne), `getCurrentCompaction` 3,16 → 0,24 ms, page `messages`
+  (`time_created DESC, id DESC`) 44,2 → 3,2 ms ; plans `SEARCH … USING INDEX` sans B-tree.
+- Index d'expression `json_extract(data,'$.time.completed')` : 44,7 → 0,10 ms sur le pire cas, mais
+  +1,313 ms par écriture contre 0,048 ms sans (×28, `updateAssistant` sur chaque fin de texte/tool)
+  → **refusé** ; l'index partiel équivalent n'est pas retenu par SQLite (prédicat `IS NULL` non reconnu).
+- Équivalence ancien/nouveau vérifiée sur les trois lookups ; `type='shell'` : 0 ligne en base,
+  vérifiée sur ligne synthétique.
+

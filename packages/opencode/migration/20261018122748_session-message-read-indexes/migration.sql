@@ -1,0 +1,2 @@
+CREATE INDEX `session_message_session_type_id_idx` ON `session_message` (`session_id`,`type`,`id`);--> statement-breakpoint
+CREATE INDEX `session_message_session_time_created_id_idx` ON `session_message` (`session_id`,`time_created`,`id`);
