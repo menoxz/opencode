@@ -75,16 +75,29 @@ const args = hideBin(process.argv)
 
 /**
  * Sans commande ni positional — `opencodev2` seul, ou seulement avec les options du serveur
- * (`--port`, `--hostname`, `--print-logs`…) — `opencodev2` **sert** : il démarre le serveur, et
- * l'interface web qu'il rend à sa racine. C'est le mode demandé par défaut, parce que c'est le
- * **serveur** qui recharge à chaud ce qui vit — skills, agents, plugins, instructions — là où une
- * session TUI ne recharge rien de ce qu'il sert.
+ * (`--port`, `--hostname`, `--print-logs`…) — `opencodev2` démarre **le serveur**, puis ouvre **le
+ * TUI attaché à lui** : c'est le serveur qui recharge à chaud ce qui vit — skills, agents, plugins,
+ * instructions — et comme il vit dans son propre processus, il garde ses veilleurs armés pendant
+ * que la TUI tourne, et survit à sa fermeture.
+ *
+ * **Sans terminal** (pipe, script, CI) une TUI ne peut pas s'afficher : le CLI sert en tête-à-tête,
+ * comme avant. Le TTY est une **entrée** de `resolveDefaultMode`, pour que la règle reste pure.
  *
  * La décision est **pure et testée** (`cli/default-command.ts`) : la version précédente cherchait
  * « un jeton qui ne commence pas par un tiret », ce qui compte la **valeur** d'une option
  * (`opencodev2 --port 4099`) comme un nom de commande et retombait sur le TUI.
  */
-if (CliDefaultCommand.shouldDefaultToServe(args)) args.unshift("serve")
+const defaultMode = CliDefaultCommand.resolveDefaultMode(args, process.stdin.isTTY === true)
+if (defaultMode === "serve") args.unshift("serve")
+if (defaultMode === "local") {
+  const { ensureServer } = await import("./cli/cmd/tui/attach")
+  const url = CliDefaultCommand.localServerUrl(args)
+  await ensureServer(url, undefined, CliDefaultCommand.listenerArgs(args))
+  // La commande d'attache ne connaît pas les options d'écoute — et le CLI est en `strict()`. Elles
+  // ont déjà servi à engendrer le serveur : on les retire de la ligne avant de l'attacher.
+  args.splice(0, args.length, ...CliDefaultCommand.attachArgs(args))
+  args.unshift("attach", url)
+}
 
 /**
  * Dans un **arbre de travail** (mode source), le serveur se relance à chaque modification de ses

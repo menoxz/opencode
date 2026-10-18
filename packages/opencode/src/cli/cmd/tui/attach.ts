@@ -33,7 +33,17 @@ function serverReachable(url: string, headers?: RequestInit["headers"]): Promise
   )
 }
 
-async function ensureServer(url: string, headers?: RequestInit["headers"]): Promise<void> {
+/**
+ * Démarre le serveur local s'il n'écoute pas encore, et attend qu'il réponde.
+ *
+ * `listener` porte les options d'écoute de l'invocation (`--hostname`, `--mdns`, `--cors`…) : les
+ * perdre ferait un serveur qui n'écoute pas là où le client qui vient de le lancer l'appelle.
+ */
+export async function ensureServer(
+  url: string,
+  headers?: RequestInit["headers"],
+  listener: readonly string[] = [],
+): Promise<void> {
   const parsed = new URL(url)
   if (!LOCAL_HOSTS.has(parsed.hostname)) return
   if (await serverReachable(url, headers)) return
@@ -47,7 +57,7 @@ async function ensureServer(url: string, headers?: RequestInit["headers"]): Prom
 
   UI.println(`No server at ${parsed.origin} — starting opencodev2 serve on port ${port}…`)
   const [command, ...prefix] = serverCommand()
-  spawn(command, [...prefix, "serve", "--port", String(port)], {
+  spawn(command, [...prefix, "serve", "--port", String(port), ...listener], {
     detached: true,
     stdio: "ignore",
     windowsHide: true,
