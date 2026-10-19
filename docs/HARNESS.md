@@ -431,4 +431,35 @@ Les index de la forme récente portent les noms de colonnes `seq` : `ALTER TABLE
   sont **sérialisés** par une promesse de module ⇒ pas d'écriture du magasin dans le désordre.
 - Test : `src/cli/cmd/tui/context/session-scope.test.ts` ; suite TUI entière 123 pass / 0 fail.
 
+## `opencodev2` sans commande : TUI sur un serveur détaché, et ce que « hot reload » couvre (mesuré 2026-10-19)
+
+- Chaîne du lancement : `src/index.ts:90` `resolveDefaultMode(args, isTTY)` → `local` devant un
+  terminal, `serve` sinon ; `:92-100` `ensureServer(url)` puis `args.unshift("attach", url)`, les
+  options d'écoute retirées de la ligne (`:96-98`, le CLI est en `strict()`).
+- Décision **pure et testée** : `cli/default-command.ts:98-101` (aucun positional + TTY) ; le port
+  vient de `localServerPort` (`:104-108`, repli `DevSource.DEFAULT_PORT`) ⇒ « aucun positional », et
+  non « aucun jeton sans tiret », sinon `opencodev2 --port 4099` retombait sur la TUI (mesuré
+  2026-10-17).
+- **Indépendance** : `cli/cmd/tui/attach.ts:40-47` — si un serveur répond déjà (`/config`), rien n'est
+  démarré et la TUI s'y rattache ; sinon `:55-60` engendre `serve --port <port>` en
+  `detached: true, stdio: "ignore"`, `.unref()`, puis attend la réponse jusqu'à 15 s (`:62-71`) ⇒ le
+  serveur ne meurt pas avec la TUI et une seconde invocation s'y rattache.
+- **Hot reload** : `src/index.ts:119-129` re-exécute la même invocation sous `bun --watch` (garde
+  `OPENCODE_WATCH`) en mode source (`Installation.isLocal()`) ⇒ le serveur se relance à chaque
+  modification de ses sources ; côté client, la boucle SSE (`tui/context/sdk.tsx:74-108`) se
+  reconnecte indéfiniment (backoff 1 s → 30 s). Un binaire installé, lui, ne surveille rien.
+  `bun --watch` ne voit que son dossier courant ⇒ lancer depuis la racine du dépôt (`:112-114`).
+- Sonde bornée : `bun run packages/opencode/src/index.ts --port 4199 --print-logs` (stdin non-TTY,
+  dossier temporaire) → joignable en ~1,6 s, journal `opencodev2 server listening on
+  http://127.0.0.1:4199`, `version=local`, `process_role=worker`, `MCP config watchers active` ;
+  port libéré après arrêt.
+- **Réserve (non prouvée mesurable)** : le chemin TTY (TUI peinte, rattachement à un serveur déjà
+  lancé) n'est vérifiable que par lecture (`index.ts:92-100`, `attach.ts:40-47`), pas dans un shell
+  sans terminal.
+- **Faiblesse trouvée** : un redémarrage **dur** du serveur par `bun --watch` n'émet pas
+  `server.instance.disposed` ⇒ la TUI se reconnecte mais ne re-`bootstrap` pas (`bootstrap` n'est
+  appelé qu'à `sync.tsx:296` et `:673`) : la liste des sessions peut rester figée jusqu'à une action
+  de rafraîchissement. Correctif minimal si on le veut : re-déclencher `bootstrap()` au premier
+  rétablissement du flux SSE (`sdk.tsx:101-106`).
+
 
