@@ -403,3 +403,32 @@ Les index de la forme récente portent les noms de colonnes `seq` : `ALTER TABLE
   passage intermédiaire a rendu **0/12** : la propagation n'est pas monotone ⇒ ne jamais conclure à
   l'échec sur un seul relevé.
 
+## Réessai : un incident réseau se lit dans le texte, pas seulement dans le statut (mesuré 2026-10-19)
+
+- `getaddrinfo ENOTFOUND opencode.ai` n'a **ni statut HTTP ni marque de retry** du SDK ; `retryable()`
+  (`session/retry.ts`) sortait par `if (!isRetryable && !transient) return undefined` ⇒ la session
+  s'arrêtait au premier échec DNS, sans aucune tentative.
+- Le texte est la seule trace de ces incidents ⇒ `TRANSIENT_MESSAGE_PATTERNS` porte `enotfound`,
+  `getaddrinfo`, `ehostunreach`, `enetunreach`, `econnaborted`, `esockettimedout`, et
+  `isTransientMessage()` sert **aussi** dans la branche `APIError` (un SDK peut envelopper une sortie
+  réseau avec `isRetryable: false`).
+- Le plafond reste `RETRY_MAX_ATTEMPTS = 10` avec backoff 2 s ×2 plafonné à 30 s sans en-tête ⇒ un
+  incident durable rend l'erreur au client, il ne retient pas la session pour toujours.
+- Test : `packages/opencode/test/session/retry-transient.test.ts` (39 pass, 0 fail sur les deux
+  fichiers retry).
+
+## TUI : un `bootstrap` ne remplace plus le magasin des sessions (mesuré 2026-10-19)
+
+- Ajouter une clé API appelle `instance.dispose()` puis `sync.bootstrap()` (`dialog-provider.tsx`) ;
+  `bootstrap` écrivait `setStore("session", reconcile(sessions))` avec la **seule** page du dossier de
+  lancement ⇒ les sessions des dossiers ajoutés disparaissaient, et leurs compteurs restaient à **0**
+  jusqu'au redémarrage, car `loadedDirectories` les marquait encore comme lus.
+- Deux corrections indissociables : `bootstrap` **fusionne** sa page avec le magasin existant
+  (`mergeSessions` de `session-scope.ts`, dédoublonnage et tri par `id`) et **efface les marques**
+  (`forgetReadFolders()`) avant de réhydrater. Le retrait d'un dossier reste le travail de
+  `session.refresh()` seul.
+- Les deux bootstraps concurrents (événement `server.instance.disposed` + appel explicite du dialogue)
+  sont **sérialisés** par une promesse de module ⇒ pas d'écriture du magasin dans le désordre.
+- Test : `src/cli/cmd/tui/context/session-scope.test.ts` ; suite TUI entière 123 pass / 0 fail.
+
+
