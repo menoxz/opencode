@@ -7,7 +7,7 @@ import { createHash } from "node:crypto"
 import { SessionID, MessageID, PartID } from "./schema"
 import { MessageV2 } from "./message-v2"
 import { PromptQueue } from "./prompt-queue"
-import { AUTO_CONTINUE_INSTRUCTION, decideRunDecision, type DeclaredIntent } from "./continuation"
+import { autoContinueInstructionFor, decideRunDecision, type DeclaredIntent } from "./continuation"
 import { SessionWorkPlan } from "./work-plan"
 import { StallWatch } from "./stall-watch"
 import { capsuleFor, environmentStateEnabled, ledgerFor } from "./environment"
@@ -1929,8 +1929,15 @@ export const layer = Layer.effect(
             })
             if (decision.action === "continue" || decision.action === "wait") {
               idleContinues++
-              autoContinueInstruction = AUTO_CONTINUE_INSTRUCTION
-              yield* slog.info("auto-continue", { step, idleContinues, reason: decision.reason })
+              // L'objectif deja clos change la derniere consigne du rappel : sinon le modele
+              // rappelle `complete_objective` sur un objectif termine, ce qui ne rend qu'un
+              // avertissement et consomme un tour (mesure 2026-10-19).
+              const objectiveClosed = yield* sessions.get(sessionID).pipe(
+                Effect.map((info) => info.goalState?.status === "completed"),
+                Effect.orElseSucceed(() => false),
+              )
+              autoContinueInstruction = autoContinueInstructionFor({ objectiveClosed })
+              yield* slog.info("auto-continue", { step, idleContinues, reason: decision.reason, objectiveClosed })
             } else {
               const orphan = lastAssistantMsg?.parts.find(
                 (part): part is MessageV2.ToolPart => part.type === "tool" && isOrphanedInterruptedTool(part),

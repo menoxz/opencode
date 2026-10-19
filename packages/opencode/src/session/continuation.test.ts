@@ -1,5 +1,30 @@
 import { describe, expect, test } from "bun:test"
-import { AUTO_CONTINUE_LIMIT, decideRunDecision, hasOpenTodos, shouldAutoContinue } from "./continuation"
+import {
+  AUTO_CONTINUE_INSTRUCTION,
+  AUTO_CONTINUE_LIMIT,
+  autoContinueInstructionFor,
+  decideRunDecision,
+  hasOpenTodos,
+  shouldAutoContinue,
+} from "./continuation"
+
+describe("auto-continue instruction", () => {
+  // Un objectif termine ne se reclot pas : la consigne faisait rappeler `complete_objective`
+  // apres une completion, ce qui brulait un tour pour un simple avertissement.
+  test("ne demande plus de clore un objectif deja clos", () => {
+    expect(autoContinueInstructionFor({ objectiveClosed: false })).toContain("call complete_objective now")
+    const closed = autoContinueInstructionFor({ objectiveClosed: true })
+    expect(closed).not.toContain("call complete_objective now")
+    expect(closed).toContain("do not call complete_objective again")
+    // Le reste du rappel doit survivre : c'est lui qui pousse a finir le travail.
+    expect(closed).toContain("<auto_continue>")
+    expect(closed).toContain("Continue the work now.")
+  })
+
+  test("la constante par defaut reste celle d'un objectif ouvert", () => {
+    expect(AUTO_CONTINUE_INSTRUCTION).toBe(autoContinueInstructionFor({ objectiveClosed: false }))
+  })
+})
 
 describe("action-oriented continuation", () => {
   test("continues only executable work", () => {

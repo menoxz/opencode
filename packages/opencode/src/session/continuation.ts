@@ -4,14 +4,27 @@
 // up and returns control to the user. Any tool call resets the counter.
 export const AUTO_CONTINUE_LIMIT = 4
 
-export const AUTO_CONTINUE_INSTRUCTION = [
-  "<auto_continue>",
-  "A concrete executable action remains. Continue the work now.",
-  "- Do not ask for permission and do not repeat your previous answer.",
-  "- If you genuinely need a decision or information, call the question tool instead of stopping.",
-  "- If the objective is already fully satisfied, verify it and call complete_objective now.",
-  "</auto_continue>",
-].join("\n")
+const AUTO_CONTINUE_OBJECTIVE_OPEN = "- If the objective is already fully satisfied, verify it and call complete_objective now."
+// Un objectif deja clos ne se reclot pas. La consigne precedente etait servie telle quelle apres
+// une completion : le modele rappelait `complete_objective` sur un objectif termine, ce qui ne
+// rendait qu'un avertissement « Objective already completed » — un tour brule pour rien, et un
+// contresens avec la carte « This objective is achieved. Do not redo it. ».
+const AUTO_CONTINUE_OBJECTIVE_CLOSED =
+  "- The current objective is already recorded as completed: do not call complete_objective again; act on what remains, or stop."
+
+/** Le rappel d'auto-continuation, dont la derniere consigne depend de l'etat de l'objectif. */
+export function autoContinueInstructionFor(input: { objectiveClosed: boolean }): string {
+  return [
+    "<auto_continue>",
+    "A concrete executable action remains. Continue the work now.",
+    "- Do not ask for permission and do not repeat your previous answer.",
+    "- If you genuinely need a decision or information, call the question tool instead of stopping.",
+    input.objectiveClosed ? AUTO_CONTINUE_OBJECTIVE_CLOSED : AUTO_CONTINUE_OBJECTIVE_OPEN,
+    "</auto_continue>",
+  ].join("\n")
+}
+
+export const AUTO_CONTINUE_INSTRUCTION = autoContinueInstructionFor({ objectiveClosed: false })
 
 /** Whether a text-only assistant stop must be turned into another run step. */
 export type NextAction =
