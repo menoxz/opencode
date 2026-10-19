@@ -6,11 +6,16 @@ import { MessageV2 } from "../../src/session/message-v2"
 
 const retryProvider = "test"
 
-function apiError(input: { statusCode?: number; headers?: Record<string, string> }): MessageV2.APIError {
+function apiError(input: {
+  statusCode?: number
+  headers?: Record<string, string>
+  message?: string
+  isRetryable?: boolean
+}): MessageV2.APIError {
   return Schema.decodeUnknownSync(MessageV2.APIError.Schema)(
     new MessageV2.APIError({
-      message: "boom",
-      isRetryable: input.statusCode === undefined,
+      message: input.message ?? "boom",
+      isRetryable: input.isRetryable ?? input.statusCode === undefined,
       responseHeaders: input.headers,
       statusCode: input.statusCode,
     }).toObject(),
@@ -53,6 +58,30 @@ describe("session.retry.transient", () => {
 
   test("never retries an abort the user asked for", () => {
     expect(SessionRetry.retryable({ name: "AbortError", data: { message: "Aborted" } }, retryProvider)).toBeUndefined()
+  })
+
+  /**
+   * Une resolution DNS qui echoue n'a ni statut HTTP ni marque de retry du SDK : elle cassait la
+   * session au lieu d'etre reessayee. Le texte est la seule trace qu'elle laisse, et il doit
+   * suffire, y compris quand le SDK l'enveloppe dans un `APIError` marque non reessayable.
+   */
+  test("retries a failed DNS resolution, plain or wrapped in an APIError", () => {
+    const text = "getaddrinfo ENOTFOUND opencode.ai"
+    expect(SessionRetry.retryable(wrap(text), retryProvider)).toEqual({ message: text })
+    expect(SessionRetry.retryable(apiError({ message: text, isRetryable: false }), retryProvider)).toEqual({
+      message: text,
+    })
+  })
+
+  test("retries the other unreachable-host and cut-connection texts", () => {
+    for (const message of [
+      "connect ENETUNREACH 1.2.3.4:443",
+      "connect EHOSTUNREACH",
+      "read ECONNABORTED",
+      "ESOCKETTIMEDOUT",
+    ]) {
+      expect(SessionRetry.retryable(wrap(message), retryProvider)).toEqual({ message })
+    }
   })
 })
 

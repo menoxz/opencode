@@ -41,9 +41,17 @@ export const TRANSIENT_MESSAGE_PATTERNS = [
   "socket hang up",
   "econnreset",
   "econnrefused",
+  "econnaborted",
   "etimedout",
+  "esockettimedout",
   "epipe",
   "eai_again",
+  // Une resolution DNS qui echoue (`getaddrinfo ENOTFOUND opencode.ai`) n'a ni statut HTTP ni
+  // marque de retry du SDK : elle n'arretait donc pas la session, elle la cassait definitivement.
+  "enotfound",
+  "getaddrinfo",
+  "ehostunreach",
+  "enetunreach",
   "connection reset",
   "connection closed",
   "premature close",
@@ -57,6 +65,17 @@ export const TRANSIENT_MESSAGE_PATTERNS = [
   "temporarily unavailable",
   "service unavailable",
 ]
+
+/**
+ * Whether an error text reads as a transport incident — DNS lookup, unreachable host, cut
+ * connection — rather than a verdict from the provider. Such an error carries no status and is
+ * often flagged `isRetryable: false` by the SDK, so the text is the only trace it leaves.
+ */
+function isTransientMessage(text: string | undefined) {
+  if (typeof text !== "string") return false
+  const lower = text.toLowerCase()
+  return TRANSIENT_MESSAGE_PATTERNS.some((pattern) => lower.includes(pattern))
+}
 
 function cap(ms: number) {
   return Math.min(ms, RETRY_MAX_DELAY)
@@ -111,7 +130,10 @@ export function retryable(error: Err, provider: string) {
     const status = error.data.statusCode
     // 5xx errors are transient server failures and should always be retried,
     // even when the provider SDK doesn't explicitly mark them as retryable.
-    const transient = status !== undefined && (status >= 500 || RETRYABLE_STATUS.has(status))
+    // Un incident de transport se lit aussi dans le texte quand il arrive enveloppe dans un
+    // `APIError` : sans cette lecture, un `getaddrinfo ENOTFOUND` reste classe non reessayable.
+    const transient =
+      (status !== undefined && (status >= 500 || RETRYABLE_STATUS.has(status))) || isTransientMessage(error.data.message)
     if (!error.data.isRetryable && !transient) return undefined
     if (error.data.responseBody?.includes("FreeUsageLimitError")) {
       return {
@@ -176,7 +198,7 @@ export function retryable(error: Err, provider: string) {
 
     // Une coupure de transport ou de flux se lit dans le texte, pas dans un statut : ces
     // erreurs interrompaient la session alors qu'un réessai suffit presque toujours.
-    if (TRANSIENT_MESSAGE_PATTERNS.some((pattern) => lower.includes(pattern))) {
+    if (isTransientMessage(msg)) {
       return { message: msg }
     }
   }
