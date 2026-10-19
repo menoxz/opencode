@@ -1,9 +1,11 @@
 import { useProject } from "@tui/context/project"
+import { useSDK } from "@tui/context/sdk"
 import { useSync } from "@tui/context/sync"
 import { createMemo, Show } from "solid-js"
 import { useTheme } from "../../context/theme"
 import { useTuiConfig } from "../../context/tui-config"
 import { InstallationChannel, InstallationVersion } from "@opencode-ai/core/installation/version"
+import { isVersionMismatch } from "../../server-version"
 import { TuiPluginRuntime } from "@/cli/cmd/tui/plugin/runtime"
 
 import { getScrollAcceleration } from "../../util/scroll"
@@ -12,9 +14,14 @@ import { WorkspaceLabel } from "../../component/workspace-label"
 export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
   const project = useProject()
   const sync = useSync()
+  const sdk = useSDK()
   const { theme } = useTheme()
   const tuiConfig = useTuiConfig()
   const session = createMemo(() => sync.session.get(props.sessionID))
+  // La version du binaire lancé ne dit pas ce qui sert réellement : le serveur attaché peut être
+  // l'ancien, resté vivant après un déploiement. On affiche celle qui sert, et l'écart se voit.
+  const serverVersion = () => sdk.serverVersion()
+  const versionMismatch = createMemo(() => isVersionMismatch(InstallationVersion, serverVersion()))
   const workspace = () => {
     const workspaceID = session()?.workspaceID
     if (!workspaceID) return
@@ -92,6 +99,14 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
               <span style={{ fg: theme.textMuted }}>Open</span>
               <span style={{ fg: theme.primary, bold: true }}>Codev2</span>{" "}
               <span style={{ fg: theme.textMuted }}>{InstallationVersion}</span>
+              <Show when={serverVersion()}>
+                <span style={{ fg: versionMismatch() ? theme.warning : theme.textMuted }}>
+                  {" "}· server {serverVersion()}
+                </span>
+              </Show>
+              <Show when={versionMismatch()}>
+                <span style={{ fg: theme.warning }}> — restart required</span>
+              </Show>
             </text>
           </TuiPluginRuntime.Slot>
         </box>

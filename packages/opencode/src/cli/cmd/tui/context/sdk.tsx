@@ -4,6 +4,7 @@ import { createSimpleContext } from "./helper"
 import { createGlobalEmitter } from "@solid-primitives/event-bus"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { batch, createSignal, onCleanup, onMount } from "solid-js"
+import { readServerVersion } from "../server-version"
 
 export type EventSource = {
   subscribe: (handler: (event: GlobalEvent) => void) => Promise<() => void>
@@ -25,6 +26,7 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
     // synchronisation s'en sert pour relire son etat ; la premiere connexion ne compte pas.
     const [reconnects, setReconnects] = createSignal(0)
     let streamOpened = false
+    const [serverVersion, setServerVersion] = createSignal<string | undefined>()
 
     function createSDK() {
       return createOpencodeClient({
@@ -76,6 +78,17 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
       flush()
     }
 
+    /**
+     * La version que tourne réellement le serveur attaché. Relue à chaque ouverture du flux : un
+     * serveur relancé entre deux connexions change de version, et l'écart doit se voir sans relancer
+     * la TUI. Une lecture qui échoue laisse la valeur précédente — une absence n'est pas un accord.
+     */
+    function refreshServerVersion() {
+      void readServerVersion({ url: props.url, headers: props.headers, fetch: props.fetch }).then((version) => {
+        if (version !== undefined) setServerVersion(version)
+      })
+    }
+
     function startSSE() {
       sse?.abort()
       const ctrl = new AbortController()
@@ -95,6 +108,7 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
           // `server.instance.disposed`).
           if (streamOpened) setReconnects((count) => count + 1)
           streamOpened = true
+          refreshServerVersion()
 
           if (Flag.OPENCODE_EXPERIMENTAL_WORKSPACES) {
             // Start syncing workspaces, it's important to do this after
@@ -120,6 +134,7 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
     }
 
     onMount(async () => {
+      refreshServerVersion()
       if (props.events) {
         const unsub = await props.events.subscribe(handleEvent)
         onCleanup(unsub)
@@ -150,6 +165,8 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
       url: props.url,
       /** Compteur des reconnexions du flux, pour les couches qui doivent relire leur etat. */
       reconnects,
+      /** La version que tourne le serveur attaché, `undefined` tant qu'il ne l'a pas attestée. */
+      serverVersion,
     }
   },
 })

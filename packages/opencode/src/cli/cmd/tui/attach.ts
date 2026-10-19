@@ -8,6 +8,8 @@ import { validateSession } from "./validate-session"
 import { ServerAuth } from "@/server/auth"
 import { ensureDaemonStarted } from "@/daemon/autostart"
 import { DevSource } from "@/dev/source"
+import { InstallationVersion } from "@opencode-ai/core/installation/version"
+import { readServerVersion, versionNotice } from "./server-version"
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"])
 
@@ -46,7 +48,13 @@ export async function ensureServer(
 ): Promise<void> {
   const parsed = new URL(url)
   if (!LOCAL_HOSTS.has(parsed.hostname)) return
-  if (await serverReachable(url, headers)) return
+  if (await serverReachable(url, headers)) {
+    // Un serveur répond, mais peut-être depuis l'ancien binaire : le dire plutôt que de servir une
+    // mise à jour inopérante en silence. On n'arrête rien — il peut détenir une session vivante.
+    const notice = versionNotice(InstallationVersion, await readServerVersion({ url, headers }))
+    if (notice) UI.println(notice)
+    return
+  }
 
   const port = Number(parsed.port)
   if (!port) {

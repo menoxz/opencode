@@ -483,6 +483,12 @@ Les index de la forme récente portent les noms de colonnes `seq` : `ALTER TABLE
   → relancer `opencodev2`. La tâche `stop-old-server` fait les deux arrêts et vérifie que le port est
   libre. **Arrêter le serveur qui héberge la session en cours la termine** : ne jamais le faire depuis
   cette session sans l'accord de l'utilisateur.
+- **Le client atteste la version du serveur** (depuis `server-version.ts`) : `ensureServer` lit
+  `GET /global/health` (`handlers/global.ts:83` rend `{ healthy, version }`) et imprime l'écart avant
+  de lancer l'interface ; le pied de la barre latérale affiche la version du serveur à côté de celle
+  du binaire et signale `restart required`. Une lecture ratée vaut `unknown`, **jamais** « aligné ».
+  Aucun processus n'est arrêté ni redémarré : le défaut est **rapporté**, l'ancien serveur reste
+  maître de sa session — c'est le choix retenu (détection + ligne d'état).
 
 
 
