@@ -5,6 +5,11 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v2.4.17] - 2026-10-19
+
+### Changed
+- **Le serveur détaché est remplacé au lancement quand sa version diffère.** Après un déploiement, l'ancien serveur répond toujours sur le port et la mise à jour restait sans effet : la 2.4.16 le signalait, mais laissait la remise en cohérence à une recette manuelle qu'aucune commande n'exposait vraiment. `ensureServer` arrête désormais le processus qui **tient le port** et relance un serveur neuf depuis le binaire lancé, puis attend qu'il réponde. Périmètre de l'arrêt étroit à dessein : le titulaire du port uniquement — jamais « tous les opencodev2 », sinon le démon et les autres serveurs de travail tombent —, seulement si son image est la nôtre (un port tenu par un autre programme n'est jamais tué, et une image illisible ne vaut pas autorisation), jamais un serveur engendré par la session, et gracieux (SIGTERM) avant d'être forcé. Les sessions hébergées par l'ancien serveur se terminent à cet instant : un redémarrage ne les transfère pas. Si la bascule échoue, l'écart est imprimé et le lancement continue sur l'ancien serveur.
+
 ## [v2.4.16] - 2026-10-19
 
 ### Added
