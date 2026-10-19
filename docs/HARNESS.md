@@ -479,10 +479,20 @@ Les index de la forme récente portent les noms de colonnes `seq` : `ALTER TABLE
   `service=default version=<version>` — **un fichier par démarrage**, nommé par l'instant du
   démarrage ⇒ le plus récent dit la version en cours (mesuré : `version=2.4.13` alors que le binaire
   installé était déjà 2.4.14).
-- Recette : quitter le TUI (`Ctrl+C`) → `opencodev2 daemon stop` → arrêter le détenteur du port 4096
-  → relancer `opencodev2`. La tâche `stop-old-server` fait les deux arrêts et vérifie que le port est
-  libre. **Arrêter le serveur qui héberge la session en cours la termine** : ne jamais le faire depuis
-  cette session sans l'accord de l'utilisateur.
+- **La bascule est automatique au lancement** (depuis `cli/server-restart.ts`). `ensureServer` lit la
+  version servie : si elle diffère du binaire lancé, il arrête le processus qui **tient le port** et
+  relance un serveur neuf. Périmètre de l'arrêt : le titulaire du port uniquement (jamais « tous les
+  opencodev2 » — le démon et les autres serveurs de travail survivent), son image doit être la nôtre
+  (un port tenu par un autre programme n'est jamais tué, et une image illisible ne vaut pas
+  autorisation), jamais un serveur engendré par la session, et l'arrêt est gracieux (SIGTERM) avant
+  d'être forcé. **Conséquence assumée** : les sessions hébergées par l'ancien serveur se terminent à
+  ce moment-là — un redémarrage ne les transfère pas. Si la bascule échoue, l'écart est imprimé et le
+  lancement continue sur l'ancien serveur.
+- Recette manuelle, quand la bascule automatique n'est pas applicable : quitter le TUI (`Ctrl+C`) →
+  `opencodev2 daemon stop` → arrêter le détenteur du port 4096 → relancer `opencodev2`. La tâche
+  `stop-old-server` fait les deux arrêts et vérifie que le port est libre. **Arrêter le serveur qui
+  héberge la session en cours la termine** : ne jamais le faire depuis cette session sans l'accord de
+  l'utilisateur.
 - **Le client atteste la version du serveur** (depuis `server-version.ts`) : `ensureServer` lit
   `GET /global/health` (`handlers/global.ts:83` rend `{ healthy, version }`) et imprime l'écart avant
   de lancer l'interface ; le pied de la barre latérale affiche la version du serveur à côté de celle

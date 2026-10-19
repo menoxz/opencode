@@ -10,6 +10,14 @@ import { ensureDaemonStarted } from "@/daemon/autostart"
 import { DevSource } from "@/dev/source"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { readServerVersion, versionNotice } from "./server-version"
+import {
+  decideServerRestart,
+  isOwnServerImage,
+  portOccupants,
+  processImage,
+  restartLocalServer,
+  waitFor,
+} from "@/cli/server-restart"
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"])
 
@@ -24,6 +32,20 @@ function serverCommand(): string[] {
       ? exe
       : "opencodev2"
   return [binary]
+}
+
+/** Serveurs engendrés par cette session : on ne se tue pas soi-même en croyant nettoyer un ancien. */
+const owned = new Set<number>()
+
+function spawnServer(port: number, listener: readonly string[]) {
+  const [command, ...prefix] = serverCommand()
+  const child = spawn(command, [...prefix, "serve", "--port", String(port), ...listener], {
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true,
+  })
+  if (child.pid) owned.add(child.pid)
+  child.unref()
 }
 
 function serverReachable(url: string, headers?: RequestInit["headers"]): Promise<boolean> {
@@ -48,15 +70,53 @@ export async function ensureServer(
 ): Promise<void> {
   const parsed = new URL(url)
   if (!LOCAL_HOSTS.has(parsed.hostname)) return
+
+  const port = Number(parsed.port)
+  const waitVersion = async () => {
+    const deadline = Date.now() + 15_000
+    while (Date.now() < deadline) {
+      const version = await readServerVersion({ url, headers })
+      if (version !== undefined) return version
+      await new Promise((resolve) => setTimeout(resolve, 400))
+    }
+    return undefined
+  }
+
   if (await serverReachable(url, headers)) {
-    // Un serveur répond, mais peut-être depuis l'ancien binaire : le dire plutôt que de servir une
-    // mise à jour inopérante en silence. On n'arrête rien — il peut détenir une session vivante.
-    const notice = versionNotice(InstallationVersion, await readServerVersion({ url, headers }))
-    if (notice) UI.println(notice)
+    const served = await readServerVersion({ url, headers })
+    const notice = versionNotice(InstallationVersion, served)
+    if (!notice) return
+    // Le serveur qui répond n'est pas celui qu'on vient de déployer : la mise à jour resterait sans
+    // effet, en silence. On applique la recette de remplacement à la place de l'utilisateur —
+    // arrêt ciblé du processus qui tient le port, puis relance depuis le binaire courant.
+    const holder = (await portOccupants(port))[0]
+    const decision = decideServerRestart({
+      mismatch: true,
+      portOccupant: holder,
+      ownServer: holder ? isOwnServerImage(await processImage(holder)) : undefined,
+      children: [...owned],
+    })
+    if (decision.action === "keep") {
+      UI.println(notice)
+      return
+    }
+    UI.println(`Server ${served} ≠ this build (${InstallationVersion}) — restarting it…`)
+    const restarted = await restartLocalServer({
+      pid: decision.pid,
+      spawn: () => spawnServer(port, listener),
+      waitPortFree: () => waitFor(async () => (await portOccupants(port)).length === 0, 10_000),
+      waitVersion,
+    })
+    if (restarted) {
+      UI.println(`Server ready at ${parsed.origin} (${InstallationVersion})`)
+      return
+    }
+    // La bascule a échoué : on ne bloque pas le lancement, on dit l'écart et on laisse l'ancien
+    // serveur maître de ses sessions.
+    UI.println(notice)
     return
   }
 
-  const port = Number(parsed.port)
   if (!port) {
     throw new Error(
       `Server not reachable at ${url} and port is unknown — specify one, e.g. http://localhost:4096`,
@@ -64,20 +124,11 @@ export async function ensureServer(
   }
 
   UI.println(`No server at ${parsed.origin} — starting opencodev2 serve on port ${port}…`)
-  const [command, ...prefix] = serverCommand()
-  spawn(command, [...prefix, "serve", "--port", String(port), ...listener], {
-    detached: true,
-    stdio: "ignore",
-    windowsHide: true,
-  }).unref()
+  spawnServer(port, listener)
 
-  const deadline = Date.now() + 15_000
-  while (Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, 400))
-    if (await serverReachable(url, headers)) {
-      UI.println(`Server ready at ${parsed.origin}`)
-      return
-    }
+  if ((await waitVersion()) !== undefined) {
+    UI.println(`Server ready at ${parsed.origin}`)
+    return
   }
   throw new Error(
     `Timed out waiting for the server at ${parsed.origin} — check that port ${port} is free`,
