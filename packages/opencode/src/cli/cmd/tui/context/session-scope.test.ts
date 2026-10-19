@@ -4,6 +4,7 @@ import {
   addDirectory,
   removeDirectory,
   folderKey,
+  createSingleFlight,
   isRecentSession,
   mergeSessions,
   pendingDirectories,
@@ -121,6 +122,57 @@ describe("session scope", () => {
 
     // The launch folder is never in the pending set, marked or not.
     expect(pendingDirectories(new Set<string>(), current, ["C:\\work\\launch"])).toEqual([])
+  })
+
+  // Un appel qui arrive pendant une passe ne doit pas recevoir une passe commencee avant lui : il
+  // en demande une seule de plus, partagee par tous les appelants en attente.
+  test("une passe en vol est suivie d'une seule relance, partagee", async () => {
+    let runs = 0
+    let release: (() => void) | undefined
+    const gate = () =>
+      new Promise<void>((resolve) => {
+        release = resolve
+      })
+    const call = createSingleFlight(async () => {
+      runs += 1
+      if (runs === 1) await gate()
+    })
+
+    const first = call()
+    const second = call()
+    const third = call()
+    expect(runs).toBe(1)
+
+    release?.()
+    await Promise.all([first, second, third])
+    expect(runs).toBe(2)
+  })
+
+  test("un appelant tardif est servi par la passe suivante, jamais par celle en cours", async () => {
+    const order: string[] = []
+    const call = createSingleFlight(async () => {
+      order.push("run")
+      if (order.filter((entry) => entry === "run").length === 1) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 1))
+      }
+    })
+
+    const early = call()
+    const late = call().then(() => order.push("late"))
+    await Promise.all([early, late])
+    expect(order).toEqual(["run", "run", "late"])
+  })
+
+  test("une passe qui echoue ne bloque pas les appels suivants", async () => {
+    let runs = 0
+    const call = createSingleFlight(async () => {
+      runs += 1
+      if (runs === 1) throw new Error("premiere passe en echec")
+    })
+
+    await call().catch(() => undefined)
+    await call()
+    expect(runs).toBe(2)
   })
 
   test("relit l'etat sur une reconnexion, pas sur la premiere connexion", () => {

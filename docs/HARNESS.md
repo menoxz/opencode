@@ -427,8 +427,11 @@ Les index de la forme récente portent les noms de colonnes `seq` : `ALTER TABLE
   (`mergeSessions` de `session-scope.ts`, dédoublonnage et tri par `id`) et **efface les marques**
   (`forgetReadFolders()`) avant de réhydrater. Le retrait d'un dossier reste le travail de
   `session.refresh()` seul.
-- Les deux bootstraps concurrents (événement `server.instance.disposed` + appel explicite du dialogue)
-  sont **sérialisés** par une promesse de module ⇒ pas d'écriture du magasin dans le désordre.
+- Les bootstraps concurrents (événement `server.instance.disposed`, appel explicite du dialogue,
+  reconnexion du flux) passent par `createSingleFlight` (`session-scope.ts`) : une passe en vol n'est
+  jamais **réutilisée** — un appelant qui arrive après un changement d'état reçoit une passe
+  **suivante**, une seule et partagée par ceux qui ont fait la queue ⇒ ni écriture dans le désordre,
+  ni résultat plus ancien que l'appelant.
 - Test : `src/cli/cmd/tui/context/session-scope.test.ts` ; suite TUI entière 123 pass / 0 fail.
 
 ## `opencodev2` sans commande : TUI sur un serveur détaché, et ce que « hot reload » couvre (mesuré 2026-10-19)

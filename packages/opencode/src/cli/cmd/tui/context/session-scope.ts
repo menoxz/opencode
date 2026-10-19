@@ -92,6 +92,49 @@ export function pendingDirectories(
 }
 
 /**
+ * A single-flight runner: while a pass is in flight, a new call queues **one** extra pass after it
+ * instead of receiving the pass already running.
+ *
+ * The TUI bootstrap needs exactly that: a call that arrives after a disposal must not be answered
+ * with a pass that started before it, and two passes must never write the session store out of
+ * order. The extra pass is shared by every caller that queued, and it reuses the last arguments the
+ * queuers passed.
+ */
+export function createSingleFlight<A extends unknown[], T>(run: (...args: A) => Promise<T>) {
+  let inFlight: Promise<T> | undefined
+  let followUp: Promise<T> | undefined
+  let lastArgs: A | undefined
+
+  function start(args: A): Promise<T> {
+    const current = run(...args)
+    inFlight = current
+    const settle = () => {
+      if (inFlight === current) inFlight = undefined
+    }
+    // Both outcomes clear the slot: a failed pass must not lock the runner out of future calls.
+    void current.then(settle, settle)
+    return current
+  }
+
+  return function call(...args: A): Promise<T> {
+    if (!inFlight) return start(args)
+    lastArgs = args
+    const queued = inFlight
+    followUp ??= queued.then(
+      () => {
+        followUp = undefined
+        return call(...((lastArgs ?? args) as A))
+      },
+      () => {
+        followUp = undefined
+        return call(...((lastArgs ?? args) as A))
+      },
+    )
+    return followUp
+  }
+}
+
+/**
  * Une reconnexion du flux doit relire l'etat, une premiere connexion non : `bootstrap` a deja lu
  * tout ce qu'il fallait au montage, et le rejouer a l'ouverture ne ferait que doubler les appels.
  */

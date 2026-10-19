@@ -42,6 +42,7 @@ import {
   mergeSessions as mergeSessionsInto,
   pendingDirectories,
   removeDirectory as removeWatchedDirectory,
+  createSingleFlight,
   sessionAgeCutoff,
   setExtraDirectories,
   shouldRebootstrapOnReconnect,
@@ -540,18 +541,11 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
 
     /**
      * Two bootstraps can be asked for at once — a disposal event and a dialog's explicit call — and
-     * each rebuilds the session store. The second reuses the pass already in flight instead of
-     * racing it, so two passes never write the store out of order.
+     * each rebuilds the session store. They are serialised, and a caller that arrives while a pass
+     * is in flight gets one pass **after** it: reusing the pass already running would answer a
+     * caller that came after a disposal with state read before it.
      */
-    let bootstrapping: Promise<void> | undefined
-
-    function bootstrap(input: { fatal?: boolean } = {}): Promise<void> {
-      if (bootstrapping) return bootstrapping
-      bootstrapping = runBootstrap(input).finally(() => {
-        bootstrapping = undefined
-      })
-      return bootstrapping
-    }
+    const bootstrap = createSingleFlight((input?: { fatal?: boolean }) => runBootstrap(input))
 
     async function runBootstrap(input: { fatal?: boolean } = {}) {
       const fatal = input.fatal ?? true
