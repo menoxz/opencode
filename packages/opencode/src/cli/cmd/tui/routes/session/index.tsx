@@ -92,7 +92,7 @@ import {
 import { openSessionFolder } from "../../component/dialog-directory-select"
 import { SubagentBar } from "./subagent-bar.tsx"
 import { SubagentFooter } from "./subagent-footer.tsx"
-import { taskFollowUpLabel } from "./task-followup"
+import { taskFollowUp, taskFollowUpIcon, taskFollowUpText } from "./task-followup"
 import { LANGUAGE_EXTENSIONS } from "@/lsp/language"
 import parsers from "../../../../../../parsers-config.ts"
 import * as Clipboard from "../../util/clipboard"
@@ -1951,6 +1951,8 @@ function UserMessage(props: {
  * c'est ce que l'agent relit à chaque tour. Elle revient ici sur une ligne, au cran bas
  * d'opacité : le statut s'anime tant que le tour tourne, et le dépliage donne les sources.
  */
+const INJECTION_ICON = "≡"
+
 function Instructions(props: { parts: Part[]; sessionID: string }) {
   const { theme } = useTheme()
   const sync = useSync()
@@ -1965,7 +1967,9 @@ function Instructions(props: { parts: Part[]; sessionID: string }) {
   // part qui les porte est écrite, l'injection est faite et l'animation s'arrête, même si la
   // réponse continue.
   const injecting = createMemo(() => instructionsInjecting(sources(), busy()))
-  const heading = createMemo(() => `◆ ${instructionsHeading(sources().length)}`)
+  // Le glyphe du bloc cede sa place au spinner pendant l'injection : sinon la ligne porterait
+  // l'animation et une icone figee qui la contredit.
+  const heading = createMemo(() => instructionsHeading(sources().length))
   const expandable = createMemo(() => sources().length > 0)
 
   return (
@@ -1984,6 +1988,7 @@ function Instructions(props: { parts: Part[]; sessionID: string }) {
             <Spinner color={theme.textLow} />
           </Show>
           <text fg={theme.textLow} wrapMode="none" truncate>
+            {injecting() ? "" : `${INJECTION_ICON} `}
             {heading()} {expandable() ? (open() ? "▾" : "▸") : ""}
           </text>
         </box>
@@ -2801,10 +2806,11 @@ function Task(props: ToolProps<typeof TaskTool>) {
     return assistant - first
   })
 
-  const followUp = createMemo(() => taskFollowUpLabel(props.input.action))
+  const followUp = createMemo(() => taskFollowUp(props.input.action))
+  const completed = createMemo(() => props.part.state.status === "completed")
 
   const content = createMemo(() => {
-    if (!props.input.description) return followUp()
+    if (!props.input.description) return taskFollowUpText(props.input.action, completed())
     const description =
       props.metadata.background === true ? `${props.input.description} (background)` : props.input.description
     let content = [`${Locale.titlecase(props.input.subagent_type ?? "General")} Task — ${description}`]
@@ -2831,9 +2837,9 @@ function Task(props: ToolProps<typeof TaskTool>) {
 
   return (
     <InlineTool
-      icon="│"
+      icon={taskFollowUpIcon(props.input.action, "⇢")}
       spinner={isRunning()}
-      complete={props.input.description || followUp()}
+      complete={props.input.description || !!followUp()}
       pending="Delegating..."
       part={props.part}
       onClick={() => {

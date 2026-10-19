@@ -1067,7 +1067,7 @@ function Task(props: ToolProps) {
   })
   return (
     <InlineTool
-      icon="│"
+      icon="⇢"
       spinner={props.part.state.status === "running"}
       complete={toolComplete(props.part)}
       pending="Delegating..."
