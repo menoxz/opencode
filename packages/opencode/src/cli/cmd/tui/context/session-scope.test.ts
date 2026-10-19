@@ -3,7 +3,10 @@ import {
   SESSION_MAX_AGE_DAYS,
   addDirectory,
   removeDirectory,
+  folderKey,
   isRecentSession,
+  mergeSessions,
+  pendingDirectories,
   sessionAgeCutoff,
   watchedDirectories,
 } from "./session-scope"
@@ -73,6 +76,50 @@ describe("session scope", () => {
     // A week exactly: kept; a millisecond older: dropped.
     expect(isRecentSession({ time: { updated: now - week } }, cutoff)).toBe(true)
     expect(isRecentSession({ time: { updated: now - week - 1 } }, cutoff)).toBe(false)
+  })
+
+  test("a bootstrap-style merge never drops sessions that came from another folder", () => {
+    // Bootstrap reads the launch folder alone; the added folder's sessions are already in the store.
+    const fromAddedFolder = [{ id: "a", directory: "C:\\work\\added" }]
+    const launchPage = [{ id: "b", directory: "C:\\work\\launch" }]
+
+    // Replacing the store with the launch page would empty the added folder: the merge keeps both.
+    expect(mergeSessions(fromAddedFolder, launchPage).map((session) => session.id)).toEqual(["a", "b"])
+  })
+
+  test("a merge collapses duplicate ids and keeps the result sorted by id", () => {
+    const existing = [
+      { id: "b", title: "stale" },
+      { id: "a", title: "a" },
+    ]
+    const page = [
+      { id: "c", title: "c" },
+      { id: "b", title: "fresh" },
+    ]
+
+    const merged = mergeSessions(existing, page)
+    // Sorted because the store binary-searches by id.
+    expect(merged.map((session) => session.id)).toEqual(["a", "b", "c"])
+    // One entry per id, and the freshly read page wins.
+    expect(merged.filter((session) => session.id === "b")).toHaveLength(1)
+    expect(merged.find((session) => session.id === "b")?.title).toBe("fresh")
+  })
+
+  test("clearing the read marks makes a rehydrate read an already-read folder again", () => {
+    const loaded = new Set([folderKey("C:\\work\\added")])
+    const current = "C:\\work\\launch"
+    const added = ["C:\\work\\added"]
+
+    // While the mark stands, the folder is already read and the pass leaves it alone.
+    expect(pendingDirectories(loaded, current, added)).toEqual([])
+
+    // The reset (`forgetReadFolders` clears this set): the folder is pending again, so the rehydrate
+    // after a disposal reads it instead of leaving it at zero sessions.
+    loaded.clear()
+    expect(pendingDirectories(loaded, current, added)).toEqual(["C:\\work\\added"])
+
+    // The launch folder is never in the pending set, marked or not.
+    expect(pendingDirectories(new Set<string>(), current, ["C:\\work\\launch"])).toEqual([])
   })
 
 })

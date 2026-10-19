@@ -39,6 +39,8 @@ import {
   addDirectory as addWatchedDirectory,
   folderKey,
   isRecentSession,
+  mergeSessions as mergeSessionsInto,
+  pendingDirectories,
   removeDirectory as removeWatchedDirectory,
   sessionAgeCutoff,
   setExtraDirectories,
@@ -196,9 +198,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
 
     /** One list out of several folders' pages, ordered by id because the store binary-searches it. */
     function mergeSessions(pages: readonly (readonly Session[])[]): Session[] {
-      const byID = new Map<string, Session>()
-      for (const page of pages) for (const session of page) byID.set(session.id, session)
-      return [...byID.values()].toSorted((a, b) => a.id.localeCompare(b.id))
+      return pages.reduce<Session[]>((merged, page) => mergeSessionsInto(merged, page), [])
     }
 
     /**
@@ -270,10 +270,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       hydrating = (async () => {
         do {
           rehydrate = false
-          const current = folderKey(currentDirectory())
-          for (const directory of storedExtraDirectories()) {
-            const key = folderKey(directory)
-            if (!key || key === current || loadedDirectories.has(key)) continue
+          for (const directory of pendingDirectories(loadedDirectories, currentDirectory(), storedExtraDirectories())) {
             if (!existsSync(directory)) continue
             try {
               await loadDirectory(directory)
@@ -294,9 +291,8 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
     event.subscribe((event, { workspace }) => {
       switch (event.type) {
         case "server.instance.disposed":
-          // The instance that answered the last read is gone, and `bootstrap` is about to rebuild
-          // the session store from the launch folder alone: re-read the added folders too.
-          forgetReadFolders()
+          // The instance that answered the last read is gone: `bootstrap` clears the read marks
+          // itself and re-reads every folder, so the added ones are read again too.
           void bootstrap()
           break
         case "permission.replied": {
@@ -541,8 +537,26 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
     const exit = useExit()
     const args = useArgs()
 
-    async function bootstrap(input: { fatal?: boolean } = {}) {
+    /**
+     * Two bootstraps can be asked for at once — a disposal event and a dialog's explicit call — and
+     * each rebuilds the session store. The second reuses the pass already in flight instead of
+     * racing it, so two passes never write the store out of order.
+     */
+    let bootstrapping: Promise<void> | undefined
+
+    function bootstrap(input: { fatal?: boolean } = {}): Promise<void> {
+      if (bootstrapping) return bootstrapping
+      bootstrapping = runBootstrap(input).finally(() => {
+        bootstrapping = undefined
+      })
+      return bootstrapping
+    }
+
+    async function runBootstrap(input: { fatal?: boolean } = {}) {
       const fatal = input.fatal ?? true
+      // A bootstrap rebuilds the session store from the launch folder, so the read marks must go:
+      // keeping them left an added folder marked read, its sessions then wiped and never re-read.
+      forgetReadFolders()
       const workspace = project.workspace.current()
       const projectPromise = project.sync()
       const sessionListPromise = projectPromise.then(() => listSessions())
@@ -603,7 +617,9 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
               setStore("console_state", reconcile(consoleState))
               setStore("agent", reconcile(agents))
               setStore("config", reconcile(config))
-              if (sessions !== undefined) setStore("session", reconcile(sessions))
+              // Merged, never replaced: the launch folder's page must not drop the sessions of the
+              // folders already loaded. Removing a folder stays `session.refresh()`'s job alone.
+              if (sessions !== undefined) setStore("session", reconcile(mergeSessionsInto(store.session, sessions)))
             })
           })
         })
@@ -614,7 +630,13 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
           void hydrateAddedDirectories()
           // non-blocking
           void Promise.all([
-            ...(args.continue ? [] : [sessionListPromise.then((sessions) => setStore("session", reconcile(sessions)))]),
+            ...(args.continue
+              ? []
+              : [
+                  sessionListPromise.then((sessions) =>
+                    setStore("session", reconcile(mergeSessionsInto(store.session, sessions))),
+                  ),
+                ]),
             consoleStatePromise.then((consoleState) => setStore("console_state", reconcile(consoleState))),
             sdk.client.command.list({ workspace }).then((x) => setStore("command", reconcile(x.data ?? []))),
             sdk.client.lsp.status({ workspace }).then((x) => setStore("lsp", reconcile(x.data ?? []))),

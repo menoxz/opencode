@@ -59,6 +59,38 @@ export function watchedDirectories(current: string | undefined, added: readonly 
   })
 }
 
+/**
+ * Merges a freshly read page into the sessions already held, instead of replacing them.
+ *
+ * A bootstrap rebuilds the session store from the launch folder, whose page alone would silently
+ * empty every folder the user added to the list: those folders are read by their own pass, so the
+ * merge keeps their sessions. A repeated id keeps the page's copy, and the result stays sorted by
+ * id (the store binary-searches it) and free of duplicates (or the search would meet an id twice).
+ */
+export function mergeSessions<T extends { id: string }>(existing: readonly T[], page: readonly T[]): T[] {
+  const byID = new Map<string, T>()
+  for (const session of existing) byID.set(session.id, session)
+  for (const session of page) byID.set(session.id, session)
+  return [...byID.values()].toSorted((a, b) => a.id.localeCompare(b.id))
+}
+
+/**
+ * The added folders a hydration pass still has to read: the ones not read yet, minus the current
+ * folder. Clearing the read marks is what puts an already-read folder back in this list, so a pass
+ * after a disposal re-reads it instead of leaving it at zero sessions.
+ */
+export function pendingDirectories(
+  loaded: ReadonlySet<string>,
+  current: string | undefined,
+  added: readonly string[],
+): string[] {
+  const currentKey = folderKey(current)
+  return added.filter((directory) => {
+    const key = folderKey(directory)
+    return key !== "" && key !== currentKey && !loaded.has(key)
+  })
+}
+
 /** The kv key the folders the user added to the session list are stored under. */
 export const SESSION_EXTRA_DIRECTORIES_KEY = "session_extra_directories"
 
