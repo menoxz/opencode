@@ -456,10 +456,26 @@ Les index de la forme récente portent les noms de colonnes `seq` : `ALTER TABLE
 - **Réserve (non prouvée mesurable)** : le chemin TTY (TUI peinte, rattachement à un serveur déjà
   lancé) n'est vérifiable que par lecture (`index.ts:92-100`, `attach.ts:40-47`), pas dans un shell
   sans terminal.
-- **Faiblesse trouvée** : un redémarrage **dur** du serveur par `bun --watch` n'émet pas
-  `server.instance.disposed` ⇒ la TUI se reconnecte mais ne re-`bootstrap` pas (`bootstrap` n'est
-  appelé qu'à `sync.tsx:296` et `:673`) : la liste des sessions peut rester figée jusqu'à une action
-  de rafraîchissement. Correctif minimal si on le veut : re-déclencher `bootstrap()` au premier
-  rétablissement du flux SSE (`sdk.tsx:101-106`).
+- **Redémarrage dur : corrigé** (2026-10-19). Un `bun --watch` qui relance le serveur n'émet pas
+  `server.instance.disposed` ; le flux rouvert le signale désormais — `tui/context/sdk.tsx` incrémente
+  un compteur `reconnects` **quand le flux avait déjà servi** (la première connexion ne compte pas) —
+  et `sync.tsx` relit son état via `shouldRebootstrapOnReconnect` (`session-scope.ts`). Sans cela, la
+  liste des sessions restait figée jusqu'à une action de rafraîchissement.
+
+## Auto-continuation : un objectif clos ne se réclot pas (mesuré 2026-10-19)
+
+- `AUTO_CONTINUE_INSTRUCTION` (`session/continuation.ts`) portait « If the objective is already fully
+  satisfied, verify it and call complete_objective now » et était injecté **tel quel** à
+  `session/prompt.ts:1932`, sans regarder l'état de l'objectif. Après une complétion, le rappel
+  poussait donc à rappeler `complete_objective`, qui ne rendait qu'un « Objective already completed. »
+  (`tool/goal-contract.ts:686`) : un tour brûlé, et un contresens avec la carte
+  « This objective is achieved. Do not redo it. » produite à la compaction.
+- Correctif : `autoContinueInstructionFor({ objectiveClosed })` remplace la **dernière** consigne du
+  rappel (le reste est inchangé) ; `prompt.ts` lit `sessions.get(sessionID).goalState?.status ===
+  "completed"` avant de l'armer. Test : `session/continuation.test.ts`.
+- Reste un tour évitable mais structurel : un `complete_objective` appelé avec un finding encore
+  `open` est refusé (`goal-contract.ts:624`) et doit être rappelé une fois — le contrat l'annonce
+  déjà dans la description de l'outil.
+
 
 
