@@ -3,7 +3,7 @@ import type { GlobalEvent } from "@opencode-ai/sdk/v2"
 import { createSimpleContext } from "./helper"
 import { createGlobalEmitter } from "@solid-primitives/event-bus"
 import { Flag } from "@opencode-ai/core/flag/flag"
-import { batch, onCleanup, onMount } from "solid-js"
+import { batch, createSignal, onCleanup, onMount } from "solid-js"
 
 export type EventSource = {
   subscribe: (handler: (event: GlobalEvent) => void) => Promise<() => void>
@@ -20,6 +20,11 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
   }) => {
     const abort = new AbortController()
     let sse: AbortController | undefined
+    // Nombre de fois ou le flux a ete rouvert apres avoir deja livre : une coupure reseau, ou un
+    // serveur relance a chaud (`bun --watch`) qui a oublie ses instances. La couche de
+    // synchronisation s'en sert pour relire son etat ; la premiere connexion ne compte pas.
+    const [reconnects, setReconnects] = createSignal(0)
+    let streamOpened = false
 
     function createSDK() {
       return createOpencodeClient({
@@ -85,6 +90,12 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
             sseMaxRetryAttempts: 0,
           })
 
+          // Le flux se rouvre alors qu'il avait deja servi : le serveur a pu redemarrer entre les
+          // deux, et rien d'autre ne le signale (un redemarrage dur n'emet pas
+          // `server.instance.disposed`).
+          if (streamOpened) setReconnects((count) => count + 1)
+          streamOpened = true
+
           if (Flag.OPENCODE_EXPERIMENTAL_WORKSPACES) {
             // Start syncing workspaces, it's important to do this after
             // we've started listening to events
@@ -137,6 +148,8 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
       event: emitter,
       fetch: props.fetch ?? fetch,
       url: props.url,
+      /** Compteur des reconnexions du flux, pour les couches qui doivent relire leur etat. */
+      reconnects,
     }
   },
 })

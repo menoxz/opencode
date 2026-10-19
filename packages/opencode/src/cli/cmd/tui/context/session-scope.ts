@@ -91,6 +91,14 @@ export function pendingDirectories(
   })
 }
 
+/**
+ * Une reconnexion du flux doit relire l'etat, une premiere connexion non : `bootstrap` a deja lu
+ * tout ce qu'il fallait au montage, et le rejouer a l'ouverture ne ferait que doubler les appels.
+ */
+export function shouldRebootstrapOnReconnect(previous: number | undefined, next: number): boolean {
+  return previous !== undefined && next > previous
+}
+
 /** The kv key the folders the user added to the session list are stored under. */
 export const SESSION_EXTRA_DIRECTORIES_KEY = "session_extra_directories"
 

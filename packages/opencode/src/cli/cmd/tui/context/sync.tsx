@@ -27,7 +27,7 @@ import { createSimpleContext } from "./helper"
 import type { Snapshot } from "@/snapshot"
 import { useExit } from "./exit"
 import { useArgs } from "./args"
-import { batch, onMount } from "solid-js"
+import { batch, createEffect, on, onMount } from "solid-js"
 import * as Log from "@opencode-ai/core/util/log"
 import { emptyConsoleState, type ConsoleState } from "@/config/console-state"
 import path from "path"
@@ -44,6 +44,7 @@ import {
   removeDirectory as removeWatchedDirectory,
   sessionAgeCutoff,
   setExtraDirectories,
+  shouldRebootstrapOnReconnect,
   watchedDirectories,
 } from "./session-scope"
 import { existsSync } from "fs"
@@ -672,6 +673,19 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
     onMount(() => {
       void bootstrap()
     })
+
+    // Le flux rouvert apres une coupure ne dit rien de l'etat du serveur : un redemarrage a chaud
+    // (`bun --watch`) n'emet pas `server.instance.disposed`. La premiere connexion, elle, suit le
+    // `bootstrap` du montage et n'a rien a relire.
+    createEffect(
+      on(
+        () => sdk.reconnects(),
+        (count, previous) => {
+          if (shouldRebootstrapOnReconnect(previous, count)) void bootstrap()
+        },
+        { defer: true },
+      ),
+    )
 
     const result = {
       data: store,

@@ -8,6 +8,7 @@ import {
   mergeSessions,
   pendingDirectories,
   sessionAgeCutoff,
+  shouldRebootstrapOnReconnect,
   watchedDirectories,
 } from "./session-scope"
 
@@ -122,4 +123,12 @@ describe("session scope", () => {
     expect(pendingDirectories(new Set<string>(), current, ["C:\\work\\launch"])).toEqual([])
   })
 
+  test("relit l'etat sur une reconnexion, pas sur la premiere connexion", () => {
+    // Premiere connexion (aucun precedent) : le bootstrap du montage vient de lire l'etat.
+    expect(shouldRebootstrapOnReconnect(undefined, 1)).toBe(false)
+    // Le flux se rouvre apres une coupure ou un redemarrage a chaud : l'etat peut etre perime.
+    expect(shouldRebootstrapOnReconnect(0, 1)).toBe(true)
+    // Un signal qui ne bouge pas ne declenche rien.
+    expect(shouldRebootstrapOnReconnect(2, 2)).toBe(false)
+  })
 })
