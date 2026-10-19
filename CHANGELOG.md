@@ -5,6 +5,19 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v2.4.14] - 2026-10-19
+
+### Fixed
+- **Une erreur réseau ou DNS est réessayée.** `getaddrinfo ENOTFOUND opencode.ai` n'a ni statut HTTP ni marque de retry du SDK : `retryable()` sortait sur `if (!isRetryable && !transient)`, donc la session s'arrêtait au premier incident au lieu de réessayer. Les motifs de transport sont lus dans le texte **aussi** dans la branche `APIError` (un SDK peut envelopper une sortie réseau avec `isRetryable: false`), et la liste s'étend à `enotfound`, `getaddrinfo`, `ehostunreach`, `enetunreach`, `econnaborted`, `esockettimedout`. Le plafond reste 10 tentatives, backoff 2 s ×2 plafonné à 30 s.
+- **Ajouter une clé API à un fournisseur ne vide plus la liste des sessions.** Le dialogue enregistre la clé, appelle `instance.dispose()` puis `sync.bootstrap()`, et `bootstrap` écrivait `setStore("session", reconcile(sessions))` avec la **seule** page du dossier de lancement : les sessions des dossiers ajoutés disparaissaient, et leurs compteurs restaient à **0** jusqu'au redémarrage, car `loadedDirectories` les marquait encore comme lus. `bootstrap` **fusionne** désormais sa page avec le magasin existant (`mergeSessions`, dédoublonnage et tri par `id`) et efface les marques de lecture avant de réhydrater ; le retrait d'un dossier reste le travail de `session.refresh()`, et les deux bootstraps concurrents (événement de disposal + appel du dialogue) sont sérialisés.
+- **La TUI relit son état après un redémarrage dur du serveur.** Un `bun --watch` qui relance le serveur n'émet pas `server.instance.disposed` : la TUI se reconnectait au flux sans jamais relire, et la liste des sessions restait figée jusqu'à une action de rafraîchissement. Le flux rouvert le signale maintenant — compteur `reconnects` incrémenté **seulement si le flux avait déjà servi**, pour que la première connexion ne paie pas un second `bootstrap` — et la synchronisation relit son état (`shouldRebootstrapOnReconnect`).
+- **Le rappel d'auto-continuation ne pousse plus à clore un objectif déjà clos.** La consigne « verify it and call complete_objective now » était injectée sans regarder l'état de l'objectif : après une complétion, le modèle rappelait l'outil, qui ne rendait qu'un « Objective already completed. » — un tour brûlé, en contresens avec la carte « This objective is achieved. Do not redo it. ». La dernière consigne du rappel dépend désormais du statut réel (`goalState.status === "completed"`).
+
+### Changed
+- **Les suivis de sous-agent ont une vraie icône.** « Waiting/Checking/Stopping subagent… » était préfixé par l'icône `│` du bloc `task`, qui se lisait comme un `|` égaré. Chaque action a son glyphe (`◷` attente, `⌕` vérification, `■` arrêt), une délégation ordinaire garde `⇢`, et la ligne terminée dit le résultat (« Subagent finished / checked / stopped ») au lieu de répéter l'action.
+- **Le bloc d'injections quitte `◆` pour `≡`,** et le glyphe s'efface pendant l'injection : la ligne affiche alors le **spinner seul**, puis `≡ core/instructions: N sources ▸` une fois posé, au lieu de porter les deux.
+- **Le fragment core interdit la narration et n'exige qu'un rapport final** (`session/prompt/core.txt`, version 8) : pas de commentaire de plan, d'intention, de progression ni du pas suivant entre les actions, et un unique rapport en fin de session — résultat d'abord, puis ce qui a changé, ce qui a été vérifié, ce qui reste. Le raisonnement qui n'est pas un livrable ne se produit plus.
+
 ## [v2.4.11] - 2026-10-18
 
 ### Changed
