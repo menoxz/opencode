@@ -5,6 +5,11 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v2.4.15] - 2026-10-19
+
+### Fixed
+- **Un bootstrap demandé pendant une passe en vol n'est plus servi par cette passe.** Les bootstraps concurrents de la TUI (événement `server.instance.disposed`, appel explicite du dialogue, reconnexion du flux) partageaient une promesse de module : un appelant qui arrivait **après** un changement d'état recevait la passe déjà commencée, donc un magasin de sessions lu avant cet état. Ils passent par un `createSingleFlight` (`session-scope.ts`) : la passe en vol n'est jamais réutilisée, un appelant en attente obtient **une** passe suivante, partagée par tous ceux qui ont fait la queue, et une passe en échec ne bloque plus les appels ultérieurs. Le magasin n'est toujours jamais écrit dans le désordre.
+
 ## [v2.4.14] - 2026-10-19
 
 ### Fixed
