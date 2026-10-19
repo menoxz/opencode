@@ -5,6 +5,11 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v2.4.16] - 2026-10-19
+
+### Added
+- **Le client atteste la version du serveur qui le sert.** Après un déploiement, l'ancien serveur détaché répond toujours et `ensureServer` le réutilisait sans regarder ce qu'il sert : la mise à jour restait **sans effet, en silence**. Le serveur publie pourtant sa version (`GET /global/health` rend `{ healthy, version }`), que le client lit désormais (`cli/cmd/tui/server-version.ts`) : l'écart est imprimé avant le démarrage de l'interface, et le pied de la barre latérale affiche la version du serveur à côté de celle du binaire, en `warning` avec `restart required` quand elles diffèrent. La valeur est relue à chaque ouverture du flux, donc un serveur relancé entre deux connexions se voit sans relancer la TUI. Une lecture ratée — injoignable, auth, corps illisible, champ absent — vaut `unknown`, **jamais** « aligné ». Aucun processus n'est arrêté ni redémarré : le défaut est **rapporté**, l'ancien serveur reste maître de sa session.
+
 ## [v2.4.15] - 2026-10-19
 
 ### Fixed
