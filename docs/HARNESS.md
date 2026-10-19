@@ -465,7 +465,26 @@ Les index de la forme récente portent les noms de colonnes `seq` : `ALTER TABLE
   et `sync.tsx` relit son état via `shouldRebootstrapOnReconnect` (`session-scope.ts`). Sans cela, la
   liste des sessions restait figée jusqu'à une action de rafraîchissement.
 
-## Auto-continuation : un objectif clos ne se réclot pas (mesuré 2026-10-19)
+## Après un déploiement : faire tourner le TUI sur le nouveau binaire (mesuré 2026-10-19)
+
+- Le TUI ne démarre un serveur que si **personne** ne répond sur le port : `attach.ts:40-47` rend la
+  main dès qu'un serveur répond à `/config` ⇒ un ancien serveur encore vivant est **réutilisé** et le
+  TUI tourne sur l'ancien code, sans aucun message. Le port par défaut est **4096**
+  (`dev/source.ts:15`, résolu par `cli/default-command.ts:107`).
+- Aucune surface de commande n'arrête ce serveur (rien dans `cli/cmd/serve.ts` ni `server/server.ts`)
+  ⇒ on l'arrête par son **PID de port**, et le démon à part par `opencodev2 daemon stop` (SIGTERM,
+  5 s de grâce, puis SIGKILL).
+- Preuve du binaire qui sert réellement : le journal de démarrage
+  `%USERPROFILE%\.local\share\opencodev2\log\<YYYY-MM-DDTHHMMSS>.log` porte
+  `service=default version=<version>` — **un fichier par démarrage**, nommé par l'instant du
+  démarrage ⇒ le plus récent dit la version en cours (mesuré : `version=2.4.13` alors que le binaire
+  installé était déjà 2.4.14).
+- Recette : quitter le TUI (`Ctrl+C`) → `opencodev2 daemon stop` → arrêter le détenteur du port 4096
+  → relancer `opencodev2`. La tâche `stop-old-server` fait les deux arrêts et vérifie que le port est
+  libre. **Arrêter le serveur qui héberge la session en cours la termine** : ne jamais le faire depuis
+  cette session sans l'accord de l'utilisateur.
+
+
 
 - `AUTO_CONTINUE_INSTRUCTION` (`session/continuation.ts`) portait « If the objective is already fully
   satisfied, verify it and call complete_objective now » et était injecté **tel quel** à
