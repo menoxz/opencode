@@ -544,5 +544,17 @@ Les index de la forme récente portent les noms de colonnes `seq` : `ALTER TABLE
 - Corollaire de diagnostic : avant d'accuser le modèle de ne pas suivre une règle, vérifier qu'elle
   est dans le bloc injecté — une règle tronquée n'est pas désobéie, elle est absente.
 
+## Skill créée en cours de session : le reload ne l'indexe pas (mesuré 2026-10-20)
+
+- Six `SKILL.md` écrits sous `.opencode/skills/fork-*/`, puis `service=skill count=196 revision=274
+  reload` dans le log **après** les écritures : le compteur ne bouge pas et `skill_search` répond
+  « 5 of 199 installed skills ».
+- Test fonctionnel : `skill({ name: "fork-tests" })` → `Skill "fork-tests" not found`, alors que la
+  liste des skills disponibles ne contient aucune des six.
+- ⇒ Une skill créée en cours de session n'est **pas** chargeable par l'outil ; elle existe sur
+  disque, elle sera indexée au démarrage suivant. Repli immédiat : lire le fichier
+  `.opencode/skills/<nom>/SKILL.md` (le contenu est injecté comme texte, sans passer par le
+  catalogue).
+
 
 

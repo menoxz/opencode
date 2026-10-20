@@ -14,6 +14,8 @@ Ne pas recopier ce que le harnais injecte déjà : descriptions d'agents et d'ou
 
 ## Skills du dépôt — charger avant d'agir
 
+Une skill créée en cours de session n'entre pas dans le catalogue (reload sans effet, mesuré) ⇒ si `skill` ne la connaît pas, lire `.opencode/skills/<nom>/SKILL.md` directement.
+
 | Domaine | Skill | Déclencher quand |
 |---|---|---|
 | Tests, typecheck, A/B | `fork-tests` | lancer ou écrire un test, échec, `--timeout`, `perf-guard` |
