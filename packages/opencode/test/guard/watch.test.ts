@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import fs from "fs"
 import os from "os"
 import path from "path"
-import { guardWatchKey, guardWatchTargets } from "../../src/guard"
+import { guardRoots, guardWatchKey, guardWatchTargets } from "../../src/guard"
 
 function tempRoot(withGuards: boolean) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "guard-watch-"))
@@ -56,5 +56,40 @@ describe("guard watch", () => {
     expect(guardWatchKey(roots, { dir: guards, container: true }, "delegate.md")).not.toBeNull()
     expect(guardWatchKey(roots, { dir: guards, container: true }, null)).not.toBeNull()
     fs.rmSync(base, { recursive: true, force: true })
+  })
+})
+
+describe("guard roots", () => {
+  test("the two default roots are the global guards folder and the project one", () => {
+    const roots = guardRoots({ configDir: "/cfg", directory: "/proj", worktree: "/proj" })
+    expect(roots).toEqual([path.join("/cfg", "guards"), path.join("/proj", ".opencode", "guards")])
+  })
+
+  test("a distinct worktree adds a third root", () => {
+    const roots = guardRoots({ configDir: "/cfg", directory: "/proj/sub", worktree: "/proj" })
+    expect(roots).toContain(path.join("/proj", ".opencode", "guards"))
+  })
+
+  // `guards.paths` est déclaré dans la config : s'il n'entre pas ici, les gardes qu'il désigne ne
+  // sont ni chargées ni surveillées, et la clé devient un mensonge silencieux.
+  test("configured extra folders are appended", () => {
+    const roots = guardRoots({ configDir: "/cfg", directory: "/proj", worktree: "/proj", extra: ["/shared/guards"] })
+    expect(roots).toContain(path.resolve("/shared/guards"))
+  })
+
+  test("a ~/ path is expanded to the home directory", () => {
+    const roots = guardRoots({ configDir: "/cfg", directory: "/proj", worktree: "/proj", extra: ["~/mes-garde"] })
+    expect(roots).toContain(path.join(os.homedir(), "mes-garde"))
+  })
+
+  test("blank entries are ignored and duplicates collapse", () => {
+    const roots = guardRoots({
+      configDir: "/cfg",
+      directory: "/proj",
+      worktree: "/proj",
+      extra: ["", "  ", path.join("/cfg", "guards")],
+    })
+    expect(roots.filter((root) => root === path.join("/cfg", "guards"))).toHaveLength(1)
+    expect(roots).toHaveLength(2)
   })
 })

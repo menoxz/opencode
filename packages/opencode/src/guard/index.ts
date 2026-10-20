@@ -12,12 +12,14 @@
  */
 import path from "path"
 import fs from "fs"
+import { homedir } from "os"
 import { Effect, Layer, Context, Option } from "effect"
 import { Global } from "@opencode-ai/core/global"
 import * as Log from "@opencode-ai/core/util/log"
 import { InstanceState } from "@/effect/instance-state"
 import { EffectBridge } from "@/effect/bridge"
 import { ToolRegistry } from "@/tool/registry"
+import { Config } from "@/config/config"
 import type { CompiledGuard } from "./triggers"
 import { loadGuardRoots, type GuardError } from "./parse"
 
@@ -45,13 +47,37 @@ export interface Interface {
   readonly revision: () => Effect.Effect<number>
 }
 
-/** Dossiers de découverte : global d'abord, puis projet (le projet gagne sur un nom identique). */
-export function guardRoots(input: { configDir: string; directory: string; worktree: string }): string[] {
+/** Dossiers de découverte : global, projet, puis les dossiers déclarés dans `guards.paths`. */
+export function guardRoots(input: {
+  configDir: string
+  directory: string
+  worktree: string
+  extra?: readonly string[]
+}): string[] {
   const roots = [path.join(input.configDir, "guards"), path.join(input.directory, ".opencode", "guards")]
   if (input.worktree && input.worktree !== input.directory) {
     roots.push(path.join(input.worktree, ".opencode", "guards"))
   }
-  return [...new Set(roots)]
+  for (const item of input.extra ?? []) {
+    const trimmed = item?.trim()
+    if (!trimmed) continue
+    // `~/` est la seule forme relative acceptée : le reste est résolu tel quel, pour qu'un chemin
+    // relatif ne dépende pas du dossier courant du processus.
+    const expanded = trimmed.startsWith("~/") ? path.join(homedir(), trimmed.slice(2)) : trimmed
+    roots.push(path.resolve(expanded))
+  }
+  // Dédoublonnage sur le chemin **résolu** : `path.join("/cfg","guards")` et `path.resolve("/cfg/guards")`
+  // désignent le même dossier mais ne s'écrivent pas pareil sur Windows. On rend la première forme
+  // rencontrée, pour que les racines par défaut gardent leur écriture d'origine.
+  const seen = new Set<string>()
+  const unique: string[] = []
+  for (const root of roots) {
+    const key = path.resolve(root)
+    if (seen.has(key)) continue
+    seen.add(key)
+    unique.push(root)
+  }
+  return unique
 }
 
 /**
@@ -95,9 +121,33 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const global = yield* Global.Service
 
+    // Réglages lus de façon optionnelle : le service ne doit pas exiger `Config` dans ses
+    // requirements (ce qui casserait les layers de test et l'ordre de résolution). Absent, on
+    // retombe sur les racines par défaut et tout est actif.
+    const guardConfig = Effect.fnUntraced(function* () {
+      const config = Option.getOrUndefined(yield* Effect.serviceOption(Config.Service))
+      if (!config) return { extra: [] as string[], enabled: true, disable: [] as string[] }
+      const info = (yield* config.get()).guards
+      return {
+        extra: info?.paths ?? [],
+        enabled: info?.enabled !== false,
+        disable: info?.disable ?? [],
+      }
+    })
+
     const state = yield* InstanceState.make<State>(
       Effect.fn("Guard.state")(function* (ctx) {
-        const roots = guardRoots({ configDir: global.config, directory: ctx.directory, worktree: ctx.worktree })
+        const settings = yield* guardConfig()
+        if (!settings.enabled) {
+          log.info("init", { count: 0, errors: 0, disabled: true })
+          return { guards: {}, errors: [] } satisfies State
+        }
+        const roots = guardRoots({
+          configDir: global.config,
+          directory: ctx.directory,
+          worktree: ctx.worktree,
+          extra: settings.extra,
+        })
         // Le registre est lu de façon **optionnelle** : il n'est pas toujours résolu à ce point du
         // cycle de vie, et l'exiger changerait les requirements du layer (ce qui avait cassé le
         // câblage). Présent, il sert de référence pour refuser un nom d'outil inexistant ; absent, on
@@ -107,7 +157,13 @@ export const layer = Layer.effect(
         const knownTools = registry ? yield* registry.ids() : undefined
         const result = yield* Effect.promise(() => loadGuardRoots(roots, { knownTools }))
         const guards: Record<string, CompiledGuard> = {}
-        for (const guard of result.guards) guards[guard.name] = guard
+        const disabled = new Set(settings.disable)
+        for (const guard of result.guards) {
+          // `disable` est une sourdine par nom : le fichier reste sur disque, la garde ne charge pas.
+          if (disabled.has(guard.name)) continue
+          guards[guard.name] = guard
+        }
+        if (disabled.size > 0) log.info("guards disabled by config", { names: [...disabled] })
         for (const error of result.errors) log.warn("invalid guard", { guard: error.location, message: error.message })
         if (knownTools) {
           const available = new Set(knownTools)
@@ -169,7 +225,13 @@ export const layer = Layer.effect(
       }
 
       const ctx = yield* InstanceState.context
-      const roots = guardRoots({ configDir: global.config, directory: ctx.directory, worktree: ctx.worktree })
+      const settings = yield* guardConfig()
+      const roots = guardRoots({
+        configDir: global.config,
+        directory: ctx.directory,
+        worktree: ctx.worktree,
+        extra: settings.extra,
+      })
       for (const [dir, container] of guardWatchTargets(roots)) {
         try {
           const watcher = fs.watch(dir, { recursive: false }, (_event, filename) => {
