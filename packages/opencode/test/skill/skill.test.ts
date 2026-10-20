@@ -695,6 +695,32 @@ description: A skill in the .opencode/skills directory.
     ),
   )
 
+  // A skill directory created while the session runs must enter the catalog: the catalog was built
+  // at boot, so a reload has to re-glob the discovery roots instead of replaying the boot-time match
+  // list. Without this, a skill written mid-session stays invisible to the `skill` tool until the
+  // process restarts — the exact defect reported against "100% hot reload".
+  it.live("a skill created after boot enters the catalog after reload", () =>
+    provideTmpdirInstance((dir) =>
+      Effect.gen(function* () {
+        const skill = yield* Skill.Service
+        expect(yield* skill.get("late-skill")).toBeUndefined()
+
+        const skillFile = path.join(dir, ".opencode", "skills", "late-skill", "SKILL.md")
+        yield* Effect.promise(() =>
+          Bun.write(
+            skillFile,
+            `---\nname: late-skill\ndescription: A skill created after boot.\n---\n\nLATE\n`,
+          ),
+        )
+
+        yield* skill.reload()
+        const late = yield* skill.get("late-skill")
+        expect(late).toBeDefined()
+        expect(late?.content).toContain("LATE")
+      }),
+    ),
+  )
+
   // Un frontmatter dont une valeur contient « : » n'est pas du YAML valide : le premier parse
   // passe par fallbackSanitization. Le catalogue etant relu a chaque rechargement, le skill
   // apparaissait au demarrage puis disparaissait du catalogue des le rechargement suivant.
