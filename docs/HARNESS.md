@@ -568,6 +568,19 @@ Les index de la forme récente portent les noms de colonnes `seq` : `ALTER TABLE
   démarrage suivant. Prouver la **résolution** ne demande donc pas de redémarrage ; prouver
   l'**armement** si.
 
+## Le contenu d'un binaire compilé ne se vérifie pas par scan de chaînes (mesuré 2026-10-20)
+
+- Sur `dist\bin\opencode.exe` (218 Mo, build vert, smoke test passé), `rg -a -F` ne trouve **aucun**
+  de ces témoins dont la présence est certaine dans les sources : `system-reminder`,
+  `instruction_injection`, `OPENCODE_EXPERIMENTAL`. `skill_search` est trouvé 3 fois.
+- ⇒ Le source embarqué n'est pas en clair (compressé/bytecode) : un scan de chaînes n'est ni
+  nécessaire ni suffisant. Un marqueur absent **ne prouve pas** que le code manque, et un marqueur
+  trouvé ne prouve pas que tout est là.
+- Preuve valable du contenu : comportementale — lancer le binaire et observer la ligne de journal
+  attendue (`service=guard …`, `service=skill reload`), pas une recherche dans le fichier.
+- Corollaire : « build exit 0 + horodatage » prouve que le build a réussi, pas que le binaire
+  contient le dernier commit. Ne pas l'écrire comme une équivalence.
+
 ## Rechargement à chaud : une seule famille suit la config (mesuré 2026-10-20)
 
 - `tasks` : entrée ajoutée dans `opencode.jsonc` en cours de session ⇒ `tasks get <nom>` la lit
