@@ -78,7 +78,7 @@ try {
     )
     .all(sessionID) as { id: string; time_created: number; mdata: string; pdata: string | null }[]
 
-  type Step = { id: string; role: string; toolCalls: number; tokens: number }
+  type Step = { id: string; role: string; toolCalls: number; tools: string[]; tokens: number }
   const steps = new Map<string, Step>()
   for (const row of rows) {
     let step = steps.get(row.id)
@@ -92,12 +92,16 @@ try {
       } catch {
         // un message illisible ne doit pas casser la simulation
       }
-      step = { id: row.id, role, toolCalls: 0, tokens }
+      step = { id: row.id, role, toolCalls: 0, tools: [], tokens }
       steps.set(row.id, step)
     }
     if (!row.pdata) continue
     try {
-      if ((JSON.parse(row.pdata) as { type?: string }).type === "tool") step.toolCalls += 1
+      const part = JSON.parse(row.pdata) as { type?: string; tool?: string; name?: string }
+      if (part.type !== "tool") continue
+      step.toolCalls += 1
+      const name = part.tool ?? part.name
+      if (name) step.tools.push(name)
     } catch {
       continue
     }
@@ -110,6 +114,9 @@ try {
   let tokensSinceLastGuard = 0
   let lastPrompt = 0
   const firedThisTurn: Record<string, number> = {}
+  // Comptage par outil pour le déclencheur `tool_calls`, remis à zéro à chaque message utilisateur.
+  const toolCallsByName: Record<string, number> = {}
+  const observedTools = new Set<string>()
   const firings: { step: number; turn: number; name: string; reasons: string }[] = []
 
   for (const step of ordered) {
@@ -118,10 +125,15 @@ try {
       stepsInTurn = 0
       toolCallsInTurn = 0
       for (const key of Object.keys(firedThisTurn)) delete firedThisTurn[key]
+      for (const key of Object.keys(toolCallsByName)) delete toolCallsByName[key]
       continue
     }
     stepsInTurn += 1
     toolCallsInTurn += step.toolCalls
+    for (const name of step.tools) {
+      toolCallsByName[name] = (toolCallsByName[name] ?? 0) + 1
+      observedTools.add(name)
+    }
     tokensSinceLastGuard += step.tokens
     if (step.tokens > 0) lastPrompt = step.tokens
 
@@ -138,6 +150,7 @@ try {
       turnsSinceInjection: 0,
       paths: [],
       firedThisTurn,
+      toolCallsByName,
     }
 
     const { selected } = selectGuards(loaded.guards, state, { max, maxChars })
@@ -155,6 +168,16 @@ try {
     )
   }
   if (firings.length === 0) console.log("  (aucun : soit aucune garde découverte, soit aucun seuil atteint)")
+
+  // Outils cités par une garde mais jamais appelés dans la session : ce n'est pas « seuil non
+  // atteint », c'est une garde qui ne peut pas tirer ici. Le dry-run doit le dire.
+  const cited = [...new Set(loaded.guards.flatMap((guard) => guard.tools.map((condition) => condition.tool)))].sort()
+  const never = cited.filter((tool) => !observedTools.has(tool))
+  console.log("\nOUTILS OBSERVÉS = " + ([...observedTools].sort().join(", ") || "aucun"))
+  if (cited.length > 0) {
+    console.log("OUTILS CITÉS PAR UNE GARDE = " + cited.join(", "))
+    console.log(never.length > 0 ? "JAMAIS OBSERVÉS (garde morte ici) = " + never.join(", ") : "TOUS OBSERVÉS")
+  }
   console.log("\nNON SIMULABLE : after_compaction (non déductible de la base), error_streak, repeat_action")
 } finally {
   db.close()
