@@ -568,5 +568,16 @@ Les index de la forme récente portent les noms de colonnes `seq` : `ALTER TABLE
   démarrage suivant. Prouver la **résolution** ne demande donc pas de redémarrage ; prouver
   l'**armement** si.
 
+## Rechargement à chaud : une seule famille suit la config (mesuré 2026-10-20)
+
+- `tasks` : entrée ajoutée dans `opencode.jsonc` en cours de session ⇒ `tasks get <nom>` la lit
+  aussitôt (`source: config`), **sans** redémarrage.
+- `permission` : config lue au démarrage ⇒ une garde écrite et prouvée par `evaluate()` n'est **pas**
+  armée dans le processus en cours.
+- Skills : un `SKILL.md` créé en cours de session n'entre pas dans le catalogue (`skill` →
+  `not found`), même après un `reload` journalisé.
+- ⇒ De méthode : une tâche nommée est le seul levier de config modifiable en cours de session ; pour
+  valider un changement de permission ou une skill nouvelle, il faut redémarrer.
+
 
 
