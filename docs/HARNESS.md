@@ -556,5 +556,17 @@ Les index de la forme récente portent les noms de colonnes `seq` : `ALTER TABLE
   `.opencode/skills/<nom>/SKILL.md` (le contenu est injecté comme texte, sans passer par le
   catalogue).
 
+## Permission : l'ordre des clés décide (vérifié 2026-10-20)
+
+- `evaluate()` résout par `findLast` sur la concaténation des rulesets (`packages/core/src/permission.ts:25`)
+  ⇒ dans une carte `bash`, un motif spécifique ne gagne que s'il est écrit **après** `"*"`.
+- Preuve sans redémarrage : script qui reconstruit le ruleset depuis `permission.bash` (ordre
+  d'insertion conservé) et appelle le vrai `evaluate()` en important le `.ts` via `bun` — 9/9 cas
+  conformes : `git push*`, `--force*`, `--amend*`, `rm -rf*`, `Remove-Item*-Recurse*` → `ask` ;
+  `bun test`, `git status`, `git commit -m` → `allow`.
+- Un serveur en cours ne relit pas la config : la garde est écrite et prouvée, elle s'arme au
+  démarrage suivant. Prouver la **résolution** ne demande donc pas de redémarrage ; prouver
+  l'**armement** si.
+
 
 
