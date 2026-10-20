@@ -360,6 +360,11 @@ export const layer = Layer.effect(
     const registry = yield* ToolRegistry.Service
     const truncate = yield* Truncate.Service
     const image = yield* Image.Service
+    // Résolu à la construction du layer, comme les autres services : un `yield*` dans le corps de la
+    // boucle ne déclare pas la dépendance (elle était effacée par le cast `as Effect.Effect<…>` de
+    // `loop`), donc le layer compilait sans que `Guard.defaultLayer` soit composé — mesuré en
+    // production le 2026-10-20 : `Service not found: @opencode/Guard`, chaque prompt échouait.
+    const guard = yield* Guard.Service
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
     const scope = yield* Scope.Scope
     const instruction = yield* Instruction.Service
@@ -2588,7 +2593,7 @@ contextSummary.add("skills", skills ? "inject relevant skill summary" : "no rele
             // volatile — jamais dans le segment système, qui doit rester octet-stable pour le cache
             // de préfixe. Chaque tir laisse une trace avec sa raison : sans elle, on ne distingue pas
             // « n'a pas tiré » de « a tiré pour une mauvaise raison ».
-            const guardService = yield* Guard.Service
+            const guardService = guard
             const guardInjection = buildGuardBlocks({
               guards: yield* guardService.all(),
               firedThisTurn: guardFired,
@@ -2877,7 +2882,7 @@ contextSummary.add("skills", skills ? "inject relevant skill summary" : "no rele
         state.ensureRunning(
           input.sessionID,
           lastAssistant(input.sessionID) as Effect.Effect<MessageV2.WithParts>,
-          runLoop(input.sessionID) as Effect.Effect<MessageV2.WithParts>,
+          runLoop(input.sessionID),
         )
 
       // Coalesced re-arm against a lost-wakeup race.
@@ -3103,6 +3108,11 @@ export const defaultLayer = Layer.suspend(() =>
         // 🔇 PlanEngine.defaultLayer, — désactivé : auto_plan cause des dysfonctionnements
 
         Bus.layer,
+        // Le service Guard est un prérequis de `SessionPrompt.layer` (garde-fous injectés en queue
+        // volatile) : absent de cette composition, le serveur — qui fournit `SessionPrompt.defaultLayer`
+        // sans passer par `AppLayer` — répondait 500 « Service not found: @opencode/Guard » sur tout
+        // prompt. Régression mesurée le 2026-10-20 (err_fd391ce8).
+        Guard.defaultLayer,
         CrossSpawnSpawner.defaultLayer,
         RuntimeFlags.defaultLayer,
         PostMortem.defaultLayer,
