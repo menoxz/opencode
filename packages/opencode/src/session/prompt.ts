@@ -99,6 +99,8 @@ import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
 import { LLMEvent } from "@opencode-ai/llm"
 import { Question } from "@/question"
+import { Guard } from "@/guard"
+import { buildGuardBlocks } from "@/guard/inject"
 import { skippedGoalState, type GoalState } from "./goal-state"
 import { isTerminalStatus } from "./goal-state"
 import { Todo } from "./todo"
@@ -2575,7 +2577,41 @@ contextSummary.add("skills", skills ? "inject relevant skill summary" : "no rele
               contextSummary.add("daemon", "inject first-step adaptive/personality/daemon/plan context", stepOneTail, Date.now() - daemonStart)
             }
 
+            // Garde-fous : tirs déjà effectués dans ce tour (pour `limits.max_per_turn`) et jetons
+            // écoulés depuis le dernier tir (pour `since_last_tokens`).
+            const guardFired: Record<string, number> = {}
+            let guardTokens = 0
+
             volatile.push(...turnPlanCapsules)
+
+            // Garde-fous injectables : conditionnés par l'état réel du step, et posés dans la queue
+            // volatile — jamais dans le segment système, qui doit rester octet-stable pour le cache
+            // de préfixe. Chaque tir laisse une trace avec sa raison : sans elle, on ne distingue pas
+            // « n'a pas tiré » de « a tiré pour une mauvaise raison ».
+            const guardService = yield* Guard.Service
+            const guardInjection = buildGuardBlocks({
+              guards: yield* guardService.all(),
+              firedThisTurn: guardFired,
+              step: {
+                step,
+                turn: 1,
+                stepsInTurn: step,
+                messages: msgs as unknown as Parameters<typeof buildGuardBlocks>[0]["step"]["messages"],
+                tokensSinceLastGuard: guardTokens,
+                contextWindow: 0,
+                lastPromptTokens: lastFinished?.tokens?.input ?? 0,
+                afterCompaction: false,
+                agent: agent?.name,
+              },
+            })
+            for (const firing of guardInjection.firings) {
+              guardFired[firing.name] = (guardFired[firing.name] ?? 0) + 1
+              log.info("guard injected", { name: firing.name, reasons: firing.reasons, step, chars: firing.chars })
+            }
+            if (guardInjection.firings.length > 0) guardTokens = 0
+            else guardTokens += (lastFinished?.tokens?.input ?? 0) + (lastFinished?.tokens?.output ?? 0)
+            volatile.push(...guardInjection.blocks)
+
             const injected = [...volatile, ...stepOneTail].filter((entry) => entry.trim())
             const injectedMessage = injected.length ? injected.join("\n\n") : undefined
 
