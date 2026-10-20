@@ -50,6 +50,7 @@ un pas de 3 000 tokens (sortie d'outil) ne pèsent pas pareil. D'où le classeme
 | 2 | `context_ratio` | la dégradation s'aggrave avec le remplissage ; au-delà de 0,8 la compaction approche et réécrit l'historique | `>= 0.65` |
 | 3 | `after_compaction` | après une compaction la consigne survit (segment système) mais **la preuve qui l'a déclenchée a disparu** ⇒ re-tirer une fois | `= true` |
 | 4 | `tool_calls_in_turn` | proxy du risque « on avance sans arbitrer » ; c'est le cas mesuré à 0/13 | `>= 4` |
+| 4b | `tool_calls` | cible un outil précis : « 12 appels à bash » n'a pas le même sens que « 12 appels » ; nom validé contre le registre, outil absent compté 0 | `{ bash: ">= 12" }` |
 | 5 | `error_streak` | deux échecs consécutifs ⇒ la méthode en cours ne marche pas, la consigne de repli doit revenir | `>= 2` |
 | 6 | `repeat_action` | même outil, mêmes arguments, deux fois ⇒ boucle ; le garde-fou casse la répétition | `>= 2` |
 | 7 | `steps_in_turn` | borne haute du tour ; utile seulement si les tokens ne sont pas fiables | `>= 8` |
@@ -75,6 +76,8 @@ Aucun signal n'est à inventer : tous existent déjà dans la boucle de step.
 | `context_ratio`, `after_compaction` | `compaction.isOverflow({ tokens: lastFinished.tokens, model, messages })` (`session/prompt.ts:1994`) |
 | `since_last_tokens` | `lastFinished.tokens`, entre deux injections de garde |
 | `tool_calls_in_turn`, `repeat_action` | parties `tool` du tour (`hasToolCalls`, `session/prompt.ts:1850`) |
+| `tool_calls` | nom d'outil des parties `tool` du tour (`part.tool`), compté par nom dans `guard/state.ts` |
+| validation des noms d'outils | registre réel lu en optionnel (`Effect.serviceOption(ToolRegistry.Service).ids()`), sinon outil compté à zéro |
 | `path_match` | chemins des parties `edit`/`read` du tour |
 | `error_streak` | dernier `toolExitCode` non nul |
 | injection | `system.push` (`session/prompt.ts:2349`) pour les instructions ; queue `<system-reminder>` pour le variable |
@@ -161,6 +164,9 @@ exit 0 :
 - `src/guard/triggers.ts` — `compileGuard` (refus explicite et nommé), `shouldInject` (raisons portant
   la valeur observée), `selectGuards` (priorité + plafonds). Commits `8ebf87c9d`, puis `3fb7a1962`
   pour `limits`.
+- `tool_calls` — onzième déclencheur : nombre d'appels d'un outil nommé, nom validé contre le registre
+  réel lu en optionnel, outil absent compté zéro et signalé (`44aed46ba`, `a4bd99538`). Aligné dans le
+  dry-run avec une garde d'exemple qui tire sur données réelles (`84a15bd11`).
 - `src/guard/parse.ts` — parse d'un fichier de garde, **partagé** par le service et le dry-run :
   `6c8eb5258`. Un dry-run qui n'emprunte pas le chemin du service annonce ce qui aurait dû se passer.
 - `src/guard/index.ts` — service de découverte, veilleurs par instance, catalogue et `errors()` :
