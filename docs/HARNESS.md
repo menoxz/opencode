@@ -515,5 +515,21 @@ Les index de la forme récente portent les noms de colonnes `seq` : `ALTER TABLE
   `open` est refusé (`goal-contract.ts:624`) et doit être rappelé une fois — le contrat l'annonce
   déjà dans la description de l'outil.
 
+## Ordre d'injection du prompt : instructions en tête, guidance volatile en queue (vérifié 2026-10-20)
+
+- `session/prompt.ts:2349` pousse `[...instructions, env.stable, preloadedSkills, toolList]` dans le
+  **segment système**, donc avant tout l'historique ; chaque fichier entre sous
+  `Instructions from: <chemin>` (`session/instruction.ts:54`) et le bloc est recalculé à chaque step
+  du tour.
+- Le volatil (date, plan de travail, capsule de sécurité, MCP indisponible) est injecté **après**
+  l'historique (`provider/transform.ts:346-351`) : un octet variable dans le segment système
+  re-facturerait tout le préfixe mis en cache.
+- Ces blocs de queue sont des messages de rôle `user` ouvrant sur `<system-reminder>`
+  (`session/prompt-methodology.ts:5`), et sont exclus du calcul de l'ancre de cache
+  (`transform.ts:352-357`, `367-370`).
+- Conséquence de lecture : la position la plus récente du contexte est occupée par la guidance du
+  harnais, pas par la question de l'utilisateur — une capsule qui contredit le message pèse donc
+  autant que lui.
+
 
 
