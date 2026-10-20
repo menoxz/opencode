@@ -581,6 +581,27 @@ Les index de la forme récente portent les noms de colonnes `seq` : `ALTER TABLE
 - Corollaire : « build exit 0 + horodatage » prouve que le build a réussi, pas que le binaire
   contient le dernier commit. Ne pas l'écrire comme une équivalence.
 
+## Déploiement du binaire : cible réelle et vérification (mesuré 2026-10-20)
+
+- La commande `opencodev2` est un **shim npm** (`%APPDATA%\npm\opencodev2.ps1`) : le binaire exécuté
+  est `%APPDATA%\npm\node_modules\@lux-tech\opencode-ai\bin\opencode.exe`.
+- **Trois** copies à remplacer, pas une : celle du parent, puis
+  `node_modules\@lux-tech\opencode-ai-windows-x64\bin\opencode.exe` et
+  `…-windows-x64-baseline\bin\opencode.exe`. Les copies imbriquées sont celles que le lanceur peut
+  résoudre selon la plateforme.
+- Le fichier est **verrouillé** par le daemon en cours : `Copy-Item` par-dessus échoue. Séquence qui
+  marche : `Copy-Item` vers `.bak-<horodatage>`, `Move-Item` de l'original vers `.old-<horodatage>`
+  (un renommage est permis sur un exécutable en cours), puis `Copy-Item` du nouveau.
+- Le remplacement **ne tue pas** le daemon : les processus continuent d'exécuter le fichier renommé
+  `.old` ; le nouveau binaire n'agit qu'au redémarrage suivant.
+- Deux vérifications, et elles ne se remplacent pas :
+  1. **résolution** — `opencodev2 --version` doit annoncer la nouvelle version (le shim pouvait
+     pointer ailleurs) ;
+  2. **intégrité** — `Get-FileHash -Algorithm SHA256` identique entre `dist\bin\opencode.exe` et
+     chaque copie déployée. C'est la seule preuve que l'artefact déployé est celui qui a été testé.
+- Un scan de chaînes dans le binaire ne prouve rien (voir la section précédente) : ne pas s'en servir
+  comme contrôle de déploiement.
+
 ## Rechargement à chaud : une seule famille suit la config (mesuré 2026-10-20)
 
 - `tasks` : entrée ajoutée dans `opencode.jsonc` en cours de session ⇒ `tasks get <nom>` la lit
