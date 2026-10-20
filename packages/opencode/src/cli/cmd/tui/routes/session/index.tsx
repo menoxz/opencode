@@ -1974,7 +1974,9 @@ function Instructions(props: { parts: Part[]; sessionID: string }) {
 
   return (
     <Show when={injecting() || expandable()}>
-      <box paddingLeft={3} flexShrink={0}>
+      {/* Une ligne de respiration au-dessus : collée au panneau du prompt, la ligne se lisait
+          comme sa dernière ligne au lieu d'un bloc à part. */}
+      <box paddingLeft={3} marginTop={1} flexShrink={0}>
         <box
           flexDirection="row"
           gap={1}
