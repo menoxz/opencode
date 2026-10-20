@@ -1,5 +1,6 @@
 import { describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
+import fs from "node:fs/promises"
 import path from "path"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Guard } from "../../src/guard"
@@ -91,6 +92,35 @@ describe("guard discovery", () => {
         const guard = yield* Guard.Service
         expect(yield* guard.get("empty")).toBeUndefined()
         expect((yield* guard.errors()).some((entry) => entry.message.includes("no trigger"))).toBe(true)
+      }),
+    ),
+  )
+
+  // Le cas qui motivait l'extension : `.opencode` existe, `guards/` n'existe pas encore. Le veilleur
+  // doit être posé sur le parent pour voir apparaître le dossier — sinon la garde reste invisible
+  // jusqu'au redémarrage. Aucun appel à reload() ici : c'est le veilleur qui doit travailler.
+  it.live("a guards folder created after the service started triggers a reload", () =>
+    provideTmpdirInstance((dir) =>
+      Effect.gen(function* () {
+        yield* Effect.promise(() => fs.mkdir(path.join(dir, ".opencode"), { recursive: true }))
+        const guard = yield* Guard.Service
+        expect(yield* guard.get("late-live")).toBeUndefined()
+        const before = yield* guard.revision()
+
+        yield* Effect.promise(() =>
+          Bun.write(
+            path.join(dir, ".opencode", "guards", "late-live.md"),
+            valid("late-live", '  since_last_tokens: ">= 20000"'),
+          ),
+        )
+
+        let reloaded = false
+        for (let attempt = 0; attempt < 50 && !reloaded; attempt++) {
+          yield* Effect.promise(() => Bun.sleep(100))
+          reloaded = (yield* guard.revision()) > before
+        }
+        expect(reloaded).toBe(true)
+        expect(yield* guard.get("late-live")).toBeDefined()
       }),
     ),
   )
