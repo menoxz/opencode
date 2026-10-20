@@ -721,6 +721,31 @@ description: A skill in the .opencode/skills directory.
     ),
   )
 
+  // The reported case: `.opencode/skills` already existed at boot, only the skill directory is new.
+  // This one discriminates the cause — if it passes on the pre-fix code too, the boot-time root cache
+  // is not what hid a mid-session skill.
+  it.live("a skill created after boot inside an existing .opencode/skills enters the catalog", () =>
+    provideTmpdirInstance((dir) =>
+      Effect.gen(function* () {
+        const container = path.join(dir, ".opencode", "skills")
+        yield* Effect.promise(() => fs.mkdir(container, { recursive: true }))
+
+        const skill = yield* Skill.Service
+        expect(yield* skill.get("late-existing")).toBeUndefined()
+
+        yield* Effect.promise(() =>
+          Bun.write(
+            path.join(container, "late-existing", "SKILL.md"),
+            `---\nname: late-existing\ndescription: A skill created after boot in an existing container.\n---\n\nEXISTING\n`,
+          ),
+        )
+
+        yield* skill.reload()
+        expect(yield* skill.get("late-existing")).toBeDefined()
+      }),
+    ),
+  )
+
   // Un frontmatter dont une valeur contient « : » n'est pas du YAML valide : le premier parse
   // passe par fallbackSanitization. Le catalogue etant relu a chaque rechargement, le skill
   // apparaissait au demarrage puis disparaissait du catalogue des le rechargement suivant.

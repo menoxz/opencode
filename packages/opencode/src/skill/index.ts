@@ -9,7 +9,6 @@ import { Global } from "@opencode-ai/core/global"
 import { Permission } from "@/permission"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { Config } from "@/config/config"
-import * as ConfigPaths from "@/config/paths"
 import { ConfigMarkdown } from "@/config/markdown"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Glob } from "@opencode-ai/core/util/glob"
@@ -243,13 +242,15 @@ const discoverSkills = Effect.fnUntraced(function* (
     }
   }
 
-  // Recomputed on every discovery rather than read from `config.directories()`: that one is cached in
-  // the instance state at boot (config.ts:768), so a reload kept scanning the boot-time root list and
-  // a skill created in a directory that appeared later stayed invisible to the `skill` tool until the
-  // process restarted — the exact hole in "100% hot reload".
-  const configDirs = yield* ConfigPaths.directories(directory, worktree)
+  // `config.directories()` is cached in the instance state at boot (config.ts:768), so a discovery
+  // root created later — typically a `.opencode` folder that did not exist when the session started —
+  // was never scanned: a skill written mid-session stayed invisible to the `skill` tool until the
+  // process restarted. Add the instance-local roots explicitly so a reload sees them.
+  const configDirs = new Set<string>(yield* config.directories())
+  configDirs.add(path.join(directory, ".opencode"))
+  if (worktree && worktree !== directory) configDirs.add(path.join(worktree, ".opencode"))
   for (const dir of configDirs) {
-    yield* scan(state, dir, OPENCODE_SKILL_PATTERN)
+    yield* scan(state, dir, OPENCODE_SKILL_PATTERN, { scope: "instance" })
   }
 
   const cfg = yield* config.get()
