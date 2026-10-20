@@ -579,5 +579,29 @@ Les index de la forme récente portent les noms de colonnes `seq` : `ALTER TABLE
 - ⇒ De méthode : une tâche nommée est le seul levier de config modifiable en cours de session ; pour
   valider un changement de permission ou une skill nouvelle, il faut redémarrer.
 
+## `$LASTEXITCODE` après un pipe mesure le pipe, pas la commande (mesuré 2026-10-20)
+
+- `bun run typecheck 2>&1 | Select-Object -Last 5` puis `$LASTEXITCODE` rend le code de
+  `Select-Object` : un typecheck **rouge** s'affiche alors comme vert (6 erreurs TS annoncées
+  « exit 0 » dans cette session).
+- Méthode juste : rediriger vers un fichier, lire le code **immédiatement**, puis filtrer le log.
+  `bun run typecheck *> "$env:TEMP\tc.log"; $code=$LASTEXITCODE; Get-Content … | Where-Object …`.
+- Même piège pour toute commande native : le code doit être capturé sur la ligne de la commande, pas
+  après un pipeline PowerShell.
+
+## Skills : les deux trous de rechargement, corrigés (mesuré 2026-10-20)
+
+- **Racines figées** : `discoverSkills` lisait `config.directories()`, mis en cache dans l'état
+  d'instance au boot (`config.ts:768`) ⇒ un `.opencode` apparu ensuite n'était jamais scanné. Fix :
+  la découverte ajoute les racines `.opencode` de l'instance et du worktree (`5f8ee05d2`).
+- **Veilleurs armés pour une seule instance** : `_started/_watchers/_timers` étaient au scope du
+  layer alors que `setupWatchers` lit `InstanceState.context` ⇒ seule la première instance armait un
+  veilleur, les autres ne rechargeaient jamais. Fix : registre et compteur de révision dans
+  `InstanceState` (`c7dedab05`).
+- Tests de non-régression : `test/skill/skill.test.ts` — « created after boot » (échoue sur le code
+  d'avant) et « arms watchers for a second instance » (échoue aussi sur le code d'avant).
+- Vérification de zone : `test/skill` en entier = 34 pass, suites voisines (`jev/skills`,
+  `tool/registry`, `skill/select`) = 33 pass, typecheck exit 0.
+
 
 
