@@ -125,6 +125,14 @@ type ScanState = {
   dirs: Set<string>
 }
 
+/** Per-instance hot-reload state: watchers, debounce timers and the catalog revision counter. */
+type WatchState = {
+  started: boolean
+  watchers: fs.FSWatcher[]
+  timers: Map<string, ReturnType<typeof setTimeout>>
+  revision: number
+}
+
 export interface Interface {
   readonly get: (name: string) => Effect.Effect<Info | undefined>
   readonly require: (name: string) => Effect.Effect<Info, NotFoundError>
@@ -328,29 +336,39 @@ export const layer = Layer.effect(
       }),
     )
 
-    // --- Hot-reload file watcher ---
+    // --- Hot-reload file watcher, PER INSTANCE ---
     // Watches every skill discovery root (config dirs, project/global .claude and
     // .agents, configured skills.paths), not just the global config directory:
     // discovery already scanned those, so watching only ~/.config/opencodev2 left
     // project/external skills silently stale. Events are debounced, and a null
     // filename (Windows buffer overflow) reloads everything.
-    let _started = false
-    let _watchers: fs.FSWatcher[] = []
-    const _timers = new Map<string, ReturnType<typeof setTimeout>>()
+    //
+    // The watcher registry lives in InstanceState, not in the layer scope. It used to be layer-scoped
+    // while `setupWatchers` read `InstanceState.context`, so only the FIRST instance to touch any
+    // skill.* method ever armed watchers: every other instance (another project, another session) had
+    // no watcher and never reloaded its catalog — a mid-session skill stayed invisible until restart.
     const DEBOUNCE_MS = 300
-    let _revision = 0
+    const opened = new Set<fs.FSWatcher>()
+    const watchState = yield* InstanceState.make<WatchState>(
+      Effect.fn("Skill.watch")(function* () {
+        return { started: false, watchers: [], timers: new Map(), revision: 0 } satisfies WatchState
+      }),
+    )
 
-    const setupWatchers = Effect.fnUntraced(function* () {
-      for (const w of _watchers) w.close()
-      _watchers = []
-      for (const t of _timers.values()) clearTimeout(t)
-      _timers.clear()
+    const setupWatchers = Effect.fnUntraced(function* (watch: WatchState) {
+      for (const w of watch.watchers) {
+        w.close()
+        opened.delete(w)
+      }
+      watch.watchers = []
+      for (const t of watch.timers.values()) clearTimeout(t)
+      watch.timers.clear()
 
       const bridge = yield* EffectBridge.make()
       const trigger = (key: string) => {
-        clearTimeout(_timers.get(key))
-        _timers.set(key, setTimeout(() => {
-          _timers.delete(key)
+        clearTimeout(watch.timers.get(key))
+        watch.timers.set(key, setTimeout(() => {
+          watch.timers.delete(key)
           bridge.promise(reload()).catch((err) => log.error("reload error", { err }))
         }, DEBOUNCE_MS))
       }
@@ -402,28 +420,29 @@ export const layer = Layer.effect(
       for (const [dir, container] of targets) {
         if (!fs.existsSync(dir)) continue
         try {
-          _watchers.push(
-            fs.watch(dir, { recursive: false }, (_eventType, filename) => {
-              const key = watchEventKey({ dir, container }, filename)
-              if (key) trigger(key)
-            }),
-          )
+          const watcher = fs.watch(dir, { recursive: false }, (_eventType, filename) => {
+            const key = watchEventKey({ dir, container }, filename)
+            if (key) trigger(key)
+          })
+          watch.watchers.push(watcher)
+          opened.add(watcher)
         } catch (err) {
           log.warn("cannot watch directory for skills", { dir, err })
         }
       }
-      if (_watchers.length > 0) log.info("hot-reload watchers active", { dirs: _watchers.length })
+      if (watch.watchers.length > 0) log.info("hot-reload watchers active", { dirs: watch.watchers.length })
     })
 
     const ensureStarted = Effect.fnUntraced(function* () {
-      if (_started) return
+      const watch = yield* InstanceState.get(watchState)
+      if (watch.started) return
       log.info("ensureStarted: setting up watchers")
-      yield* setupWatchers().pipe(
+      yield* setupWatchers(watch).pipe(
         Effect.catchCause((cause) =>
           Effect.sync(() => log.warn("ensureStarted: setupWatchers failed", { cause: String(cause) })),
         ),
       )
-      _started = true
+      watch.started = true
       log.info("ensureStarted: done")
     })
 
@@ -462,32 +481,31 @@ export const layer = Layer.effect(
 
     const reload = Effect.fn("Skill.reload")(function* () {
       yield* ensureStarted()
+      const watch = yield* InstanceState.get(watchState)
       // Bump the revision so downstream caches (prompt injection, retrieval
       // ranking) drop stale skill text.
-      _revision += 1
+      watch.revision += 1
       // Invalidate both caches — next get() re-runs discovery + loading
       yield* InstanceState.invalidate(discovered)
       yield* InstanceState.invalidate(state)
       const s = yield* InstanceState.get(state)
       const count = Object.keys(s.skills).length
-      log.info("reload", { count, revision: _revision })
+      log.info("reload", { count, revision: watch.revision })
       // Re-establish watchers (roots may have changed after re-discovery)
-      yield* setupWatchers().pipe(Effect.catchCause(() => Effect.void))
+      yield* setupWatchers(watch).pipe(Effect.catchCause(() => Effect.void))
       return count
     })
 
     const revision = Effect.fn("Skill.revision")(function* () {
-      return _revision
+      return (yield* InstanceState.get(watchState)).revision
     })
 
     // Close every watcher when the layer scope is torn down so the process (and
     // tests) do not leak fs.watch handles.
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
-        for (const w of _watchers) w.close()
-        _watchers = []
-        for (const t of _timers.values()) clearTimeout(t)
-        _timers.clear()
+        for (const w of opened) w.close()
+        opened.clear()
       }),
     )
 

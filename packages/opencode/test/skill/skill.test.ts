@@ -8,7 +8,7 @@ import { Config } from "../../src/config/config"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { Global } from "@opencode-ai/core/global"
-import { provideInstance, provideTmpdirInstance, tmpdir } from "../fixture/fixture"
+import { provideInstance, provideTmpdirInstance, tmpdir, tmpdirScoped } from "../fixture/fixture"
 import { testEffect, pollWithTimeout } from "../lib/effect"
 import path from "path"
 import fs from "fs/promises"
@@ -744,6 +744,46 @@ description: A skill in the .opencode/skills directory.
         expect(yield* skill.get("late-existing")).toBeDefined()
       }),
     ),
+  )
+
+  // Two instances in one process. The watcher registry used to be layer-scoped while setupWatchers
+  // read `InstanceState.context`, so only the FIRST instance to touch a skill.* method armed
+  // watchers: every other instance had none and never reloaded its catalog. Each instance must arm
+  // its own, otherwise a skill written under a second instance stays invisible until the process
+  // restarts.
+  it.live("arms watchers for a second instance, not only the first", () =>
+    Effect.gen(function* () {
+      const first = yield* tmpdirScoped()
+      const second = yield* tmpdirScoped()
+
+      const armAndEdit = (dir: string, name: string) =>
+        Effect.gen(function* () {
+          // The skill and its container must exist BEFORE the first skill.* call: watchers are armed
+          // over directories that exist at that moment. Creating the tree afterwards would leave the
+          // new root unwatched and the test would measure the discovery root, not the arming.
+          const skillFile = path.join(dir, ".opencode", "skill", name, "SKILL.md")
+          const frontmatter = (content: string) =>
+            `---\nname: ${name}\ndescription: A skill written under ${name}.\n---\n\n${content}\n`
+          yield* Effect.promise(() => Bun.write(skillFile, frontmatter("AAAA")))
+
+          const skill = yield* Skill.Service
+          expect(yield* skill.get(name)).toBeDefined()
+          const before = yield* skill.revision()
+
+          yield* Effect.promise(() => Bun.write(skillFile, frontmatter("BBBB")))
+          yield* pollWithTimeout(
+            Effect.gen(function* () {
+              const after = yield* skill.revision()
+              return after > before ? after : undefined
+            }),
+            `the instance at ${dir} never reloaded its catalog`,
+          )
+          expect((yield* skill.require(name)).content).toContain("BBBB")
+        })
+
+      yield* provideInstance(first)(armAndEdit(first, "first-instance-skill"))
+      yield* provideInstance(second)(armAndEdit(second, "second-instance-skill"))
+    }),
   )
 
   // Un frontmatter dont une valeur contient « : » n'est pas du YAML valide : le premier parse
