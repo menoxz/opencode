@@ -153,8 +153,43 @@ Trois déclencheurs seulement dans la première version — `since_last_tokens`,
 `after_compaction` — plus le budget et le journal. Les sept autres attendent qu'un cas réel les
 réclame : un déclencheur qu'on n'utilise pas est un paramètre qui pourrira sans bruit.
 
-Ordre de livraison :
-1. service `Guard` (découverte + parse + validation stricte), sans injection ;
-2. `shouldInject` en fonction pure + sa table de tests ;
-3. branchement dans la queue volatile + `metadata.injection = "guard"` + journal ;
-4. les trois déclencheurs du MVP, puis mesure sur une session réelle via `session-rules.ts`.
+## État d'implémentation (2026-10-20)
+
+Livré et testé — 26 tests verts (`test/guard`, `test/config/guard.test.ts`), typecheck du paquet à
+exit 0 :
+
+- `src/guard/triggers.ts` — `compileGuard` (refus explicite et nommé), `shouldInject` (raisons portant
+  la valeur observée), `selectGuards` (priorité + plafonds). Commits `8ebf87c9d`, puis `3fb7a1962`
+  pour `limits`.
+- `src/guard/parse.ts` — parse d'un fichier de garde, **partagé** par le service et le dry-run :
+  `6c8eb5258`. Un dry-run qui n'emprunte pas le chemin du service annonce ce qui aurait dû se passer.
+- `src/guard/index.ts` — service de découverte, veilleurs par instance, catalogue et `errors()` :
+  `ab1622d0b`, un seul chemin de rechargement depuis `6c8eb5258`.
+- `src/config/guard.ts` + entrée `guards` dans `Config.Info` : `23bca4b55`.
+- `script/guards.ts` — dry-run qui rejoue la décision sur une session réelle : `cabcff470`.
+- `.opencode/guards/` — deux gardes réelles (`delegate-before-diving`, `long-turn-recheck`).
+
+### Limites de répétition
+
+`limits: { max_per_turn: N }` dans le frontmatter, `N` entier ≥ 1. Clé inconnue refusée
+(`unknown limit "x" (known: max_per_turn)`), valeur non entière ou nulle refusée. Sans `limits`, la
+seule borne est le budget du step — comportement testé, pour qu'une garde sans quota ne devienne pas
+silencieusement plafonnée.
+
+### Bloc de configuration
+
+```jsonc
+"guards": { "enabled": true, "max_per_step": 2, "max_chars": 600, "disable": [], "paths": [] }
+```
+
+Toutes optionnelles, donc un fichier sans bloc `guards` garde la conduite actuelle ; `guards: {}` est
+valide ; les plafonds non positifs sont refusés plutôt que ramenés à une valeur de secours.
+
+### Reste à faire
+
+1. Brancher `selectGuards` dans la queue `<system-reminder>` avec `metadata.injection = "guard"` et la
+   ligne de journal `service=guard name=… reason=… step=…`.
+2. Alimenter `after_compaction`, `error_streak` et `repeat_action` depuis la boucle de step — le
+   dry-run les déclare aujourd'hui non simulables plutôt que d'inventer une valeur.
+3. Après rebuild : vérifier qu'une garde qui tire laisse bien une trace au journal, et qu'un step sans
+   tir n'en laisse aucune.
