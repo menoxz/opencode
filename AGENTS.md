@@ -1,100 +1,100 @@
 # AGENTS.md — opencode-fork (workspace)
 
-Scope: ce dépôt. Le fichier global (`~/.config/opencodev2/AGENTS.md`) porte la conduite générale ; ici, ce qui est propre au fork.
-**Consignes seulement.** Mesures, formes de réponses, recettes et bases de tests : `docs/HARNESS.md` (non injecté) — à lire quand une ligne porte `(H)`.
+Scope: ce dépôt. Le fichier global porte la conduite générale ; ici, ce qui est propre au fork.
+**Consignes seulement.** Mesures, recettes, bases d'échecs : `docs/HARNESS.md` (non injecté) — lire quand une ligne porte `(H)`.
+Ne pas recopier ce que le harnais injecte déjà : descriptions d'agents et d'outils, échecs récurrents, capacités dégradées. Ni l'inventaire — il dérive.
 
 ## 1. Travailler dans ce dépôt
 
-- Tests du paquet principal : `cd packages/opencode && bun test --timeout 30000 <chemins>` — `--timeout` **obligatoire** (sinon échecs fantômes à 5 s) ; typecheck `bun run typecheck` (`tsgo --noEmit`, jamais `tsc`) ; garde rapide `perf-guard`.
-- Tests webui : depuis `packages/webui`, `bun run test` (vitest + jsdom ; Bun ne peut pas exécuter de JSX ici). Le glob `src/*.test.ts` **rate** les `.tsx` ⇒ lister `src/**/*.test.{ts,tsx}` avant toute refonte de composants.
-- Tests `.opencode` : lancer **depuis `.opencode`** (`cd .opencode && bun test --timeout 30000 tests/<f>.test.ts`) — depuis la racine, `bunfig.toml` refuse.
-- Après chaque vague : relancer **tous** les tests des items voisins, pas seulement la suite ciblée (un correctif peut en annuler un autre sans qu'aucune suite ciblée ne le voie).
-- Échec de test : **A/B au HEAD** (`git checkout <commit> -- <fichier>` puis relance) avant de conclure à une régression ; bases d'échecs connues `(H)`.
-- Fichiers : `glob` (indexé) ou chemin explicite, **jamais `Get-ChildItem -Recurse`** depuis la racine.
-- Commande de tâche : `cmd /d /c bun run dev` (un chemin entre guillemets casse pwsh) ; `#force` enveloppe dans `Invoke-Expression`, où le multi-lignes casse ⇒ découper.
-- `.opencode/tasks.json` est **gitignoré** ⇒ jamais dans un commit.
-- Programme de version : `docs/releases/<version>/` ; `PROGRESS.md` est la **seule** autorité de statut.
+- Tests paquet principal : `cd packages/opencode && bun test --timeout 30000 <chemins>` (`--timeout` obligatoire, sinon échecs fantômes à 5 s) ; typecheck `bun run typecheck` (`tsgo --noEmit`, jamais `tsc`) ; garde `perf-guard`.
+- Tests webui : depuis `packages/webui`, `bun run test` (vitest + jsdom ; Bun n'exécute pas de JSX ici) ; le glob `src/*.test.ts` rate les `.tsx` ⇒ lister `src/**/*.test.{ts,tsx}`.
+- Tests `.opencode` : depuis `.opencode` (`cd .opencode && bun test --timeout 30000 tests/<f>.test.ts`) ; depuis la racine `bunfig.toml` refuse.
+- Après une vague : relancer tous les tests des items voisins, pas la suite ciblée.
+- Échec de test : A/B au HEAD (`git checkout <commit> -- <fichier>`) avant de conclure à une régression ; bases connues `(H)`.
+- Fichiers : `glob` ou chemin explicite, jamais `Get-ChildItem -Recurse` depuis la racine.
+- Tâche : `cmd /d /c bun run dev` (chemin entre guillemets casse pwsh) ; `#force` passe par `Invoke-Expression` où le multi-lignes casse ⇒ découper.
+- `.opencode/tasks.json` est gitignoré ⇒ jamais dans un commit.
+- Version : `docs/releases/<version>/` ; `PROGRESS.md` = seule autorité de statut.
 
 ## 2. API et configuration du serveur
 
-- `PATCH /config|/global/config` **fusionne** les cartes : un agent ajouté persiste, un agent **omis n'est pas retiré**, `model: null` est refusé ⇒ **aucune suppression par l'API** ; seul le fichier le permet, et un serveur en cours ne le relit pas. Corps **sur le fil** = `Config.Info` **à plat** (`groups/global.ts:102`) ⇒ `{disabled_providers:[…]}` écrit, `{config:{…}}` rend **200 et n'écrit rien** (mesuré 2026-10-17).
-- SDK : `client.global.config.update({ config: { … } })` — le **paramètre** s'appelle `config`, le corps part à plat ; passer l'objet sans ce nom envoie un corps vide ⇒ `200` pour une écriture nulle. `/config` (projet) **matérialise** un `config.json` dans l'arbre ⇒ un panneau de réglages vise `/global/config`.
-- Fournisseur dont l'abonnement est mort (clé expirée, fonds épuisés) ⇒ le mettre dans `disabled_providers` : sinon ses modèles `discover` restent proposables, et le **composeur webui adopte le modèle de la dernière réponse de la session** ⇒ l'erreur se répète à chaque envoi (mesuré 2026-10-17 : `command-code`).
-- Paramètre de chemin contenant des `/` ⇒ `encodeURIComponent` ; un `200` ne prouve rien sans vérifier le **corps** (repli SPA).
-- `GET /path` rend **deux** bases : `directory` = dossier d'instance, `worktree` = racine du projet ⇒ un chemin du dépôt se résout sous `worktree`. `GET /file/content` résout **sous la racine du projet** seulement (absolu ⇒ vide, hors projet ⇒ 500).
-- SDK : `client.find.files()` (et **non** `find.file`), `client.file.read()` ; `GET /command` = **1,95 Mo** ⇒ projeter aussitôt, lire à la demande.
-- Watcher de fichiers : opt-in `OPENCODE_EXPERIMENTAL_FILEWATCHER=true` (défaut `false`) ⇒ redémarrage ; sans lui, aucune écriture externe n'émet d'événement.
-- Hot-reload MCP : preuve que le veilleur est armé = `service=mcp … MCP config watchers active` dans le log ; sans cette ligne, un changement de `mcp` n'agit qu'au redémarrage.
-- `prompt_async` rend **204 même quand aucun tour ne démarre** : sur une session occupée, le prompt part dans `PromptQueue` (`session/prompt.ts:1742-1789`), et `handlers/session.ts:346-358` **avale** toute erreur (log + `session.error` sur le bus) sans la rendre au client. Un prompt en file « reste **invisible** jusqu'au prochain tour ». Donc « j'ai envoyé un message, rien ne se passe » n'est ni une panne ni un bug de l'UI : c'est une file d'attente silencieuse.
-- Fins de ligne : `packages/opencode/src/cli/cmd/tui/routes/session/index.tsx` est commité en **CRLF** ⇒ ne pas le convertir ; vérifier `git diff --stat`. Inversement, un blob **LF** relu dans un arbre de travail **CRLF** (`src/config/markdown.ts`, `test/config/markdown.test.ts` mesurés le 2026-10-18) fait d'une édition de 3 lignes un diff de 200 : `git ls-files --eol` (`i/lf w/crlf`) **avant** d'éditer, et écrire ces fichiers en LF — l'outil d'édition suit le fichier, pas le blob.
-- `ConfigMarkdown.parse` (agents, commandes, skills, plugins) : gray-matter 4.0.3 remplit son cache **avant** de parser (son `index.js:47`) ⇒ un YAML invalide y laisse l'objet brut vide et **le parse suivant rend `{}` au lieu de lever** : le repli `fallbackSanitization` ne s'exécute plus et une skill chargée au démarrage **disparaît du catalogue au rechargement** (199 → 196, mesuré sur 2.4.10 comme sur 2.4.11). Corrigé en passant des options explicites (`matter(t, {})`), qui écartent ce cache ⇒ ne pas revenir à `matter(t)` seul.
-- Base dont le schéma est **en avance** sur le code (table/colonne créée par une lignée plus récente) ⇒ `500 NOT NULL constraint failed: session_message.seq` sur **chaque** invite, avant tout appel de modèle, par l'API comme par `cli` : comparer `sqlite_master.sql` au DDL de `migration/*` — recette de réparation réversible dans `docs/HARNESS.md`.
+- `PATCH /config|/global/config` fusionne : agent ajouté persiste, omis non retiré, `model: null` refusé ⇒ aucune suppression par l'API ; seul le fichier, et un serveur en cours ne le relit pas. Corps à plat (`groups/global.ts:102`) : `{disabled_providers:[…]}` écrit, `{config:{…}}` rend 200 sans rien écrire.
+- SDK : `client.global.config.update({ config: { … } })` — paramètre `config`, corps à plat ; sans ce nom, corps vide ⇒ 200 pour une écriture nulle. `/config` (projet) matérialise `config.json` ⇒ un panneau de réglages vise `/global/config`.
+- Fournisseur mort (clé, fonds) ⇒ `disabled_providers` : sinon ses modèles `discover` restent proposables et le composeur webui adopte le modèle de la dernière réponse de session ⇒ erreur répétée.
+- Chemin en paramètre contenant `/` ⇒ `encodeURIComponent` ; un 200 sans vérifier le corps = repli SPA.
+- `GET /path` : `directory` = dossier d'instance, `worktree` = racine du projet ⇒ un chemin du dépôt se résout sous `worktree` ; `GET /file/content` résout sous la racine projet seulement (absolu ⇒ vide, hors projet ⇒ 500).
+- SDK : `client.find.files()` (pas `find.file`), `client.file.read()` ; `GET /command` = 1,95 Mo ⇒ projeter aussitôt.
+- Watcher : opt-in `OPENCODE_EXPERIMENTAL_FILEWATCHER=true` (défaut `false`) ⇒ redémarrage ; sans lui, aucune écriture externe n'émet d'événement.
+- Hot-reload MCP : veilleur armé ⇔ `service=mcp … MCP config watchers active` dans le log ; sinon un changement de `mcp` n'agit qu'au redémarrage.
+- `prompt_async` rend 204 même quand aucun tour ne démarre : session occupée ⇒ `PromptQueue` (`session/prompt.ts:1742-1789`), erreurs avalées (`handlers/session.ts:346-358`) ⇒ prompt invisible jusqu'au prochain tour. Ni panne, ni bug de l'UI.
+- EOL : `src/cli/cmd/tui/routes/session/index.tsx` = CRLF, ne pas convertir ; `git ls-files --eol` (`i/lf w/crlf`) avant d'éditer, écrire ces fichiers en LF — l'outil d'édition suit le fichier, pas le blob.
+- `ConfigMarkdown.parse` : options explicites `matter(t, {})` obligatoires — sinon le cache gray-matter fait rendre `{}` au parse suivant sur un YAML invalide, et une skill chargée disparaît du catalogue au rechargement.
+- Base en avance sur le code ⇒ `500 NOT NULL constraint failed: session_message.seq` sur chaque invite : comparer `sqlite_master.sql` au DDL de `migration/*` ; réparation réversible `(H)`.
 
 ## 3. Webui
 
-- Cible : `docs/web-ui/CIBLE.md` — un écran, cinq zones ; le tiroir droit n'existe que sur une permission en attente ; `step-start`/`step-finish` ne s'affichent jamais.
-- **Toute route consommée doit figurer dans `API_PREFIXES`** (`packages/webui/vite.config.ts`) : sinon Vite rend `index.html` en **200**, l'erreur est avalée et l'écran reste **vide sans aucun message** ⇒ sonder **par le proxy** et vérifier le `content-type`, jamais le seul status.
-- Feature webui : suivre la skill `opencode-webui-feature` (native : `opencode-fork-feature` ; plugin : `opencode-plugin-feature`).
-- Réglages : **liste de choix** dès que l'ensemble des valeurs est connu du serveur, jamais un champ libre. Modèles = `GET /config/providers` (**531 ko**) — jamais `GET /provider` (**6,7 Mo**) ni `/api/model` ; agents = `GET /agent` filtré `mode === "primary" && hidden !== true` ; interpréteurs = `GET /pty/shells` (absent du SDK ⇒ `fetch` direct + `/pty` dans le proxy). Projeter aussitôt en `{value,label}` : ces routes rendent des clés en clair.
-- Fournisseur = **deux magasins** : clé par `PUT /auth/{id}`, `baseURL` par la config ⇒ l'écran fait les deux ; un fournisseur créé n'apparaît qu'au rechargement ⇒ la grille fusionne la config déclarée ; aucun `DELETE` sur `/config` ⇒ l'écran le dit **avant** le clic.
-- `GET /config/providers` : `providers` = **tableau**, `models` = **carte** indexée par fournisseur ⇒ le détail n'exige pas de second appel.
-- Section `Providers` : **grille cherchable puis détail** (`providers.tsx`).
-- Contrôle de choix = `picker.tsx` (cherchable), **jamais un `<select>` natif**.
-- Copie **en anglais** (tout `packages/webui/src/*`), nombres selon la langue ; commentaires et intitulés de test en français.
-- Fil mis à jour **en place** par le flux, pas par relecture REST ; **écouter `/global/event`** — `/event` est borné à un dossier (`middleware/workspace-routing.ts:86-88`) donc muet pour toute session ouverte ailleurs ⇒ fil figé jusqu'au rechargement (le REST, lui, résout le dossier de la session, donc il « répare » tout seul : c'est ce qui masque le défaut).
-- Le flot de deltas s'applique **au plus une fois par image** (`createLatestGate`, `stream-sync.ts`) : écrire le signal des messages par événement rend le fil entier — mesuré le 2026-10-17, 75 `message.part.delta`/s ont bloqué une image **12 388 ms** et rendu la page sourde 24 s, pendant que le sondage de santé affichait « server unreachable » à tort. Ne jamais rebrancher `setMessages` directement sur un événement.
-- `message.part.updated` porte la partie **imbriquée** sous `properties.part` (`{sessionID, part, time}`) ; `message.part.delta` = `{sessionID, messageID, partID, field, delta}` ; `message.updated` = `{sessionID, info}`. Lire `properties` comme la partie rend `id` indéfini et l'événement est classé « nothing to change » — le fil ne bouge plus, sans erreur. Lecture par **étape** (`groupTurns`/`groupSteps`).
-- Une réponse d'agent qui **échoue n'a aucune partie** ⇒ le tour n'a rien à rendre et le fil est **muet** : afficher `turnError(turn)` (`view-model.ts`, première `info.error`), sinon un échec DNS ou de quota ressemble à une panne de l'interface (mesuré 2026-10-17 : `getaddrinfo ENOTFOUND opencode.ai` invisible).
-- **Ne jamais poser une animation d'entrée sur un bloc du fil** : la première réponse d'un tour est fusionnée dans le tour de l'utilisateur (`groupTurns`), donc chaque delta la recrée, et Solid `For` recrée le nœud ⇒ l'animation **rejoue à chaque image** (mesuré : 482 démarrages sur 482 nœuds distincts en un tour). Une animation d'entrée ne va que sur un bloc **stable** — la ligne d'injection « en cours » (`.injections.injecting`) l'est ; une boucle (`spinner`, `caret`, balayage) peut aller partout.
-- `question.asked` = seule écriture du fil (l'agent est bloqué dessus) ; réponse **positionnelle** `{answers: string[][]}`.
-- SSE : `EventSource` ne rappelle **jamais** `onerror` quand la socket reste ouverte sans rien livrer ⇒ garder le watchdog (silence > 30 s = flux remplacé + reconnexion).
-- Affichage : ±lignes d'une écriture = `edit.state.metadata.filediff` **uniquement** ; `bash.state.output` = sortie **complète** ⇒ borner à 12 lignes + « show N more lines ».
-- Barres de défilement : **une** règle globale (`*::-webkit-scrollbar`) et **un** mécanisme (`scrollbar-width` désactive `::-webkit-scrollbar` dans Chromium).
-- Toute taille passe par un **jeton** ; un jeton référencé mais non défini **hérite en silence** ⇒ inventorier le **utilisé contre le défini**.
-- Le rare ne s'affiche pas au repos ; une action de premier plan (changer de dossier de travail) reste au pied du rail, pas dans un panneau de réglages.
-- Deux compositeurs (`home-composer`, `composer-inner`) ⇒ **compter les sites d'appel** avant de corriger un composant du fil.
-- Un composant peut exister **sans être monté** ⇒ grep l'usage **et** le CSS avant de conclure « ça n'existe pas ».
-- Comparer deux chemins **par leur texte** est faux (séparateurs, casse) ⇒ normaliser (`pathKey`), garder l'original pour le serveur.
-- Un bouton qui agit sans effet visible est **pire** qu'un bouton mort ⇒ mesurer l'**effet** (largeur rendue), pas l'état.
-- Vérifier une écriture sans toucher la config réelle : instance isolée 4097/5181 (XDG isolés, `bun.exe` en chemin **absolu**, proxy par `OPENCODE_SERVER_PORT`) ; elle meurt avec le shell qui l'a lancée ⇒ sonder les **deux** ports avant d'accuser le code.
+- Cible : `docs/web-ui/CIBLE.md` — un écran, cinq zones ; tiroir droit seulement sur permission en attente ; `step-start`/`step-finish` jamais affichés.
+- Toute route consommée figure dans `API_PREFIXES` (`packages/webui/vite.config.ts`) : sinon Vite rend `index.html` en 200 et l'écran reste vide ⇒ sonder par le proxy et vérifier le `content-type`, jamais le seul status.
+- Feature webui : skill `opencode-webui-feature` (native : `opencode-fork-feature` ; plugin : `opencode-plugin-feature`).
+- Réglages : liste de choix dès que les valeurs sont connues du serveur, jamais un champ libre. Modèles = `GET /config/providers` (531 ko), jamais `GET /provider` (6,7 Mo) ni `/api/model` ; agents = `GET /agent` filtré `mode === "primary" && hidden !== true` ; interpréteurs = `GET /pty/shells` (fetch direct + `/pty` dans le proxy). Projeter aussitôt en `{value,label}`.
+- Fournisseur = deux magasins : clé par `PUT /auth/{id}`, `baseURL` par la config ; créé ⇒ visible au rechargement ⇒ la grille fusionne la config déclarée ; aucun `DELETE` sur `/config` ⇒ l'écran le dit avant le clic.
+- `GET /config/providers` : `providers` = tableau, `models` = carte par fournisseur ⇒ pas de second appel.
+- Providers : grille cherchable puis détail (`providers.tsx`). Contrôle de choix = `picker.tsx`, jamais un `<select>` natif.
+- Copie en anglais (`packages/webui/src/*`), nombres selon la langue ; commentaires et intitulés de test en français.
+- Fil mis à jour en place par le flux, pas par relecture REST ; écouter `/global/event` — `/event` est borné à un dossier (`middleware/workspace-routing.ts:86-88`).
+- Deltas appliqués au plus une fois par image (`createLatestGate`, `stream-sync.ts`) : brancher `setMessages` sur un événement fige la page (75 deltas/s ⇒ image bloquée 12 388 ms).
+- `message.part.updated` porte `properties.part` ; `message.part.delta` = `{sessionID, messageID, partID, field, delta}` ; `message.updated` = `{sessionID, info}` ; lire `properties` comme la partie ⇒ `id` indéfini, événement ignoré, fil muet. Lecture par étape (`groupTurns`/`groupSteps`).
+- Réponse d'agent en échec sans partie ⇒ afficher `turnError(turn)` (`view-model.ts`, première `info.error`).
+- Jamais d'animation d'entrée sur un bloc du fil (fusion dans le tour utilisateur ⇒ rejoue à chaque image) ; seule la ligne d'injection `.injections.injecting` est stable ; une boucle peut aller partout.
+- `question.asked` = seule écriture du fil ; réponse positionnelle `{answers: string[][]}`.
+- SSE : `EventSource` ne rappelle jamais `onerror` sur une socket ouverte sans rien livrer ⇒ garder le watchdog (silence > 30 s).
+- Affichage : ±lignes = `edit.state.metadata.filediff` uniquement ; `bash.state.output` complet ⇒ borner à 12 lignes + « show N more lines ».
+- Barres de défilement : une règle globale (`*::-webkit-scrollbar`) et un mécanisme (`scrollbar-width` désactive `::-webkit-scrollbar` dans Chromium).
+- Toute taille par jeton ; un jeton référencé mais non défini hérite en silence ⇒ inventorier utilisé contre défini.
+- Le rare ne s'affiche pas au repos ; une action de premier plan reste au pied du rail, pas dans un panneau de réglages.
+- Deux compositeurs (`home-composer`, `composer-inner`) ⇒ compter les sites d'appel avant de corriger.
+- Un composant peut exister sans être monté ⇒ grep l'usage et le CSS avant de conclure « ça n'existe pas ».
+- Chemins : comparer par leur texte est faux ⇒ normaliser (`pathKey`), garder l'original pour le serveur.
+- Un bouton sans effet visible est pire qu'un bouton mort ⇒ mesurer l'effet (largeur rendue), pas l'état.
+- Écriture à vérifier sans toucher la config réelle : instance isolée 4097/5181 (XDG isolés, `bun.exe` en chemin absolu, proxy par `OPENCODE_SERVER_PORT`) ; elle meurt avec son shell ⇒ sonder les deux ports avant d'accuser le code.
 
 ## 4. TUI et CLI
 
-- Route standard = `routes/session/index.tsx` (CRLF) ; deux crans d'opacité **dérivés du thème** (`theme.textLow`), jamais un gris figé.
-- bash : commande bornée à 1 ligne + `· +N lines`, sortie par la **fin** (5 lignes), un même clic déplie les deux ; jamais de troncature de caractères.
-- Prompt en file : le badge `QUEUED` se décide par le **statut**, jamais en retirant la visibilité ; `STEER` par `metadata.steer` seulement.
-- Annuler une file/un steer : `session.revert` sur un message **non servi** est une **suppression** (`withdrawableUserID`, `session/prompt-queue.ts` → `SessionRevert.withdraw`), jamais un revert avec snapshot — `assertNotBusy` rendait l'appel impossible pendant que le prompt existait, et un `void` côté TUI faisait passer le refus pour une annulation. Tout message non servi au-delà de la cible part avec elle.
-- `inspect_batch` : une ligne repliée `inspect_batch · N actions ▸`, dépliée au clic ; chevron seulement s'il y a à révéler.
-- `run` : `TOOL_RULES.bash.view.final` reste `true` (sinon `exit 1` s'affiche comme un succès) ; code de sortie par `toolExitCode`, partagé par le texte **et** la couleur.
-- Retry de session : 408/425/429 et erreurs de transport réessayés, `AbortError` jamais, plafond 10 ; délai **serveur** non plafonné et pas de reprise après facturation `(H)`.
-- Preuve visuelle : `bun packages/opencode/script/tui-shot.ts --session <id> --db <copie> --wait 45` — ~15-20 s avant la première peinture, une trame plus tôt est vide ; base = **copie** `VACUUM INTO`, jamais la vraie.
-- `packages/opencode/src/**` ⇒ rebuild + redéploiement (skill `fork-build`) ; les fragments de prompt sont **embarqués** dans le binaire ⇒ même contrainte.
+- Route standard = `routes/session/index.tsx` (CRLF) ; deux crans d'opacité dérivés du thème (`theme.textLow`), jamais un gris figé.
+- bash : commande bornée à 1 ligne + `· +N lines`, sortie par la fin (5 lignes), un même clic déplie les deux ; jamais de troncature de caractères.
+- Prompt en file : `QUEUED` se décide par le statut, jamais en retirant la visibilité ; `STEER` par `metadata.steer` seulement.
+- Annuler une file/un steer : `session.revert` sur un message non servi est une suppression (`withdrawableUserID`, `session/prompt-queue.ts` → `SessionRevert.withdraw`), jamais un revert avec snapshot ; tout message non servi au-delà de la cible part avec elle.
+- `inspect_batch` : une ligne repliée `inspect_batch · N actions ▸`, chevron seulement s'il y a à révéler.
+- `run` : `TOOL_RULES.bash.view.final` reste `true` (sinon `exit 1` s'affiche comme un succès) ; code de sortie par `toolExitCode`, partagé texte et couleur.
+- Retry : 408/425/429 et erreurs de transport réessayés, `AbortError` jamais, plafond 10 ; délai serveur non plafonné, pas de reprise après facturation `(H)`.
+- Preuve visuelle : `bun packages/opencode/script/tui-shot.ts --session <id> --db <copie> --wait 45` ; ~15-20 s avant la première peinture ; base = copie `VACUUM INTO`, jamais la vraie.
+- `packages/opencode/src/**` ⇒ rebuild + redéploiement (skill `fork-build`) ; les fragments de prompt sont embarqués dans le binaire ⇒ même contrainte.
 
 ## 5. Harnais, outils, publication
 
-- Outil natif invisible ⇒ chercher dans le tableau `builtin` de `packages/opencode/src/tool/registry.ts` ; `always_tools`, la carte `tools` et les permissions ne filtrent qu'un catalogue **déjà construit**.
-- Mode plan : `plan_enter`/`plan_exit` exigent `OPENCODE_EXPERIMENTAL_PLAN_MODE` **et** `flags.client === "cli"` ; distincts de l'outil `planning` (`experimental.planning.enabled`) et de `turn_plan`.
-- Plugin livré = config seule, **aucun rebuild** ; changement dans `src/**` = rebuild.
-- `.opencode/plugin/*` n'est **pas** auto-découvert (ignoré par design) ⇒ entrée explicite `file:///…` dans la config globale + redémarrage. Composant `schedule` : chemins et options `(H)`.
-- Workflow agentic : agent `.opencode/agent/coding-orchestrator.md`, entrée `/deliver`, spec `specs/agentic-coding-workflow.md` — config pure, aucun rebuild.
-- Publication npm : **voie canonique = CI `release-fork`** — elle construit le ref **poussé** (12 plateformes) et publie les 13 paquets ; pousser `dev` d'abord. Un publish local ne couvre que la plateforme construite, or la méta doit lister les 12 (`postinstall.mjs` rejoue la résolution par `npm install <plateforme>@<version>`) ⇒ une méta à 1 plateforme casse l'installation ailleurs en remplaçant un `latest` qui marche. Le script local reste valable pour la **VOIE MANUELLE** de secours (`bun ./packages/opencode/script/publish-fork.ts`, jeton via `NPM_CONFIG_USERCONFIG`), idempotent depuis 2.4.3 ; vérifier **13 paquets** sur le registre. `(H)`
-- Point d'entrée npm = un **lanceur Node** (`script/opencodev2.mjs` → `bin/opencodev2.mjs`), jamais un faux `.exe` : **aucun** gestionnaire ne lance le `postinstall` par défaut (Bun sans approbation, pnpm, `--ignore-scripts`, et npm lui-même : `install-scripts … not covered by allowScripts`, mesuré 2026-10-18), donc un placeholder script finissait en « not a valid application for this OS platform » (mesuré chez l'utilisateur : 346 o, magie `ec`). Le lanceur **répare** au premier appel, puis exécute.
-- `opencodev2` sans commande = **`serve`** (l'UI est servie à la racine) ; en mode source le serveur est enveloppé d'un `bun --watch` ⇒ le veilleur ne surveille que le **dossier courant** (depuis la racine : tout le harnais).
-- Sauvegarde de binaire : le **nom ne dit pas** ce qu'elle contient ⇒ `--version` sur une **copie** portant l'extension `.exe`, jamais sur le nom en `.bak.…`.
-- Navigateur : `isolated` = `%LOCALAPPDATA%\McpBrowserProfiles\<navigateur>` (sans les sessions de l'utilisateur) ; `browser_ensure` **ignore** le profil dès qu'un CDP est actif ⇒ lancer `chrome.exe --remote-debugging-port=9222 --user-data-dir=…` puis `browser_use` ; si `browser_use` n'est pas exposé, piloter **par CDP direct** (`/json/list` → WebSocket → `Runtime.evaluate`). Jamais le navigateur réel sans accord explicite.
-- Actions GitHub sur un fork : `422` malgré `enabled` ⇒ clic « I understand my workflows » dans l'onglet Actions (aucun endpoint ne le débloque).
-- Registre npm après un run de `release-fork` : la propagation prend **plusieurs minutes** ⇒ un paquet « absent » juste après n'est pas un échec. Sonder l'endpoint de version (`registry.npmjs.org/@lux-tech%2Fopencode-ai-<plateforme>/<version>`) et re-vérifier ~2 min plus tard — mesuré le 2026-10-18 : 7/13 puis **13/13** sur le même lot, sans rien republier (« No match found for version » sur un packument encore en cache, alors que la version était publiée).
-- Modèles gratuits : tester `opencode-go/*-free` **avant** de conclure « pas de gratuit » ; `opencode/*-free` est fermé côté serveur. `jev-1.13*` n'est **pas** un modèle de conversation (endpoint `/systemone`). `(H)`
+- Outil natif invisible ⇒ tableau `builtin` de `packages/opencode/src/tool/registry.ts` ; `always_tools`, carte `tools` et permissions ne filtrent qu'un catalogue déjà construit.
+- Mode plan : `plan_enter`/`plan_exit` exigent `OPENCODE_EXPERIMENTAL_PLAN_MODE` et `flags.client === "cli"` ; distincts de `planning` (`experimental.planning.enabled`) et de `turn_plan`.
+- Plugin livré = config seule, aucun rebuild ; `src/**` = rebuild.
+- `.opencode/plugin/*` n'est pas auto-découvert ⇒ entrée `file:///…` dans la config globale + redémarrage ; composant `schedule` `(H)`.
+- Workflow agentic : `.opencode/agent/coding-orchestrator.md`, entrée `/deliver`, spec `specs/agentic-coding-workflow.md` — config pure.
+- Publication npm : voie canonique = CI `release-fork` (construit le ref poussé, 12 plateformes, publie 13 paquets) ; pousser `dev` d'abord. Publish local = une seule plateforme, or la méta doit lister les 12 (`postinstall.mjs`) ⇒ installation cassée ailleurs. Voie manuelle : `bun ./packages/opencode/script/publish-fork.ts` (jeton via `NPM_CONFIG_USERCONFIG`) ; vérifier 13 paquets. `(H)`
+- Entrée npm = lanceur Node (`script/opencodev2.mjs` → `bin/opencodev2.mjs`), jamais un faux `.exe` : aucun gestionnaire ne lance le `postinstall` ; le lanceur répare au premier appel.
+- `opencodev2` sans commande = `serve` (UI à la racine) ; en mode source, `bun --watch` ⇒ le veilleur ne surveille que le dossier courant.
+- Sauvegarde de binaire : le nom ne dit pas ce qu'elle contient ⇒ `--version` sur une copie portant `.exe`, jamais sur `.bak.…`.
+- Navigateur : `isolated` = `%LOCALAPPDATA%\McpBrowserProfiles\<navigateur>` ; `browser_ensure` ignore le profil dès qu'un CDP est actif ⇒ `chrome.exe --remote-debugging-port=9222 --user-data-dir=…` puis `browser_use` ; sinon piloter par CDP direct. Jamais le navigateur réel sans accord explicite.
+- Actions GitHub sur fork : 422 malgré `enabled` ⇒ clic « I understand my workflows » (aucun endpoint).
+- Registre npm après `release-fork` : propagation de plusieurs minutes ⇒ un paquet absent juste après n'est pas un échec ; sonder `registry.npmjs.org/@lux-tech%2Fopencode-ai-<plateforme>/<version>` et re-vérifier ~2 min.
+- Modèles gratuits : tester `opencode-go/*-free` avant de conclure ; `opencode/*-free` est fermé côté serveur ; `jev-1.13*` n'est pas un modèle de conversation (`/systemone`). `(H)`
 
 ## 6. Dépannage — ordre de diagnostic
 
-- Page pilotée muette : `/json/list` → santé des **deux** serveurs → CPU des processus, **avant** de suspecter le code (`Runtime.evaluate` peut expirer sur toutes ses requêtes alors que la page est saine).
-- Sonde CDP : borner chaque appel (`Promise.race`), journaliser par étape ; `scrollIntoView({block:'center'})` **puis** mesurer ; sonde **idempotente** ou repartir d'un rechargement. Capture = une **zone**, jamais la page entière (plein écran : 15 à 40 s). Activation utilisateur = `Input.dispatchMouseEvent`, pas `.click()` ; pour ouvrir ou sélectionner, `.click()` d'abord.
-- Vite : tuer le parent `bun` **ne tue pas** l'enfant `node …/vite.js`, qui garde le port ⇒ arrêter le processus `vite` lui-même.
-- Jamais `window.confirm` dans du code piloté par navigateur : le dialogue survit à tout et rien ne le ferme côté agent.
-- Console opencode.ai : viser le **libellé exact**, liste noire `credit|pay|billing|delete|revoke`, sélecteurs bornés au `[role="dialog"]`.
+- Page pilotée muette : `/json/list` → santé des deux serveurs → CPU des processus, avant de suspecter le code.
+- Sonde CDP : borner chaque appel (`Promise.race`), journaliser par étape ; `scrollIntoView({block:'center'})` puis mesurer ; sonde idempotente ou rechargement ; capture = une zone ; activation utilisateur par `Input.dispatchMouseEvent`, `.click()` pour ouvrir ou sélectionner.
+- Vite : tuer le parent `bun` ne tue pas l'enfant `node …/vite.js`, qui garde le port ⇒ arrêter le processus `vite`.
+- Jamais `window.confirm` dans du code piloté par navigateur.
+- Console opencode.ai : libellé exact, liste noire `credit|pay|billing|delete|revoke`, sélecteurs bornés au `[role="dialog"]`.
 
 ## 7. Mise à jour de ce fichier
 
-- Même test de tri que le fichier global : action à faire **maintenant** ⇒ ici, une ligne ; mesure, forme de réponse, recette, récit ⇒ `docs/HARNESS.md`.
+- Action à faire maintenant ⇒ ici, une ligne ; mesure, forme de réponse, recette ⇒ `docs/HARNESS.md`.
 - Une règle déjà présente dans le fichier global ne se recopie pas ici.
