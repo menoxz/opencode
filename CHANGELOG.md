@@ -5,6 +5,11 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v2.4.19] - 2026-10-20
+
+### Fixed
+- **Plus aucun prompt n'est rejeté par le serveur (`Sending the prompt failed. Open console for more details.`)** : l'injection des garde-fous (v2.4.18) lisait `Guard.Service` **dans le corps de la boucle** de `SessionPrompt` au lieu de la construction du layer ; la dépendance était donc effacée par le cast `runLoop(...) as Effect.Effect<…>` du site d'appel, le typecheck restait vert alors que `SessionPrompt.defaultLayer` ne composait pas `Guard.defaultLayer`. Le serveur — qui fournit `SessionPrompt.defaultLayer` sans passer par `AppLayer` — répondait à chaque prompt un 500 opaque `Unexpected server error (ref err_fd391ce8)` (cause journalisée : `Service not found: @opencode/Guard`), donc l'agent ne démarrait jamais. Correctif en trois points : `Guard.Service` est résolu à la construction du layer comme les autres services, `Guard.defaultLayer` entre dans la composition de `SessionPrompt.defaultLayer`, et le cast du site d'appel est retiré — le typecheck redevient le contrôle : avec la mutation (retrait de `Guard.defaultLayer`), `bun run typecheck` échoue bien sur `server.ts(210)` au lieu de passer. Vérifié de bout en bout sur le binaire reconstruit : `run --agent lean` rend « OK », exit 0, journal `service=guard count=3 errors=0 validated=true init` (auparavant exit 1 et le 500). Référence : `err_fd391ce8`, binaire déployé 2.4.18 du 2026-10-20 23:01.
+
 ## [v2.4.18] - 2026-10-20
 
 ### Fixed
