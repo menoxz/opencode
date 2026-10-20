@@ -54,6 +54,40 @@ export function guardRoots(input: { configDir: string; directory: string; worktr
   return [...new Set(roots)]
 }
 
+/**
+ * Cibles de veille : le dossier de gardes lui-même (tout événement le concerne) et son **parent**,
+ * filtré. Sans le parent, un dossier `guards/` créé après le démarrage n'était jamais surveillé : le
+ * service ne le voyait qu'au redémarrage suivant, alors que les skills, elles, apparaissent à chaud.
+ */
+export function guardWatchTargets(roots: string[]): Map<string, boolean> {
+  const targets = new Map<string, boolean>()
+  for (const root of roots) {
+    const parent = path.dirname(root)
+    if (parent !== root && fs.existsSync(parent)) targets.set(parent, false)
+    if (fs.existsSync(root)) targets.set(root, true)
+  }
+  return targets
+}
+
+/**
+ * Ce qu'un événement brut signifie pour le catalogue des gardes : la clé de debounce, ou `null` si
+ * l'écriture ne concerne pas les gardes. Le filtre est indispensable sur un parent partagé : sans
+ * lui, chaque écriture dans `.opencode/skills` ou dans la config globale rechargerait les gardes.
+ */
+export function guardWatchKey(
+  roots: string[],
+  target: { dir: string; container: boolean },
+  filename?: string | null,
+): string | null {
+  if (target.container) return target.dir
+  if (filename == null) return target.dir
+  const changed = path.join(target.dir, filename.toString())
+  for (const root of roots) {
+    if (changed === root || changed.startsWith(root + path.sep)) return changed
+  }
+  return null
+}
+
 export class Service extends Context.Service<Service, Interface>()("@opencode/Guard") {}
 
 export const layer = Layer.effect(
@@ -136,10 +170,12 @@ export const layer = Layer.effect(
 
       const ctx = yield* InstanceState.context
       const roots = guardRoots({ configDir: global.config, directory: ctx.directory, worktree: ctx.worktree })
-      for (const dir of roots) {
-        if (!fs.existsSync(dir)) continue
+      for (const [dir, container] of guardWatchTargets(roots)) {
         try {
-          const watcher = fs.watch(dir, { recursive: false }, () => trigger(dir))
+          const watcher = fs.watch(dir, { recursive: false }, (_event, filename) => {
+            const key = guardWatchKey(roots, { dir, container }, filename?.toString())
+            if (key) trigger(key)
+          })
           watch.watchers.push(watcher)
           opened.add(watcher)
         } catch (err) {
