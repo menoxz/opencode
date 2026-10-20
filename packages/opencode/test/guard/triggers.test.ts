@@ -109,4 +109,37 @@ describe("guard triggers", () => {
     const g = guard("tokens", { since_last_tokens: ">= 1000" }, "AAAA")
     expect(selectGuards([g], state({ tokensSinceLastGuard: 10 })).selected).toHaveLength(0)
   })
+
+  test("max_per_turn stops a guard that already fired its quota", () => {
+    const g = compileGuard({
+      name: "quota",
+      body: "AAAA",
+      when: { since_last_tokens: ">= 1" },
+      limits: { max_per_turn: 2 },
+    })
+    const under = selectGuards([g], state({ tokensSinceLastGuard: 9, firedThisTurn: { quota: 1 } }))
+    expect(under.selected).toHaveLength(1)
+
+    const atQuota = selectGuards([g], state({ tokensSinceLastGuard: 9, firedThisTurn: { quota: 2 } }))
+    expect(atQuota.selected).toHaveLength(0)
+    expect(atQuota.skipped.some((entry) => entry.name === "quota")).toBe(true)
+  })
+
+  test("a guard without limits is only bounded by the step budget", () => {
+    const g = guard("free", { since_last_tokens: ">= 1" }, "AAAA")
+    const { selected } = selectGuards([g], state({ tokensSinceLastGuard: 9, firedThisTurn: { free: 99 } }))
+    expect(selected).toHaveLength(1)
+  })
+
+  test("an unknown limit is refused, naming the known one", () => {
+    expect(() =>
+      compileGuard({ name: "bad", body: "x", when: { since_last_tokens: ">= 1" }, limits: { par_session: 3 } }),
+    ).toThrow(/unknown limit "par_session" \(known: max_per_turn\)/)
+  })
+
+  test("a non-integer max_per_turn is refused", () => {
+    expect(() =>
+      compileGuard({ name: "bad", body: "x", when: { since_last_tokens: ">= 1" }, limits: { max_per_turn: 0 } }),
+    ).toThrow(/expects an integer >= 1/)
+  })
 })

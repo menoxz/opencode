@@ -76,6 +76,8 @@ export type GuardState = {
   paths: string[]
   agent?: string
   phase?: string
+  /** Nombre de tirs déjà effectués dans le tour courant, par nom de garde. */
+  firedThisTurn?: Record<string, number>
 }
 
 export type NumericCondition = { key: string; operator: Operator; value: number }
@@ -91,6 +93,8 @@ export type CompiledGuard = {
   boolean: BooleanCondition[]
   list: ListCondition[]
   enumeration: EnumCondition[]
+  /** Borne de répétition. Absente = aucune borne au-delà du budget global du step. */
+  maxPerTurn?: number
 }
 
 export class GuardDefinitionError extends Error {
@@ -162,6 +166,7 @@ export function compileGuard(input: {
   description?: string
   body: string
   when?: Record<string, unknown>
+  limits?: Record<string, unknown>
 }): CompiledGuard {
   const compiled: CompiledGuard = {
     name: input.name,
@@ -196,6 +201,18 @@ export function compileGuard(input: {
   }
   if (compiled.numeric.length + compiled.boolean.length + compiled.list.length + compiled.enumeration.length === 0) {
     throw new GuardDefinitionError(input.name, "no trigger: a guard without condition would fire every step")
+  }
+  for (const [key, raw] of Object.entries(input.limits ?? {})) {
+    if (key !== "max_per_turn") {
+      throw new GuardDefinitionError(input.name, `unknown limit "${key}" (known: max_per_turn)`)
+    }
+    if (typeof raw !== "number" || !Number.isInteger(raw) || raw < 1) {
+      throw new GuardDefinitionError(
+        input.name,
+        `limit "max_per_turn" expects an integer >= 1, got ${JSON.stringify(raw)}`,
+      )
+    }
+    compiled.maxPerTurn = raw
   }
   return compiled
 }
@@ -283,6 +300,11 @@ export function selectGuards(
   const skipped: CompiledGuard[] = []
 
   for (const guard of guards) {
+    const fired = state.firedThisTurn?.[guard.name] ?? 0
+    if (guard.maxPerTurn !== undefined && fired >= guard.maxPerTurn) {
+      skipped.push(guard)
+      continue
+    }
     const verdict = shouldInject(guard, state)
     if (verdict.inject) candidates.push({ guard, reasons: verdict.reasons })
     else skipped.push(guard)
