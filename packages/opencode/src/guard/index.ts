@@ -1,44 +1,32 @@
 /**
- * Découverte des garde-fous injectables — spec : `specs/injectable-guards.md`.
+ * Service de découverte des garde-fous injectables — spec : `specs/injectable-guards.md`.
  *
- * Un garde-fou est un `.md` dans `guards/` (global) ou `<projet>/.opencode/guards/`, avec un
- * frontmatter `name` / `description` / `when`. Ce module ne fait que découvrir, valider et exposer :
- * il n'injecte rien. Le branchement sur le prompt est une étape séparée, et c'est voulu — la décision
- * d'injecter reste une fonction pure testable (`./triggers`).
+ * Un garde-fou est un `.md` dans `guards/` (global) ou `<projet>/.opencode/guards/`. Ce service
+ * découvre, valide et expose : il n'injecte rien. La décision d'injecter reste une fonction pure
+ * testable (`./triggers`), et le parse est partagé avec la commande de dry-run (`./parse`), pour que
+ * l'instrument et le service ne puissent pas diverger.
  *
  * Une garde invalide ne disparaît pas en silence : elle est écartée du catalogue et son message est
- * exposé par `errors()`. Sinon on retombe sur le mode d'échec mesuré sur cette session — une consigne
- * présente sur disque et absente de l'esprit du modèle, sans aucune trace.
+ * exposé par `errors()`. Sans ça on retombe sur le mode d'échec mesuré : une consigne présente sur
+ * disque, absente de l'esprit du modèle, sans aucune trace.
  */
 import path from "path"
 import fs from "fs"
-import { Effect, Layer, Context, Schema } from "effect"
+import { Effect, Layer, Context } from "effect"
 import { Global } from "@opencode-ai/core/global"
-import { Glob } from "@opencode-ai/core/util/glob"
 import * as Log from "@opencode-ai/core/util/log"
-import { ConfigMarkdown } from "@/config/markdown"
 import { InstanceState } from "@/effect/instance-state"
 import { EffectBridge } from "@/effect/bridge"
-import { compileGuard, GuardDefinitionError, type CompiledGuard } from "./triggers"
+import type { CompiledGuard } from "./triggers"
+import { loadGuardRoots, type GuardError } from "./parse"
 
 const log = Log.create({ service: "guard" })
 
-/** Un dossier de gardes, et s'il contient directement les fichiers (il est alors sa propre cible). */
-export type WatchTarget = { dir: string; container: boolean }
-
-export const GUARD_PATTERN = "*.md"
 const DEBOUNCE_MS = 300
-
-export type GuardInfo = {
-  name: string
-  description?: string
-  location: string
-  body: string
-}
 
 type State = {
   guards: Record<string, CompiledGuard>
-  errors: { location: string; message: string }[]
+  errors: GuardError[]
 }
 
 type WatchState = {
@@ -51,12 +39,12 @@ type WatchState = {
 export interface Interface {
   readonly all: () => Effect.Effect<CompiledGuard[]>
   readonly get: (name: string) => Effect.Effect<CompiledGuard | undefined>
-  readonly errors: () => Effect.Effect<{ location: string; message: string }[]>
+  readonly errors: () => Effect.Effect<GuardError[]>
   readonly reload: () => Effect.Effect<number>
   readonly revision: () => Effect.Effect<number>
 }
 
-/** Dossiers de découverte pour l'instance courante : le global, puis le projet. */
+/** Dossiers de découverte : global d'abord, puis projet (le projet gagne sur un nom identique). */
 export function guardRoots(input: { configDir: string; directory: string; worktree: string }): string[] {
   const roots = [path.join(input.configDir, "guards"), path.join(input.directory, ".opencode", "guards")]
   if (input.worktree && input.worktree !== input.directory) {
@@ -74,62 +62,15 @@ export const layer = Layer.effect(
 
     const state = yield* InstanceState.make<State>(
       Effect.fn("Guard.state")(function* (ctx) {
-        const s: State = { guards: {}, errors: [] }
         const roots = guardRoots({ configDir: global.config, directory: ctx.directory, worktree: ctx.worktree })
-        for (const root of roots) {
-          if (!fs.existsSync(root)) continue
-          // Le canal d'erreur doit rester `never` : cet Effect construit l'état d'instance. Un scan
-          // qui échoue dégrade en « aucune garde dans ce dossier », il ne casse pas le service — d'où
-          // le `catch` au point d'appel plutôt qu'un try/catch synchrone autour du `yield*`.
-          const files = yield* Effect.tryPromise(() =>
-            Glob.scan(GUARD_PATTERN, { cwd: root, absolute: true, include: "file" }),
-          ).pipe(
-            Effect.catch((error) => {
-              log.error("failed to scan guards", { dir: root, error })
-              return Effect.succeed([] as string[])
-            }),
-          )
-          for (const file of files) {
-            const parsed = yield* Effect.tryPromise(() => ConfigMarkdown.parse(file)).pipe(
-              Effect.catch((error) =>
-                Effect.sync(() => {
-                  const message = String((error as { message?: string })?.message ?? error)
-                  s.errors.push({ location: file, message })
-                  log.warn("failed to parse guard", { guard: file, message })
-                  return undefined
-                }),
-              ),
-            )
-            if (!parsed) continue
-            const data = parsed.data as { name?: unknown; description?: unknown; when?: unknown }
-            const name = typeof data.name === "string" ? data.name : undefined
-            if (!name) {
-              s.errors.push({ location: file, message: "missing name in frontmatter" })
-              log.warn("ignored guard without a name", { guard: file })
-              continue
-            }
-            const when =
-              data.when && typeof data.when === "object" && !Array.isArray(data.when)
-                ? (data.when as Record<string, unknown>)
-                : {}
-            try {
-              // compileGuard lève : on garde le message pour `errors()` plutôt que de perdre la garde
-              // sur disque sans trace.
-              s.guards[name] = compileGuard({
-                name,
-                description: typeof data.description === "string" ? data.description : undefined,
-                body: parsed.content,
-                when,
-              })
-            } catch (error) {
-              const message = error instanceof GuardDefinitionError ? error.message : String(error)
-              s.errors.push({ location: file, message })
-              log.warn("invalid guard", { guard: file, message })
-            }
-          }
-        }
-        log.info("init", { count: Object.keys(s.guards).length, errors: s.errors.length })
-        return s
+        // `loadGuardRoots` rend ses refus au lieu de lever : le canal d'erreur de cet Effect reste
+        // `never`, sinon `InstanceState.make` refuse la construction entière du service.
+        const result = yield* Effect.promise(() => loadGuardRoots(roots))
+        const guards: Record<string, CompiledGuard> = {}
+        for (const guard of result.guards) guards[guard.name] = guard
+        for (const error of result.errors) log.warn("invalid guard", { guard: error.location, message: error.message })
+        log.info("init", { count: result.guards.length, errors: result.errors.length })
+        return { guards, errors: result.errors } satisfies State
       }),
     )
 
@@ -142,6 +83,18 @@ export const layer = Layer.effect(
         return { started: false, watchers: [], timers: new Map(), revision: 0 } satisfies WatchState
       }),
     )
+
+    // Une seule implémentation du rechargement, partagée par le déclencheur de veilleur et par l'API
+    // publique : deux copies divergeraient sur le comptage de révision.
+    const doReload = Effect.fnUntraced(function* (watch: WatchState) {
+      watch.revision += 1
+      yield* InstanceState.invalidate(state)
+      const s = yield* InstanceState.get(state)
+      const count = Object.keys(s.guards).length
+      log.info("reload", { count, revision: watch.revision, errors: s.errors.length })
+      yield* setupWatchers(watch).pipe(Effect.catchCause(() => Effect.void))
+      return count
+    })
 
     const setupWatchers = Effect.fnUntraced(function* (watch: WatchState) {
       for (const w of watch.watchers) {
@@ -159,7 +112,7 @@ export const layer = Layer.effect(
           key,
           setTimeout(() => {
             watch.timers.delete(key)
-            bridge.promise(reload()).catch((err) => log.error("reload error", { err }))
+            bridge.promise(doReload(watch)).catch((err) => log.error("reload error", { err }))
           }, DEBOUNCE_MS),
         )
       }
@@ -208,14 +161,7 @@ export const layer = Layer.effect(
 
     const reload = Effect.fn("Guard.reload")(function* () {
       yield* ensureStarted()
-      const watch = yield* InstanceState.get(watchState)
-      watch.revision += 1
-      yield* InstanceState.invalidate(state)
-      const s = yield* InstanceState.get(state)
-      const count = Object.keys(s.guards).length
-      log.info("reload", { count, revision: watch.revision, errors: s.errors.length })
-      yield* setupWatchers(watch).pipe(Effect.catchCause(() => Effect.void))
-      return count
+      return yield* doReload(yield* InstanceState.get(watchState))
     })
 
     const revision = Effect.fn("Guard.revision")(function* () {
@@ -234,13 +180,5 @@ export const layer = Layer.effect(
 )
 
 export const defaultLayer = layer.pipe(Layer.provide(Global.layer))
-
-export type Info = Schema.Schema.Type<typeof GuardInfoSchema>
-const GuardInfoSchema = Schema.Struct({
-  name: Schema.String,
-  description: Schema.optional(Schema.String),
-  location: Schema.String,
-  body: Schema.String,
-})
 
 export * as Guard from "."
