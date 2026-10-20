@@ -12,11 +12,12 @@
  */
 import path from "path"
 import fs from "fs"
-import { Effect, Layer, Context } from "effect"
+import { Effect, Layer, Context, Option } from "effect"
 import { Global } from "@opencode-ai/core/global"
 import * as Log from "@opencode-ai/core/util/log"
 import { InstanceState } from "@/effect/instance-state"
 import { EffectBridge } from "@/effect/bridge"
+import { ToolRegistry } from "@/tool/registry"
 import type { CompiledGuard } from "./triggers"
 import { loadGuardRoots, type GuardError } from "./parse"
 
@@ -63,14 +64,29 @@ export const layer = Layer.effect(
     const state = yield* InstanceState.make<State>(
       Effect.fn("Guard.state")(function* (ctx) {
         const roots = guardRoots({ configDir: global.config, directory: ctx.directory, worktree: ctx.worktree })
-        // Pas de `knownTools` ici : le service ne dépend volontairement pas du registre d'outils, qui
-        // n'est pas résolu à ce point du cycle de vie. La disponibilité est vérifiée à l'évaluation,
-        // avec les outils réellement offerts au step — c'est le seul endroit où l'information existe.
-        const result = yield* Effect.promise(() => loadGuardRoots(roots))
+        // Le registre est lu de façon **optionnelle** : il n'est pas toujours résolu à ce point du
+        // cycle de vie, et l'exiger changerait les requirements du layer (ce qui avait cassé le
+        // câblage). Présent, il sert de référence pour refuser un nom d'outil inexistant ; absent, on
+        // ne valide pas les noms ici — la disponibilité reste vérifiée à l'évaluation, avec les outils
+        // réellement offerts au step.
+        const registry = Option.getOrUndefined(yield* Effect.serviceOption(ToolRegistry.Service))
+        const knownTools = registry ? yield* registry.ids() : undefined
+        const result = yield* Effect.promise(() => loadGuardRoots(roots, { knownTools }))
         const guards: Record<string, CompiledGuard> = {}
         for (const guard of result.guards) guards[guard.name] = guard
         for (const error of result.errors) log.warn("invalid guard", { guard: error.location, message: error.message })
-        log.info("init", { count: result.guards.length, errors: result.errors.length })
+        if (knownTools) {
+          const available = new Set(knownTools)
+          const unavailable = [
+            ...new Set(
+              result.guards.flatMap((guard) =>
+                guard.tools.map((condition) => condition.tool).filter((tool) => !available.has(tool)),
+              ),
+            ),
+          ].sort()
+          if (unavailable.length > 0) log.warn("guards reference unavailable tools", { tools: unavailable })
+        }
+        log.info("init", { count: result.guards.length, errors: result.errors.length, validated: Boolean(knownTools) })
         return { guards, errors: result.errors } satisfies State
       }),
     )
