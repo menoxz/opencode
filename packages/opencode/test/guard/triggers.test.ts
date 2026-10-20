@@ -142,4 +142,27 @@ describe("guard triggers", () => {
       compileGuard({ name: "bad", body: "x", when: { since_last_tokens: ">= 1" }, limits: { max_per_turn: 0 } }),
     ).toThrow(/expects an integer >= 1/)
   })
+
+  // Couverture des dix déclencheurs de la spec : chacun doit être accepté au chargement ET tirer sur
+  // un état construit pour lui. Sans ce test, « implémenté » signifierait seulement « parsé ».
+  test("every trigger of the spec compiles and fires on its own state", () => {
+    const cases: { key: string; value: unknown; state: Partial<GuardState> }[] = [
+      { key: "since_last_tokens", value: ">= 100", state: { tokensSinceLastGuard: 200 } },
+      { key: "context_ratio", value: ">= 0.5", state: { contextRatio: 0.7 } },
+      { key: "after_compaction", value: true, state: { afterCompaction: true } },
+      { key: "tool_calls_in_turn", value: ">= 3", state: { toolCallsInTurn: 4 } },
+      { key: "error_streak", value: ">= 2", state: { errorStreak: 2 } },
+      { key: "repeat_action", value: ">= 2", state: { repeatAction: 2 } },
+      { key: "steps_in_turn", value: ">= 5", state: { stepsInTurn: 5 } },
+      { key: "path_match", value: "**/*.tsx", state: { paths: ["src/app.tsx"] } },
+      { key: "turns_since_injection", value: ">= 3", state: { turnsSinceInjection: 3 } },
+      { key: "agent", value: "plan", state: { agent: "plan" } },
+    ]
+    expect(cases).toHaveLength(10)
+    for (const item of cases) {
+      const g = guard("g-" + item.key, { [item.key]: item.value })
+      const verdict = shouldInject(g, state(item.state))
+      expect({ key: item.key, inject: verdict.inject }).toEqual({ key: item.key, inject: true })
+    }
+  })
 })
