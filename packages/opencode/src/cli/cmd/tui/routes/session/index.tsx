@@ -1966,7 +1966,8 @@ function Instructions(props: { parts: Part[]; sessionID: string }) {
   // Le spinner dit « les instructions entrent dans le contexte », rien de plus : dès que la
   // part qui les porte est écrite, l'injection est faite et l'animation s'arrête, même si la
   // réponse continue.
-  const injecting = createMemo(() => instructionsInjecting(sources(), busy()))
+  const compaction = createMemo(() => props.parts.some((part) => part.type === "compaction"))
+  const injecting = createMemo(() => instructionsInjecting({ sources: sources(), busy: busy(), compaction: compaction() }))
   // Le glyphe du bloc cede sa place au spinner pendant l'injection : sinon la ligne porterait
   // l'animation et une icone figee qui la contredit.
   const heading = createMemo(() => instructionsHeading(sources().length))

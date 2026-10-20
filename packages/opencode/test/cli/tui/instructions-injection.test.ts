@@ -59,8 +59,18 @@ describe("instructions injection", () => {
    */
   test("no source yet means injecting, and any source ends the animation", () => {
     expect(instructionsHeading(0)).toBe("core/instructions: injecting")
-    expect(instructionsInjecting([], true)).toBe(true)
-    expect(instructionsInjecting([], false)).toBe(false)
-    expect(instructionsInjecting(["Instructions from: a"], true)).toBe(false)
+    expect(instructionsInjecting({ sources: [], busy: true, compaction: false })).toBe(true)
+    expect(instructionsInjecting({ sources: [], busy: false, compaction: false })).toBe(false)
+    expect(instructionsInjecting({ sources: ["Instructions from: a"], busy: true, compaction: false })).toBe(false)
+  })
+
+  /**
+   * Le message qui déclenche une compaction ne reçoit **jamais** de sources : son prompt est
+   * rejoué dans un message neuf après le résumé. La ligne y restait donc sur `injecting`
+   * pendant toute la compaction et tout le tour suivant, la session n'étant pas au repos
+   * (constaté sur une session réelle, 2026-10-20).
+   */
+  test("a compaction turn never announces an injection", () => {
+    expect(instructionsInjecting({ sources: [], busy: true, compaction: true })).toBe(false)
   })
 })

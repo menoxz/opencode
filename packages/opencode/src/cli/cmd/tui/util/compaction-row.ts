@@ -13,12 +13,14 @@
  * véracité prendrait le résumé de diffs d'un tour antérieur pour la fin de la compaction.
  */
 export function summaryAfter(
-  messages: readonly { id: string; role: string; summary?: unknown }[],
+  messages: readonly { id: string; role: string; summary?: unknown; time?: { created?: number; completed?: number } }[],
   messageID: string,
 ): boolean {
   const index = messages.findIndex((message) => message.id === messageID)
   if (index < 0) return false
-  return messages.slice(index + 1).some((message) => message.role === "assistant" && message.summary === true)
+  return messages.slice(index + 1).some(
+    (message) => message.role === "assistant" && message.summary === true && message.time?.completed !== undefined,
+  )
 }
 
 /**

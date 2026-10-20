@@ -34,7 +34,13 @@ export function instructionsHeading(count: number): string {
  * La part qui porte les sources est écrite **au moment** de l'injection : sa présence veut
  * dire « les instructions sont dans le contexte ». L'animation ne dit donc que cela, et
  * s'arrête là — elle ne tourne pas pendant toute la réponse.
+ *
+ * Un message qui porte la part de `compaction` est exclu : ce tour-là n'envoie pas son prompt
+ * au modèle, il est rejoué dans un message **neuf** après le résumé, et c'est ce message neuf
+ * qui reçoit les sources. Sans cette garde, la ligne restait sur `injecting` pendant toute la
+ * compaction **et** tout le tour qui suit, la session n'étant pas au repos (mesuré le
+ * 2026-10-20 sur une session réelle : message utilisateur dont l'unique part est `compaction`).
  */
-export function instructionsInjecting(sources: string[], busy: boolean): boolean {
-  return busy && sources.length === 0
+export function instructionsInjecting(input: { sources: string[]; busy: boolean; compaction: boolean }): boolean {
+  return input.busy && !input.compaction && input.sources.length === 0
 }
