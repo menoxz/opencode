@@ -5,6 +5,13 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v2.4.18] - 2026-10-20
+
+### Fixed
+- **La ligne d'injections ne s'annonce plus sur un tour de compaction.** Le message utilisateur qui déclenche une compaction ne reçoit jamais la part qui porte les sources : son prompt est rejoué dans un message **neuf** après le résumé. Comme la session reste occupée pendant tout ce temps, la ligne restait sur `core/instructions: injecting` pendant la compaction **et** le tour suivant. Le tour de compaction est désormais exclu de cet état, et la garde est un test. Mesure sur une session réelle (`ses_ea96c0057ffe…`, 2026-10-20) : message dont l'unique part est `compaction`, zéro source ⇒ l'ancien verdict annonçait une injection, le nouveau non.
+- **L'attente de compaction dure jusqu'au résumé terminé, et non jusqu'à son début.** `summaryAfter` prenait le message du résumé pour preuve dès qu'il existait, soit 5 s après la part de compaction, alors que ce message est écrit avant d'être rempli : la ligne « Compacting context » s'effaçait presque aussitôt, laissant un fil muet devant un bloc `Compacted context` encore vide. Elle exige désormais `time.completed`. Mesuré sur la même session : message du résumé créé à 11:03:06, terminé à 11:04:05 — 59 s pendant lesquelles l'écran ne disait plus rien.
+- **Le bloc `core/instructions` respire au-dessus du prompt.** Collé au panneau du message utilisateur, il se lisait comme sa dernière ligne. Une ligne vide l'en sépare (`marginTop`), vérifié par capture A/B de la TUI sur une session importée : instructions en ligne 9 sans le correctif, en ligne 10 avec.
+
 ## [v2.4.17] - 2026-10-19
 
 ### Changed
