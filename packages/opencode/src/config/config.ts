@@ -28,6 +28,7 @@ import { ConfigAttachment } from "./attachment"
 import { ConfigCommand } from "./command"
 import { ConfigContextRollout } from "./context-rollout"
 import { ConfigFormatter } from "./formatter"
+import { ConfigGuard } from "./guard"
 import { ConfigInstructionInjection } from "./instruction-injection"
 import { ConfigJev } from "./jev"
 import { ConfigLayout } from "./layout"
@@ -264,6 +265,9 @@ export const Info = Schema.Struct({
   }),
   instruction_injection: Schema.optional(ConfigInstructionInjection.Info).annotate({
     description: "Stable instruction injection controls for AGENTS.md and related files.",
+  }),
+  guards: Schema.optional(ConfigGuard.Info).annotate({
+    description: "Injectable guards: caps, mute list and extra folders (specs/injectable-guards.md).",
   }),
   layout: Schema.optional(ConfigLayout.Layout).annotate({ description: "@deprecated Always uses stretch layout." }),
   permission: Schema.optional(ConfigPermission.Info),
