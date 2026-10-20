@@ -531,5 +531,18 @@ Les index de la forme récente portent les noms de colonnes `seq` : `ALTER TABLE
   harnais, pas par la question de l'utilisateur — une capsule qui contredit le message pèse donc
   autant que lui.
 
+## Instructions : le mode par défaut tronque, discrets sont les fichiers trop longs (vérifié 2026-10-20)
+
+- Défaut du code : `injectionInstructions: "summary"` (`session/context-rollout.ts:54`) avec
+  `SUMMARY_CHAR_BUDGET = 4_000` caractères **par fichier** (`session/instruction.ts:50`) ; au-delà,
+  les lignes restantes sont remplacées par « … truncated: N more lines omitted — read <chemin> ».
+- Config locale : `instruction_injection.agents = "full"` (`~/.config/opencodev2/opencode.jsonc:1168`)
+  ⇒ contenu intégral injecté (mesuré : 6 520 octets global + 18 138 octets projet). Si la clé
+  disparaît, retour **silencieux** au mode `summary` et perte de ~78 % du fichier projet.
+- Contrôle immédiat, sans instrument : la présence de `<summary>` et de « truncated: » dans le bloc
+  injecté signale le mode `summary` ; leur absence, le mode `full`.
+- Corollaire de diagnostic : avant d'accuser le modèle de ne pas suivre une règle, vérifier qu'elle
+  est dans le bloc injecté — une règle tronquée n'est pas désobéie, elle est absente.
+
 
 
