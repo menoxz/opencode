@@ -1,6 +1,7 @@
 import { createMemo } from "solid-js"
 import { useSync } from "@tui/context/sync"
 import { DialogSelect } from "@tui/ui/dialog-select"
+import { useToast } from "@tui/ui/toast"
 import { useSDK } from "@tui/context/sdk"
 import { useRoute } from "@tui/context/route"
 import * as Clipboard from "@tui/util/clipboard"
@@ -14,6 +15,7 @@ export function DialogMessage(props: {
 }) {
   const sync = useSync()
   const sdk = useSDK()
+  const toast = useToast()
   const message = createMemo(() => sync.data.message[props.sessionID]?.find((x) => x.id === props.messageID))
   const route = useRoute()
 
@@ -25,14 +27,24 @@ export function DialogMessage(props: {
           title: "Revert",
           value: "session.revert",
           description: "undo messages and file changes",
-          onSelect: (dialog) => {
+          onSelect: async (dialog) => {
             const msg = message()
             if (!msg) return
 
-            void sdk.client.session.revert({
+            // A refusal has to be visible. Reverting the turn the run is serving
+            // is refused while it is in flight (`BusyError`), and the previous
+            // `void` call turned that into a silent no-op that read as "the queued
+            // prompt was cancelled" when it was still going to be served.
+            const result = await sdk.client.session.revert({
               sessionID: props.sessionID,
               messageID: msg.id,
             })
+            if (result.error) {
+              toast.show({
+                variant: "error",
+                message: `Revert refused: ${JSON.stringify(result.error)}`,
+              })
+            }
 
             if (props.setPrompt) {
               const parts = sync.data.part[msg.id]

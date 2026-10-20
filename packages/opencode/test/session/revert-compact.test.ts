@@ -1,10 +1,11 @@
 import { describe, expect } from "bun:test"
 import fs from "fs/promises"
 import path from "path"
-import { Effect, Layer } from "effect"
+import { Effect, Fiber, Layer } from "effect"
 import { Session } from "@/session/session"
 import { ModelID, ProviderID } from "../../src/provider/schema"
 import { SessionRevert } from "../../src/session/revert"
+import { SessionRunState } from "../../src/session/run-state"
 import { MessageV2 } from "../../src/session/message-v2"
 import { Snapshot } from "../../src/snapshot"
 import * as Log from "@opencode-ai/core/util/log"
@@ -18,6 +19,7 @@ void Log.init({ print: false })
 const env = Layer.mergeAll(
   Session.defaultLayer,
   SessionRevert.defaultLayer,
+  SessionRunState.defaultLayer,
   Snapshot.defaultLayer,
   CrossSpawnSpawner.defaultLayer,
 )
@@ -634,6 +636,63 @@ describe("revert + compact workflow", () => {
           expect(yield* read(path.join(dir, "a.txt"))).toBe("a3")
         }),
       { git: true },
+    ),
+  )
+})
+
+/**
+ * Un prompt en file ou en steer n'existe **que** pendant qu'une exécution est en vol — et
+ * c'est exactement l'état où `assertNotBusy` refusait le revert, donc où l'annulation était
+ * impossible. Le cas monte un vrai runner qui ne rend jamais la main : la session est
+ * occupée pour de bon, et revert doit alors **supprimer** le prompt non servi au lieu de
+ * poser un bandeau de revert (qui laissait le prompt en place, prêt à être servi).
+ */
+describe("revert d'un prompt jamais servi", () => {
+  const waitBusy = Effect.fnUntraced(function* (runState: SessionRunState.Interface, sessionID: SessionID) {
+    for (let attempt = 0; attempt < 400; attempt++) {
+      const busy = yield* runState.assertNotBusy(sessionID).pipe(
+        Effect.match({ onFailure: () => true, onSuccess: () => false }),
+      )
+      if (busy) return
+      yield* Effect.sleep("5 millis")
+    }
+    return yield* Effect.die(new Error("la session n'est jamais devenue occupée"))
+  })
+
+  it.live(
+    "un prompt en file est supprimé, sans bandeau de revert",
+    provideTmpdirInstance((dir) =>
+      Effect.gen(function* () {
+        const session = yield* Session.Service
+        const revert = yield* SessionRevert.Service
+        const runState = yield* SessionRunState.Service
+
+        const info = yield* session.create({})
+        const sessionID = info.id
+
+        // Le tour que l'exécution sert, puis le prompt écrit pendant qu'elle tourne.
+        const served = yield* user(sessionID)
+        yield* text(sessionID, served.id, "question servie")
+        const queued = yield* user(sessionID)
+        yield* text(sessionID, queued.id, "prompt en file")
+
+        const running = yield* runState
+          .ensureRunning(
+            sessionID,
+            Effect.succeed({ info: served, parts: [] }) as Effect.Effect<MessageV2.WithParts>,
+            Effect.never as Effect.Effect<MessageV2.WithParts>,
+          )
+          .pipe(Effect.forkChild)
+        yield* waitBusy(runState, sessionID)
+
+        const result = yield* revert.revert({ sessionID, messageID: queued.id })
+
+        // Aucun bandeau : le prompt est parti, il n'y a rien à « dé-reverter ».
+        expect(result.revert).toBeUndefined()
+        expect((yield* session.messages({ sessionID })).map((message) => message.info.id)).toEqual([served.id])
+
+        yield* Fiber.interrupt(running)
+      }),
     ),
   )
 })

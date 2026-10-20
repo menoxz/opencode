@@ -63,6 +63,7 @@ Scope: ce dépôt. Le fichier global (`~/.config/opencodev2/AGENTS.md`) porte la
 - Route standard = `routes/session/index.tsx` (CRLF) ; deux crans d'opacité **dérivés du thème** (`theme.textLow`), jamais un gris figé.
 - bash : commande bornée à 1 ligne + `· +N lines`, sortie par la **fin** (5 lignes), un même clic déplie les deux ; jamais de troncature de caractères.
 - Prompt en file : le badge `QUEUED` se décide par le **statut**, jamais en retirant la visibilité ; `STEER` par `metadata.steer` seulement.
+- Annuler une file/un steer : `session.revert` sur un message **non servi** est une **suppression** (`withdrawableUserID`, `session/prompt-queue.ts` → `SessionRevert.withdraw`), jamais un revert avec snapshot — `assertNotBusy` rendait l'appel impossible pendant que le prompt existait, et un `void` côté TUI faisait passer le refus pour une annulation. Tout message non servi au-delà de la cible part avec elle.
 - `inspect_batch` : une ligne repliée `inspect_batch · N actions ▸`, dépliée au clic ; chevron seulement s'il y a à révéler.
 - `run` : `TOOL_RULES.bash.view.final` reste `true` (sinon `exit 1` s'affiche comme un succès) ; code de sortie par `toolExitCode`, partagé par le texte **et** la couleur.
 - Retry de session : 408/425/429 et erreurs de transport réessayés, `AbortError` jamais, plafond 10 ; délai **serveur** non plafonné et pas de reprise après facturation `(H)`.

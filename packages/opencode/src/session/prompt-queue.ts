@@ -86,6 +86,32 @@ export const pendingUserID = (msgs: MessageV2.WithParts[]): MessageV2.User["id"]
     })
     .sort((a, b) => (a.info.id < b.info.id ? -1 : a.info.id > b.info.id ? 1 : 0))[0]?.info.id
 
+// A prompt the run has NOT served yet — one queued behind the active turn, or a
+// steer that no assistant has answered — can be cancelled while the run is in
+// flight. It never reached the model, so cancelling it is a **deletion**, not a
+// revert: there is no file change to undo and no snapshot to take. Excluded: the
+// prompt the run is serving (`pendingUserID`, the FIFO anchor), anything that
+// already has an assistant child (that turn is being written right now), a steer
+// the run already answered, and the runtime-shaped users that are not prompts.
+export const withdrawableUserID = (
+  msgs: MessageV2.WithParts[],
+  messageID: MessageV2.User["id"],
+  busy: boolean,
+): boolean => {
+  // An idle session keeps the classic revert: the banner, `unrevert`, and the
+  // snapshot restore. Withdrawing there would delete the prompt outright with no
+  // way back, while a prompt only needs withdrawing because a run is about to
+  // serve it.
+  if (!busy) return false
+  const target = msgs.find((m) => m.info.id === messageID)
+  if (!target || target.info.role !== "user") return false
+  if (isRunInternalUser(target)) return false
+  if (msgs.some((m) => m.info.role === "assistant" && m.info.parentID === messageID)) return false
+  if (isSteerUser(target) && steerServed(msgs, messageID)) return false
+  if (pendingUserID(msgs) === messageID) return false
+  return true
+}
+
 // Restrict a run's message view to the anchored turn. Run-internal users
 // (compaction + auto-continue) are kept so the run can serve them; any user
 // prompt queued while the run is active is invisible until a fresh run anchors

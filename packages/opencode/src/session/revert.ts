@@ -8,6 +8,7 @@ import * as Session from "./session"
 import { MessageV2 } from "./message-v2"
 import { SessionID, MessageID, PartID } from "./schema"
 import { SessionRunState } from "./run-state"
+import { PromptQueue } from "./prompt-queue"
 import { SessionSummary } from "./summary"
 
 const log = Log.create({ service: "session.revert" })
@@ -42,11 +43,47 @@ export const layer = Layer.effect(
     const state = yield* SessionRunState.Service
     const sync = yield* SyncEvent.Service
 
+    // Cancel a prompt that never reached the model. It exists only while a run is
+    // in flight — the exact state in which `assertNotBusy` refused the call — so
+    // the queue could be neither reverted nor deleted, and the run served it
+    // anyway. Deletion, not revert: no snapshot, no file restore, and everything
+    // at or after the target goes with it (a later queued prompt has not been
+    // served either).
+    const withdraw = Effect.fnUntraced(function* (input: {
+      session: Session.Info
+      all: MessageV2.WithParts[]
+      messageID: MessageID
+    }) {
+      const remove = input.all.filter((msg) => msg.info.id >= input.messageID)
+      for (const msg of remove) {
+        yield* sync.run(MessageV2.Event.Removed, { sessionID: input.session.id, messageID: msg.info.id })
+      }
+      log.info("withdrew a prompt that was never served", {
+        sessionID: input.session.id,
+        messageID: input.messageID,
+        removedMessageCount: remove.length,
+        removedMessageIDs: remove.map((msg) => msg.info.id),
+      })
+      return input.session
+    })
+
     const revert = Effect.fn("SessionRevert.revert")(function* (input: RevertInput) {
-      yield* state.assertNotBusy(input.sessionID)
       const all = yield* sessions.messages({ sessionID: input.sessionID }).pipe(Effect.orDie)
-      let lastUser: MessageV2.User | undefined
       const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
+      // A whole-message target that the run has not served is a cancellation, and
+      // it is the only way to withdraw a queued or steered prompt before it runs.
+      // At rest the classic revert applies: the prompt may still be deleted by
+      // `cleanup` at the next run, but the banner and `unrevert` stay available.
+      // "Busy" is read from the run state itself — the same source that made the
+      // old `assertNotBusy` refuse — so the two decisions can never disagree.
+      const busy = yield* state.assertNotBusy(input.sessionID).pipe(
+        Effect.match({ onFailure: (error) => error._tag === "SessionBusyError", onSuccess: () => false }),
+      )
+      if (input.partID === undefined && PromptQueue.withdrawableUserID(all, input.messageID, busy)) {
+        return yield* withdraw({ session, all, messageID: input.messageID })
+      }
+      yield* state.assertNotBusy(input.sessionID)
+      let lastUser: MessageV2.User | undefined
 
       let rev: Session.Info["revert"]
       const patches: Snapshot.Patch[] = []
