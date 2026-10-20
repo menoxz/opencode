@@ -21,6 +21,12 @@ export type GuardInjection = {
   blocks: string[]
   firings: GuardFiring[]
   missing: string[]
+  /**
+   * Outils référencés par une garde mais absents de la session : la garde ne peut pas tirer, et ce
+   * n'est pas un seuil non atteint. Les confondre ferait croire à une garde « calme » alors qu'elle
+   * est morte.
+   */
+  unavailable: string[]
 }
 
 export function buildGuardBlocks(input: {
@@ -30,10 +36,21 @@ export function buildGuardBlocks(input: {
   step: GuardStepInput
   max?: number
   maxChars?: number
+  /** Outils disponibles dans la session ; sans cette liste, l'absence n'est pas distinguable d'un non-usage. */
+  availableTools?: string[]
 }): GuardInjection {
-  if (input.guards.length === 0) return { blocks: [], firings: [], missing: [] }
+  if (input.guards.length === 0) return { blocks: [], firings: [], missing: [], unavailable: [] }
 
   const { state, signals } = buildGuardState(input.step)
+  const available = input.availableTools ? new Set(input.availableTools) : undefined
+  const unavailable = [
+    ...new Set(
+      input.guards
+        .flatMap((guard) => guard.tools.map((condition) => condition.tool))
+        .filter((tool) => available !== undefined && !available.has(tool)),
+    ),
+  ].sort()
+
   const { selected } = selectGuards(input.guards, { ...state, firedThisTurn: input.firedThisTurn }, {
     max: input.max,
     maxChars: input.maxChars,
@@ -47,7 +64,7 @@ export function buildGuardBlocks(input: {
     blocks.push(`[garde-fou: ${entry.guard.name}]\n${entry.guard.body.trim()}`)
     firings.push({ name: entry.guard.name, reasons: entry.reasons.join(", "), chars: entry.guard.body.length })
   }
-  return { blocks, firings, missing: signals.missing }
+  return { blocks, firings, missing: signals.missing, unavailable }
 }
 
 /**

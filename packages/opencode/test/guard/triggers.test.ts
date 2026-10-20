@@ -165,4 +165,58 @@ describe("guard triggers", () => {
       expect({ key: item.key, inject: verdict.inject }).toEqual({ key: item.key, inject: true })
     }
   })
+
+  // --- tool_calls : nombre d'appels d'un outil nommé ---
+
+  test("tool_calls fires on the call count of the named tool", () => {
+    const g = guard("bash-heavy", { tool_calls: { bash: ">= 3" } })
+    expect(shouldInject(g, state({ toolCallsByName: { bash: 2 } })).inject).toBe(false)
+    const verdict = shouldInject(g, state({ toolCallsByName: { bash: 5 } }))
+    expect(verdict.inject).toBe(true)
+    expect(verdict.reasons).toEqual(["tool_calls.bash>=3 (5)"])
+  })
+
+  test("tool_calls counts per tool, not the total", () => {
+    const g = guard("grep-heavy", { tool_calls: { grep: ">= 2" } })
+    expect(shouldInject(g, state({ toolCallsByName: { bash: 9, grep: 1 } })).inject).toBe(false)
+    expect(shouldInject(g, state({ toolCallsByName: { bash: 9, grep: 2 } })).inject).toBe(true)
+  })
+
+  test("an absent tool counts as zero instead of making the guard throw", () => {
+    const g = guard("task-heavy", { tool_calls: { task: ">= 1" } })
+    expect(shouldInject(g, state({ toolCallsByName: {} })).inject).toBe(false)
+    expect(shouldInject(g, state({ toolCallsByName: { bash: 4 } })).inject).toBe(false)
+  })
+
+  test("a tool name that does not exist is refused when the registry is known", () => {
+    expect(() =>
+      compileGuard({
+        name: "typo",
+        body: "x",
+        when: { tool_calls: { bsh: ">= 3" } },
+        knownTools: ["bash", "read", "grep"],
+      }),
+    ).toThrow(/unknown tool "bsh" \(known: bash, grep, read\)/)
+  })
+
+  test("the same guard is accepted when the tool exists", () => {
+    const g = compileGuard({
+      name: "ok",
+      body: "x",
+      when: { tool_calls: { bash: ">= 3" } },
+      knownTools: ["bash", "read"],
+    })
+    expect(g.tools).toEqual([{ tool: "bash", operator: ">=", value: 3 }])
+  })
+
+  test("an empty tool_calls map is refused, an unparsable comparison too", () => {
+    expect(() => guard("empty-tools", { tool_calls: {} })).toThrow(/is empty/)
+    expect(() => guard("bad-tools", { tool_calls: { bash: "souvent" } })).toThrow(/expects a comparison/)
+    expect(() => guard("bad-shape", { tool_calls: "bash" })).toThrow(/expects a map of tool name/)
+  })
+
+  test("a guard made only of tool_calls still counts as triggered configuration", () => {
+    const g = guard("only-tools", { tool_calls: { read: ">= 1" } })
+    expect(shouldInject(g, state({ toolCallsByName: { read: 1 } })).inject).toBe(true)
+  })
 })

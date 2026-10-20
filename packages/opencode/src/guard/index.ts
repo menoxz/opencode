@@ -63,8 +63,9 @@ export const layer = Layer.effect(
     const state = yield* InstanceState.make<State>(
       Effect.fn("Guard.state")(function* (ctx) {
         const roots = guardRoots({ configDir: global.config, directory: ctx.directory, worktree: ctx.worktree })
-        // `loadGuardRoots` rend ses refus au lieu de lever : le canal d'erreur de cet Effect reste
-        // `never`, sinon `InstanceState.make` refuse la construction entière du service.
+        // Pas de `knownTools` ici : le service ne dépend volontairement pas du registre d'outils, qui
+        // n'est pas résolu à ce point du cycle de vie. La disponibilité est vérifiée à l'évaluation,
+        // avec les outils réellement offerts au step — c'est le seul endroit où l'information existe.
         const result = yield* Effect.promise(() => loadGuardRoots(roots))
         const guards: Record<string, CompiledGuard> = {}
         for (const guard of result.guards) guards[guard.name] = guard

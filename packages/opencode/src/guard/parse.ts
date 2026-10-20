@@ -33,7 +33,7 @@ export function guardFiles(root: string): string[] {
  * Charge une garde depuis son fichier. Lève `GuardDefinitionError` : un fichier illisible ou sans nom
  * ne doit pas devenir une garde inerte, il doit être signalé.
  */
-export async function loadGuardFile(file: string): Promise<CompiledGuard> {
+export async function loadGuardFile(file: string, options?: { knownTools?: readonly string[] }): Promise<CompiledGuard> {
   const fallbackName = path.basename(file, path.extname(file))
   const parsed = await ConfigMarkdown.parse(file)
   const data = (parsed.data ?? {}) as {
@@ -52,17 +52,18 @@ export async function loadGuardFile(file: string): Promise<CompiledGuard> {
     body: parsed.content ?? "",
     when: record(data.when) ?? {},
     limits: record(data.limits) ?? {},
+    knownTools: options?.knownTools,
   })
 }
 
 /** Charge tous les `.md` d'un dossier : les gardes valides d'un côté, les refus de l'autre. */
-export async function loadGuardRoot(root: string): Promise<GuardLoadResult> {
+export async function loadGuardRoot(root: string, options?: { knownTools?: readonly string[] }): Promise<GuardLoadResult> {
   const files = guardFiles(root)
   const guards: CompiledGuard[] = []
   const errors: GuardError[] = []
   for (const file of files) {
     try {
-      guards.push(await loadGuardFile(file))
+      guards.push(await loadGuardFile(file, options))
     } catch (error) {
       const message = error instanceof GuardDefinitionError ? error.message : String(error)
       errors.push({ location: file, message })
@@ -72,12 +73,15 @@ export async function loadGuardRoot(root: string): Promise<GuardLoadResult> {
 }
 
 /** Fusionne plusieurs dossiers ; le dernier gagne sur un nom identique (projet > global). */
-export async function loadGuardRoots(roots: string[]): Promise<GuardLoadResult> {
+export async function loadGuardRoots(
+  roots: string[],
+  options?: { knownTools?: readonly string[] },
+): Promise<GuardLoadResult> {
   const byName = new Map<string, CompiledGuard>()
   const errors: GuardError[] = []
   const files: string[] = []
   for (const root of roots) {
-    const result = await loadGuardRoot(root)
+    const result = await loadGuardRoot(root, options)
     files.push(...result.files)
     errors.push(...result.errors)
     for (const guard of result.guards) byName.set(guard.name, guard)

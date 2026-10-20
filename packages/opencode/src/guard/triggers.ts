@@ -40,11 +40,15 @@ export const ENUM_SIGNALS = {
   phase: "phase",
 } as const
 
+/** Déclencheur par outil : `tool_calls: { bash: ">= 6", task: "= 0" }`. */
+export const TOOL_SIGNAL = "tool_calls"
+
 export const SIGNAL_KEYS: readonly string[] = [
   ...Object.keys(NUMERIC_SIGNALS),
   ...Object.keys(BOOLEAN_SIGNALS),
   ...Object.keys(LIST_SIGNALS),
   ...Object.keys(ENUM_SIGNALS),
+  TOOL_SIGNAL,
 ]
 
 /** Ordre de priorité : c'est l'ordre du tableau de la spec, pas l'ordre du fichier. */
@@ -53,6 +57,7 @@ export const PRIORITY: readonly string[] = [
   "context_ratio",
   "after_compaction",
   "tool_calls_in_turn",
+  "tool_calls",
   "error_streak",
   "repeat_action",
   "steps_in_turn",
@@ -78,12 +83,20 @@ export type GuardState = {
   phase?: string
   /** Nombre de tirs déjà effectués dans le tour courant, par nom de garde. */
   firedThisTurn?: Record<string, number>
+  /**
+   * Appels par nom d'outil dans le tour. Un outil absent vaut 0 : une garde qui exige `>= 1` d'un
+   * outil non disponible ne peut donc pas tirer, et l'appelant doit le signaler plutôt que de laisser
+   * croire que le seuil n'est simplement pas atteint.
+   */
+  toolCallsByName?: Record<string, number>
 }
 
 export type NumericCondition = { key: string; operator: Operator; value: number }
 export type BooleanCondition = { key: string; value: boolean }
 export type ListCondition = { key: string; globs: string[] }
 export type EnumCondition = { key: string; values: string[] }
+/** Condition sur le nombre d'appels d'un outil nommé. */
+export type ToolCondition = { tool: string; operator: Operator; value: number }
 
 export type CompiledGuard = {
   name: string
@@ -93,6 +106,7 @@ export type CompiledGuard = {
   boolean: BooleanCondition[]
   list: ListCondition[]
   enumeration: EnumCondition[]
+  tools: ToolCondition[]
   /** Borne de répétition. Absente = aucune borne au-delà du budget global du step. */
   maxPerTurn?: number
 }
@@ -161,12 +175,50 @@ function compileEnum(guard: string, key: string, raw: unknown): EnumCondition {
  * Valide les déclencheurs d'une garde. Tout ce qui n'est pas compris lève, avec le nom de la garde et
  * la liste des déclencheurs connus : une garde silencieusement inerte est indétectable.
  */
+/**
+ * Compile une carte `tool_calls: { bash: ">= 6" }`.
+ *
+ * `knownTools` est fourni par le service, qui interroge le registre réel : un nom d'outil qui n'existe
+ * pas est refusé au chargement. Un nom qui existe mais n'est pas disponible dans cette session n'est
+ * pas une erreur de configuration — c'est un outil absent, compté à zéro à l'évaluation, et signalé
+ * par l'appelant. Sans `knownTools` (tests unitaires), la validation de nom est simplement ignorée.
+ */
+function compileTools(
+  guard: string,
+  raw: unknown,
+  knownTools?: readonly string[],
+): ToolCondition[] {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new GuardDefinitionError(
+      guard,
+      `trigger "${TOOL_SIGNAL}" expects a map of tool name to comparison, got ${JSON.stringify(raw)}`,
+    )
+  }
+  const entries = Object.entries(raw as Record<string, unknown>)
+  if (entries.length === 0) {
+    throw new GuardDefinitionError(guard, `trigger "${TOOL_SIGNAL}" is empty: it would always match`)
+  }
+  const known = knownTools ? new Set(knownTools) : undefined
+  return entries.map(([tool, value]) => {
+    if (known && !known.has(tool)) {
+      throw new GuardDefinitionError(
+        guard,
+        `unknown tool "${tool}" (known: ${[...known].sort().join(", ")})`,
+      )
+    }
+    const numeric = compileNumeric(guard, `${TOOL_SIGNAL}.${tool}`, value)
+    return { tool, operator: numeric.operator, value: numeric.value }
+  })
+}
+
 export function compileGuard(input: {
   name: string
   description?: string
   body: string
   when?: Record<string, unknown>
   limits?: Record<string, unknown>
+  /** Noms d'outils réellement connus, pour refuser une référence morte. */
+  knownTools?: readonly string[]
 }): CompiledGuard {
   const compiled: CompiledGuard = {
     name: input.name,
@@ -176,6 +228,7 @@ export function compileGuard(input: {
     boolean: [],
     list: [],
     enumeration: [],
+    tools: [],
   }
   for (const [key, raw] of Object.entries(input.when ?? {})) {
     if (key in NUMERIC_SIGNALS) {
@@ -194,12 +247,23 @@ export function compileGuard(input: {
       compiled.enumeration.push(compileEnum(input.name, key, raw))
       continue
     }
+    if (key === TOOL_SIGNAL) {
+      compiled.tools.push(...compileTools(input.name, raw, input.knownTools))
+      continue
+    }
     throw new GuardDefinitionError(
       input.name,
       `unknown trigger "${key}" (known: ${SIGNAL_KEYS.join(", ")})`,
     )
   }
-  if (compiled.numeric.length + compiled.boolean.length + compiled.list.length + compiled.enumeration.length === 0) {
+  if (
+    compiled.numeric.length +
+      compiled.boolean.length +
+      compiled.list.length +
+      compiled.enumeration.length +
+      compiled.tools.length ===
+    0
+  ) {
     throw new GuardDefinitionError(input.name, "no trigger: a guard without condition would fire every step")
   }
   for (const [key, raw] of Object.entries(input.limits ?? {})) {
@@ -273,6 +337,14 @@ export function shouldInject(guard: CompiledGuard, state: GuardState): { inject:
     const actual = (state as unknown as Record<string, string | undefined>)[field]
     if (!actual || !condition.values.includes(actual)) return { inject: false, reasons: [] }
     reasons.push(`${condition.key}=${actual}`)
+  }
+
+  for (const condition of guard.tools) {
+    // Un outil absent vaut 0 : la garde ne tire pas, et l'appelant signale l'absence au lieu de
+    // laisser croire à un seuil simplement non atteint.
+    const actual = state.toolCallsByName?.[condition.tool] ?? 0
+    if (!compare(actual, condition.operator, condition.value)) return { inject: false, reasons: [] }
+    reasons.push(`${TOOL_SIGNAL}.${condition.tool}${condition.operator}${condition.value} (${actual})`)
   }
 
   return { inject: true, reasons }

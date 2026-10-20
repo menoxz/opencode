@@ -2603,6 +2603,12 @@ contextSummary.add("skills", skills ? "inject relevant skill summary" : "no rele
                 afterCompaction: false,
                 agent: agent?.name,
               },
+              // Outils réellement offerts à ce step : c'est la seule information qui permette de
+              // distinguer « outil absent » de « outil non utilisé » pour les gardes `tool_calls`.
+              // La forme de `tools` dépend de la résolution, d'où la normalisation défensive.
+              availableTools: (Array.isArray(tools)
+                ? tools.map((tool) => (tool as { id?: unknown })?.id)
+                : Object.keys(tools as object)) as string[],
             })
             for (const firing of guardInjection.firings) {
               guardFired[firing.name] = (guardFired[firing.name] ?? 0) + 1

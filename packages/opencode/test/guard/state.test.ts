@@ -76,4 +76,18 @@ describe("buildGuardState", () => {
     const { state } = buildGuardState({ ...base, contextWindow: 1000, lastPromptTokens: 5000, messages: [user()] })
     expect(state.contextRatio).toBe(1)
   })
+
+  test("calls are counted per tool name, not as a total", () => {
+    const { state } = buildGuardState({
+      ...base,
+      messages: [user(), tool("bash"), tool("bash"), tool("read"), tool("bash", { command: "x" })],
+    })
+    expect(state.toolCallsByName).toEqual({ bash: 3, read: 1 })
+    expect(state.toolCallsInTurn).toBe(4)
+  })
+
+  test("a tool never called is absent from the table rather than zero-filled", () => {
+    const { state } = buildGuardState({ ...base, messages: [user(), tool("read")] })
+    expect(state.toolCallsByName?.bash).toBeUndefined()
+  })
 })

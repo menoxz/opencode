@@ -97,6 +97,14 @@ export function buildGuardState(input: GuardStepInput): {
   const tools = turnMessages.flatMap(toolParts)
   const paths = tools.map(toolPath).filter((value): value is string => Boolean(value))
 
+  // Comptage par nom d'outil : c'est ce qui alimente le déclencheur `tool_calls`. Un outil jamais
+  // appelé est simplement absent de la table ; la décision le lit comme 0.
+  const toolCallsByName: Record<string, number> = {}
+  for (const part of tools) {
+    if (!part.tool) continue
+    toolCallsByName[part.tool] = (toolCallsByName[part.tool] ?? 0) + 1
+  }
+
   // Série d'échecs : on remonte depuis la fin tant que l'outil a échoué.
   let errorStreak = 0
   for (let index = tools.length - 1; index >= 0; index--) {
@@ -135,6 +143,7 @@ export function buildGuardState(input: GuardStepInput): {
       paths,
       agent: input.agent,
       phase: input.phase,
+      toolCallsByName,
     },
     signals: { missing },
   }
