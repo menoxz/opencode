@@ -622,6 +622,16 @@ Session `ses_ea62ef80…`, binaire 2.4.18 déployé, six gardes sur disque.
 - Non mesuré à ce jour : tirs sur `repeat_action`, `error_streak`, `after_compaction` et
   `context_ratio` (le dry-run les déclare non simulables ; seul le journal du service les verra).
 
+### Mesurer le budget des gardes dans le journal — deux pièges (2026-10-21)
+
+- **Ne pas grouper par `step` seul** : chaque run (un prompt utilisateur) renumérote ses steps à
+  partir de 1, donc deux runs fusionnés donnent `4 tirs / 974 caractères` là où il y a en réalité
+  deux steps de `2 tirs / 487`. Grouper par `(horodatage, step)`. Mesure correcte :
+  `VIOLATIONS_TIRS=0`, `VIOLATIONS_CHARS=0` sur 8 steps réels.
+- **Filtrer les lignes de `permission`** : une commande de recherche contenant `guard injected`
+  produit sa propre ligne de journal, comptée comme un tir (`step=-1`, `chars=0`). Exiger un motif
+  qui ancre la ligne sur `service=session.prompt`.
+
 ## Rechargement à chaud : une seule famille suit la config (mesuré 2026-10-20)
 
 - `tasks` : entrée ajoutée dans `opencode.jsonc` en cours de session ⇒ `tasks get <nom>` la lit
