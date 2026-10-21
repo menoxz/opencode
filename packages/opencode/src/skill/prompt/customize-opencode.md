@@ -172,6 +172,87 @@ Register skills from non-default locations via `skills.paths` (scanned
 recursively for `**/SKILL.md`) and `skills.urls` (each URL serves a list of
 skills).
 
+## Guards
+
+Injectable instructions that appear **only while a measurable condition of the current step holds**.
+`instructions`/AGENTS.md is always in the system segment; a guard is a few lines pushed into the
+volatile tail of the prompt (a `user` message wrapped in `<system-reminder>`, prefixed
+`[garde-fou: <name>]`) and dropped at the next step. Use a guard for a reflex that must arrive at the
+moment it is useful; keep invariants in AGENTS.md and procedures in skills.
+
+Files live in the same roots as skills:
+
+```
+~/.config/opencode/guards/<name>.md          global
+<project>/.opencode/guards/<name>.md         project (wins on identical name)
+```
+
+```markdown
+---
+name: two-failures-change-form
+description: Change the shape of the command after two failures
+when:
+  error_streak: ">= 2"
+limits:
+  max_per_turn: 1
+---
+Two consecutive failures: the form is wrong, not the intent. Change the form (redirection instead
+of a pipe, another tool) rather than replaying the same line.
+```
+
+`when` takes at least one trigger and all conditions are ANDed; comparators are `>=`, `<=`, `>`,
+`<`, `=` and `!=`. `limits.max_per_turn` (integer ≥ 1) caps repetitions within a turn. An unknown
+trigger, an empty `when`, an unparsable comparison, an unknown limit or a `name` that references an
+unknown tool is **refused with a message naming what is known** — a silently inert guard cannot be
+detected later.
+
+| Trigger | Value | Meaning |
+| --- | --- | --- |
+| `since_last_tokens` | `">= 20000"` | prompt tokens elapsed since the last guard injection |
+| `context_ratio` | `">= 0.65"` | last prompt ÷ model context window |
+| `after_compaction` | `true` | the step following a compaction |
+| `tool_calls_in_turn` | `">= 4"` | tool calls in the current turn |
+| `tool_calls` | `{ bash: ">= 12" }` | calls of one named tool; the name is checked against the live registry, an absent tool counts as 0 |
+| `error_streak` | `">= 2"` | trailing consecutive tool failures |
+| `repeat_action` | `">= 2"` | same tool called with the same arguments |
+| `steps_in_turn` | `">= 8"` | assistant steps in the turn |
+| `path_match` | `["src/**", "*.ts"]` | globs against the paths the turn touched |
+| `turns_since_injection` | `">= 3"` | safety net for a useful guard |
+| `agent`, `phase` | `"plan"` | restrict to one agent or phase |
+
+The config block is optional; every key is optional and the defaults below apply when it is absent:
+
+```json
+"guards": { "enabled": true, "max_per_step": 2, "max_chars": 600, "disable": [], "paths": [] }
+```
+
+`max_per_step` and `max_chars` are **hard caps**: beyond them the remaining guards are dropped, not
+truncated. This is deliberate — a wall of advice is ignored as a block, so less is more. `disable`
+mutes a guard by name while keeping the file; `paths` adds folders (same form as `skills.paths`,
+`~/` expanded).
+
+**Observing.** Every injection logs
+`service=guard name=… reasons=… step=… chars=…`, and the reason carries the observed value
+(`tool_calls_in_turn>=8 (11)`), not just the threshold — that is what separates a guard firing for
+the right reason from one firing by accident. To check a threshold against real sessions before
+trusting it:
+
+```
+bun packages/opencode/script/guards.ts [sessionID]
+```
+
+which replays the decision through the same code path as the service and prints which guards would
+have fired, why, and which tools a guard cites but the session never used.
+
+**Hot reload.** Guard folders are watched per instance, parent included, so a `guards/` directory
+created while opencode runs is picked up — writes are debounced and logged as
+`service=guard … reload` with a `count`. Guards therefore do not need a restart; `guards.paths` and
+`disable` changes do (config is read once).
+
+**When not to write one.** If the rule cannot be tied to a signal in the table above, a guard will
+never fire: put it in AGENTS.md (always on) or in a skill (loaded on demand). And prefer a
+permission rule or a hook when the point is to *prevent* an action rather than to remind.
+
 ## Agents
 
 Two ways to define an agent. Use the file form for anything non-trivial.
