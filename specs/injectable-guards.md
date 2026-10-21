@@ -209,6 +209,34 @@ qui n'en dépend que par eux **ne peut pas tirer** ; le dry-run et le journal le
 2. Décider du sort de `phase` : soit une notion de phase existe (plan/build/orchestrator), soit le
    déclencheur est retiré de la spec plutôt que laissé inerte.
 
+### Affichage du chargement dans le stream
+
+Le bloc `Context injections` joint au message utilisateur porte une section de plus, écrite une fois
+par tour :
+
+```
+Context injections · 5 section(s)
+- core: system prompt (PROMPT_CORE) · agent build · 5592 chars
+- env: environment · 391 chars
+- instructions: instruction files · 1 source(s) · 7742 chars
+- skills: skill summary · 6883 chars
+- guards: 6 globale(s) · 5 locale(s) · 132 chars
+```
+
+L'origine par garde est décidée par le **répertoire** d'où vient le fichier (`global` = répertoire de
+config, sinon `project`), jamais par son contenu : une garde du dépôt qui porte le nom d'une garde
+globale la remplace, et l'affichage annonce donc l'origine réellement chargée. Le détail
+(`global: … | local: …`) donne les noms.
+
+Deux pièges consignés parce qu'ils ont coûté du temps :
+
+- le producteur du bloc est le tableau `contextSections` (`session/prompt.ts`, autour de la ligne
+  2378) — **pas** `contextSummary` ; une section ajoutée via `contextSummary.add` est enregistrée et
+  jamais rendue ;
+- le format est extrait dans `session/injection-format.ts` et testé **contre le parseur réel de la
+  webui** (`packages/webui/src/injections.ts`, `parseInjections`) : un test côté serveur avec le
+  format recopié à la main validerait ce qu'on a écrit, pas ce qui est lu.
+
 ### Vérification après redémarrage
 
 - Une garde qui tire laisse une ligne `service=session.prompt name=… reasons=… step=… chars=… guard injected`,
