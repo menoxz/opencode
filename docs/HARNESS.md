@@ -667,5 +667,23 @@ Session `ses_ea62ef80…`, binaire 2.4.18 déployé, six gardes sur disque.
 - Vérification de zone : `test/skill` en entier = 34 pass, suites voisines (`jev/skills`,
   `tool/registry`, `skill/select`) = 33 pass, typecheck exit 0.
 
+## Gardes : baseline des tirs réels avant redémarrage (mesuré 2026-10-21)
+
+- Agrégat sur **12 fichiers de log** : 141 tirs, mais **deux gardes seulement** —
+  `proof-before-claim` = 71 (`tool_calls_in_turn>=6 (11)`), `delegate-before-diving` = 70
+  (`tool_calls_in_turn>=8 (11)`). Les neuf autres n'ont jamais tiré.
+- Cause, et ce n'est pas un défaut du dispositif mais du binaire qui tournait : le daemon avait
+  démarré avant `bb6dd7e52` (compteur de jetons par garde) et `ba0d2655b` (fenêtre de contexte
+  réelle). Donc `interpret-request` (12 000 jetons) était affamée par le compteur partagé, remis à
+  zéro à chaque tir de `proof-before-claim`, et `compaction-due` avait `context_ratio = 0` par
+  construction.
+- **Piège de mesure** : le fichier de log le plus récent avait tourné (11:54) et ne contenait aucun
+  tir — mesurer sur le seul log courant donnait `TIRS=0`. Il faut agréger **tous** les `*.log` du
+  répertoire, et filtrer sur `service=session.prompt` pour ne pas compter les lignes `permission`
+  qui reprennent le motif recherché.
+- À comparer après redémarrage : on attend **au moins trois gardes distinctes** tirent, dont
+  `interpret-request` sur les tours longs, et `compaction-due` dès que le ratio passe 0,65. Si le
+  compte reste à deux, le correctif de starvation n'est pas actif.
+
 
 
