@@ -2586,6 +2586,10 @@ contextSummary.add("skills", skills ? "inject relevant skill summary" : "no rele
             // écoulés depuis le dernier tir (pour `since_last_tokens`).
             const guardFired: Record<string, number> = {}
             let guardTokens = 0
+            // Une seule ligne par tour : les signaux manquants sont une propriété du câblage, pas un
+            // événement de step. Sans elle, une garde morte n'est visible que dans le dry-run — donc
+            // jamais par celui qui lit le journal du service en production.
+            let guardMissingLogged = false
 
             volatile.push(...turnPlanCapsules)
 
@@ -2623,6 +2627,13 @@ contextSummary.add("skills", skills ? "inject relevant skill summary" : "no rele
             }
             if (guardInjection.firings.length > 0) guardTokens = 0
             else guardTokens += (lastFinished?.tokens?.input ?? 0) + (lastFinished?.tokens?.output ?? 0)
+            if (!guardMissingLogged && guardInjection.missing.length > 0) {
+              guardMissingLogged = true
+              log.warn("guard signals unavailable", {
+                missing: guardInjection.missing,
+                unavailable_tools: guardInjection.unavailable,
+              })
+            }
             volatile.push(...guardInjection.blocks)
 
             const injected = [...volatile, ...stepOneTail].filter((entry) => entry.trim())
