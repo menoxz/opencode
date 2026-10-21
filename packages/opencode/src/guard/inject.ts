@@ -15,7 +15,13 @@ import { loadGuardRoots } from "./parse"
 /** Marqueur stable : sans lui, une consigne injectée est indistinguable d'une consigne utilisateur. */
 export const GUARDS_MARKER = "[garde-fou:"
 
-export type GuardFiring = { name: string; reasons: string; chars: number }
+export type GuardFiring = {
+  name: string
+  reasons: string
+  chars: number
+  /** Provenance, pour l'affichage : `global` (config utilisateur) ou `project` (dépôt). */
+  origin: "global" | "project"
+}
 
 export type GuardInjection = {
   blocks: string[]
@@ -62,7 +68,12 @@ export function buildGuardBlocks(input: {
     // Le nom reste visible dans le transcript : sans lui, une consigne injectée est
     // indistinguable d'une consigne écrite par l'utilisateur.
     blocks.push(`[garde-fou: ${entry.guard.name}]\n${entry.guard.body.trim()}`)
-    firings.push({ name: entry.guard.name, reasons: entry.reasons.join(", "), chars: entry.guard.body.length })
+    firings.push({
+      name: entry.guard.name,
+      reasons: entry.reasons.join(", "),
+      chars: entry.guard.body.length,
+      origin: entry.guard.origin === "global" ? "global" : "project",
+    })
   }
   return { blocks, firings, missing: signals.missing, unavailable }
 }

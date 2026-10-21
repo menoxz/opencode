@@ -33,12 +33,26 @@ export type InjectionSection = {
 }
 
 export type Injections = {
-  kind: "sections" | "sources"
+  kind: "sections" | "sources" | "firings"
   count: number
   sections: InjectionSection[]
   /** Chemins des fichiers d'instructions, pour la forme « sources ». */
   sources: string[]
+  /** Gardes qui ont tiré dans le tour, pour la forme « firings ». */
+  firings: GuardFiring[]
 }
+
+/** Un tir de garde-fou : l'origine (config globale ou dépôt) et le nom sont ce qu'on lit en premier. */
+export type GuardFiring = {
+  origin: "global" | "workspace"
+  name: string
+  reason?: string
+}
+
+/** En-tête des tirs : `Guards fired · 2 tir(s)`. */
+const HEADER_FIRINGS = /^Guards fired\s+·\s+(\d+)\s+tir/
+/** Ligne de tir : `- 🛡 guard: global/nom · raison`. L'icône est optionnelle à la lecture. */
+const FIRING_LINE = /^-\s*(?:🛡\s*)?guard:\s*(global|workspace)\/(\S+?)(?:\s+·\s+(.+))?$/
 
 /** En-tête à volumes : `Context injections · 4 section(s)`. */
 const HEADER_SECTIONS = /^Context injections\s+·\s+(\d+)\s+section/
@@ -140,7 +154,7 @@ export function parseInjections(text: string | undefined): Injections | undefine
       })
     }
     return sections.length > 0
-      ? { kind: "sections", count: Number(sectionsHeader[1]), sections, sources: [] }
+      ? { kind: "sections", count: Number(sectionsHeader[1]), sections, sources: [], firings: [] }
       : undefined
   }
 
@@ -152,7 +166,24 @@ export function parseInjections(text: string | undefined): Injections | undefine
       if (match?.[1]) sources.push(match[1].trim())
     }
     return sources.length > 0
-      ? { kind: "sources", count: Number(sourcesHeader[1]), sections: [], sources }
+      ? { kind: "sources", count: Number(sourcesHeader[1]), sections: [], sources, firings: [] }
+      : undefined
+  }
+
+  const firingsHeader = HEADER_FIRINGS.exec(first)
+  if (firingsHeader) {
+    const firings: GuardFiring[] = []
+    for (const line of lines.slice(1)) {
+      const match = FIRING_LINE.exec(line)
+      if (!match) continue
+      firings.push({
+        origin: match[1] as GuardFiring["origin"],
+        name: match[2] ?? "",
+        reason: match[3]?.trim(),
+      })
+    }
+    return firings.length > 0
+      ? { kind: "firings", count: Number(firingsHeader[1]), sections: [], sources: [], firings }
       : undefined
   }
 

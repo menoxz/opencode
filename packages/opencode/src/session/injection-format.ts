@@ -38,3 +38,30 @@ export function formatInjectionLine(entry: InjectionSectionLine): string {
 export function formatInjectionBlock(sections: InjectionSectionLine[]): string {
   return [formatInjectionHeader(sections.length), ...sections.map(formatInjectionLine)].join("\n")
 }
+
+/** Icône d'un tir de garde-fou. Un seul glyphe, pour que la largeur d'affichage reste prévisible. */
+export const GUARD_ICON = "🛡"
+
+export type GuardFiringLine = {
+  /** `global` = répertoire de config, `workspace` = dépôt du projet (affiché sous ce mot). */
+  origin: "global" | "project"
+  name: string
+  reason: string
+}
+
+/**
+ * Une ligne de tir : `- 🛡 guard: global/<nom> · <raison>`.
+ *
+ * La provenance est dans le libellé parce que c'est la question qu'on se pose en lisant le fil :
+ * cette garde vient-elle de ma config ou de ce dépôt ? Un nom identique peut exister des deux côtés,
+ * et c'est la version du dépôt qui gagne.
+ */
+export function formatGuardFiringLine(entry: GuardFiringLine): string {
+  const scope = entry.origin === "global" ? "global" : "workspace"
+  return `- ${GUARD_ICON} guard: ${scope}/${entry.name} · ${entry.reason}`
+}
+
+/** Bloc des tirs d'un tour, tête comprise. */
+export function formatGuardFiringsBlock(entries: GuardFiringLine[]): string {
+  return [`Guards fired · ${entries.length} tir(s)`, ...entries.map(formatGuardFiringLine)].join("\n")
+}

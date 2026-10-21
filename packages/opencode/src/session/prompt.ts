@@ -81,7 +81,7 @@ import * as PostMortem from "@/memory/post-mortem"
 import { SessionRunState } from "./run-state"
 import * as PromptMethodology from "./prompt-methodology"
 import { createPromptContextSummary, createPromptInjectionCache } from "./prompt-context-summary"
-import { formatInjectionBlock } from "./injection-format"
+import { formatInjectionBlock, formatGuardFiringsBlock, type GuardFiringLine } from "./injection-format"
 import { derivePhaseCapsule } from "./phase-capsule"
 import { buildQaProofAdvisory, buildRiskAdvisory, collectStickyFindings } from "./lean-advisory"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -2604,6 +2604,11 @@ contextSummary.add("skills", skills ? "inject relevant skill summary" : "no rele
             // événement de step. Sans elle, une garde morte n'est visible que dans le dry-run — donc
             // jamais par celui qui lit le journal du service en production.
             let guardMissingLogged = false
+            // Tirs du tour, affichés dans le fil : une ligne par tir avec son origine, dans une
+            // part synthétique unique réécrite à chaque nouveau tir (pas une part par tir).
+            const guardFiringLines: GuardFiringLine[] = []
+            // Type brandé obligatoire : `updatePart` refuse un `string` nu pour un identifiant.
+            let guardFiringPartID: ReturnType<typeof PartID.ascending> | undefined
 
             volatile.push(...turnPlanCapsules)
 
@@ -2645,6 +2650,22 @@ contextSummary.add("skills", skills ? "inject relevant skill summary" : "no rele
             for (const firing of guardInjection.firings) {
               guardFired[firing.name] = (guardFired[firing.name] ?? 0) + 1
               log.info("guard injected", { name: firing.name, reasons: firing.reasons, step, chars: firing.chars })
+              guardFiringLines.push({ origin: firing.origin, name: firing.name, reason: firing.reasons })
+            }
+            if (guardInjection.firings.length > 0) {
+              // Part synthétique ET ignorée : visible dans le fil, jamais renvoyée au modèle — sinon
+              // elle compterait dans le contexte et se rejouerait à chaque tour.
+              const written = yield* sessions.updatePart({
+                id: guardFiringPartID ?? PartID.ascending(),
+                messageID: lastUser.id,
+                sessionID,
+                type: "text",
+                text: formatGuardFiringsBlock(guardFiringLines),
+                synthetic: true,
+                ignored: true,
+                metadata: { injection: "guard", firings: guardFiringLines },
+              })
+              guardFiringPartID = written.id
             }
             const stepTokens = (lastFinished?.tokens?.input ?? 0) + (lastFinished?.tokens?.output ?? 0)
             for (const name of Object.keys(guardTokensByName)) guardTokensByName[name] += stepTokens

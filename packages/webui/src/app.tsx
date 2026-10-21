@@ -1935,6 +1935,20 @@ export default function App() {
     // une structure et il ne s'affiche **pas** comme si l'utilisateur l'avait écrit.
     const injections = parseInjections(text)
     if (!injections) return <UserPrompt text={text} />
+    // Les tirs de garde-fous ont leur propre forme : une ligne par tir, avec l'origine en clair.
+    // Les passer à `ContextInjections` afficherait « 0 section » — le bloc n'a pas de volumes.
+    if (injections.kind === "firings") {
+      return (
+        <div class="injections">
+          <div class="injections-head">{`${injections.count} tir(s) de garde-fou`}</div>
+          <ul class="injections-list">
+            {injections.firings.map((firing) => (
+              <li>{`🛡 guard: ${firing.origin}/${firing.name}${firing.reason ? ` · ${firing.reason}` : ""}`}</li>
+            ))}
+          </ul>
+        </div>
+      )
+    }
     const id = part.id ?? "injections"
     return <ContextInjections injections={injections} open={Boolean(expanded()[id])} onToggle={() => toggle(id)} loadSource={loadInstructionSource} />
   }

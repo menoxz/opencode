@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { formatInjectionBlock, formatInjectionHeader, formatInjectionLine } from "../../src/session/injection-format"
+import { formatInjectionBlock, formatInjectionHeader, formatInjectionLine, formatGuardFiringLine, formatGuardFiringsBlock } from "../../src/session/injection-format"
 import { parseInjections } from "../../../webui/src/injections"
 
 /**
@@ -46,5 +46,36 @@ describe("context injection block", () => {
 
   test("an empty block still parses to undefined, never to a bogus section list", () => {
     expect(parseInjections(formatInjectionBlock([]))).toBeUndefined()
+  })
+})
+
+/**
+ * Aller-retour des tirs : ce que le serveur écrit doit être exactement ce que la webui relit, sinon
+ * la ligne n'apparaît pas — et une ligne absente ne produit aucune erreur, seulement du silence.
+ */
+describe("guard firings block", () => {
+  test("the webui reads back what the server writes", () => {
+    const text = formatGuardFiringsBlock([
+      { origin: "global", name: "delegate-before-diving", reason: "tool_calls_in_turn>=10 (11)" },
+      { origin: "project", name: "bash-loop", reason: "tool_calls.bash>=12 (14)" },
+    ])
+    const parsed = parseInjections(text)
+    expect(parsed?.kind).toBe("firings")
+    expect(parsed?.count).toBe(2)
+    // `project` est écrit `workspace` : c'est le mot affiché, et c'est lui que le parseur relit.
+    expect(parsed?.firings).toEqual([
+      { origin: "global", name: "delegate-before-diving", reason: "tool_calls_in_turn>=10 (11)" },
+      { origin: "workspace", name: "bash-loop", reason: "tool_calls.bash>=12 (14)" },
+    ])
+  })
+
+  test("the line carries the icon and the origin prefix", () => {
+    expect(formatGuardFiringLine({ origin: "project", name: "bash-loop", reason: "x" })).toBe(
+      "- 🛡 guard: workspace/bash-loop · x",
+    )
+  })
+
+  test("an empty firing list is never rendered as a block", () => {
+    expect(parseInjections(formatGuardFiringsBlock([]))).toBeUndefined()
   })
 })
