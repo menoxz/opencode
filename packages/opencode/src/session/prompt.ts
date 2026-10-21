@@ -2375,6 +2375,10 @@ contextSummary.add("skills", skills ? "inject relevant skill summary" : "no rele
             // transcript hides it — it never reaches the model or the visible
             // conversation. Recorded once per user message.
             const corePrompt = agent.prompt ?? PROMPT_CORE
+            // Gardes chargées, avec leur provenance. `contextSections` est le SEUL producteur du bloc
+            // « Context injections » lu par le stream : `contextSummary.add` ne fait que des tailles,
+            // donc une section ajoutée là-bas ne s'affiche jamais.
+            const guardLoad = yield* (yield* Guard.Service).summary()
             const contextSections = [
               {
                 section: "core",
@@ -2395,6 +2399,16 @@ contextSummary.add("skills", skills ? "inject relevant skill summary" : "no rele
                 section: "skills",
                 label: skills ? "skill summary" : "no relevant skill summary",
                 text: skills ?? "",
+              },
+              {
+                // Une garde du dépôt qui porte le nom d'une garde globale la remplace : le décompte
+                // dit donc l'origine réellement chargée, pas les fichiers présents sur disque.
+                section: "guards",
+                label: `${guardLoad.global.length} globale(s) · ${guardLoad.project.length} locale(s)`,
+                text: [
+                  `global: ${guardLoad.global.join(", ") || "—"}`,
+                  `local: ${guardLoad.project.join(", ") || "—"}`,
+                ].join("\n"),
               },
             ]
               .filter((entry) => entry.text.length > 0)
@@ -2593,9 +2607,6 @@ contextSummary.add("skills", skills ? "inject relevant skill summary" : "no rele
             // événement de step. Sans elle, une garde morte n'est visible que dans le dry-run — donc
             // jamais par celui qui lit le journal du service en production.
             let guardMissingLogged = false
-            // Ligne de chargement : une fois par tour, pas à chaque step — un catalogue ne change pas
-            // d'un step à l'autre, et le répéter noierait le stream.
-            let guardLoadLogged = false
 
             volatile.push(...turnPlanCapsules)
 
@@ -2642,21 +2653,6 @@ contextSummary.add("skills", skills ? "inject relevant skill summary" : "no rele
             for (const name of Object.keys(guardTokensByName)) guardTokensByName[name] += stepTokens
             guardTokens = guardInjection.firings.length > 0 ? 0 : guardTokens + stepTokens
             for (const firing of guardInjection.firings) guardTokensByName[firing.name] = 0
-            if (!guardLoadLogged) {
-              guardLoadLogged = true
-              const guardSummary = yield* guardService.summary()
-              const total = guardSummary.global.length + guardSummary.project.length
-              if (total > 0) {
-                // Une garde du dépôt qui porte le nom d'une garde globale la remplace : l'affichage
-                // doit donc nommer l'origine réellement chargée, pas les deux.
-                contextSummary.add(
-                  "guards",
-                  `${guardSummary.global.length} globale(s) · ${guardSummary.project.length} locale(s)`,
-                  `global: ${guardSummary.global.join(", ") || "—"} | local: ${guardSummary.project.join(", ") || "—"}`,
-                  0,
-                )
-              }
-            }
             if (!guardMissingLogged && guardInjection.missing.length > 0) {
               guardMissingLogged = true
               log.warn("guard signals unavailable", {
