@@ -2603,7 +2603,9 @@ contextSummary.add("skills", skills ? "inject relevant skill summary" : "no rele
                 stepsInTurn: step,
                 messages: msgs as unknown as Parameters<typeof buildGuardBlocks>[0]["step"]["messages"],
                 tokensSinceLastGuard: guardTokens,
-                contextWindow: 0,
+                // Fenêtre réelle du modèle : la laisser à 0 rendait `context_ratio` structurellement
+                // nul, donc toute garde qui n'en dépendait que par lui était morte sans le dire.
+                contextWindow: model.limit.context ?? 0,
                 lastPromptTokens: lastFinished?.tokens?.input ?? 0,
                 afterCompaction: false,
                 agent: agent?.name,
