@@ -21,7 +21,8 @@ import { homedir } from "node:os"
 import { join } from "node:path"
 import { guardRoots } from "../src/guard"
 import { loadGuardRoots } from "../src/guard/parse"
-import { selectGuards, type GuardState } from "../src/guard/triggers"
+import { selectGuards } from "../src/guard/triggers"
+import { buildGuardState, type Message, type ToolPart } from "../src/guard/state"
 
 const args = process.argv.slice(2)
 const flag = (name: string, fallback?: string) => {
@@ -78,7 +79,7 @@ try {
     )
     .all(sessionID) as { id: string; time_created: number; mdata: string; pdata: string | null }[]
 
-  type Step = { id: string; role: string; toolCalls: number; tools: string[]; tokens: number }
+  type Step = { id: string; role: string; toolCalls: number; tools: string[]; parts: ToolPart[]; tokens: number }
   const steps = new Map<string, Step>()
   for (const row of rows) {
     let step = steps.get(row.id)
@@ -92,16 +93,17 @@ try {
       } catch {
         // un message illisible ne doit pas casser la simulation
       }
-      step = { id: row.id, role, toolCalls: 0, tools: [], tokens }
+      step = { id: row.id, role, toolCalls: 0, tools: [], parts: [], tokens }
       steps.set(row.id, step)
     }
     if (!row.pdata) continue
     try {
-      const part = JSON.parse(row.pdata) as { type?: string; tool?: string; name?: string }
+      const part = JSON.parse(row.pdata) as ToolPart & { name?: string }
       if (part.type !== "tool") continue
       step.toolCalls += 1
       const name = part.tool ?? part.name
       if (name) step.tools.push(name)
+      step.parts.push(part)
     } catch {
       continue
     }
@@ -114,8 +116,10 @@ try {
   let tokensSinceLastGuard = 0
   let lastPrompt = 0
   const firedThisTurn: Record<string, number> = {}
-  // Comptage par outil pour le déclencheur `tool_calls`, remis à zéro à chaque message utilisateur.
-  const toolCallsByName: Record<string, number> = {}
+  // Messages du tour courant : `buildGuardState` en dérive le nombre d'outils, la série d'échecs et
+  // les répétitions. Reconstruire ces compteurs ici ferait diverger l'instrument du service.
+  const turnMessages: Message[] = []
+  let missingSignals: string[] = []
   const observedTools = new Set<string>()
   const firings: { step: number; turn: number; name: string; reasons: string }[] = []
 
@@ -123,37 +127,29 @@ try {
     if (step.role === "user") {
       turn += 1
       stepsInTurn = 0
-      toolCallsInTurn = 0
+      turnMessages.length = 0
       for (const key of Object.keys(firedThisTurn)) delete firedThisTurn[key]
-      for (const key of Object.keys(toolCallsByName)) delete toolCallsByName[key]
       continue
     }
     stepsInTurn += 1
-    toolCallsInTurn += step.toolCalls
-    for (const name of step.tools) {
-      toolCallsByName[name] = (toolCallsByName[name] ?? 0) + 1
-      observedTools.add(name)
-    }
+    turnMessages.push({ info: { role: step.role }, parts: step.parts })
     tokensSinceLastGuard += step.tokens
     if (step.tokens > 0) lastPrompt = step.tokens
 
-    const state: GuardState = {
+    const { state, signals } = buildGuardState({
       step: stepsInTurn,
       turn,
       stepsInTurn,
-      toolCallsInTurn,
+      messages: turnMessages,
       tokensSinceLastGuard,
-      contextRatio: contextWindow > 0 ? Math.min(lastPrompt / contextWindow, 1) : 0,
+      contextWindow,
+      lastPromptTokens: lastPrompt,
       afterCompaction: false,
-      errorStreak: 0,
-      repeatAction: 0,
-      turnsSinceInjection: 0,
-      paths: [],
-      firedThisTurn,
-      toolCallsByName,
-    }
+    })
+    missingSignals = signals.missing
+    for (const name of Object.keys(state.toolCallsByName ?? {})) observedTools.add(name)
 
-    const { selected } = selectGuards(loaded.guards, state, { max, maxChars })
+    const { selected } = selectGuards(loaded.guards, { ...state, firedThisTurn }, { max, maxChars })
     for (const entry of selected) {
       firedThisTurn[entry.guard.name] = (firedThisTurn[entry.guard.name] ?? 0) + 1
       tokensSinceLastGuard = 0
@@ -178,7 +174,13 @@ try {
     console.log("OUTILS CITÉS PAR UNE GARDE = " + cited.join(", "))
     console.log(never.length > 0 ? "JAMAIS OBSERVÉS (garde morte ici) = " + never.join(", ") : "TOUS OBSERVÉS")
   }
-  console.log("\nNON SIMULABLE : after_compaction (non déductible de la base), error_streak, repeat_action")
+  console.log(
+    missingSignals.length > 0
+      ? "\nSIGNAUX NON DÉDUCTIBLES DE LA BASE = " + missingSignals.join(", ")
+      : "\nTOUS LES SIGNAUX DÉDUCTIBLES ONT ÉTÉ MESURÉS",
+  )
+  // `after_compaction` n'existe pas dans la base : il ne peut venir que de la boucle de step.
+  console.log("after_compaction reste false ici : signal de la boucle, pas de l'historique")
 } finally {
   db.close()
 }
