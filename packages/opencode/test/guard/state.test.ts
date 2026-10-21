@@ -90,4 +90,20 @@ describe("buildGuardState", () => {
     const { state } = buildGuardState({ ...base, messages: [user(), tool("read")] })
     expect(state.toolCallsByName?.bash).toBeUndefined()
   })
+
+  // Un signal fabriqué rend une garde muette sans trace. Absent, il doit être déclaré : c'est la
+  // différence entre « la garde n'a pas tiré » et « la garde ne peut pas tirer ».
+  test("signals the caller cannot provide are declared missing, not invented", () => {
+    const { afterCompaction, ...withoutCompaction } = base
+    const { signals } = buildGuardState({ ...withoutCompaction, messages: [user()] })
+    expect(signals.missing).toContain("after_compaction (non fourni par la boucle)")
+    expect(signals.missing).toContain("turns_since_injection (non fourni)")
+    expect(signals.missing).toContain("phase (non fourni)")
+  })
+
+  test("a provided compaction flag is no longer reported as missing", () => {
+    const { signals } = buildGuardState({ ...base, messages: [user()], turnsSinceInjection: 0, phase: "build" })
+    expect(signals.missing).not.toContain("after_compaction (non fourni par la boucle)")
+    expect(signals.missing).not.toContain("phase (non fourni)")
+  })
 })

@@ -2607,7 +2607,9 @@ contextSummary.add("skills", skills ? "inject relevant skill summary" : "no rele
                 // nul, donc toute garde qui n'en dépendait que par lui était morte sans le dire.
                 contextWindow: model.limit.context ?? 0,
                 lastPromptTokens: lastFinished?.tokens?.input ?? 0,
-                afterCompaction: false,
+                // `after_compaction`, `turns_since_injection` et `phase` ne sont volontairement pas
+                // fournis : la boucle ne les connaît pas. Les fabriquer rendrait les gardes
+                // concernées muettes sans trace ; omis, `buildGuardState` les déclare manquants.
                 agent: agent?.name,
               },
               // `SessionTools.resolve` rend un `Record<string, AITool>` : les clés sont les noms

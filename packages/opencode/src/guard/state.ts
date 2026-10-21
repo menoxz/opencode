@@ -37,7 +37,14 @@ export type GuardStepInput = {
   contextWindow: number
   /** Jetons du dernier prompt envoyé, pour `context_ratio`. */
   lastPromptTokens: number
-  afterCompaction: boolean
+  /**
+   * Absent quand la boucle de step ne sait pas le fournir. Ne pas le fabriquer : un `false` inventé
+   * rend une garde muette sans que rien ne le signale, alors qu'un champ absent est déclaré dans
+   * `signals.missing`.
+   */
+  afterCompaction?: boolean
+  /** Nombre de tours depuis la dernière injection de garde ; absent = non fourni par l'appelant. */
+  turnsSinceInjection?: number
   agent?: string
   phase?: string
 }
@@ -126,6 +133,12 @@ export function buildGuardState(input: GuardStepInput): {
   const missing: string[] = []
   if (input.contextWindow <= 0) missing.push("context_ratio (fenêtre inconnue)")
   if (paths.length === 0) missing.push("path_match (aucun chemin dans le tour)")
+  // Ces trois signaux ne sont pas déductibles des messages : quand l'appelant ne les fournit pas, on
+  // le dit. Une garde qui n'en dépend que par eux est morte, et « morte silencieuse » est le défaut
+  // que ce dispositif existe pour rendre impossible.
+  if (input.afterCompaction === undefined) missing.push("after_compaction (non fourni par la boucle)")
+  if (input.turnsSinceInjection === undefined) missing.push("turns_since_injection (non fourni)")
+  if (input.phase === undefined) missing.push("phase (non fourni)")
 
   return {
     state: {
@@ -136,10 +149,10 @@ export function buildGuardState(input: GuardStepInput): {
       tokensSinceLastGuard: input.tokensSinceLastGuard,
       contextRatio:
         input.contextWindow > 0 ? Math.min(Math.max(input.lastPromptTokens / input.contextWindow, 0), 1) : 0,
-      afterCompaction: input.afterCompaction,
+      afterCompaction: input.afterCompaction ?? false,
       errorStreak,
       repeatAction,
-      turnsSinceInjection: 0,
+      turnsSinceInjection: input.turnsSinceInjection ?? 0,
       paths,
       agent: input.agent,
       phase: input.phase,
