@@ -81,6 +81,7 @@ import * as PostMortem from "@/memory/post-mortem"
 import { SessionRunState } from "./run-state"
 import * as PromptMethodology from "./prompt-methodology"
 import { createPromptContextSummary, createPromptInjectionCache } from "./prompt-context-summary"
+import { formatInjectionBlock } from "./injection-format"
 import { derivePhaseCapsule } from "./phase-capsule"
 import { buildQaProofAdvisory, buildRiskAdvisory, collectStickyFindings } from "./lean-advisory"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -2428,13 +2429,9 @@ contextSummary.add("skills", skills ? "inject relevant skill summary" : "no rele
                 messageID: lastUser.id,
                 sessionID,
                 type: "text",
-                text: [
-                  `Context injections · ${contextSections.length} section(s)`,
-                  ...contextSections.map(
-                    (entry) =>
-                      `- ${entry.section}: ${entry.label} · ${entry.size} chars${entry.truncated ? " (truncated)" : ""}`,
-                  ),
-                ].join("\n"),
+                // Format déporté dans une fonction pure, testée contre le parseur réel de la webui :
+                // une ligne mal formée disparaît de l'affichage sans erreur.
+                text: formatInjectionBlock(contextSections),
                 synthetic: true,
                 ignored: true,
                 metadata: { injection: "context", sections: contextSections },
