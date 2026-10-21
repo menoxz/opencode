@@ -237,6 +237,22 @@ Deux pièges consignés parce qu'ils ont coûté du temps :
   webui** (`packages/webui/src/injections.ts`, `parseInjections`) : un test côté serveur avec le
   format recopié à la main validerait ce qu'on a écrit, pas ce qui est lu.
 
+Ce que l'utilisateur voit exactement, vérifié dans `packages/webui/src/components.tsx` :
+
+| Élément | Rendu |
+|---|---|
+| bloc replié | `N sections · X chars` (`components.tsx:390`) |
+| bloc déplié | une ligne par section : libellé, part en %, `Y chars` (`components.tsx:450-459`) |
+| ligne des gardes | `guards` + `6 globale(s) · 5 locale(s)` + sa part |
+
+**Ce qui n'est PAS affiché : le tir lui-même.** Les blocs `[garde-fou: …]` ne créent aucune part —
+ils passent par `volatile.push(...guardInjection.blocks)` puis `injectedMessage`, donc uniquement
+dans les *messages de la requête* au modèle (`session/prompt.ts:2660` et `2728`), sans `updatePart`.
+La seule trace d'un tir est la ligne de journal
+`name=… reasons=… step=… chars=… guard injected`. Pour l'afficher dans le fil, il faudrait une part
+synthétique par tour (`synthetic: true, ignored: true`, `metadata.injection = "guard"`) écrite après
+les steps : proposé, pas implémenté.
+
 ### Vérification après redémarrage
 
 - Une garde qui tire laisse une ligne `service=session.prompt name=… reasons=… step=… chars=… guard injected`,
