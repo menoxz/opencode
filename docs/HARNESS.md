@@ -602,6 +602,26 @@ Les index de la forme récente portent les noms de colonnes `seq` : `ALTER TABLE
 - Un scan de chaînes dans le binaire ne prouve rien (voir la section précédente) : ne pas s'en servir
   comme contrôle de déploiement.
 
+## Garde-fous : premier tir réel et rechargement à chaud (mesuré 2026-10-21)
+
+Session `ses_ea62ef80…`, binaire 2.4.18 déployé, six gardes sur disque.
+
+- **Rechargement à chaud d'un dossier de gardes** — trois `.md` écrits dans `.opencode/guards/` en
+  cours de session : `service=guard count=3 → 5 → 6`, `revision=1 → 2 → 3`, chaque reload suivi de
+  `dirs=3 hot-reload watchers active`. Deux événements regroupés par le debounce de 300 ms, un seul
+  reload par paire de fichiers. Aucun redémarrage.
+- **Injection réelle** — deux lignes dans le même step :
+  `service=session.prompt name=delegate-before-diving reasons=tool_calls_in_turn>=8 (11) step=7 chars=228 guard injected`
+  et `name=proof-before-claim reasons=tool_calls_in_turn>=6 (11) chars=259 guard injected`.
+  Les blocs `[garde-fou: <nom>]` correspondants sont arrivés dans le contexte du modèle.
+- **Budget vérifié sur un cas réel** : 228 + 259 = 487 caractères ≤ 600, et 2 gardes = `max_per_step`
+  par défaut. Les deux gardes ont été évaluées sur le même état (11 appels), la plus prioritaire
+  consommant son budget d'abord.
+- **Conséquence de méthode** : la ligne de journal porte la **raison et la valeur observée**, pas
+  seulement le nom — c'est ce qui permet de distinguer un tir à bon escient d'un tir au hasard.
+- Non mesuré à ce jour : tirs sur `repeat_action`, `error_streak`, `after_compaction` et
+  `context_ratio` (le dry-run les déclare non simulables ; seul le journal du service les verra).
+
 ## Rechargement à chaud : une seule famille suit la config (mesuré 2026-10-20)
 
 - `tasks` : entrée ajoutée dans `opencode.jsonc` en cours de session ⇒ `tasks get <nom>` la lit
