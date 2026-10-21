@@ -33,7 +33,10 @@ export function guardFiles(root: string): string[] {
  * Charge une garde depuis son fichier. Lève `GuardDefinitionError` : un fichier illisible ou sans nom
  * ne doit pas devenir une garde inerte, il doit être signalé.
  */
-export async function loadGuardFile(file: string, options?: { knownTools?: readonly string[] }): Promise<CompiledGuard> {
+export async function loadGuardFile(
+  file: string,
+  options?: { knownTools?: readonly string[]; origin?: "global" | "project" },
+): Promise<CompiledGuard> {
   const fallbackName = path.basename(file, path.extname(file))
   const parsed = await ConfigMarkdown.parse(file)
   const data = (parsed.data ?? {}) as {
@@ -46,18 +49,24 @@ export async function loadGuardFile(file: string, options?: { knownTools?: reado
   if (!name) throw new GuardDefinitionError(fallbackName, "missing name in frontmatter")
   const record = (value: unknown): Record<string, unknown> | undefined =>
     value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined
-  return compileGuard({
-    name,
-    description: typeof data.description === "string" ? data.description : undefined,
-    body: parsed.content ?? "",
-    when: record(data.when) ?? {},
-    limits: record(data.limits) ?? {},
-    knownTools: options?.knownTools,
-  })
+  return {
+    ...compileGuard({
+      name,
+      description: typeof data.description === "string" ? data.description : undefined,
+      body: parsed.content ?? "",
+      when: record(data.when) ?? {},
+      limits: record(data.limits) ?? {},
+      knownTools: options?.knownTools,
+    }),
+    origin: options?.origin ?? "project",
+  }
 }
 
 /** Charge tous les `.md` d'un dossier : les gardes valides d'un côté, les refus de l'autre. */
-export async function loadGuardRoot(root: string, options?: { knownTools?: readonly string[] }): Promise<GuardLoadResult> {
+export async function loadGuardRoot(
+  root: string,
+  options?: { knownTools?: readonly string[]; origin?: "global" | "project" },
+): Promise<GuardLoadResult> {
   const files = guardFiles(root)
   const guards: CompiledGuard[] = []
   const errors: GuardError[] = []
@@ -75,13 +84,18 @@ export async function loadGuardRoot(root: string, options?: { knownTools?: reado
 /** Fusionne plusieurs dossiers ; le dernier gagne sur un nom identique (projet > global). */
 export async function loadGuardRoots(
   roots: string[],
-  options?: { knownTools?: readonly string[] },
+  options?: { knownTools?: readonly string[]; globalRoot?: string },
 ): Promise<GuardLoadResult> {
   const byName = new Map<string, CompiledGuard>()
   const errors: GuardError[] = []
   const files: string[] = []
   for (const root of roots) {
-    const result = await loadGuardRoot(root, options)
+    // L'origine se décide par le **répertoire** d'où vient le fichier, jamais par son contenu : un
+    // nom identique déclaré dans le dépôt remplace la version globale, et l'affichage doit dire
+    // laquelle des deux est réellement chargée.
+    const origin: "global" | "project" =
+      options?.globalRoot && path.resolve(root) === path.resolve(options.globalRoot) ? "global" : "project"
+    const result = await loadGuardRoot(root, { knownTools: options?.knownTools, origin })
     files.push(...result.files)
     errors.push(...result.errors)
     for (const guard of result.guards) byName.set(guard.name, guard)

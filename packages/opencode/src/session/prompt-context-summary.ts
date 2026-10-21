@@ -18,6 +18,7 @@ export type PromptContextSection =
   | "env"
   | "environment"
   | "instructions"
+  | "guards"
   | "userSystem"
 
 export interface PromptContextEntry {

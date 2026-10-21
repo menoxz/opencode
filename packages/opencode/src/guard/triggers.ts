@@ -114,6 +114,8 @@ export type CompiledGuard = {
   list: ListCondition[]
   enumeration: EnumCondition[]
   tools: ToolCondition[]
+  /** D'où la garde est chargée : le répertoire de config global, ou le dépôt local. */
+  origin?: "global" | "project"
   /** Borne de répétition. Absente = aucune borne au-delà du budget global du step. */
   maxPerTurn?: number
 }

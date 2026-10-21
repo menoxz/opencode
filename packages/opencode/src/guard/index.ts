@@ -30,6 +30,8 @@ const DEBOUNCE_MS = 300
 type State = {
   guards: Record<string, CompiledGuard>
   errors: GuardError[]
+  /** Répartition par provenance, pour l'affichage : global (config utilisateur) ou dépôt local. */
+  summary: { global: string[]; project: string[] }
 }
 
 type WatchState = {
@@ -43,6 +45,8 @@ export interface Interface {
   readonly all: () => Effect.Effect<CompiledGuard[]>
   readonly get: (name: string) => Effect.Effect<CompiledGuard | undefined>
   readonly errors: () => Effect.Effect<GuardError[]>
+  /** Gardes chargées, réparties par provenance — sert à l'affichage du stream. */
+  readonly summary: () => Effect.Effect<{ global: string[]; project: string[] }>
   readonly reload: () => Effect.Effect<number>
   readonly revision: () => Effect.Effect<number>
 }
@@ -140,7 +144,7 @@ export const layer = Layer.effect(
         const settings = yield* guardConfig()
         if (!settings.enabled) {
           log.info("init", { count: 0, errors: 0, disabled: true })
-          return { guards: {}, errors: [] } satisfies State
+          return { guards: {}, errors: [], summary: { global: [], project: [] } } satisfies State
         }
         const roots = guardRoots({
           configDir: global.config,
@@ -155,7 +159,9 @@ export const layer = Layer.effect(
         // réellement offerts au step.
         const registry = Option.getOrUndefined(yield* Effect.serviceOption(ToolRegistry.Service))
         const knownTools = registry ? yield* registry.ids() : undefined
-        const result = yield* Effect.promise(() => loadGuardRoots(roots, { knownTools }))
+        const result = yield* Effect.promise(() =>
+          loadGuardRoots(roots, { knownTools, globalRoot: path.join(global.config, "guards") }),
+        )
         const guards: Record<string, CompiledGuard> = {}
         const disabled = new Set(settings.disable)
         for (const guard of result.guards) {
@@ -176,8 +182,12 @@ export const layer = Layer.effect(
           ].sort()
           if (unavailable.length > 0) log.warn("guards reference unavailable tools", { tools: unavailable })
         }
+        const summary: { global: string[]; project: string[] } = { global: [], project: [] }
+        for (const guard of Object.values(guards)) {
+          summary[guard.origin === "global" ? "global" : "project"].push(guard.name)
+        }
         log.info("init", { count: result.guards.length, errors: result.errors.length, validated: Boolean(knownTools) })
-        return { guards, errors: result.errors } satisfies State
+        return { guards, errors: result.errors, summary } satisfies State
       }),
     )
 
@@ -274,6 +284,11 @@ export const layer = Layer.effect(
       return (yield* InstanceState.get(state)).errors
     })
 
+    const summary = Effect.fn("Guard.summary")(function* () {
+      yield* ensureStarted()
+      return (yield* InstanceState.get(state)).summary
+    })
+
     const reload = Effect.fn("Guard.reload")(function* () {
       yield* ensureStarted()
       return yield* doReload(yield* InstanceState.get(watchState))
@@ -290,7 +305,7 @@ export const layer = Layer.effect(
       }),
     )
 
-    return Service.of({ all, get, errors, reload, revision })
+    return Service.of({ all, get, errors, summary, reload, revision })
   }),
 )
 
