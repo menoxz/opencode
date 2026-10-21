@@ -15,10 +15,14 @@ import { ShellID } from "@/tool/shell/id"
 import { webSearchProviderLabel } from "@/tool/websearch"
 import { getScrollAcceleration } from "../../util/scroll"
 import { useTuiConfig } from "../../context/tui-config"
-import { OPENCODE_BASE_MODE, useBindings, useCommandShortcut } from "../../keymap"
+import { useBindings, useCommandShortcut } from "../../keymap"
 import { usePathFormatter } from "../../context/path-format"
 
 type PermissionStage = "permission" | "always" | "reject"
+
+// Le panneau doit battre la couche textarea, qui revendique return et les fleches
+// des qu un editeur a le focus. Meme valeur que QUESTION_PRIORITY (question.tsx).
+const PERMISSION_PRIORITY = 1
 
 function filetype(input?: string) {
   if (!input) return "none"
@@ -448,7 +452,7 @@ function RejectPrompt(props: { onConfirm: (message: string) => void; onCancel: (
   const dimensions = useTerminalDimensions()
   const narrow = createMemo(() => dimensions().width < 80)
   useBindings(() => ({
-    mode: OPENCODE_BASE_MODE,
+    priority: PERMISSION_PRIORITY,
     commands: [
       {
         name: "app.exit",
@@ -543,7 +547,7 @@ function Prompt<const T extends Record<string, string>>(props: {
   const fullscreenHint = useCommandShortcut("permission.prompt.fullscreen")
 
   useBindings(() => ({
-    mode: OPENCODE_BASE_MODE,
+    priority: PERMISSION_PRIORITY,
     commands: [
       {
         name: "app.exit",
