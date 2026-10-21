@@ -5,6 +5,12 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v2.4.20] - 2026-10-21
+
+### Fixed
+- **La régression du prompt est revenue par le bloc d'affichage des gardes (`Sending the prompt failed`), et cette fois le typecheck ne pouvait pas la voir.** Les commits d'affichage des tirs écrivaient `yield* (yield* Guard.Service).summary()` **dans le corps de `runLoop`** : le service était donc redemandé à l'exécution, dans le contexte du handler serveur qui ne fournit pas `Guard` ⇒ 500 `Service not found: @opencode/Guard` (err_f6c706d7), soit exactement la panne de la veille (err_fd391ce8) réintroduite autrement. Mesure du trou de typage : `const probe: Effect.Effect<A> = runLoop(...)` **compile** alors que `runLoop` exige `Guard.Service` — un `yield*` de service dans un corps d'`Effect.fn` est invisible au typecheck, donc seul l'exécution le révèle. Correctif : le bloc lit la capture `guard` faite à la construction du layer (`yield* guard.summary()`), et un test de câblage (`test/guard/wiring.test.ts`) verrouille la forme — une seule occurrence de `yield* Guard.Service` dans `src/session/prompt.ts`, à la construction. A/B sur les binaires : build du 17:33 (`err_f6c706d7`) exit 1 sans réponse ; 2.4.20 exit 0, « OK », `service=guard count=3 errors=0 validated=true init`.
+- **L'installation globale restaurée après un `npm install -g @lux-tech/opencode-ai@2.4.17`.** Mesuré : l'installation du 2026-10-21 17:43 a remplacé le paquet par la version publiée 2.4.17, bloqué le `postinstall` (allow-scripts) et laissé `bin/opencode.exe` **absent** ; le lanceur n'aurait réparé qu'avec un 2.4.17 sans garde-fous. Réinstallé depuis le build 2.4.20 sur les trois copies (parent + `-windows-x64` + `-windows-x64-baseline`), SHA-256 identique partout. ⚠️ Un `npm install -g` du paquet **publié** (2.4.17) réécrit ces trois copies : la publication d'une version corrigée reste nécessaire pour que la distribution ne régresse pas.
+
 ## [v2.4.19] - 2026-10-20
 
 ### Fixed
