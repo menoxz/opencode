@@ -73,6 +73,13 @@ export type GuardState = {
   stepsInTurn: number
   toolCallsInTurn: number
   tokensSinceLastGuard: number
+  /**
+   * Jetons écoulés depuis le dernier tir de **cette** garde, par nom. Un compteur unique est
+   * starvation-privé : dès qu'une garde précoce (`proof-before-claim` à 6 appels) tire, elle remet le
+   * compteur partagé à zéro et une garde à seuil haut (`interpret-request`, 12 000 jetons) ne
+   * l'atteint jamais. À défaut d'entrée, le compteur global sert de repli.
+   */
+  tokensSinceGuard?: Record<string, number>
   contextRatio: number
   afterCompaction: boolean
   errorStreak: number
@@ -312,7 +319,11 @@ export function shouldInject(guard: CompiledGuard, state: GuardState): { inject:
   const reasons: string[] = []
 
   for (const condition of guard.numeric) {
-    const actual = readNumber(state, condition.key)
+    // `since_last_tokens` se mesure par garde : sinon toute garde plus précoce l'affame.
+    const actual =
+      condition.key === "since_last_tokens"
+        ? (state.tokensSinceGuard?.[guard.name] ?? state.tokensSinceLastGuard)
+        : readNumber(state, condition.key)
     if (!compare(actual, condition.operator, condition.value)) return { inject: false, reasons: [] }
     reasons.push(`${condition.key}${condition.operator}${condition.value} (${actual})`)
   }

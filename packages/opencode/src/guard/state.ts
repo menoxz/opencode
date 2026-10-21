@@ -33,6 +33,8 @@ export type GuardStepInput = {
   /** Messages du tour, dans l'ordre. Sert à mesurer les outils ; le système les ignore. */
   messages: Message[]
   tokensSinceLastGuard: number
+  /** Compteurs par garde (voir `GuardState.tokensSinceGuard`) ; absent = repli sur le global. */
+  tokensSinceGuard?: Record<string, number>
   /** Fenêtre de contexte du modèle, en jetons. 0 ⇒ `context_ratio` reste à 0 (signal absent). */
   contextWindow: number
   /** Jetons du dernier prompt envoyé, pour `context_ratio`. */
@@ -147,6 +149,7 @@ export function buildGuardState(input: GuardStepInput): {
       stepsInTurn: input.stepsInTurn,
       toolCallsInTurn: tools.length,
       tokensSinceLastGuard: input.tokensSinceLastGuard,
+      tokensSinceGuard: input.tokensSinceGuard,
       contextRatio:
         input.contextWindow > 0 ? Math.min(Math.max(input.lastPromptTokens / input.contextWindow, 0), 1) : 0,
       afterCompaction: input.afterCompaction ?? false,

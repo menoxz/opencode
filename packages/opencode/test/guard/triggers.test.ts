@@ -215,6 +215,21 @@ describe("guard triggers", () => {
     expect(() => guard("bad-shape", { tool_calls: "bash" })).toThrow(/expects a map of tool name/)
   })
 
+  // Un compteur unique est starvation-privé : la première garde qui tire le remet à zéro, donc une
+  // garde à seuil haut ne l'atteint jamais. Chaque garde doit mesurer sa propre distance.
+  test("a high-threshold guard is not starved by a guard that fires first", () => {
+    const late = guard("interpret-request", { since_last_tokens: ">= 10000" })
+    const verdict = shouldInject(late, state({ tokensSinceLastGuard: 0, tokensSinceGuard: { "interpret-request": 12000 } }))
+    expect(verdict.inject).toBe(true)
+    expect(verdict.reasons).toEqual(["since_last_tokens>=10000 (12000)"])
+  })
+
+  test("without a per-guard counter the global one is used as fallback", () => {
+    const g = guard("interpret-request", { since_last_tokens: ">= 10000" })
+    expect(shouldInject(g, state({ tokensSinceLastGuard: 5000, tokensSinceGuard: {} })).inject).toBe(false)
+    expect(shouldInject(g, state({ tokensSinceLastGuard: 11000, tokensSinceGuard: {} })).inject).toBe(true)
+  })
+
   test("a guard made only of tool_calls still counts as triggered configuration", () => {
     const g = guard("only-tools", { tool_calls: { read: ">= 1" } })
     expect(shouldInject(g, state({ toolCallsByName: { read: 1 } })).inject).toBe(true)

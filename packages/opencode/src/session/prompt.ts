@@ -2586,6 +2586,9 @@ contextSummary.add("skills", skills ? "inject relevant skill summary" : "no rele
             // écoulés depuis le dernier tir (pour `since_last_tokens`).
             const guardFired: Record<string, number> = {}
             let guardTokens = 0
+            // Compteur par garde : un compteur unique est affamé par la première garde qui tire, donc
+            // une garde à seuil haut (`interpret-request`, 12 000 jetons) ne l'atteindrait jamais.
+            const guardTokensByName: Record<string, number> = {}
             // Une seule ligne par tour : les signaux manquants sont une propriété du câblage, pas un
             // événement de step. Sans elle, une garde morte n'est visible que dans le dry-run — donc
             // jamais par celui qui lit le journal du service en production.
@@ -2598,8 +2601,14 @@ contextSummary.add("skills", skills ? "inject relevant skill summary" : "no rele
             // de préfixe. Chaque tir laisse une trace avec sa raison : sans elle, on ne distingue pas
             // « n'a pas tiré » de « a tiré pour une mauvaise raison ».
             const guardService = guard
+            const guardCatalog = yield* guardService.all()
+            // Amorçage : une garde jamais tirée n'a pas encore d'entrée et retomberait sur le compteur
+            // global, donc sur un compteur remis à zéro par les autres gardes — starvation.
+            for (const guardName of guardCatalog) {
+              if (!(guardName.name in guardTokensByName)) guardTokensByName[guardName.name] = guardTokens
+            }
             const guardInjection = buildGuardBlocks({
-              guards: yield* guardService.all(),
+              guards: guardCatalog,
               firedThisTurn: guardFired,
               step: {
                 step,
@@ -2607,6 +2616,7 @@ contextSummary.add("skills", skills ? "inject relevant skill summary" : "no rele
                 stepsInTurn: step,
                 messages: msgs as unknown as Parameters<typeof buildGuardBlocks>[0]["step"]["messages"],
                 tokensSinceLastGuard: guardTokens,
+                tokensSinceGuard: guardTokensByName,
                 // Fenêtre réelle du modèle : la laisser à 0 rendait `context_ratio` structurellement
                 // nul, donc toute garde qui n'en dépendait que par lui était morte sans le dire.
                 contextWindow: model.limit.context ?? 0,
@@ -2625,8 +2635,10 @@ contextSummary.add("skills", skills ? "inject relevant skill summary" : "no rele
               guardFired[firing.name] = (guardFired[firing.name] ?? 0) + 1
               log.info("guard injected", { name: firing.name, reasons: firing.reasons, step, chars: firing.chars })
             }
-            if (guardInjection.firings.length > 0) guardTokens = 0
-            else guardTokens += (lastFinished?.tokens?.input ?? 0) + (lastFinished?.tokens?.output ?? 0)
+            const stepTokens = (lastFinished?.tokens?.input ?? 0) + (lastFinished?.tokens?.output ?? 0)
+            for (const name of Object.keys(guardTokensByName)) guardTokensByName[name] += stepTokens
+            guardTokens = guardInjection.firings.length > 0 ? 0 : guardTokens + stepTokens
+            for (const firing of guardInjection.firings) guardTokensByName[firing.name] = 0
             if (!guardMissingLogged && guardInjection.missing.length > 0) {
               guardMissingLogged = true
               log.warn("guard signals unavailable", {
