@@ -180,10 +180,11 @@ volatile tail of the prompt (a `user` message wrapped in `<system-reminder>`, pr
 `[garde-fou: <name>]`) and dropped at the next step. Use a guard for a reflex that must arrive at the
 moment it is useful; keep invariants in AGENTS.md and procedures in skills.
 
-Files live in the same roots as skills:
+Files live in the same roots as skills — the global config directory, which is
+`~/.config/opencode/guards/` upstream and `~/.config/opencodev2/guards/` on the `opencodev2` fork:
 
 ```
-~/.config/opencode/guards/<name>.md          global
+<global config dir>/guards/<name>.md         global, applies to every session
 <project>/.opencode/guards/<name>.md         project (wins on identical name)
 ```
 
