@@ -191,11 +191,30 @@ silencieusement plafonnée.
 Toutes optionnelles, donc un fichier sans bloc `guards` garde la conduite actuelle ; `guards: {}` est
 valide ; les plafonds non positifs sont refusés plutôt que ramenés à une valeur de secours.
 
+### Signaux : ce qui est mesuré, ce qui ne l'est pas
+
+Alimentés depuis les messages du tour (`guard/state.ts`) : `tool_calls_in_turn`, `tool_calls` (par
+nom), `error_streak`, `repeat_action`, `path_match`, `since_last_tokens`, `context_ratio`
+(fenêtre réelle du modèle, `prompt.ts`), `steps_in_turn`, `step`, `turn`.
+
+**Non fournis par la boucle**, et donc déclarés manquants plutôt qu'inventés (`af8bab394`) :
+`after_compaction` (aucun drapeau de compaction dans la boucle), `turns_since_injection` (demande un
+compteur persistant à l'échelle de la session), `phase` (notion inexistante aujourd'hui). Une garde
+qui n'en dépend que par eux **ne peut pas tirer** ; le dry-run et le journal le disent.
+
 ### Reste à faire
 
-1. Brancher `selectGuards` dans la queue `<system-reminder>` avec `metadata.injection = "guard"` et la
-   ligne de journal `service=guard name=… reason=… step=…`.
-2. Alimenter `after_compaction`, `error_streak` et `repeat_action` depuis la boucle de step — le
-   dry-run les déclare aujourd'hui non simulables plutôt que d'inventer une valeur.
-3. Après rebuild : vérifier qu'une garde qui tire laisse bien une trace au journal, et qu'un step sans
-   tir n'en laisse aucune.
+1. Câbler `after_compaction` et `turns_since_injection` — ce sont des fonctionnalités, pas des
+   correctifs : drapeau de compaction exposé à la boucle de step, compteur persistant des tours.
+2. Décider du sort de `phase` : soit une notion de phase existe (plan/build/orchestrator), soit le
+   déclencheur est retiré de la spec plutôt que laissé inerte.
+
+### Vérification après redémarrage
+
+- Une garde qui tire laisse une ligne `service=session.prompt name=… reasons=… step=… chars=… guard injected`,
+  et le bloc `[garde-fou: <nom>]` arrive dans la queue volatile.
+- Un step sans tir ne laisse **aucune** ligne `guard injected`.
+- Les signaux manquants produisent une ligne `guard signals unavailable` **une fois par tour**, pas une
+  par step.
+- Une garde écrite sur `phase` ne tire jamais et le journal explique pourquoi — c'est le test de la
+  promesse « aucune garde morte silencieuse ».
