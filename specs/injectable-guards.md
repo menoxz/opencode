@@ -245,13 +245,22 @@ Ce que l'utilisateur voit exactement, vérifié dans `packages/webui/src/compone
 | bloc déplié | une ligne par section : libellé, part en %, `Y chars` (`components.tsx:450-459`) |
 | ligne des gardes | `guards` + `6 globale(s) · 5 locale(s)` + sa part |
 
-**Ce qui n'est PAS affiché : le tir lui-même.** Les blocs `[garde-fou: …]` ne créent aucune part —
-ils passent par `volatile.push(...guardInjection.blocks)` puis `injectedMessage`, donc uniquement
-dans les *messages de la requête* au modèle (`session/prompt.ts:2660` et `2728`), sans `updatePart`.
-La seule trace d'un tir est la ligne de journal
-`name=… reasons=… step=… chars=… guard injected`. Pour l'afficher dans le fil, il faudrait une part
-synthétique par tour (`synthetic: true, ignored: true`, `metadata.injection = "guard"`) écrite après
-les steps : proposé, pas implémenté.
+**Le tir est affiché dans une part dédiée.** Les blocs `[garde-fou: …]` eux-mêmes ne créent aucune
+part : ils passent par `volatile.push(...guardInjection.blocks)` puis `injectedMessage`, donc
+uniquement dans les *messages de la requête* au modèle (`session/prompt.ts:2660` et `2728`). Mais
+chaque tir ajoute une ligne à une part synthétique **unique par tour** (`synthetic: true,
+ignored: true`, `metadata.injection = "guard"`), réécrite à chaque nouveau tir — une part par tir
+ferait 141 blocs sur une session comme celle-ci :
+
+```
+Guards fired · 2 tir(s)
+- 🛡 guard: global/delegate-before-diving · tool_calls_in_turn>=10 (11)
+- 🛡 guard: workspace/bash-loop · tool_calls.bash>=12 (14)
+```
+
+L'origine interne `project` s'affiche **`workspace`**. La part est `ignored`, donc le modèle ne la
+reçoit jamais et elle ne se rejoue pas d'un tour à l'autre. La ligne de journal
+`name=… reasons=… step=… chars=… guard injected` reste la trace exploitable hors interface.
 
 ### Vérification après redémarrage
 
