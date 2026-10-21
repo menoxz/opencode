@@ -2379,7 +2379,11 @@ contextSummary.add("skills", skills ? "inject relevant skill summary" : "no rele
             // Gardes chargées, avec leur provenance. `contextSections` est le SEUL producteur du bloc
             // « Context injections » lu par le stream : `contextSummary.add` ne fait que des tailles,
             // donc une section ajoutée là-bas ne s'affiche jamais.
-            const guardLoad = yield* (yield* Guard.Service).summary()
+            // Le service est celui capturé à la construction du layer (`guard`) : un `yield* Guard.Service`
+            // ici serait invisible à `tsgo` (mesuré : `runLoop` se type sans requirement) et n'échouerait
+            // qu'à l'exécution, dans le contexte du handler serveur qui ne fournit pas Guard — régression
+            // err_f6c706d7 du 2026-10-21, exactement la même panne que err_fd391ce8 la veille.
+            const guardLoad = yield* guard.summary()
             const contextSections = [
               {
                 section: "core",
