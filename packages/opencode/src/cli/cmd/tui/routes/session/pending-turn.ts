@@ -56,7 +56,7 @@ type PartLike = {
 
 // A steering message carries the steer flag on a text part
 // (PromptQueue.isSteerUser).
-const hasSteerFlag = (parts: readonly PartLike[]) =>
+export const hasSteerFlag = (parts: readonly PartLike[]) =>
   parts.some((part) => part.type === "text" && (part.metadata as { steer?: unknown } | undefined)?.steer === true)
 
 // Mirrors PromptQueue.isRunInternalUser: runtime-shaped user messages — a
@@ -78,6 +78,25 @@ const isInternalParts = (parts: readonly PartLike[]) =>
   )
 
 export type QueuedStatus = "queued" | "steer" | undefined
+
+// A steer that was injected into the run already in flight. It is NOT a turn: the transcript
+// must show it inside the running agent's stream, right before the ReAct step it was read by,
+// otherwise a mid-run interjection appears as an answer that came after the work.
+//
+// Distinguished from a steer that became a turn of its own: that one has an assistant written
+// after it (`steerServed`) because the run had settled before serving it, and it must keep
+// rendering as an ordinary prompt.
+export const isInlineSteer = (
+  messages: readonly MessageLike[],
+  message: MessageLike,
+  partsOf: (messageID: string) => readonly PartLike[],
+) => {
+  if (message.role !== "user") return false
+  const parts = partsOf(message.id)
+  if (!hasSteerFlag(parts)) return false
+  if (steerServed(messages, message.id)) return false
+  return hasSteerDelivered(parts) || steerActedAfter(messages, message, partsOf)
+}
 
 // The run already answered this prompt: its own turn is closed (a terminal assistant
 // child, or an error). Exported because the instructions line uses it — an injection
@@ -103,7 +122,7 @@ const steerServed = (messages: readonly MessageLike[], steerID: string) =>
 
 // A steer the server has already handed to the model carries this receipt on its part
 // (PromptQueue.isSteerDelivered). It is the authoritative signal and it survives a reload.
-const hasSteerDelivered = (parts: readonly PartLike[]) =>
+export const hasSteerDelivered = (parts: readonly PartLike[]) =>
   parts.some(
     (part) => part.type === "text" && (part.metadata as { steerDelivered?: unknown } | undefined)?.steerDelivered === true,
   )
@@ -115,7 +134,7 @@ const hasSteerDelivered = (parts: readonly PartLike[]) =>
 // to that same message. Parts carry their own clock, and those updates already stream to the
 // client, so the badge drops on the step that reads the steer instead of at the end of the
 // turn.
-const steerActedAfter = (
+export const steerActedAfter = (
   messages: readonly MessageLike[],
   steer: MessageLike,
   partsOf?: (messageID: string) => readonly PartLike[],
