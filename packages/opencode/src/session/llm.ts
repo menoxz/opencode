@@ -33,7 +33,7 @@ import { Session } from "./session"
 import { Todo } from "./todo"
 import { CachePrefix } from "./llm/cache-prefix"
 import { CachePrefixAdapters } from "./llm/cache-prefix-adapters"
-import { batchNudge, stripLoopNudge } from "./loop-counter"
+import { batchNudge, previousTurnToolCalls, stripLoopNudge } from "./loop-counter"
 import { InstanceState } from "@/effect/instance-state"
 
 const log = Log.create({ service: "llm" })
@@ -471,11 +471,38 @@ const live: Layer.Layer<
           const unreminded = stripLoopNudge(stepMessages)
           // `OPENCODE_LOOP_COUNTER=0` coupe le rappel sans toucher au reste : c'est le seul
           // moyen honnête de mesurer son effet, en comparant deux serveurs sur la même tâche.
-          const nudge = process.env.OPENCODE_LOOP_COUNTER === "0" ? undefined : batchNudge({ steps, nudged: loopNudges })
+          // Au premier step d'un tour, `steps` est vide : le seul signal disponible est le
+          // tour precedent, lu dans l'historique. Sans lui le compteur ne voyait que
+          // l'interieur d'un tour et se declenchait sur les steps de fin, ou l'appel unique
+          // est inevitable — mesure A/B : aucun effet.
+          const previousTurnCalls = steps.length === 0 ? previousTurnToolCalls(unreminded) : undefined
+          // Releve de diagnostic derriere un drapeau : il a servi a trouver que lire le
+          // dernier message assistant donnait 0 appel, la reponse finale du tour etant muette,
+          // et que les cartes injectees en queue brouillaient la frontiere de tour.
+          if (steps.length === 0 && process.env.OPENCODE_LOOP_COUNTER_DEBUG === "1") {
+            l.info("loop counter turn probe", { previousTurnCalls, messages: unreminded.length })
+          }
+          // Desactive par defaut : mesure A/B sur deux jeux de taches, le rappel ne reduit
+          // pas le gaspillage et l'augmente quand l'appel unique est legitime.
+          // - tache demandant de lire 6 fichiers (regroupement possible) : 2,07 appels/step
+          //   avec rappel contre 1,79 sans, ecart dans le bruit ;
+          // - taches demandant explicitement UN fichier par tour : 8,33 steps et 6,00 appels
+          //   par session avec rappel contre 6,67 et 5,00 sans, et 92 % de steps a <=1 appel
+          //   contre 80 % — le rappel pousse a faire des steps en plus.
+          // Il reste disponible derriere OPENCODE_LOOP_COUNTER=1 pour qui veut l'essayer.
+          const nudge =
+            process.env.OPENCODE_LOOP_COUNTER === "1"
+              ? batchNudge({ steps, nudged: loopNudges, previousTurnCalls })
+              : undefined
           // Sans trace, une absence de difference entre deux runs serait indistinguable d'un
           // compteur qui ne se declenche jamais.
           if (nudge !== undefined) {
-            l.info("loop counter nudge", { calls: nudge.calls, step: steps.length, nudges: loopNudges })
+            l.info("loop counter nudge", {
+              calls: nudge.calls,
+              scope: nudge.scope,
+              step: steps.length,
+              nudges: loopNudges,
+            })
           }
           if (nudge !== undefined) loopNudges++
           const reminded: ModelMessage[] =

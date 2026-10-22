@@ -29,27 +29,126 @@ export function callsPerStep(steps: readonly StepLike[]): number[] {
   return steps.map((step) => step.toolCalls?.length ?? 0)
 }
 
+/** Message assistant, réduit à ce qui compte pour compter ses appels. */
+export interface AssistantLike {
+  role?: string
+  content?: unknown
+}
+
+/**
+ * Nombre d'appels outils portés par un message assistant.
+ *
+ * Indispensable pour voir **entre** les tours : `steps` ne décrit que l'invocation en cours,
+ * et se vide à chaque nouveau tour. Or le gaspillage mesuré est justement un tour qui n'émet
+ * qu'un appel puis continue — information qui n'existe que dans l'historique.
+ */
+export function assistantToolCalls(message: AssistantLike): number {
+  const content = message.content
+  if (!Array.isArray(content)) return 0
+  return content.filter(
+    (part) => part !== null && typeof part === "object" && (part as { type?: unknown }).type === "tool-call",
+  ).length
+}
+
+/** Dernier message assistant de la conversation, s'il y en a un. */
+export function lastAssistant<T extends AssistantLike>(messages: readonly T[]): T | undefined {
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index]
+    if (message?.role === "assistant") return message
+  }
+  return undefined
+}
+
+/**
+ * Vrai si le message est un **vrai** tour utilisateur, c'est-à-dire un prompt portant une
+ * part `text`.
+ *
+ * Les rappels injectés voyagent aussi en `role: "user"` avec un contenu chaîne. Les compter
+ * comme tours décalait la frontière d'un tour : relevé live, la tranche retenue était
+ * `[rappel, rappel]`, donc 0 appel, alors que le tour venait d'émettre un appel.
+ */
+export function isUserTurn(message: AssistantLike): boolean {
+  if (message.role !== "user" || !Array.isArray(message.content)) return false
+  return message.content.some(
+    (part) => part !== null && typeof part === "object" && (part as { type?: unknown }).type === "text",
+  )
+}
+
+/**
+ * Vrai pour un message utilisateur qui n'est **pas** un prompt de l'utilisateur : cartes
+ * injectées en queue (working state, rappels). Elles portent un contenu texte brut et
+ * commencent par `<system-reminder>` ou `<!--`.
+ *
+ * Sans ce filtre, la frontière de tour est introuvable : releve live — deux runs identiques
+ * ont donné 0 puis 1 parce que la carte injectée se faisait passer pour le dernier prompt.
+ */
+export function isInjectedUserMessage(message: AssistantLike): boolean {
+  if (message.role !== "user") return false
+  const content = message.content
+  if (typeof content !== "string") return false
+  const head = content.trimStart()
+  return head.startsWith("<system-reminder>") || head.startsWith("<!--")
+}
+
+/**
+ * Appels outils émis par le **tour précédent**, c'est-à-dire entre l'avant-dernier et le
+ * dernier vrai prompt utilisateur.
+ *
+ * Lire seulement le dernier message assistant ne marche pas : le dernier est la réponse
+ * finale du tour, celle qui n'émet aucun appel. Mesuré en live — `previousTurnCalls=0`
+ * alors que le tour venait d'émettre un appel. C'est donc l'intervalle du tour qu'il faut
+ * sommer, en excluant les messages injectés qui brouillent la frontière.
+ */
+export function previousTurnToolCalls(messages: readonly AssistantLike[]): number | undefined {
+  const userTurns: number[] = []
+  for (let index = messages.length - 1; index >= 0 && userTurns.length < 2; index--) {
+    const message = messages[index]
+    if (message?.role !== "user") continue
+    if (isInjectedUserMessage(message)) continue
+    userTurns.push(index)
+  }
+  if (userTurns.length < 2) return undefined
+  const previous = userTurns[1]!
+  const current = userTurns[0]!
+  let total = 0
+  for (let index = previous; index < current; index++) {
+    total += assistantToolCalls(messages[index]!)
+  }
+  return total
+}
+
+/** D'où vient le constat, pour que la trace permette de distinguer les deux cas. */
+export type NudgeScope = "step" | "turn"
+
 /**
  * Rappel à ajouter avant le step qui va commencer, ou `undefined` s'il n'y a rien à dire.
  *
- * Le premier step d'une invocation n'a pas de boucle précédente : le compter comme
- * sous-rempli rappellerait la règle pour la toute première décision, où l'agent n'a encore
- * rien pu regrouper.
+ * Deux cas, et un seul est un vrai gaspillage :
+ * - step > 1 : la boucle précédente de cette invocation n'a émis qu'un appel ;
+ * - step 1 : le **tour précédent** n'a émis qu'un appel puis a continué.
+ *
+ * Zéro appel n'est jamais un rappel : c'est une réponse terminée, pas une boucle sous-remplie.
  */
 export function batchNudge(input: {
   steps: readonly StepLike[]
   nudged: number
+  previousTurnCalls?: number
   maxNudges?: number
   threshold?: number
-}): { text: string; calls: number } | undefined {
-  if (input.steps.length === 0) return undefined
-  const calls = input.steps.at(-1)?.toolCalls?.length ?? 0
-  // Zéro appel ne veut pas dire « boucle sous-remplie » : c'est le modèle qui s'arrête de
-  // travailler. Le rappeler là reviendrait à lui demander de continuer un tour terminé.
-  if (calls < 1) return undefined
-  if (calls > (input.threshold ?? UNDERFILLED_THRESHOLD)) return undefined
+}): { text: string; calls: number; scope: NudgeScope } | undefined {
+  const threshold = input.threshold ?? UNDERFILLED_THRESHOLD
   if (input.nudged >= (input.maxNudges ?? MAX_NUDGES)) return undefined
-  return { text: nudgeText(calls), calls }
+
+  if (input.steps.length === 0) {
+    const previous = input.previousTurnCalls
+    if (previous === undefined || previous < 1 || previous > threshold) return undefined
+    return { text: nudgeText(previous), calls: previous, scope: "turn" }
+  }
+
+  const calls = input.steps.at(-1)?.toolCalls?.length ?? 0
+  if (calls < 1) return undefined
+  if (calls > threshold) return undefined
+  return { text: nudgeText(calls), calls, scope: "step" }
 }
 
 /**
