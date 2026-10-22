@@ -116,7 +116,7 @@ import { nextThinkingMode, reasoningSummary, useThinkingMode, type ThinkingMode 
 import { getScrollAcceleration } from "../../util/scroll"
 import { collapseToolOutput, collapseToolOutputTail } from "../../util/collapse-tool-output"
 import { instructionSources, instructionsHeading, instructionsInjecting } from "../../util/instructions-injection"
-import { guardFirings, guardLine, guardsHeading } from "../../util/guard-injection"
+import { GUARD_ICON, guardFirings, guardLine, guardsHeading } from "../../util/guard-injection"
 import { compactionRunning, summaryAfter } from "../../util/compaction-row"
 import { isHiddenTool } from "../../util/hidden-tools"
 import { TuiPluginRuntime } from "@/cli/cmd/tui/plugin/runtime"
@@ -1953,13 +1953,17 @@ function UserMessage(props: {
  * c'est ce que l'agent relit à chaque tour. Elle revient ici sur une ligne, au cran bas
  * d'opacité : le statut s'anime tant que le tour tourne, et le dépliage donne les sources.
  */
-// Plus d'icone sur cette ligne : le libelle (`core/instructions: N sources`) dit deja ce dont il s'agit,
+// Reference mark : un renvoi, pas un fichier. Hors des plages de double largeur, donc une seule
+// cellule et un glyphe monochrome — le bouclier emoji (U+1F6E1) tombait dans `0x1F300-0x1F9FF`
+// et occupait deux cellules, d'ou le decalage visible dans le fil.
+const INJECTION_ICON = "※"
 
 function Instructions(props: { parts: Part[]; sessionID: string }) {
   const { theme } = useTheme()
   const sync = useSync()
   const renderer = useRenderer()
   const [open, setOpen] = createSignal(false)
+  const [hover, setHover] = createSignal(false)
   const sources = createMemo(() => instructionSources(props.parts))
   const busy = createMemo(() => {
     const status = sync.data.session_status?.[props.sessionID]
@@ -1983,6 +1987,11 @@ function Instructions(props: { parts: Part[]; sessionID: string }) {
         <box
           flexDirection="row"
           gap={1}
+          onMouseOver={() => setHover(true)}
+          onMouseOut={() => setHover(false)}
+          // Le fond au survol dit que la ligne est cliquable ; sans lui, seule la position du
+          // curseur le laissait deviner. Même teinte que les autres lignes survolables du fil.
+          backgroundColor={hover() ? theme.backgroundElement : undefined}
           onMouseUp={() => {
             if (!expandable()) return
             if (renderer.getSelection()?.getSelectedText()) return
@@ -1993,7 +2002,7 @@ function Instructions(props: { parts: Part[]; sessionID: string }) {
             <Spinner color={theme.textLow} />
           </Show>
           <text fg={theme.textLow} wrapMode="none" truncate>
-            {heading()} {expandable() ? (open() ? "▾" : "▸") : ""}
+            {INJECTION_ICON} {heading()} {expandable() ? (open() ? "▾" : "▸") : ""}
           </text>
         </box>
         <Show when={open()}>
@@ -2016,6 +2025,7 @@ function Guards(props: { parts: Part[] }) {
   const { theme } = useTheme()
   const renderer = useRenderer()
   const [open, setOpen] = createSignal(false)
+  const [hover, setHover] = createSignal(false)
   const firings = createMemo(() => guardFirings(props.parts))
   const expandable = createMemo(() => firings().length > 0)
 
@@ -2025,6 +2035,11 @@ function Guards(props: { parts: Part[] }) {
         <box
           flexDirection="row"
           gap={1}
+          onMouseOver={() => setHover(true)}
+          onMouseOut={() => setHover(false)}
+          // Même fond au survol que la ligne d'instructions : les deux blocs se comportent pareil,
+          // donc l'affordance est la même sans avoir à y penser.
+          backgroundColor={hover() ? theme.backgroundElement : undefined}
           onMouseUp={() => {
             if (!expandable()) return
             if (renderer.getSelection()?.getSelectedText()) return
@@ -2032,7 +2047,7 @@ function Guards(props: { parts: Part[] }) {
           }}
         >
           <text fg={theme.textLow} wrapMode="none" truncate>
-            {guardsHeading(firings().length)} {open() ? "▾" : "▸"}
+            {GUARD_ICON} {guardsHeading(firings().length)} {open() ? "▾" : "▸"}
           </text>
         </box>
         <Show when={open()}>

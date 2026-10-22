@@ -16,8 +16,12 @@ export type GuardFiring = {
   reason?: string
 }
 
-/** Glyphe du bloc. Un seul caractère, pour que la largeur d'affichage reste prévisible. */
-export const GUARD_ICON = "🛡"
+/**
+ * Glyphe du bloc : zigzag descendant, le reflexe — ce qui se declenche. Hors des plages de double
+ * largeur (`0x1F300-0x1F9FF`), donc une seule cellule ; le bouclier emoji y tombait et decalait la
+ * ligne d'une colonne dans le fil.
+ */
+export const GUARD_ICON = "↯"
 
 export function guardFirings(parts: Part[]): GuardFiring[] {
   const carrier = parts.findLast(
