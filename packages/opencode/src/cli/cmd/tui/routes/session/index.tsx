@@ -2177,9 +2177,18 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
       if (!isInlineSteer(all, candidate, partsOf)) continue
       const created = candidate.time?.created
       if (created === undefined) continue
-      // Le steer doit être arrivé pendant la vie de ce message assistant.
       if (created < props.message.time.created) continue
-      if (props.message.time.completed !== undefined && created > props.message.time.completed) continue
+      // Propriété unique : le steer appartient au DERNIER assistant démarré avant lui. Sans
+      // cette borne, deux itérations successives le revendiquaient toutes les deux (chacune
+      // avait démarré avant le steer) et il s'affichait deux fois de suite dans le fil.
+      const claimedByLater = all.some(
+        (other) =>
+          other.role === "assistant" &&
+          other.id !== props.message.id &&
+          (other.time?.created ?? Number.POSITIVE_INFINITY) > props.message.time.created &&
+          (other.time?.created ?? Number.POSITIVE_INFINITY) <= created,
+      )
+      if (claimedByLater) continue
       const at = props.parts.findIndex((part) => {
         const time = (part as { time?: { start?: number; end?: number } }).time
         const started = time?.start ?? time?.end
