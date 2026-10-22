@@ -21,6 +21,15 @@ import {
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"])
 
+/** Whether `url` names a server on this machine, where a local cwd is a real project folder. */
+function isLocalURL(url: string): boolean {
+  try {
+    return LOCAL_HOSTS.has(new URL(url).hostname)
+  } catch {
+    return false
+  }
+}
+
 function serverCommand(): string[] {
   // In development the background server must be the source entrypoint: spawning `opencodev2` here
   // would silently serve the last deployed build instead of the working tree.
@@ -188,14 +197,21 @@ export const AttachCommand = cmd({
       }
 
       const directory = (() => {
-        if (!args.dir) return undefined
-        try {
-          process.chdir(args.dir)
-          return process.cwd()
-        } catch {
-          // If the directory doesn't exist locally (remote attach), pass it through.
-          return args.dir
+        if (args.dir) {
+          try {
+            process.chdir(args.dir)
+            return process.cwd()
+          } catch {
+            // If the directory doesn't exist locally (remote attach), pass it through.
+            return args.dir
+          }
         }
+        // Attaching to a LOCAL server from a folder: that folder is the project the TUI addresses.
+        // Sending no directory at all made every instance-scoped route fall back to the server's
+        // own cwd — a permission reply answered on the wrong instance and the panel did nothing.
+        if (isLocalURL(args.url)) return process.cwd()
+        // A remote server has its own filesystem, where a local cwd names nothing.
+        return undefined
       })()
       const headers = ServerAuth.headers({ password: args.password, username: args.username })
       const config = await TuiConfig.get()
