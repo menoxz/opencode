@@ -602,6 +602,27 @@ Les index de la forme récente portent les noms de colonnes `seq` : `ALTER TABLE
 - Un scan de chaînes dans le binaire ne prouve rien (voir la section précédente) : ne pas s'en servir
   comme contrôle de déploiement.
 
+### Pièges de version et d'écrasement (mesuré 2026-10-22)
+
+- `build.ts` force `OPENCODE_VERSION` depuis `packages/opencode/package.json` : un correctif posé
+  après une release **hérite de son estampille**. Mesuré : deux binaires différents annonçaient tous
+  deux 2.4.20 (`bak-…091616` → 2.4.20, `bak-…061343` → 2.4.17).
+- ⇒ Le numéro de version ne prouve pas la présence d'un correctif ; seule l'empreinte SHA-256 du
+  fichier déployé comparée au build le prouve.
+- `sync-version --fix` aligne la version sur le **dernier tag git** (`git describe`), pas sur « +1 » :
+  mesuré, il aurait fait 2.4.20 → v2.4.18, donc **descendu** la version. ⇒ pour un bump local,
+  éditer `package.json` à la main ; ne pas lancer `--fix`.
+- `postinstall.mjs` recopie le binaire du paquet de plateforme **épinglé** dans les
+  `optionalDependencies` de la méta, après un `unlinkSync` de la cible, et `verifyBinary()` ne
+  contrôle que le **code de sortie** de `--version` (jamais la version). ⇒ `npm install`/`npm update`
+  de la méta remplace un build local corrigé par la version publiée, sans erreur ni message.
+- Les copies de plateforme (`-windows-x64`, `-windows-x64-baseline`) sont la **source** de ce
+  postinstall, pas seulement des doublons de la cible : les laisser en arrière les rend capables de
+  réinjecter l'ancien binaire à la première réinstallation.
+- `opencode` ≠ `opencodev2` : `opencode` résout `node_modules\@opencode\cli\bin\opencode.exe`, l'amont
+  officiel (mesuré `opencode v2.0.32`) ; le fork se lance par `opencodev2`. ⇒ mesurer avec la
+  mauvaise commande ne mesure jamais le fork.
+
 ## Garde-fous : premier tir réel et rechargement à chaud (mesuré 2026-10-21)
 
 Session `ses_ea62ef80…`, binaire 2.4.18 déployé, six gardes sur disque.
