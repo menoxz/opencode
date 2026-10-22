@@ -33,6 +33,7 @@ import { Session } from "./session"
 import { Todo } from "./todo"
 import { CachePrefix } from "./llm/cache-prefix"
 import { CachePrefixAdapters } from "./llm/cache-prefix-adapters"
+import { batchNudge, stripLoopNudge } from "./loop-counter"
 import { InstanceState } from "@/effect/instance-state"
 
 const log = Log.create({ service: "llm" })
@@ -406,6 +407,9 @@ const live: Layer.Layer<
       // Default runtime path: AI SDK owns provider execution and tool dispatch;
       // LLMAISDK.toLLMEvents below normalizes fullStream parts for the processor.
       const aiSdkStarted = Date.now()
+      // Loop counter: how many reminders this invocation already injected. Reset per
+      // invocation so a long turn cannot accumulate them.
+      let loopNudges = 0
       const result = streamText({
         onError(error) {
           l.error("ai-sdk stream error", {
@@ -455,12 +459,28 @@ const live: Layer.Layer<
         // tool-result messages *after* that card, so it would drift into the middle
         // of the next step's prompt — replaying volatile state into the cached
         // history. Re-attach it as the last message of every step.
-        prepareStep: ({ messages: stepMessages }) => {
+        prepareStep: ({ messages: stepMessages, steps }) => {
           // A steer that arrived during the previous step belongs to the step about to start.
           // Appending it leaves every byte before it untouched, so the provider's cached prefix
           // survives; it is also why this must stay a tail append and never a re-sort.
           const steered = input.steer?.() ?? []
-          const base = steered.length > 0 ? [...stepMessages, ...steered] : stepMessages
+          // Loop counter: retire the reminder injected at an earlier step before deciding
+          // whether this step earns a new one. Leaving the old one would turn the reminder
+          // into the pollution it denounces, and both edits are tail-only, so the cached
+          // prefix stays byte-identical.
+          const unreminded = stripLoopNudge(stepMessages)
+          // `OPENCODE_LOOP_COUNTER=0` coupe le rappel sans toucher au reste : c'est le seul
+          // moyen honnête de mesurer son effet, en comparant deux serveurs sur la même tâche.
+          const nudge = process.env.OPENCODE_LOOP_COUNTER === "0" ? undefined : batchNudge({ steps, nudged: loopNudges })
+          // Sans trace, une absence de difference entre deux runs serait indistinguable d'un
+          // compteur qui ne se declenche jamais.
+          if (nudge !== undefined) {
+            l.info("loop counter nudge", { calls: nudge.calls, step: steps.length, nudges: loopNudges })
+          }
+          if (nudge !== undefined) loopNudges++
+          const reminded: ModelMessage[] =
+            nudge === undefined ? unreminded : [...unreminded, { role: "user", content: nudge.text }]
+          const base = steered.length > 0 ? [...reminded, ...steered] : reminded
           const tail = prepared.messages.at(-1)
           if (
             tail === undefined ||
