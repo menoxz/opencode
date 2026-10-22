@@ -706,5 +706,25 @@ Session `ses_ea62ef80…`, binaire 2.4.18 déployé, six gardes sur disque.
   `interpret-request` sur les tours longs, et `compaction-due` dès que le ratio passe 0,65. Si le
   compte reste à deux, le correctif de starvation n'est pas actif.
 
+## Glyphes du TUI : les Dingbats basculent en police emoji sous Windows (mesuré 2026-10-22)
+
+- Symptôme rapporté : un carré **vert** apparaît derrière l'icône de la ligne d'instructions, alors
+  qu'aucun style de fond n'est posé par le code.
+- Cause : `✳` est U+2733, dans le bloc **Dingbats** (U+2700–U+27BF). Windows Terminal le résout via
+  Segoe UI Emoji, qui le dessine en étoile blanche **sur carré vert**. Ce n'est pas un `bg` de style,
+  c'est la police qui prend le relais — donc invisible dans le code et dans le typecheck.
+- Preuve ANSI sur le rendu réel (client attaché à un serveur de dev, séquence dumpée) :
+  `[38;2;228;228;228m [48;2;24;24;24m ※ …` — premier plan blanc cassé, fond `24;24;24`, aucun
+  `48;2;…` vert. Le glyphe affiché par l'utilisateur n'était donc pas celui du code courant.
+- Deuxième cause cumulée, à vérifier **avant** de corriger : le client TUI était plus ancien que le
+  dernier commit. `git log --date=format:'%H:%M:%S'` sur les fichiers d'icônes contre
+  `Get-Process bun,node | Select StartTime` : client démarré 10:21:45, commit qui introduisait `✳`
+  à 10:21:44, retour à `※` à 10:27:36 ⇒ le client affichait une version intermédiaire.
+- Règle : un glyphe de statut doit rester **hors** des plages emoji et double largeur —
+  `0x1F300–0x1F9FF` (double cellule, cf. `script/tui-shot.ts:62`) et `0x2700–0x27BF` (fallback emoji).
+  `※` (U+203B) et `↯` (U+21AF) sont stables ; `😀`-like et `✳` ne le sont pas.
+- Corollaire de méthode : devant un rendu inattendu, comparer l'heure de démarrage du client à celle
+  des commits touchant les fichiers de rendu avant de suspecter le code.
+
 
 
