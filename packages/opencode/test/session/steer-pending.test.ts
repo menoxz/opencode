@@ -98,4 +98,23 @@ describe("isPendingSteerFor", () => {
     const plain = user("msg0002")
     expect(PromptQueue.isPendingSteerFor([user("msg0001"), plain], plain, anchor)).toBe(false)
   })
+
+  /**
+   * Régression mesurée en live le 2026-10-22 : un steer arrivé pendant un run était classé
+   * `already-delivered` une seconde après son envoi (`injected=0`), donc il attendait la fin du
+   * tour au lieu de partir au step suivant. Cause : l'appelant passait `lastUser.id` — or le steer
+   * *devient* le dernier message utilisateur, donc `id > lastUser.id` est faux et il se range
+   * lui-même parmi les livrés. L'ancre du run est la seule référence valable.
+   */
+  test("a steer that is itself the latest user is still pending for the run that anchors earlier", () => {
+    const steer = user("msg0500", [steerText()])
+    const msgs = [user("msg0001"), assistant("msg0100", "msg0001", { finish: "tool-calls" }), steer]
+
+    // Ancre du run (msg0001) : le steer est bien pendant, donc à injecter.
+    expect(PromptQueue.isPendingSteerFor(msgs, steer, String(anchor))).toBe(true)
+
+    // Dernier message utilisateur (= le steer lui-même) : il se déclare livré, ce qui est
+    // exactement le bug du site d'appel. Ce cas doit rester faux pour documenter la cause.
+    expect(PromptQueue.isPendingSteerFor(msgs, steer, String(steer.info.id))).toBe(false)
+  })
 })

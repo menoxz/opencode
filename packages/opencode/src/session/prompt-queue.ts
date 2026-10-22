@@ -71,8 +71,12 @@ export const hasPendingSteer = (msgs: MessageV2.WithParts[]) =>
 export const isPendingSteerFor = (
   msgs: MessageV2.WithParts[],
   message: MessageV2.WithParts,
-  anchorUserID: MessageV2.User["id"],
-) => isSteerUser(message) && message.info.id > anchorUserID && !steerServed(msgs, message.info.id)
+  // The run's anchor, never the latest user: once a steer arrives it *becomes* the latest
+  // user, so comparing against it classified the steer as already before the anchor and it
+  // was seeded as delivered — measured live: `already-delivered` on a steer one second old,
+  // injected=0, and the interjection waited for the turn to end.
+  anchorUserID: string,
+) => isSteerUser(message) && String(message.info.id) > anchorUserID && !steerServed(msgs, message.info.id)
 
 export const resolveAnchorUserID = (
   msgs: MessageV2.WithParts[],

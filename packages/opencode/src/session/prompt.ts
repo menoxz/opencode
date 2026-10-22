@@ -2235,7 +2235,7 @@ export const layer = Layer.effect(
             const preparedMsgs = yield* applyVisionFallback({
               // Un steer encore pendant voyage par le rappel `<system-reminder>` plus bas : le
               // laisser dans l'historique ferait lire son texte deux fois au modèle.
-              messages: msgs.filter((message) => !PromptQueue.isPendingSteerFor(msgs, message, lastUser.id)),
+              messages: msgs.filter((message) => !PromptQueue.isPendingSteerFor(msgs, message, String(anchorUserID))),
               model,
               user: lastUser,
               sessionID,
@@ -2725,7 +2725,7 @@ contextSummary.add("skills", skills ? "inject relevant skill summary" : "no rele
               // injection never happened.
               msgs
                 .filter(
-                  (message) => !PromptQueue.isPendingSteerFor(msgs, message, lastUser.id) && PromptQueue.isSteerUser(message),
+                  (message) => !PromptQueue.isPendingSteerFor(msgs, message, String(anchorUserID)) && PromptQueue.isSteerUser(message),
                 )
                 .map((message) => String(message.info.id)),
             )
