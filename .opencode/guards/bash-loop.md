@@ -5,6 +5,6 @@ when:
   tool_calls:
     bash: ">= 12"
 limits:
-  max_per_turn: 1
+  min_steps_between: 5
 ---
 Douze appels à bash dans le même tour : tu essaies probablement au hasard. Nomme l'hypothèse que tu testes, ou change d'outil.

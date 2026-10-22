@@ -91,6 +91,11 @@ export type GuardState = {
   /** Nombre de tirs déjà effectués dans le tour courant, par nom de garde. */
   firedThisTurn?: Record<string, number>
   /**
+   * Dernier step où chaque garde a tiré, par nom. C'est l'axe qui compte en session : la
+   * consigne doit pouvoir revenir à mesure que le fil s'allonge, pas une seule fois par tour.
+   */
+  lastFiredStep?: Record<string, number>
+  /**
    * Appels par nom d'outil dans le tour. Un outil absent vaut 0 : une garde qui exige `>= 1` d'un
    * outil non disponible ne peut donc pas tirer, et l'appelant doit le signaler plutôt que de laisser
    * croire que le seuil n'est simplement pas atteint.
@@ -116,8 +121,14 @@ export type CompiledGuard = {
   tools: ToolCondition[]
   /** D'où la garde est chargée : le répertoire de config global, ou le dépôt local. */
   origin?: "global" | "project"
-  /** Borne de répétition. Absente = aucune borne au-delà du budget global du step. */
+  /** Borne de répétition par tour. Absente = aucune borne de ce type. */
   maxPerTurn?: number
+  /**
+   * Délai minimal, en steps, entre deux tirs de la même garde. C'est le réglage par défaut à
+   * privilégier : `max_per_turn: 1` transforme une garde en événement de tour, alors qu'une
+   * consigne utile doit revenir tant que la condition tient.
+   */
+  minStepsBetween?: number
 }
 
 export class GuardDefinitionError extends Error {
@@ -276,16 +287,20 @@ export function compileGuard(input: {
     throw new GuardDefinitionError(input.name, "no trigger: a guard without condition would fire every step")
   }
   for (const [key, raw] of Object.entries(input.limits ?? {})) {
-    if (key !== "max_per_turn") {
-      throw new GuardDefinitionError(input.name, `unknown limit "${key}" (known: max_per_turn)`)
+    if (key !== "max_per_turn" && key !== "min_steps_between") {
+      throw new GuardDefinitionError(
+        input.name,
+        `unknown limit "${key}" (known: max_per_turn, min_steps_between)`,
+      )
     }
     if (typeof raw !== "number" || !Number.isInteger(raw) || raw < 1) {
       throw new GuardDefinitionError(
         input.name,
-        `limit "max_per_turn" expects an integer >= 1, got ${JSON.stringify(raw)}`,
+        `limit "${key}" expects an integer >= 1, got ${JSON.stringify(raw)}`,
       )
     }
-    compiled.maxPerTurn = raw
+    if (key === "max_per_turn") compiled.maxPerTurn = raw
+    else compiled.minStepsBetween = raw
   }
   return compiled
 }
@@ -389,6 +404,15 @@ export function selectGuards(
     if (guard.maxPerTurn !== undefined && fired >= guard.maxPerTurn) {
       skipped.push(guard)
       continue
+    }
+    // Délai en steps : la garde peut revenir dans le tour, à condition d'avoir laissé passer N
+    // steps. Sans ce test, une garde dont la condition reste vraie tirerait à chaque step.
+    if (guard.minStepsBetween !== undefined) {
+      const last = state.lastFiredStep?.[guard.name]
+      if (last !== undefined && state.step - last < guard.minStepsBetween) {
+        skipped.push(guard)
+        continue
+      }
     }
     const verdict = shouldInject(guard, state)
     if (verdict.inject) candidates.push({ guard, reasons: verdict.reasons })

@@ -131,10 +131,45 @@ describe("guard triggers", () => {
     expect(selected).toHaveLength(1)
   })
 
+  // L'axe utile en session est le step, pas le tour : une consigne doit revenir à mesure que le fil
+  // s'allonge. `max_per_turn: 1` en faisait un événement de tour, invisible sur un tour de 40 steps.
+  test("min_steps_between lets a guard fire again inside the same turn", () => {
+    const g = compileGuard({
+      name: "reminder",
+      body: "AAAA",
+      when: { tool_calls_in_turn: ">= 1" },
+      limits: { min_steps_between: 3 },
+    })
+    // step 5, dernier tir au step 4 : trop tôt, on saute.
+    expect(
+      selectGuards([g], state({ step: 5, toolCallsInTurn: 9, lastFiredStep: { reminder: 4 } })).selected,
+    ).toHaveLength(0)
+    // step 7 : trois steps d'écart, la garde revient — sans changer de tour.
+    expect(
+      selectGuards([g], state({ step: 7, toolCallsInTurn: 9, lastFiredStep: { reminder: 4 } })).selected,
+    ).toHaveLength(1)
+  })
+
+  test("a guard never fired yet is not delayed by min_steps_between", () => {
+    const g = compileGuard({
+      name: "first",
+      body: "AAAA",
+      when: { since_last_tokens: ">= 1" },
+      limits: { min_steps_between: 10 },
+    })
+    expect(selectGuards([g], state({ step: 1, tokensSinceLastGuard: 22000 })).selected).toHaveLength(1)
+  })
+
+  test("min_steps_between is validated and named when wrong", () => {
+    expect(() =>
+      compileGuard({ name: "bad", body: "x", when: { since_last_tokens: ">= 1" }, limits: { min_steps_between: 0 } }),
+    ).toThrow(/limit "min_steps_between" expects an integer >= 1/)
+  })
+
   test("an unknown limit is refused, naming the known one", () => {
     expect(() =>
       compileGuard({ name: "bad", body: "x", when: { since_last_tokens: ">= 1" }, limits: { par_session: 3 } }),
-    ).toThrow(/unknown limit "par_session" \(known: max_per_turn\)/)
+    ).toThrow(/unknown limit "par_session" \(known: max_per_turn, min_steps_between\)/)
   })
 
   test("a non-integer max_per_turn is refused", () => {

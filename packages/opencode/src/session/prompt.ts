@@ -2601,6 +2601,9 @@ contextSummary.add("skills", skills ? "inject relevant skill summary" : "no rele
             // écoulés depuis le dernier tir (pour `since_last_tokens`).
             const guardFired: Record<string, number> = {}
             let guardTokens = 0
+            // Dernier step de tir par garde : c'est l'axe qui décide de la reprise dans un même tour
+            // (`limits.min_steps_between`). Sans lui, une garde ne pouvait revenir qu'au tour suivant.
+            const guardLastStep: Record<string, number> = {}
             // Compteur par garde : un compteur unique est affamé par la première garde qui tire, donc
             // une garde à seuil haut (`interpret-request`, 12 000 jetons) ne l'atteindrait jamais.
             const guardTokensByName: Record<string, number> = {}
@@ -2630,6 +2633,7 @@ contextSummary.add("skills", skills ? "inject relevant skill summary" : "no rele
             const guardInjection = buildGuardBlocks({
               guards: guardCatalog,
               firedThisTurn: guardFired,
+              lastFiredStep: guardLastStep,
               step: {
                 step,
                 turn: 1,
@@ -2653,6 +2657,7 @@ contextSummary.add("skills", skills ? "inject relevant skill summary" : "no rele
             })
             for (const firing of guardInjection.firings) {
               guardFired[firing.name] = (guardFired[firing.name] ?? 0) + 1
+              guardLastStep[firing.name] = step
               log.info("guard injected", { name: firing.name, reasons: firing.reasons, step, chars: firing.chars })
               guardFiringLines.push({ origin: firing.origin, name: firing.name, reason: firing.reasons })
             }

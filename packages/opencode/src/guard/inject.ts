@@ -39,6 +39,8 @@ export function buildGuardBlocks(input: {
   guards: CompiledGuard[]
   /** Tirs déjà effectués dans le tour, par nom — sert à `limits.max_per_turn`. */
   firedThisTurn: Record<string, number>
+  /** Dernier step de tir par garde — sert à `limits.min_steps_between`. */
+  lastFiredStep?: Record<string, number>
   step: GuardStepInput
   max?: number
   maxChars?: number
@@ -57,10 +59,14 @@ export function buildGuardBlocks(input: {
     ),
   ].sort()
 
-  const { selected } = selectGuards(input.guards, { ...state, firedThisTurn: input.firedThisTurn }, {
-    max: input.max,
-    maxChars: input.maxChars,
-  })
+  const { selected } = selectGuards(
+    input.guards,
+    { ...state, firedThisTurn: input.firedThisTurn, lastFiredStep: input.lastFiredStep },
+    {
+      max: input.max,
+      maxChars: input.maxChars,
+    },
+  )
 
   const blocks: string[] = []
   const firings: GuardFiring[] = []
@@ -88,6 +94,7 @@ export async function guardsForStep(
     guards?: CompiledGuard[]
     roots?: string[]
     firedThisTurn?: Record<string, number>
+    lastFiredStep?: Record<string, number>
     max?: number
     maxChars?: number
   },
@@ -96,6 +103,7 @@ export async function guardsForStep(
   const injection = buildGuardBlocks({
     guards,
     firedThisTurn: input.firedThisTurn ?? {},
+    lastFiredStep: input.lastFiredStep,
     step: {
       step: input.step,
       turn: input.turn,
