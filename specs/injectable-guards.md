@@ -262,6 +262,40 @@ L'origine interne `project` s'affiche **`workspace`**. La part est `ignored`, do
 reçoit jamais et elle ne se rejoue pas d'un tour à l'autre. La ligne de journal
 `name=… reasons=… step=… chars=… guard injected` reste la trace exploitable hors interface.
 
+### Déclencher un tir à la demande
+
+Pour valider le rendu sans attendre une condition réelle, une garde de contrôle :
+
+```markdown
+---
+name: render-check
+description: Garde de contrôle, déclenchée à la demande
+when:
+  since_last_tokens: ">= 0"
+limits:
+  max_per_turn: 1
+---
+Test de rendu : la garde `render-check` a tiré.
+```
+
+`since_last_tokens: ">= 0"` est toujours vrai, et `max_per_turn: 1` la limite à un tir par tour : **un
+message envoyé = un tir**. C'est le déclenchement manuel le plus simple qui n'exige aucun nouveau
+déclencheur.
+
+Trois surfaces à contrôler, et elles ne se remplacent pas :
+
+| Où | Attendu |
+|---|---|
+| fil | `Guards fired · 1 tir(s)` puis `- 🛡 guard: workspace/render-check · since_last_tokens>=0 (0)` |
+| journal | `service=session.prompt name=render-check reasons=since_last_tokens>=0 (0) step=N chars=… guard injected` |
+| base | part `synthetic=true ignored=true`, `metadata.injection = "guard"`, `metadata.firings` non vide |
+
+Arrêt : supprimer le fichier. Le veilleur détecte en ~300 ms, `service=guard reload` baisse le
+`count` — aucun redémarrage.
+
+Une garde de contrôle **commitée** revient à chaque redémarrage : la retirer du suivi git (`git rm`)
+quand la validation est faite, sinon elle tire dans toutes les sessions futures.
+
 ### Vérification après redémarrage
 
 - Une garde qui tire laisse une ligne `service=session.prompt name=… reasons=… step=… chars=… guard injected`,
