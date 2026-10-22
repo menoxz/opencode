@@ -1366,6 +1366,28 @@ export function lastWorkingTurn(turns: TurnView[]): TurnView | undefined {
   return undefined
 }
 
+/**
+ * Le tour que le run **sert en ce moment** : le plus ancien prompt dont le tour n'est pas clos.
+ *
+ * La file du serveur est FIFO et le run s'ancre sur le plus ancien tour ouvert. Une étape close
+ * porte un motif de fin terminal (`stop`, `length`…) ; `tool-calls` et l'absence de motif sont
+ * intermédiaires — le run travaille encore ce tour. Un prompt envoyé pendant qu'un autre tourne
+ * est donc plus récent, donc en attente : il ne doit pas annoncer une injection qui n'a pas
+ * commencé. Sans cette distinction, la ligne « loaded … / Injecting… » s'affichait aussi sur les
+ * prompts en file — et restait animée après coup, ce tour-là ne recevant ses parts qu'une fois
+ * servi par un run neuf.
+ */
+export function servedTurn(turns: TurnView[]): TurnView | undefined {
+  return turns.find((turn) => turn.prompt.length > 0 && !turnClosed(turn))
+}
+
+/** Un tour est clos dès qu'une de ses étapes a fini pour de bon (`stop`, `length`…). */
+function turnClosed(turn: TurnView): boolean {
+  return turn.steps.some(
+    (step) => step.reason !== undefined && !["tool-calls", "unknown"].includes(step.reason),
+  )
+}
+
 /* =============================================================================
    Le badge de type d'un document — CIBLE.md §14.
 

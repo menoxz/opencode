@@ -40,7 +40,7 @@ import type {
 } from "@opencode-ai/sdk/v2"
 import { useLocal } from "@tui/context/local"
 import { Locale } from "@/util/locale"
-import { queuedUserStatus, visibleFromID } from "./pending-turn"
+import { queuedUserStatus, turnAnswered, visibleFromID } from "./pending-turn"
 import type { Tool } from "@/tool/tool"
 import type { ReadTool } from "@/tool/read"
 import type { WriteTool } from "@/tool/write"
@@ -1752,6 +1752,7 @@ export function Session() {
                               message={message as UserMessage}
                               parts={sync.data.part[message.id] ?? []}
                               status={status}
+                              answered={turnAnswered(messages(), message.id)}
                             />
                           )
                         })()}
@@ -1855,6 +1856,8 @@ function UserMessage(props: {
   onMouseUp: () => void
   index: number
   status?: "queued" | "steer"
+  /** Le run a déjà répondu à ce prompt (tour clos) : plus rien n'est en cours d'injection. */
+  answered?: boolean
 }) {
   const ctx = use()
   const local = useLocal()
@@ -1939,7 +1942,12 @@ function UserMessage(props: {
           </box>
         </box>
       </Show>
-      <Instructions parts={props.parts} sessionID={props.message.sessionID} />
+      <Instructions
+        parts={props.parts}
+        sessionID={props.message.sessionID}
+        pending={props.status !== undefined}
+        answered={props.answered}
+      />
       <Guards parts={props.parts} />
       <Compaction parts={props.parts} messageID={props.message.id} sessionID={props.message.sessionID} />
     </>
@@ -1957,7 +1965,11 @@ function UserMessage(props: {
 // donc une seule cellule — le bouclier emoji y tombait et decalait la ligne d'une colonne.
 const INJECTION_ICON = "※"
 
-function Instructions(props: { parts: Part[]; sessionID: string }) {
+// Fleche directe pour les lignes depliees : elle dit qu'elles appartiennent au bloc au-dessus.
+// U+2192, hors plages emoji et double largeur.
+const DETAIL_ARROW = "→"
+
+function Instructions(props: { parts: Part[]; sessionID: string; pending?: boolean; answered?: boolean }) {
   const { theme } = useTheme()
   const sync = useSync()
   const renderer = useRenderer()
@@ -1972,7 +1984,18 @@ function Instructions(props: { parts: Part[]; sessionID: string }) {
   // part qui les porte est écrite, l'injection est faite et l'animation s'arrête, même si la
   // réponse continue.
   const compaction = createMemo(() => props.parts.some((part) => part.type === "compaction"))
-  const injecting = createMemo(() => instructionsInjecting({ sources: sources(), busy: busy(), compaction: compaction() }))
+  const injecting = createMemo(() =>
+    instructionsInjecting({
+      sources: sources(),
+      busy: busy(),
+      compaction: compaction(),
+      // Un prompt encore en file (QUEUED) ou qui part en steer n'est pas en cours
+      // d'injection : le run ne l'a pas encore pris. La ligne s'affichait pourtant, et
+      // son animation survivait à l'injection une fois le prompt servi par la file.
+      pending: props.pending,
+      answered: props.answered,
+    }),
+  )
   // Le glyphe du bloc cede sa place au spinner pendant l'injection : sinon la ligne porterait
   // l'animation et une icone figee qui la contredit.
   const heading = createMemo(() => instructionsHeading(sources().length))
@@ -2001,13 +2024,17 @@ function Instructions(props: { parts: Part[]; sessionID: string }) {
               de la ligne, alors que l'affordance ne concerne que le libellé. La zone de clic reste
               celle du box, plus généreuse que le texte. */}
           <text fg={theme.textLow} bg={hover() ? theme.backgroundElement : undefined} wrapMode="none" truncate>
-            <span style={{ fg: theme.text }}>{injecting() ? "" : `${INJECTION_ICON} `}</span>
+            {injecting() ? "" : `${INJECTION_ICON} `}
             {heading()} {expandable() ? (open() ? "▾" : "▸") : ""}
           </text>
         </box>
         <Show when={open()}>
           <For each={sources()}>
-            {(source) => <text fg={theme.textMuted}>{source.replace(/^Instructions from:\s*/, "")}</text>}
+            {(source) => (
+              <text fg={theme.textMuted}>
+                {`${DETAIL_ARROW} ${source.replace(/^Instructions from:\s*/, "")}`}
+              </text>
+            )}
           </For>
         </Show>
       </box>
@@ -2045,12 +2072,14 @@ function Guards(props: { parts: Part[] }) {
         >
           {/* Même contrat que la ligne d'instructions : fond sur le texte seulement. */}
           <text fg={theme.textLow} bg={hover() ? theme.backgroundElement : undefined} wrapMode="none" truncate>
-            <span style={{ fg: theme.text }}>{GUARD_ICON} </span>
+            {`${GUARD_ICON} `}
             {guardsHeading(firings().length)} {open() ? "▾" : "▸"}
           </text>
         </box>
         <Show when={open()}>
-          <For each={firings()}>{(firing) => <text fg={theme.textMuted}>{guardLine(firing)}</text>}</For>
+          <For each={firings()}>
+            {(firing) => <text fg={theme.textMuted}>{`${DETAIL_ARROW} ${guardLine(firing)}`}</text>}
+          </For>
         </Show>
       </box>
     </Show>

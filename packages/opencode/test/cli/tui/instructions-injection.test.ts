@@ -73,4 +73,25 @@ describe("instructions injection", () => {
   test("a compaction turn never announces an injection", () => {
     expect(instructionsInjecting({ sources: [], busy: true, compaction: true })).toBe(false)
   })
+
+  /**
+   * Un prompt envoyé pendant qu'un autre tourne attend en file : le run ne l'a pas encore pris,
+   * donc rien n'entre dans le contexte. La ligne s'affichait pourtant, avant même l'injection,
+   * et son animation survivait à l'injection une fois le prompt servi par la file.
+   */
+  test("a queued prompt never announces an injection", () => {
+    expect(instructionsInjecting({ sources: [], busy: true, compaction: false, pending: true })).toBe(false)
+  })
+
+  test("a prompt the run already answered no longer animates", () => {
+    expect(instructionsInjecting({ sources: [], busy: true, compaction: false, answered: true })).toBe(false)
+  })
+
+  test("the server being busy elsewhere does not animate a settled prompt", () => {
+    // busy vient de la session, pas du prompt : un prompt sans réponse mais déjà servi par un
+    // run doit cesser d'animer, même si la session reste occupée par un tour plus récent.
+    expect(
+      instructionsInjecting({ sources: [], busy: true, compaction: false, pending: false, answered: true }),
+    ).toBe(false)
+  })
 })

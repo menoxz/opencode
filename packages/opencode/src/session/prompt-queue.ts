@@ -52,8 +52,27 @@ export const isSteerUser = (m: MessageV2.WithParts) =>
     (part) => part.type === "text" && (part as { metadata?: { steer?: unknown } }).metadata?.steer === true,
   )
 
-const steerServed = (msgs: MessageV2.WithParts[], steerID: MessageV2.User["id"]) =>
+export const steerServed = (msgs: MessageV2.WithParts[], steerID: MessageV2.User["id"]) =>
   msgs.some((m) => m.info.role === "assistant" && m.info.id > steerID)
+
+// A steer the running turn has not answered yet. It is already persisted as a user
+// message newer than the run's anchor, so it belongs to THIS run: stopping the loop
+// here handed it to a fresh run, which opened a second turn instead of injecting the
+// interjection into the one in flight.
+export const hasPendingSteer = (msgs: MessageV2.WithParts[]) =>
+  msgs.some((m) => isSteerUser(m) && !steerServed(msgs, m.info.id))
+
+// A steer this run must deliver as an interjection (`<system-reminder>`) rather than as a
+// new user turn: newer than the anchor and not yet answered. Such a message stays in the
+// run's view so the loop can see it arrive, but it is excluded from the history sent to
+// the model — otherwise its text would reach the model twice, once as a user turn and once
+// as the reminder. A steer that became the anchor of a run (the previous one settled before
+// consuming it) is a normal prompt and is deliberately not "pending".
+export const isPendingSteerFor = (
+  msgs: MessageV2.WithParts[],
+  message: MessageV2.WithParts,
+  anchorUserID: MessageV2.User["id"],
+) => isSteerUser(message) && message.info.id > anchorUserID && !steerServed(msgs, message.info.id)
 
 export const resolveAnchorUserID = (
   msgs: MessageV2.WithParts[],

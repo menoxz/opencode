@@ -74,6 +74,12 @@ const isInternalParts = (parts: readonly PartLike[]) =>
 
 export type QueuedStatus = "queued" | "steer" | undefined
 
+// The run already answered this prompt: its own turn is closed (a terminal assistant
+// child, or an error). Exported because the instructions line uses it — an injection
+// that never wrote its carrier must stop animating once the answer exists, instead of
+// spinning for the whole session.
+export const turnAnswered = (messages: readonly MessageLike[], userID: string) => turnClosed(messages, userID)
+
 // A step assistant carries `finish: "tool-calls"` (or "unknown") while it keeps
 // working; any other finish is terminal, matching PromptQueue.turnClosed.
 const isTerminalFinish = (finish?: string) => finish !== undefined && !["tool-calls", "unknown"].includes(finish)

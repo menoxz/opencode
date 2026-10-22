@@ -41,6 +41,24 @@ export function instructionsHeading(count: number): string {
  * compaction **et** tout le tour qui suit, la session n'étant pas au repos (mesuré le
  * 2026-10-20 sur une session réelle : message utilisateur dont l'unique part est `compaction`).
  */
-export function instructionsInjecting(input: { sources: string[]; busy: boolean; compaction: boolean }): boolean {
+export function instructionsInjecting(input: {
+  sources: string[]
+  busy: boolean
+  compaction: boolean
+  /**
+   * Le prompt est encore en file (QUEUED) ou part en steer : il n'est **pas** en train d'être
+   * injecté. Sans cette garde, la ligne s'affichait sur un prompt que le run n'avait pas encore
+   * pris — elle annonçait une injection qui n'avait pas commencé.
+   */
+  pending?: boolean
+  /**
+   * Le run a déjà écrit une réponse pour ce prompt : l'injection est finie depuis longtemps.
+   * Une part de sources manquante ne doit donc pas laisser l'animation tourner indéfiniment —
+   * cas mesuré sur un prompt livré par la file.
+   */
+  answered?: boolean
+}): boolean {
+  if (input.pending === true) return false
+  if (input.answered === true) return false
   return input.busy && !input.compaction && input.sources.length === 0
 }

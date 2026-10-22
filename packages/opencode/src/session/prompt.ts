@@ -15,7 +15,6 @@ import { progressCapsule } from "./progress"
 import { contextCapsule, noteSkillRevision, setSkillSlots } from "./context-ledger"
 import * as TurnPlan from "./turn-plan"
 import { matchedRecipeCapsule } from "./recipes"
-import { isLeanAgent } from "@/tool/lean-output-policy"
 import { isContinuationPrompt, classifyUserMessage } from "./turn-intent"
 import * as Log from "@opencode-ai/core/util/log"
 import { retryTransientLaunch } from "@opencode-ai/core/process"
@@ -1924,41 +1923,54 @@ export const layer = Layer.effect(
             lastUser.id < lastAssistant.id &&
             PromptQueue.turnClosed(msgs, lastUser.id)
           ) {
-            const continuationAgent = yield* agents.get(lastUser.agent)
-            const decision = decideRunDecision({
-              nextAction: { kind: hasToolCalls ? "await_tool" : "none" },
-              idleContinues,
-              autocontinueEnabled:
-                lastUser.format?.type !== "json_schema" &&
-                (continuationAgent?.autocontinue ?? isLeanAgent(continuationAgent)),
-              stepLimitReached: reachedStepLimit(step, continuationAgent?.steps),
-              pendingTools: hasToolCalls,
-              declaredIntent,
-            })
-            if (decision.action === "continue" || decision.action === "wait") {
-              idleContinues++
-              // L'objectif deja clos change la derniere consigne du rappel : sinon le modele
-              // rappelle `complete_objective` sur un objectif termine, ce qui ne rend qu'un
-              // avertissement et consomme un tour (mesure 2026-10-19).
-              const objectiveClosed = yield* sessions.get(sessionID).pipe(
-                Effect.map((info) => info.goalState?.status === "completed"),
-                Effect.orElseSucceed(() => false),
-              )
-              autoContinueInstruction = autoContinueInstructionFor({ objectiveClosed })
-              yield* slog.info("auto-continue", { step, idleContinues, reason: decision.reason, objectiveClosed })
+            // A steer is a prompt the user sent into the run already in flight: it is
+            // persisted as a user message newer than the anchor, so THIS run must answer
+            // it at its next step. Ending the run here handed it to a fresh run, which
+            // opened a second turn instead of injecting the interjection into the one in
+            // flight. Once an assistant is written after it the steer counts as served,
+            // so the loop still settles on the following pass.
+            if (PromptQueue.hasPendingSteer(msgs)) {
+              idleContinues = 0
+              yield* slog.info("pending steer keeps the run open", { step })
             } else {
-              const orphan = lastAssistantMsg?.parts.find(
-                (part): part is MessageV2.ToolPart => part.type === "tool" && isOrphanedInterruptedTool(part),
-              )
-              if (orphan) {
-                yield* slog.warn("loop exit with orphaned interrupted tool", {
-                  messageID: lastAssistant.id,
-                  tool: orphan.tool,
-                  callID: orphan.callID,
-                })
+              const continuationAgent = yield* agents.get(lastUser.agent)
+              const decision = decideRunDecision({
+                nextAction: { kind: hasToolCalls ? "await_tool" : "none" },
+                idleContinues,
+                // Opt-in only: no agent chases its plan or objective on its own. Left on by
+                // default, the loop kept running on plan/objective signals the user never
+                // asked to be chased, so a settled answer could never end the run.
+                autocontinueEnabled:
+                  lastUser.format?.type !== "json_schema" && continuationAgent?.autocontinue === true,
+                stepLimitReached: reachedStepLimit(step, continuationAgent?.steps),
+                pendingTools: hasToolCalls,
+                declaredIntent,
+              })
+              if (decision.action === "continue" || decision.action === "wait") {
+                idleContinues++
+                // L'objectif deja clos change la derniere consigne du rappel : sinon le modele
+                // rappelle `complete_objective` sur un objectif termine, ce qui ne rend qu'un
+                // avertissement et consomme un tour (mesure 2026-10-19).
+                const objectiveClosed = yield* sessions.get(sessionID).pipe(
+                  Effect.map((info) => info.goalState?.status === "completed"),
+                  Effect.orElseSucceed(() => false),
+                )
+                autoContinueInstruction = autoContinueInstructionFor({ objectiveClosed })
+                yield* slog.info("auto-continue", { step, idleContinues, reason: decision.reason, objectiveClosed })
+              } else {
+                const orphan = lastAssistantMsg?.parts.find(
+                  (part): part is MessageV2.ToolPart => part.type === "tool" && isOrphanedInterruptedTool(part),
+                )
+                if (orphan) {
+                  yield* slog.warn("loop exit with orphaned interrupted tool", {
+                    messageID: lastAssistant.id,
+                    tool: orphan.tool,
+                    callID: orphan.callID,
+                  })
+                }
+                yield* slog.info("exiting loop", { step, reason: decision.reason })
+                break
               }
-              yield* slog.info("exiting loop", { step, reason: decision.reason })
-              break
             }
           }
 
@@ -2221,7 +2233,9 @@ export const layer = Layer.effect(
             yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
 
             const preparedMsgs = yield* applyVisionFallback({
-              messages: msgs,
+              // Un steer encore pendant voyage par le rappel `<system-reminder>` plus bas : le
+              // laisser dans l'historique ferait lire son texte deux fois au modèle.
+              messages: msgs.filter((message) => !PromptQueue.isPendingSteerFor(msgs, message, lastUser.id)),
               model,
               user: lastUser,
               sessionID,
@@ -2703,7 +2717,17 @@ contextSummary.add("skills", skills ? "inject relevant skill summary" : "no rele
             // between-turns path does (the `<system-reminder>` envelope further up this loop), so
             // the model treats it as an interjection rather than a new request.
             const deliveredSteers = new Set(
-              msgs.filter((message) => PromptQueue.isSteerUser(message)).map((message) => String(message.info.id)),
+              // Delivered = already answered, or already the anchor of this run (its text is
+              // then the normal user turn in the history). Only a steer that arrived while this
+              // turn was running and is still unanswered must be injected — and it is, once,
+              // through the `<system-reminder>` envelope below. Seeding this set from mere
+              // presence marked a freshly sent steer as delivered, which is why the direct
+              // injection never happened.
+              msgs
+                .filter(
+                  (message) => !PromptQueue.isPendingSteerFor(msgs, message, lastUser.id) && PromptQueue.isSteerUser(message),
+                )
+                .map((message) => String(message.info.id)),
             )
             const steer = () =>
               Database.use((db) => {
@@ -2797,7 +2821,15 @@ contextSummary.add("skills", skills ? "inject relevant skill summary" : "no rele
               }
             }
 
-            if (result === "stop") return "break" as const
+            // A steer can land exactly as the model ends its answer. Breaking here handed it to
+            // a fresh run, which opened a second turn: the interjection then arrived as a new
+            // request, not inside the run it was sent to. Read the queue back and keep this run
+            // going so the next step injects it.
+            if (result === "stop") {
+              const stillPending = PromptQueue.hasPendingSteer(yield* MessageV2.filterCompactedEffect(sessionID))
+              if (!stillPending) return "break" as const
+              yield* slog.info("pending steer keeps the run open after stop", { step })
+            }
             if (result === "compact") {
               yield* compaction.create({
                 sessionID,

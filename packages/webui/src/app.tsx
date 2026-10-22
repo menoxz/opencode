@@ -134,6 +134,7 @@ import {
   emptyAnswers,
   groupTurns,
   lastWorkingTurn,
+  servedTurn,
   partMedia,
   reducePermissions,
   reasoningLive,
@@ -2073,7 +2074,13 @@ export default function App() {
             les fichiers d'instructions ne sont pas écrits, « Injecting… » tant que le contexte ne
             l'est pas. Chaque phase finie devient sa ligne posée, avec son losange.
           */}
-          <Show when={injectionPhase(turn.prompt, working()) !== "done"}>
+          {/*
+            Seul le tour que le run **sert** annonce une injection. Un prompt envoyé pendant
+            qu'un autre tourne attend en file : sa ligne d'injection ne doit pas apparaître,
+            sinon elle s'affiche avant même l'injection et reste animée après, ce tour-là ne
+            recevant ses parts qu'une fois servi.
+          */}
+          <Show when={turn.id === servedTurn(turns())?.id && injectionPhase(turn.prompt, working()) !== "done"}>
             <div class="injections injecting">
               <span class="injections-head">
                 <Spinner />
