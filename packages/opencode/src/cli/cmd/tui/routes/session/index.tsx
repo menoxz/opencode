@@ -1953,10 +1953,10 @@ function UserMessage(props: {
  * c'est ce que l'agent relit à chaque tour. Elle revient ici sur une ligne, au cran bas
  * d'opacité : le statut s'anime tant que le tour tourne, et le dépliage donne les sources.
  */
-// Reference mark : un renvoi, pas un fichier. Hors des plages de double largeur, donc une seule
-// cellule et un glyphe monochrome — le bouclier emoji (U+1F6E1) tombait dans `0x1F300-0x1F9FF`
-// et occupait deux cellules, d'ou le decalage visible dans le fil.
-const INJECTION_ICON = "※"
+// Asterisque a huit branches (U+2733) : plus dense que le reference mark (※), il remplit mieux la
+// cellule et se lit donc « plus gros » sans gras. Hors des plages de double largeur (0x1F300-0x1F9FF),
+// donc une seule cellule : le bouclier emoji y tombait et decalait la ligne.
+const INJECTION_ICON = "✳"
 
 function Instructions(props: { parts: Part[]; sessionID: string }) {
   const { theme } = useTheme()
@@ -2002,9 +2002,7 @@ function Instructions(props: { parts: Part[]; sessionID: string }) {
               de la ligne, alors que l'affordance ne concerne que le libellé. La zone de clic reste
               celle du box, plus généreuse que le texte. */}
           <text fg={theme.textLow} bg={hover() ? theme.backgroundElement : undefined} wrapMode="none" truncate>
-            <span style={{ fg: theme.text, attributes: TextAttributes.BOLD }}>
-              {injecting() ? "" : `${INJECTION_ICON} `}
-            </span>
+            <span style={{ fg: theme.text }}>{injecting() ? "" : `${INJECTION_ICON} `}</span>
             {heading()} {expandable() ? (open() ? "▾" : "▸") : ""}
           </text>
         </box>
@@ -2048,7 +2046,7 @@ function Guards(props: { parts: Part[] }) {
         >
           {/* Même contrat que la ligne d'instructions : fond sur le texte seulement. */}
           <text fg={theme.textLow} bg={hover() ? theme.backgroundElement : undefined} wrapMode="none" truncate>
-            <span style={{ fg: theme.text, attributes: TextAttributes.BOLD }}>{GUARD_ICON} </span>
+            <span style={{ fg: theme.text }}>{GUARD_ICON} </span>
             {guardsHeading(firings().length)} {open() ? "▾" : "▸"}
           </text>
         </box>
