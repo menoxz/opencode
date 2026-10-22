@@ -121,10 +121,31 @@ export function PermissionPrompt(props: { request: PermissionRequest }) {
   const sync = useSync()
   const [store, setStore] = createStore({
     stage: "permission" as PermissionStage,
+    error: "",
   })
   const pathFormatter = usePathFormatter()
 
   const session = createMemo(() => sync.data.session.find((s) => s.id === props.request.sessionID))
+
+  // Le panneau est alimente par le flux global, qui porte les demandes de TOUTES les instances,
+  // alors que le reply est route cote serveur par dossier (`directory`, sinon le cwd du serveur).
+  // Un TUI lance sans --dir n envoyait donc aucun dossier et repondait a l instance du cwd du
+  // serveur : 404 PermissionNotFound, avale par `void`, et le panneau restait identique. On vise
+  // explicitement le dossier de la session concernee et on rend l echec visible.
+  const reply = (input: { reply: "once" | "always" | "reject"; message?: string }) => {
+    setStore("error", "")
+    void sdk.client.permission
+      .reply({
+        ...input,
+        requestID: props.request.id,
+        directory: session()?.directory ?? sdk.directory,
+        workspace: project.workspace.current(),
+      })
+      .catch((error) => {
+        setStore("stage", "permission")
+        setStore("error", error instanceof Error ? error.message : String(error))
+      })
+  }
 
   const input = createMemo(() => {
     const tool = props.request.tool
@@ -172,23 +193,14 @@ export function PermissionPrompt(props: { request: PermissionRequest }) {
           onSelect={(option) => {
             setStore("stage", "permission")
             if (option === "cancel") return
-            void sdk.client.permission.reply({
-              reply: "always",
-              requestID: props.request.id,
-              workspace: project.workspace.current(),
-            })
+            reply({ reply: "always" })
           }}
         />
       </Match>
       <Match when={store.stage === "reject"}>
         <RejectPrompt
           onConfirm={(message) => {
-            void sdk.client.permission.reply({
-              reply: "reject",
-              requestID: props.request.id,
-              message: message || undefined,
-              workspace: project.workspace.current(),
-            })
+            reply({ reply: "reject", message: message || undefined })
           }}
           onCancel={() => {
             setStore("stage", "permission")
@@ -401,6 +413,11 @@ export function PermissionPrompt(props: { request: PermissionRequest }) {
                 </text>
                 <text fg={theme.text}>{current.title}</text>
               </box>
+              <Show when={store.error}>
+                <box paddingLeft={2} flexShrink={0}>
+                  <text fg={theme.error}>{"! " + store.error}</text>
+                </box>
+              </Show>
             </box>
           )
 
@@ -422,18 +439,10 @@ export function PermissionPrompt(props: { request: PermissionRequest }) {
                     setStore("stage", "reject")
                     return
                   }
-                  void sdk.client.permission.reply({
-                    reply: "reject",
-                    requestID: props.request.id,
-                    workspace: project.workspace.current(),
-                  })
+                  reply({ reply: "reject" })
                   return
                 }
-                void sdk.client.permission.reply({
-                  reply: "once",
-                  requestID: props.request.id,
-                  workspace: project.workspace.current(),
-                })
+                reply({ reply: "once" })
               }}
             />
           )
