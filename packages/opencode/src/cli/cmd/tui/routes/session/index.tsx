@@ -1989,9 +1989,6 @@ function Instructions(props: { parts: Part[]; sessionID: string }) {
           gap={1}
           onMouseOver={() => setHover(true)}
           onMouseOut={() => setHover(false)}
-          // Le fond au survol dit que la ligne est cliquable ; sans lui, seule la position du
-          // curseur le laissait deviner. Même teinte que les autres lignes survolables du fil.
-          backgroundColor={hover() ? theme.backgroundElement : undefined}
           onMouseUp={() => {
             if (!expandable()) return
             if (renderer.getSelection()?.getSelectedText()) return
@@ -2001,8 +1998,14 @@ function Instructions(props: { parts: Part[]; sessionID: string }) {
           <Show when={injecting()}>
             <Spinner color={theme.textLow} />
           </Show>
-          <text fg={theme.textLow} wrapMode="none" truncate>
-            {INJECTION_ICON} {heading()} {expandable() ? (open() ? "▾" : "▸") : ""}
+          {/* Le fond est sur le `text`, pas sur le `box` : sur le box il couvrait toute la largeur
+              de la ligne, alors que l'affordance ne concerne que le libellé. La zone de clic reste
+              celle du box, plus généreuse que le texte. */}
+          <text fg={theme.textLow} bg={hover() ? theme.backgroundElement : undefined} wrapMode="none" truncate>
+            <span style={{ fg: theme.text, attributes: TextAttributes.BOLD }}>
+              {injecting() ? "" : `${INJECTION_ICON} `}
+            </span>
+            {heading()} {expandable() ? (open() ? "▾" : "▸") : ""}
           </text>
         </box>
         <Show when={open()}>
@@ -2037,17 +2040,16 @@ function Guards(props: { parts: Part[] }) {
           gap={1}
           onMouseOver={() => setHover(true)}
           onMouseOut={() => setHover(false)}
-          // Même fond au survol que la ligne d'instructions : les deux blocs se comportent pareil,
-          // donc l'affordance est la même sans avoir à y penser.
-          backgroundColor={hover() ? theme.backgroundElement : undefined}
           onMouseUp={() => {
             if (!expandable()) return
             if (renderer.getSelection()?.getSelectedText()) return
             setOpen((prev) => !prev)
           }}
         >
-          <text fg={theme.textLow} wrapMode="none" truncate>
-            {GUARD_ICON} {guardsHeading(firings().length)} {open() ? "▾" : "▸"}
+          {/* Même contrat que la ligne d'instructions : fond sur le texte seulement. */}
+          <text fg={theme.textLow} bg={hover() ? theme.backgroundElement : undefined} wrapMode="none" truncate>
+            <span style={{ fg: theme.text, attributes: TextAttributes.BOLD }}>{GUARD_ICON} </span>
+            {guardsHeading(firings().length)} {open() ? "▾" : "▸"}
           </text>
         </box>
         <Show when={open()}>

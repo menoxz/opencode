@@ -262,6 +262,42 @@ L'origine interne `project` s'affiche **`workspace`**. La part est `ignored`, do
 reçoit jamais et elle ne se rejoue pas d'un tour à l'autre. La ligne de journal
 `name=… reasons=… step=… chars=… guard injected` reste la trace exploitable hors interface.
 
+#### TUI : un bloc dédié dans le chat de session
+
+Le fil du TUI masque les parts synthétiques (`routes/session/index.tsx:550`, `636`, `1863`) : sans
+un rendu dédié, un tir n'apparaît que dans les Logs. Le bloc est donc construit sur le même contrat
+que la ligne d'instructions (`util/instructions-injection.ts`) : lecture de la part porteuse,
+`metadata.injection = "guard"`, champs **déclarés** seulement, rien de déduit du texte.
+
+```
+core/instructions: 2 sources ▸
+                              ← marginTop : le bloc ne colle pas au prompt
+guards: 1 tir ▸
+```
+
+Déplié (clic, comme la ligne d'instructions) :
+
+```
+guards: 1 tir ▾
+workspace/render-check · since_last_tokens>=0 (0)
+global/proof-before-claim · tool_calls_in_turn>=6 (11)
+```
+
+Décisions d'affichage, mesurées sur capture réelle (`tui-shot` contre un serveur de dev) :
+
+| Choix | Raison |
+|---|---|
+| **Aucune icône** sur la ligne d'instructions ni sur celle des gardes | deux glyphes côte à côte (`≡`, `🛡`) se lisaient comme du bruit ; le libellé suffit |
+| `marginTop={1}` sur le bloc gardes | collé au panneau du prompt, il se lisait comme sa dernière ligne |
+| une ligne par tir, origine en tête | `global/` ou `workspace/` répond à « d'où vient cette consigne ? », la question qu'on se pose en lisant |
+| `project` affiché `workspace` | mot identique à la webui, pour que les deux interfaces disent la même chose |
+
+Vérification de la capture : `bun packages/opencode/script/tui-shot.ts --url http://127.0.0.1:4097
+--session <id> --cwd packages/opencode --dir <projet> --click guards`. `--url` attache à un serveur
+déjà lancé (sinon la capture mesure le serveur du port par défaut), `--cwd` est le dossier du code
+source, `--dir` le dossier projet transmis à `attach` — les confondre échoue en « Module not found
+./src/index.ts ».
+
 ### Déclencher un tir à la demande
 
 Pour valider le rendu sans attendre une condition réelle, une garde de contrôle :
