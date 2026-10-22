@@ -25,7 +25,7 @@ import { SplitBorder } from "@tui/component/border"
 import { DeliveryBadge } from "@tui/component/delivery-badge"
 import { Spinner } from "@tui/component/spinner"
 import { InspectBatchTree } from "@tui/component/inspect-batch-tree"
-import { CompactionDisclosure } from "@tui/component/compaction-summary"
+import { CompactionDisclosure, CompactionPending } from "@tui/component/compaction-summary"
 import { generateSubtleSyntax, selectedForeground, useTheme } from "@tui/context/theme"
 import { BoxRenderable, ScrollBoxRenderable, addDefaultParsers, TextAttributes, RGBA } from "@opentui/core"
 import { Prompt, type PromptRef } from "@tui/component/prompt"
@@ -117,7 +117,6 @@ import { getScrollAcceleration } from "../../util/scroll"
 import { collapseToolOutput, collapseToolOutputTail } from "../../util/collapse-tool-output"
 import { instructionSources, instructionsHeading, instructionsInjecting } from "../../util/instructions-injection"
 import { GUARD_ICON, guardFirings, guardLine, guardsHeading } from "../../util/guard-injection"
-import { compactionRunning, summaryAfter } from "../../util/compaction-row"
 import { isHiddenTool } from "../../util/hidden-tools"
 import { TuiPluginRuntime } from "@/cli/cmd/tui/plugin/runtime"
 import { DialogRetryAction } from "../../component/dialog-retry-action"
@@ -1960,7 +1959,6 @@ function UserMessage(props: {
         answered={props.answered}
       />
       <Guards parts={props.parts} />
-      <Compaction parts={props.parts} messageID={props.message.id} sessionID={props.message.sessionID} />
     </>
   )
 }
@@ -2101,37 +2099,6 @@ function Guards(props: { parts: Part[] }) {
   )
 }
 
-/**
- * La compaction réécrit tout le préfixe du prompt : cela prend des secondes pendant
- * lesquelles le fil n'affiche **rien** — la part de compaction ne porte aucun texte, et le
- * bloc `Compacted context` n'arrive qu'avec le résumé. Une ligne, au cran bas, dit ce qui se
- * passe ; elle s'efface dès que le résumé existe, puisque le bloc prend alors le relais.
- */
-function Compaction(props: { parts: Part[]; messageID: string; sessionID: string }) {
-  const { theme } = useTheme()
-  const sync = useSync()
-  const carries = createMemo(() => props.parts.some((part) => part.type === "compaction"))
-  const busy = createMemo(() => {
-    const status = sync.data.session_status?.[props.sessionID]
-    return status !== undefined && status.type !== "idle"
-  })
-  const summaryReady = createMemo(() => summaryAfter(sync.data.message[props.sessionID] ?? [], props.messageID))
-  const running = createMemo(() =>
-    compactionRunning({ carries: carries(), busy: busy(), summaryReady: summaryReady() }),
-  )
-
-  return (
-    <Show when={running()}>
-      <box paddingLeft={3} flexDirection="row" gap={1} flexShrink={0}>
-        <Spinner color={theme.textLow} />
-        <text fg={theme.textLow} wrapMode="none" truncate>
-          Compacting context
-        </text>
-      </box>
-    </Show>
-  )
-}
-
 function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; last: boolean }) {
   const ctx = use()
   const local = useLocal()
@@ -2181,15 +2148,28 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
     <>
       <Show when={props.message.summary} fallback={parts()}>
         <box marginTop={1} flexShrink={0}>
-          <CompactionDisclosure
-            label="Compacted context"
-            color={theme.text}
-            muted={theme.textMuted}
-            align="left"
-            paddingLeft={3}
+          <Show
+            when={props.message.time.completed}
+            fallback={
+              <CompactionPending
+                label="Compacting context"
+                muted={theme.textMuted}
+                rule={theme.textMuted}
+                paddingLeft={3}
+              />
+            }
           >
-            {parts()}
-          </CompactionDisclosure>
+            <CompactionDisclosure
+              label="Compacted context"
+              color={theme.text}
+              muted={theme.textMuted}
+              rule={theme.textMuted}
+              hoverBg={theme.backgroundElement}
+              paddingLeft={3}
+            >
+              {parts()}
+            </CompactionDisclosure>
+          </Show>
         </box>
       </Show>
       <Show

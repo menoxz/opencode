@@ -244,6 +244,8 @@ export function CompactionMessage(props: { message: SessionMessageCompaction }) 
         label={props.message.reason === "auto" ? "Auto Compaction" : "Compaction"}
         color={theme.text}
         muted={theme.textMuted}
+        rule={theme.textMuted}
+        hoverBg={theme.backgroundElement}
       >
         <Show when={props.message.summary}>
         {(summary) => (
