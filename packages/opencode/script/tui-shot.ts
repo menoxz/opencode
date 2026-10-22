@@ -28,12 +28,19 @@ const one = (name: string, fallback?: string) => arg(name, fallback)[0]
 const many = (name: string) => arg(name)
 
 const session = one("session")
+// `--url` attache la TUI à un serveur **déjà lancé** (dev, instance isolée) au lieu d'en engendrer
+// un : sans cette option, la capture mesurait toujours le serveur du port par défaut, donc jamais
+// les sources en cours de modification.
+const url = one("url")
 if (!session) {
   console.error("--session <id> requis")
   process.exit(2)
 }
 const db = one("db")
 const cwd = one("cwd", process.cwd())
+// `--dir` = dossier PROJET transmis a attach ; `--cwd` = ou vit ./src/index.ts (packages/opencode).
+// Les confondre fait echouer le spawn avec « Module not found ./src/index.ts » depuis la racine.
+const dir = one("dir", cwd)
 const cols = Number(one("cols", "120"))
 const rows = Number(one("rows", "40"))
 const wait = Number(one("wait", "20"))
@@ -273,7 +280,10 @@ const scr = new Screen(rows, cols)
 const feed = makeFeed(scr)
 const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms))
 
-const pty = spawn(process.execPath, ["run", "--conditions=browser", "./src/index.ts", "--session", session], {
+const launchArgs = url
+  ? ["run", "--conditions=browser", "./src/index.ts", "attach", url, "--session", session, "--dir", dir]
+  : ["run", "--conditions=browser", "./src/index.ts", "--session", session]
+const pty = spawn(process.execPath, launchArgs, {
   name: "xterm-256color",
   cols,
   rows,

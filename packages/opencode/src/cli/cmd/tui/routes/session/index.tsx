@@ -116,7 +116,7 @@ import { nextThinkingMode, reasoningSummary, useThinkingMode, type ThinkingMode 
 import { getScrollAcceleration } from "../../util/scroll"
 import { collapseToolOutput, collapseToolOutputTail } from "../../util/collapse-tool-output"
 import { instructionSources, instructionsHeading, instructionsInjecting } from "../../util/instructions-injection"
-import { GUARD_ICON, guardFirings, guardLine, guardsHeading } from "../../util/guard-injection"
+import { guardFirings, guardLine, guardsHeading } from "../../util/guard-injection"
 import { compactionRunning, summaryAfter } from "../../util/compaction-row"
 import { isHiddenTool } from "../../util/hidden-tools"
 import { TuiPluginRuntime } from "@/cli/cmd/tui/plugin/runtime"
@@ -1953,7 +1953,7 @@ function UserMessage(props: {
  * c'est ce que l'agent relit à chaque tour. Elle revient ici sur une ligne, au cran bas
  * d'opacité : le statut s'anime tant que le tour tourne, et le dépliage donne les sources.
  */
-const INJECTION_ICON = "≡"
+// Plus d'icone sur cette ligne : le libelle (`core/instructions: N sources`) dit deja ce dont il s'agit,
 
 function Instructions(props: { parts: Part[]; sessionID: string }) {
   const { theme } = useTheme()
@@ -1993,7 +1993,6 @@ function Instructions(props: { parts: Part[]; sessionID: string }) {
             <Spinner color={theme.textLow} />
           </Show>
           <text fg={theme.textLow} wrapMode="none" truncate>
-            {injecting() ? "" : `${INJECTION_ICON} `}
             {heading()} {expandable() ? (open() ? "▾" : "▸") : ""}
           </text>
         </box>
@@ -2022,7 +2021,7 @@ function Guards(props: { parts: Part[] }) {
 
   return (
     <Show when={expandable()}>
-      <box paddingLeft={3} flexShrink={0}>
+      <box paddingLeft={3} marginTop={1} flexShrink={0}>
         <box
           flexDirection="row"
           gap={1}
@@ -2033,7 +2032,6 @@ function Guards(props: { parts: Part[] }) {
           }}
         >
           <text fg={theme.textLow} wrapMode="none" truncate>
-            {`${GUARD_ICON} `}
             {guardsHeading(firings().length)} {open() ? "▾" : "▸"}
           </text>
         </box>
@@ -2369,7 +2367,7 @@ function ToolPart(props: { last: boolean; part: ToolPart; message: AssistantMess
         <Match when={props.part.tool === "inspect_batch"}>
           {/* Give the batch block the same left gutter as the prose, at the call
               site: a gutter on the component's own root collapses its rows. */}
-          <box paddingLeft={3} flexShrink={0}>
+          <box paddingLeft={3} marginTop={1} flexShrink={0}>
             <InspectBatchTree
               input={props.part.state.input}
               output={toolprops.output}
