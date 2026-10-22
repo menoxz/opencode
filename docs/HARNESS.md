@@ -726,5 +726,47 @@ Session `ses_ea62ef80…`, binaire 2.4.18 déployé, six gardes sur disque.
 - Corollaire de méthode : devant un rendu inattendu, comparer l'heure de démarrage du client à celle
   des commits touchant les fichiers de rendu avant de suspecter le code.
 
+## Regroupement des appels outils : le levier est le périmètre, pas la relance (mesuré 2026-10-22)
+
+Question posée : les boucles à un seul appel gaspillent des tours, faut-il relancer l'agent pendant
+le run ou poser le périmètre dès la demande ?
+
+- Base mesurée (devdb, 51 640 steps) : 50,8 % des steps émettent **exactement 1** appel outil, 56,1 %
+  en émettent ≤1, moyenne 1,74, médiane 1. Le gaspillage est donc réel et majoritaire.
+- Relance runtime (`<system-reminder>` injecté par `prepareStep`, `src/session/loop-counter.ts`) :
+  **ne marche pas**. Deux A/B sur serveurs jumeaux, même code, même base, seule différence
+  `OPENCODE_LOOP_COUNTER` :
+  - tâche « lire 6 fichiers », 7 runs/bras : 2,07 appels/step avec relance contre 1,79 sans, 4,14
+    steps contre 4,57 — écart dans le bruit ;
+  - tâche « un fichier par tour », 3 sessions de 3 tours/bras : 8,33 steps et 6,00 appels avec
+    relance contre 6,67 et 5,00 sans, 92 % de steps ≤1 appel contre 80 % — la relance fait faire
+    **plus** de steps. Le compteur est donc livré **éteint** (`98b64c78a`), activable par
+    `OPENCODE_LOOP_COUNTER=1`.
+- Périmètre énuméré dans la demande : **marche**. Même tâche, deux formulations, compteur éteint,
+  t1 = « comment builder et tester ce package » (4 runs/bras), t2 = « inventaire des tests »
+  (vague n=3, scoped n=4) :
+
+  | | steps | appels | fichiers du périmètre réellement ouverts |
+  |---|---|---|---|
+  | t1 vague | 6,75 | 12,25 | 2,00 / 6 |
+  | t1 scoped | **5,00** | **11,00** | **5,50 / 6** |
+  | t2 vague | 15,67 | 19,67 | 0,00 / 3 |
+  | t2 scoped | **11,50** | **12,75** | **1,00 / 3** |
+
+  t1 scoped est stable (5,5,5,5 steps) là où vague varie (5,8,8,6) : le périmètre supprime la
+  variance, pas seulement la moyenne. t2 reste bruité des deux côtés (vague 23/12/12, scoped
+  5/16/18/7) — un échantillon de 3-4 ne conclut pas sur t2 seul.
+- Mécanisme du gaspillage, visible dans les traces : le bras vague dépense son budget en `bash`
+  (16, 27, 14, 10 appels) au lieu de `read`/`glob`, et ne touche que 2,0 à 4,5 chemins distincts.
+  Le périmètre ne fait pas « travailler plus vite », il fait choisir le bon outil.
+- Piège de mesure à ne pas refaire : la couverture calculée sur le **texte de la réponse** est
+  truquée — le bras scoped reçoit la liste des fichiers dans son prompt et n'a qu'à la recopier
+  (6/6 « couvert » pour 3 réponses sur 4). Il faut compter les fichiers **réellement ouverts**, lus
+  dans `state.input` des parts `tool` (`filePath`, `pattern`).
+- Deux incidents de banc à connaître : un lot de runs dépasse le plafond shell de 900 s (lancer en
+  détaché, par petits paquets) ; si le serveur tombe en cours de lot, le run reste `OPEN` (dernière
+  step sans `step-finish`) et doit être **exclu** de l'agrégat, sinon ses steps partiels comptent
+  comme un run fini.
+
 
 
