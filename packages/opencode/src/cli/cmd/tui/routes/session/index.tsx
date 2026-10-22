@@ -1965,10 +1965,6 @@ function UserMessage(props: {
 // donc une seule cellule — le bouclier emoji y tombait et decalait la ligne d'une colonne.
 const INJECTION_ICON = "※"
 
-// Fleche directe pour les lignes depliees : elle dit qu'elles appartiennent au bloc au-dessus.
-// U+2192, hors plages emoji et double largeur.
-const DETAIL_ARROW = "→"
-
 function Instructions(props: { parts: Part[]; sessionID: string; pending?: boolean; answered?: boolean }) {
   const { theme } = useTheme()
   const sync = useSync()
@@ -2031,9 +2027,11 @@ function Instructions(props: { parts: Part[]; sessionID: string; pending?: boole
         <Show when={open()}>
           <For each={sources()}>
             {(source) => (
-              <text fg={theme.textMuted}>
-                {`${DETAIL_ARROW} ${source.replace(/^Instructions from:\s*/, "")}`}
-              </text>
+              <box paddingLeft={2} flexShrink={0}>
+                <text fg={theme.textMuted} wrapMode="none" truncate>
+                  {source.replace(/^Instructions from:\s*/, "")}
+                </text>
+              </box>
             )}
           </For>
         </Show>
@@ -2078,7 +2076,13 @@ function Guards(props: { parts: Part[] }) {
         </box>
         <Show when={open()}>
           <For each={firings()}>
-            {(firing) => <text fg={theme.textMuted}>{`${DETAIL_ARROW} ${guardLine(firing)}`}</text>}
+            {(firing) => (
+              <box paddingLeft={2} flexShrink={0}>
+                <text fg={theme.textMuted} wrapMode="none" truncate>
+                  {guardLine(firing)}
+                </text>
+              </box>
+            )}
           </For>
         </Show>
       </box>
