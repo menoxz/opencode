@@ -40,7 +40,7 @@ import type {
 } from "@opencode-ai/sdk/v2"
 import { useLocal } from "@tui/context/local"
 import { Locale } from "@/util/locale"
-import { isInlineSteer, queuedUserStatus, turnAnswered, visibleFromID } from "./pending-turn"
+import { isDeliveredSteer, queuedUserStatus, turnAnswered, visibleFromID } from "./pending-turn"
 import type { Tool } from "@/tool/tool"
 import type { ReadTool } from "@/tool/read"
 import type { WriteTool } from "@/tool/write"
@@ -1726,11 +1726,14 @@ export function Session() {
                       <Match when={revert()?.messageID && message.id >= revert()!.messageID}>
                         <></>
                       </Match>
-                      <Match when={isInlineSteer(messages(), message, (id) => sync.data.part[id] ?? [])}>
+                      <Match when={isDeliveredSteer(messages(), message, (id) => sync.data.part[id] ?? [])}>
                         {/*
-                          Un steer injecté n'est pas un tour : il est rendu DANS le flux du
-                          message assistant qui l'a lu (juste avant la boucle ReAct suivante),
-                          donc il ne s'affiche pas ici, après coup.
+                          Un steer déjà pris par le run ne s'affiche nulle part : le modèle l'a
+                          consommé à l'intérieur d'un tour qui existait déjà, donc le montrer —
+                          ici comme dans le flux de l'assistant — duplique un prompt déjà lu, à
+                          une position qui dépend de frontières de steps invisibles côté client.
+                          Tant qu'il est en attente, le badge STEER fait le retour ; une fois
+                          livré, il n'y a plus rien à en dire.
                         */}
                         <></>
                       </Match>
@@ -2129,17 +2132,6 @@ function Compaction(props: { parts: Part[]; messageID: string; sessionID: string
   )
 }
 
-/**
- * Un steer injecté dans le run en cours, rendu DANS le flux du message assistant.
- *
- * Il ne crée pas de tour : sa place dans le fil est celle de la boucle ReAct qui l'a lu, donc il
- * se dessine comme un prompt ordinaire, sans badge (il est livré) — et juste avant la part qui
- * suit sa lecture, pas après la fin du run.
- */
-function InlineSteer(props: { message: UserMessage; parts: Part[] }) {
-  return <UserMessage message={props.message} parts={props.parts} onMouseUp={() => {}} index={1} answered={true} />
-}
-
 function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; last: boolean }) {
   const ctx = use()
   const local = useLocal()
@@ -2163,42 +2155,6 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
 
   const childShortcut = useCommandShortcut("session.child.first")
 
-  // Un steer livré pendant CE run appartient au flux de ce message : il s'affiche juste avant
-  // la part de la boucle ReAct qui l'a suivi, et n'ouvre donc pas de tour à part. Le repère est
-  // l'horloge des parts — la première part démarrée après la création du prompt est celle qui
-  // suit sa lecture. Un steer qui a ouvert son propre tour (le run s'était arrêté avant de le
-  // servir) n'entre pas ici : `isInlineSteer` l'exclut, il reste un prompt normal.
-  const inlineSteers = createMemo(() => {
-    const all = messages()
-    const partsOf = (id: string) => sync.data.part[id] ?? []
-    const out: { id: string; message: UserMessage; at: number }[] = []
-    for (const candidate of all) {
-      if (candidate.role !== "user") continue
-      if (!isInlineSteer(all, candidate, partsOf)) continue
-      const created = candidate.time?.created
-      if (created === undefined) continue
-      if (created < props.message.time.created) continue
-      // Propriété unique : le steer appartient au DERNIER assistant démarré avant lui. Sans
-      // cette borne, deux itérations successives le revendiquaient toutes les deux (chacune
-      // avait démarré avant le steer) et il s'affichait deux fois de suite dans le fil.
-      const claimedByLater = all.some(
-        (other) =>
-          other.role === "assistant" &&
-          other.id !== props.message.id &&
-          (other.time?.created ?? Number.POSITIVE_INFINITY) > props.message.time.created &&
-          (other.time?.created ?? Number.POSITIVE_INFINITY) <= created,
-      )
-      if (claimedByLater) continue
-      const at = props.parts.findIndex((part) => {
-        const time = (part as { time?: { start?: number; end?: number } }).time
-        const started = time?.start ?? time?.end
-        return started !== undefined && started > created
-      })
-      out.push({ id: candidate.id, message: candidate as UserMessage, at: at < 0 ? props.parts.length : at })
-    }
-    return out
-  })
-
   const parts = () => (
     <>
       <For each={props.parts}>
@@ -2206,9 +2162,6 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
           const component = createMemo(() => PART_MAPPING[part.type as keyof typeof PART_MAPPING])
           return (
             <>
-              <For each={inlineSteers().filter((entry) => entry.at === index())}>
-                {(entry) => <InlineSteer message={entry.message} parts={sync.data.part[entry.id] ?? []} />}
-              </For>
               <Show when={component()}>
                 <Dynamic
                   last={index() === props.parts.length - 1}
@@ -2220,9 +2173,6 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
             </>
           )
         }}
-      </For>
-      <For each={inlineSteers().filter((entry) => entry.at >= props.parts.length)}>
-        {(entry) => <InlineSteer message={entry.message} parts={sync.data.part[entry.id] ?? []} />}
       </For>
     </>
   )

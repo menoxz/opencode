@@ -79,14 +79,14 @@ const isInternalParts = (parts: readonly PartLike[]) =>
 
 export type QueuedStatus = "queued" | "steer" | undefined
 
-// A steer that was injected into the run already in flight. It is NOT a turn: the transcript
-// must show it inside the running agent's stream, right before the ReAct step it was read by,
-// otherwise a mid-run interjection appears as an answer that came after the work.
+// A steer the run has already taken: it reached the model, so it must leave the transcript.
 //
-// Distinguished from a steer that became a turn of its own: that one has an assistant written
-// after it (`steerServed`) because the run had settled before serving it, and it must keep
-// rendering as an ordinary prompt.
-export const isInlineSteer = (
+// It is not a turn — the run answered it inside the turn that was already open — and it is not
+// a message either: showing it anywhere (inline, or at the tail of the assistant) duplicates a
+// prompt the model has already consumed, and the placement depends on provider step boundaries
+// the client cannot observe reliably. While it is still pending the badge is the feedback; once
+// delivered, nothing is left to say about it.
+export const isDeliveredSteer = (
   messages: readonly MessageLike[],
   message: MessageLike,
   partsOf: (messageID: string) => readonly PartLike[],
@@ -94,7 +94,9 @@ export const isInlineSteer = (
   if (message.role !== "user") return false
   const parts = partsOf(message.id)
   if (!hasSteerFlag(parts)) return false
-  if (steerServed(messages, message.id)) return false
+  // `steerServed` also covers a steer served as the anchor of its own run: the previous run
+  // settled before reading it, so an assistant was written after it and it is ordinary history.
+  if (steerServed(messages, message.id)) return true
   return hasSteerDelivered(parts) || steerActedAfter(messages, message, partsOf)
 }
 
