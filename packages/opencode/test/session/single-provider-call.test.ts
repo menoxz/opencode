@@ -32,6 +32,7 @@ import { SessionSummary } from "../../src/session/summary"
 import { Instruction } from "../../src/session/instruction"
 import { SessionProcessor } from "../../src/session/processor"
 import { SessionPrompt } from "../../src/session/prompt"
+import { empty as emptyGuard } from "../fixture/guard"
 import { SessionRevert } from "../../src/session/revert"
 import { SessionRunState } from "../../src/session/run-state"
 import { SessionTitle } from "../../src/session/title"
@@ -195,6 +196,8 @@ function makePrompt(input?: {
     SyncEvent.defaultLayer,
     EventV2Bridge.defaultLayer,
     ToolCacheService.defaultLayer,
+    // `SessionPrompt.layer` capture `Guard.Service` à sa construction (`prompt.ts:367`).
+    emptyGuard,
   ).pipe(Layer.provideMerge(infra))
   const question = Question.layer.pipe(Layer.provideMerge(deps))
   const todo = Todo.layer.pipe(Layer.provideMerge(deps))

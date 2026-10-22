@@ -70,6 +70,7 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { Session } from "@/session/session"
 import { LLM } from "../../src/session/llm"
 import { SessionPrompt } from "../../src/session/prompt"
+import { empty as emptyGuard } from "../fixture/guard"
 import { SessionRevert } from "../../src/session/revert"
 import { SessionSummary } from "../../src/session/summary"
 import { MessageV2 } from "../../src/session/message-v2"
@@ -213,6 +214,8 @@ function makeHttp(wrapProc: (p: Layer.Layer<SessionProcessor.Service, any, any>)
     SyncEvent.defaultLayer,
     EventV2Bridge.defaultLayer,
     ToolCacheService.defaultLayer,
+    // `SessionPrompt.layer` capture `Guard.Service` à sa construction (`prompt.ts:367`).
+    emptyGuard,
   ).pipe(Layer.provideMerge(infra))
   const question = Question.layer.pipe(Layer.provideMerge(deps))
   const todo = Todo.layer.pipe(Layer.provideMerge(deps))
