@@ -55,6 +55,16 @@ export const isSteerUser = (m: MessageV2.WithParts) =>
 export const steerServed = (msgs: MessageV2.WithParts[], steerID: MessageV2.User["id"]) =>
   msgs.some((m) => m.info.role === "assistant" && m.info.id > steerID)
 
+// Durable proof that a steer already reached the model, written on the part when the run
+// injects it. `steerServed` cannot answer this for a chained turn: the SDK writes one assistant
+// message per provider invocation and creates it *before* the steer arrives, so no assistant id
+// is ever newer than the steer. Without this marker the steer stayed "pending" forever, `loop()`
+// re-armed on it, and the interjection was answered a second time after the turn had finished.
+export const isSteerDelivered = (m: MessageV2.WithParts) =>
+  m.parts.some(
+    (part) => part.type === "text" && (part as { metadata?: { steerDelivered?: unknown } }).metadata?.steerDelivered === true,
+  )
+
 // A steer the running turn has not answered yet. It is already persisted as a user
 // message newer than the run's anchor, so it belongs to THIS run: stopping the loop
 // here handed it to a fresh run, which opened a second turn instead of injecting the
@@ -76,7 +86,7 @@ export const isPendingSteerFor = (
   // was seeded as delivered — measured live: `already-delivered` on a steer one second old,
   // injected=0, and the interjection waited for the turn to end.
   anchorUserID: string,
-) => isSteerUser(message) && String(message.info.id) > anchorUserID && !steerServed(msgs, message.info.id)
+) => isSteerUser(message) && !isSteerDelivered(message) && String(message.info.id) > anchorUserID && !steerServed(msgs, message.info.id)
 
 export const resolveAnchorUserID = (
   msgs: MessageV2.WithParts[],
@@ -104,7 +114,7 @@ export const pendingUserID = (msgs: MessageV2.WithParts[]): MessageV2.User["id"]
     .filter((m) => {
       if (m.info.role !== "user") return false
       if (isRunInternalUser(m)) return false
-      if (isSteerUser(m)) return !steerServed(msgs, m.info.id)
+      if (isSteerUser(m)) return !isSteerDelivered(m) && !steerServed(msgs, m.info.id)
       return !turnClosed(msgs, m.info.id)
     })
     .sort((a, b) => (a.info.id < b.info.id ? -1 : a.info.id > b.info.id ? 1 : 0))[0]?.info.id

@@ -43,8 +43,13 @@ function assistant(id: string, parent: string, opts?: { finish?: string }): Mess
   }
 }
 
-const steerText = (): MessageV2.Part =>
-  ({ id: PartID.ascending("prt-steer"), type: "text", text: "va plus vite", metadata: { steer: true } }) as unknown as MessageV2.Part
+const steerText = (extra?: { steerDelivered?: boolean }): MessageV2.Part =>
+  ({
+    id: PartID.ascending("prt-steer"),
+    type: "text",
+    text: "va plus vite",
+    metadata: { steer: true, ...extra },
+  }) as unknown as MessageV2.Part
 
 /**
  * Un steer est un prompt envoyé dans le run **déjà en cours** : le run doit le servir lui-même,
@@ -116,5 +121,37 @@ describe("isPendingSteerFor", () => {
     // Dernier message utilisateur (= le steer lui-même) : il se déclare livré, ce qui est
     // exactement le bug du site d'appel. Ce cas doit rester faux pour documenter la cause.
     expect(PromptQueue.isPendingSteerFor(msgs, steer, String(steer.info.id))).toBe(false)
+  })
+})
+
+/**
+ * Régression mesurée en live le 2026-10-22 : le steer était bien injecté pendant le run (le modèle
+ * le lisait), puis un **second tour** le rejouait après la fin — la réponse arrivait hors du tour
+ * visible. Cause : `steerServed` cherche un assistant d'id supérieur au steer, or un tour chaîné
+ * n'écrit qu'un assistant, créé *avant* l'arrivée du steer. Le steer restait donc « pendant » pour
+ * toujours et `loop()` ré-armait sur lui. Le reçu durable ferme ce tour.
+ */
+describe("isSteerDelivered — le reçu de livraison ferme le tour", () => {
+  const anchor = MessageID.ascending("msg0001")
+
+  test("un steer livré n'est plus pendant, même sans assistant plus récent", () => {
+    const delivered = user("msg0500", [steerText({ steerDelivered: true })])
+    const msgs = [user("msg0001"), assistant("msg0100", "msg0001", { finish: "stop" }), delivered]
+
+    expect(PromptQueue.isSteerDelivered(delivered)).toBe(true)
+    // Aucun assistant n'a d'id supérieur au steer : c'est exactement le cas d'un tour chaîné.
+    expect(PromptQueue.steerServed(msgs, delivered.info.id)).toBe(false)
+    // Il ne doit donc plus être ni ré-armé ni réinjecté.
+    expect(PromptQueue.pendingUserID(msgs)).toBeUndefined()
+    expect(PromptQueue.isPendingSteerFor(msgs, delivered, String(anchor))).toBe(false)
+  })
+
+  test("un steer pas encore livré reste pendant", () => {
+    const fresh = user("msg0500", [steerText()])
+    const msgs = [user("msg0001"), assistant("msg0100", "msg0001", { finish: "stop" }), fresh]
+
+    expect(PromptQueue.isSteerDelivered(fresh)).toBe(false)
+    expect(PromptQueue.pendingUserID(msgs)).toBe(MessageID.ascending("msg0500"))
+    expect(PromptQueue.isPendingSteerFor(msgs, fresh, String(anchor))).toBe(true)
   })
 })

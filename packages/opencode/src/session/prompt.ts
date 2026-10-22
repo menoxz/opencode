@@ -1754,6 +1754,29 @@ export const layer = Layer.effect(
           PromptQueue.pendingUserID(anchorMsgs) ?? anchorMsgs.findLast((m) => m.info.role === "user")?.info.id
         if (!anchorUserID) throw new Error("No user message found in stream. This should never happen.")
 
+        // Ledger of steers delivered by THIS run. It has to be run-scoped, not per iteration:
+        // the SDK chains every tool round of a turn inside a single `llm.stream`, so all the
+        // ReAct steps live in one assistant message whose id predates the steer. Rebuilding the
+        // ledger per iteration therefore made the run believe an already-injected steer was
+        // still waiting (`steerServed` looks for an assistant id after the steer, and a chained
+        // turn never writes one), so it kept itself open and delivered the interjection a second
+        // time — the answer surfaced only after the whole turn had finished.
+        const deliveredSteers = new Set<string>()
+        // A steer this run owns: newer than the anchor and not already answered. It rides this
+        // run as an interjection through `<system-reminder>`, never as history.
+        const ownsSteer = (messages: MessageV2.WithParts[], message: MessageV2.WithParts) =>
+          PromptQueue.isPendingSteerFor(messages, message, String(anchorUserID))
+        const pendingSteerIn = (messages: MessageV2.WithParts[]) =>
+          messages.some((message) => ownsSteer(messages, message) && !deliveredSteers.has(String(message.info.id)))
+
+        // Interjections already handed to the provider during the current provider invocation.
+        // `prepareStep` appends what `steer()` returns to *that step's* messages, and a chained
+        // turn can run up to 8 steps: returning only the newly arrived steer meant the model read
+        // the message once, then never saw it again, so it carried on with its tool loop and
+        // answered only after the turn ended. Kept run-scoped, appended on every later step, and
+        // cleared at the start of each iteration — by then the steer is ordinary history.
+        const interjections: { role: "user"; content: string }[] = []
+
         // A text-only assistant stop no longer ends the run while the anchored
         // objective is still open; `idleContinues` bounds those extra steps and
         // resets on any tool call. `autoContinueInstruction` carries the nudge
@@ -1929,7 +1952,7 @@ export const layer = Layer.effect(
             // opened a second turn instead of injecting the interjection into the one in
             // flight. Once an assistant is written after it the steer counts as served,
             // so the loop still settles on the following pass.
-            if (PromptQueue.hasPendingSteer(msgs)) {
+            if (pendingSteerIn(msgs)) {
               idleContinues = 0
               yield* slog.info("pending steer keeps the run open", { step })
             } else {
@@ -2235,7 +2258,12 @@ export const layer = Layer.effect(
             const preparedMsgs = yield* applyVisionFallback({
               // Un steer encore pendant voyage par le rappel `<system-reminder>` plus bas : le
               // laisser dans l'historique ferait lire son texte deux fois au modèle.
-              messages: msgs.filter((message) => !PromptQueue.isPendingSteerFor(msgs, message, String(anchorUserID))),
+              // An undelivered steer is excluded because it travels through the
+              // `<system-reminder>` envelope instead. Once delivered it *is* part of the session:
+              // dropping it forever made the interjection vanish from the model's context.
+              messages: msgs.filter(
+                (message) => !ownsSteer(msgs, message) || deliveredSteers.has(String(message.info.id)),
+              ),
               model,
               user: lastUser,
               sessionID,
@@ -2710,25 +2738,16 @@ contextSummary.add("skills", skills ? "inject relevant skill summary" : "no rele
             if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
             const handleProcessStart = Date.now()
             yield* reachedProvider
-            // A steer written while this turn is running never enters the list below, and the SDK
-            // chains the following tool rounds inside this one `process` call, so the outer loop
-            // cannot carry it before the turn ends — the steer then waits and opens a turn of its
-            // own. Read it back at every step boundary instead, and deliver it exactly the way the
-            // between-turns path does (the `<system-reminder>` envelope further up this loop), so
-            // the model treats it as an interjection rather than a new request.
-            const deliveredSteers = new Set(
-              // Delivered = already answered, or already the anchor of this run (its text is
-              // then the normal user turn in the history). Only a steer that arrived while this
-              // turn was running and is still unanswered must be injected — and it is, once,
-              // through the `<system-reminder>` envelope below. Seeding this set from mere
-              // presence marked a freshly sent steer as delivered, which is why the direct
-              // injection never happened.
-              msgs
-                .filter(
-                  (message) => !PromptQueue.isPendingSteerFor(msgs, message, String(anchorUserID)) && PromptQueue.isSteerUser(message),
-                )
-                .map((message) => String(message.info.id)),
-            )
+            // A steer written while this turn is running never enters the list below: it is
+            // read back from the database at every step boundary and delivered through the
+            // `<system-reminder>` envelope, so the model treats it as an interjection rather
+            // than a new request. The ledger is the run-scoped `deliveredSteers` declared
+            // above — a per-iteration copy would forget what the chained steps already
+            // injected and re-deliver it once the turn ended.
+            // A new provider invocation: what was delivered last time is now ordinary history
+            // (the delivered branch of the filter above keeps it), so only interjections that
+            // arrive during THIS invocation travel as reminders.
+            interjections.length = 0
             const steer = () =>
               Database.use((db) => {
                 const fresh: { role: "user"; content: string }[] = []
@@ -2751,6 +2770,15 @@ contextSummary.add("skills", skills ? "inject relevant skill summary" : "no rele
                     if (data.metadata?.steer !== true) continue
                     if (typeof data.text !== "string") continue
                     texts.push(data.text)
+                    // Durable receipt: this steer has reached the model. The in-memory ledger
+                    // dies with the run, and `steerServed` can never see it — a chained turn
+                    // writes its single assistant *before* the steer arrives — so without this
+                    // the steer stayed pending forever and `loop()` opened a duplicate turn
+                    // that replayed the interjection after the answer was already written.
+                    db.update(PartTable)
+                      .set({ data: { ...data, metadata: { ...data.metadata, steerDelivered: true } } as never })
+                      .where(eq(PartTable.id, part.id))
+                      .run()
                   }
                   const text = texts.join("\n")
                   if (!text.trim()) continue
@@ -2759,15 +2787,19 @@ contextSummary.add("skills", skills ? "inject relevant skill summary" : "no rele
                     role: "user",
                     content: [
                       "<system-reminder>",
-                      "The user sent the following message:",
-                      text,
+                      "The user interrupted your work to send the message below. It takes priority over your current plan: address it in the same response, then continue.",
                       "",
-                      "Address this message if it is still relevant, then continue toward the current objective.",
+                      text,
                       "</system-reminder>",
                     ].join("\n"),
                   })
                 }
-                return fresh
+                interjections.push(...fresh)
+                // Every later step re-appends what was already handed over, so the interjection
+                // stays in the model's context until the step that answers it. Returning only
+                // `fresh` left it visible for exactly one step, which is why a long tool loop
+                // never reacted to it.
+                return [...interjections]
               })
             const result = yield* handle.process({
               user: lastUser,
@@ -2826,7 +2858,7 @@ contextSummary.add("skills", skills ? "inject relevant skill summary" : "no rele
             // request, not inside the run it was sent to. Read the queue back and keep this run
             // going so the next step injects it.
             if (result === "stop") {
-              const stillPending = PromptQueue.hasPendingSteer(yield* MessageV2.filterCompactedEffect(sessionID))
+              const stillPending = pendingSteerIn(yield* MessageV2.filterCompactedEffect(sessionID))
               if (!stillPending) return "break" as const
               yield* slog.info("pending steer keeps the run open after stop", { step })
             }
