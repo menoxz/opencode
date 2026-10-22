@@ -116,6 +116,7 @@ import { nextThinkingMode, reasoningSummary, useThinkingMode, type ThinkingMode 
 import { getScrollAcceleration } from "../../util/scroll"
 import { collapseToolOutput, collapseToolOutputTail } from "../../util/collapse-tool-output"
 import { instructionSources, instructionsHeading, instructionsInjecting } from "../../util/instructions-injection"
+import { GUARD_ICON, guardFirings, guardLine, guardsHeading } from "../../util/guard-injection"
 import { compactionRunning, summaryAfter } from "../../util/compaction-row"
 import { isHiddenTool } from "../../util/hidden-tools"
 import { TuiPluginRuntime } from "@/cli/cmd/tui/plugin/runtime"
@@ -1939,6 +1940,7 @@ function UserMessage(props: {
         </box>
       </Show>
       <Instructions parts={props.parts} sessionID={props.message.sessionID} />
+      <Guards parts={props.parts} />
       <Compaction parts={props.parts} messageID={props.message.id} sessionID={props.message.sessionID} />
     </>
   )
@@ -1999,6 +2001,44 @@ function Instructions(props: { parts: Part[]; sessionID: string }) {
           <For each={sources()}>
             {(source) => <text fg={theme.textMuted}>{source.replace(/^Instructions from:\s*/, "")}</text>}
           </For>
+        </Show>
+      </box>
+    </Show>
+  )
+}
+
+/**
+ * Les garde-fous qui ont tiré dans ce tour, dans une part synthétique et ignorée — donc
+ * invisible dans le fil sans ce bloc. Même forme que la ligne d'instructions : une ligne au
+ * cran bas d'opacité, dépliable pour lire la raison de chaque tir et son origine
+ * (`global/` = répertoire de config, `workspace/` = dépôt).
+ */
+function Guards(props: { parts: Part[] }) {
+  const { theme } = useTheme()
+  const renderer = useRenderer()
+  const [open, setOpen] = createSignal(false)
+  const firings = createMemo(() => guardFirings(props.parts))
+  const expandable = createMemo(() => firings().length > 0)
+
+  return (
+    <Show when={expandable()}>
+      <box paddingLeft={3} flexShrink={0}>
+        <box
+          flexDirection="row"
+          gap={1}
+          onMouseUp={() => {
+            if (!expandable()) return
+            if (renderer.getSelection()?.getSelectedText()) return
+            setOpen((prev) => !prev)
+          }}
+        >
+          <text fg={theme.textLow} wrapMode="none" truncate>
+            {`${GUARD_ICON} `}
+            {guardsHeading(firings().length)} {open() ? "▾" : "▸"}
+          </text>
+        </box>
+        <Show when={open()}>
+          <For each={firings()}>{(firing) => <text fg={theme.textMuted}>{guardLine(firing)}</text>}</For>
         </Show>
       </box>
     </Show>
