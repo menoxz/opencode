@@ -26,8 +26,10 @@
 // `queued`: an older prompt's turn is still open (the run is serving someone
 // ahead of this one) AND this prompt's own turn has not closed.
 //
-// `steer`: the prompt carries the steer flag and no assistant has been written
-// after it yet — the running run serves it at its next step.
+// `steer`: the prompt carries the steer flag and the run has not read it yet. The badge is a
+// delivery indicator, not a label: it disappears the moment the steer is handed to the model
+// (the server's receipt, or the first agent part started after the prompt), and the message
+// then reads as an ordinary prompt in the stream.
 //
 // A queued prompt is RENDERED immediately with its QUEUED badge: a waiting
 // prompt has to stay visible so the user can see (and manage) the queue, and it
@@ -47,6 +49,9 @@ type PartLike = {
   synthetic?: boolean
   metadata?: { [key: string]: unknown }
   tail_start_id?: unknown
+  // Parts do not share one clock shape: a text/tool part carries `start`/`end`, a retry part
+  // carries `created`. Both are optional here so a real `Part` can be passed as-is.
+  time?: { start?: number; end?: number; created?: number }
 }
 
 // A steering message carries the steer flag on a text part
@@ -95,6 +100,38 @@ const turnClosed = (messages: readonly MessageLike[], userID: string) =>
 // written after it.
 const steerServed = (messages: readonly MessageLike[], steerID: string) =>
   messages.some((m) => m.role === "assistant" && m.id > steerID)
+
+// A steer the server has already handed to the model carries this receipt on its part
+// (PromptQueue.isSteerDelivered). It is the authoritative signal and it survives a reload.
+const hasSteerDelivered = (parts: readonly PartLike[]) =>
+  parts.some(
+    (part) => part.type === "text" && (part.metadata as { steerDelivered?: unknown } | undefined)?.steerDelivered === true,
+  )
+
+// The run has acted after the steer: some part of an agent message started later than the
+// prompt. This is what makes the badge detach at the right moment. `steerServed` compares
+// message ids and is blind to a chained turn — the SDK writes ONE assistant per provider
+// invocation, created before the steer arrives, and every later ReAct step appends its parts
+// to that same message. Parts carry their own clock, and those updates already stream to the
+// client, so the badge drops on the step that reads the steer instead of at the end of the
+// turn.
+const steerActedAfter = (
+  messages: readonly MessageLike[],
+  steer: MessageLike,
+  partsOf?: (messageID: string) => readonly PartLike[],
+) => {
+  if (partsOf === undefined) return false
+  const since = steer.time?.created
+  if (since === undefined) return false
+  for (const message of messages) {
+    if (message.role !== "assistant") continue
+    for (const part of partsOf(message.id)) {
+      const started = part.time?.start ?? part.time?.end
+      if (started !== undefined && started > since) return true
+    }
+  }
+  return false
+}
 
 // The prompt the active run is serving: the oldest user prompt whose turn is
 // still open. It is the head of the FIFO the run is anchored on, so it is
@@ -145,7 +182,7 @@ const servingUserID = (
       // Runtime-shaped messages are not prompts; a served steer is no longer
       // pending either (PromptQueue.pendingUserID skips both).
       if (isInternalParts(parts)) continue
-      if (hasSteerFlag(parts) && steerServed(messages, message.id)) continue
+      if (hasSteerFlag(parts) && (hasSteerDelivered(parts) || steerServed(messages, message.id))) continue
     }
     if (turnClosed(messages, message.id)) continue
     if (inFlight(message.id) && (oldestInFlight === undefined || message.id < oldestInFlight)) oldestInFlight = message.id
@@ -198,10 +235,18 @@ export function queuedUserStatus(input: {
   if (isInternalParts(input.parts)) return undefined
 
   // A steer is decided by its own flag, not by the anchor scan. It rides the
-  // running run, and until an assistant is written after it the run has not
-  // served it. Keying it on the anchor dropped the badge whenever the anchor's
-  // turn had already closed while the run kept going.
-  if (hasSteerFlag(input.parts)) return steerServed(input.messages, input.message.id) ? undefined : "steer"
+  // running run, and until the run reads it the badge means "not delivered yet".
+  // Delivery ends the badge: the server receipt (authoritative, survives a reload)
+  // or the first agent part started after the prompt (the chained-turn case, where
+  // no assistant id is ever newer than the steer). Keying it on the anchor alone
+  // dropped the badge whenever the anchor's turn had already closed while the run
+  // kept going.
+  if (hasSteerFlag(input.parts)) {
+    if (hasSteerDelivered(input.parts)) return undefined
+    if (steerServed(input.messages, input.message.id)) return undefined
+    if (steerActedAfter(input.messages, input.message, input.partsOf)) return undefined
+    return "steer"
+  }
 
   // Nothing is waiting: no open turn means no run to queue behind.
   const serving = servingUserID(input.messages, input.visibleFrom, input.partsOf)

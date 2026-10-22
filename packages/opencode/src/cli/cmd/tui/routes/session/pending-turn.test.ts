@@ -4,10 +4,11 @@ import { queuedUserStatus, visibleFromID, type QueuedStatus } from "./pending-tu
 // Message ids sort lexicographically in real life (MessageID.ascending); these
 // fixtures preserve that so the `assistant.id > steer.id` comparison is
 // meaningful.
-const user = (id: string, opts: { steer?: boolean } = {}) => ({
+const user = (id: string, opts: { steer?: boolean; created?: number } = {}) => ({
   id,
   role: "user",
   sessionID: "s",
+  ...(opts.created !== undefined ? { time: { created: opts.created } } : {}),
   parts: [{ type: "text", text: "hi", ...(opts.steer ? { metadata: { steer: true } } : {}) }],
 })
 const assistant = (id: string, parentID: string, extra: Record<string, unknown> = {}) => ({
@@ -24,7 +25,13 @@ const status = (
   messages: readonly unknown[],
   busy = true,
   visibleFrom?: string,
-  partsOf?: (messageID: string) => readonly { type: string; metadata?: { [key: string]: unknown } }[],
+  partsOf?: (
+    messageID: string,
+  ) => readonly {
+    type: string
+    metadata?: { [key: string]: unknown }
+    time?: { start?: number; end?: number; created?: number }
+  }[],
 ): QueuedStatus => queuedUserStatus({ message, parts, messages, busy, visibleFrom, partsOf } as never)
 
 describe("TUI user prompt delivery status", () => {
@@ -220,6 +227,43 @@ describe("TUI user prompt delivery status", () => {
       assistant("03", "01", { finish: "stop", time: { created: 1, completed: 2 } }),
       s,
     ]
+    expect(status(s, s.parts, messages)).toBe("steer")
+  })
+
+  /**
+   * Le badge STEER est un indicateur de livraison, pas une étiquette permanente : dès que le run
+   * a lu le prompt, le message se recolle au fil et le badge disparaît. Sans cela il restait
+   * affiché jusqu'à la fin du tour, ce qui laissait croire que le steer n'était jamais pris.
+   */
+  test("the STEER badge disappears as soon as the run acted after the steer (chained turn)", () => {
+    // Un tour chaîné n'écrit qu'un seul assistant, créé AVANT l'arrivée du steer : aucun id
+    // d'assistant n'est donc plus grand que celui du steer, et `steerServed` reste muet. Ce
+    // sont les parts qui datent la lecture, via leur propre horloge.
+    const s = user("04", { steer: true, created: 1000 })
+    const messages = [user("01"), assistant("02", "01", { finish: "tool-calls" }), s]
+    const partsOf = (id: string) =>
+      id === "02" ? [{ type: "tool" as const, time: { start: 1500, end: 1600 } }] : []
+
+    expect(status(s, s.parts, messages, true, undefined, partsOf)).toBeUndefined()
+  })
+
+  test("the STEER badge stays while no agent part started after the steer", () => {
+    const s = user("04", { steer: true, created: 1000 })
+    const messages = [user("01"), assistant("02", "01", { finish: "tool-calls" }), s]
+    // Toutes les parts du run précèdent le steer : le run ne l'a pas encore lu.
+    const partsOf = (id: string) =>
+      id === "02" ? [{ type: "tool" as const, time: { start: 900, end: 950 } }] : []
+
+    expect(status(s, s.parts, messages, true, undefined, partsOf)).toBe("steer")
+  })
+
+  test("the server receipt alone clears the badge (survives a reload)", () => {
+    const s = user("04", { steer: true, created: 1000 })
+    const delivered = [{ type: "text", metadata: { steer: true, steerDelivered: true } }]
+    const messages = [user("01"), assistant("02", "01", { finish: "tool-calls" }), s]
+
+    expect(status(s, delivered, messages)).toBeUndefined()
+    // Sans le reçu et sans part postérieure, le badge reste : c'est l'avant-livraison.
     expect(status(s, s.parts, messages)).toBe("steer")
   })
 
