@@ -17,11 +17,11 @@ export type GuardFiring = {
 }
 
 /**
- * Glyphe du bloc : oeil de poisson (U+25C9), une cible atteinte — le tir a eu lieu. Plus dense que
- * le zigzag, il occupe mieux la cellule et se lit donc « plus gros » sans gras. Hors des plages de
- * double largeur (`0x1F300-0x1F9FF`), donc une seule cellule.
+ * Glyphe du bloc : zigzag descendant, le reflexe — ce qui se declenche. Hors des plages de double
+ * largeur (`0x1F300-0x1F9FF`), donc une seule cellule ; le bouclier emoji y tombait et decalait la
+ * ligne d'une colonne dans le fil.
  */
-export const GUARD_ICON = "◉"
+export const GUARD_ICON = "↯"
 
 export function guardFirings(parts: Part[]): GuardFiring[] {
   const carrier = parts.findLast(

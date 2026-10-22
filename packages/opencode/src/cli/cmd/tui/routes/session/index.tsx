@@ -1953,10 +1953,9 @@ function UserMessage(props: {
  * c'est ce que l'agent relit à chaque tour. Elle revient ici sur une ligne, au cran bas
  * d'opacité : le statut s'anime tant que le tour tourne, et le dépliage donne les sources.
  */
-// Asterisque a huit branches (U+2733) : plus dense que le reference mark (※), il remplit mieux la
-// cellule et se lit donc « plus gros » sans gras. Hors des plages de double largeur (0x1F300-0x1F9FF),
-// donc une seule cellule : le bouclier emoji y tombait et decalait la ligne.
-const INJECTION_ICON = "✳"
+// Reference mark : un renvoi, pas un fichier. Hors des plages de double largeur (0x1F300-0x1F9FF),
+// donc une seule cellule — le bouclier emoji y tombait et decalait la ligne d'une colonne.
+const INJECTION_ICON = "※"
 
 function Instructions(props: { parts: Part[]; sessionID: string }) {
   const { theme } = useTheme()
