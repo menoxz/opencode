@@ -1,4 +1,4 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { Effect, Layer, Stream } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
@@ -169,6 +169,34 @@ describe("installation", () => {
         expect(result).toBe("2.1.0")
       }),
     )
+  })
+
+  // Régression mesurée le 2026-10-23 : `latest()` rendait le dist-tag npm 2.4.17 alors que le
+  // binaire déployé était en 2.4.22. L'auto-update du TUI (worker.checkUpgrade) comparait par
+  // `!==`, classait l'écart en « patch » et installait donc la version ANTÉRIEURE, réécrivant
+  // les lanceurs `opencodev2` : l'app se rétrogradait à chaque démarrage et le user retombait
+  // sur du code sans les correctifs Queue/Steer (badges faux, session bloquée).
+  describe("isNewer", () => {
+    test("accepts a strictly newer version as an update", () => {
+      expect(Installation.isNewer("2.4.23", "2.4.22")).toBe(true)
+      expect(Installation.isNewer("2.5.0", "2.4.22")).toBe(true)
+      expect(Installation.isNewer("3.0.0", "2.99.99")).toBe(true)
+    })
+
+    test("never accepts the same or an older version", () => {
+      expect(Installation.isNewer("2.4.22", "2.4.22")).toBe(false)
+      expect(Installation.isNewer("2.4.17", "2.4.22")).toBe(false)
+      expect(Installation.isNewer("2.4.9", "2.4.22")).toBe(false)
+      expect(Installation.isNewer("1.99.99", "2.0.0")).toBe(false)
+      // Pourquoi la garde d'origine laissait passer : l'écart descendant était étiqueté « patch ».
+      expect(Installation.getReleaseType("2.4.22", "2.4.17")).toBe("patch")
+    })
+
+    test("refuses to compare an unversioned build", () => {
+      // Un build de dev porte `local` : il ne doit jamais être remplacé par le paquet publié.
+      expect(Installation.isNewer("2.4.17", "local")).toBe(false)
+      expect(Installation.isNewer("local", "2.4.22")).toBe(false)
+    })
   })
 
   describe("upgrade", () => {

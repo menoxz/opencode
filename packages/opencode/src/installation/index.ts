@@ -51,6 +51,21 @@ export function getReleaseType(current: string, latest: string): ReleaseType {
   return "patch"
 }
 
+// `latest()` ne veut pas dire « plus récent » : il rend le dist-tag du registre npm, et pour
+// ce fork le paquet publié retarde régulièrement sur le binaire déployé. Comparer par simple
+// inégalité faisait donc installer une version PLUS ANCIENNE (2.4.22 → 2.4.17), en réécrivant
+// au passage les lanceurs `opencodev2` : l'application se rétrogradait elle-même à chaque
+// démarrage et retombait sur du code sans les correctifs Queue/Steer. Seul un vrai `>` fait foi.
+//
+// Une version non analysable (`local` pour un build de dev) n'est jamais « plus récente » :
+// un build local ne doit pas être remplacé par le paquet publié.
+export function isNewer(candidate: string, current: string): boolean {
+  const next = semver.valid(candidate)
+  const now = semver.valid(current)
+  if (!next || !now) return false
+  return semver.gt(next, now)
+}
+
 export const Info = Schema.Struct({
   version: Schema.String,
   latest: Schema.String,

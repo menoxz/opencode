@@ -23,7 +23,11 @@ export async function upgrade() {
     return
   }
 
-  if (InstallationVersion === latest) return
+  // `latest` vient du dist-tag du registre : il peut être DERRIÈRE le build courant, ce qui
+  // est l'état permanent de ce fork dont le paquet publié retarde sur le binaire déployé.
+  // Un simple `!==` installait alors une version antérieure (2.4.22 → 2.4.17), rétrogradant
+  // l'application et réécrivant les lanceurs `opencodev2`. Seul un vrai « plus récent » compte.
+  if (!Installation.isNewer(latest, InstallationVersion)) return
 
   const kind = Installation.getReleaseType(InstallationVersion, latest)
 
