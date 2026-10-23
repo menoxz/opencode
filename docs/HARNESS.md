@@ -878,3 +878,43 @@ instructions-injection.ts prompt-queue.ts` est **vide**, et `a9714bf67` porte bi
   réinstallation le recrée et **publier** reste la vraie sortie. Depuis le correctif `isNewer`,
   l'app ne se rétrograde plus d'elle-même : réparer ne fait plus que repousser le shim, et le shim
   réparé est idempotent.
+
+## Compaction : un seuil proportionnel seul ne compacte jamais (mesuré 2026-10-23)
+
+- Symptôme : une session longue « ne progresse pas » — tours de 80 à 295 s, l'utilisateur appuie sur
+  Échap, le run est annulé (`Aborted process`), la file enchaîne le prompt suivant et la boucle
+  recommence.
+- Cause : `compaction.threshold = 0.98` **sans** `absolute_trigger`. `overflow.ts:102-114` calcule
+  `min(proportionnel, absolu)` ; sans clé absolue `absolu = proportionnel`, donc le seuil vaut
+  0,98 × fenêtre utilisable = **960 400 tokens** sur une fenêtre de 1 M (sortie 32 k). La session
+  mesurée était à ~319 000 tokens : aucune compaction, 169 messages, 4 140 parts, 26 h de vie, une
+  seule compaction, 114 runs terminés.
+- Correctif : `"absolute_trigger": 200000` (déjà présent dans `~/.config/opencode/opencode.json`,
+  absent de `~/.config/opencodev2/opencode.jsonc`). Mesure après, en appelant `trigger()` avec la
+  vraie config : seuil effectif **200 000** au lieu de 960 400 — la session repasse sous le seuil au
+  tour suivant.
+- Le coût réel est le **temps**, pas l'argent : 21 runs annulés = 2,68 M tokens de contexte
+  ≈ **0,02 $**, contre 80-295 s d'attente par tour. Le catalogue de skills (196 entrées,
+  7 842 caractères ≈ 1 960 tokens par requête) n'est pas le coût dominant.
+- Ne pas confondre avec un défaut de rendu : sur les données réelles `queuedUserStatus` ne produit
+  aucun badge et `instructionsInjecting` n'anime rien (mesuré sur 36 prompts) — les badges « faux »
+  reflétaient un tour jamais clos.
+
+## Base `opencodev2` : schéma d'une lignée de migrations interrompue (mesuré 2026-10-23)
+
+- Symptôme, à chaque démarrage : `failed to run data migrations` (SQLITE_ERROR) et
+  `no such column: workspace.project_id`.
+- Cause : la base porte le schéma d'une **autre lignée**. Le registre `migration` compte **51**
+  entrées (dont des migrations absentes du dépôt) et `__drizzle_migrations` **26** pour **25**
+  dossiers : les migrations du dépôt sont donc toutes marquées appliquées et ne rejouent rien. Deux
+  objets divergent — `data_migration` **absente** alors que sa migration est dite appliquée, et
+  `workspace` avec `provider/binding/created_at/last_used_at` au lieu de
+  `type/name/branch/directory/extra/project_id/time_used`.
+- Dégât : la migration `session_usage_from_messages` échouait à chaque démarrage, et les routes
+  serveur qui lisent `workspace.project_id` renvoyaient une erreur.
+- Réparation : `bun scripts/repair-opencodev2-db.ts` (DDL d'origine sauvegardé à côté de la base,
+  refus si `workspace` n'est pas vide). Vérifié : `pragma integrity_check` = ok ; 2ᵉ exécution =
+  « dérive : aucune » (idempotent) ; serveur temporaire démarré **sans aucune erreur** et migration
+  terminée en **20 s**, ligne `data_migration` écrite — elle ne se rejouera plus.
+- Préflight qui autorise l'opération : `workspace` vide (0 ligne), aucune `session.workspace_id`
+  renseignée, **0 JSON invalide** sur 53 995 messages et 323 789 parts.
