@@ -74,7 +74,11 @@ export function normalize(plan: TurnPlan): TurnPlan | undefined {
   const intent = clip(plan.intent)
   const expect = clip(plan.expect)
   if (!intent || !expect) return undefined
-  return { intent, expect, actions: clipActions(plan.actions), onFail: clip(plan.onFail), stopIf: clip(plan.stopIf) }
+  // Porte fermee : la liste n'est meme pas conservee. Sinon un bras temoin qui remplit le
+  // champ (2 runs sur 4 l'ont fait, mesure 2026-10-23) beneficierait quand meme de la
+  // restitution, et la comparaison ne mesurerait plus la fonctionnalite.
+  const actions = actionsEnabled() ? clipActions(plan.actions) : undefined
+  return { intent, expect, actions, onFail: clip(plan.onFail), stopIf: clip(plan.stopIf) }
 }
 
 /**

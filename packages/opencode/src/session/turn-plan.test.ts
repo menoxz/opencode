@@ -278,4 +278,24 @@ describe("named actions make the batch concrete", () => {
       if (previous !== undefined) process.env.OPENCODE_TURN_PLAN_ACTIONS = previous
     }
   })
+
+  test("a disabled arm stores no actions even when the model fills the field", () => {
+    // Mesure 2026-10-23 : la porte ne coupant que le protocole, 2 des 4 runs du bras
+    // temoin ont rempli le champ et beneficiaient quand meme de la restitution. Un temoin
+    // qui utilise la fonctionnalite ne mesure rien.
+    const previous = process.env.OPENCODE_TURN_PLAN_ACTIONS
+    process.env.OPENCODE_TURN_PLAN_ACTIONS = "0"
+    try {
+      const plan = normalize({
+        intent: "inspect",
+        expect: "package.json read",
+        actions: ["read package.json", "read tsconfig.json"],
+      })
+      expect(plan?.actions).toBeUndefined()
+      expect(plan?.intent).toBe("inspect")
+    } finally {
+      if (previous === undefined) delete process.env.OPENCODE_TURN_PLAN_ACTIONS
+      else process.env.OPENCODE_TURN_PLAN_ACTIONS = previous
+    }
+  })
 })

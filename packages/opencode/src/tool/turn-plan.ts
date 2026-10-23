@@ -1,7 +1,10 @@
 import { Effect, Schema } from "effect"
-import { declare } from "@/session/turn-plan"
+import { actionsEnabled, declare } from "@/session/turn-plan"
 import * as Tool from "./tool"
 
+// Le parametre reste declare dans le schema : le deriver de la porte casse le typage Effect
+// (`DecodingServices` devient `unknown`). La porte agit donc en aval, dans `declare` : un
+// bras coupe n'enregistre pas les actions, ne les restitue pas et ne les renvoie pas.
 const Parameters = Schema.Struct({
   intent: Schema.String.annotate({
     description:
@@ -56,7 +59,7 @@ export const TurnPlanTool = Tool.define<typeof Parameters, Metadata, never>(
             metadata: { declared: true },
             output: [
               `Recorded for this turn: intent "${plan.intent}", expecting "${plan.expect}".`,
-              ...(plan.actions?.length
+              ...(actionsEnabled() && plan.actions?.length
                 ? [`Named actions (${plan.actions.length}), do them together where independent: ${plan.actions.join(" ; ")}.`]
                 : []),
               ...(plan.onFail ? [`Fallback if the expectation is not observed: ${plan.onFail}.`] : []),
