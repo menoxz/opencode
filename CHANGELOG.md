@@ -5,6 +5,14 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v2.4.23] - 2026-10-23
+
+### Fixed
+- **L'auto-update n'installe plus une version antérieure à celle qui tourne.** `Installation.latest()` rend le dist-tag du registre npm, et le paquet publié de ce fork retarde sur le binaire déployé (2.4.17 contre 2.4.22). `upgrade()` ne comparait que `InstallationVersion !== latest`, puis classait l'écart avec `getReleaseType` : `getReleaseType("2.4.22", "2.4.17")` → `"patch"`, donc l'auto-update du TUI (`worker.checkUpgrade`) lançait `npm install -g @lux-tech/opencode-ai@2.4.17` à chaque démarrage. Trace dans les logs npm : `npm list --global --depth 0` puis `npm install --global …@2.4.17` à 11:17 puis 11:33 le 23/10. La conséquence n'était pas cosmétique : 2.4.17 précède quatre correctifs du pivot Queue/Steer (`e136005e6`, `5cac915f7`, `2827e5e3f`, `1931b5bd4`), donc l'application se rétrogradait elle-même vers un binaire aux badges faux et à la session qui ne progresse pas. `Installation.isNewer(candidate, current)` n'accepte plus qu'un vrai `semver.gt` — une version non analysable (`local`) n'est jamais « plus récente », donc un build de dev n'est jamais remplacé par le paquet publié — et la garde de `upgrade()` passe dessus. Preuve : `bun test test/installation/installation.test.ts` 14 pass / 0 fail, dont les contrôles négatifs `2.4.17` contre `2.4.22` et `getReleaseType("2.4.22", "2.4.17") === "patch"` ; `tsgo --noEmit` exit 0.
+
+### Added
+- **Contrôle des lanceurs `opencodev2`.** `scripts/check-opencodev2-launcher.ps1` compare la version rendue par la commande nue **et** par l'exécutable à `packages/opencode/package.json`, et sort en code 1 avec `LAUNCHER-STALE` ou `EXE-DESYNC` sinon. PowerShell résout `.ps1` avant `.exe`, donc chaque `npm install -g` réécrit l'aiguillage vers le paquet npm : la commande nue peut annoncer une vieille version sans que rien ne le signale. Contre-épreuve jouée : un faux shim en tête de `PATH` rend bien `LAUNCHER-STALE` (exit 1), donc le contrôle détecte la panne au lieu de toujours répondre OK.
+
 ## [v2.4.22] - 2026-10-22
 
 ### Added
