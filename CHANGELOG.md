@@ -5,6 +5,11 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v2.4.26] - 2026-10-23
+
+### Fixed
+- **Un revert dont la cible a disparu ne vide plus le transcript, et ne détruit plus le tour suivant.** Le TUI masque tout message dont l'id est supérieur ou égal à `revert.messageID` : quand la cible n'existe plus, **tout** est masqué et le panneau reste vide alors que la session a bien tourné. Mesuré le 2026-10-23 : une demande de revert arrivée pendant la purge d'une demande précédente a ré-armé une cible déjà supprimée (`msg_169b2c6df…` à 16:58:49, 30 ms après la purge), et le tour réussi qui suivait (`hi` → réponse, `finish=stop`, 38 923 tokens facturés) restait invisible. Pire, `revert.cleanup` aurait ensuite supprimé **ce tour et tous les suivants**, puisque tous les messages ont un id supérieur à la cible. Deux correctifs : côté serveur, `cleanup` détecte une cible absente et se contente d'effacer le revert (`revert target missing, clearing without removing`), sans rien supprimer ; côté TUI, un revert sans cible n'est plus considéré comme actif, donc rien n'est masqué. Vérifié de bout en bout : session à 2 messages, revert fantôme injecté, second prompt → **4 messages conservés**, `revert = null`, ligne de log attendue ; `tsgo --noEmit` exit 0.
+
 ## [v2.4.25] - 2026-10-23
 
 ### Fixed

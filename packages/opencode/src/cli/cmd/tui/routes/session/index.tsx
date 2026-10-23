@@ -1529,6 +1529,12 @@ export function Session() {
     const info = revertInfo()
     if (!info) return
     if (!info.messageID) return
+    // Un revert dont la cible n'existe plus est caduc : tout message a un id supérieur ou égal, donc
+    // la règle de masquage ci-dessous viderait le transcript entier. Cas mesuré le 2026-10-23 : une
+    // demande de revert arrivée pendant la purge d'une demande précédente ré-armait la cible déjà
+    // supprimée, et le tour réussi qui suivait (hi → réponse, finish=stop) restait invisible alors
+    // que la session avait bien tourné (38 923 tokens facturés). Sans cible, rien n'est masqué.
+    if (!messages().some((message) => message.id === info.messageID)) return
     return {
       messageID: info.messageID,
       reverted: revertRevertedMessages(),

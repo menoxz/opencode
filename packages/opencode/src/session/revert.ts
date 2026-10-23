@@ -198,6 +198,22 @@ export const layer = Layer.effect(
       const sessionID = session.id
       const msgs = yield* sessions.messages({ sessionID }).pipe(Effect.orDie)
       const messageID = session.revert.messageID
+      // Un revert dont la cible a disparu masque TOUT : le TUI cache chaque message dont l'id est
+      // supérieur ou égal à la cible, et la purge ci-dessous supprimerait le tour suivant en entier.
+      // Cas mesuré le 2026-10-23 : une demande de revert arrivée pendant la purge d'une demande
+      // précédente ré-armait la cible déjà supprimée (msg_169b2c6df…), et le tour réussi qui
+      // suivait (hi → « Salut… », finish=stop) restait invisible, transcript vide.
+      // Cible absente ⇒ le revert est caduc : on le retire sans rien supprimer.
+      if (!msgs.some((msg) => msg.info.id === messageID)) {
+        log.warn("revert target missing, clearing without removing", {
+          sessionID,
+          messageID,
+          partID: session.revert.partID,
+          messageCount: msgs.length,
+        })
+        yield* sessions.clearRevert(sessionID)
+        return
+      }
       const remove = [] as MessageV2.WithParts[]
       let target: MessageV2.WithParts | undefined
       let removedPartCount = 0
