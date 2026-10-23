@@ -13,6 +13,8 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 ### Added
 - **Contrôle des lanceurs `opencodev2`.** `scripts/check-opencodev2-launcher.ps1` compare la version rendue par la commande nue **et** par l'exécutable à `packages/opencode/package.json`, et sort en code 1 avec `LAUNCHER-STALE` ou `EXE-DESYNC` sinon. PowerShell résout `.ps1` avant `.exe`, donc chaque `npm install -g` réécrit l'aiguillage vers le paquet npm : la commande nue peut annoncer une vieille version sans que rien ne le signale. Contre-épreuve jouée : un faux shim en tête de `PATH` rend bien `LAUNCHER-STALE` (exit 1), donc le contrôle détecte la panne au lieu de toujours répondre OK.
 
+- **La CI de release ne compile plus de binding natif inutile.** `tree-sitter-powershell` déclare un script `install: node-gyp-build`, mais le paquet ne livre pas de dossier `prebuilds/` : la CI le compilait donc depuis les sources et échouait sur `spawn node-gyp ENOENT` (run `39951457274`, étape `setup-bun`). Or `src/tool/shell.ts` ne charge que les `.wasm` livrés dans le paquet — le binding natif n'a jamais été importé. Le paquet est retiré de `trustedDependencies` : ses scripts d'installation ne tournent plus, le `.wasm` reste disponible puisqu'il fait partie du tarball. `tree-sitter-bash` garde son entrée : il livre des `prebuilds/` et ne compile pas.
+
 ## [v2.4.22] - 2026-10-22
 
 ### Added
