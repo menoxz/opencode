@@ -778,21 +778,32 @@ plan de tour, et les restituer au tour suivant comme contenu.
   `renderCommitment`, prescrit par `instruction()`. Porte `OPENCODE_TURN_PLAN_ACTIONS=0`.
 - Critère décidé **avant** de voir les résultats : retenue si moins de steps **et** couverture
   effective non dégradée ; rejetée sinon.
-- A/B séquentiel, même base, même commit `68fe01249`, même tâche (t1 vague : « comment builder et
-  tester ce package »), 4 runs par bras :
+- A/B séquentiel, même base, même commit, même tâche (t1 vague : « comment builder et tester ce
+  package »). Deux passes, parce que la première n'avait aucune marge de bruit :
 
-  | bras | steps | appels | appels/step | couverture effective |
-  |---|---|---|---|---|
-  | ON | **5,50** (4,4,8,5) | 9,75 | 1,77 | **3,00/6** (4,3,1,4) |
-  | OFF | 6,50 (7,5,7,7) | 11,50 | 1,77 | 1,50/6 (0,3,1,2) |
+  | passe | modèle | n/bras | steps ON / OFF | couverture ON / OFF | verdict |
+  |---|---|---|---|---|---|
+  | 1 | payant | 4 | 5,50 / 6,50 | 3,00 / 1,50 | « retenue » — **trompeur** |
+  | 2 | gratuit `commandcode/inclusionai/ling-3.1-flash` | 10 | **3,40 / 3,60** | **1,90 / 1,90** | écarté |
 
-  Delta : **−1,00 step**, **+1,50 de couverture**. Verdict : retenue.
-- Le résultat est cohérent avec une première collecte confondue (−0,75 / +0,50) mais les plages se
-  recouvrent (ON va jusqu'à 8 steps, OFF descend à 5) : n=4 ne prouve pas, il oriente.
-- **Le mécanisme n'est PAS celui attendu** : `appels/step` est identique à 1,77 dans les deux bras.
-  Le champ ne fait donc pas regrouper davantage par boucle ; il réduit le nombre de boucles et
-  améliore la couverture. Interprétation probable : le plan nommé agit comme une liste de contrôle
-  qui empêche d'errer, pas comme un ordre de parallélisme. À vérifier avant de généraliser.
+- Passe 2, chiffres décisifs : delta steps = −0,20, erreur-type 0,31, **t = −0,64**, intervalle 95 %
+  [−0,81 ; +0,41] ; delta couverture = 0,00, **t = 0,00**. Les deux métriques sont dans le bruit, la
+  couverture est strictement identique.
+- **Conclusion : le champ `actions` ne produit aucun effet mesurable.** Il est livré **éteint**
+  (`OPENCODE_TURN_PLAN_ACTIONS=1` pour l'activer), commit `3b54cea3a`.
+- Faute de conception à ne pas refaire : le critère de la passe 1 comparait des moyennes sans marge,
+  donc il déclarait « retenue » dès que le signe était favorable. Le −1,00 step de n=4 était de la
+  variance (écart-type 1,73 dans le bras ON). **Tout critère d'acceptation doit inclure l'erreur-type
+  et un intervalle**, sinon il ne mesure que le hasard.
+- Ce que la passe 2 a appris au passage : le modèle gratuit est plus rapide et **moins variable**
+  (écart-type 0,52 contre 1,73), à steps moyens plus bas (3,4 contre 5,5). Un modèle plus faible
+  bâcle davantage mais dérive moins — utile à savoir pour choisir un banc de mesure.
+- Autre résultat, inchangé : `appels/step` était identique dans les deux bras (1,77 puis 2,21 vs
+  2,25). Le champ n'a jamais fait regrouper davantage par boucle. L'hypothèse « l'agent oublie de
+  regrouper » n'est donc pas soutenue par les données.
+- Pistes fermées par cette mesure : la relance runtime (inopérante, A/B), le champ `actions` du plan
+  (sans effet, A/B n=10). Reste ouvert et **mesuré comme efficace** : énumérer le périmètre dans la
+  demande elle-même (6,75 → 5,00 boucles sur t1, couverture réelle 2,00/6 → 5,50/6).
 - Piège de banc corrigé en route : la première porte ne coupait que le protocole et la restitution,
   pas l'écho du tool ni le stockage — 2 des 4 runs du bras témoin remplissaient le champ et
   bénéficiaient de l'écho. Un témoin qui utilise la fonctionnalité ne mesure rien : la porte agit
