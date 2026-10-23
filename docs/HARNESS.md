@@ -768,5 +768,38 @@ le run ou poser le périmètre dès la demande ?
   step sans `step-finish`) et doit être **exclu** de l'agrégat, sinon ses steps partiels comptent
   comme un run fini.
 
+## Couche 1 — actions nommées dans le turn_plan (mesuré 2026-10-23)
+
+Hypothèse : le modèle oublie en cours de run la consigne « regroupe tes appels ». La relance runtime
+étant mesurée inopérante, on teste une consigne **déclarative** : nommer les cibles du lot dans le
+plan de tour, et les restituer au tour suivant comme contenu.
+
+- Implémentation : champ `actions` optionnel sur `turn_plan` (8 max, 120 cara max), restitué par
+  `renderCommitment`, prescrit par `instruction()`. Porte `OPENCODE_TURN_PLAN_ACTIONS=0`.
+- Critère décidé **avant** de voir les résultats : retenue si moins de steps **et** couverture
+  effective non dégradée ; rejetée sinon.
+- A/B séquentiel, même base, même commit `68fe01249`, même tâche (t1 vague : « comment builder et
+  tester ce package »), 4 runs par bras :
+
+  | bras | steps | appels | appels/step | couverture effective |
+  |---|---|---|---|---|
+  | ON | **5,50** (4,4,8,5) | 9,75 | 1,77 | **3,00/6** (4,3,1,4) |
+  | OFF | 6,50 (7,5,7,7) | 11,50 | 1,77 | 1,50/6 (0,3,1,2) |
+
+  Delta : **−1,00 step**, **+1,50 de couverture**. Verdict : retenue.
+- Le résultat est cohérent avec une première collecte confondue (−0,75 / +0,50) mais les plages se
+  recouvrent (ON va jusqu'à 8 steps, OFF descend à 5) : n=4 ne prouve pas, il oriente.
+- **Le mécanisme n'est PAS celui attendu** : `appels/step` est identique à 1,77 dans les deux bras.
+  Le champ ne fait donc pas regrouper davantage par boucle ; il réduit le nombre de boucles et
+  améliore la couverture. Interprétation probable : le plan nommé agit comme une liste de contrôle
+  qui empêche d'errer, pas comme un ordre de parallélisme. À vérifier avant de généraliser.
+- Piège de banc corrigé en route : la première porte ne coupait que le protocole et la restitution,
+  pas l'écho du tool ni le stockage — 2 des 4 runs du bras témoin remplissaient le champ et
+  bénéficiaient de l'écho. Un témoin qui utilise la fonctionnalité ne mesure rien : la porte agit
+  maintenant sur les trois points (`normalize`, `renderCommitment`, `instruction`, écho).
+- Piège de typage rencontré : dériver le schéma du paramètre de la porte
+  (`...(enabled ? { actions } : {})`) casse Effect (`DecodingServices` devient `unknown`). Le schéma
+  reste donc statique ; la porte agit en aval.
+
 
 
