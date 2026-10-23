@@ -5,6 +5,11 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v2.4.29] - 2026-10-23
+
+### Fixed
+- **Le cache du catalogue d'outils durait moins longtemps que l'espacement réel entre deux prompts.** Le TTL de 30 s garantissait un miss à chaque tour dans l'usage normal : vérifié sur une session « Greeting » en cours, **quatre tours** espacés de 1 à 27 minutes, **quatre clés strictement identiques** (`…:interactive-tui:write:1:1:all-tools`, longueur identique) et **quatre `cacheHit=false`**. Ce n'était donc ni la clé ni l'unicité de l'entrée, mais l'expiration. La fraîcheur n'a pas besoin de ce filet : la clé porte le modèle, l'agent, ses permissions, l'allowlist stricte, la version du registre (compteur monotone `++catalogSequence`, donc toute reconstruction — rechargement de plugin compris — change la clé) et la version du catalogue MCP (incrémentée à chaque connexion/déconnexion/rechargement), et la disposition des instances vide de toute façon ce cache. TTL porté à **10 minutes**. Mesure avant/après, même session, deux prompts espacés de 45 s (au-delà de l'ancien TTL) : avant `cacheHit=false` (58 ms), après **`cacheHit=true`, 20 ms**, et la résolution passe de 154 à **21 ms**. `tsgo --noEmit` exit 0, 22 tests du catalogue passent.
+
 ## [v2.4.28] - 2026-10-23
 
 ### Fixed

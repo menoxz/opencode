@@ -95,11 +95,27 @@ const cache = new WeakMap<object, Map<string, PreparedCatalog>>()
  */
 const MAX_PREPARED_ENTRIES = 4
 
+/**
+ * Durée de vie d'un catalogue préparé.
+ *
+ * 30 s garantissait un miss à **chaque** tour dans l'usage réel : mesuré le 2026-10-23 sur une
+ * session « Greeting » en cours, quatre tours espacés de 1 à 27 minutes, quatre clés
+ * **strictement identiques** (`…:interactive-tui:write:1:1:all-tools`) et quatre
+ * `cacheHit=false` — le TTL expirait entre deux prompts, jamais la clé ne changeait. La
+ * fraîcheur n'a pas besoin de ce filet : la clé porte déjà le modèle, l'agent, ses permissions,
+ * l'allowlist stricte, la version du registre (compteur monotone `++catalogSequence`, donc
+ * remise à zéro par toute reconstruction, y compris un rechargement de plugin) et la version du
+ * catalogue MCP (incrémentée à chaque connexion/déconnexion/rechargement) ; la disposition des
+ * instances vide de toute façon ce cache. Dix minutes couvrent l'espacement normal entre deux
+ * prompts sans servir un catalogue périmé.
+ */
+const PREPARED_CACHE_TTL_MS = 10 * 60_000
+
 export function getPrepared(
   owner: object,
   version: string,
   build: () => readonly PreparedTool[],
-  ttlMs = 30_000,
+  ttlMs = PREPARED_CACHE_TTL_MS,
 ): { catalog: PreparedCatalog; hit: boolean } {
   const now = Date.now()
   const entries = cache.get(owner) ?? new Map<string, PreparedCatalog>()
@@ -122,7 +138,7 @@ export function getPreparedEffect<R, E, T>(
   owner: object,
   version: string,
   build: Effect.Effect<readonly PreparedTool<T>[], E, R>,
-  ttlMs = 30_000,
+  ttlMs = PREPARED_CACHE_TTL_MS,
 ): Effect.Effect<{ catalog: PreparedCatalog<T>; hit: boolean }, E, R> {
   return Effect.gen(function* () {
     const now = Date.now()
