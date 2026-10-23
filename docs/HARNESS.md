@@ -836,3 +836,45 @@ plan de tour, et les restituer au tour suivant comme contenu.
 
 
 
+
+## L'auto-update rétrogradait le binaire, et `npm install -g` réécrivait les lanceurs (constaté 4×)
+
+Deux défauts distincts, mesurés le 2026-10-23 à ~11:35, qui se cumulaient pour faire tourner du
+vieux code sans que rien ne le signale.
+
+1. **L'app se rétrogradait elle-même.** `Installation.latest()` rend le dist-tag du registre npm ;
+   pour ce fork le paquet publié retarde sur le binaire déployé (2.4.17 vs 2.4.22). `upgrade()` ne
+   comparait que `InstallationVersion !== latest`, puis classait l'écart via `getReleaseType` :
+   `getReleaseType("2.4.22", "2.4.17")` → `"patch"`, donc l'auto-update du TUI
+   (`worker.checkUpgrade` → `cli/upgrade.ts`) lançait `npm install -g @lux-tech/opencode-ai@2.4.17`
+   à chaque démarrage. Trace : `_logs` npm, `npm list --global --depth 0` puis
+   `npm install --global …@2.4.17` à **11:17** puis **11:33** le même jour. Correctif :
+   `Installation.isNewer(candidate, current)` (seul un vrai `semver.gt` compte, une version non
+   analysable comme `local` n'est jamais « plus récente ») et la garde de `upgrade()` passe dessus.
+   Mesure d'urgence sans rebuild : `"autoupdate": false` dans le config global coupe la boucle.
+2. **PowerShell résout `.ps1` avant `.exe`.** Le shim `%APPDATA%\npm\opencodev2.ps1` pointe vers
+   `node_modules/@lux-tech/opencode-ai/bin/opencodev2.mjs` ; chaque `npm install -g` le recrée. Le
+   binaire déployé n'est jamais touché, seul l'aiguillage l'est. Symptôme : `opencodev2 --version`
+   annonce une **vieille** version (2.4.3, 2.4.21, puis 2.4.17 les 20, 22 et 23/10) alors que `.exe`
+   répond la bonne. Message typique au passage : `opencodev2: binaire de plateforme absent, résolution…`.
+
+**Dégât observé** (2026-10-23) : la commande nue résolvait **2.4.17**, qui précède quatre correctifs
+du pivot Queue/Steer — `e136005e6` (le steer chevauche le tour en cours, plus de ligne d'injection
+fantôme, auto-continue opt-in), `5cac915f7` (le badge STEER disparaît dès que le run a lu le prompt),
+`2827e5e3f`, `1931b5bd4`. D'où les deux symptômes rapportés : badges faux et session qui ne progresse
+pas. Preuve que le binaire déployé est sain : `git diff v2.4.22..HEAD -- pending-turn.ts index.tsx
+instructions-injection.ts prompt-queue.ts` est **vide**, et `a9714bf67` porte bien le tag `v2.4.22`.
+
+- Réparation : renommer les trois shims (`opencodev2.ps1`, `.cmd`, sans extension) en
+  `.stale-<version>-<ts>.bak` — jamais les supprimer — puis les remplacer par des lanceurs d'une
+  ligne visant `opencodev2.exe` (le `.ps1` passe par `$PSScriptRoot`, `exec` en sh,
+  `"%dp0%opencodev2.exe" %*` en cmd).
+- Contrôle, pour que la règle ne dérive pas : `scripts/check-opencodev2-launcher.ps1` (tâche
+  `check-opencodev2-launcher`), qui compare la version rendue par la commande nue **et** par l'.exe à
+  `packages/opencode/package.json` et sort en code 1 avec `LAUNCHER-STALE` ou `EXE-DESYNC` sinon.
+  Contre-épreuve jouée : un faux shim en tête de PATH rend bien `LAUNCHER-STALE` (exit 1), donc le
+  contrôle détecte la panne au lieu de toujours répondre OK. Lancer avant d'annoncer une version déployée.
+- Le pansement ne tient pas indéfiniment : le paquet publié reste en 2.4.17, donc toute
+  réinstallation le recrée et **publier** reste la vraie sortie. Depuis le correctif `isNewer`,
+  l'app ne se rétrograde plus d'elle-même : réparer ne fait plus que repousser le shim, et le shim
+  réparé est idempotent.
