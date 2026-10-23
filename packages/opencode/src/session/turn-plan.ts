@@ -227,13 +227,17 @@ export function enabled(input: { flag: boolean; config?: boolean }): boolean {
 }
 
 /**
- * Whether named actions are asked for and restated. On by default: the field is declarative,
- * it costs one line in the protocol and one in the commitment. `OPENCODE_TURN_PLAN_ACTIONS=0`
- * turns it off, which is also the control arm of the A/B — with the bullet gone the model
- * never fills the field, so the two arms differ only by this feature.
+ * Whether named actions are asked for and restated. **Off by default**: the field is not
+ * disproven but it is not proven either. A/B at n=10 per arm on a free model gave
+ * steps 3,40 vs 3,60 (t = −0,64) and identical effective coverage (1,90/6 both) — no
+ * effect beyond noise. A field that adds a line to the injected protocol without a
+ * measured benefit is a debt, so it is opt-in: `OPENCODE_TURN_PLAN_ACTIONS=1`.
+ *
+ * The n=4 result that first looked favourable (−1,00 step, +1,50 coverage) did not
+ * survive: it was variance, which is why the earlier criterion had no noise margin.
  */
 export function actionsEnabled(): boolean {
-  return process.env.OPENCODE_TURN_PLAN_ACTIONS !== "0"
+  return process.env.OPENCODE_TURN_PLAN_ACTIONS === "1"
 }
 
 /**

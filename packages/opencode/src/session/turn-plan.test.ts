@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Schema } from "effect"
 import {
   MAX_ACTION_CHARS,
@@ -198,8 +198,15 @@ describe("the protocol demands a plan every turn without displaying it", () => {
 
 describe("named actions make the batch concrete", () => {
   // Le champ existe pour produire des NOMS : une phrase d'intention ne donne rien a
-  // regrouper, trois cibles nommees si. Mesure de reference : un perimetre enumere dans la
-  // demande fait passer t1 de 6,75 a 5,00 boucles (docs/HARNESS.md).
+  // regrouper, trois cibles nommees si. Mais il est livre ETEINT : l'A/B a n=10 par bras
+  // ne montre aucun effet hors bruit (3,40 vs 3,60 steps, t = -0,64 ; couverture identique).
+  // Les tests de comportement activent donc la porte explicitement.
+  beforeEach(() => {
+    process.env.OPENCODE_TURN_PLAN_ACTIONS = "1"
+  })
+  afterEach(() => {
+    delete process.env.OPENCODE_TURN_PLAN_ACTIONS
+  })
   test("keeps the named targets instead of only the outcome sentence", () => {
     const plan = normalize({
       intent: "inspect the package",
@@ -269,11 +276,17 @@ describe("named actions make the batch concrete", () => {
     }
   })
 
-  test("the gate is on unless explicitly switched off", () => {
+  test("the field is off unless explicitly switched on", () => {
+    // Defaut livre : la ligne n'est pas injectee. Un champ non prouve qui reste dans le
+    // protocole est une dette, pas un actif.
     const previous = process.env.OPENCODE_TURN_PLAN_ACTIONS
     delete process.env.OPENCODE_TURN_PLAN_ACTIONS
     try {
-      expect(instruction()).toContain("`actions`")
+      expect(instruction()).not.toContain("`actions`")
+      expect(renderCommitment({ intent: "a", expect: "b", actions: ["read package.json"] })).not.toContain(
+        "Named actions",
+      )
+      expect(normalize({ intent: "a", expect: "b", actions: ["read package.json"] })?.actions).toBeUndefined()
     } finally {
       if (previous !== undefined) process.env.OPENCODE_TURN_PLAN_ACTIONS = previous
     }
