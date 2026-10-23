@@ -5,6 +5,11 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v2.4.24] - 2026-10-23
+
+### Fixed
+- **Le rechargement à chaud des skills ne boucle plus.** `setupWatchers()` fermait puis recréait tous les `fs.watch` à chaque rechargement. Or une cible « container » (un dossier `skills`) traduit **tout** événement en rechargement : recréer un watcher sur un dossier déjà surveillé émet un événement, donc un rechargement, donc un nouveau re-armement. Mesure : **324 rechargements** dans le log d'une session, serveur à **100 % CPU** et TUI à **87 %** pendant que l'utilisateur travaillait, sans aucune écriture dans les dossiers de skills (donc aucune cause externe). Le re-armement est désormais incrémental : on ne démonte que les répertoires disparus ou changés de nature, et on n'arme que les nouveaux. Le harnais redevient utilisable, et un vrai changement de skill déclenche toujours exactement un rechargement.
+
 ## [v2.4.23] - 2026-10-23
 
 ### Fixed

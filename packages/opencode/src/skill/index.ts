@@ -128,7 +128,13 @@ type ScanState = {
 /** Per-instance hot-reload state: watchers, debounce timers and the catalog revision counter. */
 type WatchState = {
   started: boolean
-  watchers: fs.FSWatcher[]
+  /**
+   * Watchers armés, indexés par répertoire. Re-créer un `fs.watch` sur un dossier déjà surveillé
+   * émet un événement, et une cible « container » traduit tout événement en reload : re-armer en
+   * fermant tout relançait `setupWatchers`, donc un reload, donc un re-armement (boucle mesurée le
+   * 2026-10-23 : 313 reloads en 8 min, serveur à 100 % CPU). Le re-armement est donc incrémental.
+   */
+  armed: Map<string, { watcher: fs.FSWatcher; container: boolean }>
   timers: Map<string, ReturnType<typeof setTimeout>>
   revision: number
 }
@@ -351,16 +357,11 @@ export const layer = Layer.effect(
     const opened = new Set<fs.FSWatcher>()
     const watchState = yield* InstanceState.make<WatchState>(
       Effect.fn("Skill.watch")(function* () {
-        return { started: false, watchers: [], timers: new Map(), revision: 0 } satisfies WatchState
+        return { started: false, armed: new Map(), timers: new Map(), revision: 0 } satisfies WatchState
       }),
     )
 
     const setupWatchers = Effect.fnUntraced(function* (watch: WatchState) {
-      for (const w of watch.watchers) {
-        w.close()
-        opened.delete(w)
-      }
-      watch.watchers = []
       for (const t of watch.timers.values()) clearTimeout(t)
       watch.timers.clear()
 
@@ -417,20 +418,31 @@ export const layer = Layer.effect(
       }
       log.debug("hot-reload targets", { count: targets.size, roots: [...roots] })
 
+      // Re-armement INCRÉMENTAL : on ne démonte que ce qui a disparu ou changé de nature. Fermer
+      // puis recréer les watchers à chaque reload émettait un événement sur chaque cible
+      // « container », donc un reload, donc un nouveau re-armement — boucle auto-entretenue
+      // mesurée le 2026-10-23 (313 reloads en 8 min, serveur à 100 % CPU, TUI à 87 %).
+      for (const [dir, armed] of watch.armed) {
+        if (targets.get(dir) === armed.container) continue
+        armed.watcher.close()
+        opened.delete(armed.watcher)
+        watch.armed.delete(dir)
+      }
       for (const [dir, container] of targets) {
+        if (watch.armed.has(dir)) continue
         if (!fs.existsSync(dir)) continue
         try {
           const watcher = fs.watch(dir, { recursive: false }, (_eventType, filename) => {
             const key = watchEventKey({ dir, container }, filename)
             if (key) trigger(key)
           })
-          watch.watchers.push(watcher)
+          watch.armed.set(dir, { watcher, container })
           opened.add(watcher)
         } catch (err) {
           log.warn("cannot watch directory for skills", { dir, err })
         }
       }
-      if (watch.watchers.length > 0) log.info("hot-reload watchers active", { dirs: watch.watchers.length })
+      if (watch.armed.size > 0) log.info("hot-reload watchers active", { dirs: watch.armed.size })
     })
 
     const ensureStarted = Effect.fnUntraced(function* () {
