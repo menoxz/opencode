@@ -82,6 +82,19 @@ const searchTokens = (value: string) => tokens(value.replaceAll("_", " ").replac
 
 const cache = new WeakMap<object, Map<string, PreparedCatalog>>()
 
+/**
+ * Nombre de catalogues préparés conservés par propriétaire.
+ *
+ * Une seule entrée était conservée : `entries.clear()` jetait la version précédente à chaque
+ * construction, donc **alterner deux agents ou deux modèles repayait la construction à chaque
+ * tour**. Mesuré le 2026-10-23 sur une session alternant `build` / `plan` : quatre tours,
+ * quatre `cacheHit=false`, 61 à 77 ms de sélection à chaque fois, contre 23-25 ms sur un cache
+ * servi. Les clés sont déjà discriminantes (agent, permissions, modèle, versions du registre et
+ * du catalogue MCP), donc garder quelques versions ne peut servir qu'une clé identique ; le TTL
+ * de 30 s borne la fraîcheur et la borne ci-dessous la mémoire.
+ */
+const MAX_PREPARED_ENTRIES = 4
+
 export function getPrepared(
   owner: object,
   version: string,
@@ -95,8 +108,13 @@ export function getPrepared(
   if (cached && now - cached.createdAt < ttlMs) return { catalog: cached, hit: true }
 
   const catalog = { version, createdAt: now, tools: build() } satisfies PreparedCatalog
-  entries.clear()
+  entries.delete(version)
   entries.set(version, catalog)
+  while (entries.size > MAX_PREPARED_ENTRIES) {
+    const oldest = entries.keys().next()
+    if (oldest.done) break
+    entries.delete(oldest.value)
+  }
   return { catalog, hit: false }
 }
 
@@ -114,8 +132,15 @@ export function getPreparedEffect<R, E, T>(
     if (cached && now - cached.createdAt < ttlMs) return { catalog: cached, hit: true }
     const tools = yield* build
     const catalog = { version, createdAt: now, tools } satisfies PreparedCatalog<T>
-    entries.clear()
+    entries.delete(version)
     entries.set(version, catalog)
+    // Eviction LRU bornée : le cache sert les quelques clés d'une session (agents, modèles)
+    // au lieu de n'en garder qu'une.
+    while (entries.size > MAX_PREPARED_ENTRIES) {
+      const oldest = entries.keys().next()
+      if (oldest.done) break
+      entries.delete(oldest.value)
+    }
     return { catalog, hit: false }
   })
 }

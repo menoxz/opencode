@@ -5,6 +5,11 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v2.4.28] - 2026-10-23
+
+### Fixed
+- **Le cache du catalogue d'outils ne jette plus la version précédente.** Le cache gardait **une seule** entrée (`entries.clear()` à chaque construction), donc **alterner deux agents ou deux modèles repayait la construction à chaque tour**. Mesuré le 2026-10-23 sur une session alternant `build` / `plan` : quatre tours, **quatre `cacheHit=false`**, 61 à 77 ms de sélection puis 61-77 ms de résolution à chaque fois. Le cache conserve désormais jusqu'à quatre versions en LRU ; les clés étant déjà discriminantes (agent, permissions, modèle, versions du registre et du catalogue MCP) et le TTL de 30 s bornant la fraîcheur, seules des clés identiques sont servies. Même mesure après correctif : `cacheHit=false, false, true, true` — les tours 3 et 4 tombent à **30 et 24 ms** de résolution (`cacheHit=true`). Les outils ne sont résolus qu'**une fois par tour** : le surcoût entre deux appels modèle reste de quelques millisecondes hors modèle. Preuve : test de non-régression ajouté (`keeps several versions instead of dropping the previous one`, éviction LRU comprise), 22 pass / 0 fail sur `tool-catalog*.test.ts`, `tsgo --noEmit` exit 0.
+
 ## [v2.4.27] - 2026-10-23
 
 ### Changed

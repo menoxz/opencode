@@ -19,6 +19,26 @@ describe("session tool hot-path catalog", () => {
     expect(builds).toBe(2)
   })
 
+  test("keeps several versions instead of dropping the previous one", () => {
+    // Alterner deux agents (`build` / `plan`) ou deux modèles vidait l'unique entrée du cache :
+    // mesuré le 2026-10-23, quatre tours alternés donnaient quatre `cacheHit=false`.
+    const owner = {}
+    const builds: string[] = []
+    const build = (version: string) => () => {
+      builds.push(version)
+      return [tool("read", "Read files")]
+    }
+    expect(ToolCatalog.getPrepared(owner, "a", build("a")).hit).toBe(false)
+    expect(ToolCatalog.getPrepared(owner, "b", build("b")).hit).toBe(false)
+    expect(ToolCatalog.getPrepared(owner, "a", build("a")).hit).toBe(true)
+    expect(ToolCatalog.getPrepared(owner, "b", build("b")).hit).toBe(true)
+    expect(builds).toEqual(["a", "b"])
+    // Borné : au-delà de quatre versions, la plus ancienne non réutilisée est évincée.
+    for (const version of ["c", "d", "e"]) expect(ToolCatalog.getPrepared(owner, version, build(version)).hit).toBe(false)
+    expect(ToolCatalog.getPrepared(owner, "a", build("a")).hit).toBe(false)
+    expect(ToolCatalog.getPrepared(owner, "e", build("e")).hit).toBe(true)
+  })
+
   test("selects relevant tools while preserving core tools", () => {
     const catalog = {
       version: "v1",
