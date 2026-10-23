@@ -8,6 +8,8 @@ import { SessionShare } from "@/share/session"
 import { Session } from "@/session/session"
 import { SessionCompaction } from "@/session/compaction"
 import { MessageV2 } from "@/session/message-v2"
+import { MCP } from "@/mcp"
+import { InstanceState } from "@/effect/instance-state"
 import { SessionPrompt } from "@/session/prompt"
 import { SessionRevert } from "@/session/revert"
 import { SessionRunState } from "@/session/run-state"
@@ -58,6 +60,26 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     const todoSvc = yield* Todo.Service
     const summary = yield* SessionSummary.Service
     const bus = yield* Bus.Service
+    const mcp = yield* MCP.Service
+
+    /**
+     * Instances dont les serveurs MCP ont déjà été démarrés par cette couche.
+     *
+     * La résolution d'outils attend le démarrage des serveurs MCP : mesuré sur cette machine
+     * `toolResolution` = **5 695 à 11 160 ms** à froid contre **118 à 282 ms** à chaud, alors que
+     * toutes les autres sections de l'assemblage du prompt restent sous 6 ms. `MCP.status()` ne
+     * crée aucun client (il ne lit que l'état) : c'est `reload()` qui connecte. On le lance donc
+     * pendant la **lecture du transcript**, quand l'utilisateur ouvre une session — le coût tombe
+     * dans son temps de lecture au lieu du début de tour. Une fois par instance, en tâche de fond,
+     * sans retarder la réponse.
+     */
+    const warmedDirectories = new Set<string>()
+    const warmMcp = Effect.gen(function* () {
+      const instance = yield* InstanceState.context
+      if (warmedDirectories.has(instance.directory)) return
+      warmedDirectories.add(instance.directory)
+      yield* mcp.reload()
+    }).pipe(Effect.catchCause(() => Effect.void), Effect.forkDetach)
     const scope = yield* Scope.Scope
 
     const list = Effect.fn("SessionHttpApi.list")(function* (ctx: { query: typeof ListQuery.Type }) {
@@ -105,6 +127,9 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       params: { sessionID: SessionID }
       query: typeof MessagesQuery.Type
     }) {
+      // Ouvrir une session est le moment de démarrer les serveurs MCP (voir `warmMcp`) : leur
+      // démarrage ne doit pas être payé au premier prompt.
+      yield* warmMcp
       if (ctx.query.before && ctx.query.limit === undefined)
         return yield* badRequest(new Error('"before" requires "limit"'))
       if (ctx.query.before) {

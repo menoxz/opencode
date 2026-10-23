@@ -5,6 +5,11 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v2.4.27] - 2026-10-23
+
+### Changed
+- **Les serveurs MCP démarrent à l'ouverture d'une session, plus au premier prompt.** L'assemblage du prompt est dominé par une seule section : `toolResolution`, elle-même bloquée par le démarrage des serveurs MCP. Mesuré sur cette machine (logs du TUI, `durationMs` de la section) : **5 695 à 11 160 ms à froid** contre **118 à 282 ms à chaud**, alors que toutes les autres sections (messageFiltering, goal, reminders, core, env, instructions, conversion) restent **sous 6 ms**. Sur un tour réel, `toolResolution` = **7 198 ms** sur 17,9 s de latence totale avant réponse. La cause : `MCP.status()` ne crée aucun client (il ne lit que l'état), donc rien ne préchauffait réellement MCP ; et les serveurs les plus lents (`web-browser` 5,6 s, `computer-use` 4,1 s, `agent-tools` 2,6 s) sont déjà connectés en parallèle, le plancher étant le plus lent. Le préchauffage est désormais déclenché par la **lecture du transcript** (`SessionHttpApi.messages`), une fois par instance, en tâche de fond : le coût tombe pendant que l'utilisateur lit la session, pas au début de son tour. `tsgo --noEmit` exit 0 ; mesure avant/après sur le même serveur et la même session.
+
 ## [v2.4.26] - 2026-10-23
 
 ### Fixed
