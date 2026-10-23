@@ -804,6 +804,28 @@ plan de tour, et les restituer au tour suivant comme contenu.
 - Pistes fermées par cette mesure : la relance runtime (inopérante, A/B), le champ `actions` du plan
   (sans effet, A/B n=10). Reste ouvert et **mesuré comme efficace** : énumérer le périmètre dans la
   demande elle-même (6,75 → 5,00 boucles sur t1, couverture réelle 2,00/6 → 5,50/6).
+
+## Bruit CRLF : 2003 fichiers sales pour zéro changement (mesuré 2026-10-23)
+
+- Symptôme : `git status` annonce 2003 fichiers modifiés, alors que
+  `git diff --ignore-cr-at-eol --name-only` en retourne **0**. Aucun contenu ne diffère : tout est
+  fins de ligne. Un `git add .` dans cet état embarque 2003 fichiers sous un message sans rapport
+  (déjà arrivé sur `.config/opencodev2/AGENTS.md`, où 84 lignes sont parties sous un message qui en
+  annonçait 2 ; historique local réécrit pour le scinder).
+- Direction, donnée par l'outil autoritaire `git ls-files --eol` : **`i/lf` en index, `w/crlf` sur
+  le disque**, et `attr/` vide ⇒ aucune règle `.gitattributes`, `core.autocrlf=false` ⇒ git ne
+  convertit pas. C'est donc un outil externe (éditeur) qui a écrit les CRLF, pas git.
+- Piège de mesure : compter les CRLF après un passage dans le pipeline texte PowerShell
+  (`| Out-String`) est faux — le décodage normalise. `git ls-files --eol` est la seule source.
+- Correctif, sûr car zéro contenu ne diffère : `git restore .` (l'index porte le LF, le disque
+  revient à l'identique de HEAD). Résultat mesuré : `git status --short` → **0 ligne**.
+- **Ne pas poser de règle globale `* text=auto eol=lf`** : l'index contient 4357 fichiers LF, mais
+  aussi **169 CRLF, 31 mixed, 328 `-text`, 1092 binaires**. La règle forcerait la renormalisation de
+  200 fichiers — un churn de contenu bien plus coûteux que le bruit qu'elle évite. Si un jour on
+  veut cette politique, c'est une décision explicite avec `git add --renormalize .` et un commit
+  dédié, pas un effet de bord.
+- Réflexe : avant tout `git add`, vérifier `git diff --ignore-cr-at-eol --name-only` ; s'il est vide
+  alors que `git status` est bruyant, c'est ce bruit, et `git restore .` le traite.
 - Piège de banc corrigé en route : la première porte ne coupait que le protocole et la restitution,
   pas l'écho du tool ni le stockage — 2 des 4 runs du bras témoin remplissaient le champ et
   bénéficiaient de l'écho. Un témoin qui utilise la fonctionnalité ne mesure rien : la porte agit
