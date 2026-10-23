@@ -14,6 +14,7 @@ import { Config } from "@/config/config"
 import { Service } from "./bootstrap-service"
 import { Reference } from "@/reference/reference"
 import { MCP } from "@/mcp"
+import { RuntimeFlags } from "@/effect/runtime-flags"
 
 export { Service } from "./bootstrap-service"
 export type { Interface } from "./bootstrap-service"
@@ -30,6 +31,7 @@ export const layer = Layer.effect(
     const format = yield* Format.Service
     const lsp = yield* LSP.Service
     const mcp = yield* MCP.Service
+    const flags = yield* RuntimeFlags.Service
     const plugin = yield* Plugin.Service
     const project = yield* Project.Service
     const reference = yield* Reference.Service
@@ -58,12 +60,20 @@ export const layer = Layer.effect(
       //
       // Forked on purpose: this bootstrap's completion is what releases the instance, so awaiting
       // the connections would delay every instance by however long they take.
-      yield* mcp
-        .status()
-        .pipe(
-          Effect.catchCause((cause) => Effect.logWarning("mcp warmup failed", { cause })),
-          Effect.forkDetach,
-        )
+      //
+      // Opt-in (`OPENCODE_EXPERIMENTAL_MCP_WARMUP`), because the cost is paid PER INSTANCE and the
+      // TUI creates one instance per folder it hydrates: measured on 2026-10-23, six instances
+      // started 36 MCP clients and twelve sockets and left the process at 95% CPU. Lazy clients
+      // cost one warmup (~3s) on the instance that actually runs a turn, instead of N warmups at
+      // launch on instances that only list sessions.
+      if (flags.mcpWarmup) {
+        yield* mcp
+          .status()
+          .pipe(
+            Effect.catchCause((cause) => Effect.logWarning("mcp warmup failed", { cause })),
+            Effect.forkDetach,
+          )
+      }
     }).pipe(Effect.withSpan("InstanceBootstrap"))
 
     return Service.of({ run })
@@ -85,6 +95,7 @@ export const defaultLayer: Layer.Layer<Service> = layer.pipe(
     ShareNext.defaultLayer,
     Snapshot.defaultLayer,
     Vcs.defaultLayer,
+    RuntimeFlags.defaultLayer,
   ]),
 )
 

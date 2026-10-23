@@ -81,6 +81,11 @@ export class Service extends ConfigService.Service<Service>()("@opencode/Runtime
   // OPENCODE_DISABLE_STREAM_TIMEOUT stays the absolute kill switch.
   disableStreamTimeout: bool("OPENCODE_DISABLE_STREAM_TIMEOUT"),
   experimentalNativeLlm: bool("OPENCODE_EXPERIMENTAL_NATIVE_LLM"),
+  // Opt-in : le préchauffage des clients MCP est payé PAR INSTANCE. Le TUI hydrate chaque dossier
+  // ajouté en créant son instance, donc N dossiers = N × tous les serveurs MCP. Mesuré le
+  // 2026-10-23 : 6 instances → 36 clients MCP et 12 sockets, processus à 95 % de CPU. Les clients
+  // se matérialisent de toute façon au premier usage : la chauffe est donc désactivée par défaut.
+  mcpWarmup: bool("OPENCODE_EXPERIMENTAL_MCP_WARMUP"),
   client: Config.string("OPENCODE_CLIENT").pipe(Config.withDefault("cli")),
 }) {}
 

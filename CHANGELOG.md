@@ -5,6 +5,11 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [v2.4.25] - 2026-10-23
+
+### Fixed
+- **Le préchauffage des clients MCP n'est plus payé par instance** (opt-in `OPENCODE_EXPERIMENTAL_MCP_WARMUP`). Chaque instance créée lançait tous les serveurs MCP pour « cacher » les 3,2 s de la première résolution d'outils. Or le TUI crée une instance **par dossier ajouté** à la liste de sessions, pour n'en lire que les sessions : mesuré le 2026-10-23 sur une instance réelle, **6 instances → 36 clients MCP** (6 par serveur), 12 sockets ouverts, **324 rechargements de skills** et le processus à **95 % de CPU** en continu, serveur HTTP injoignable — le harnais était inutilisable. Les clients se matérialisent de toute façon au premier usage : la chauffe redevient opt-in, et la même instance mesure désormais **0 à 6 clients MCP** selon qu'elle liste des sessions ou exécute un tour, 0 rechargement et **1 à 2 % de CPU**. Vérifié : `opencodev2 run` termine en 5,1 s (`error=false`, 1 instance → 6 clients, pas 36) ; TUI lancé sans argument : 18 lignes de log, 1 % de CPU ; `tsgo --noEmit` exit 0.
+
 ## [v2.4.24] - 2026-10-23
 
 ### Fixed
