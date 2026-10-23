@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { Schema } from "effect"
 import {
+  MAX_ACTION_CHARS,
+  MAX_ACTIONS,
   MAX_CAPSULE_CHARS,
   MAX_FIELD_CHARS,
   MAX_SESSIONS,
@@ -191,5 +193,89 @@ describe("the protocol demands a plan every turn without displaying it", () => {
 
   test("keeps the plan out of the visible answer", () => {
     expect(instruction()).toContain("Keep the plan out of your visible answer")
+  })
+})
+
+describe("named actions make the batch concrete", () => {
+  // Le champ existe pour produire des NOMS : une phrase d'intention ne donne rien a
+  // regrouper, trois cibles nommees si. Mesure de reference : un perimetre enumere dans la
+  // demande fait passer t1 de 6,75 a 5,00 boucles (docs/HARNESS.md).
+  test("keeps the named targets instead of only the outcome sentence", () => {
+    const plan = normalize({
+      intent: "inspect the package",
+      expect: "package.json read",
+      actions: ["read package.json", "read tsconfig.json", "grep SessionPrompt"],
+    })
+    expect(plan?.actions).toEqual(["read package.json", "read tsconfig.json", "grep SessionPrompt"])
+  })
+
+  test("drops an empty or blank list rather than keeping an empty array", () => {
+    expect(normalize({ intent: "a", expect: "b", actions: [] })?.actions).toBeUndefined()
+    expect(normalize({ intent: "a", expect: "b", actions: ["   ", ""] })?.actions).toBeUndefined()
+  })
+
+  test("clips each target and caps the list", () => {
+    const plan = normalize({
+      intent: "a",
+      expect: "b",
+      actions: Array.from({ length: MAX_ACTIONS + 3 }, (_, index) => `cible ${index} ${"x".repeat(400)}`),
+    })
+    expect(plan?.actions?.length).toBe(MAX_ACTIONS)
+    expect(plan?.actions?.[0].length).toBe(MAX_ACTION_CHARS)
+  })
+
+  test("does not invent an action to reach a count", () => {
+    // Une seule cible connue reste une seule cible : le quota est precisement le mode
+    // d'echec mesure sur la relance runtime, qui faisait durer les taches legitimes.
+    const plan = normalize({ intent: "a", expect: "b", actions: ["read package.json"] })
+    expect(plan?.actions).toHaveLength(1)
+  })
+
+  test("restates the named targets in the next turn's commitment", () => {
+    const text = renderCommitment({
+      intent: "inspect the package",
+      expect: "package.json read",
+      actions: ["read package.json", "read tsconfig.json"],
+    })
+    expect(text).toContain("read package.json ; read tsconfig.json")
+    expect(text).toContain("do them together where independent")
+  })
+
+  test("leaves the commitment unchanged when no target was named", () => {
+    const text = renderCommitment({ intent: "inspect the package", expect: "package.json read" })
+    expect(text).not.toContain("Named actions")
+  })
+
+  test("prescribes the field without turning it into a quota", () => {
+    const protocol = instruction()
+    expect(protocol).toContain("`actions`")
+    expect(protocol).toContain("Not a quota")
+    expect(protocol).toContain("never invent an action to reach a count")
+  })
+
+  test("the activation gate removes the field from the protocol and the commitment", () => {
+    // Le bras temoin de l'A/B : sans la puce, le modele ne remplit jamais le champ, donc les
+    // deux bras ne different que par cette fonctionnalite.
+    const previous = process.env.OPENCODE_TURN_PLAN_ACTIONS
+    process.env.OPENCODE_TURN_PLAN_ACTIONS = "0"
+    try {
+      expect(instruction()).not.toContain("`actions`")
+      expect(renderCommitment({ intent: "a", expect: "b", actions: ["read package.json"] })).not.toContain(
+        "Named actions",
+      )
+    } finally {
+      if (previous === undefined) delete process.env.OPENCODE_TURN_PLAN_ACTIONS
+      else process.env.OPENCODE_TURN_PLAN_ACTIONS = previous
+    }
+  })
+
+  test("the gate is on unless explicitly switched off", () => {
+    const previous = process.env.OPENCODE_TURN_PLAN_ACTIONS
+    delete process.env.OPENCODE_TURN_PLAN_ACTIONS
+    try {
+      expect(instruction()).toContain("`actions`")
+    } finally {
+      if (previous !== undefined) process.env.OPENCODE_TURN_PLAN_ACTIONS = previous
+    }
   })
 })

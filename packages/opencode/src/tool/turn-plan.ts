@@ -11,6 +11,10 @@ const Parameters = Schema.Struct({
     description:
       "The observation that proves the whole batch landed, stated as a concrete artifact: an exit code, a file path, or a measured value. It is compared against the real observation at the head of the next turn.",
   }),
+  actions: Schema.optional(Schema.Array(Schema.String)).annotate({
+    description:
+      "The concrete targets this batch touches (file, route, symbol), e.g. ['read package.json', 'read tsconfig.json', 'grep SessionPrompt']. Naming them is what makes batching possible: a vague outcome offers nothing to batch on, and the list is restated to you next turn so the batch survives a long run. Not a quota — list only what you already know.",
+  }),
   on_fail: Schema.optional(Schema.String).annotate({
     description: "The bounded fallback to run when the expectation is not observed.",
   }),
@@ -33,6 +37,9 @@ export const TurnPlanTool = Tool.define<typeof Parameters, Metadata, never>(
           const plan = declare(ctx.sessionID, {
             intent: params.intent,
             expect: params.expect,
+            // `Schema.Array` yields a readonly array; the plan holds a mutable one, so copy
+            // at the boundary rather than weakening the plan's type.
+            actions: params.actions ? [...params.actions] : undefined,
             onFail: params.on_fail,
             stopIf: params.stop_if,
           })
@@ -49,6 +56,9 @@ export const TurnPlanTool = Tool.define<typeof Parameters, Metadata, never>(
             metadata: { declared: true },
             output: [
               `Recorded for this turn: intent "${plan.intent}", expecting "${plan.expect}".`,
+              ...(plan.actions?.length
+                ? [`Named actions (${plan.actions.length}), do them together where independent: ${plan.actions.join(" ; ")}.`]
+                : []),
               ...(plan.onFail ? [`Fallback if the expectation is not observed: ${plan.onFail}.`] : []),
               ...(plan.stopIf ? [`The turn ends when: ${plan.stopIf}.`] : []),
               "This is a prediction, not a fact. Act on it at the start of your next turn, and treat it as invalidated if the observation contradicts it.",

@@ -25,12 +25,19 @@ import { expectationMatches } from "./progress"
 // wait, a user question, the step limit, or a safety stop.
 
 export const MAX_FIELD_CHARS = 240
-export const MAX_CAPSULE_CHARS = 1_200
+export const MAX_CAPSULE_CHARS = 1_600
 export const MAX_SALIENT_TOKENS = 12
+export const MAX_ACTIONS = 8
+export const MAX_ACTION_CHARS = 120
 
 export const TurnPlanSchema = Schema.Struct({
   intent: Schema.String,
   expect: Schema.String,
+  // Named targets of the batch. The list exists to *produce names*: an outcome sentence
+  // ("inspect the package") offers nothing to batch on, while three named targets do.
+  // It is deliberately not a quota — requiring three actions would make the model invent
+  // a third when one is correct, which is the failure mode measured on the runtime nudge.
+  actions: Schema.optional(Schema.Array(Schema.String)),
   onFail: Schema.optional(Schema.String),
   stopIf: Schema.optional(Schema.String),
 }).annotate({ identifier: "TurnPlan" })
@@ -49,6 +56,15 @@ function clip(value: string | undefined, max = MAX_FIELD_CHARS): string | undefi
   return text.length > max ? `${text.slice(0, max - 1)}…` : text
 }
 
+/** Named targets, clipped and capped; an empty list is no list at all. */
+function clipActions(actions: readonly string[] | undefined): string[] | undefined {
+  const named = (actions ?? [])
+    .map((action) => clip(action, MAX_ACTION_CHARS))
+    .filter((action): action is string => action !== undefined)
+  if (named.length === 0) return undefined
+  return named.slice(0, MAX_ACTIONS)
+}
+
 function bounded(capsule: string): string {
   return capsule.length > MAX_CAPSULE_CHARS ? `${capsule.slice(0, MAX_CAPSULE_CHARS - 1)}…` : capsule
 }
@@ -58,7 +74,7 @@ export function normalize(plan: TurnPlan): TurnPlan | undefined {
   const intent = clip(plan.intent)
   const expect = clip(plan.expect)
   if (!intent || !expect) return undefined
-  return { intent, expect, onFail: clip(plan.onFail), stopIf: clip(plan.stopIf) }
+  return { intent, expect, actions: clipActions(plan.actions), onFail: clip(plan.onFail), stopIf: clip(plan.stopIf) }
 }
 
 /**
@@ -160,6 +176,11 @@ export function renderCommitment(plan: TurnPlan): string {
       "You declared this engagement for the current step. It is a prediction, not a fact.",
       `- Intent: ${plan.intent}`,
       `- Expected: ${plan.expect}`,
+      // Restating the names is the point: they are what survives the model forgetting the
+      // rule mid-run, because they come back as content rather than as a general instruction.
+      ...(actionsEnabled() && plan.actions?.length
+        ? [`- Named actions, do them together where independent: ${plan.actions.join(" ; ")}`]
+        : []),
       ...(plan.onFail ? [`- Declared fallback: ${plan.onFail}`] : []),
       ...(plan.stopIf ? [`- Declared stop condition: ${plan.stopIf}`] : []),
       "Take that action now. If the observation contradicts the expectation, run the fallback or re-plan.",
@@ -202,6 +223,16 @@ export function enabled(input: { flag: boolean; config?: boolean }): boolean {
 }
 
 /**
+ * Whether named actions are asked for and restated. On by default: the field is declarative,
+ * it costs one line in the protocol and one in the commitment. `OPENCODE_TURN_PLAN_ACTIONS=0`
+ * turns it off, which is also the control arm of the A/B — with the bullet gone the model
+ * never fills the field, so the two arms differ only by this feature.
+ */
+export function actionsEnabled(): boolean {
+  return process.env.OPENCODE_TURN_PLAN_ACTIONS !== "0"
+}
+
+/**
  * The protocol the model is asked to follow on every turn. It frames the turn as
  * a batch, not a single action: a one-action frame spends a whole turn on work
  * that was already ready, which made the tool accountable without ever making it
@@ -213,6 +244,11 @@ export function instruction(): string {
     "On every turn, declare with the `turn_plan` tool the BATCH this turn delivers, and finish that batch before you stop:",
     "- `intent`: the bounded OUTCOME this turn delivers, as an imperative. Group every independent action you can complete now and run them together (parallel tool calls) instead of spending the turn on one step.",
     "- `expect`: the observation that proves the whole batch landed, as a concrete artifact: an exit code, a file path, or a measured value.",
+    ...(actionsEnabled()
+      ? [
+          "- `actions`: the concrete targets this batch touches (file, route, symbol). Name them instead of summarising the work: a named target can be batched, a vague outcome cannot. Not a quota — list only what you already know, and never invent an action to reach a count.",
+        ]
+      : []),
     "- `on_fail`: the bounded fallback if it does not (optional).",
     "- `stop_if`: what ends the turn (optional).",
     "Finish the batch in this turn. Declare only what genuinely remains: a plan that restates a step you could have completed wastes the turn.",
