@@ -11,6 +11,7 @@ Ne pas recopier ce que le harnais injecte déjà : descriptions d'agents et d'ou
 - `push` ⇒ `git.exe push` (pwsh casse `#force`).
 - Commit dès qu'un changement est cohérent et vérifié ; ne pas finir sur du travail fini non commité ; `.opencode/tasks.json` est gitignoré ⇒ jamais dans un commit.
 - Une règle sans artefact dérive : la doubler d'un contrôle, d'une permission ou d'un test.
+- Une version publiée **par lot** : un build + redéploiement par micro-correctif coûte plus que son gain (neuf versions le 2026-10-23) ⇒ grouper les correctifs, puis publier une fois.
 
 ## Skills du dépôt — charger avant d'agir
 

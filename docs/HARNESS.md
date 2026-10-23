@@ -918,3 +918,20 @@ instructions-injection.ts prompt-queue.ts` est **vide**, et `a9714bf67` porte bi
   terminée en **20 s**, ligne `data_migration` écrite — elle ne se rejouera plus.
 - Préflight qui autorise l'opération : `workspace` vide (0 ligne), aucune `session.workspace_id`
   renseignée, **0 JSON invalide** sur 53 995 messages et 323 789 parts.
+
+## Une version par lot, pas un build par micro-correctif (mesuré 2026-10-23)
+
+- Ce que la journée a produit : **neuf versions** (2.4.21 → 2.4.29) pour neuf symptômes, chacune
+  avec un build de ~4 min, un redéploiement et une vérification. Les quatre derniers gains de perf
+  valaient quelques dizaines de millisecondes par tour — moins que le coût du cycle lui-même.
+- Règle qui en sort (posée dans `AGENTS.md`) : grouper les correctifs cohérents, puis publier une
+  fois. Le déclencheur d'un build reste un changement **vérifié**, pas une mesure qui vient d'être
+  lue.
+- Le vrai risque de la journée n'était pas la perf mais **la divergence** : binaire déployé en
+  2.4.29, paquet npm resté en 2.4.23 pendant six versions. Un `npm install -g` réinstallait donc un
+  binaire sans le correctif du revert (qui pouvait supprimer un tour entier) et réécrivait les
+  lanceurs. **Publier fait partie du correctif**, pas de la finition.
+- Dette de filet laissée ouverte le même jour, à traiter avant le prochain refactor de ces zones :
+  aucun test ne couvre `revert.cleanup` avec une cible disparue, le re-armement incrémental des
+  watchers de skills, ni le préchauffage MCP par instance. Seul le cache du catalogue d'outils a
+  son test (LRU + TTL).
